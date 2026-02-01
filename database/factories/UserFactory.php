@@ -28,6 +28,8 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
+            'type' => 'internal',
+            'is_active' => true,
             'remember_token' => Str::random(10),
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
@@ -46,6 +48,46 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user is an internal team member.
+     */
+    public function internal(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => 'internal',
+        ]);
+    }
+
+    /**
+     * Indicate that the user is an agent (real estate agent).
+     */
+    public function agent(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => 'agent',
+        ]);
+    }
+
+    /**
+     * Indicate that the user is a customer (homeowner).
+     */
+    public function customer(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => 'customer',
+        ]);
+    }
+
+    /**
+     * Indicate that the user account is inactive.
+     */
+    public function inactive(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => false,
+        ]);
+    }
+
+    /**
      * Indicate that the model has two-factor authentication configured.
      */
     public function withTwoFactor(): static
@@ -55,5 +97,22 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-1'])),
             'two_factor_confirmed_at' => now(),
         ]);
+    }
+
+    /**
+     * Configure the internal user to have a signature.
+     * Only applies to internal users.
+     */
+    public function withSignature(): static
+    {
+        return $this->afterCreating(function (\App\Models\User $user) {
+            if ($user->type === 'internal' && $user->internalUser) {
+                $user->internalUser->update([
+                    'signature_data' => $user->name,
+                    'signature_type' => 'typed',
+                    'signature_updated_at' => now(),
+                ]);
+            }
+        });
     }
 }

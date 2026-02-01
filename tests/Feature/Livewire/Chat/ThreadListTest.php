@@ -1,0 +1,229 @@
+<?php
+
+use App\Livewire\Chat\ThreadList;
+use App\Models\ChatMessage;
+use App\Models\ChatThread;
+use App\Models\User;
+use Livewire\Livewire;
+
+describe('ThreadList component', function () {
+    it('renders the thread list component for internal users', function () {
+        $user = User::factory()->internal()->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertStatus(200)
+            ->assertSee('Messages');
+    });
+
+    it('prevents access for unauthenticated users', function () {
+        Livewire::test(ThreadList::class)
+            ->assertForbidden();
+    });
+
+    it('displays threads the user is a participant in', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->withSubject('Test Thread Subject')
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertSee('Test Thread Subject');
+    });
+
+    it('does not display threads the user is not a participant in', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser1 = User::factory()->internal()->create();
+        $otherUser2 = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->withSubject('Other Thread')
+            ->betweenUsers($otherUser1, $otherUser2)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertDontSee('Other Thread');
+    });
+
+    it('can search threads by display name', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create(['name' => 'John Smith']);
+
+        $thread = ChatThread::factory()
+            ->direct()
+            ->withSubject('Project Discussion')
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->set('search', 'Project')
+            ->assertSee('Project Discussion');
+    });
+
+    it('can filter by unread threads', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        // Create thread with unread message
+        $thread = ChatThread::factory()
+            ->withSubject('Unread Thread')
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        ChatMessage::factory()
+            ->forThread($thread)
+            ->fromUser($otherUser)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->set('filter', 'unread')
+            ->assertSee('Unread Thread');
+    });
+
+    it('can filter by archived threads', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        $archivedThread = ChatThread::factory()
+            ->withSubject('Archived Thread')
+            ->archived()
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        $activeThread = ChatThread::factory()
+            ->withSubject('Active Thread')
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->set('filter', 'archived')
+            ->assertSee('Archived Thread')
+            ->assertDontSee('Active Thread');
+    });
+
+    it('can archive a thread', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        expect($thread->is_archived)->toBeFalse();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->call('archiveThread', $thread->id)
+            ->assertDispatched('thread-archived');
+
+        expect($thread->fresh()->is_archived)->toBeTrue();
+    });
+
+    it('can unarchive a thread', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->archived()
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        expect($thread->is_archived)->toBeTrue();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->call('unarchiveThread', $thread->id)
+            ->assertDispatched('thread-unarchived');
+
+        expect($thread->fresh()->is_archived)->toBeFalse();
+    });
+
+    it('prevents archiving threads the user is not a participant of', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser1 = User::factory()->internal()->create();
+        $otherUser2 = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->betweenUsers($otherUser1, $otherUser2)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->call('archiveThread', $thread->id)
+            ->assertForbidden();
+    });
+
+    it('shows empty state when no threads exist', function () {
+        $user = User::factory()->internal()->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertSee('No conversations found');
+    });
+
+    it('shows last message preview', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->withSubject('Test Thread')
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        ChatMessage::factory()
+            ->forThread($thread)
+            ->fromUser($otherUser)
+            ->withContent('Hello, this is a test message!')
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertSee('Hello, this is a test message!');
+    });
+
+    it('shows unread count badge', function () {
+        $user = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->create();
+
+        $thread = ChatThread::factory()
+            ->betweenUsers($user, $otherUser)
+            ->create();
+
+        // Create multiple unread messages
+        ChatMessage::factory()
+            ->count(3)
+            ->forThread($thread)
+            ->fromUser($otherUser)
+            ->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertSeeHtml('3');
+    });
+
+    it('has correct default filter value', function () {
+        $user = User::factory()->internal()->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->assertSet('filter', 'all')
+            ->assertSet('search', '');
+    });
+
+    it('refreshes threads on message-sent event', function () {
+        $user = User::factory()->internal()->create();
+
+        Livewire::actingAs($user)
+            ->test(ThreadList::class)
+            ->dispatch('message-sent')
+            ->assertStatus(200);
+    });
+});

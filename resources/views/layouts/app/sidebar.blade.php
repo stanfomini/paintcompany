@@ -15,7 +15,52 @@
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
+                    @if (auth()->user()?->isInternal())
+                        <flux:sidebar.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>
+                            {{ __('Customers') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="home" :href="route('properties.index')" :current="request()->routeIs('properties.*')" wire:navigate>
+                            {{ __('Properties') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="briefcase" :href="route('deals.index')" :current="request()->routeIs('deals.*')" wire:navigate>
+                            {{ __('Deals') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="document-text" :href="route('estimates.index')" :current="request()->routeIs('estimates.*')" wire:navigate>
+                            {{ __('Estimates') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="check-circle" :href="route('activities.index')" :current="request()->routeIs('activities.*')" wire:navigate>
+                            {{ __('Tasks') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="building-office" :href="route('agent-listings.index')" :current="request()->routeIs('agent-listings.*')" wire:navigate>
+                            {{ __('Agent Listings') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="user-group" :href="route('agents.index')" :current="request()->routeIs('agents.*')" wire:navigate>
+                            {{ __('Agents') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="chart-bar" :href="route('production-rates.index')" :current="request()->routeIs('production-rates.*')" wire:navigate>
+                            {{ __('Production Rates') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="chat-bubble-left-right" :href="route('chat.index')" :current="request()->routeIs('chat.*')" wire:navigate>
+                            {{ __('Messages') }}
+                        </flux:sidebar.item>
+                    @endif
                 </flux:sidebar.group>
+
+                @if (auth()->user() && app(\App\Services\InvitationService::class)->canSendInvitations(auth()->user()))
+                    <flux:sidebar.group :heading="__('Team')" class="grid">
+                        <flux:sidebar.item icon="envelope" :href="route('invitations')" :current="request()->routeIs('invitations')" wire:navigate>
+                            {{ __('Invitations') }}
+                        </flux:sidebar.item>
+                    </flux:sidebar.group>
+                @endif
+
+                @if (auth()->user()?->isInternal())
+                    <flux:sidebar.group :heading="__('Settings')" class="grid">
+                        <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
+                            {{ __('Company') }}
+                        </flux:sidebar.item>
+                    </flux:sidebar.group>
+                @endif
             </flux:sidebar.nav>
 
             <flux:spacer />

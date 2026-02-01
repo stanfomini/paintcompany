@@ -21,3 +21,14 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Mobile app secrets
+.secrets/
+*.keystore
+*.jks
+
+# Python
+python/venv/
+__pycache__/
+*.pyc
+*.pyo

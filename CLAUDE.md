@@ -1,3 +1,225 @@
+# Apex Negotiations - Painting Company CRM
+
+## Project Plans
+
+**IMPORTANT**: Before starting work, read the plan files in `.claude/plans/`:
+
+- **`.claude/plans/master-plan.md`** - Complete project overview, all phases, what's built
+- **`.claude/plans/current-status.md`** - Current progress, what's next, quick commands
+- **`.claude/plans/technical-decisions.md`** - Architecture decisions and rationale
+- **`.claude/plans/phase-2-crm-plan.md`** - Detailed plan for next phase (Core CRM)
+
+## Quick Status
+
+- **Phase 1: Multi-Auth** - COMPLETE
+- **Phase 1.1: Invitation System** - COMPLETE
+- **Phase 2: Core CRM** - COMPLETE (Customers, Deals, Properties, Estimates)
+- **Sprint 7: Integration & Polish** - COMPLETE (PDF generation, notifications, company settings)
+- **PBP Pricing System** - COMPLETE (Substrates, Paint Catalog, Nested Areas, Calculator Service)
+- **Simple Estimate Workflow** - IN PROGRESS (see `.claude/plans/spreadsheet-workflow-plan.md`)
+- **Total Tests**: 1852 passing
+
+## CURRENT WORK: Simple Estimate Workflow - Deep Dive Phase
+
+**Goal**: Faster than the spreadsheet. One-click room selection, instant pricing.
+
+**IMPORTANT**: Read `.claude/plans/simple-workflow-handoff.md` for next session context!
+
+**Plan File**: `.claude/plans/spreadsheet-workflow-plan.md`
+
+**The Vision**:
+```
+Click [+ Living Room] → Pick [Medium ▼] → See [$827] → Done
+```
+
+**What's Built** (PBP backend - all working):
+- Production rates with sqft/hr, lnft/hr, hours/unit
+- Company settings (wage, margins, cleanup ratio, sundries)
+- PaintingEstimateCalculatorService for PBP formula
+- EstimateArea and EstimateAreaSurface models
+
+**What We're Building** (Tasks #6-10):
+1. ✅ Room templates with size options (S/M/L) and surface ratios - DONE
+2. ✅ Simple room picker UI (grid of buttons, size dropdown) - DONE
+3. ✅ Connect to PBP calculator (auto-calculate from template) - DONE
+4. ✅ Optional expand-to-customize feature - DONE (expandable breakdown)
+5. ✅ Test prices match spreadsheet - DONE (7 tests verifying PBP formula)
+
+**Completed Templates** (seeded in database):
+- Interior: Living Room, Bedroom, Master Bedroom, Bathroom, Kitchen, Dining Room, Hallway, Office, Laundry, Closet
+- Exterior: House Exterior, Garage, Deck, Fence, Porch, Shed
+- Each has: sizes (S/M/L), surface_ratios (walls, ceiling, baseboards, doors)
+
+**Key Features Built**:
+- One-click Quick Add buttons for common rooms
+- Size dropdown (S/M/L) that instantly recalculates price
+- Per-surface breakdown using production rates (walls, ceiling, baseboards, doors)
+- PBP formula applied: labor + cleanup + sundries + materials → margins
+- Expandable details showing surface quantities and hours
+- Comprehensive test coverage: SpreadsheetPricingTest.php (7 tests)
+
+**Simple Workflow is COMPLETE** - Tasks 6-10 all done!
+
+**NEXT PHASE: Deep Dive Audit** (see `.claude/plans/simple-workflow-handoff.md`)
+- Are substrates actually affecting prices? (currently NO)
+- Are we using the right production rates from spreadsheet?
+- Is material cost coming from PaintProduct or hardcoded?
+- Do we need a "detailed builder" for complex jobs?
+- Should linear foot inputs be available for precision?
+- Compare our output to spreadsheet for same inputs
+
+**Key Insight from Spreadsheet Analysis**:
+- User enters room sqft → system auto-calculates surfaces using ratios
+- Walls sqft = room sqft × 1.0
+- Ceiling sqft = room sqft × 0.9
+- Baseboards lnft = room sqft / 100 × 28
+- Doors = count (typically 1 per room)
+- All PBP complexity hidden from user
+
+**Reference Spreadsheet**: https://docs.google.com/spreadsheets/d/13jhzT7ulHZVIwUBGfKx2Z-qwaT3IirDrPLZ8AdcuOCw/
+
+## User Types
+
+1. **Internal** - Company team (full access)
+2. **Agent** - Real estate agents (can invite customers, see their referrals)
+3. **Customer** - Homeowners (view their projects only)
+
+## Key Services
+
+- `InvitationService` - Handles all invitation logic with permission rules
+- `ProductionRateService` - Painting production rate calculations and seeding
+- `PythonBridgeService` - HTTP client for Python ML/processing service integration
+- `PaintingEstimateCalculatorService` - Core PBP pricing engine (labor + materials + margins)
+
+## Key Models (Estimates)
+
+- `Estimate` - Main estimate with status workflow (draft → sent → accepted/rejected)
+- `EstimateItem` - Traditional line items with quantity, unit, price
+- `EstimateArea` - Room/area with dimensions (auto-calculates sqft)
+- `EstimateAreaSurface` - Surfaces within areas (walls, ceiling, trim) with production rates
+- `EstimateOption` - Add-on options customers can select (fixed, per_sqft, per_surface pricing)
+- `EstimatePhoto` - Photos with show_on_proposal flag
+- `EstimateSignature` - Customer digital signature (drawn or typed)
+- `EstimateActivity` - Activity log for estimate changes
+- `EstimateView` - Tracks when customers view public proposals
+- `ProductionRate` - Painting industry production rates by category
+- `ProductionRateCategory` - Categories (Interior, Exterior, Specialty)
+- `CompanySetting` - Singleton model for company information and defaults (name, address, tax rate, etc.)
+
+## PBP (Painting Business Pricing) Models
+
+- `Substrate` - Surface conditions (previously painted, new drywall, peeling) with prep/paint multipliers
+- `PaintBrand` - Paint manufacturers (Sherwin-Williams, Benjamin Moore, Behr, PPG)
+- `PaintProduct` - Individual paints with pricing, coverage, sheens (Duration, ProMar 200, etc.)
+- `NestedAreaTemplate` - Fixed-price templates for closets, half baths, etc.
+- `EstimateAreaPaintSelection` - Links areas to specific paint products per surface
+
+## PBP Seeders
+
+```bash
+php artisan db:seed --class=SubstrateSeeder        # 22 substrates
+php artisan db:seed --class=PaintCatalogSeeder     # 4 brands, 25+ products
+php artisan db:seed --class=NestedAreaTemplateSeeder  # 15 templates
+```
+
+## PBP Pricing Calculator
+
+```php
+$calculator = new PaintingEstimateCalculatorService();
+
+// Quick estimate for a surface
+$result = $calculator->quickEstimate(sqft: 400, productionRate: 200, coats: 2);
+// Returns: hours, labor_cost, price_with_margins
+
+// Calculate full area with substrates, paint, nested areas
+$areaResult = $calculator->calculateArea($area);
+
+// Get pricing formula explanation
+$explanation = $calculator->getPricingExplanation();
+```
+
+**Pricing Formula**: `(sqft / rate) × multipliers × hourly_rate + materials → profit → overhead → markup`
+
+## Key Routes
+
+- `/estimates` - Estimate management (internal users)
+- `/estimates/{estimate}/pdf` - PDF download
+- `/proposal/{token}` - Public customer proposal view
+- `/production-rates` - Production rate management
+- `/settings/company` - Company settings (internal users only)
+
+## Notifications
+
+- `EstimateProposalSent` - Sent to customer when estimate is sent (includes public proposal URL)
+- `EstimateAccepted` - Sent to internal users when customer accepts estimate
+- `EstimateRejected` - Sent to internal users when customer rejects estimate
+
+## Artisan Commands
+
+- `php artisan production-rates:seed` - Seed default painting production rates
+
+## Python Service
+
+The application includes a Python FastAPI service for ML processing, web scraping, and media handling.
+
+### Structure
+- `python/` - Python service root
+- `python/api/` - FastAPI application
+- `python/api/routers/` - API endpoints (health, images, scraping, media)
+- `python/api/services/` - Business logic (ml, scraper, media)
+- `config/python.php` - Laravel configuration
+- `app/Services/PythonBridgeService.php` - Laravel HTTP client
+
+### Environment Variables
+```env
+PYTHON_ENABLED=true
+PYTHON_SERVICE_URL=http://127.0.0.1:8000
+PYTHON_SERVICE_TIMEOUT=60
+ML_GPU_ENABLED=false
+```
+
+### Running Python Service
+```bash
+cd python
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn api.main:app --reload --port 8000
+```
+
+### Using in Laravel
+```php
+$python = app(PythonBridgeService::class);
+$python->healthCheck();  // Check service status
+$python->detectSubstrate($imageUrl);  // Detect paint surface type
+$python->scrapeListing($zillowUrl);  // Scrape real estate listing
+$python->transcribeAudio($audioUrl);  // Transcribe audio with Whisper
+$python->recolorSurface($imageUrl, '#C0D6D2');  // Change wall color
+```
+
+### Laravel Job Classes
+- `App\Jobs\Python\ScrapeListingJob` - Queue scraping jobs
+- `App\Jobs\Python\ProcessImageMLJob` - Queue image processing
+- `App\Jobs\Python\TranscribeAudioJob` - Queue audio transcription
+
+## Running the Project
+
+```bash
+# Queue worker (required for emails)
+php artisan queue:work
+
+# Python service (optional, for ML/scraping)
+cd python && uvicorn api.main:app --reload --port 8000
+
+# Run tests
+php artisan test --compact
+
+# Format code
+vendor/bin/pint --dirty
+```
+
+---
+
 <laravel-boost-guidelines>
 === foundation rules ===
 
@@ -19,6 +241,8 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/sail (SAIL) - v1
 - pestphp/pest (PEST) - v4
 - phpunit/phpunit (PHPUNIT) - v12
+- react (REACT) - v19
+- tailwindcss (TAILWINDCSS) - v4
 
 ## Conventions
 - You must follow all existing code conventions used in this application. When creating or editing a file, check sibling files for the correct structure, approach, and naming.
@@ -351,6 +575,70 @@ $pages = visit(['/', '/about', '/contact']);
 
 $pages->assertNoJavascriptErrors()->assertNoConsoleLogs();
 </code-snippet>
+
+=== tailwindcss/core rules ===
+
+## Tailwind CSS
+
+- Use Tailwind CSS classes to style HTML; check and use existing Tailwind conventions within the project before writing your own.
+- Offer to extract repeated patterns into components that match the project's conventions (i.e. Blade, JSX, Vue, etc.).
+- Think through class placement, order, priority, and defaults. Remove redundant classes, add classes to parent or child carefully to limit repetition, and group elements logically.
+- You can use the `search-docs` tool to get exact examples from the official documentation when needed.
+
+### Spacing
+- When listing items, use gap utilities for spacing; don't use margins.
+
+<code-snippet name="Valid Flex Gap Spacing Example" lang="html">
+    <div class="flex gap-8">
+        <div>Superior</div>
+        <div>Michigan</div>
+        <div>Erie</div>
+    </div>
+</code-snippet>
+
+### Dark Mode
+- If existing pages and components support dark mode, new pages and components must support dark mode in a similar way, typically using `dark:`.
+
+=== tailwindcss/v4 rules ===
+
+## Tailwind CSS 4
+
+- Always use Tailwind CSS v4; do not use the deprecated utilities.
+- `corePlugins` is not supported in Tailwind v4.
+- In Tailwind v4, configuration is CSS-first using the `@theme` directive — no separate `tailwind.config.js` file is needed.
+
+<code-snippet name="Extending Theme in CSS" lang="css">
+@theme {
+  --color-brand: oklch(0.72 0.11 178);
+}
+</code-snippet>
+
+- In Tailwind v4, you import Tailwind using a regular CSS `@import` statement, not using the `@tailwind` directives used in v3:
+
+<code-snippet name="Tailwind v4 Import Tailwind Diff" lang="diff">
+   - @tailwind base;
+   - @tailwind components;
+   - @tailwind utilities;
+   + @import "tailwindcss";
+</code-snippet>
+
+### Replaced Utilities
+- Tailwind v4 removed deprecated utilities. Do not use the deprecated option; use the replacement.
+- Opacity values are still numeric.
+
+| Deprecated |	Replacement |
+|------------+--------------|
+| bg-opacity-* | bg-black/* |
+| text-opacity-* | text-black/* |
+| border-opacity-* | border-black/* |
+| divide-opacity-* | divide-black/* |
+| ring-opacity-* | ring-black/* |
+| placeholder-opacity-* | placeholder-black/* |
+| flex-shrink-* | shrink-* |
+| flex-grow-* | grow-* |
+| overflow-ellipsis | text-ellipsis |
+| decoration-slice | box-decoration-slice |
+| decoration-clone | box-decoration-clone |
 
 === laravel/fortify rules ===
 

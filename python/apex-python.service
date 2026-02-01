@@ -1,0 +1,17 @@
+[Unit]
+Description=Apex Python ML Service
+After=network.target
+
+[Service]
+User=forge
+Group=forge
+WorkingDirectory=/home/forge/apexnegotiations.com/python
+Environment="PATH=/home/forge/apexnegotiations.com/python/venv/bin:/usr/bin"
+ExecStart=/home/forge/apexnegotiations.com/python/venv/bin/uvicorn api.main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/apex-python.log
+StandardError=append:/var/log/apex-python.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,452 @@
+<?php
+
+namespace App\Services;
+
+use App\Events\MessageRead;
+use App\Events\MessageSent;
+use App\Events\NewThreadNotification;
+use App\Models\ChatMessage;
+use App\Models\ChatThread;
+use App\Models\Deal;
+use App\Models\User;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+
+class ChatService
+{
+    /**
+     * Chat permission matrix: who can chat with whom
+     * Internal users can chat with: internal, agent, customer
+     * Agents can chat with: internal, their customers (via deals they referred)
+     * Customers can chat with: internal (via deal threads only)
+     */
+    private const CHAT_PERMISSIONS = [
+        'internal' => ['internal', 'agent', 'customer'],
+        'agent' => ['internal', 'customer'],
+        'customer' => ['internal'],
+    ];
+
+    /**
+     * Check if a user can initiate chat with another user.
+     */
+    public function canChatWith(User $user, User $target): bool
+    {
+        $allowedTypes = self::CHAT_PERMISSIONS[$user->type] ?? [];
+
+        if (! in_array($target->type, $allowedTypes, true)) {
+            return false;
+        }
+
+        // Additional checks for agents - can only chat with their referred customers
+        if ($user->isAgent() && $target->isCustomer()) {
+            return $this->agentCanChatWithCustomer($user, $target);
+        }
+
+        // Customers can only chat with internal users through deal threads
+        if ($user->isCustomer() && $target->isInternal()) {
+            return true;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if an agent can chat with a specific customer.
+     */
+    private function agentCanChatWithCustomer(User $agent, User $customerUser): bool
+    {
+        // Check if the customer is associated with any deal referred by this agent
+        return Deal::query()
+            ->where('agent_id', $agent->id)
+            ->whereHas('customer', function ($query) use ($customerUser) {
+                $query->where('user_id', $customerUser->id);
+            })
+            ->exists();
+    }
+
+    /**
+     * Get or create a chat thread for a deal.
+     */
+    public function getOrCreateDealThread(Deal $deal, User $initiator): ChatThread
+    {
+        $thread = $deal->chatThread;
+
+        if (! $thread) {
+            $thread = $deal->chatThread()->create([
+                'type' => ChatThread::TYPE_DEAL,
+                'subject' => $deal->title,
+                'last_message_at' => now(),
+            ]);
+
+            // Add initiator as participant
+            $thread->addParticipant($initiator);
+
+            // Notify about new thread
+            broadcast(new NewThreadNotification($thread, $initiator))->toOthers();
+        } elseif (! $thread->hasParticipant($initiator)) {
+            $thread->addParticipant($initiator);
+        }
+
+        return $thread;
+    }
+
+    /**
+     * Get or create a direct chat thread between two users.
+     */
+    public function getOrCreateDirectThread(User $user1, User $user2, ?string $subject = null): ChatThread
+    {
+        // Check if a direct thread already exists between these users
+        $thread = ChatThread::query()
+            ->ofType(ChatThread::TYPE_DIRECT)
+            ->whereHas('participants', function ($query) use ($user1) {
+                $query->where('user_id', $user1->id)->whereNull('left_at');
+            })
+            ->whereHas('participants', function ($query) use ($user2) {
+                $query->where('user_id', $user2->id)->whereNull('left_at');
+            })
+            ->first();
+
+        if (! $thread) {
+            $thread = ChatThread::create([
+                'type' => ChatThread::TYPE_DIRECT,
+                'subject' => $subject,
+                'last_message_at' => now(),
+            ]);
+
+            $thread->addParticipant($user1);
+            $thread->addParticipant($user2);
+
+            // Notify user2 about new thread
+            broadcast(new NewThreadNotification($thread, $user1))->toOthers();
+        }
+
+        return $thread;
+    }
+
+    /**
+     * Send a message in a thread.
+     *
+     * @param  array{is_internal?: bool, parent_id?: int, metadata?: array}  $options
+     */
+    public function sendMessage(
+        ChatThread $thread,
+        User $sender,
+        string $content,
+        array $options = []
+    ): ChatMessage {
+        // Ensure user is a participant
+        if (! $thread->hasParticipant($sender)) {
+            $thread->addParticipant($sender);
+        }
+
+        // Non-internal users cannot send internal messages
+        $isInternal = ($options['is_internal'] ?? false) && $sender->isInternal();
+
+        $message = $thread->messages()->create([
+            'user_id' => $sender->id,
+            'content' => $content,
+            'type' => ChatMessage::TYPE_TEXT,
+            'is_internal' => $isInternal,
+            'parent_id' => $options['parent_id'] ?? null,
+            'metadata' => $options['metadata'] ?? null,
+        ]);
+
+        // Update thread's last message timestamp
+        $thread->touchLastMessage();
+
+        // Mark as read by sender
+        $participant = $thread->getParticipant($sender);
+        $participant?->markAsRead();
+
+        // Broadcast message to thread
+        broadcast(new MessageSent($message))->toOthers();
+
+        return $message;
+    }
+
+    /**
+     * Send a message with attachments.
+     *
+     * @param  array<UploadedFile>  $files
+     * @param  array{is_internal?: bool, parent_id?: int, metadata?: array}  $options
+     */
+    public function sendMessageWithAttachments(
+        ChatThread $thread,
+        User $sender,
+        string $content,
+        array $files,
+        array $options = []
+    ): ChatMessage {
+        return DB::transaction(function () use ($thread, $sender, $content, $files, $options) {
+            $isImage = count($files) === 1 && str_starts_with($files[0]->getMimeType(), 'image/');
+            $messageType = $isImage ? ChatMessage::TYPE_IMAGE : ChatMessage::TYPE_FILE;
+
+            $isInternal = ($options['is_internal'] ?? false) && $sender->isInternal();
+
+            $message = $thread->messages()->create([
+                'user_id' => $sender->id,
+                'content' => $content,
+                'type' => $messageType,
+                'is_internal' => $isInternal,
+                'parent_id' => $options['parent_id'] ?? null,
+                'metadata' => $options['metadata'] ?? null,
+            ]);
+
+            foreach ($files as $file) {
+                $filename = Str::uuid().'.'.$file->getClientOriginalExtension();
+                $path = $file->storeAs('chat-attachments', $filename, 'local');
+
+                $message->attachments()->create([
+                    'path' => $path,
+                    'filename' => $filename,
+                    'original_filename' => $file->getClientOriginalName(),
+                    'mime_type' => $file->getMimeType(),
+                    'file_size' => $file->getSize(),
+                ]);
+            }
+
+            $thread->touchLastMessage();
+
+            $participant = $thread->getParticipant($sender);
+            $participant?->markAsRead();
+
+            broadcast(new MessageSent($message->load('attachments')))->toOthers();
+
+            return $message;
+        });
+    }
+
+    /**
+     * Send a system message in a thread.
+     */
+    public function sendSystemMessage(ChatThread $thread, string $content): ChatMessage
+    {
+        $message = $thread->messages()->create([
+            'user_id' => $thread->participants()->first()?->user_id,
+            'content' => $content,
+            'type' => ChatMessage::TYPE_SYSTEM,
+            'is_internal' => false,
+        ]);
+
+        $thread->touchLastMessage();
+
+        broadcast(new MessageSent($message))->toOthers();
+
+        return $message;
+    }
+
+    /**
+     * Send an audio message in a thread.
+     *
+     * @param  array{audio_url: string, audio_path: string, audio_duration: float|null, transcription: string|null, transcription_status: string}  $audioData
+     * @param  array{is_internal?: bool, parent_id?: int}  $options
+     */
+    public function sendAudioMessage(
+        ChatThread $thread,
+        User $sender,
+        array $audioData,
+        array $options = []
+    ): ChatMessage {
+        // Ensure user is a participant
+        if (! $thread->hasParticipant($sender)) {
+            $thread->addParticipant($sender);
+        }
+
+        // Non-internal users cannot send internal messages
+        $isInternal = ($options['is_internal'] ?? false) && $sender->isInternal();
+
+        $message = $thread->messages()->create([
+            'user_id' => $sender->id,
+            'content' => $audioData['transcription'] ?? '',
+            'type' => ChatMessage::TYPE_AUDIO,
+            'is_internal' => $isInternal,
+            'parent_id' => $options['parent_id'] ?? null,
+            'metadata' => [
+                'audio_url' => $audioData['audio_url'],
+                'audio_path' => $audioData['audio_path'],
+                'audio_duration' => $audioData['audio_duration'],
+                'transcription' => $audioData['transcription'],
+                'transcription_status' => $audioData['transcription_status'],
+            ],
+        ]);
+
+        // Update thread's last message timestamp
+        $thread->touchLastMessage();
+
+        // Mark as read by sender
+        $participant = $thread->getParticipant($sender);
+        $participant?->markAsRead();
+
+        // Broadcast message to thread
+        broadcast(new MessageSent($message))->toOthers();
+
+        return $message;
+    }
+
+    /**
+     * Edit a message.
+     */
+    public function editMessage(ChatMessage $message, User $user, string $newContent): ChatMessage
+    {
+        if ($message->user_id !== $user->id) {
+            throw new \InvalidArgumentException('You can only edit your own messages.');
+        }
+
+        if ($message->isSystem()) {
+            throw new \InvalidArgumentException('System messages cannot be edited.');
+        }
+
+        $message->update([
+            'content' => $newContent,
+            'edited_at' => now(),
+        ]);
+
+        broadcast(new MessageSent($message->fresh()))->toOthers();
+
+        return $message;
+    }
+
+    /**
+     * Delete a message.
+     */
+    public function deleteMessage(ChatMessage $message, User $user): bool
+    {
+        if ($message->user_id !== $user->id && ! $user->isInternal()) {
+            throw new \InvalidArgumentException('You can only delete your own messages.');
+        }
+
+        return $message->delete();
+    }
+
+    /**
+     * Mark a thread as read for a user.
+     */
+    public function markThreadAsRead(ChatThread $thread, User $user): void
+    {
+        $participant = $thread->getParticipant($user);
+
+        if ($participant) {
+            $participant->markAsRead();
+
+            broadcast(new MessageRead($thread->id, $user->id, now()))->toOthers();
+        }
+    }
+
+    /**
+     * Get threads for a user with unread counts.
+     */
+    public function getThreadsForUser(User $user): Collection
+    {
+        return ChatThread::query()
+            ->forUser($user)
+            ->active()
+            ->with(['latestMessage.user', 'deal', 'activeParticipants.user'])
+            ->latestActivity()
+            ->get()
+            ->map(function (ChatThread $thread) use ($user) {
+                $thread->unread_count = $thread->getUnreadCountFor($user);
+                $thread->display_name = $thread->getDisplayNameFor($user);
+
+                return $thread;
+            });
+    }
+
+    /**
+     * Get total unread count for a user.
+     */
+    public function getUnreadCountForUser(User $user): int
+    {
+        return ChatThread::query()
+            ->forUser($user)
+            ->active()
+            ->get()
+            ->sum(fn (ChatThread $thread) => $thread->getUnreadCountFor($user));
+    }
+
+    /**
+     * Get messages for a thread visible to a user.
+     */
+    public function getMessagesForThread(ChatThread $thread, User $user, int $limit = 50, ?int $beforeId = null): Collection
+    {
+        $query = $thread->messages()
+            ->visibleTo($user)
+            ->with(['user', 'attachments', 'parent.user'])
+            ->orderByDesc('created_at')
+            ->limit($limit);
+
+        if ($beforeId) {
+            $query->where('id', '<', $beforeId);
+        }
+
+        return $query->get()->reverse()->values();
+    }
+
+    /**
+     * Add a participant to a thread.
+     */
+    public function addParticipant(ChatThread $thread, User $user, User $addedBy): void
+    {
+        if ($thread->hasParticipant($user)) {
+            return;
+        }
+
+        $thread->addParticipant($user);
+
+        $this->sendSystemMessage(
+            $thread,
+            "{$addedBy->name} added {$user->name} to the conversation"
+        );
+    }
+
+    /**
+     * Remove a participant from a thread.
+     */
+    public function removeParticipant(ChatThread $thread, User $user, User $removedBy): void
+    {
+        if (! $thread->hasParticipant($user)) {
+            return;
+        }
+
+        $thread->removeParticipant($user);
+
+        $this->sendSystemMessage(
+            $thread,
+            "{$removedBy->name} removed {$user->name} from the conversation"
+        );
+    }
+
+    /**
+     * Archive a thread.
+     */
+    public function archiveThread(ChatThread $thread): bool
+    {
+        return $thread->update(['is_archived' => true]);
+    }
+
+    /**
+     * Unarchive a thread.
+     */
+    public function unarchiveThread(ChatThread $thread): bool
+    {
+        return $thread->update(['is_archived' => false]);
+    }
+
+    /**
+     * Delete attachment file from storage.
+     */
+    public function deleteAttachment(int $attachmentId): bool
+    {
+        $attachment = \App\Models\ChatAttachment::find($attachmentId);
+
+        if (! $attachment) {
+            return false;
+        }
+
+        Storage::disk('local')->delete($attachment->path);
+
+        return $attachment->delete();
+    }
+}
