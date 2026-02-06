@@ -114,6 +114,8 @@ new class extends Component {
 
     public function toggleStatus(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         $this->customer->update([
             'status' => $this->customer->status === 'active' ? 'inactive' : 'active',
         ]);
@@ -123,6 +125,8 @@ new class extends Component {
 
     public function sendPortalInvite(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         try {
             $invitationService = app(InvitationService::class);
             $invitationService->sendInvitation(
@@ -151,6 +155,8 @@ new class extends Component {
 
     public function saveProperty(): void
     {
+        abort_unless(auth()->user()->can('people.create'), 403);
+
         $this->validate([
             'propertyAddress' => ['required', 'string', 'max:255'],
             'propertyCity' => ['required', 'string', 'max:100'],
@@ -189,6 +195,8 @@ new class extends Component {
 
     public function saveDeal(): void
     {
+        abort_unless(auth()->user()->can('people.create'), 403);
+
         $this->validate([
             'dealTitle' => ['required', 'string', 'max:255'],
             'dealPropertyId' => ['nullable', 'exists:properties,id'],
@@ -227,6 +235,8 @@ new class extends Component {
 
     public function saveActivity(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         $this->validate([
             'activityTitle' => ['required', 'string', 'max:255'],
             'activityType' => ['required', 'in:task,note,call,email,meeting,other'],
@@ -290,7 +300,9 @@ new class extends Component {
                 @else
                     <flux:badge size="sm" color="yellow">Inactive</flux:badge>
                 @endif
-                @livewire('customers.edit-modal', ['customerId' => $customer->id])
+                @can('people.edit')
+                    @livewire('customers.edit-modal', ['customerId' => $customer->id])
+                @endcan
             </div>
         </div>
 
@@ -310,23 +322,27 @@ new class extends Component {
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 mb-6 bg-zinc-50 dark:bg-zinc-900/50">
             <div class="flex flex-wrap items-center gap-2">
                 <flux:text size="sm" class="font-medium text-zinc-600 dark:text-zinc-400 mr-2">Quick Actions:</flux:text>
-                <flux:button size="sm" icon="plus" wire:click="openAddDeal">
-                    New Deal
-                </flux:button>
-                <flux:button size="sm" icon="home" wire:click="openAddProperty">
-                    Add Property
-                </flux:button>
-                <flux:button size="sm" icon="check-circle" wire:click="openAddActivity">
-                    Add Activity
-                </flux:button>
-                @if (!$customer->hasPortalAccess())
-                    <flux:button size="sm" icon="envelope" wire:click="sendPortalInvite" wire:confirm="Send portal invitation to {{ $customer->email }}?">
-                        Send Portal Invite
+                @can('people.create')
+                    <flux:button size="sm" icon="plus" wire:click="openAddDeal">
+                        New Deal
                     </flux:button>
-                @endif
-                <flux:button size="sm" variant="ghost" wire:click="toggleStatus" wire:confirm="Change customer status to {{ $customer->status === 'active' ? 'inactive' : 'active' }}?">
-                    {{ $customer->status === 'active' ? 'Deactivate' : 'Reactivate' }}
-                </flux:button>
+                    <flux:button size="sm" icon="home" wire:click="openAddProperty">
+                        Add Property
+                    </flux:button>
+                @endcan
+                @can('people.edit')
+                    <flux:button size="sm" icon="check-circle" wire:click="openAddActivity">
+                        Add Activity
+                    </flux:button>
+                    @if (!$customer->hasPortalAccess())
+                        <flux:button size="sm" icon="envelope" wire:click="sendPortalInvite" wire:confirm="Send portal invitation to {{ $customer->email }}?">
+                            Send Portal Invite
+                        </flux:button>
+                    @endif
+                    <flux:button size="sm" variant="ghost" wire:click="toggleStatus" wire:confirm="Change customer status to {{ $customer->status === 'active' ? 'inactive' : 'active' }}?">
+                        {{ $customer->status === 'active' ? 'Deactivate' : 'Reactivate' }}
+                    </flux:button>
+                @endcan
             </div>
         </div>
 

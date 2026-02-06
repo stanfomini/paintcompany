@@ -119,6 +119,8 @@ new class extends Component {
 
     public function saveProfile(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         $this->validate([
             'editName' => 'required|string|max:255',
             'editCompanyName' => 'nullable|string|max:255',
@@ -178,6 +180,8 @@ new class extends Component {
 
     public function saveCompliance(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         $this->validate([
             'editInsuranceCompany' => 'nullable|string|max:255',
             'editPolicyNumber' => 'nullable|string|max:255',
@@ -262,6 +266,8 @@ new class extends Component {
 
     public function activate(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         $this->user->update(['is_active' => true]);
         $this->user->refresh();
         session()->flash('success', 'Crew activated successfully.');
@@ -269,6 +275,8 @@ new class extends Component {
 
     public function deactivate(): void
     {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
         $this->user->update(['is_active' => false]);
         $this->user->refresh();
         session()->flash('success', 'Crew deactivated successfully.');
@@ -304,15 +312,17 @@ new class extends Component {
                 @else
                     <flux:badge size="sm" color="yellow">Inactive</flux:badge>
                 @endif
-                @if ($user->is_active)
-                    <flux:button wire:click="deactivate" size="sm" variant="ghost" icon="x-circle" wire:confirm="Are you sure you want to deactivate this crew? They will be unable to log in.">
-                        Deactivate
-                    </flux:button>
-                @else
-                    <flux:button wire:click="activate" size="sm" variant="primary" icon="check-circle">
-                        Activate
-                    </flux:button>
-                @endif
+                @can('people.edit')
+                    @if ($user->is_active)
+                        <flux:button wire:click="deactivate" size="sm" variant="ghost" icon="x-circle" wire:confirm="Are you sure you want to deactivate this crew? They will be unable to log in.">
+                            Deactivate
+                        </flux:button>
+                    @else
+                        <flux:button wire:click="activate" size="sm" variant="primary" icon="check-circle">
+                            Activate
+                        </flux:button>
+                    @endif
+                @endcan
                 @php
                     $complianceStatus = $user->crewProfile?->getComplianceStatus() ?? 'compliant';
                 @endphp
@@ -393,11 +403,13 @@ new class extends Component {
 
         <!-- Tab Content -->
         @if ($activeTab === 'overview')
-            <div class="flex justify-end mb-4">
-                <flux:button wire:click="openEditProfileModal" size="sm" icon="pencil">
-                    Edit Profile
-                </flux:button>
-            </div>
+            @can('people.edit')
+                <div class="flex justify-end mb-4">
+                    <flux:button wire:click="openEditProfileModal" size="sm" icon="pencil">
+                        Edit Profile
+                    </flux:button>
+                </div>
+            @endcan
 
             <div class="grid gap-6 md:grid-cols-2">
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
@@ -472,11 +484,13 @@ new class extends Component {
         @endif
 
         @if ($activeTab === 'compliance')
-            <div class="flex justify-end mb-4">
-                <flux:button wire:click="openComplianceModal" size="sm" icon="pencil">
-                    Edit Compliance Info
-                </flux:button>
-            </div>
+            @can('people.edit')
+                <div class="flex justify-end mb-4">
+                    <flux:button wire:click="openComplianceModal" size="sm" icon="pencil">
+                        Edit Compliance Info
+                    </flux:button>
+                </div>
+            @endcan
 
             <div class="grid gap-6 md:grid-cols-2">
                 <!-- Insurance Information -->

@@ -23,7 +23,7 @@ describe('Customer list access', function () {
         $response = $this->actingAs($user)
             ->get(route('customers.index'));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('denies customer access to customer list', function () {
@@ -32,7 +32,7 @@ describe('Customer list access', function () {
         $response = $this->actingAs($user)
             ->get(route('customers.index'));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('redirects unauthenticated users to login', function () {
@@ -61,7 +61,7 @@ describe('Customer detail access', function () {
         $response = $this->actingAs($user)
             ->get(route('customers.show', $customer));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('denies customer access to customer detail', function () {
@@ -71,7 +71,7 @@ describe('Customer detail access', function () {
         $response = $this->actingAs($user)
             ->get(route('customers.show', $customer));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 });
 

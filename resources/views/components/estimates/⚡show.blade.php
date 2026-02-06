@@ -45,6 +45,8 @@ new class extends Component {
 
     public function openSendModal(): void
     {
+        abort_unless(auth()->user()->can('estimates.send'), 403);
+
         if ($this->estimate->status !== 'draft') {
             session()->flash('error', 'Only draft estimates can be sent.');
 
@@ -74,6 +76,8 @@ new class extends Component {
 
     public function sendProposal(): void
     {
+        abort_unless(auth()->user()->can('estimates.send'), 403);
+
         if ($this->estimate->status !== 'draft') {
             session()->flash('error', 'Only draft estimates can be sent.');
             $this->showSendModal = false;
@@ -115,6 +119,8 @@ new class extends Component {
 
     public function markAsSent(): void
     {
+        abort_unless(auth()->user()->can('estimates.send'), 403);
+
         if ($this->estimate->status !== 'draft') {
             session()->flash('error', 'Only draft estimates can be marked as sent.');
 
@@ -199,23 +205,27 @@ new class extends Component {
                 <flux:badge size="sm" color="{{ $this->statusColor }}">{{ $estimate->status_label }}</flux:badge>
             </div>
             <div class="flex items-center gap-2">
-                @if ($estimate->isEditable())
-                    @php
-                        $editRoute = match($estimate->estimator_mode) {
-                            'simple' => route('estimates.edit.simple', $estimate),
-                            'template' => route('estimates.edit.template', $estimate),
-                            default => route('estimates.edit', $estimate),
-                        };
-                    @endphp
-                    <flux:button :href="$editRoute" icon="pencil" wire:navigate>
-                        Edit
-                    </flux:button>
-                @endif
-                @if ($estimate->status === 'draft')
-                    <flux:button wire:click="openSendModal" icon="paper-airplane" variant="primary">
-                        Send Proposal
-                    </flux:button>
-                @endif
+                @can('estimates.edit')
+                    @if ($estimate->isEditable())
+                        @php
+                            $editRoute = match($estimate->estimator_mode) {
+                                'simple' => route('estimates.edit.simple', $estimate),
+                                'template' => route('estimates.edit.template', $estimate),
+                                default => route('estimates.edit', $estimate),
+                            };
+                        @endphp
+                        <flux:button :href="$editRoute" icon="pencil" wire:navigate>
+                            Edit
+                        </flux:button>
+                    @endif
+                @endcan
+                @can('estimates.send')
+                    @if ($estimate->status === 'draft')
+                        <flux:button wire:click="openSendModal" icon="paper-airplane" variant="primary">
+                            Send Proposal
+                        </flux:button>
+                    @endif
+                @endcan
                 <flux:button :href="route('estimates.breakdown', $estimate)" icon="calculator" variant="ghost" wire:navigate>
                     Cost Breakdown
                 </flux:button>
@@ -225,9 +235,11 @@ new class extends Component {
                 <flux:dropdown>
                     <flux:button variant="ghost" icon="ellipsis-horizontal" />
                     <flux:menu>
-                        @if ($estimate->status === 'draft')
-                            <flux:menu.item wire:click="markAsSent" icon="paper-airplane">Mark as Sent (No Email)</flux:menu.item>
-                        @endif
+                        @can('estimates.send')
+                            @if ($estimate->status === 'draft')
+                                <flux:menu.item wire:click="markAsSent" icon="paper-airplane">Mark as Sent (No Email)</flux:menu.item>
+                            @endif
+                        @endcan
                         @if (in_array($estimate->status, ['draft', 'sent']))
                             <flux:menu.item wire:click="markAsAccepted" icon="check-circle">Mark as Accepted</flux:menu.item>
                             <flux:menu.item wire:click="markAsRejected" icon="x-circle">Mark as Rejected</flux:menu.item>

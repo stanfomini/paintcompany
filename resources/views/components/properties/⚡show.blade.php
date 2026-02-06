@@ -35,7 +35,9 @@ new class extends Component {
                 </flux:button>
                 <flux:heading size="xl">{{ $property->display_name }}</flux:heading>
             </div>
-            @livewire('properties.edit-modal', ['propertyId' => $property->id])
+            @can('properties.edit')
+                @livewire('properties.edit-modal', ['propertyId' => $property->id])
+            @endcan
         </div>
 
         @if (session('success'))

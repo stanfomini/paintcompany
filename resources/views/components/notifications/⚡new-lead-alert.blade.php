@@ -11,7 +11,7 @@ new class extends Component {
     public function getListeners(): array
     {
         // Only listen if user is internal
-        if (! auth()->check() || ! auth()->user()->isInternal()) {
+        if (! auth()->check() || ! auth()->user()->can('deals.view')) {
             return [];
         }
 

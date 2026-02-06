@@ -11,6 +11,8 @@ class PainterBreakdownExportController extends Controller
 {
     public function workOrder(Estimate $estimate): Response
     {
+        abort_unless(auth()->user()?->can('financials.view_painter_breakdown'), 403);
+
         $estimate->load([
             'areas.surfaces.productionRate',
             'areas.surfaces.paintProduct.brand',
@@ -45,6 +47,8 @@ class PainterBreakdownExportController extends Controller
 
     public function financials(Estimate $estimate): Response
     {
+        abort_unless(auth()->user()?->can('financials.view_painter_breakdown'), 403);
+
         $estimate->load([
             'areas.surfaces.productionRate',
             'areas.surfaces.paintProduct.brand',

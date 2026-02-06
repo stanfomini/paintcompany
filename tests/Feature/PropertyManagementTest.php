@@ -24,7 +24,7 @@ describe('Property list access', function () {
         $response = $this->actingAs($user)
             ->get(route('properties.index'));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('denies customer access to property list', function () {
@@ -33,7 +33,7 @@ describe('Property list access', function () {
         $response = $this->actingAs($user)
             ->get(route('properties.index'));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('redirects unauthenticated users to login', function () {
@@ -62,7 +62,7 @@ describe('Property detail access', function () {
         $response = $this->actingAs($user)
             ->get(route('properties.show', $property));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('denies customer access to property detail', function () {
@@ -72,7 +72,7 @@ describe('Property detail access', function () {
         $response = $this->actingAs($user)
             ->get(route('properties.show', $property));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 });
 

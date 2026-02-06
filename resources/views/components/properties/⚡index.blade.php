@@ -62,7 +62,7 @@ new class extends Component {
     {
         $user = Auth::user();
 
-        if (! $user || ! $user->isInternal()) {
+        if (! $user || ! $user->can('properties.view')) {
             abort(403, 'Only internal users can access properties.');
         }
 

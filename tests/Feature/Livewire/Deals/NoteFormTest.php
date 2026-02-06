@@ -97,7 +97,7 @@ describe('NoteForm component', function () {
     it('displays internal badge for internal notes', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
-        DealNote::factory()->forDeal($deal)->writtenBy($user)->internal()->withFullAccess()->create();
+        DealNote::factory()->forDeal($deal)->writtenBy($user)->internal()->create();
 
         Livewire::actingAs($user)
             ->test('deals.note-form', ['dealId' => $deal->id])

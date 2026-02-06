@@ -48,6 +48,8 @@ new class extends Component {
 
     public function delete(int $id): void
     {
+        abort_unless(auth()->user()->can('agent_listings.manage'), 403);
+
         $listing = AgentListing::findOrFail($id);
         $listing->delete();
 
@@ -81,7 +83,9 @@ new class extends Component {
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
             <flux:heading size="xl">Agent Listings</flux:heading>
-            @livewire('agent-listings.create-modal')
+            @can('agent_listings.manage')
+                @livewire('agent-listings.create-modal')
+            @endcan
         </div>
 
         @if (session('success'))
@@ -180,13 +184,15 @@ new class extends Component {
                                     @endswitch
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right">
-                                    <flux:dropdown>
-                                        <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
-                                        <flux:menu>
-                                            <flux:menu.item icon="pencil" wire:click="$dispatch('edit-listing', { listingId: {{ $listing->id }} })">Edit</flux:menu.item>
-                                            <flux:menu.item icon="trash" variant="danger" wire:click="delete({{ $listing->id }})" wire:confirm="Are you sure you want to archive this listing?">Archive</flux:menu.item>
-                                        </flux:menu>
-                                    </flux:dropdown>
+                                    @can('agent_listings.manage')
+                                        <flux:dropdown>
+                                            <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
+                                            <flux:menu>
+                                                <flux:menu.item icon="pencil" wire:click="$dispatch('edit-listing', { listingId: {{ $listing->id }} })">Edit</flux:menu.item>
+                                                <flux:menu.item icon="trash" variant="danger" wire:click="delete({{ $listing->id }})" wire:confirm="Are you sure you want to archive this listing?">Archive</flux:menu.item>
+                                            </flux:menu>
+                                        </flux:dropdown>
+                                    @endcan
                                 </td>
                             </tr>
                         @endforeach

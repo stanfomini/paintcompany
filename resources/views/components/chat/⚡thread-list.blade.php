@@ -11,7 +11,8 @@ use Livewire\Component;
 new class extends Component {
     public function boot(): void
     {
-        if (! auth()->user()?->can('chat.access')) {
+        $user = auth()->user();
+        if (! $user?->can('chat.access')) {
             abort(403);
         }
     }

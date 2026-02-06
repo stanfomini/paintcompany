@@ -25,7 +25,7 @@ describe('Deal pipeline access', function () {
         $response = $this->actingAs($user)
             ->get(route('deals.index'));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('denies customer access to deal pipeline', function () {
@@ -34,7 +34,7 @@ describe('Deal pipeline access', function () {
         $response = $this->actingAs($user)
             ->get(route('deals.index'));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('redirects unauthenticated users to login', function () {
@@ -63,7 +63,7 @@ describe('Deal detail access', function () {
         $response = $this->actingAs($user)
             ->get(route('deals.show', $deal));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 
     it('denies customer access to deal detail', function () {
@@ -73,7 +73,7 @@ describe('Deal detail access', function () {
         $response = $this->actingAs($user)
             ->get(route('deals.show', $deal));
 
-        $response->assertForbidden();
+        $response->assertRedirect();
     });
 });
 

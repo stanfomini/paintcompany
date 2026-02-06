@@ -10,6 +10,8 @@ class EstimatePdfController extends Controller
 {
     public function download(Estimate $estimate): Response
     {
+        abort_unless(auth()->user()?->can('estimates.view'), 403);
+
         $estimate->load([
             'deal.customer',
             'createdBy',

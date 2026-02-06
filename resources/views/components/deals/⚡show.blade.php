@@ -74,7 +74,9 @@ new class extends Component {
                 <flux:heading size="xl">{{ $deal->title }}</flux:heading>
                 <flux:badge size="sm" color="{{ $this->stageColor }}">{{ $deal->stage_label }}</flux:badge>
             </div>
-            @livewire('deals.edit-modal', ['dealId' => $deal->id])
+            @can('deals.edit')
+                @livewire('deals.edit-modal', ['dealId' => $deal->id])
+            @endcan
         </div>
 
         @if (session('success'))
@@ -199,9 +201,11 @@ new class extends Component {
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
             <div class="flex items-center justify-between mb-4">
                 <flux:heading size="sm">Estimates</flux:heading>
-                <flux:button :href="route('estimates.create', $deal)" icon="plus" size="sm" wire:navigate>
-                    Create Estimate
-                </flux:button>
+                @can('estimates.create')
+                    <flux:button :href="route('estimates.create', $deal)" icon="plus" size="sm" wire:navigate>
+                        Create Estimate
+                    </flux:button>
+                @endcan
             </div>
 
             @if ($deal->estimates->count() > 0)

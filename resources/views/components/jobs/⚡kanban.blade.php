@@ -64,6 +64,8 @@ new class extends Component {
      */
     public function moveToStage(int $jobId, string $newStage, int $newPosition): void
     {
+        abort_unless(auth()->user()->can('jobs.edit'), 403);
+
         if (! array_key_exists($newStage, Job::STAGES)) {
             return;
         }

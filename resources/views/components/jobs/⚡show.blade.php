@@ -95,6 +95,8 @@ new class extends Component {
      */
     public function advanceStage(): void
     {
+        abort_unless(auth()->user()->can('jobs.edit'), 403);
+
         $service = app(JobService::class);
 
         if ($this->job->stage === 'scheduling_colors' && ! $this->job->isReadyForDispatch()) {
@@ -138,11 +140,13 @@ new class extends Component {
                     {{ $job->stage_label }}
                 </flux:badge>
             </div>
-            @if (! $job->isCompleted())
-                <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
-                    Advance Stage
-                </flux:button>
-            @endif
+            @can('jobs.edit')
+                @if (! $job->isCompleted())
+                    <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
+                        Advance Stage
+                    </flux:button>
+                @endif
+            @endcan
         </div>
 
         @if (session('success'))
@@ -324,11 +328,13 @@ new class extends Component {
                     <flux:text class="text-zinc-500 mt-2">
                         The customer has signed and accepted the estimate. Advance to the next stage to begin scheduling and color selection.
                     </flux:text>
-                    <div class="mt-4">
-                        <flux:button wire:click="advanceStage" variant="primary" icon="arrow-right">
-                            Begin Scheduling & Colors
-                        </flux:button>
-                    </div>
+                    @can('jobs.edit')
+                        <div class="mt-4">
+                            <flux:button wire:click="advanceStage" variant="primary" icon="arrow-right">
+                                Begin Scheduling & Colors
+                            </flux:button>
+                        </div>
+                    @endcan
                 </div>
             @elseif ($job->stage === 'scheduling_colors')
                 @livewire('jobs.stage-scheduling', ['job' => $job], key('stage-scheduling-' . $job->id))

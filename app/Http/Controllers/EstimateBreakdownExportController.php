@@ -16,6 +16,8 @@ class EstimateBreakdownExportController extends Controller
 
     public function pdf(Estimate $estimate): Response
     {
+        abort_unless(auth()->user()?->can('financials.view_cost_breakdown'), 403);
+
         $estimate->load(['areas.surfaces.productionRate', 'areas.addons', 'items']);
 
         $breakdown = $this->service->calculateBreakdown($estimate);
@@ -32,6 +34,8 @@ class EstimateBreakdownExportController extends Controller
 
     public function csv(Estimate $estimate): StreamedResponse
     {
+        abort_unless(auth()->user()?->can('financials.view_cost_breakdown'), 403);
+
         $estimate->load(['areas.surfaces.productionRate', 'areas.addons', 'items']);
 
         $breakdown = $this->service->calculateBreakdown($estimate);

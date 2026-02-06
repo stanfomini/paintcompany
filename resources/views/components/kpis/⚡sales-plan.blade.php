@@ -31,7 +31,7 @@ new class extends Component
     public function boot(): void
     {
         $user = Auth::user();
-        if (! $user || ! $user->isInternal()) {
+        if (! $user || ! $user->can('view kpis')) {
             abort(403);
         }
     }
@@ -93,6 +93,8 @@ new class extends Component
 
     public function syncCurrentWeek(): void
     {
+        abort_unless(auth()->user()->can('enter kpi actuals'), 403);
+
         $week = $this->service->getWeek($this->settings, $this->selectedWeek, $this->year);
         $this->service->syncWeekActuals($week);
         unset($this->currentWeek, $this->weeks, $this->ytdProgress);
@@ -101,6 +103,8 @@ new class extends Component
 
     public function syncAllWeeks(): void
     {
+        abort_unless(auth()->user()->can('manage kpis'), 403);
+
         $this->service->syncYearActuals($this->settings, $this->year);
         unset($this->weeks, $this->ytdProgress);
         session()->flash('success', 'All weeks synced from app data.');
@@ -118,6 +122,8 @@ new class extends Component
 
     public function saveGoal(): void
     {
+        abort_unless(auth()->user()->can('edit kpi targets'), 403);
+
         $this->validate([
             'goalAnnualRevenue' => 'required|numeric|min:0',
             'goalAvgJobSize' => 'required|numeric|min:0',
@@ -151,6 +157,8 @@ new class extends Component
 
     public function saveWeekPlan(): void
     {
+        abort_unless(auth()->user()->can('edit kpi targets'), 403);
+
         $this->validate([
             'leadsPlanned' => 'required|integer|min:0',
             'estimatesPlanned' => 'required|integer|min:0',
@@ -173,6 +181,8 @@ new class extends Component
 
     public function populateFromGoals(): void
     {
+        abort_unless(auth()->user()->can('manage kpis'), 403);
+
         $this->service->populatePlanFromGoals($this->settings, $this->year);
         unset($this->weeks);
         session()->flash('success', 'All weeks populated from annual goals.');

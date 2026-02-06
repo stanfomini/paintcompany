@@ -68,7 +68,7 @@ new class extends Component {
             ->orderByDesc('created_at');
 
         // Internal users can see all deals, agents only their referred deals
-        if (! $user->isInternal()) {
+        if (! $user->can('chat.access')) {
             $query->where('agent_id', $user->id);
         }
 

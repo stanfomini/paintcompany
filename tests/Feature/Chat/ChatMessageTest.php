@@ -394,7 +394,7 @@ describe('ChatMessage casts', function () {
 
         $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
-        $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->internal()->withFullAccess()->create();
+        $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->internal()->create();
 
         expect($message->is_internal)->toBeBool();
         expect($message->is_internal)->toBeTrue();

@@ -113,9 +113,15 @@ new class extends Component {
             'taskAssignedTo' => ['nullable', 'exists:users,id'],
         ]);
 
+        // Only users with planner.manage can assign to others
+        $assignedTo = $this->taskAssignedTo ?: auth()->id();
+        if ($assignedTo !== auth()->id() && ! auth()->user()->can('planner.manage')) {
+            $assignedTo = auth()->id();
+        }
+
         $activity = Activity::create([
             'user_id' => auth()->id(),
-            'assigned_to' => $this->taskAssignedTo ?: auth()->id(),
+            'assigned_to' => $assignedTo,
             'type' => $this->taskType,
             'title' => $this->taskTitle,
             'description' => $this->taskDescription ?: null,
@@ -184,7 +190,13 @@ new class extends Component {
                 break;
 
             case 'team':
-                // Show all activities for the team (internal users only)
+                // Only users with planner.view_all can see all team activities
+                if (! auth()->user()->can('planner.view_all')) {
+                    $query->where(function ($q) {
+                        $q->where('user_id', auth()->id())
+                            ->orWhere('assigned_to', auth()->id());
+                    });
+                }
                 break;
         }
 
@@ -242,13 +254,15 @@ new class extends Component {
             >
                 Created by Me
             </flux:button>
-            <flux:button
-                size="sm"
-                :variant="$view === 'team' ? 'primary' : 'ghost'"
-                wire:click="$set('view', 'team')"
-            >
-                Team View
-            </flux:button>
+            @can('planner.view_all')
+                <flux:button
+                    size="sm"
+                    :variant="$view === 'team' ? 'primary' : 'ghost'"
+                    wire:click="$set('view', 'team')"
+                >
+                    Team View
+                </flux:button>
+            @endcan
         </div>
 
         {{-- Filters --}}
@@ -418,6 +432,7 @@ new class extends Component {
                     <flux:error name="taskDueAt" />
                 </flux:field>
 
+                @can('planner.manage')
                 <flux:field>
                     <flux:label>Assign To</flux:label>
                     <flux:select wire:model="taskAssignedTo">
@@ -430,6 +445,7 @@ new class extends Component {
                     </flux:select>
                     <flux:error name="taskAssignedTo" />
                 </flux:field>
+                @endcan
 
                 <flux:field>
                     <flux:label>Description (Optional)</flux:label>
