@@ -158,7 +158,7 @@ describe('ChatService sendAudioMessage', function () {
     it('creates an audio message', function () {
         Event::fake([MessageSent::class]);
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -187,7 +187,7 @@ describe('ChatService sendAudioMessage', function () {
     it('respects internal message flag', function () {
         Event::fake([MessageSent::class]);
 
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internalUser);
 
@@ -232,7 +232,7 @@ describe('ChatService sendAudioMessage', function () {
     it('adds user as participant if not already', function () {
         Event::fake([MessageSent::class]);
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         // Not adding user as participant initially
 
@@ -254,12 +254,12 @@ describe('ChatService sendAudioMessage', function () {
 
 describe('MessageComposer audio integration', function () {
     it('can render with audio recording state', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
         Livewire::actingAs($user)
-            ->test(\App\Livewire\Chat\MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->assertSet('isRecording', false)
             ->assertSet('isProcessingAudio', false);
     });
@@ -277,14 +277,14 @@ describe('MessageComposer audio integration', function () {
                 'duration' => 3.0,
             ]);
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
         $fakeAudio = base64_encode('fake audio content');
 
         Livewire::actingAs($user)
-            ->test(\App\Livewire\Chat\MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->call('processRecordedAudio', $fakeAudio)
             ->assertDispatched('message-sent');
 
@@ -300,12 +300,12 @@ describe('MessageComposer audio integration', function () {
             ->shouldReceive('processBase64Audio')
             ->andThrow(new \Exception('Processing failed'));
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
         Livewire::actingAs($user)
-            ->test(\App\Livewire\Chat\MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->call('processRecordedAudio', base64_encode('fake'))
             ->assertHasErrors(['audio']);
     });

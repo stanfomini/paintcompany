@@ -48,6 +48,10 @@ return [
             'driver' => 'session',
             'provider' => 'customers',
         ],
+        'crew' => [
+            'driver' => 'session',
+            'provider' => 'crews',
+        ],
     ],
 
     /*
@@ -77,6 +81,10 @@ return [
             'model' => App\Models\User::class,
         ],
         'customers' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\User::class,
+        ],
+        'crews' => [
             'driver' => 'eloquent',
             'model' => App\Models\User::class,
         ],
@@ -116,6 +124,12 @@ return [
         ],
         'customers' => [
             'provider' => 'customers',
+            'table' => 'password_reset_tokens',
+            'expire' => 60,
+            'throttle' => 60,
+        ],
+        'crews' => [
+            'provider' => 'crews',
             'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,

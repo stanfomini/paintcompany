@@ -86,8 +86,11 @@ class EstimatePackageItem extends Model
     }
 
     /**
-     * Get the effective price for this item.
-     * Returns price_override if set, otherwise the itemable's total/price.
+     * Get the effective price for this item (customer-facing price).
+     * Returns price_override if set, otherwise calculates from the itemable.
+     *
+     * IMPORTANT: This returns the CUSTOMER PRICE (with margins applied).
+     * Margins are calculated fresh from CompanySetting - never hardcoded.
      */
     public function getEffectivePriceAttribute(): float
     {
@@ -101,19 +104,52 @@ class EstimatePackageItem extends Model
             return 0.0;
         }
 
-        // EstimateItem has a 'total' attribute
+        // EstimateItem has a 'total' attribute (already customer-facing)
         if ($itemable instanceof EstimateItem) {
             return (float) $itemable->total;
         }
 
-        // EstimateAreaSurface has a 'total' attribute
+        // EstimateAreaSurface - get customer price (COGS + margin from CompanySetting)
         if ($itemable instanceof EstimateAreaSurface) {
+            return $itemable->getCustomerPrice();
+        }
+
+        // EstimateArea - get customer price (COGS + margin from CompanySetting)
+        if ($itemable instanceof EstimateArea) {
+            return $itemable->getCustomerPrice();
+        }
+
+        return 0.0;
+    }
+
+    /**
+     * Get the COGS (Cost of Goods Sold) for this item.
+     * Returns the raw cost without margins.
+     */
+    public function getCOGS(): float
+    {
+        if ($this->price_override !== null) {
+            // If price is overridden, we can't know the COGS
+            // Return the override as an approximation
+            return (float) $this->price_override;
+        }
+
+        $itemable = $this->itemable;
+
+        if (! $itemable) {
+            return 0.0;
+        }
+
+        if ($itemable instanceof EstimateItem) {
             return (float) $itemable->total;
         }
 
-        // EstimateArea - return the surfaces total
+        if ($itemable instanceof EstimateAreaSurface) {
+            return $itemable->getCOGS();
+        }
+
         if ($itemable instanceof EstimateArea) {
-            return (float) $itemable->surfaces_total;
+            return $itemable->getCOGS();
         }
 
         return 0.0;

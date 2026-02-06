@@ -4,11 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @auth('customer')
+    <meta name="user-id" content="{{ auth('customer')->id() }}">
+    <meta name="user-type" content="customer">
+    @endauth
 
     <title>{{ $title ?? 'Customer Portal' }} - {{ config('app.name') }}</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @livewireStyles
     @fluxAppearance
 </head>
 <body class="min-h-screen bg-white dark:bg-zinc-800">
@@ -29,6 +32,9 @@
             </flux:navlist.item>
             <flux:navlist.item icon="document-text" href="{{ route('customer.estimates.index') }}" :current="request()->routeIs('customer.estimates.*')">
                 {{ __('Estimates') }}
+            </flux:navlist.item>
+            <flux:navlist.item icon="clipboard-document-check" href="{{ route('customer.jobs.index') }}" :current="request()->routeIs('customer.jobs.*')">
+                {{ __('My Jobs') }}
             </flux:navlist.item>
             <flux:navlist.item icon="credit-card" href="#" :current="false">
                 {{ __('Invoices') }}
@@ -89,10 +95,10 @@
     </flux:header>
 
     <flux:main>
+        @include('partials.flash-messages')
         {{ $slot }}
     </flux:main>
 
-    @livewireScripts
     @fluxScripts
 </body>
 </html>

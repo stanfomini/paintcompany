@@ -7,7 +7,7 @@ use Livewire\Livewire;
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->internalUser = User::factory()->internal()->create();
+    $this->internalUser = User::factory()->internal()->withFullAccess()->create();
     $this->agentUser = User::factory()->agent()->create();
     $this->customerUser = User::factory()->customer()->create();
 });
@@ -331,8 +331,8 @@ describe('CompanySetting model', function () {
             'net_profit_margin_percent' => 30.00,
         ]);
 
-        // 70 / (1 - 0.30) = 70 / 0.70 = 100
-        expect($settings->calculateWithProfitMargin(70.00))->toBe(100.00);
+        // PBP formula: cost / (margin% / 100) = 70 / 0.30 = 233.33
+        expect($settings->calculateWithProfitMargin(70.00))->toBe(233.33);
     });
 
     it('uses default profit margin when not set', function () {
@@ -340,14 +340,14 @@ describe('CompanySetting model', function () {
             'company_name' => 'Test',
         ]);
 
-        // 70 / 0.70 = 100 (default 30%)
-        expect($settings->calculateWithProfitMargin(70.00))->toBe(100.00);
+        // 70 / 0.30 = 233.33 (default 30%)
+        expect($settings->calculateWithProfitMargin(70.00))->toBe(233.33);
     });
 
-    it('handles edge case of 100% profit margin', function () {
+    it('handles edge case of 0% profit margin', function () {
         $settings = CompanySetting::create([
             'company_name' => 'Test',
-            'net_profit_margin_percent' => 100.00,
+            'net_profit_margin_percent' => 0,
         ]);
 
         // Should return original cost to prevent division by zero
@@ -451,31 +451,57 @@ describe('CompanySetting model', function () {
         expect($settings->warranty_options)->toBeArray();
     });
 
-    it('calculates with all margins applied sequentially', function () {
+    it('calculates OTD from COGS using simple markup', function () {
         $settings = CompanySetting::create([
             'company_name' => 'Test',
-            'net_profit_margin_percent' => 30.00,
-            'overhead_percent' => 10.00,
-            'markup_percent' => 20.00,
+            'net_profit_margin_percent' => 30.00, // Not used in customer pricing
+            'overhead_percent' => 10.00, // Not used in customer pricing
+            'markup_percent' => 20.00, // Only this is used: OTD = COGS × (1 + markup%)
         ]);
 
-        // Base cost: 100
-        // With 30% profit: 100 * 1.30 = 130
-        // With 10% overhead: 130 * 1.10 = 143
-        // With 20% markup: 143 * 1.20 = 171.60
-        expect($settings->calculateWithMargins(100.00))->toBe(171.60);
+        // New simplified formula: OTD = COGS × (1 + markup%)
+        // COGS: 100
+        // With 20% markup: 100 * 1.20 = 120.00
+        // Note: profit and overhead percentages are for business analysis only,
+        // they are NOT applied to customer estimates.
+        expect($settings->calculateWithMargins(100.00))->toBe(120.00);
     });
 
-    it('uses default margins when not set', function () {
+    it('uses default markup when not set', function () {
         $settings = CompanySetting::create([
             'company_name' => 'Test',
         ]);
 
-        // Base cost: 100
-        // With 30% profit: 100 * 1.30 = 130
-        // With 12% overhead: 130 * 1.12 = 145.60
-        // With 45% markup: 145.60 * 1.45 = 211.12
-        expect($settings->calculateWithMargins(100.00))->toBe(211.12);
+        // Legacy markup formula: OTD = COGS × (1 + markup%)
+        // Default markup is 45%
+        // COGS: 100
+        // With 45% markup: 100 * 1.45 = 145.00
+        expect($settings->calculateWithMargins(100.00))->toBe(145.00);
+    });
+
+    it('calculates OTD using margin formula', function () {
+        $settings = CompanySetting::create([
+            'company_name' => 'Test',
+            'margin_percent' => 50.00,
+        ]);
+
+        // PBP formula: OTD = COGS / (margin% / 100)
+        // COGS: 100
+        // With 50% margin: 100 / 0.50 = 200.00
+        // COGS is 50% of sale price
+        expect($settings->calculateOTD(100.00))->toBe(200.00);
+    });
+
+    it('uses default margin when not set', function () {
+        $settings = CompanySetting::create([
+            'company_name' => 'Test',
+        ]);
+
+        // PBP formula: OTD = COGS / (margin% / 100)
+        // Default margin is 45%
+        // COGS: 100
+        // With 45% margin: 100 / 0.45 = 222.22
+        expect($settings->calculateOTD(100.00))->toBe(222.22);
     });
 
     it('calculates labor cost from hours', function () {
@@ -490,30 +516,29 @@ describe('CompanySetting model', function () {
         expect($settings->calculateLaborCost(8.00))->toBe(280.00);
     });
 
-    it('calculates price from production rate with full formula', function () {
+    it('calculates price from production rate with simple markup', function () {
         $settings = CompanySetting::create([
             'company_name' => 'Test',
             'base_hourly_wage' => 20.00,
             'payroll_burden_multiplier' => 1.50,
-            'net_profit_margin_percent' => 20.00,
-            'overhead_percent' => 10.00,
-            'markup_percent' => 15.00,
+            'net_profit_margin_percent' => 20.00, // Not used - for business analysis only
+            'overhead_percent' => 10.00, // Not used - for business analysis only
+            'markup_percent' => 15.00, // Only markup is applied: OTD = COGS × (1 + 15%)
         ]);
 
         // Effective hourly rate: 20 * 1.50 = 30
         // Hours: 300 sqft / 150 sqft/hour = 2 hours
         // Labor cost: 2 * 30 * 2 coats = 120
         // Material cost: 25 * 2 coats = 50
-        // Base cost: 120 + 50 = 170
-        // With 20% profit: 170 * 1.20 = 204
-        // With 10% overhead: 204 * 1.10 = 224.40
-        // With 15% markup: 224.40 * 1.15 = 258.06
+        // Base cost (COGS): 120 + 50 = 170
+        // New simplified formula: OTD = COGS × (1 + markup%)
+        // With 15% markup: 170 * 1.15 = 195.50
         expect($settings->calculateFromProductionRate(
             quantity: 300.00,
             productionRate: 150.00,
             materialCost: 25.00,
             coats: 2
-        ))->toBe(258.06);
+        ))->toBe(195.50);
     });
 
     it('handles zero production rate gracefully', function () {

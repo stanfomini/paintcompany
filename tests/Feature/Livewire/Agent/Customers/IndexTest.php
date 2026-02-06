@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Customers\Index;
 use App\Models\AgentListing;
 use App\Models\Customer;
 use App\Models\User;
@@ -11,7 +10,7 @@ describe('Agent Customer Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertStatus(200)
             ->assertSee('My Customers');
     });
@@ -25,7 +24,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertSee('John Doe')
             ->assertSee('john.doe@example.com');
     });
@@ -45,7 +44,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertSee('John Doe')
             ->assertDontSee('Jane Smith');
     });
@@ -64,7 +63,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->set('search', 'John')
             ->assertSee('John Doe')
             ->assertDontSee('Jane Smith');
@@ -86,7 +85,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->set('search', 'john@example')
             ->assertSee('John Doe')
             ->assertDontSee('Jane Smith');
@@ -108,7 +107,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertSee('123 Main St');
     });
 
@@ -117,7 +116,7 @@ describe('Agent Customer Index component', function () {
         Customer::factory()->count(20)->referredByAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
@@ -126,7 +125,7 @@ describe('Agent Customer Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertSee('No customers found')
             ->assertSee('Customers referred through your listings will appear here.');
     });
@@ -139,7 +138,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->set('search', 'NonexistentCustomer')
             ->assertSee('No customers found')
             ->assertSee('Try adjusting your search criteria');
@@ -154,7 +153,7 @@ describe('Agent Customer Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertSee(now()->subDays(5)->format('M d, Y'));
     });
 
@@ -162,7 +161,7 @@ describe('Agent Customer Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.customers.index')
             ->assertSet('search', '')
             ->assertSet('perPage', 15);
     });

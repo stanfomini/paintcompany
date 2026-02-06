@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Properties\Show;
 use App\Models\Customer;
 use App\Models\Property;
 use App\Models\User;
@@ -10,7 +9,7 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('Show component', function () {
     it('renders the show component with property data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -25,7 +24,7 @@ describe('Show component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertStatus(200)
             ->assertSee('123 Main St')
             ->assertSee('Anytown')
@@ -34,16 +33,16 @@ describe('Show component', function () {
     });
 
     it('displays property type badge', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create(['type' => 'commercial']);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertStatus(200);
     });
 
     it('displays customer information', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'Jane',
             'last_name' => 'Smith',
@@ -53,52 +52,52 @@ describe('Show component', function () {
         $property = Property::factory()->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertSee('Jane Smith')
             ->assertSee('jane@example.com')
             ->assertSee('555-1234');
     });
 
     it('displays notes when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'notes' => 'This is a test note for the property.',
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertSee('This is a test note for the property.');
     });
 
     it('displays square footage when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'square_footage' => 2500,
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertSee('2,500 sq ft');
     });
 
     it('displays year built when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'year_built' => 1995,
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertSee('1995');
     });
 
     it('loads relationships correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $property = Property::factory()->create(['customer_id' => $customer->id]);
 
         $component = Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property]);
+            ->test('properties.show', ['property' => $property]);
 
         expect($component->get('property')->relationLoaded('customer'))->toBeTrue();
         expect($component->get('property')->relationLoaded('photos'))->toBeTrue();
@@ -106,11 +105,11 @@ describe('Show component', function () {
     });
 
     it('displays property with no photos or deals', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertStatus(200);
 
         expect($property->photos)->toHaveCount(0);
@@ -118,31 +117,31 @@ describe('Show component', function () {
     });
 
     it('uses the app layout', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create(['address' => 'Test Address']);
 
         $component = Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property]);
+            ->test('properties.show', ['property' => $property]);
 
         $component->assertStatus(200);
     });
 
     it('displays property name when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'name' => 'Main Office Building',
             'address' => '123 Business St',
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['property' => $property])
+            ->test('properties.show', ['property' => $property])
             ->assertStatus(200);
 
         expect($property->display_name)->toBe('Main Office Building');
     });
 
     it('uses address as display name when no name set', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'name' => null,
             'address' => '456 Residential Ave',

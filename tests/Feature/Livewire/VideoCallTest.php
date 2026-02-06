@@ -1,38 +1,37 @@
 <?php
 
-use App\Livewire\VideoCall\Room;
 use App\Models\User;
 use Livewire\Livewire;
 
 use function Pest\Laravel\actingAs;
 
 beforeEach(function () {
-    $this->user = User::factory()->internal()->create();
+    $this->user = User::factory()->internal()->withFullAccess()->create();
 });
 
 it('renders the video call room component', function () {
     actingAs($this->user)
         ->get('/video-call')
         ->assertStatus(200)
-        ->assertSeeLivewire(Room::class);
+        ->assertSeeLivewire('video-call.room');
 });
 
 it('generates a room id when none is provided', function () {
     Livewire::actingAs($this->user)
-        ->test(Room::class)
+        ->test('video-call.room')
         ->assertSet('userName', $this->user->name)
         ->assertNotSet('roomId', '');
 });
 
 it('uses the provided room id', function () {
     Livewire::actingAs($this->user)
-        ->test(Room::class, ['room' => 'test-video-room'])
+        ->test('video-call.room', ['room' => 'test-video-room'])
         ->assertSet('roomId', 'test-video-room');
 });
 
 it('returns correct websocket url', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Room::class);
+        ->test('video-call.room');
 
     $wsUrl = $component->instance()->getWebSocketUrl();
 
@@ -41,7 +40,7 @@ it('returns correct websocket url', function () {
 
 it('toggles audio state', function () {
     Livewire::actingAs($this->user)
-        ->test(Room::class)
+        ->test('video-call.room')
         ->assertSet('isAudioEnabled', true)
         ->call('toggleAudio')
         ->assertSet('isAudioEnabled', false)
@@ -51,7 +50,7 @@ it('toggles audio state', function () {
 
 it('toggles video state', function () {
     Livewire::actingAs($this->user)
-        ->test(Room::class)
+        ->test('video-call.room')
         ->assertSet('isVideoEnabled', true)
         ->call('toggleVideo')
         ->assertSet('isVideoEnabled', false)
@@ -64,10 +63,12 @@ it('requires authentication', function () {
         ->assertRedirect('/login');
 });
 
-it('requires internal user', function () {
+it('redirects non-internal users to their dashboard', function () {
     $customer = User::factory()->customer()->create();
 
+    // Now redirects to customer dashboard instead of showing 403
     actingAs($customer)
         ->get('/video-call')
-        ->assertForbidden();
+        ->assertRedirect(route('customer.dashboard'))
+        ->assertSessionHas('warning');
 });

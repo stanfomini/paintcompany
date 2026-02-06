@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\PaintCalculator;
 use App\Models\CompanySetting;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
@@ -324,18 +323,18 @@ describe('EstimateAreaSurface Paint Fields', function () {
 
 describe('PaintCalculator Livewire Component', function () {
     it('renders successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->assertStatus(200);
     });
 
     it('calculates when sqft is entered', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->set('sqft', 500)
             ->set('coats', 2)
             ->set('applicationMethod', 'brush_roll')
@@ -345,10 +344,10 @@ describe('PaintCalculator Livewire Component', function () {
     });
 
     it('updates calculation when inputs change', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $component = Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->set('sqft', 1000)
             ->set('coats', 2)
             ->set('applicationMethod', 'brush_roll');
@@ -363,10 +362,10 @@ describe('PaintCalculator Livewire Component', function () {
     });
 
     it('resets paint type when brand changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->set('paintBrand', 'sherwin_williams')
             ->set('paintType', 'duration')
             ->set('paintBrand', 'ppg')
@@ -374,7 +373,7 @@ describe('PaintCalculator Livewire Component', function () {
     });
 
     it('loads surface data when surfaceId provided', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $surface = EstimateAreaSurface::factory()->create([
             'quantity' => 750,
@@ -385,7 +384,7 @@ describe('PaintCalculator Livewire Component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class, ['surfaceId' => $surface->id])
+            ->test('estimates.paint-calculator', ['surfaceId' => $surface->id])
             ->assertSet('sqft', 750.0)
             ->assertSet('coats', 3)
             ->assertSet('applicationMethod', 'spray')
@@ -394,7 +393,7 @@ describe('PaintCalculator Livewire Component', function () {
     });
 
     it('can apply calculation to surface', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $surface = EstimateAreaSurface::factory()->create([
             'quantity' => 500,
@@ -407,7 +406,7 @@ describe('PaintCalculator Livewire Component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class, ['surfaceId' => $surface->id])
+            ->test('estimates.paint-calculator', ['surfaceId' => $surface->id])
             ->set('paintBrand', 'sherwin_williams')
             ->set('paintType', 'emerald')
             ->call('applyToSurface')
@@ -422,20 +421,20 @@ describe('PaintCalculator Livewire Component', function () {
     });
 
     it('displays paint brands in select', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->assertSee('Sherwin Williams')
             ->assertSee('Benjamin Moore')
             ->assertSee('Ppg');
     });
 
     it('shows calculation results when sqft provided', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->set('sqft', 1000)
             ->assertSee('Gallons Needed')
             ->assertSee('Paint Cost')
@@ -443,10 +442,10 @@ describe('PaintCalculator Livewire Component', function () {
     });
 
     it('shows message when no sqft entered', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(PaintCalculator::class)
+            ->test('estimates.paint-calculator')
             ->set('sqft', 0)
             ->assertSee('Enter square footage to see paint calculation');
     });

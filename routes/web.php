@@ -1,31 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\VideoDataController;
+use App\Http\Controllers\EstimateBreakdownExportController;
 use App\Http\Controllers\EstimatePdfController;
-use App\Livewire\Activities\TaskList as ActivitiesTaskList;
-use App\Livewire\AgentListings\Index as AgentListingsIndex;
-use App\Livewire\Agents\Index as AgentsIndex;
-use App\Livewire\Agents\Show as AgentsShow;
-use App\Livewire\Chat\ThreadList as ChatThreadList;
-use App\Livewire\Chat\ThreadView as ChatThreadView;
-use App\Livewire\Customers\Index as CustomersIndex;
-use App\Livewire\Customers\Show as CustomersShow;
-use App\Livewire\Deals\Pipeline as DealsPipeline;
-use App\Livewire\Deals\Show as DealsShow;
-use App\Livewire\Estimates\Builder as EstimatesBuilder;
-use App\Livewire\Estimates\Create as EstimatesCreate;
-use App\Livewire\Estimates\Index as EstimatesIndex;
-use App\Livewire\Estimates\Show as EstimatesShow;
-use App\Livewire\Estimates\SimpleBuilder as EstimatesSimpleBuilder;
-use App\Livewire\Estimates\TemplateBuilder as EstimatesTemplateBuilder;
-use App\Livewire\Invitations\AcceptInvitation;
-use App\Livewire\ProductionRates\Index as ProductionRatesIndex;
-use App\Livewire\Properties\Index as PropertiesIndex;
-use App\Livewire\Properties\Show as PropertiesShow;
-use App\Livewire\Public\EstimateProposal;
-use App\Livewire\Public\OpenHouseSignup;
-use App\Livewire\VideoCall\Room as VideoCallRoom;
-use App\Livewire\WalkieTalkie\Room as WalkieTalkieRoom;
+use App\Http\Controllers\PainterBreakdownExportController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -41,17 +19,17 @@ Route::view('dashboard', 'dashboard')
     ->name('dashboard');
 
 // Invitation acceptance route (public with signed URL)
-Route::get('/invitation/accept/{token}', AcceptInvitation::class)
+Route::livewire('/invitation/accept/{token}', 'invitations.accept-invitation')
     ->middleware('signed')
     ->name('invitation.accept');
 
 // Public open house sign-up route
-Route::get('/open-house/{agentListing}', OpenHouseSignup::class)
+Route::livewire('/open-house/{agentListing}', 'public.open-house-signup')
     ->name('open-house.signup')
     ->middleware('throttle:60,1');
 
 // Public estimate proposal route
-Route::get('/proposal/{token}', EstimateProposal::class)
+Route::livewire('/proposal/{token}', 'public.estimate-proposal')
     ->name('estimates.public')
     ->middleware('throttle:60,1');
 
@@ -61,55 +39,135 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('invitations');
 });
 
-// Internal user routes (customers management)
+// Internal user routes - grouped by permission
 Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
-    Route::get('/customers', CustomersIndex::class)->name('customers.index');
-    Route::get('/customers/{customer}', CustomersShow::class)->name('customers.show');
-    Route::get('/properties', PropertiesIndex::class)->name('properties.index');
-    Route::get('/properties/{property}', PropertiesShow::class)->name('properties.show');
-    Route::get('/deals', DealsPipeline::class)->name('deals.index');
-    Route::get('/deals/{deal}', DealsShow::class)->name('deals.show');
-    Route::get('/activities', ActivitiesTaskList::class)->name('activities.index');
 
-    // Agent listings routes
-    Route::get('/agent-listings', AgentListingsIndex::class)->name('agent-listings.index');
+    // People routes
+    Route::middleware(['permission:people.view'])->group(function () {
+        Route::livewire('/people', 'people.index')->name('people.index');
+        Route::livewire('/customers', 'customers.index')->name('customers.index');
+        Route::livewire('/customers/{customer}', 'customers.show')->name('customers.show');
+        Route::livewire('/agents', 'agents.index')->name('agents.index');
+        Route::livewire('/agents/{user}', 'agents.show')->name('agents.show');
+        Route::livewire('/crews', 'crews.index')->name('crews.index');
+        Route::livewire('/crews/{user}', 'crews.show')->name('crews.show');
+    });
 
-    // Agents routes
-    Route::get('/agents', AgentsIndex::class)->name('agents.index');
-    Route::get('/agents/{user}', AgentsShow::class)->name('agents.show');
+    // Properties routes
+    Route::middleware(['permission:properties.view'])->group(function () {
+        Route::livewire('/properties', 'properties.index')->name('properties.index');
+        Route::livewire('/properties/{property}', 'properties.show')->name('properties.show');
+    });
+
+    // Deals routes
+    Route::middleware(['permission:deals.view'])->group(function () {
+        Route::livewire('/deals', 'deals.pipeline')->name('deals.index');
+        Route::livewire('/deals/{deal}', 'deals.show')->name('deals.show');
+    });
 
     // Estimates routes
-    Route::get('/estimates', EstimatesIndex::class)->name('estimates.index');
-    Route::get('/estimates/create/{deal}', EstimatesCreate::class)->name('estimates.create');
-    Route::get('/estimates/create/{deal}/simple', EstimatesSimpleBuilder::class)->name('estimates.create.simple');
-    Route::get('/estimates/create/{deal}/template', EstimatesTemplateBuilder::class)->name('estimates.create.template');
-    Route::get('/estimates/create/{deal}/detailed', EstimatesBuilder::class)->name('estimates.create.detailed');
-    Route::get('/estimates/{estimate}', EstimatesShow::class)->name('estimates.show');
-    Route::get('/estimates/{estimate}/edit', EstimatesBuilder::class)->name('estimates.edit');
-    Route::get('/estimates/{estimate}/edit/simple', EstimatesSimpleBuilder::class)->name('estimates.edit.simple');
-    Route::get('/estimates/{estimate}/edit/template', EstimatesTemplateBuilder::class)->name('estimates.edit.template');
-    Route::get('/estimates/{estimate}/pdf', [EstimatePdfController::class, 'download'])->name('estimates.pdf');
+    Route::middleware(['permission:estimates.view'])->group(function () {
+        Route::livewire('/estimates', 'estimates.index')->name('estimates.index');
+        Route::livewire('/estimates/create/{deal}', 'estimates.create')
+            ->middleware('permission:estimates.create')->name('estimates.create');
+        Route::livewire('/estimates/create/{deal}/simple', 'estimates.simple-builder')
+            ->middleware('permission:estimates.create')->name('estimates.create.simple');
+        Route::livewire('/estimates/create/{deal}/template', 'estimates.template-builder')
+            ->middleware('permission:estimates.create')->name('estimates.create.template');
+        Route::livewire('/estimates/{estimate}', 'estimates.show')->name('estimates.show');
+        Route::get('/estimates/{estimate}/edit', function (\App\Models\Estimate $estimate) {
+            return match ($estimate->estimator_mode) {
+                \App\Models\Estimate::MODE_SIMPLE => redirect()->route('estimates.edit.simple', $estimate),
+                default => redirect()->route('estimates.edit.template', $estimate),
+            };
+        })->middleware('permission:estimates.edit')->name('estimates.edit');
+        Route::livewire('/estimates/{estimate}/edit/simple', 'estimates.simple-builder')
+            ->middleware('permission:estimates.edit')->name('estimates.edit.simple');
+        Route::livewire('/estimates/{estimate}/edit/template', 'estimates.template-builder')
+            ->middleware('permission:estimates.edit')->name('estimates.edit.template');
+        Route::get('/estimates/{estimate}/pdf', [EstimatePdfController::class, 'download'])->name('estimates.pdf');
 
-    // Production rates routes (includes substrates, paint catalog, nested templates)
-    Route::get('/production-rates', ProductionRatesIndex::class)->name('production-rates.index');
+        // Financial breakdowns (separate permissions)
+        Route::livewire('/estimates/{estimate}/breakdown', 'estimates.cost-breakdown')
+            ->middleware('permission:financials.view_cost_breakdown')
+            ->name('estimates.breakdown');
+        Route::get('/estimates/{estimate}/breakdown/pdf', [EstimateBreakdownExportController::class, 'pdf'])
+            ->middleware('permission:financials.view_cost_breakdown')
+            ->name('estimates.breakdown.pdf');
+        Route::get('/estimates/{estimate}/breakdown/csv', [EstimateBreakdownExportController::class, 'csv'])
+            ->middleware('permission:financials.view_cost_breakdown')
+            ->name('estimates.breakdown.csv');
+        Route::livewire('/estimates/{estimate}/painter-breakdown', 'estimates.painter-breakdown')
+            ->middleware('permission:financials.view_painter_breakdown')
+            ->name('estimates.painter-breakdown');
+        Route::get('/estimates/{estimate}/painter-breakdown/pdf/work-order', [PainterBreakdownExportController::class, 'workOrder'])
+            ->middleware('permission:financials.view_painter_breakdown')
+            ->name('estimates.painter-breakdown.pdf.work-order');
+        Route::get('/estimates/{estimate}/painter-breakdown/pdf/financials', [PainterBreakdownExportController::class, 'financials'])
+            ->middleware('permission:financials.view_painter_breakdown')
+            ->name('estimates.painter-breakdown.pdf.financials');
+    });
 
-    // Area Templates routes (under Production Rates section)
-    Route::get('/production-rates/area-templates', \App\Livewire\AreaTemplates\Index::class)
-        ->name('area-templates.index');
-    Route::get('/production-rates/area-templates/create', \App\Livewire\AreaTemplates\Builder::class)
-        ->name('area-templates.create');
-    Route::get('/production-rates/area-templates/{template}/edit', \App\Livewire\AreaTemplates\Builder::class)
-        ->name('area-templates.edit');
+    // Jobs routes
+    Route::middleware(['permission:jobs.view'])->group(function () {
+        Route::livewire('/jobs', 'jobs.kanban')->name('jobs.index');
+        Route::livewire('/jobs/{job}', 'jobs.show')->name('jobs.show');
+    });
+
+    // Planner routes
+    Route::livewire('/planner', 'planner.my-day')
+        ->middleware('permission:planner.view')
+        ->name('planner.index');
+    Route::redirect('/activities', '/planner');
+
+    // Agent Listings routes
+    Route::livewire('/agent-listings', 'agent-listings.index')
+        ->middleware('permission:agent_listings.view')
+        ->name('agent-listings.index');
+
+    // Production rates routes
+    Route::middleware(['permission:production_rates.view'])->group(function () {
+        Route::livewire('/production-rates', 'production-rates.index')->name('production-rates.index');
+        Route::livewire('/production-rates/area-templates', 'area-templates.index')
+            ->name('area-templates.index');
+        Route::livewire('/production-rates/area-templates/create', 'area-templates.builder')
+            ->middleware('permission:production_rates.manage')
+            ->name('area-templates.create');
+        Route::livewire('/production-rates/area-templates/{template}/edit', 'area-templates.builder')
+            ->middleware('permission:production_rates.manage')
+            ->name('area-templates.edit');
+    });
 
     // Chat routes
-    Route::get('/chat', ChatThreadList::class)->name('chat.index');
-    Route::get('/chat/{thread}', ChatThreadView::class)->name('chat.show');
+    Route::middleware(['permission:chat.access'])->group(function () {
+        Route::livewire('/chat', 'chat.thread-list')->name('chat.index');
+        Route::livewire('/chat/{thread}', 'chat.thread-view')->name('chat.show');
+    });
 
     // Walkie-talkie routes
-    Route::get('/walkie-talkie/{room?}', WalkieTalkieRoom::class)->name('walkie-talkie.room');
+    Route::livewire('/walkie-talkie/{room?}', 'walkie-talkie.room')
+        ->middleware('permission:walkie_talkie.access')
+        ->name('walkie-talkie.room');
 
     // Video call routes
-    Route::get('/video-call/{room?}', VideoCallRoom::class)->name('video-call.room');
+    Route::livewire('/video-call/{room?}', 'video-call.room')
+        ->middleware('permission:video_call.access')
+        ->name('video-call.room');
+
+    // Roadmap routes (permission-based access)
+    Route::livewire('/roadmap', 'roadmap.index')
+        ->name('roadmap.index')
+        ->middleware('permission:view roadmap');
+
+    // KPI routes
+    Route::prefix('kpis')->group(function () {
+        Route::livewire('/sales', 'kpis.sales-plan')
+            ->name('kpis.sales')
+            ->middleware('permission:view kpis');
+        Route::livewire('/production', 'kpis.production-plan')
+            ->name('kpis.production')
+            ->middleware('permission:view kpis');
+    });
 });
 
 // Video API endpoint (public for player embeds)

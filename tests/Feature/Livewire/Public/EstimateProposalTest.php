@@ -12,6 +12,8 @@
  * (either by renaming the column to 'internal_notes' or the relationship to 'estimateNotes').
  */
 
+use App\Models\ChatMessage;
+use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -20,10 +22,13 @@ use App\Models\EstimateOption;
 use App\Models\EstimateSignature;
 use App\Models\EstimateView;
 use App\Models\User;
+use App\Notifications\EstimateAccepted;
+use Illuminate\Support\Facades\Notification;
+use Livewire\Livewire;
 
 describe('EstimateProposal public functionality', function () {
     beforeEach(function () {
-        $this->internalUser = User::factory()->internal()->create();
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
         $this->customer = Customer::factory()->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -323,5 +328,447 @@ describe('EstimateProposal public functionality', function () {
         $this->estimate->status = 'accepted';
         $this->estimate->save();
         expect($this->estimate->isEditable())->toBeFalse();
+    });
+});
+
+describe('EstimateProposal pricing consistency', function () {
+    uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
+
+    beforeEach(function () {
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
+        $this->customer = Customer::factory()->create();
+        $this->deal = Deal::factory()->forCustomer($this->customer)->create();
+    });
+
+    it('margin factor is 1.0 for non-template mode estimates', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'simple',
+            'areas_subtotal' => 1000,
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // For non-template mode, margin factor should be 1.0
+        expect($component->instance()->getMarginFactor())->toBe(1.0);
+    });
+
+    it('margin factor uses company settings regardless of stored areas_subtotal', function () {
+        // Now that surfaces store COGS consistently, we always use company settings
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'areas_subtotal' => 2920.06, // Stored value is ignored for factor calculation
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        // Create area with surfaces
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create([
+            'name' => 'Living Room',
+        ]);
+
+        // Create surfaces with raw totals (COGS: labor + material)
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'name' => 'Walls',
+            'labor_cost' => 302.40,
+            'material_cost' => 452.65,
+            'total' => 755.05, // COGS: labor + material
+            'is_included' => true,
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'name' => 'Baseboards',
+            'labor_cost' => 72.58,
+            'material_cost' => 90.53,
+            'total' => 163.11,
+            'is_included' => true,
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'name' => 'Ceiling',
+            'labor_cost' => 31.10,
+            'material_cost' => 90.53,
+            'total' => 121.63,
+            'is_included' => true,
+        ]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Margin factor now comes from company settings, not stored totals
+        $settings = \App\Models\CompanySetting::getInstance();
+        $expectedFactor = 1 / (1 - ($settings->getMarginPercentForScope('interior') / 100));
+        $marginFactor = $component->instance()->getMarginFactor();
+        expect($marginFactor)->toBe($expectedFactor);
+    });
+
+    it('uses company settings margin regardless of stored subtotals', function () {
+        // Now that surfaces store COGS consistently, we always use company settings
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'areas_subtotal' => 0,
+            'subtotal' => 2500,
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create();
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'total' => 1000,
+            'is_included' => true,
+        ]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Should use company margin settings (interior default is 50%, factor = 2.0)
+        $settings = \App\Models\CompanySetting::getInstance();
+        $expectedFactor = 1 / (1 - ($settings->getMarginPercentForScope('interior') / 100));
+        $marginFactor = $component->instance()->getMarginFactor();
+        expect($marginFactor)->toBe($expectedFactor);
+    });
+
+    it('handles edge case where areas_subtotal equals raw total (no margins stored)', function () {
+        // Edge case: areas_subtotal equals raw surfaces total (margins not stored)
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'areas_subtotal' => 1000, // Same as raw
+            'subtotal' => 1000, // Also same (no margins anywhere)
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create();
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'total' => 1000,
+            'is_included' => true,
+        ]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Should use company margin settings as fallback (not return 1.0)
+        $marginFactor = $component->instance()->getMarginFactor();
+        // With typical 35-65% margin, factor should be roughly 1.5-3.0
+        expect($marginFactor)->toBeGreaterThan(1.0);
+    });
+
+    it('uses margin factor from company settings in template mode', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'areas_subtotal' => 0,
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        // Create area but no surfaces - still uses company margin factor
+        \App\Models\EstimateArea::factory()->forEstimate($estimate)->create();
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // In template mode, always use company margin settings
+        $settings = \App\Models\CompanySetting::getInstance();
+        $expectedFactor = 1 / (1 - ($settings->getMarginPercentForScope('interior') / 100));
+        expect($component->instance()->getMarginFactor())->toBe($expectedFactor);
+    });
+
+    it('area display total correctly applies margin factor', function () {
+        // Set up company settings with no cleanup/sundries/taxes for predictable calculation
+        $settings = \App\Models\CompanySetting::getInstance();
+        $settings->update([
+            'interior_cleanup_hours_ratio' => 999999, // Effectively disable cleanup
+            'interior_sundries_cost_per_hour' => 0,
+            'interior_margin_percent' => 50.0, // 50% margin = factor of 2
+            'material_tax_rate' => 0,
+            'labor_tax_rate' => 0,
+        ]);
+
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+            'areas_subtotal' => 2000, // 2x margin
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create([
+            'scope_type' => 'interior',
+        ]);
+        // Create surfaces with proper labor/material breakdown
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'labor_hours' => 5,
+            'labor_cost' => 250,
+            'material_cost' => 250,
+            'total' => 500,
+            'is_included' => true,
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'labor_hours' => 5,
+            'labor_cost' => 250,
+            'material_cost' => 250,
+            'total' => 500,
+            'is_included' => true,
+        ]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Raw area COGS: 1000 (labor + material)
+        // With 50% margin: 1000 / 0.50 = 2000
+        $displayTotal = $component->instance()->getAreaDisplayTotal($estimate->fresh()->areas->first());
+        expect($displayTotal)->toBe(2000.0);
+    });
+
+    it('surface display total correctly applies margin factor from company settings', function () {
+        // Set up company settings with no cleanup/sundries/taxes for predictable calculation
+        $settings = \App\Models\CompanySetting::getInstance();
+        $settings->update([
+            'interior_cleanup_hours_ratio' => 999999, // Effectively disable cleanup
+            'interior_sundries_cost_per_hour' => 0,
+            'interior_margin_percent' => 50.0, // 50% margin = factor of 2
+            'material_tax_rate' => 0,
+            'labor_tax_rate' => 0,
+        ]);
+
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'areas_subtotal' => 1500,
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create([
+            'scope_type' => 'interior',
+        ]);
+        $surface = \App\Models\EstimateAreaSurface::factory()->forArea($area)->create([
+            'labor_hours' => 10,
+            'labor_cost' => 500,
+            'material_cost' => 500,
+            'total' => 1000,
+            'is_included' => true,
+        ]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Surface COGS: 1000, with 50% margin: 1000 / 0.50 = 2000
+        $displayTotal = $component->instance()->getSurfaceDisplayTotal($surface);
+        expect($displayTotal)->toBe(2000.0);
+    });
+
+    it('has packages returns true when packages exist', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        // Create a package
+        \App\Models\EstimatePackage::factory()->forEstimate($estimate)->create();
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        expect($component->instance()->hasPackages())->toBeTrue();
+    });
+
+    it('sum of area display totals uses consistent margin factor', function () {
+        // Set up company settings with no cleanup/sundries/taxes for predictable calculation
+        $settings = \App\Models\CompanySetting::getInstance();
+        $settings->update([
+            'interior_cleanup_hours_ratio' => 999999, // Effectively disable cleanup
+            'interior_sundries_cost_per_hour' => 0,
+            'interior_margin_percent' => 50.0, // 50% margin = factor of 2
+            'material_tax_rate' => 0,
+            'labor_tax_rate' => 0,
+        ]);
+
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'areas_subtotal' => 3000,
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        // Create multiple areas with surfaces (proper labor/material breakdown)
+        $area1 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create([
+            'name' => 'Room 1',
+            'scope_type' => 'interior',
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area1)->create([
+            'labor_hours' => 4,
+            'labor_cost' => 200,
+            'material_cost' => 200,
+            'total' => 400,
+            'is_included' => true,
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area1)->create([
+            'labor_hours' => 2,
+            'labor_cost' => 100,
+            'material_cost' => 100,
+            'total' => 200,
+            'is_included' => true,
+        ]);
+
+        $area2 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create([
+            'name' => 'Room 2',
+            'scope_type' => 'interior',
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area2)->create([
+            'labor_hours' => 3,
+            'labor_cost' => 150,
+            'material_cost' => 150,
+            'total' => 300,
+            'is_included' => true,
+        ]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area2)->create([
+            'labor_hours' => 1,
+            'labor_cost' => 50,
+            'material_cost' => 50,
+            'total' => 100,
+            'is_included' => true,
+        ]);
+
+        // Raw total COGS: 400 + 200 + 300 + 100 = 1000
+        // With 50% margin: 1000 / 0.50 = 2000
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        $estimate->refresh();
+        $estimate->load('areas.surfaces');
+
+        $sumDisplayTotals = 0;
+        foreach ($estimate->areas as $area) {
+            $sumDisplayTotals += $component->instance()->getAreaDisplayTotal($area);
+        }
+
+        // Sum of display totals: 2000
+        expect(round($sumDisplayTotals, 2))->toBe(2000.0);
+    });
+});
+
+describe('EstimateProposal acceptance actions', function () {
+    beforeEach(function () {
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
+        $this->internalUser2 = User::factory()->internal()->withFullAccess()->create();
+        $this->customer = Customer::factory()->create([
+            'first_name' => 'Jane',
+            'last_name' => 'Smith',
+            'email' => 'jane@example.com',
+        ]);
+        $this->deal = Deal::factory()->forCustomer($this->customer)->create([
+            'title' => 'Smith Kitchen Repaint',
+            'stage' => 'quoted',
+        ]);
+        $this->estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'valid_until' => now()->addMonth(),
+        ]);
+        $this->estimate->generatePublicToken(30);
+    });
+
+    it('sends notification to all internal users on acceptance', function () {
+        Notification::fake();
+
+        EstimateSignature::createFromRequest(
+            $this->estimate,
+            'Jane Smith',
+            'jane@example.com',
+            'Jane Smith',
+            'typed'
+        );
+
+        Notification::assertSentTo($this->internalUser, EstimateAccepted::class);
+        Notification::assertSentTo($this->internalUser2, EstimateAccepted::class);
+    });
+
+    it('EstimateAccepted notification uses mail and database channels', function () {
+        $notification = new EstimateAccepted($this->estimate);
+        $channels = $notification->via($this->internalUser);
+
+        expect($channels)->toContain('mail');
+        expect($channels)->toContain('database');
+    });
+
+    it('creates a deal chat thread on acceptance', function () {
+        expect(ChatThread::where('deal_id', $this->deal->id)->exists())->toBeFalse();
+
+        EstimateSignature::createFromRequest(
+            $this->estimate,
+            'Jane Smith',
+            'jane@example.com',
+            'Jane Smith',
+            'typed'
+        );
+
+        $thread = ChatThread::where('deal_id', $this->deal->id)->first();
+        expect($thread)->not->toBeNull();
+        expect($thread->type)->toBe(ChatThread::TYPE_DEAL);
+        expect($thread->subject)->toBe('Smith Kitchen Repaint');
+    });
+
+    it('adds internal users as chat participants on acceptance', function () {
+        EstimateSignature::createFromRequest(
+            $this->estimate,
+            'Jane Smith',
+            'jane@example.com',
+            'Jane Smith',
+            'typed'
+        );
+
+        $thread = ChatThread::where('deal_id', $this->deal->id)->first();
+        expect($thread->hasParticipant($this->internalUser))->toBeTrue();
+        expect($thread->hasParticipant($this->internalUser2))->toBeTrue();
+    });
+
+    it('posts a system message in chat on acceptance', function () {
+        EstimateSignature::createFromRequest(
+            $this->estimate,
+            'Jane Smith',
+            'jane@example.com',
+            'Jane Smith',
+            'typed'
+        );
+
+        $thread = ChatThread::where('deal_id', $this->deal->id)->first();
+        $message = $thread->messages()->first();
+
+        expect($message)->not->toBeNull();
+        expect($message->type)->toBe(ChatMessage::TYPE_SYSTEM);
+        expect($message->content)->toContain($this->estimate->estimate_number);
+        expect($message->content)->toContain('Jane Smith');
+        expect($message->user_id)->toBeNull();
+    });
+
+    it('advances deal to signed_accepted stage on acceptance', function () {
+        expect($this->deal->fresh()->stage)->toBe('quoted');
+
+        EstimateSignature::createFromRequest(
+            $this->estimate,
+            'Jane Smith',
+            'jane@example.com',
+            'Jane Smith',
+            'typed'
+        );
+
+        expect($this->deal->fresh()->stage)->toBe('signed_accepted');
+    });
+
+    it('does not create duplicate chat thread if one already exists', function () {
+        // Create a thread beforehand
+        $existingThread = $this->deal->getOrCreateChatThread();
+
+        EstimateSignature::createFromRequest(
+            $this->estimate,
+            'Jane Smith',
+            'jane@example.com',
+            'Jane Smith',
+            'typed'
+        );
+
+        // Should still only have one thread
+        expect(ChatThread::where('deal_id', $this->deal->id)->count())->toBe(1);
+
+        // But should have the system message
+        expect($existingThread->messages()->count())->toBe(1);
     });
 });

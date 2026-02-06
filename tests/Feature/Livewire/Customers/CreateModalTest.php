@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customers\CreateModal;
 use App\Models\Customer;
 use App\Models\User;
 use Livewire\Livewire;
@@ -9,18 +8,18 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('CreateModal component', function () {
     it('renders the create modal component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->assertStatus(200);
     });
 
     it('opens and closes the modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->assertSet('showModal', false)
             ->call('openModal')
             ->assertSet('showModal', true)
@@ -29,10 +28,10 @@ describe('CreateModal component', function () {
     });
 
     it('resets form fields when closing modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->set('firstName', 'John')
             ->set('lastName', 'Doe')
             ->set('email', 'john@example.com')
@@ -43,19 +42,19 @@ describe('CreateModal component', function () {
     });
 
     it('validates required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->call('save')
             ->assertHasErrors(['firstName', 'lastName', 'email']);
     });
 
     it('validates email format', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->set('firstName', 'John')
             ->set('lastName', 'Doe')
             ->set('email', 'invalid-email')
@@ -63,24 +62,21 @@ describe('CreateModal component', function () {
             ->assertHasErrors(['email']);
     });
 
-    it('validates unique email', function () {
-        $user = User::factory()->internal()->create();
+    it('shows duplicate warning for existing email', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
         Customer::factory()->create(['email' => 'existing@example.com']);
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
-            ->set('firstName', 'John')
-            ->set('lastName', 'Doe')
+            ->test('customers.create-modal')
             ->set('email', 'existing@example.com')
-            ->call('save')
-            ->assertHasErrors(['email']);
+            ->assertSet('showDuplicateWarning', true);
     });
 
     it('creates a customer successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->set('firstName', 'John')
             ->set('lastName', 'Doe')
             ->set('email', 'john.doe@example.com')
@@ -90,6 +86,7 @@ describe('CreateModal component', function () {
             ->set('state', 'CA')
             ->set('zip', '90210')
             ->set('notes', 'Test notes')
+            ->set('sendInvite', false) // Disable to avoid invitation service
             ->call('save')
             ->assertHasNoErrors()
             ->assertDispatched('customer-created')
@@ -111,13 +108,14 @@ describe('CreateModal component', function () {
     });
 
     it('creates customer with only required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->set('firstName', 'Jane')
             ->set('lastName', 'Smith')
             ->set('email', 'jane.smith@example.com')
+            ->set('sendInvite', false) // Disable to avoid invitation service
             ->call('save')
             ->assertHasNoErrors()
             ->assertDispatched('customer-created');
@@ -131,13 +129,14 @@ describe('CreateModal component', function () {
     });
 
     it('sets created_by to authenticated user', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('customers.create-modal')
             ->set('firstName', 'Test')
             ->set('lastName', 'Customer')
             ->set('email', 'test@example.com')
+            ->set('sendInvite', false)
             ->call('save');
 
         $customer = Customer::where('email', 'test@example.com')->first();

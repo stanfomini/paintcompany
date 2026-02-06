@@ -24,9 +24,10 @@ class ChatService
      * Customers can chat with: internal (via deal threads only)
      */
     private const CHAT_PERMISSIONS = [
-        'internal' => ['internal', 'agent', 'customer'],
+        'internal' => ['internal', 'agent', 'customer', 'crew'],
         'agent' => ['internal', 'customer'],
         'customer' => ['internal'],
+        'crew' => ['internal'],
     ];
 
     /**

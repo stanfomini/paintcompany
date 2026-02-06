@@ -39,6 +39,14 @@ class EstimateTemplateUsage extends Model
     protected static function booted(): void
     {
         static::saving(function (EstimateTemplateUsage $usage) {
+            // Skip auto-calculation if there's a resultable EstimateArea with a price.
+            // AreaBuilder calculates the price from actual surfaces and dimensions,
+            // which should be preserved instead of recalculating from the template.
+            if ($usage->resultable_type === EstimateArea::class && $usage->calculated_price > 0) {
+                return;
+            }
+
+            // Auto-calculate price from template for simple usages (not from AreaBuilder)
             if ($usage->template) {
                 $usage->calculated_price = $usage->template->calculatePrice(
                     (float) $usage->quantity,

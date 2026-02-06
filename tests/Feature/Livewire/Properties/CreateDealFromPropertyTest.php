@@ -1,7 +1,5 @@
 <?php
 
-use App\Livewire\Deals\CreateModal;
-use App\Livewire\Properties\Show;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Property;
@@ -11,7 +9,7 @@ use Livewire\Livewire;
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->user = User::factory()->internal()->create();
+    $this->user = User::factory()->internal()->withFullAccess()->create();
     $this->customer = Customer::factory()->create();
     $this->property = Property::factory()->create(['customer_id' => $this->customer->id]);
 });
@@ -25,13 +23,13 @@ it('shows create deal button on property page', function () {
 
 it('property show component contains deals create modal', function () {
     Livewire::actingAs($this->user)
-        ->test(Show::class, ['property' => $this->property])
-        ->assertSeeLivewire(CreateModal::class);
+        ->test('properties.show', ['property' => $this->property])
+        ->assertSeeLivewire('deals.create-modal');
 });
 
 it('pre-populates customer and property when opening modal from property page', function () {
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class, [
+        ->test('deals.create-modal', [
             'customerId' => $this->customer->id,
             'propertyId' => $this->property->id,
         ])
@@ -42,7 +40,7 @@ it('pre-populates customer and property when opening modal from property page', 
 
 it('creates deal with pre-populated property and customer', function () {
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class, [
+        ->test('deals.create-modal', [
             'customerId' => $this->customer->id,
             'propertyId' => $this->property->id,
         ])
@@ -61,7 +59,7 @@ it('creates deal with pre-populated property and customer', function () {
 
 it('refreshes deals list after deal is created', function () {
     Livewire::actingAs($this->user)
-        ->test(Show::class, ['property' => $this->property])
+        ->test('properties.show', ['property' => $this->property])
         ->assertDontSee('New Test Deal')
         ->dispatch('deal-created');
 
@@ -74,13 +72,13 @@ it('refreshes deals list after deal is created', function () {
 
     // Refresh and check
     Livewire::actingAs($this->user)
-        ->test(Show::class, ['property' => $this->property])
+        ->test('properties.show', ['property' => $this->property])
         ->assertSee('New Test Deal');
 });
 
 it('shows empty state when no deals exist', function () {
     Livewire::actingAs($this->user)
-        ->test(Show::class, ['property' => $this->property])
+        ->test('properties.show', ['property' => $this->property])
         ->assertSee('No deals yet')
         ->assertSee('Create a deal to start tracking work for this property.');
 });
@@ -96,7 +94,7 @@ it('shows deals table when deals exist', function () {
     $this->property->refresh();
 
     Livewire::actingAs($this->user)
-        ->test(Show::class, ['property' => $this->property])
+        ->test('properties.show', ['property' => $this->property])
         ->assertSee('Existing Deal')
         ->assertSee('$5,000.00');
 });

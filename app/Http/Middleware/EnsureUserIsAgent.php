@@ -2,8 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\UserTypeMismatchException;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureUserIsAgent
@@ -15,14 +17,42 @@ class EnsureUserIsAgent
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->user('agent') || ! $request->user('agent')->isAgent()) {
-            abort(403, 'Access denied. Agent users only.');
+        $user = $request->user('agent');
+
+        // Not authenticated with agent guard
+        if (! $user || ! $user->isAgent()) {
+            throw new UserTypeMismatchException(
+                expectedType: 'agent',
+                actualType: $this->getAuthenticatedUserType(),
+                intendedGuard: 'agent'
+            );
         }
 
-        if (! $request->user('agent')->isActive()) {
-            abort(403, 'Your account has been deactivated.');
+        // Account deactivated
+        if (! $user->isActive()) {
+            Auth::guard('agent')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            session()->flash('error', 'Your account has been deactivated. Please contact support.');
+
+            return new \Illuminate\Http\RedirectResponse(route('agent.login'));
         }
 
         return $next($request);
+    }
+
+    /**
+     * Check if user is authenticated with any guard and return their type.
+     */
+    private function getAuthenticatedUserType(): ?string
+    {
+        foreach (['web', 'agent', 'customer', 'crew'] as $guard) {
+            if (Auth::guard($guard)->check()) {
+                return Auth::guard($guard)->user()->type;
+            }
+        }
+
+        return null;
     }
 }

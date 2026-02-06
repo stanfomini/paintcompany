@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Customer;
 
+use App\Http\Controllers\Concerns\HandlesMultiGuardLogin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -10,6 +11,8 @@ use Illuminate\View\View;
 
 class LoginController extends Controller
 {
+    use HandlesMultiGuardLogin;
+
     public function showLoginForm(): View
     {
         return view('customer.auth.login');
@@ -28,6 +31,12 @@ class LoginController extends Controller
 
         if (Auth::guard('customer')->attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
+
+            // Clear intended URL if it's for a different guard's area
+            $this->clearCrossGuardIntendedUrl($request, 'customer');
+
+            // Logout from other guards to prevent session confusion
+            $this->logoutOtherGuards($request, 'customer');
 
             return redirect()->intended(route('customer.dashboard'));
         }

@@ -2,11 +2,13 @@
 
 use App\Models\EstimateTemplate;
 use App\Models\EstimateTemplateCategory;
+use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
 use App\Models\ProductionRate;
 use App\Models\ProductionRateCategory;
 use App\Models\Substrate;
 use Database\Seeders\EstimateTemplateSeeder;
+use Database\Seeders\NestedAreaTemplateSeeder;
 use Database\Seeders\PaintCatalogSeeder;
 use Database\Seeders\SubstrateSeeder;
 
@@ -63,12 +65,11 @@ describe('EstimateTemplateSeeder', function () {
         expect($areaNames)->toContain('Fence');
     });
 
-    it('creates add-on templates with both scope', function () {
-        (new EstimateTemplateSeeder)->run();
+    it('creates add-ons as Fixed Price templates in NestedAreaTemplates', function () {
+        // Add-ons (warranties, services, prep) are now in NestedAreaTemplateSeeder
+        (new NestedAreaTemplateSeeder)->run();
 
-        $addons = EstimateTemplate::where('scope_type', 'both')
-            ->whereHas('templateCategory', fn ($q) => $q->where('type', 'addon'))
-            ->get();
+        $addons = NestedAreaTemplate::where('scope_type', 'both')->get();
 
         expect($addons->count())->toBeGreaterThanOrEqual(5);
 
@@ -76,7 +77,7 @@ describe('EstimateTemplateSeeder', function () {
         $addonNames = $addons->pluck('name')->toArray();
         expect($addonNames)->toContain('1-Year Touch-Up Warranty');
         expect($addonNames)->toContain('Color Consultation');
-        expect($addonNames)->toContain('Furniture Moving');
+        expect($addonNames)->toContain('Premium Paint Upgrade');
     });
 
     it('sets default surfaces for room templates', function () {
@@ -223,25 +224,23 @@ describe('EstimateTemplateSeeder with relationships', function () {
         expect($completeTemplates)->toBeGreaterThanOrEqual(5);
     });
 
-    it('sets correct pricing method for add-ons', function () {
-        (new EstimateTemplateSeeder)->run();
+    it('add-ons are now in NestedAreaTemplates with fixed pricing', function () {
+        // Add-ons moved to NestedAreaTemplates (Fixed Price) for simpler workflow
+        (new NestedAreaTemplateSeeder)->run();
 
-        // Fixed price add-ons
-        $warranty = EstimateTemplate::where('name', '1-Year Touch-Up Warranty')->first();
+        // Fixed price warranty
+        $warranty = NestedAreaTemplate::where('name', '1-Year Touch-Up Warranty')->first();
         expect($warranty)->not->toBeNull();
-        expect($warranty->pricing_method)->toBe('fixed');
-        expect((float) $warranty->base_price)->toBeGreaterThan(0);
+        expect((float) $warranty->fixed_price)->toBeGreaterThan(0);
 
-        // Per sqft add-ons
-        $paintUpgrade = EstimateTemplate::where('name', 'Premium Paint Upgrade')->first();
+        // Fixed price services
+        $paintUpgrade = NestedAreaTemplate::where('name', 'Premium Paint Upgrade')->first();
         expect($paintUpgrade)->not->toBeNull();
-        expect($paintUpgrade->pricing_method)->toBe('per_sqft');
-        expect((float) $paintUpgrade->per_sqft_rate)->toBeGreaterThan(0);
+        expect((float) $paintUpgrade->fixed_price)->toBeGreaterThan(0);
 
-        // Percent add-ons
-        $expedited = EstimateTemplate::where('name', 'Expedited Service')->first();
-        expect($expedited)->not->toBeNull();
-        expect($expedited->pricing_method)->toBe('percent');
-        expect((float) $expedited->percent_of_total)->toBeGreaterThan(0);
+        // Prep work
+        $drywall = NestedAreaTemplate::where('code', 'PREP-DRYWALL-SM')->first();
+        expect($drywall)->not->toBeNull();
+        expect((float) $drywall->fixed_price)->toBeGreaterThan(0);
     });
 });

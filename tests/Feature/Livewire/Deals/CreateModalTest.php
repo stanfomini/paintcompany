@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Deals\CreateModal;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Property;
@@ -11,18 +10,18 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('CreateModal component', function () {
     it('renders the create modal component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->assertStatus(200);
     });
 
     it('opens and closes the modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->assertSet('showModal', false)
             ->call('openModal')
             ->assertSet('showModal', true)
@@ -31,11 +30,11 @@ describe('CreateModal component', function () {
     });
 
     it('resets form fields when closing modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'Test Deal')
             ->set('estimatedValue', '5000')
@@ -46,19 +45,19 @@ describe('CreateModal component', function () {
     });
 
     it('validates required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->call('save')
             ->assertHasErrors(['customerId', 'title']);
     });
 
     it('validates customer exists', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', 99999)
             ->set('title', 'Test Deal')
             ->call('save')
@@ -66,11 +65,11 @@ describe('CreateModal component', function () {
     });
 
     it('validates stage is valid', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'Test Deal')
             ->set('stage', 'invalid_stage')
@@ -79,11 +78,11 @@ describe('CreateModal component', function () {
     });
 
     it('validates estimated value is numeric', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'Test Deal')
             ->set('estimatedValue', 'not-a-number')
@@ -92,11 +91,11 @@ describe('CreateModal component', function () {
     });
 
     it('validates expected end date is after start date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'Test Deal')
             ->set('expectedStartDate', '2025-06-01')
@@ -106,13 +105,13 @@ describe('CreateModal component', function () {
     });
 
     it('creates a deal successfully with all fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $property = Property::factory()->create(['customer_id' => $customer->id]);
-        $assignee = User::factory()->internal()->create();
+        $assignee = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('propertyId', $property->id)
             ->set('title', 'Exterior Painting Project')
@@ -142,11 +141,11 @@ describe('CreateModal component', function () {
     });
 
     it('creates deal with only required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'Basic Deal')
             ->call('save')
@@ -162,11 +161,11 @@ describe('CreateModal component', function () {
     });
 
     it('sets created_by to authenticated user', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'Test Deal')
             ->call('save');
@@ -177,13 +176,13 @@ describe('CreateModal component', function () {
     });
 
     it('resets property when customer changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create();
         $customer2 = Customer::factory()->create();
         $property = Property::factory()->create(['customer_id' => $customer1->id]);
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer1->id)
             ->set('propertyId', $property->id)
             ->assertSet('propertyId', $property->id)
@@ -192,7 +191,7 @@ describe('CreateModal component', function () {
     });
 
     it('shows properties dropdown only for selected customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $property = Property::factory()->create([
             'customer_id' => $customer->id,
@@ -200,17 +199,17 @@ describe('CreateModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->assertSee('Main House');
     });
 
     it('lists internal users in assigned dropdown', function () {
-        $internalUser = User::factory()->internal()->create(['name' => 'John Painter']);
+        $internalUser = User::factory()->internal()->withFullAccess()->create(['name' => 'John Painter']);
         $agentUser = User::factory()->agent()->create(['name' => 'Agent Smith']);
 
         Livewire::actingAs($internalUser)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->assertSee('John Painter')
             ->assertDontSee('Agent Smith');
     });

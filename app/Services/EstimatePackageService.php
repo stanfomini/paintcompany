@@ -139,16 +139,47 @@ class EstimatePackageService
 
     /**
      * Calculate the total for a package.
+     *
+     * IMPORTANT: Painting work uses AREA-level pricing (margin applied once per area).
+     * Surfaces are grouped by area and summed using the area's customer price.
+     * Service items (EstimateItem) use their own effective price.
      */
     public function calculatePackageTotal(EstimatePackage $package): void
     {
-        // Sum only approved and included items
-        $subtotal = $package->items()
+        $items = $package->items()
             ->where('is_included', true)
             ->where('customer_approved', true)
-            ->get()
-            ->sum(fn (EstimatePackageItem $item) => $item->effective_price);
+            ->with('itemable')
+            ->get();
 
+        // Separate surface items from service items
+        $surfaceItems = $items->filter(
+            fn ($item) => $item->itemable_type === EstimateAreaSurface::class
+        );
+        $serviceItems = $items->filter(
+            fn ($item) => $item->itemable_type !== EstimateAreaSurface::class
+        );
+
+        // Group surfaces by area and use AREA-level customer price
+        // This ensures margin is applied once per area, not per surface
+        $paintingTotal = 0.0;
+        $areaIds = $surfaceItems
+            ->map(fn ($item) => $item->itemable?->area_id)
+            ->filter()
+            ->unique();
+
+        foreach ($areaIds as $areaId) {
+            $area = EstimateArea::find($areaId);
+            if ($area) {
+                // Use area's customer price (COGS + cleanup + sundries + margin)
+                $paintingTotal += $area->getCustomerPrice();
+            }
+        }
+
+        // Add service items (already have correct prices)
+        $servicesTotal = $serviceItems->sum(fn ($item) => $item->effective_price);
+
+        $subtotal = $paintingTotal + $servicesTotal;
         $package->subtotal = $subtotal;
 
         // Add warranty price to base amount

@@ -38,7 +38,6 @@ describe('production-rates:seed Command', function () {
 
         expect($rate)->not->toBeNull();
         expect((float) $rate->production_rate)->toBe(300.00);
-        expect((float) $rate->hourly_labor_rate)->toBe(45.00);
     });
 
     it('creates ceiling painting rate', function () {
@@ -65,7 +64,7 @@ describe('production-rates:seed Command', function () {
         $rate = ProductionRate::where('name', 'Siding Painting')->first();
 
         expect($rate)->not->toBeNull();
-        expect((float) $rate->hourly_labor_rate)->toBe(50.00);
+        expect($rate->scope)->toBe('exterior');
     });
 
     it('creates deck staining rate', function () {

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CompanySetting;
 use App\Models\EstimateTemplate;
 use App\Models\EstimateTemplateCategory;
 use App\Models\ProductionRate;
@@ -9,16 +10,26 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('EstimateTemplate price calculations', function () {
     it('calculates production rate pricing correctly', function () {
+        // Set up company settings with known hourly rate
+        CompanySetting::truncate();
+        CompanySetting::create([
+            'company_name' => 'Test Company',
+            'hourly_wage' => 25.00,
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 25.00,
+            'payroll_burden_multiplier' => 1.0, // No burden for simple calculation
+        ]);
+
         // Create a production rate category first
         $category = ProductionRateCategory::factory()->create();
 
         // Create a production rate with known values
-        // Formula: ((quantity / production_rate) * hourly_labor_rate + (quantity * material_cost_per_unit)) * coat_multiplier
+        // New formula: (quantity / production_rate) * coat_multiplier * effective_rate
+        // Material cost now comes from PaintProduct, not ProductionRate
         $productionRate = ProductionRate::factory()->create([
             'category_id' => $category->id,
             'production_rate' => 200, // 200 sqft/hour
-            'hourly_labor_rate' => 50, // $50/hour
-            'material_cost_per_unit' => 0.25, // $0.25/sqft
+            'scope' => 'interior',
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,
@@ -29,26 +40,36 @@ describe('EstimateTemplate price calculations', function () {
 
         $template = EstimateTemplate::factory()
             ->withProductionRate($productionRate)
-            ->create();
+            ->create([
+                'scope_type' => 'interior',
+            ]);
 
         // Calculate price for 1000 sqft with 2 coats
-        // Labor: (1000 / 200) * 50 = 5 * 50 = $250
-        // Material: 1000 * 0.25 = $250
-        // Subtotal: 250 + 250 = $500
-        // With 2 coat multiplier (1.8): 500 * 1.8 = $900
+        // Labor hours: (1000 / 200) * 1.8 = 9 hours
+        // Labor cost: 9 * $25 = $225 (using effective rate with no burden)
+        // Material cost is now 0 (comes from paint products, not production rate)
         $price = $template->calculatePrice(1000, 2);
 
-        expect($price)->toBe(900.0);
+        expect($price)->toBe(225.0);
     });
 
     it('uses default coats when not specified for production rate pricing', function () {
+        // Set up company settings with known hourly rate
+        CompanySetting::truncate();
+        CompanySetting::create([
+            'company_name' => 'Test Company',
+            'hourly_wage' => 25.00,
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 25.00,
+            'payroll_burden_multiplier' => 1.0, // No burden for simple calculation
+        ]);
+
         $category = ProductionRateCategory::factory()->create();
 
         $productionRate = ProductionRate::factory()->create([
             'category_id' => $category->id,
             'production_rate' => 100, // 100 sqft/hour
-            'hourly_labor_rate' => 60, // $60/hour
-            'material_cost_per_unit' => 0.50, // $0.50/sqft
+            'scope' => 'interior',
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,
@@ -60,16 +81,16 @@ describe('EstimateTemplate price calculations', function () {
             ->withProductionRate($productionRate)
             ->create([
                 'default_coats' => 2,
+                'scope_type' => 'interior',
             ]);
 
         // 500 sqft, default 2 coats
-        // Labor: (500 / 100) * 60 = 5 * 60 = $300
-        // Material: 500 * 0.50 = $250
-        // Subtotal: $550
-        // With 2 coat multiplier (1.8): 550 * 1.8 = $990
+        // Labor hours: (500 / 100) * 1.8 = 9 hours
+        // Labor cost: 9 * $25 = $225 (using effective rate with no burden)
+        // Material cost is now 0 (comes from paint products, not production rate)
         $price = $template->calculatePrice(500);
 
-        expect($price)->toBe(990.0);
+        expect($price)->toBe(225.0);
     });
 
     it('returns zero when production rate is missing', function () {

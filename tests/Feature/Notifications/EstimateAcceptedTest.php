@@ -15,7 +15,7 @@ describe('EstimateAccepted Notification', function () {
     it('can be sent to internal users', function () {
         Notification::fake();
 
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->create();
@@ -136,7 +136,7 @@ describe('EstimateAccepted Notification', function () {
         $notification = new EstimateAccepted($estimate);
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail']);
+        expect($channels)->toBe(['mail', 'database']);
     });
 
     it('converts to array with correct structure', function () {

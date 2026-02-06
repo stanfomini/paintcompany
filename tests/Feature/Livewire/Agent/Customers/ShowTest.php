@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Customers\Show;
 use App\Models\AgentListing;
 use App\Models\Customer;
 use App\Models\User;
@@ -15,7 +14,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertStatus(200)
             ->assertSee('John Doe');
     });
@@ -34,7 +33,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertSee('john@example.com')
             ->assertSee('555-123-4567')
             ->assertSee('456 Oak Ave');
@@ -56,7 +55,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertSee('123 Main St, Springfield, IL 62701');
     });
 
@@ -69,7 +68,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertSee('Active');
     });
 
@@ -82,7 +81,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertSee('This is a test note about the customer.');
     });
 
@@ -95,7 +94,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertSee(now()->subDays(10)->format('M d, Y'));
     });
 
@@ -109,13 +108,13 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertForbidden();
     });
 
     it('returns 403 when customer has no referring agent', function () {
         $agent = User::factory()->agent()->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $customer = Customer::factory()->createdBy($internalUser)->create([
             'first_name' => 'Orphan',
@@ -124,7 +123,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertForbidden();
     });
 
@@ -136,7 +135,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertDontSee('Edit')
             ->assertDontSee('Delete');
     });
@@ -149,7 +148,7 @@ describe('Agent Customer Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['customer' => $customer])
+            ->test('agent.customers.show', ['customer' => $customer])
             ->assertSee('Back');
     });
 });

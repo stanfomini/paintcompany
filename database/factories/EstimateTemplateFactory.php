@@ -39,7 +39,7 @@ class EstimateTemplateFactory extends Factory
                 'Crown Molding',
             ]),
             'description' => fake()->optional(0.7)->sentence(10),
-            'icon' => fake()->optional(0.5)->randomElement(['paint-brush', 'home', 'door', 'cabinet', 'fence']),
+            'icon' => fake()->optional(0.5)->randomElement(['home', 'home-modern', 'squares-2x2', 'cube', 'rectangle-stack']),
             'image_path' => null,
             'default_quantity' => fake()->randomFloat(2, 100, 500),
             'default_unit' => fake()->randomElement(['sqft', 'lnft', 'unit']),
@@ -115,6 +115,32 @@ class EstimateTemplateFactory extends Factory
             'production_rate_id' => null,
             'per_sqft_rate' => null,
             'percent_of_total' => null,
+        ]);
+    }
+
+    /**
+     * Set fixed pricing method with full cost tracking.
+     *
+     * @param  float|null  $laborHours  Estimated labor hours
+     * @param  float|null  $materialCost  Material/supplies cost
+     * @param  float|null  $marginPercent  Per-template margin (defaults to scope margin if null)
+     */
+    public function fixedPricingWithCostTracking(
+        ?float $laborHours = null,
+        ?float $materialCost = null,
+        ?float $marginPercent = null
+    ): static {
+        return $this->state(fn (array $attributes) => [
+            'pricing_method' => EstimateTemplate::PRICING_FIXED,
+            'estimated_labor_hours' => $laborHours ?? fake()->randomFloat(2, 0.5, 8),
+            'material_cost' => $materialCost ?? fake()->randomFloat(2, 10, 100),
+            'margin_percent' => $marginPercent,
+            'base_price' => null, // Calculated from COGS
+            'production_rate_id' => null,
+            'per_sqft_rate' => null,
+            'percent_of_total' => null,
+            'default_quantity' => 1, // Fixed items typically have quantity of 1
+            'default_unit' => 'unit',
         ]);
     }
 

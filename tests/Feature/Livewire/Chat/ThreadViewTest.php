@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Chat\ThreadView;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\User;
@@ -8,8 +7,8 @@ use Livewire\Livewire;
 
 describe('ThreadView component', function () {
     it('renders the thread view component', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Conversation')
@@ -17,28 +16,28 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertStatus(200)
             ->assertSee('Test Conversation');
     });
 
     it('prevents access for non-participants', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser1 = User::factory()->internal()->create();
-        $otherUser2 = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser1 = User::factory()->internal()->withFullAccess()->create();
+        $otherUser2 = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($otherUser1, $otherUser2)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertForbidden();
     });
 
     it('displays messages in the thread', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -51,12 +50,12 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertSee('Hello, this is a test message!');
     });
 
     it('shows internal messages only to internal users', function () {
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $customerUser = User::factory()->customer()->create();
 
         $thread = ChatThread::factory()
@@ -79,20 +78,20 @@ describe('ThreadView component', function () {
 
         // Internal user sees both
         Livewire::actingAs($internalUser)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertSee('Internal staff note')
             ->assertSee('Public message');
 
         // Customer only sees public
         Livewire::actingAs($customerUser)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertDontSee('Internal staff note')
             ->assertSee('Public message');
     });
 
     it('can set a message to reply to', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -104,15 +103,15 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->call('setReplyTo', $message->id)
             ->assertSet('replyingToMessageId', $message->id)
             ->assertDispatched('set-reply-to');
     });
 
     it('can cancel reply', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -124,7 +123,7 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->call('setReplyTo', $message->id)
             ->call('cancelReply')
             ->assertSet('replyingToMessageId', null)
@@ -132,8 +131,8 @@ describe('ThreadView component', function () {
     });
 
     it('can delete own messages', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -145,7 +144,7 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->call('deleteMessage', $message->id)
             ->assertDispatched('message-deleted');
 
@@ -153,8 +152,8 @@ describe('ThreadView component', function () {
     });
 
     it('internal users can delete any message', function () {
-        $internalUser = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($internalUser, $otherUser)
@@ -166,7 +165,7 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($internalUser)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->call('deleteMessage', $message->id)
             ->assertDispatched('message-deleted');
 
@@ -175,7 +174,7 @@ describe('ThreadView component', function () {
 
     it('non-internal users cannot delete others messages', function () {
         $customerUser = User::factory()->customer()->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($customerUser, $internalUser)
@@ -187,41 +186,41 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($customerUser)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->call('deleteMessage', $message->id)
             ->assertForbidden();
     });
 
     it('shows empty state when no messages exist', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertSee('No messages yet')
             ->assertSee('Start the conversation');
     });
 
     it('shows participant count', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertSee('2 participants');
     });
 
     it('shows reply reference for message replies', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -241,21 +240,21 @@ describe('ThreadView component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->assertSee('Original message content')
             ->assertSee('This is my reply');
     });
 
     it('refreshes messages on message-sent event', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('chat.thread-view', ['thread' => $thread])
             ->dispatch('message-sent')
             ->assertStatus(200);
     });

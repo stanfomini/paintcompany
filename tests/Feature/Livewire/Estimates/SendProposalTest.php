@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\Show;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -13,20 +12,20 @@ uses(Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('Send Proposal Feature', function () {
     it('shows send proposal button for draft estimates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Send Proposal');
     });
 
     it('hides send proposal primary button for non-draft estimates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
 
         $component = Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate]);
+            ->test('estimates.show', ['estimate' => $estimate]);
 
         // The primary "Send Proposal" button should not be shown, but there's no direct way
         // to check for a specific button variant, so we verify by trying to open the modal
@@ -35,49 +34,49 @@ describe('Send Proposal Feature', function () {
     });
 
     it('can open send modal', function () {
-        $user = User::factory()->internal()->withSignature()->create();
+        $user = User::factory()->internal()->withFullAccess()->withSignature()->create();
         $customer = Customer::factory()->create(['email' => 'test@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('openSendModal')
             ->assertSet('showSendModal', true);
     });
 
     it('cannot open send modal for non-draft estimate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create(['email' => 'test@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->sent()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('openSendModal')
             ->assertSet('showSendModal', false);
     });
 
     it('cannot open send modal without customer email', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create(['email' => null]);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('openSendModal')
             ->assertSet('showSendModal', false);
     });
 
     it('can close send modal', function () {
-        $user = User::factory()->internal()->withSignature()->create();
+        $user = User::factory()->internal()->withFullAccess()->withSignature()->create();
         $customer = Customer::factory()->create(['email' => 'test@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('openSendModal')
             ->assertSet('showSendModal', true)
             ->call('closeSendModal')
@@ -87,13 +86,13 @@ describe('Send Proposal Feature', function () {
     it('sends proposal and marks estimate as sent', function () {
         Notification::fake();
 
-        $user = User::factory()->internal()->withSignature()->create();
+        $user = User::factory()->internal()->withFullAccess()->withSignature()->create();
         $customer = Customer::factory()->create(['email' => 'customer@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('sendProposal')
             ->assertSet('showSendModal', false);
 
@@ -108,13 +107,13 @@ describe('Send Proposal Feature', function () {
     it('generates public URL after sending', function () {
         Notification::fake();
 
-        $user = User::factory()->internal()->withSignature()->create();
+        $user = User::factory()->internal()->withFullAccess()->withSignature()->create();
         $customer = Customer::factory()->create(['email' => 'customer@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         $component = Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSet('publicUrl', null)
             ->call('sendProposal');
 
@@ -124,13 +123,13 @@ describe('Send Proposal Feature', function () {
     it('cannot send proposal twice', function () {
         Notification::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create(['email' => 'customer@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->sent()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('sendProposal')
             ->assertSet('showSendModal', false);
 
@@ -138,31 +137,31 @@ describe('Send Proposal Feature', function () {
     });
 
     it('displays public URL section when URL exists', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
         $estimate->generatePublicToken();
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Public Link:');
     });
 
     it('hides public URL section when no URL exists', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertDontSee('Public Link:');
     });
 
     it('can trigger copy URL action', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
         $estimate->generatePublicToken();
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('copyPublicUrl')
             ->assertDispatched('copy-to-clipboard');
     });
@@ -170,7 +169,7 @@ describe('Send Proposal Feature', function () {
     it('shows success message after sending proposal', function () {
         Notification::fake();
 
-        $user = User::factory()->internal()->withSignature()->create();
+        $user = User::factory()->internal()->withFullAccess()->withSignature()->create();
         $customer = Customer::factory()->create(['email' => 'test@example.com']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
@@ -178,7 +177,7 @@ describe('Send Proposal Feature', function () {
         // The component uses session flash which is handled differently in Livewire
         // Just verify the notification is sent and status is updated
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('sendProposal');
 
         $estimate->refresh();

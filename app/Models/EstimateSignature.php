@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Notifications\EstimateAccepted;
+use App\Services\JobService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -60,6 +61,32 @@ class EstimateSignature extends Model
             $internalUsers = User::where('type', 'internal')->get();
             foreach ($internalUsers as $user) {
                 $user->notify(new EstimateAccepted($signature->estimate));
+            }
+
+            // Create a deal chat thread for the accepted estimate
+            $deal = $signature->estimate->deal;
+            if ($deal) {
+                $thread = $deal->getOrCreateChatThread();
+
+                // Add internal users as participants
+                foreach ($internalUsers as $user) {
+                    if (! $thread->hasParticipant($user)) {
+                        $thread->addParticipant($user);
+                    }
+                }
+
+                // Post a system message about the acceptance
+                $thread->messages()->create([
+                    'user_id' => null,
+                    'content' => "Estimate #{$signature->estimate->estimate_number} has been accepted by {$signature->signer_name}.",
+                    'type' => ChatMessage::TYPE_SYSTEM,
+                ]);
+
+                // Advance deal to 'signed_accepted' stage and create job
+                $deal->moveTo('signed_accepted');
+
+                // Auto-create job from the accepted estimate
+                app(JobService::class)->createFromEstimate($signature->estimate);
             }
         });
     }

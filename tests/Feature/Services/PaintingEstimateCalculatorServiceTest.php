@@ -140,16 +140,48 @@ it('calculates correct effective hourly rate', function () {
     expect($explanation['settings']['effective_hourly_rate'])->toBe(33.75);
 });
 
-it('applies all margins correctly', function () {
+it('applies simple markup to COGS (legacy)', function () {
     $settings = CompanySetting::getInstance();
 
-    // Test with $100 base cost
-    // Profit: 100 × 1.30 = 130
-    // Overhead: 130 × 1.12 = 145.60
-    // Markup: 145.60 × 1.45 = 211.12
+    // Legacy markup formula: OTD = COGS × (1 + markup%)
+    // Test with $100 COGS
+    // Default markup: 45%
+    // Result: 100 × 1.45 = 145.00
     $result = $settings->calculateWithMargins(100.00);
 
-    expect($result)->toBe(211.12);
+    expect($result)->toBe(145.00);
+});
+
+it('applies margin-based pricing to COGS', function () {
+    $settings = CompanySetting::getInstance();
+
+    // PBP formula: OTD = COGS / (margin% / 100)
+    // Test with $100 COGS
+    // Default margin: 45%
+    // Result: 100 / 0.45 = 222.22
+    $result = $settings->calculateOTD(100.00);
+
+    expect($result)->toBe(222.22);
+});
+
+it('applies scope-specific margin to interior pricing', function () {
+    $settings = CompanySetting::getInstance();
+
+    // Interior margin: 50%
+    // OTD = COGS / (margin% / 100) = 100 / 0.50 = 200.00
+    $result = $settings->calculateOTDFromCOGS(100.00, 'interior');
+
+    expect($result)->toBe(200.00);
+});
+
+it('applies scope-specific margin to exterior pricing', function () {
+    $settings = CompanySetting::getInstance();
+
+    // Exterior margin: 41%
+    // OTD = COGS / (margin% / 100) = 100 / 0.41 = 243.90
+    $result = $settings->calculateOTDFromCOGS(100.00, 'exterior');
+
+    expect($result)->toBe(243.90);
 });
 
 it('calculates labor hours with coat multipliers', function () {

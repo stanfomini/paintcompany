@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\Event;
 
 describe('ChatThread hasParticipant', function () {
     it('returns true when user is active participant', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -17,14 +17,14 @@ describe('ChatThread hasParticipant', function () {
     });
 
     it('returns false when user is not a participant', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect($thread->hasParticipant($user))->toBeFalse();
     });
 
     it('returns false when user has left the thread', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
         $thread->removeParticipant($user);
@@ -35,7 +35,7 @@ describe('ChatThread hasParticipant', function () {
 
 describe('ChatThread addParticipant', function () {
     it('creates participant record for new user', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         $participant = $thread->addParticipant($user);
@@ -48,7 +48,7 @@ describe('ChatThread addParticipant', function () {
     });
 
     it('reactivates participant who previously left', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         $thread->addParticipant($user);
@@ -62,7 +62,7 @@ describe('ChatThread addParticipant', function () {
     });
 
     it('updates existing record instead of creating duplicate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         $thread->addParticipant($user);
@@ -74,7 +74,7 @@ describe('ChatThread addParticipant', function () {
 
 describe('ChatThread removeParticipant', function () {
     it('sets left_at timestamp', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -90,7 +90,7 @@ describe('ChatThread removeParticipant', function () {
     });
 
     it('returns false when user is not a participant', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         $result = $thread->removeParticipant($user);
@@ -103,8 +103,8 @@ describe('ChatThread getUnreadCountFor', function () {
     it('returns correct count for unread messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
         $thread->addParticipant($otherUser);
@@ -117,8 +117,8 @@ describe('ChatThread getUnreadCountFor', function () {
     it('returns zero when all messages are read', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
         $thread->addParticipant($otherUser);
@@ -134,7 +134,7 @@ describe('ChatThread getUnreadCountFor', function () {
     it('does not count own messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -146,8 +146,8 @@ describe('ChatThread getUnreadCountFor', function () {
     it('returns zero for non-participant', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($otherUser);
 
@@ -160,7 +160,7 @@ describe('ChatThread getUnreadCountFor', function () {
         Event::fake();
 
         $customer = User::factory()->customer()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($customer);
         $thread->addParticipant($internal);
@@ -174,8 +174,8 @@ describe('ChatThread getUnreadCountFor', function () {
     it('includes internal messages for internal users', function () {
         Event::fake();
 
-        $internal1 = User::factory()->internal()->create();
-        $internal2 = User::factory()->internal()->create();
+        $internal1 = User::factory()->internal()->withFullAccess()->create();
+        $internal2 = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal1);
         $thread->addParticipant($internal2);
@@ -189,8 +189,8 @@ describe('ChatThread getUnreadCountFor', function () {
 
 describe('ChatThread forUser scope', function () {
     it('filters threads where user is active participant', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread1 = ChatThread::factory()->create();
         $thread1->addParticipant($user);
@@ -205,7 +205,7 @@ describe('ChatThread forUser scope', function () {
     });
 
     it('excludes threads where user has left', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
@@ -219,7 +219,7 @@ describe('ChatThread forUser scope', function () {
 
 describe('ChatThread getDisplayNameFor', function () {
     it('returns subject when set', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->withSubject('Custom Subject')->create();
         $thread->addParticipant($user);
 
@@ -227,7 +227,7 @@ describe('ChatThread getDisplayNameFor', function () {
     });
 
     it('returns deal title for deal threads', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create(['title' => 'Deal Title']);
         $thread = ChatThread::factory()->forDeal($deal)->create(['subject' => null]);
         $thread->addParticipant($user);
@@ -236,7 +236,7 @@ describe('ChatThread getDisplayNameFor', function () {
     });
 
     it('returns other participant name for direct threads without subject', function () {
-        $user = User::factory()->internal()->create(['name' => 'Current User']);
+        $user = User::factory()->internal()->withFullAccess()->create(['name' => 'Current User']);
         $otherUser = User::factory()->agent()->create(['name' => 'Other User']);
         $thread = ChatThread::factory()->direct()->create(['subject' => null]);
         $thread->addParticipant($user);
@@ -246,7 +246,7 @@ describe('ChatThread getDisplayNameFor', function () {
     });
 
     it('returns multiple participant names for group threads', function () {
-        $user = User::factory()->internal()->create(['name' => 'Current User']);
+        $user = User::factory()->internal()->withFullAccess()->create(['name' => 'Current User']);
         $user2 = User::factory()->agent()->create(['name' => 'User Two']);
         $user3 = User::factory()->customer()->create(['name' => 'User Three']);
         $thread = ChatThread::factory()->direct()->create(['subject' => null]);
@@ -261,7 +261,7 @@ describe('ChatThread getDisplayNameFor', function () {
     });
 
     it('returns Chat as fallback when no participants', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->direct()->create(['subject' => null]);
         $thread->addParticipant($user);
 
@@ -322,7 +322,7 @@ describe('ChatThread relationships', function () {
     });
 
     it('has many participants', function () {
-        $user1 = User::factory()->internal()->create();
+        $user1 = User::factory()->internal()->withFullAccess()->create();
         $user2 = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user1);
@@ -334,7 +334,7 @@ describe('ChatThread relationships', function () {
     it('has many messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -346,7 +346,7 @@ describe('ChatThread relationships', function () {
     it('has latest message relationship', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -357,7 +357,7 @@ describe('ChatThread relationships', function () {
     });
 
     it('has active participants excluding those who left', function () {
-        $user1 = User::factory()->internal()->create();
+        $user1 = User::factory()->internal()->withFullAccess()->create();
         $user2 = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user1);

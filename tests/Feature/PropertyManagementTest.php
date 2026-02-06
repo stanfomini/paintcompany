@@ -1,9 +1,5 @@
 <?php
 
-use App\Livewire\Properties\CreateModal;
-use App\Livewire\Properties\EditModal;
-use App\Livewire\Properties\Index;
-use App\Livewire\Properties\Show;
 use App\Models\Customer;
 use App\Models\Property;
 use App\Models\User;
@@ -13,13 +9,13 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('Property list access', function () {
     it('allows internal user to view property list', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $response = $this->actingAs($user)
             ->get(route('properties.index'));
 
         $response->assertOk();
-        $response->assertSeeLivewire(Index::class);
+        $response->assertSeeLivewire('properties.index');
     });
 
     it('denies agent access to property list', function () {
@@ -49,14 +45,14 @@ describe('Property list access', function () {
 
 describe('Property detail access', function () {
     it('allows internal user to view property detail', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         $response = $this->actingAs($user)
             ->get(route('properties.show', $property));
 
         $response->assertOk();
-        $response->assertSeeLivewire(Show::class);
+        $response->assertSeeLivewire('properties.show');
     });
 
     it('denies agent access to property detail', function () {
@@ -82,11 +78,11 @@ describe('Property detail access', function () {
 
 describe('Property creation', function () {
     it('allows internal user to create property', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', $customer->id)
             ->set('address', '123 Main St')
             ->set('city', 'Los Angeles')
@@ -107,10 +103,10 @@ describe('Property creation', function () {
     });
 
     it('validates required customer field', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', '')
             ->set('address', '123 Main St')
             ->call('save')
@@ -118,11 +114,11 @@ describe('Property creation', function () {
     });
 
     it('validates required address field', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', $customer->id)
             ->set('address', '')
             ->call('save')
@@ -130,10 +126,10 @@ describe('Property creation', function () {
     });
 
     it('validates customer exists', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', 99999)
             ->set('address', '123 Main St')
             ->call('save')
@@ -141,11 +137,11 @@ describe('Property creation', function () {
     });
 
     it('validates property type', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', $customer->id)
             ->set('address', '123 Main St')
             ->set('type', 'invalid-type')
@@ -156,7 +152,7 @@ describe('Property creation', function () {
 
 describe('Property editing', function () {
     it('allows internal user to update property', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $property = Property::factory()->create([
             'customer_id' => $customer->id,
@@ -165,7 +161,7 @@ describe('Property editing', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->set('address', '456 New Ave')
             ->set('type', 'commercial')
             ->call('save')
@@ -179,7 +175,7 @@ describe('Property editing', function () {
     });
 
     it('property belongs to correct customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create();
         $customer2 = Customer::factory()->create();
         $property = Property::factory()->create([
@@ -187,7 +183,7 @@ describe('Property editing', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->set('customerId', $customer2->id)
             ->call('save')
             ->assertHasNoErrors();
@@ -199,7 +195,7 @@ describe('Property editing', function () {
     });
 
     it('loads property data correctly when editing', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $property = Property::factory()->create([
             'customer_id' => $customer->id,
@@ -211,7 +207,7 @@ describe('Property editing', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->assertSet('customerId', (string) $customer->id)
             ->assertSet('address', '789 Test Blvd')
             ->assertSet('city', 'San Francisco')
@@ -223,14 +219,14 @@ describe('Property editing', function () {
 
 describe('Property search functionality', function () {
     it('can search properties by address', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Property::factory()->create(['address' => '123 Maple Street']);
         Property::factory()->create(['address' => '456 Oak Avenue']);
         Property::factory()->create(['address' => '789 Pine Road']);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('properties.index')
             ->set('search', 'Maple')
             ->assertSee('123 Maple Street')
             ->assertDontSee('456 Oak Avenue')
@@ -238,14 +234,14 @@ describe('Property search functionality', function () {
     });
 
     it('can filter by property type', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Property::factory()->residential()->create(['address' => '111 Residential Dr']);
         Property::factory()->commercial()->create(['address' => '222 Commercial Blvd']);
         Property::factory()->industrial()->create(['address' => '333 Industrial Way']);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('properties.index')
             ->set('typeFilter', 'commercial')
             ->assertSee('222 Commercial Blvd')
             ->assertDontSee('111 Residential Dr')
@@ -253,7 +249,7 @@ describe('Property search functionality', function () {
     });
 
     it('can filter by customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $customer1 = Customer::factory()->create(['first_name' => 'John', 'last_name' => 'Doe']);
         $customer2 = Customer::factory()->create(['first_name' => 'Jane', 'last_name' => 'Smith']);
@@ -262,20 +258,20 @@ describe('Property search functionality', function () {
         Property::factory()->create(['address' => '200 Jane Property', 'customer_id' => $customer2->id]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('properties.index')
             ->set('customerFilter', $customer1->id)
             ->assertSee('100 John Property')
             ->assertDontSee('200 Jane Property');
     });
 
     it('shows all properties when no filters applied', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Property::factory()->residential()->create(['address' => 'First Property']);
         Property::factory()->commercial()->create(['address' => 'Second Property']);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('properties.index')
             ->set('search', '')
             ->set('typeFilter', 'all')
             ->set('customerFilter', '')
@@ -284,13 +280,13 @@ describe('Property search functionality', function () {
     });
 
     it('can search by city', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Property::factory()->create(['address' => '111 Main St', 'city' => 'Los Angeles']);
         Property::factory()->create(['address' => '222 Oak Ave', 'city' => 'San Francisco']);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('properties.index')
             ->set('search', 'Los Angeles')
             ->assertSee('111 Main St')
             ->assertDontSee('222 Oak Ave');

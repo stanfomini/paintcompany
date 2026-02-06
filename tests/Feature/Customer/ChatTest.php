@@ -1,8 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Chat\MessageComposer;
-use App\Livewire\Customer\Chat\ThreadList;
-use App\Livewire\Customer\Chat\ThreadView;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\Customer;
@@ -16,7 +13,7 @@ describe('Customer Chat ThreadList', function () {
         Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertStatus(200)
             ->assertSee('Messages');
     });
@@ -26,7 +23,7 @@ describe('Customer Chat ThreadList', function () {
         Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertSee('No Messages')
             ->assertSee('You don\'t have any active conversations yet');
     });
@@ -42,14 +39,14 @@ describe('Customer Chat ThreadList', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertSee('Kitchen Repaint Project');
     });
 
     it('does not display direct threads', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         // Direct thread between customer and internal user
         $thread = ChatThread::factory()
@@ -59,7 +56,7 @@ describe('Customer Chat ThreadList', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertDontSee('Direct Chat');
     });
 
@@ -69,14 +66,14 @@ describe('Customer Chat ThreadList', function () {
         $otherCustomer = Customer::factory()->create();
         $deal = Deal::factory()->forCustomer($otherCustomer)->create(['title' => 'Other Project']);
 
-        $otherUser = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()
             ->forDeal($deal)
             ->withParticipants([$otherUser])
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertDontSee('Other Project');
     });
 
@@ -84,7 +81,7 @@ describe('Customer Chat ThreadList', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
         $deal = Deal::factory()->forCustomer($customer)->create(['title' => 'Bathroom Remodel']);
-        $internalUser = User::factory()->internal()->create(['name' => 'John Staff']);
+        $internalUser = User::factory()->internal()->withFullAccess()->create(['name' => 'John Staff']);
 
         $thread = ChatThread::factory()
             ->forDeal($deal)
@@ -98,7 +95,7 @@ describe('Customer Chat ThreadList', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertSee('John Staff')
             ->assertSee('Your estimate is ready for review!');
     });
@@ -107,7 +104,7 @@ describe('Customer Chat ThreadList', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
         $deal = Deal::factory()->forCustomer($customer)->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->forDeal($deal)
@@ -122,7 +119,7 @@ describe('Customer Chat ThreadList', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadList::class)
+            ->test('customer.chat.thread-list')
             ->assertSeeHtml('2');
     });
 });
@@ -139,7 +136,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertStatus(200)
             ->assertSee('Living Room Painting');
     });
@@ -150,7 +147,7 @@ describe('Customer Chat ThreadView', function () {
 
         $otherCustomer = Customer::factory()->create();
         $deal = Deal::factory()->forCustomer($otherCustomer)->create();
-        $otherUser = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->forDeal($deal)
@@ -158,14 +155,14 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertNotFound();
     });
 
     it('cannot access non-deal threads', function () {
         $customerUser = User::factory()->customer()->create();
         Customer::factory()->create(['user_id' => $customerUser->id]);
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->direct()
@@ -173,7 +170,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertNotFound();
     });
 
@@ -187,7 +184,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertNotFound();
     });
 
@@ -195,7 +192,7 @@ describe('Customer Chat ThreadView', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
         $deal = Deal::factory()->forCustomer($customer)->create();
-        $internalUser = User::factory()->internal()->create(['name' => 'Team Member']);
+        $internalUser = User::factory()->internal()->withFullAccess()->create(['name' => 'Team Member']);
 
         $thread = ChatThread::factory()
             ->forDeal($deal)
@@ -209,7 +206,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertSee('Hello! Your project is progressing well.')
             ->assertSee('Team Member');
     });
@@ -218,7 +215,7 @@ describe('Customer Chat ThreadView', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
         $deal = Deal::factory()->forCustomer($customer)->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->forDeal($deal)
@@ -242,7 +239,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertSee('This is a public message')
             ->assertDontSee('This is an internal staff note');
     });
@@ -264,7 +261,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertSee('My own message');
     });
 
@@ -272,7 +269,7 @@ describe('Customer Chat ThreadView', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
         $deal = Deal::factory()->forCustomer($customer)->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->forDeal($deal)
@@ -290,7 +287,7 @@ describe('Customer Chat ThreadView', function () {
 
         // View the thread which should mark messages as read
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertStatus(200);
 
         // Check that last_read_at has been updated
@@ -309,7 +306,7 @@ describe('Customer Chat ThreadView', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('customer.chat.thread-view', ['thread' => $thread])
             ->assertSee('No messages yet');
     });
 });
@@ -326,7 +323,7 @@ describe('Customer Chat MessageComposer', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('customer.chat.message-composer', ['thread' => $thread])
             ->assertStatus(200)
             ->assertSee('Send');
     });
@@ -342,7 +339,7 @@ describe('Customer Chat MessageComposer', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('customer.chat.message-composer', ['thread' => $thread])
             ->set('message', 'Hello, I have a question about my project.')
             ->call('send')
             ->assertHasNoErrors()
@@ -364,7 +361,7 @@ describe('Customer Chat MessageComposer', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('customer.chat.message-composer', ['thread' => $thread])
             ->set('message', '')
             ->call('send')
             ->assertHasErrors(['message' => 'required']);
@@ -381,7 +378,7 @@ describe('Customer Chat MessageComposer', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('customer.chat.message-composer', ['thread' => $thread])
             ->set('message', str_repeat('a', 5001))
             ->call('send')
             ->assertHasErrors(['message' => 'max']);
@@ -398,7 +395,7 @@ describe('Customer Chat MessageComposer', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('customer.chat.message-composer', ['thread' => $thread])
             ->set('message', 'Customer message')
             ->call('send')
             ->assertHasNoErrors();
@@ -411,7 +408,7 @@ describe('Customer Chat MessageComposer', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
-        $otherUser = User::factory()->internal()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
         $otherCustomer = Customer::factory()->create();
         $deal = Deal::factory()->forCustomer($otherCustomer)->create();
 
@@ -421,7 +418,7 @@ describe('Customer Chat MessageComposer', function () {
             ->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('customer.chat.message-composer', ['thread' => $thread])
             ->set('message', 'Trying to send a message')
             ->call('send')
             ->assertHasErrors(['message']);
@@ -438,7 +435,7 @@ describe('Customer Chat Routes', function () {
         $this->actingAs($customerUser, 'customer')
             ->get(route('customer.chat.index'))
             ->assertOk()
-            ->assertSeeLivewire(ThreadList::class);
+            ->assertSeeLivewire('customer.chat.thread-list');
     });
 
     it('can access chat show page for authorized thread', function () {
@@ -454,7 +451,7 @@ describe('Customer Chat Routes', function () {
         $this->actingAs($customerUser, 'customer')
             ->get(route('customer.chat.show', $thread))
             ->assertOk()
-            ->assertSeeLivewire(ThreadView::class);
+            ->assertSeeLivewire('customer.chat.thread-view');
     });
 
     it('redirects to login if not authenticated', function () {

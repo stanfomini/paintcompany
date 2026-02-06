@@ -12,6 +12,7 @@
                     </span>
                     <span class="sr-only">{{ config('app.name', 'Laravel') }}</span>
                 </a>
+                @include('partials.flash-messages')
                 <div class="flex flex-col gap-6">
                     {{ $slot }}
                 </div>

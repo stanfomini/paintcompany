@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Customer;
 use App\Models\Invitation;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
@@ -16,9 +17,10 @@ class InvitationService
      * Customers cannot invite anyone
      */
     private const INVITATION_PERMISSIONS = [
-        'internal' => ['internal', 'agent', 'customer'],
+        'internal' => ['internal', 'agent', 'customer', 'crew'],
         'agent' => ['customer'],
         'customer' => [],
+        'crew' => [],
     ];
 
     /**
@@ -158,10 +160,39 @@ class InvitationService
             'is_active' => true,
         ]);
 
+        // Link existing Customer record to this user (for customer invitations)
+        if ($invitation->invited_user_type === 'customer') {
+            $this->linkCustomerToUser($user);
+        }
+
         // Mark invitation as accepted
         $invitation->markAsAccepted();
 
         return $user;
+    }
+
+    /**
+     * Link an existing Customer record to the newly created User and add
+     * the user as a participant in any existing deal chat threads.
+     */
+    protected function linkCustomerToUser(User $user): void
+    {
+        $customer = Customer::where('email', $user->email)
+            ->whereNull('user_id')
+            ->first();
+
+        if (! $customer) {
+            return;
+        }
+
+        $customer->update(['user_id' => $user->id]);
+
+        // Add user as participant in any existing deal chat threads
+        foreach ($customer->deals()->with('chatThread')->get() as $deal) {
+            if ($deal->chatThread) {
+                $deal->chatThread->addParticipant($user);
+            }
+        }
     }
 
     /**

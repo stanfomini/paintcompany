@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Estimates\Index;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -12,7 +11,7 @@ describe('Customer Estimates Index component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->assertStatus(200)
             ->assertSee('Estimates');
     });
@@ -33,7 +32,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->assertSee('EST-2026-00001')
             ->assertSee('Kitchen Renovation')
             ->assertSee('$5,000.00')
@@ -52,7 +51,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->assertDontSee('EST-DRAFT-001');
     });
 
@@ -77,7 +76,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->assertSee('EST-MINE-001')
             ->assertDontSee('EST-OTHER-001');
     });
@@ -100,7 +99,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->set('search', '00001')
             ->assertSee('EST-2026-00001')
             ->assertDontSee('EST-2026-00002');
@@ -124,7 +123,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->set('status', 'sent')
             ->assertSee('EST-PENDING-001')
             ->assertDontSee('EST-ACCEPTED-001');
@@ -154,7 +153,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->assertSee('Pending')
             ->assertSee('Accepted')
             ->assertSee('Declined');
@@ -165,7 +164,7 @@ describe('Customer Estimates Index component', function () {
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->assertSee('No estimates found')
             ->assertSee('Estimates will appear here once sent to you');
     });
@@ -182,7 +181,7 @@ describe('Customer Estimates Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->set('search', 'NonexistentEstimate')
             ->assertSee('No estimates found')
             ->assertSee('Try adjusting your search criteria');
@@ -202,7 +201,7 @@ describe('Customer Estimates Index component', function () {
             ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
@@ -221,7 +220,7 @@ describe('Customer Estimates Index component', function () {
             ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.estimates.index')
             ->set('status', 'sent')
             ->assertSet('paginators.page', 1);
     });

@@ -294,8 +294,8 @@ class AreaTemplateService
 
         $subtotal = $laborCost + $cleanupCost + $sundriesCost + $totalMaterialCost + $nestedTotal;
 
-        // Apply margins
-        $withMargins = $settings->calculateWithMarginsForScope($subtotal, $scope);
+        // Apply margin: OTD = COGS / (margin% / 100)
+        $withMargins = $settings->calculateOTDFromCOGS($subtotal, $scope);
 
         return [
             'surfaces' => $surfaceBreakdowns,

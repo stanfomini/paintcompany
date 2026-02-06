@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Dashboard;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -13,7 +12,7 @@ describe('Customer Dashboard component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertStatus(200)
             ->assertSee('Welcome');
     });
@@ -22,7 +21,7 @@ describe('Customer Dashboard component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertSee('Welcome to Your Customer Portal')
             ->assertSee('Your account has been set up');
     });
@@ -44,7 +43,7 @@ describe('Customer Dashboard component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertSee('Active Projects')
             ->assertSee('Pending Estimates')
             ->assertSee('Properties');
@@ -60,7 +59,7 @@ describe('Customer Dashboard component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertSee('Recent Projects')
             ->assertSee('Exterior Painting Project');
     });
@@ -82,7 +81,7 @@ describe('Customer Dashboard component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertSee('Estimates Awaiting Response')
             ->assertSee('EST-2026-00001')
             ->assertSee('Kitchen Remodel');
@@ -101,7 +100,7 @@ describe('Customer Dashboard component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertDontSee('EST-DRAFT-001');
     });
 
@@ -110,7 +109,7 @@ describe('Customer Dashboard component', function () {
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertSee('No projects yet');
     });
 
@@ -119,7 +118,7 @@ describe('Customer Dashboard component', function () {
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Dashboard::class)
+            ->test('customer.dashboard')
             ->assertSee('No pending estimates');
     });
 });

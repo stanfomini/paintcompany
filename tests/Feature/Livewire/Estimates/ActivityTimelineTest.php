@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\ActivityTimeline;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimateActivity;
@@ -9,7 +8,7 @@ use Livewire\Livewire;
 
 describe('ActivityTimeline component', function () {
     beforeEach(function () {
-        $this->internalUser = User::factory()->internal()->create();
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
         $this->deal = Deal::factory()->create();
         $this->estimate = Estimate::factory()->forDeal($this->deal)->draft()->create([
             'created_by' => $this->internalUser->id,
@@ -22,7 +21,7 @@ describe('ActivityTimeline component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate])
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate])
             ->assertStatus(200)
             ->assertSee('Estimate was viewed');
     });
@@ -42,9 +41,9 @@ describe('ActivityTimeline component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        $activities = $component->viewData('activities');
+        $activities = $component->get('activities');
         expect($activities->first()->id)->toBe($newerActivity->id);
         expect($activities->last()->id)->toBe($olderActivity->id);
     });
@@ -54,17 +53,17 @@ describe('ActivityTimeline component', function () {
         EstimateActivity::factory()->count(25)->forEstimate($this->estimate)->create();
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         // Default limit is 20
         expect($component->get('limit'))->toBe(20);
-        expect($component->viewData('activities'))->toHaveCount(20);
+        expect($component->get('activities'))->toHaveCount(20);
 
         // Load more
         $component->call('loadMore');
 
         expect($component->get('limit'))->toBe(40);
-        expect($component->viewData('activities'))->toHaveCount(25);
+        expect($component->get('activities'))->toHaveCount(25);
     });
 
     it('has more property returns correct value', function () {
@@ -72,7 +71,7 @@ describe('ActivityTimeline component', function () {
         EstimateActivity::factory()->count(25)->forEstimate($this->estimate)->create();
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         // With 25 activities and limit of 20, hasMore should be true
         expect($component->instance()->getHasMoreProperty())->toBeTrue();
@@ -89,7 +88,7 @@ describe('ActivityTimeline component', function () {
         EstimateActivity::factory()->count(30)->forEstimate($this->estimate)->create();
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         expect($component->get('showAll'))->toBeFalse();
         expect($component->get('limit'))->toBe(20);
@@ -109,7 +108,7 @@ describe('ActivityTimeline component', function () {
 
     it('activity icons are mapped correctly', function () {
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         $instance = $component->instance();
 
@@ -126,7 +125,7 @@ describe('ActivityTimeline component', function () {
 
     it('activity colors are mapped correctly', function () {
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         $instance = $component->instance();
 
@@ -143,26 +142,26 @@ describe('ActivityTimeline component', function () {
 
     it('shows empty state when no activities', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate])
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate])
             ->assertStatus(200);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        expect($component->viewData('activities'))->toHaveCount(0);
-        expect($component->viewData('totalCount'))->toBe(0);
+        expect($component->get('activities'))->toHaveCount(0);
+        expect($component->get('totalCount'))->toBe(0);
     });
 
     it('displays user name for activities with user', function () {
-        $user = User::factory()->internal()->create(['name' => 'John Doe']);
+        $user = User::factory()->internal()->withFullAccess()->create(['name' => 'John Doe']);
         EstimateActivity::factory()->forEstimate($this->estimate)->byUser($user)->create([
             'description' => 'Test activity',
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        $activity = $component->viewData('activities')->first();
+        $activity = $component->get('activities')->first();
         $userName = $component->instance()->getActivityUserName($activity);
 
         expect($userName)->toBe('John Doe');
@@ -174,9 +173,9 @@ describe('ActivityTimeline component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        $activity = $component->viewData('activities')->first();
+        $activity = $component->get('activities')->first();
         $userName = $component->instance()->getActivityUserName($activity);
 
         expect($userName)->toBe('Anonymous');
@@ -189,9 +188,9 @@ describe('ActivityTimeline component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        $activity = $component->viewData('activities')->first();
+        $activity = $component->get('activities')->first();
         $userName = $component->instance()->getActivityUserName($activity);
 
         expect($userName)->toBe('Jane Smith');
@@ -203,7 +202,7 @@ describe('ActivityTimeline component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         // Create a new activity after component mounted
         EstimateActivity::factory()->forEstimate($this->estimate)->create([
@@ -213,12 +212,12 @@ describe('ActivityTimeline component', function () {
         // Dispatch the event
         $component->dispatch('estimate-updated');
 
-        expect($component->viewData('activities'))->toHaveCount(2);
+        expect($component->get('activities'))->toHaveCount(2);
     });
 
     it('refreshes on options-updated event', function () {
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         EstimateActivity::factory()->forEstimate($this->estimate)->optionToggled()->create([
             'description' => 'Option toggled',
@@ -226,12 +225,12 @@ describe('ActivityTimeline component', function () {
 
         $component->dispatch('options-updated');
 
-        expect($component->viewData('activities'))->toHaveCount(1);
+        expect($component->get('activities'))->toHaveCount(1);
     });
 
     it('refreshes on photos-updated event', function () {
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         EstimateActivity::factory()->forEstimate($this->estimate)->photoAdded()->create([
             'description' => 'Photo added',
@@ -239,12 +238,12 @@ describe('ActivityTimeline component', function () {
 
         $component->dispatch('photos-updated');
 
-        expect($component->viewData('activities'))->toHaveCount(1);
+        expect($component->get('activities'))->toHaveCount(1);
     });
 
     it('refreshes on notes-updated event', function () {
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
         EstimateActivity::factory()->forEstimate($this->estimate)->noteAdded()->create([
             'description' => 'Note added',
@@ -252,7 +251,7 @@ describe('ActivityTimeline component', function () {
 
         $component->dispatch('notes-updated');
 
-        expect($component->viewData('activities'))->toHaveCount(1);
+        expect($component->get('activities'))->toHaveCount(1);
     });
 
     it('displays all activity types', function () {
@@ -266,17 +265,17 @@ describe('ActivityTimeline component', function () {
         EstimateActivity::factory()->forEstimate($this->estimate)->photoAdded()->create();
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        expect($component->viewData('activities'))->toHaveCount(8);
+        expect($component->get('activities'))->toHaveCount(8);
     });
 
     it('returns correct total count', function () {
         EstimateActivity::factory()->count(15)->forEstimate($this->estimate)->create();
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(ActivityTimeline::class, ['estimate' => $this->estimate]);
+            ->test('estimates.activity-timeline', ['estimate' => $this->estimate]);
 
-        expect($component->viewData('totalCount'))->toBe(15);
+        expect($component->get('totalCount'))->toBe(15);
     });
 });

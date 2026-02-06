@@ -74,16 +74,20 @@ class EstimateAreaSurfaceFactory extends Factory
 
     /**
      * Associate with a specific production rate.
+     * Labor costs are calculated using Company Settings effective rate.
      */
-    public function forRate(ProductionRate $rate): static
+    public function forRate(ProductionRate $rate, string $scopeType = 'interior'): static
     {
-        return $this->state(function (array $attributes) use ($rate) {
+        return $this->state(function (array $attributes) use ($rate, $scopeType) {
             $quantity = $attributes['quantity'];
             $coats = $attributes['coats'];
 
+            $settings = \App\Models\CompanySetting::getInstance();
+            $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+
             $laborHours = ($quantity / $rate->production_rate) * $coats;
-            $laborCost = $laborHours * $rate->hourly_labor_rate;
-            $materialTotal = $quantity * $rate->material_cost_per_unit * $coats;
+            $laborCost = $laborHours * $effectiveRate;
+            $materialTotal = $quantity * 0.15 * $coats; // Default material cost fallback
             $total = $laborCost + $materialTotal;
 
             return [
@@ -92,8 +96,8 @@ class EstimateAreaSurfaceFactory extends Factory
                 'surface_type' => $rate->unit_type,
                 'unit' => $rate->unit_type,
                 'production_rate_value' => $rate->production_rate,
-                'hourly_labor_rate' => $rate->hourly_labor_rate,
-                'material_cost_per_unit' => $rate->material_cost_per_unit,
+                'hourly_labor_rate' => $effectiveRate, // From Company Settings
+                'material_cost_per_unit' => 0.15, // Default fallback
                 'labor_hours' => $laborHours,
                 'labor_cost' => $laborCost,
                 'material_cost' => $materialTotal,

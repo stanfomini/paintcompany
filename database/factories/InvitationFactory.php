@@ -24,7 +24,7 @@ class InvitationFactory extends Factory
         return [
             'email' => fake()->unique()->safeEmail(),
             'token' => Str::random(64),
-            'invited_user_type' => fake()->randomElement(['internal', 'agent', 'customer']),
+            'invited_user_type' => fake()->randomElement(['internal', 'agent', 'customer', 'crew']),
             'inviter_id' => User::factory()->internal(),
             'expires_at' => now()->addDays(7),
             'accepted_at' => null,
@@ -58,6 +58,16 @@ class InvitationFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'invited_user_type' => 'customer',
+        ]);
+    }
+
+    /**
+     * Indicate that the invitation is for a crew member.
+     */
+    public function forCrew(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'invited_user_type' => 'crew',
         ]);
     }
 

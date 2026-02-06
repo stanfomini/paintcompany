@@ -11,8 +11,6 @@ describe('ProductionRate model', function () {
             'description' => 'Standard wall painting',
             'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
             'production_rate' => 300.00,
-            'hourly_labor_rate' => 45.00,
-            'material_cost_per_unit' => 0.15,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 2,
             'is_active' => true,
@@ -24,8 +22,6 @@ describe('ProductionRate model', function () {
         expect($rate->description)->toBe('Standard wall painting');
         expect($rate->unit_type)->toBe('sqft');
         expect((float) $rate->production_rate)->toBe(300.00);
-        expect((float) $rate->hourly_labor_rate)->toBe(45.00);
-        expect((float) $rate->material_cost_per_unit)->toBe(0.15);
         expect($rate->coat_multipliers)->toEqual(['1' => 1.0, '2' => 1.8, '3' => 2.5]);
         expect($rate->default_coats)->toBe(2);
         expect($rate->is_active)->toBeTrue();
@@ -70,67 +66,87 @@ describe('ProductionRate model', function () {
 });
 
 describe('ProductionRate calculatePrice method', function () {
-    it('calculates price correctly with default coats', function () {
+    beforeEach(function () {
+        // Set up deterministic company settings for calculations
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 30.00,
+            'payroll_burden_multiplier' => 1.40,
+        ]);
+    });
+
+    it('calculates labor cost correctly with default coats', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.20,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 2,
         ]);
 
-        // 500 sqft with default 2 coats
-        // Labor cost: (500 / 200) * 50 = 2.5 * 50 = 125
-        // Material cost: 500 * 0.20 = 100
-        // Coat multiplier: 1.8
-        // Total: (125 + 100) * 1.8 = 405
+        // 500 sqft with default 2 coats (interior scope)
+        // Labor hours: (500 / 200) * 1.8 coat multiplier = 4.5 hours
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 4.5 * 35 = 157.50
 
         $price = $rate->calculatePrice(500);
 
-        expect($price)->toBe(405.0);
+        expect($price)->toBe(157.5);
     });
 
-    it('calculates price correctly with specified coats', function () {
+    it('calculates labor cost correctly with specified coats', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 100.00,
-            'hourly_labor_rate' => 60.00,
-            'material_cost_per_unit' => 0.30,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 2,
         ]);
 
-        // 200 sqft with 3 coats
-        // Labor cost: (200 / 100) * 60 = 2 * 60 = 120
-        // Material cost: 200 * 0.30 = 60
-        // Coat multiplier: 2.5
-        // Total: (120 + 60) * 2.5 = 450
+        // 200 sqft with 3 coats (interior scope)
+        // Labor hours: (200 / 100) * 2.5 coat multiplier = 5 hours
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 5 * 35 = 175
 
         $price = $rate->calculatePrice(200, 3);
 
-        expect($price)->toBe(450.0);
+        expect($price)->toBe(175.0);
     });
 
     it('uses 1 coat when coats not specified and default_coats is 1', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 100.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.10,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8],
             'default_coats' => 1,
         ]);
 
-        // 100 sqft with 1 coat (from default_coats)
-        // Labor cost: (100 / 100) * 50 = 1 * 50 = 50
-        // Material cost: 100 * 0.10 = 10
-        // Coat multiplier: 1.0
-        // Total: (50 + 10) * 1.0 = 60
+        // 100 sqft with 1 coat (interior scope)
+        // Labor hours: (100 / 100) * 1.0 = 1 hour
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 1 * 35 = 35
 
         $price = $rate->calculatePrice(100);
 
-        expect($price)->toBe(60.0);
+        expect($price)->toBe(35.0);
+    });
+
+    it('uses exterior rates when scope type is exterior', function () {
+        $category = ProductionRateCategory::factory()->create();
+        $rate = ProductionRate::factory()->forCategory($category)->create([
+            'production_rate' => 100.00,
+            'coat_multipliers' => ['1' => 1.0],
+            'default_coats' => 1,
+        ]);
+
+        // 100 sqft with 1 coat (exterior scope)
+        // Labor hours: (100 / 100) * 1.0 = 1 hour
+        // Effective rate: $30 * 1.40 = $42/hr
+        // Labor cost: 1 * 42 = 42
+
+        $price = $rate->calculatePrice(100, 1, 'exterior');
+
+        expect($price)->toBe(42.0);
     });
 });
 

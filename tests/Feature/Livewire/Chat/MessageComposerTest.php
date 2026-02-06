@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Chat\MessageComposer;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\User;
@@ -10,29 +9,29 @@ use Livewire\Livewire;
 
 describe('MessageComposer component', function () {
     it('renders the message composer component', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->assertStatus(200)
             ->assertSee('Type a message');
     });
 
     it('can send a text message', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', 'Hello, this is a test message!')
             ->call('send')
             ->assertDispatched('message-sent')
@@ -42,45 +41,45 @@ describe('MessageComposer component', function () {
     });
 
     it('validates message content is required', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', '')
             ->call('send')
             ->assertHasErrors(['content' => 'required']);
     });
 
     it('validates message content max length', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', str_repeat('a', 10001))
             ->call('send')
             ->assertHasErrors(['content' => 'max']);
     });
 
     it('internal users can send internal messages', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', 'Internal note for staff')
             ->set('isInternal', true)
             ->call('send')
@@ -92,14 +91,14 @@ describe('MessageComposer component', function () {
 
     it('non-internal users cannot send internal messages', function () {
         $customerUser = User::factory()->customer()->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($customerUser, $internalUser)
             ->create();
 
         Livewire::actingAs($customerUser)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', 'Trying to send internal')
             ->set('isInternal', true)
             ->call('send')
@@ -111,7 +110,7 @@ describe('MessageComposer component', function () {
     });
 
     it('shows internal toggle only for internal users', function () {
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $customerUser = User::factory()->customer()->create();
 
         $thread1 = ChatThread::factory()
@@ -119,23 +118,23 @@ describe('MessageComposer component', function () {
             ->create();
 
         $thread2 = ChatThread::factory()
-            ->betweenUsers($customerUser, User::factory()->internal()->create())
+            ->betweenUsers($customerUser, User::factory()->internal()->withFullAccess()->create())
             ->create();
 
         // Internal user sees the toggle
         Livewire::actingAs($internalUser)
-            ->test(MessageComposer::class, ['thread' => $thread1])
+            ->test('chat.message-composer', ['thread' => $thread1])
             ->assertSee('Send as internal note');
 
         // Customer does not see the toggle
         Livewire::actingAs($customerUser)
-            ->test(MessageComposer::class, ['thread' => $thread2])
+            ->test('chat.message-composer', ['thread' => $thread2])
             ->assertDontSee('Send as internal note');
     });
 
     it('can send a reply to a message', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -147,7 +146,7 @@ describe('MessageComposer component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->dispatch('set-reply-to', messageId: $parentMessage->id)
             ->assertSet('replyToMessageId', $parentMessage->id)
             ->set('content', 'This is my reply')
@@ -160,8 +159,8 @@ describe('MessageComposer component', function () {
     });
 
     it('can clear reply', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -173,7 +172,7 @@ describe('MessageComposer component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->dispatch('set-reply-to', messageId: $parentMessage->id)
             ->call('clearReply')
             ->assertSet('replyToMessageId', null)
@@ -183,8 +182,8 @@ describe('MessageComposer component', function () {
     it('can upload and send attachments', function () {
         Storage::fake('local');
 
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -193,7 +192,7 @@ describe('MessageComposer component', function () {
         $file = UploadedFile::fake()->image('photo.jpg');
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', 'Check out this photo')
             ->set('attachments', [$file])
             ->call('send')
@@ -205,8 +204,8 @@ describe('MessageComposer component', function () {
     });
 
     it('can remove attachments before sending', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -216,22 +215,22 @@ describe('MessageComposer component', function () {
         $file2 = UploadedFile::fake()->image('photo2.jpg');
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('attachments', [$file1, $file2])
             ->call('removeAttachment', 0)
             ->assertCount('attachments', 1);
     });
 
     it('resets form after sending', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->set('content', 'Test message')
             ->set('isInternal', true)
             ->call('send')
@@ -242,8 +241,8 @@ describe('MessageComposer component', function () {
     });
 
     it('shows reply indicator when replying', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create(['name' => 'John Smith']);
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create(['name' => 'John Smith']);
 
         $thread = ChatThread::factory()
             ->betweenUsers($user, $otherUser)
@@ -256,7 +255,7 @@ describe('MessageComposer component', function () {
             ->create();
 
         Livewire::actingAs($user)
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('chat.message-composer', ['thread' => $thread])
             ->dispatch('set-reply-to', messageId: $parentMessage->id)
             ->assertSee('Replying to John Smith')
             ->assertSee('Original message content');

@@ -3,17 +3,19 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable, TwoFactorAuthenticatable;
+    use HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * The attributes that are mass assignable.
@@ -61,6 +63,7 @@ class User extends Authenticatable
                 'internal' => $user->internalUser()->create(),
                 'agent' => $user->agentProfile()->create(),
                 'customer' => $user->customerProfile()->create(),
+                'crew' => $user->crewProfile()->create(),
                 default => null,
             };
         });
@@ -79,6 +82,21 @@ class User extends Authenticatable
     public function customerProfile(): HasOne
     {
         return $this->hasOne(CustomerProfile::class);
+    }
+
+    public function crewProfile(): HasOne
+    {
+        return $this->hasOne(CrewProfile::class);
+    }
+
+    /**
+     * Get the jobs assigned to this crew member.
+     */
+    public function crewJobs(): BelongsToMany
+    {
+        return $this->belongsToMany(Job::class, 'job_crew', 'crew_user_id', 'job_id')
+            ->withPivot('status', 'dispatched_at', 'responded_at', 'notes')
+            ->withTimestamps();
     }
 
     /**
@@ -112,9 +130,63 @@ class User extends Authenticatable
         return $this->type === 'customer';
     }
 
+    public function isCrew(): bool
+    {
+        return $this->type === 'crew';
+    }
+
     public function isActive(): bool
     {
         return $this->is_active;
+    }
+
+    /**
+     * Determine if user can access the internal dashboard.
+     * Requires internal type + appropriate role/permission.
+     */
+    public function canAccessInternalDashboard(): bool
+    {
+        return $this->isInternal() && $this->hasAnyRole(['owner', 'admin', 'manager', 'estimator', 'crew_lead']);
+    }
+
+    /**
+     * Determine if user can view roadmap.
+     */
+    public function canViewRoadmap(): bool
+    {
+        return $this->isInternal() && $this->hasPermissionTo('view roadmap');
+    }
+
+    /**
+     * Determine if user can edit roadmap.
+     */
+    public function canEditRoadmap(): bool
+    {
+        return $this->isInternal() && $this->hasPermissionTo('edit roadmap');
+    }
+
+    /**
+     * Determine if user can view KPIs.
+     */
+    public function canViewKpis(): bool
+    {
+        return $this->isInternal() && $this->hasPermissionTo('view kpis');
+    }
+
+    /**
+     * Determine if user can view sensitive financial data.
+     */
+    public function canViewFinancials(): bool
+    {
+        return $this->isInternal() && $this->hasPermissionTo('view financials');
+    }
+
+    /**
+     * Determine if user is the business owner.
+     */
+    public function isOwner(): bool
+    {
+        return $this->isInternal() && $this->hasRole('owner');
     }
 
     /**

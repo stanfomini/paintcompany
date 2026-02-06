@@ -285,8 +285,6 @@ class SpreadsheetProductionRateSeeder extends Seeder
                     'unit_type' => $unitType,
                     'production_rate' => $rate,
                     'rate_type' => $rateType,
-                    'hourly_labor_rate' => 0, // PBP uses CompanySetting rates
-                    'material_cost_per_unit' => 0, // PBP uses PaintProduct prices
                     'coat_multipliers' => self::COAT_MULTIPLIERS,
                     'default_coats' => 2,
                     'is_active' => true,

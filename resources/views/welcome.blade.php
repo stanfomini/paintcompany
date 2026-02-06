@@ -52,6 +52,14 @@
                         Customer Portal
                     </flux:button>
                 </a>
+
+                {{-- Crew Portal --}}
+                <a href="{{ route('crew.login') }}" class="block">
+                    <flux:button variant="ghost" class="w-full justify-center border border-zinc-200 dark:border-zinc-700">
+                        <flux:icon name="paint-brush" class="mr-2" />
+                        Crew Portal
+                    </flux:button>
+                </a>
             </div>
 
             <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">

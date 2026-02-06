@@ -1,0 +1,675 @@
+<?php
+
+use App\Models\ChatThread;
+use App\Models\Customer;
+use App\Models\Job;
+use App\Models\JobColor;
+use App\Services\ChatService;
+use App\Services\JobService;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
+use Livewire\Attributes\Validate;
+use Livewire\Component;
+
+new class extends Component {
+    public Job $job;
+
+    public bool $showColorModal = false;
+
+    public string $newColorName = '';
+
+    public string $newColorBrand = '';
+
+    public string $newColorCode = '';
+
+    public string $newColorHex = '#ffffff';
+
+    public string $proposedDate = '';
+
+    public function mount(Job $job): void
+    {
+        $this->ensureCustomerOwnsJob($job);
+        $this->job = $job->load(['deal.customer', 'deal.chatThread', 'colors.selectedBy', 'estimate']);
+
+        if ($job->scheduled_date) {
+            $this->proposedDate = $job->scheduled_date->format('Y-m-d');
+        }
+
+        $this->ensureChatParticipant();
+
+        // Reload chatThread since ensureChatParticipant may have created it
+        $this->job->load('deal.chatThread');
+    }
+
+    public function boot(): void
+    {
+        $user = Auth::guard('customer')->user();
+        if (! $user || ! $user->isCustomer()) {
+            abort(403);
+        }
+    }
+
+    /**
+     * Authorize: customer can only see their own jobs.
+     */
+    private function ensureCustomerOwnsJob(Job $job): void
+    {
+        $user = Auth::guard('customer')->user();
+        $customer = Customer::where('user_id', $user->id)->first();
+
+        if (! $customer || $job->deal?->customer_id !== $customer->id) {
+            abort(404);
+        }
+    }
+
+    /**
+     * Ensure the customer is a participant in the deal's chat thread.
+     */
+    private function ensureChatParticipant(): void
+    {
+        $user = Auth::guard('customer')->user();
+        $deal = $this->job->deal;
+
+        if ($deal) {
+            $thread = $deal->getOrCreateChatThread();
+            if (! $thread->hasParticipant($user)) {
+                $thread->addParticipant($user);
+            }
+        }
+    }
+
+    #[Computed]
+    public function chatThread(): ?ChatThread
+    {
+        return $this->job->deal?->chatThread;
+    }
+
+    #[Computed]
+    public function chatMessages()
+    {
+        $thread = $this->chatThread;
+        if (! $thread) {
+            return collect();
+        }
+
+        $user = Auth::guard('customer')->user();
+
+        return app(ChatService::class)->getMessagesForThread($thread, $user, 30);
+    }
+
+    /**
+     * Confirm the scheduled date from the customer side.
+     */
+    public function confirmDate(): void
+    {
+        if (! $this->job->scheduled_date) {
+            session()->flash('error', 'No date has been set yet.');
+
+            return;
+        }
+
+        if ($this->job->customer_date_confirmed) {
+            session()->flash('error', 'Date already confirmed.');
+
+            return;
+        }
+
+        app(JobService::class)->confirmCustomerDate($this->job);
+        $this->job->refresh();
+        session()->flash('success', 'Date confirmed! Thank you.');
+    }
+
+    /**
+     * Propose a preferred start date from the customer.
+     */
+    public function proposeDate(): void
+    {
+        $this->validate([
+            'proposedDate' => 'required|date|after_or_equal:today',
+        ]);
+
+        $date = Carbon::parse($this->proposedDate);
+
+        app(JobService::class)->proposeCustomerDate($this->job, $date);
+        $this->job->refresh();
+        $this->job->load('deal.chatThread');
+
+        session()->flash('success', 'Your preferred date has been proposed. We\'ll review and confirm shortly.');
+    }
+
+    /**
+     * Add a customer-selected color.
+     */
+    public function addColor(): void
+    {
+        $this->validate([
+            'newColorName' => 'required|string|max:255',
+            'newColorBrand' => 'nullable|string|max:255',
+            'newColorCode' => 'nullable|string|max:50',
+            'newColorHex' => 'nullable|string|max:7',
+        ]);
+
+        if ($this->job->allowed_colors > 0 && $this->job->colors()->count() >= $this->job->allowed_colors) {
+            session()->flash('error', 'Maximum number of colors reached.');
+
+            return;
+        }
+
+        $user = Auth::guard('customer')->user();
+
+        $this->job->colors()->create([
+            'name' => $this->newColorName,
+            'brand' => $this->newColorBrand ?: null,
+            'code' => $this->newColorCode ?: null,
+            'hex_value' => $this->newColorHex !== '#ffffff' ? $this->newColorHex : null,
+            'selected_by' => $user->id,
+            'sort_order' => $this->job->colors()->count(),
+        ]);
+
+        $this->reset('newColorName', 'newColorBrand', 'newColorCode', 'newColorHex');
+        $this->showColorModal = false;
+        $this->job->refresh();
+    }
+
+    /**
+     * Confirm colors from the customer side.
+     */
+    public function confirmColors(): void
+    {
+        if ($this->job->colors()->count() === 0) {
+            session()->flash('error', 'Add at least one color first.');
+
+            return;
+        }
+
+        if ($this->job->customer_colors_confirmed) {
+            session()->flash('error', 'Colors already confirmed.');
+
+            return;
+        }
+
+        app(JobService::class)->confirmCustomerColors($this->job);
+        $this->job->refresh();
+        session()->flash('success', 'Colors confirmed! Thank you.');
+    }
+
+    #[On('message-sent')]
+    public function onMessageSent(): void
+    {
+        $thread = $this->chatThread;
+        if ($thread) {
+            $user = Auth::guard('customer')->user();
+            app(ChatService::class)->markThreadAsRead($thread, $user);
+        }
+    }
+
+    #[Computed]
+    public function isSchedulingStage(): bool
+    {
+        return $this->job->stage === 'scheduling_colors';
+    }
+
+    #[Computed]
+    public function canAddColors(): bool
+    {
+        return $this->isSchedulingStage
+            && ! $this->job->customer_colors_confirmed
+            && ($this->job->allowed_colors === 0 || $this->job->colors()->count() < $this->job->allowed_colors);
+    }
+}; ?>
+
+<div>
+    <div class="max-w-4xl mx-auto">
+        {{-- Header --}}
+        <div class="flex items-center gap-4 mb-6">
+            <flux:button variant="ghost" :href="route('customer.jobs.index')" icon="arrow-left" wire:navigate>
+                Back
+            </flux:button>
+            <div>
+                <flux:heading size="xl">{{ $job->title }}</flux:heading>
+                <flux:text class="text-zinc-500">{{ $job->job_number }}</flux:text>
+            </div>
+        </div>
+
+        @if (session('success'))
+            <flux:callout variant="success" class="mb-4">
+                {{ session('success') }}
+            </flux:callout>
+        @endif
+
+        @if (session('error'))
+            <flux:callout variant="danger" class="mb-4">
+                {{ session('error') }}
+            </flux:callout>
+        @endif
+
+        {{-- Progress Timeline --}}
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+            <flux:heading size="sm" class="mb-6">Job Progress</flux:heading>
+            <div class="flex items-center justify-between">
+                @foreach (App\Models\Job::STAGES as $stageKey => $stageLabel)
+                    @php
+                        $stageNum = App\Models\Job::STAGE_ORDER[$stageKey];
+                        $currentNum = $job->stage_number;
+                        $isActive = $stageKey === $job->stage;
+                        $isCompleted = $stageNum < $currentNum;
+                        $isFuture = $stageNum > $currentNum;
+                    @endphp
+                    <div class="flex-1 flex flex-col items-center relative" wire:key="progress-{{ $stageKey }}">
+                        @if (! $loop->first)
+                            <div class="absolute top-5 -left-1/2 w-full h-0.5 {{ $isCompleted || $isActive ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600' }}"></div>
+                        @endif
+
+                        <div class="relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all
+                            {{ $isCompleted ? 'bg-green-500 border-green-500 text-white' : '' }}
+                            {{ $isActive ? 'bg-blue-500 border-blue-500 text-white ring-4 ring-blue-100 dark:ring-blue-900' : '' }}
+                            {{ $isFuture ? 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400' : '' }}
+                        ">
+                            @if ($isCompleted)
+                                <flux:icon name="check" class="w-5 h-5" />
+                            @else
+                                <span class="text-sm font-bold">{{ $stageNum }}</span>
+                            @endif
+                        </div>
+
+                        <flux:text class="mt-2 text-xs text-center leading-tight {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
+                            {{ $stageLabel }}
+                        </flux:text>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
+        {{-- Stage Content --}}
+        @if ($job->stage === 'estimate_accepted')
+            {{-- Stage 1: Estimate Accepted --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+                <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-green-500 mb-4" />
+                <flux:heading size="lg">Your Estimate Has Been Accepted</flux:heading>
+                <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
+                    Great news! Your painting project is confirmed. Our team will begin scheduling and color selection soon.
+                </flux:text>
+                @if ($job->estimate)
+                    <div class="mt-4">
+                        <flux:badge size="sm" color="green">
+                            Estimate: {{ $job->estimate->estimate_number }}
+                        </flux:badge>
+                    </div>
+                @endif
+            </div>
+
+        @elseif ($job->stage === 'scheduling_colors')
+            {{-- Stage 2: Scheduling & Colors (Interactive) --}}
+            <div class="space-y-6">
+                {{-- Date Confirmation --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                    <flux:heading size="sm" class="mb-4">Schedule Your Start Date</flux:heading>
+
+                    @if ($job->scheduled_date)
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <flux:heading size="lg">{{ $job->scheduled_date->format('l, F j, Y') }}</flux:heading>
+                                <flux:text class="text-zinc-500 mt-1">
+                                    @if ($job->company_date_confirmed)
+                                        Our team has confirmed this date.
+                                    @else
+                                        Our team is reviewing this date.
+                                    @endif
+                                </flux:text>
+                            </div>
+                            <div>
+                                @if ($job->customer_date_confirmed)
+                                    <flux:badge size="lg" color="green">
+                                        <flux:icon name="check" class="w-4 h-4 mr-1" /> Date Confirmed
+                                    </flux:badge>
+                                @else
+                                    <flux:button wire:click="confirmDate" variant="primary" icon="check">
+                                        Confirm This Date
+                                    </flux:button>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="mt-4 grid grid-cols-2 gap-4">
+                            <div class="flex items-center gap-2">
+                                @if ($job->company_date_confirmed)
+                                    <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
+                                @else
+                                    <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
+                                @endif
+                                <flux:text class="text-sm">Company confirmation</flux:text>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                @if ($job->customer_date_confirmed)
+                                    <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
+                                @else
+                                    <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
+                                @endif
+                                <flux:text class="text-sm">Your confirmation</flux:text>
+                            </div>
+                        </div>
+
+                        {{-- Propose a different date --}}
+                        @if (! $job->customer_date_confirmed)
+                            <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700" x-data="{ showDatePicker: false }">
+                                <flux:button variant="ghost" size="sm" icon="calendar" x-on:click="showDatePicker = !showDatePicker">
+                                    Propose a Different Date
+                                </flux:button>
+                                <div x-show="showDatePicker" x-cloak class="mt-3">
+                                    <form wire:submit="proposeDate" class="flex items-end gap-3">
+                                        <flux:field class="flex-1">
+                                            <flux:label>Your Preferred Date</flux:label>
+                                            <flux:input type="date" wire:model="proposedDate" :min="now()->format('Y-m-d')" />
+                                            <flux:error name="proposedDate" />
+                                        </flux:field>
+                                        <flux:button type="submit" variant="primary" size="sm">
+                                            Propose This Date
+                                        </flux:button>
+                                    </form>
+                                </div>
+                            </div>
+                        @endif
+                    @else
+                        {{-- No date set yet - let customer propose one --}}
+                        <div class="py-4">
+                            <flux:text class="text-zinc-500 mb-4">
+                                No date has been set yet. You can propose a preferred start date below, or wait for our team to schedule one.
+                            </flux:text>
+                            <form wire:submit="proposeDate" class="flex items-end gap-3">
+                                <flux:field class="flex-1">
+                                    <flux:label>Preferred Start Date</flux:label>
+                                    <flux:input type="date" wire:model="proposedDate" :min="now()->format('Y-m-d')" />
+                                    <flux:error name="proposedDate" />
+                                </flux:field>
+                                <flux:button type="submit" variant="primary" icon="calendar">
+                                    Propose Date
+                                </flux:button>
+                            </form>
+                        </div>
+                    @endif
+                </div>
+
+                {{-- Color Selection --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <flux:heading size="sm">Select Your Colors</flux:heading>
+                            @if ($job->allowed_colors > 0)
+                                <flux:text class="text-sm text-zinc-500">
+                                    You can choose up to {{ $job->allowed_colors }} {{ Str::plural('color', $job->allowed_colors) }}.
+                                    {{ $job->colors->count() }} selected.
+                                </flux:text>
+                            @endif
+                        </div>
+                        @if ($this->canAddColors)
+                            <flux:button wire:click="$set('showColorModal', true)" size="sm" icon="plus">
+                                Add Color
+                            </flux:button>
+                        @endif
+                    </div>
+
+                    @if ($job->colors->count() > 0)
+                        <div class="space-y-3">
+                            @foreach ($job->colors as $color)
+                                <div class="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="cust-color-{{ $color->id }}">
+                                    @if ($color->hex_value)
+                                        <div class="w-10 h-10 rounded-lg border border-zinc-300 dark:border-zinc-600 shrink-0" style="background-color: {{ $color->hex_value }}"></div>
+                                    @endif
+                                    <div class="flex-1">
+                                        <flux:text class="font-medium">{{ $color->name }}</flux:text>
+                                        @if ($color->brand || $color->code)
+                                            <flux:text class="text-sm text-zinc-500">
+                                                {{ collect([$color->brand, $color->code])->filter()->join(' - ') }}
+                                            </flux:text>
+                                        @endif
+                                    </div>
+                                    @if ($color->selectedBy)
+                                        <flux:text class="text-xs text-zinc-400">
+                                            Selected by {{ $color->selectedBy->name }}
+                                        </flux:text>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="text-center py-6">
+                            <flux:icon name="swatch" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                            <flux:text class="text-zinc-500">No colors selected yet. Add your preferred paint colors.</flux:text>
+                        </div>
+                    @endif
+
+                    <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                        <div class="flex items-center justify-between">
+                            <div class="grid grid-cols-2 gap-4 flex-1">
+                                <div class="flex items-center gap-2">
+                                    @if ($job->company_colors_confirmed)
+                                        <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
+                                    @else
+                                        <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
+                                    @endif
+                                    <flux:text class="text-sm">Company approved</flux:text>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    @if ($job->customer_colors_confirmed)
+                                        <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
+                                    @else
+                                        <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
+                                    @endif
+                                    <flux:text class="text-sm">Your approval</flux:text>
+                                </div>
+                            </div>
+
+                            @if (! $job->customer_colors_confirmed && $job->colors->count() > 0)
+                                <flux:button wire:click="confirmColors" variant="primary" size="sm" icon="check">
+                                    Confirm Colors
+                                </flux:button>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        @elseif ($job->stage === 'job_prep')
+            {{-- Stage 3: Job Prep --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+                <flux:icon name="wrench-screwdriver" class="w-16 h-16 mx-auto text-yellow-500 mb-4" />
+                <flux:heading size="lg">Preparing Your Project</flux:heading>
+                <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
+                    Our team is gathering materials and preparing for your painting project. We'll let you know when we're ready to begin.
+                </flux:text>
+                @if ($job->scheduled_date)
+                    <div class="mt-4">
+                        <flux:badge size="sm" color="blue">
+                            Scheduled: {{ $job->scheduled_date->format('M j, Y') }}
+                        </flux:badge>
+                    </div>
+                @endif
+            </div>
+
+        @elseif ($job->stage === 'in_progress')
+            {{-- Stage 4: In Progress --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+                <flux:icon name="paint-brush" class="w-16 h-16 mx-auto text-orange-500 mb-4" />
+                <flux:heading size="lg">Painting In Progress</flux:heading>
+                <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
+                    Your painting project is underway! Our crew is on site working on your project.
+                </flux:text>
+                @if ($job->actual_start_date)
+                    <div class="mt-4">
+                        <flux:badge size="sm" color="orange">
+                            Started: {{ $job->actual_start_date->format('M j, Y') }}
+                        </flux:badge>
+                    </div>
+                @endif
+            </div>
+
+        @elseif ($job->stage === 'completed')
+            {{-- Stage 5: Completed --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+                <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-green-500 mb-4" />
+                <flux:heading size="lg">Project Completed!</flux:heading>
+                <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
+                    Your painting project is complete. Thank you for choosing us!
+                </flux:text>
+                @if ($job->actual_end_date)
+                    <div class="mt-4">
+                        <flux:badge size="sm" color="green">
+                            Completed: {{ $job->actual_end_date->format('M j, Y') }}
+                        </flux:badge>
+                    </div>
+                @endif
+                @if ($job->estimate)
+                    <div class="mt-4">
+                        <flux:button :href="route('customer.estimates.show', $job->estimate)" variant="ghost" icon="document-text" wire:navigate>
+                            View Estimate
+                        </flux:button>
+                    </div>
+                @endif
+            </div>
+        @endif
+
+        {{-- Color Summary (always visible when colors exist, except on scheduling stage) --}}
+        @if ($job->stage !== 'scheduling_colors' && $job->colors->count() > 0)
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mt-6">
+                <flux:heading size="sm" class="mb-4">Selected Colors</flux:heading>
+                <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                    @foreach ($job->colors as $color)
+                        <div class="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="summary-color-{{ $color->id }}">
+                            @if ($color->hex_value)
+                                <div class="w-8 h-8 rounded border border-zinc-300" style="background-color: {{ $color->hex_value }}"></div>
+                            @endif
+                            <div>
+                                <flux:text class="font-medium text-sm">{{ $color->name }}</flux:text>
+                                @if ($color->brand)
+                                    <flux:text class="text-xs text-zinc-500">{{ $color->brand }}</flux:text>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
+        {{-- Project Conversation (visible on all stages) --}}
+        @if ($this->chatThread)
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" wire:poll.10s>
+                {{-- Chat Header --}}
+                <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
+                        <flux:heading size="sm">Project Conversation</flux:heading>
+                    </div>
+                    <flux:text class="text-xs text-zinc-400 mt-1">Discuss scheduling, colors, or any questions about your project.</flux:text>
+                </div>
+
+                {{-- Messages --}}
+                <div class="max-h-80 overflow-y-auto p-4 space-y-3 bg-white dark:bg-zinc-900" x-data x-init="$el.scrollTop = $el.scrollHeight">
+                    @forelse ($this->chatMessages->reverse() as $message)
+                        @php
+                            $isOwnMessage = $message->user_id === auth('customer')->id();
+                            $isSystem = $message->type === 'system';
+                        @endphp
+
+                        <div wire:key="msg-{{ $message->id }}" class="{{ $isOwnMessage ? 'flex justify-end' : 'flex justify-start' }}">
+                            @if ($isSystem)
+                                <div class="w-full text-center py-1">
+                                    <flux:text class="text-xs text-zinc-400 italic">{{ $message->content }}</flux:text>
+                                </div>
+                            @else
+                                <div class="flex items-start gap-2 max-w-[80%] {{ $isOwnMessage ? 'flex-row-reverse' : '' }}">
+                                    @if ($message->user)
+                                        <flux:avatar size="xs" :initials="$message->user->initials()" class="bg-zinc-200 dark:bg-zinc-700 shrink-0" />
+                                    @else
+                                        <div class="w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                                            <flux:icon name="user" class="w-3 h-3 text-zinc-500" />
+                                        </div>
+                                    @endif
+
+                                    <div class="{{ $isOwnMessage ? 'text-right' : 'text-left' }}">
+                                        <div class="flex items-center gap-1 mb-0.5 {{ $isOwnMessage ? 'flex-row-reverse' : '' }}">
+                                            <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? 'Unknown' }}</flux:text>
+                                            <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
+                                        </div>
+                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                            @if ($message->isAudio())
+                                                <div class="flex items-center gap-2">
+                                                    <flux:icon name="microphone" class="w-4 h-4 {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-400' }}" />
+                                                    <audio controls preload="metadata" class="h-8 max-w-[200px]">
+                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}">
+                                                    </audio>
+                                                </div>
+                                                @if (! empty($message->metadata['transcription']))
+                                                    <flux:text class="text-xs italic mt-1 {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-500' }}">
+                                                        "{{ $message->metadata['transcription'] }}"
+                                                    </flux:text>
+                                                @endif
+                                            @else
+                                                <flux:text class="whitespace-pre-wrap break-words">{{ $message->content }}</flux:text>
+                                            @endif
+                                        </div>
+
+                                        @if ($message->attachments->isNotEmpty())
+                                            <div class="mt-1 space-y-1">
+                                                @foreach ($message->attachments as $attachment)
+                                                    <div class="flex items-center gap-1 text-xs {{ $isOwnMessage ? 'justify-end' : 'justify-start' }}">
+                                                        <flux:icon name="paper-clip" class="w-3 h-3 text-zinc-400" />
+                                                        <flux:text class="text-zinc-500">{{ $attachment->original_filename }}</flux:text>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <div class="text-center py-6">
+                            <flux:icon name="chat-bubble-left" class="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
+                            <flux:text class="text-sm text-zinc-500">No messages yet. Send a message to discuss your project.</flux:text>
+                        </div>
+                    @endforelse
+                </div>
+
+                {{-- Message Composer --}}
+                <div class="border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
+                    <livewire:customer.chat.message-composer :thread="$this->chatThread" :key="'job-composer-'.$this->chatThread->id" />
+                </div>
+            </div>
+        @endif
+    </div>
+
+    {{-- Add Color Modal --}}
+    <flux:modal wire:model="showColorModal" class="max-w-md">
+        <div class="space-y-4">
+            <flux:heading size="lg">Choose a Color</flux:heading>
+
+            <flux:field>
+                <flux:label>Color Name</flux:label>
+                <flux:input wire:model="newColorName" placeholder="e.g. Simply White" />
+                <flux:error name="newColorName" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>Brand (optional)</flux:label>
+                <flux:input wire:model="newColorBrand" placeholder="e.g. Benjamin Moore" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>Color Code (optional)</flux:label>
+                <flux:input wire:model="newColorCode" placeholder="e.g. OC-17" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>Preview Color (optional)</flux:label>
+                <flux:input type="color" wire:model="newColorHex" />
+            </flux:field>
+
+            <div class="flex justify-end gap-2">
+                <flux:button wire:click="$set('showColorModal', false)" variant="ghost">Cancel</flux:button>
+                <flux:button wire:click="addColor" variant="primary">Add Color</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+</div>

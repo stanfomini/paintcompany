@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Deals\Pipeline;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
@@ -8,19 +7,19 @@ use Livewire\Livewire;
 
 describe('Deal Pipeline component', function () {
     it('renders the deal pipeline component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertStatus(200)
             ->assertSee('Deal Pipeline');
     });
 
     it('allows internal users to view the pipeline', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertStatus(200);
     });
 
@@ -28,15 +27,15 @@ describe('Deal Pipeline component', function () {
         $user = User::factory()->agent()->create();
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertStatus(403);
     });
 
     it('displays all deal stages', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('Lead')
             ->assertSee('Quoted')
             ->assertSee('Scheduled')
@@ -47,7 +46,7 @@ describe('Deal Pipeline component', function () {
     });
 
     it('displays deals in correct stages', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create();
 
         $leadDeal = Deal::factory()->forCustomer($customer)->lead()->create([
@@ -60,13 +59,13 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('Lead Deal Test')
             ->assertSee('Quoted Deal Test');
     });
 
-    it('can update deal stage via sort', function () {
-        $user = User::factory()->internal()->create();
+    it('can move deal to a new stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create();
 
         $deal = Deal::factory()->forCustomer($customer)->lead()->create([
@@ -77,15 +76,16 @@ describe('Deal Pipeline component', function () {
         expect($deal->stage)->toBe('lead');
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
-            ->call('updateOrder', [$deal->id], 'lead', 'quoted');
+            ->test('deals.pipeline')
+            ->call('moveToStage', $deal->id, 'quoted', 0);
 
         $deal->refresh();
         expect($deal->stage)->toBe('quoted');
+        expect($deal->sort_order)->toBe(0);
     });
 
-    it('updates sort order when moving deals', function () {
-        $user = User::factory()->internal()->create();
+    it('updates sort order when reordering deals within a stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create();
 
         $deal1 = Deal::factory()->forCustomer($customer)->quoted()->create([
@@ -100,8 +100,8 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
-            ->call('updateOrder', [$deal2->id, $deal1->id], 'quoted', 'quoted');
+            ->test('deals.pipeline')
+            ->call('moveToStage', $deal2->id, 'quoted', 0);
 
         $deal1->refresh();
         $deal2->refresh();
@@ -110,10 +110,55 @@ describe('Deal Pipeline component', function () {
         expect($deal1->sort_order)->toBe(1);
     });
 
+    it('reorders existing deals when moving a deal across stages', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+
+        $existingDeal = Deal::factory()->forCustomer($customer)->quoted()->create([
+            'title' => 'Existing Quoted Deal',
+            'created_by' => $user->id,
+            'sort_order' => 0,
+        ]);
+
+        $movingDeal = Deal::factory()->forCustomer($customer)->lead()->create([
+            'title' => 'Moving Deal',
+            'created_by' => $user->id,
+            'sort_order' => 0,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('deals.pipeline')
+            ->call('moveToStage', $movingDeal->id, 'quoted', 0);
+
+        $movingDeal->refresh();
+        $existingDeal->refresh();
+
+        expect($movingDeal->stage)->toBe('quoted');
+        expect($movingDeal->sort_order)->toBe(0);
+        expect($existingDeal->sort_order)->toBe(1);
+    });
+
+    it('ignores move to an invalid stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+
+        $deal = Deal::factory()->forCustomer($customer)->lead()->create([
+            'title' => 'Stay Put Deal',
+            'created_by' => $user->id,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('deals.pipeline')
+            ->call('moveToStage', $deal->id, 'invalid_stage', 0);
+
+        $deal->refresh();
+        expect($deal->stage)->toBe('lead');
+    });
+
     it('can filter by assigned user', function () {
-        $user = User::factory()->internal()->create();
-        $assignee1 = User::factory()->internal()->create(['name' => 'John Assigned']);
-        $assignee2 = User::factory()->internal()->create(['name' => 'Jane Assigned']);
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee1 = User::factory()->internal()->withFullAccess()->create(['name' => 'John Assigned']);
+        $assignee2 = User::factory()->internal()->withFullAccess()->create(['name' => 'Jane Assigned']);
         $customer = Customer::factory()->createdBy($user)->create();
 
         $deal1 = Deal::factory()->forCustomer($customer)->assignedTo($assignee1)->create([
@@ -126,14 +171,14 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('assignedToFilter', $assignee1->id)
             ->assertSee('Johns Deal')
             ->assertDontSee('Janes Deal');
     });
 
     it('can filter by customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Alice',
             'last_name' => 'Customer',
@@ -153,14 +198,14 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('customerFilter', $customer1->id)
             ->assertSee('Alices Project')
             ->assertDontSee('Bobs Project');
     });
 
     it('can search deals by title', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create();
 
         $deal1 = Deal::factory()->forCustomer($customer)->create([
@@ -173,14 +218,14 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('search', 'Kitchen')
             ->assertSee('Kitchen Renovation')
             ->assertDontSee('Bathroom Remodel');
     });
 
     it('can search deals by customer name', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Alice',
             'last_name' => 'Wonderland',
@@ -200,14 +245,14 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('search', 'Alice')
             ->assertSee('Project Alpha')
             ->assertDontSee('Project Beta');
     });
 
     it('displays deal estimated value', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create();
 
         $deal = Deal::factory()->forCustomer($customer)->create([
@@ -217,12 +262,12 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('$15,000');
     });
 
     it('displays customer name on deal cards', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Test',
             'last_name' => 'Customer',
@@ -234,30 +279,30 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('Test Customer');
     });
 
     it('shows empty state when no deals in a stage', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('No deals');
     });
 
     it('has correct default values', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSet('search', '')
             ->assertSet('assignedToFilter', '')
             ->assertSet('customerFilter', '');
     });
 
     it('shows deal count in stage header', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create();
 
         Deal::factory()->forCustomer($customer)->lead()->count(3)->create([
@@ -265,7 +310,7 @@ describe('Deal Pipeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('3');
     });
 });

@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Properties\EditModal;
 use App\Models\Customer;
 use App\Models\Property;
 use App\Models\User;
@@ -10,15 +9,15 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('EditModal component', function () {
     it('renders the edit modal component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class)
+            ->test('properties.edit-modal')
             ->assertStatus(200);
     });
 
     it('loads property data on mount with property id', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $property = Property::factory()->create([
             'customer_id' => $customer->id,
@@ -33,7 +32,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->assertSet('propertyId', $property->id)
             ->assertSet('customerId', (string) $customer->id)
             ->assertSet('name', 'Test Property')
@@ -47,13 +46,13 @@ describe('EditModal component', function () {
     });
 
     it('opens modal with property data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'address' => '456 Oak Ave',
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class)
+            ->test('properties.edit-modal')
             ->call('openModal', $property->id)
             ->assertSet('showModal', true)
             ->assertSet('propertyId', $property->id)
@@ -61,11 +60,11 @@ describe('EditModal component', function () {
     });
 
     it('closes modal and resets data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->call('openModal')
             ->assertSet('showModal', true)
             ->call('closeModal')
@@ -75,11 +74,11 @@ describe('EditModal component', function () {
     });
 
     it('validates required fields on save', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->set('customerId', '')
             ->set('address', '')
             ->set('city', '')
@@ -90,18 +89,18 @@ describe('EditModal component', function () {
     });
 
     it('validates property type', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->set('type', 'invalid')
             ->call('save')
             ->assertHasErrors(['type']);
     });
 
     it('updates property successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $newCustomer = Customer::factory()->create();
         $property = Property::factory()->create([
@@ -111,7 +110,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->set('customerId', (string) $newCustomer->id)
             ->set('name', 'Updated Name')
             ->set('address', 'Updated Address')
@@ -142,7 +141,7 @@ describe('EditModal component', function () {
     });
 
     it('clears optional fields when set to empty', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create([
             'name' => 'Test Name',
             'notes' => 'Some notes',
@@ -150,7 +149,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['propertyId' => $property->id])
+            ->test('properties.edit-modal', ['propertyId' => $property->id])
             ->set('name', '')
             ->set('notes', '')
             ->set('squareFootage', '')
@@ -165,12 +164,12 @@ describe('EditModal component', function () {
     });
 
     it('displays customers in dropdown', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create(['first_name' => 'Alice']);
         $customer2 = Customer::factory()->create(['first_name' => 'Bob']);
 
         $component = Livewire::actingAs($user)
-            ->test(EditModal::class);
+            ->test('properties.edit-modal');
 
         expect($component->get('customers'))->toHaveCount(2);
     });

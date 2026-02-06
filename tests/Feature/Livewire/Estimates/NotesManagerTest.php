@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\NotesManager;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimateNote;
@@ -9,7 +8,7 @@ use Livewire\Livewire;
 
 describe('NotesManager component', function () {
     beforeEach(function () {
-        $this->internalUser = User::factory()->internal()->create();
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
         $this->deal = Deal::factory()->create();
         $this->estimate = Estimate::factory()->forDeal($this->deal)->draft()->create([
             'created_by' => $this->internalUser->id,
@@ -18,13 +17,13 @@ describe('NotesManager component', function () {
 
     it('renders for internal user', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->assertStatus(200);
     });
 
     it('can add note', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->set('newNoteContent', 'This is a test note.')
             ->call('addNote')
             ->assertHasNoErrors()
@@ -43,7 +42,7 @@ describe('NotesManager component', function () {
 
     it('can add internal note for internal users', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->set('newNoteContent', 'This is an internal note.')
             ->set('newNoteIsInternal', true)
             ->call('addNote')
@@ -61,7 +60,7 @@ describe('NotesManager component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->set('newNoteContent', 'Customer note.')
             ->set('newNoteIsInternal', true)
             ->call('addNote');
@@ -82,7 +81,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('startReply', $parentNote->id)
             ->assertSet('replyingToId', $parentNote->id)
             ->set('replyContent', 'This is a reply.')
@@ -107,7 +106,7 @@ describe('NotesManager component', function () {
         expect(EstimateNote::where('id', $note->id)->exists())->toBeTrue();
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('deleteNote', $note->id)
             ->assertDispatched('notes-updated');
 
@@ -122,7 +121,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('deleteNote', $note->id)
             ->assertDispatched('notes-updated');
 
@@ -137,7 +136,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($customerUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('deleteNote', $note->id);
 
         // Note should still exist since customer cannot delete internal user's note
@@ -158,7 +157,7 @@ describe('NotesManager component', function () {
         ]);
 
         $component = Livewire::actingAs($customerUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate]);
 
         // Access the computed property through the instance
         $notes = $component->instance()->notes;
@@ -177,7 +176,7 @@ describe('NotesManager component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate]);
 
         $notes = $component->instance()->notes;
         expect($notes)->toHaveCount(2);
@@ -203,7 +202,7 @@ describe('NotesManager component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate]);
 
         $notes = $component->instance()->notes;
         // Only root notes are returned in the main collection
@@ -216,7 +215,7 @@ describe('NotesManager component', function () {
 
     it('validates note content is required', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->set('newNoteContent', '')
             ->call('addNote')
             ->assertHasErrors(['newNoteContent']);
@@ -228,7 +227,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('startReply', $parentNote->id)
             ->set('replyContent', '')
             ->call('submitReply')
@@ -237,7 +236,7 @@ describe('NotesManager component', function () {
 
     it('validates note content max length', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->set('newNoteContent', str_repeat('a', 5001))
             ->call('addNote')
             ->assertHasErrors(['newNoteContent']);
@@ -249,7 +248,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('startReply', $parentNote->id)
             ->assertSet('replyingToId', $parentNote->id)
             ->set('replyContent', 'Draft reply')
@@ -264,7 +263,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('toggleInternal', $note->id)
             ->assertDispatched('notes-updated');
 
@@ -279,7 +278,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($customerUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('toggleInternal', $note->id);
 
         $note->refresh();
@@ -293,7 +292,7 @@ describe('NotesManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate])
             ->call('deleteNote', $otherNote->id);
 
         expect(EstimateNote::where('id', $otherNote->id)->exists())->toBeTrue();
@@ -301,7 +300,7 @@ describe('NotesManager component', function () {
 
     it('shows internal toggle for internal users', function () {
         $component = Livewire::actingAs($this->internalUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate]);
 
         expect($component->instance()->showInternalToggle)->toBeTrue();
     });
@@ -310,7 +309,7 @@ describe('NotesManager component', function () {
         $customerUser = User::factory()->customer()->create();
 
         $component = Livewire::actingAs($customerUser)
-            ->test(NotesManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.notes-manager', ['estimate' => $this->estimate]);
 
         expect($component->instance()->showInternalToggle)->toBeFalse();
     });

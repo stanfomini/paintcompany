@@ -21,6 +21,7 @@ class Deal extends Model
         'in_progress' => 'In Progress',
         'completed' => 'Completed',
         'paid' => 'Paid',
+        'signed_accepted' => 'Signed & Accepted',
         'cancelled' => 'Cancelled',
     ];
 
@@ -126,6 +127,14 @@ class Deal extends Model
     public function activities(): MorphMany
     {
         return $this->morphMany(Activity::class, 'subject');
+    }
+
+    /**
+     * Get the job for this deal.
+     */
+    public function job(): HasOne
+    {
+        return $this->hasOne(Job::class);
     }
 
     /**

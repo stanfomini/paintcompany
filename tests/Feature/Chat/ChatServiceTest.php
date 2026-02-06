@@ -14,15 +14,15 @@ use Illuminate\Support\Facades\Event;
 describe('ChatService canChatWith permission matrix', function () {
     it('allows internal users to chat with internal users', function () {
         $service = app(ChatService::class);
-        $internal1 = User::factory()->internal()->create();
-        $internal2 = User::factory()->internal()->create();
+        $internal1 = User::factory()->internal()->withFullAccess()->create();
+        $internal2 = User::factory()->internal()->withFullAccess()->create();
 
         expect($service->canChatWith($internal1, $internal2))->toBeTrue();
     });
 
     it('allows internal users to chat with agents', function () {
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
 
         expect($service->canChatWith($internal, $agent))->toBeTrue();
@@ -30,7 +30,7 @@ describe('ChatService canChatWith permission matrix', function () {
 
     it('allows internal users to chat with customers', function () {
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $customer = User::factory()->customer()->create();
 
         expect($service->canChatWith($internal, $customer))->toBeTrue();
@@ -39,7 +39,7 @@ describe('ChatService canChatWith permission matrix', function () {
     it('allows agents to chat with internal users', function () {
         $service = app(ChatService::class);
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         expect($service->canChatWith($agent, $internal))->toBeTrue();
     });
@@ -74,7 +74,7 @@ describe('ChatService canChatWith permission matrix', function () {
     it('allows customers to chat with internal users', function () {
         $service = app(ChatService::class);
         $customer = User::factory()->customer()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         expect($service->canChatWith($customer, $internal))->toBeTrue();
     });
@@ -101,7 +101,7 @@ describe('ChatService getOrCreateDealThread', function () {
         Event::fake([NewThreadNotification::class]);
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create(['title' => 'Test Deal']);
 
         $thread = $service->getOrCreateDealThread($deal, $internal);
@@ -119,7 +119,7 @@ describe('ChatService getOrCreateDealThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $existingThread = ChatThread::factory()->forDeal($deal)->create();
         $existingThread->addParticipant($internal);
@@ -134,8 +134,8 @@ describe('ChatService getOrCreateDealThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user1 = User::factory()->internal()->create();
-        $user2 = User::factory()->internal()->create();
+        $user1 = User::factory()->internal()->withFullAccess()->create();
+        $user2 = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $thread = $service->getOrCreateDealThread($deal, $user1);
@@ -153,7 +153,7 @@ describe('ChatService getOrCreateDirectThread', function () {
         Event::fake([NewThreadNotification::class]);
 
         $service = app(ChatService::class);
-        $user1 = User::factory()->internal()->create();
+        $user1 = User::factory()->internal()->withFullAccess()->create();
         $user2 = User::factory()->agent()->create();
 
         $thread = $service->getOrCreateDirectThread($user1, $user2, 'Test Subject');
@@ -171,7 +171,7 @@ describe('ChatService getOrCreateDirectThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user1 = User::factory()->internal()->create();
+        $user1 = User::factory()->internal()->withFullAccess()->create();
         $user2 = User::factory()->agent()->create();
 
         $firstThread = $service->getOrCreateDirectThread($user1, $user2, 'First Subject');
@@ -185,7 +185,7 @@ describe('ChatService getOrCreateDirectThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user1 = User::factory()->internal()->create();
+        $user1 = User::factory()->internal()->withFullAccess()->create();
         $user2 = User::factory()->agent()->create();
 
         $firstThread = $service->getOrCreateDirectThread($user1, $user2);
@@ -202,7 +202,7 @@ describe('ChatService sendMessage', function () {
         Event::fake([MessageSent::class]);
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -222,7 +222,7 @@ describe('ChatService sendMessage', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create(['last_message_at' => now()->subDay()]);
         $thread->addParticipant($user);
 
@@ -237,7 +237,7 @@ describe('ChatService sendMessage', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect($thread->hasParticipant($user))->toBeFalse();
@@ -251,7 +251,7 @@ describe('ChatService sendMessage', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         $service->sendMessage($thread, $user, 'Test message');
@@ -266,7 +266,7 @@ describe('ChatService sendMessage with is_internal flag', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
 
@@ -307,7 +307,7 @@ describe('ChatService markThreadAsRead', function () {
         Event::fake([MessageRead::class]);
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -323,7 +323,7 @@ describe('ChatService markThreadAsRead', function () {
         Event::fake([MessageRead::class]);
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         $service->markThreadAsRead($thread, $user);
@@ -337,7 +337,7 @@ describe('ChatService getThreadsForUser', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $thread1 = ChatThread::factory()->create();
         $thread1->addParticipant($user);
@@ -358,7 +358,7 @@ describe('ChatService getThreadsForUser', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
@@ -373,7 +373,7 @@ describe('ChatService getThreadsForUser', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $activeThread = ChatThread::factory()->create();
         $activeThread->addParticipant($user);
@@ -391,8 +391,8 @@ describe('ChatService getThreadsForUser', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
@@ -409,7 +409,7 @@ describe('ChatService getThreadsForUser', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()->withSubject('Test Subject')->create();
         $thread->addParticipant($user);
@@ -425,7 +425,7 @@ describe('ChatService getMessagesForThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
 
@@ -440,7 +440,7 @@ describe('ChatService getMessagesForThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $customer = User::factory()->customer()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
@@ -460,7 +460,7 @@ describe('ChatService getMessagesForThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -475,7 +475,7 @@ describe('ChatService getMessagesForThread', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -495,7 +495,7 @@ describe('ChatService addParticipant and removeParticipant', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create(['name' => 'Admin User']);
+        $internal = User::factory()->internal()->withFullAccess()->create(['name' => 'Admin User']);
         $newUser = User::factory()->agent()->create(['name' => 'New Agent']);
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
@@ -512,7 +512,7 @@ describe('ChatService addParticipant and removeParticipant', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create(['name' => 'Admin User']);
+        $internal = User::factory()->internal()->withFullAccess()->create(['name' => 'Admin User']);
         $existingUser = User::factory()->agent()->create(['name' => 'Existing Agent']);
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
@@ -530,7 +530,7 @@ describe('ChatService addParticipant and removeParticipant', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $existingUser = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
@@ -545,7 +545,7 @@ describe('ChatService addParticipant and removeParticipant', function () {
         Event::fake();
 
         $service = app(ChatService::class);
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $nonParticipant = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);

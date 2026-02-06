@@ -7,7 +7,7 @@ use App\Models\User;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    $this->internalUser = User::factory()->create(['type' => 'internal']);
+    $this->internalUser = User::factory()->withFullAccess()->create(['type' => 'internal']);
     $customer = Customer::factory()->create(['email' => 'customer@example.com']);
     $deal = Deal::factory()->create(['customer_id' => $customer->id]);
     $this->estimate = Estimate::factory()->create([
@@ -19,7 +19,7 @@ beforeEach(function () {
 
 it('cannot open send modal without creator signature', function () {
     Livewire::actingAs($this->internalUser)
-        ->test(\App\Livewire\Estimates\Show::class, ['estimate' => $this->estimate])
+        ->test('estimates.show', ['estimate' => $this->estimate])
         ->call('openSendModal')
         ->assertSet('showSendModal', false);
 
@@ -34,7 +34,7 @@ it('can open send modal when creator has signature', function () {
     ]);
 
     Livewire::actingAs($this->internalUser)
-        ->test(\App\Livewire\Estimates\Show::class, ['estimate' => $this->estimate])
+        ->test('estimates.show', ['estimate' => $this->estimate])
         ->call('openSendModal')
         ->assertSet('showSendModal', true);
 });
@@ -49,7 +49,7 @@ it('can send proposal when creator has signature', function () {
     ]);
 
     Livewire::actingAs($this->internalUser)
-        ->test(\App\Livewire\Estimates\Show::class, ['estimate' => $this->estimate])
+        ->test('estimates.show', ['estimate' => $this->estimate])
         ->call('sendProposal');
 
     expect($this->estimate->fresh()->status)->toBe('sent');
@@ -59,7 +59,7 @@ it('cannot send proposal without signature', function () {
     \Illuminate\Support\Facades\Notification::fake();
 
     Livewire::actingAs($this->internalUser)
-        ->test(\App\Livewire\Estimates\Show::class, ['estimate' => $this->estimate])
+        ->test('estimates.show', ['estimate' => $this->estimate])
         ->set('showSendModal', true)
         ->call('sendProposal')
         ->assertSet('showSendModal', false);

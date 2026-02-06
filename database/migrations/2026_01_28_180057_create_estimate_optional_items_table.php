@@ -29,7 +29,7 @@ return new class extends Migration
             $table->integer('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['estimate_id', 'is_selected_by_customer']);
+            $table->index(['estimate_id', 'is_selected_by_customer'], 'est_opt_items_estimate_selected_index');
         });
     }
 

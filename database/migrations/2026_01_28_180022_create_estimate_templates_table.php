@@ -44,7 +44,7 @@ return new class extends Migration
             $table->integer('sort_order')->default(0);
             $table->timestamps();
 
-            $table->index(['template_category_id', 'is_active', 'sort_order']);
+            $table->index(['template_category_id', 'is_active', 'sort_order'], 'est_templates_category_active_sort_index');
             $table->index('pricing_method');
         });
     }

@@ -190,8 +190,9 @@ class PaintProduct extends Model
      *
      * @return array{gallons: float, gallons_rounded: int, paint_cost: float, recycle_fee: float, total_cost: float}
      */
-    public function calculateCost(float $sqft, int $coats = 2, string $applicationMethod = 'brush_roll', float $recycleFeePerGallon = 0.54): array
+    public function calculateCost(float $sqft, int $coats = 2, string $applicationMethod = 'brush_roll', ?float $recycleFeePerGallon = null): array
     {
+        $recycleFeePerGallon ??= (float) CompanySetting::getInstance()->recycle_fee_per_gallon;
         $gallonCalc = $this->calculateGallons($sqft, $coats, $applicationMethod);
 
         $paintCost = $gallonCalc['gallons_rounded'] * (float) $this->price_per_gallon;

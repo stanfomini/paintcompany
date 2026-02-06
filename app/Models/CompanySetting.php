@@ -3,10 +3,20 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CompanySetting extends Model
 {
+    use HasFactory;
+
+    /**
+     * Static in-memory cache for the singleton instance.
+     * Prevents repeated DB queries within a single request.
+     */
+    protected static ?self $resolvedInstance = null;
+
     protected $fillable = [
         'company_name',
         'company_email',
@@ -32,16 +42,21 @@ class CompanySetting extends Model
         'sales_percent',
         'production_management_percent',
         'markup_percent',
+        'margin_percent',
         'interior_markup_percent',
+        'interior_margin_percent',
         'exterior_markup_percent',
+        'exterior_margin_percent',
         // Defaults
         'default_deposit_percent',
         'default_sales_discount_percent',
         'material_tax_rate',
+        'labor_tax_rate',
         'default_interior_sqft_rate',
         'default_exterior_sqft_rate',
         // JSON fields
         'paint_catalog',
+        'default_paint_products_by_category',
         'trim_widths',
         'warranty_options',
         // Production Settings
@@ -56,6 +71,9 @@ class CompanySetting extends Model
         // Recycle/Misc Fees
         'recycle_fee_per_gallon',
         'wood_replacement_minimum',
+        // Crew Settings
+        'default_required_crew_size',
+        'total_painters',
     ];
 
     protected function casts(): array
@@ -76,16 +94,21 @@ class CompanySetting extends Model
             'sales_percent' => 'decimal:2',
             'production_management_percent' => 'decimal:2',
             'markup_percent' => 'decimal:2',
+            'margin_percent' => 'decimal:2',
             'interior_markup_percent' => 'decimal:2',
+            'interior_margin_percent' => 'decimal:2',
             'exterior_markup_percent' => 'decimal:2',
+            'exterior_margin_percent' => 'decimal:2',
             // Defaults
             'default_deposit_percent' => 'decimal:2',
             'default_sales_discount_percent' => 'decimal:2',
             'material_tax_rate' => 'decimal:2',
+            'labor_tax_rate' => 'decimal:2',
             'default_interior_sqft_rate' => 'decimal:4',
             'default_exterior_sqft_rate' => 'decimal:4',
             // JSON fields
             'paint_catalog' => 'array',
+            'default_paint_products_by_category' => 'array',
             'trim_widths' => 'array',
             'warranty_options' => 'array',
             // Production Settings
@@ -100,25 +123,47 @@ class CompanySetting extends Model
             // Recycle/Misc Fees
             'recycle_fee_per_gallon' => 'decimal:2',
             'wood_replacement_minimum' => 'decimal:2',
+            // Crew Settings
+            'default_required_crew_size' => 'integer',
+            'total_painters' => 'integer',
         ];
     }
 
     /**
      * Get the singleton company settings instance.
      * Creates a default record if none exists.
+     * Uses static in-memory cache to avoid repeated DB queries per request.
      */
     public static function getInstance(): self
     {
-        return static::firstOrCreate([], [
+        return static::$resolvedInstance ??= static::firstOrCreate([], [
             'company_name' => config('app.name', 'My Company'),
             'paint_catalog' => self::getDefaultPaintCatalog(),
             'trim_widths' => self::getDefaultTrimWidths(),
             'warranty_options' => self::getDefaultWarrantyOptions(),
+            // Core pricing settings
+            'base_hourly_wage' => 25.00,
+            'payroll_burden_multiplier' => 1.35,
+            'net_profit_margin_percent' => 30.00,
+            'overhead_percent' => 12.00,
+            'marketing_percent' => 8.00,
+            'sales_percent' => 7.00,
+            'production_management_percent' => 7.00,
+            'recycle_fee_per_gallon' => 0.54,
+            'material_tax_rate' => 7.50,
+            'labor_tax_rate' => 0.00,
+            'default_tax_rate' => 0.00,
+            'default_deposit_percent' => 30.00,
+            'default_interior_sqft_rate' => 4.50,
+            'default_exterior_sqft_rate' => 3.50,
+            'estimate_validity_days' => 30,
             // Scope-specific defaults from PBP spreadsheet
             'interior_hourly_wage' => 21.00,
             'exterior_hourly_wage' => 27.00,
             'interior_markup_percent' => 50.00,
             'exterior_markup_percent' => 41.00,
+            'interior_margin_percent' => 50.00,
+            'exterior_margin_percent' => 41.00,
             'interior_cleanup_hours_ratio' => 16.00,
             'exterior_cleanup_hours_ratio' => 20.00,
             'interior_sundries_cost_per_hour' => 3.30,
@@ -126,7 +171,158 @@ class CompanySetting extends Model
             // Production settings
             'spray_paint_coverage_multiplier' => 2.00,
             'brush_roll_coverage_multiplier' => 1.30,
+            // Crew & Dispatch settings
+            'default_required_crew_size' => 2,
+            'total_painters' => 4,
         ]);
+    }
+
+    /**
+     * Clear the static instance cache.
+     * Called automatically on save/delete to ensure freshness within the same request.
+     */
+    public static function clearInstanceCache(): void
+    {
+        static::$resolvedInstance = null;
+    }
+
+    /**
+     * Boot the model and register events to clear the cache on changes.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function () {
+            static::clearInstanceCache();
+        });
+
+        static::deleted(function () {
+            static::clearInstanceCache();
+        });
+    }
+
+    /**
+     * Get the allocations for this company setting.
+     */
+    public function allocations(): HasMany
+    {
+        return $this->hasMany(CompanyAllocation::class);
+    }
+
+    /**
+     * Get active allocations that reduce profit.
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, CompanyAllocation>
+     */
+    public function getActiveAllocations(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->allocations()
+            ->active()
+            ->reducesProfit()
+            ->ordered()
+            ->get();
+    }
+
+    /**
+     * Get all active allocations (including informational).
+     *
+     * @return \Illuminate\Database\Eloquent\Collection<int, CompanyAllocation>
+     */
+    public function getAllAllocations(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->allocations()
+            ->active()
+            ->ordered()
+            ->get();
+    }
+
+    /**
+     * Calculate total allocations for a job.
+     *
+     * @return array{total: float, details: array}
+     */
+    public function calculateAllocations(float $customerPrice, float $laborHours = 0): array
+    {
+        $allocations = $this->getActiveAllocations();
+        $details = [];
+        $total = 0;
+
+        foreach ($allocations as $allocation) {
+            $amount = $allocation->calculateAmount($customerPrice, $laborHours);
+            $details[] = [
+                'id' => $allocation->id,
+                'name' => $allocation->name,
+                'slug' => $allocation->slug,
+                'type' => $allocation->type,
+                'type_label' => $allocation->type_label,
+                'value' => (float) $allocation->value,
+                'formatted_value' => $allocation->formatted_value,
+                'amount' => $amount,
+                'is_system' => $allocation->is_system,
+            ];
+            $total += $amount;
+        }
+
+        return [
+            'total' => round($total, 2),
+            'details' => $details,
+        ];
+    }
+
+    /**
+     * Ensure system allocations exist for this company setting.
+     * Creates them if they don't exist.
+     */
+    public function ensureSystemAllocations(): void
+    {
+        $systemAllocations = [
+            [
+                'name' => 'Marketing',
+                'slug' => 'marketing',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => (float) $this->marketing_percent ?: 8.00,
+                'is_system' => true,
+                'is_informational' => false,
+                'description' => 'Marketing and advertising budget',
+                'sort_order' => 1,
+            ],
+            [
+                'name' => 'Sales',
+                'slug' => 'sales',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => (float) $this->sales_percent ?: 7.00,
+                'is_system' => true,
+                'is_informational' => false,
+                'description' => 'Sales commission and compensation',
+                'sort_order' => 2,
+            ],
+            [
+                'name' => 'Production Management',
+                'slug' => 'production_management',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => (float) $this->production_management_percent ?: 7.00,
+                'is_system' => true,
+                'is_informational' => false,
+                'description' => 'Production oversight and coordination',
+                'sort_order' => 3,
+            ],
+            [
+                'name' => 'General Overhead',
+                'slug' => 'general_overhead',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => (float) $this->overhead_percent ?: 12.00,
+                'is_system' => true,
+                'is_informational' => true,
+                'description' => 'Rent, utilities, insurance (informational only)',
+                'sort_order' => 10,
+            ],
+        ];
+
+        foreach ($systemAllocations as $allocationData) {
+            $this->allocations()->updateOrCreate(
+                ['slug' => $allocationData['slug']],
+                $allocationData
+            );
+        }
     }
 
     /**
@@ -435,34 +631,66 @@ class CompanySetting extends Model
 
     /**
      * Calculate price with profit margin (inverse calculation for desired margin).
+     *
+     * Uses the PBP formula: OTD = COGS / (margin% / 100)
+     * Where margin% represents the COGS percentage of the sale price.
      */
     public function calculateWithProfitMargin(float $cost): float
     {
         $marginPercent = (float) ($this->net_profit_margin_percent ?? 30.00);
 
         // Prevent division by zero
-        if ($marginPercent >= 100) {
+        if ($marginPercent <= 0) {
             return $cost;
         }
 
-        return $cost / (1 - $marginPercent / 100);
+        return round($cost / ($marginPercent / 100), 2);
     }
 
     /**
-     * Calculate price with all margins applied sequentially: profit → overhead → markup.
-     * This follows the PBP spreadsheet formula for full price calculation.
+     * Calculate OTD (Out The Door) price from COGS using simple markup.
+     *
+     * @deprecated Use calculateOTD() instead for margin-based pricing.
+     *
+     * IMPORTANT: This is the ONLY margin calculation used for customer pricing.
+     * The formula is: OTD = COGS × (1 + markup%)
+     *
+     * The other margin percentages (profit, overhead, marketing, sales, production_management)
+     * are for a SEPARATE business analysis tool to help determine what markup% should be.
+     * They are NOT applied to customer estimates.
+     *
+     * @param  float  $cogs  Cost of Goods Sold (labor + cleanup + sundries + materials + taxes)
+     * @return float OTD price
      */
-    public function calculateWithMargins(float $baseCost): float
+    public function calculateWithMargins(float $cogs): float
     {
-        $profitPercent = (float) ($this->net_profit_margin_percent ?? 30.00);
-        $overheadPercent = (float) ($this->overhead_percent ?? 12.00);
         $markupPercent = (float) ($this->markup_percent ?? 45.00);
 
-        $withProfit = $baseCost * (1 + $profitPercent / 100);
-        $withOverhead = $withProfit * (1 + $overheadPercent / 100);
-        $withMarkup = $withOverhead * (1 + $markupPercent / 100);
+        return round($cogs * (1 + $markupPercent / 100), 2);
+    }
 
-        return round($withMarkup, 2);
+    /**
+     * Calculate OTD (Out The Door) price from COGS using margin formula.
+     *
+     * PBP formula: OTD = COGS / (margin% / 100)
+     * Where margin% represents the COGS percentage of the sale price.
+     *
+     * Example: 41% margin on $100 COGS = $100 / 0.41 = $243.90
+     * COGS = $100 which is 41% of $243.90, Gross Profit = 59%
+     *
+     * @param  float  $cogs  Cost of Goods Sold (labor + cleanup + sundries + materials + taxes)
+     * @return float OTD price
+     */
+    public function calculateOTD(float $cogs): float
+    {
+        $marginPercent = (float) ($this->margin_percent ?? 45.00);
+
+        // Prevent division by zero
+        if ($marginPercent <= 0) {
+            return $cogs;
+        }
+
+        return round($cogs / ($marginPercent / 100), 2);
     }
 
     /**
@@ -542,6 +770,8 @@ class CompanySetting extends Model
     /**
      * Get the markup percentage for a specific scope type.
      * Interior: 50%, Exterior: 41% (based on PBP spreadsheet).
+     *
+     * @deprecated Use getMarginPercentForScope() instead.
      */
     public function getMarkupPercentForScope(string $scopeType): float
     {
@@ -549,6 +779,23 @@ class CompanySetting extends Model
             'interior' => (float) ($this->interior_markup_percent ?? 50.00),
             'exterior' => (float) ($this->exterior_markup_percent ?? 41.00),
             default => (float) ($this->markup_percent ?? 45.00),
+        };
+    }
+
+    /**
+     * Get the margin percentage for a specific scope type.
+     * Interior: 50%, Exterior: 41% (based on PBP spreadsheet).
+     *
+     * Margin% represents the COGS percentage of the sale price.
+     * 50% margin means: OTD = COGS / 0.50 (price is 2x COGS, GP = 50%)
+     * 41% margin means: OTD = COGS / 0.41 (price is ~2.44x COGS, GP = 59%)
+     */
+    public function getMarginPercentForScope(string $scopeType): float
+    {
+        return match ($scopeType) {
+            'interior' => (float) ($this->interior_margin_percent ?? 50.00),
+            'exterior' => (float) ($this->exterior_margin_percent ?? 41.00),
+            default => (float) ($this->margin_percent ?? 45.00),
         };
     }
 
@@ -607,20 +854,121 @@ class CompanySetting extends Model
     }
 
     /**
-     * Calculate price with all margins applied for a specific scope type.
-     * Uses scope-specific markup percentage.
+     * Get the labor tax rate (for states that require sales tax on labor).
+     * Most states don't tax labor, so default is 0%.
      */
-    public function calculateWithMarginsForScope(float $baseCost, string $scopeType): float
+    public function getLaborTaxRate(): float
     {
-        $profitPercent = (float) ($this->net_profit_margin_percent ?? 30.00);
-        $overheadPercent = (float) ($this->overhead_percent ?? 12.00);
+        return (float) ($this->labor_tax_rate ?? 0);
+    }
+
+    /**
+     * Get the material tax rate.
+     */
+    public function getMaterialTaxRate(): float
+    {
+        return (float) ($this->material_tax_rate ?? 7.5);
+    }
+
+    /**
+     * Calculate material tax from material cost.
+     */
+    public function calculateMaterialTax(float $materialCost): float
+    {
+        return round($materialCost * ($this->getMaterialTaxRate() / 100), 2);
+    }
+
+    /**
+     * Calculate labor tax from labor cost (labor + cleanup).
+     * Only applies in states that tax labor services.
+     */
+    public function calculateLaborTax(float $laborCost, float $cleanupCost): float
+    {
+        $totalLabor = $laborCost + $cleanupCost;
+
+        return round($totalLabor * ($this->getLaborTaxRate() / 100), 2);
+    }
+
+    /**
+     * Calculate complete COGS (Cost of Goods Sold) from components.
+     *
+     * COGS = Labor + Cleanup + Sundries + Materials + Material Tax + Labor Tax
+     *
+     * @return array{cogs: float, material_tax: float, labor_tax: float}
+     */
+    public function calculateCOGS(
+        float $laborCost,
+        float $cleanupCost,
+        float $sundriesCost,
+        float $materialCost
+    ): array {
+        $materialTax = $this->calculateMaterialTax($materialCost);
+        $laborTax = $this->calculateLaborTax($laborCost, $cleanupCost);
+
+        $cogs = $laborCost + $cleanupCost + $sundriesCost + $materialCost + $materialTax + $laborTax;
+
+        return [
+            'cogs' => round($cogs, 2),
+            'material_tax' => $materialTax,
+            'labor_tax' => $laborTax,
+        ];
+    }
+
+    /**
+     * Calculate OTD (Out The Door) price from COGS using scope-specific markup.
+     *
+     * @deprecated Use calculateOTDFromCOGS() instead for margin-based pricing.
+     *
+     * IMPORTANT: This is the ONLY margin calculation used for customer pricing.
+     * The formula is: OTD = COGS × (1 + markup%)
+     *
+     * Interior: 50% markup (OTD = COGS × 1.50)
+     * Exterior: 41% markup (OTD = COGS × 1.41)
+     *
+     * The other margin percentages (profit, overhead, marketing, sales, production_management)
+     * are for a SEPARATE business analysis tool to help determine what markup% should be.
+     * They are NOT applied to customer estimates.
+     *
+     * @param  float  $cogs  Cost of Goods Sold (labor + cleanup + sundries + materials + taxes)
+     * @param  string  $scopeType  'interior' or 'exterior'
+     * @return float OTD price
+     */
+    public function calculateWithMarginsForScope(float $cogs, string $scopeType): float
+    {
         $markupPercent = $this->getMarkupPercentForScope($scopeType);
 
-        $withProfit = $baseCost * (1 + $profitPercent / 100);
-        $withOverhead = $withProfit * (1 + $overheadPercent / 100);
-        $withMarkup = $withOverhead * (1 + $markupPercent / 100);
+        return round($cogs * (1 + $markupPercent / 100), 2);
+    }
 
-        return round($withMarkup, 2);
+    /**
+     * Calculate OTD (Out The Door) price from COGS using scope-specific margin.
+     *
+     * PBP formula: OTD = COGS / (margin% / 100)
+     * Where margin% represents the COGS percentage of the sale price.
+     *
+     * Interior (50% margin): OTD = COGS / 0.50 = COGS × 2
+     * Exterior (41% margin): OTD = COGS / 0.41 ≈ COGS × 2.439
+     *
+     * Example:
+     * COGS = $113.71
+     * Interior 50% margin: OTD = $113.71 / 0.50 = $227.42
+     * Exterior 41% margin: OTD = $113.71 / 0.41 = $277.34
+     * COGS is 41% of $277.34, Gross Profit = 59%
+     *
+     * @param  float  $cogs  Cost of Goods Sold (labor + cleanup + sundries + materials + taxes)
+     * @param  string  $scopeType  'interior' or 'exterior'
+     * @return float OTD price
+     */
+    public function calculateOTDFromCOGS(float $cogs, string $scopeType): float
+    {
+        $marginPercent = $this->getMarginPercentForScope($scopeType);
+
+        // Prevent division by zero
+        if ($marginPercent <= 0) {
+            return $cogs;
+        }
+
+        return round($cogs / ($marginPercent / 100), 2);
     }
 
     /**
@@ -630,6 +978,7 @@ class CompanySetting extends Model
      *     hourly_wage: float,
      *     effective_hourly_rate: float,
      *     markup_percent: float,
+     *     margin_percent: float,
      *     cleanup_hours_ratio: float,
      *     sundries_cost_per_hour: float,
      *     profit_percent: float,
@@ -642,10 +991,111 @@ class CompanySetting extends Model
             'hourly_wage' => $this->getHourlyWageForScope($scopeType),
             'effective_hourly_rate' => $this->getEffectiveHourlyRateForScope($scopeType),
             'markup_percent' => $this->getMarkupPercentForScope($scopeType),
+            'margin_percent' => $this->getMarginPercentForScope($scopeType),
             'cleanup_hours_ratio' => $this->getCleanupHoursRatioForScope($scopeType),
             'sundries_cost_per_hour' => $this->getSundriesCostForScope($scopeType),
             'profit_percent' => (float) ($this->net_profit_margin_percent ?? 30.00),
             'overhead_percent' => (float) ($this->overhead_percent ?? 12.00),
         ];
+    }
+
+    /**
+     * Surface categories for interior projects.
+     */
+    public const INTERIOR_SURFACE_CATEGORIES = [
+        'walls' => 'Walls',
+        'ceiling' => 'Ceiling',
+        'trim' => 'Trim/Baseboards',
+        'doors' => 'Doors',
+    ];
+
+    /**
+     * Surface categories for exterior projects.
+     */
+    public const EXTERIOR_SURFACE_CATEGORIES = [
+        'body' => 'Body/Siding',
+        'trim' => 'Trim',
+        'fascia' => 'Fascia',
+        'eaves' => 'Eaves/Soffit',
+        'doors' => 'Doors',
+    ];
+
+    /**
+     * Get surface categories for a given scope.
+     *
+     * @return array<string, string>
+     */
+    public static function getSurfaceCategoriesForScope(string $scope): array
+    {
+        return match ($scope) {
+            'interior' => self::INTERIOR_SURFACE_CATEGORIES,
+            'exterior' => self::EXTERIOR_SURFACE_CATEGORIES,
+            default => self::INTERIOR_SURFACE_CATEGORIES,
+        };
+    }
+
+    /**
+     * Get the default paint product ID for a specific surface category and scope.
+     *
+     * @param  string  $category  Surface category (walls, ceiling, trim, doors, body, fascia, eaves)
+     * @param  string  $scope  Project scope (interior or exterior)
+     * @return int|null Paint product ID or null if not set
+     */
+    public function getDefaultPaintForCategory(string $category, string $scope): ?int
+    {
+        $defaults = $this->default_paint_products_by_category ?? [];
+
+        return $defaults[$scope][$category] ?? null;
+    }
+
+    /**
+     * Set the default paint product ID for a specific surface category and scope.
+     *
+     * @param  string  $category  Surface category (walls, ceiling, trim, doors, body, fascia, eaves)
+     * @param  string  $scope  Project scope (interior or exterior)
+     * @param  int|null  $paintProductId  Paint product ID or null to remove
+     */
+    public function setDefaultPaintForCategory(string $category, string $scope, ?int $paintProductId): void
+    {
+        $defaults = $this->default_paint_products_by_category ?? [];
+
+        if (! isset($defaults[$scope])) {
+            $defaults[$scope] = [];
+        }
+
+        if ($paintProductId === null) {
+            unset($defaults[$scope][$category]);
+
+            // Remove scope key if empty
+            if (empty($defaults[$scope])) {
+                unset($defaults[$scope]);
+            }
+        } else {
+            $defaults[$scope][$category] = $paintProductId;
+        }
+
+        $this->default_paint_products_by_category = $defaults;
+        $this->save();
+    }
+
+    /**
+     * Get all paint defaults for a specific scope.
+     *
+     * @param  string  $scope  Project scope (interior or exterior)
+     * @return array<string, int> Category => paint product ID mapping
+     */
+    public function getPaintDefaultsForScope(string $scope): array
+    {
+        $defaults = $this->default_paint_products_by_category ?? [];
+
+        return $defaults[$scope] ?? [];
+    }
+
+    /**
+     * Check if there are any custom paint defaults set for a scope.
+     */
+    public function hasPaintDefaultsForScope(string $scope): bool
+    {
+        return ! empty($this->getPaintDefaultsForScope($scope));
     }
 }

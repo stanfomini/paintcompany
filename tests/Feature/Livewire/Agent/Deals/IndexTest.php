@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Deals\Index;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
@@ -11,7 +10,7 @@ describe('Agent Deals Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertStatus(200)
             ->assertSee('My Deals');
     });
@@ -29,7 +28,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSee('Kitchen Painting')
             ->assertSee('John Doe')
             ->assertSee('$5,000');
@@ -58,7 +57,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSee('Own Deal')
             ->assertDontSee('Other Deal');
     });
@@ -76,7 +75,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->set('search', 'Kitchen')
             ->assertSee('Kitchen Painting')
             ->assertDontSee('Exterior Touch-up');
@@ -104,7 +103,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->set('search', 'John')
             ->assertSee('Johns Deal')
             ->assertDontSee('Janes Deal');
@@ -123,7 +122,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->set('stageFilter', 'lead')
             ->assertSee('Lead Deal')
             ->assertDontSee('Quoted Deal');
@@ -140,7 +139,7 @@ describe('Agent Deals Index component', function () {
 
         // Commission is 10% = $1,000
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSee('$10,000')
             ->assertSee('Commission: $1,000');
     });
@@ -154,7 +153,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSee('In Progress');
     });
 
@@ -164,7 +163,7 @@ describe('Agent Deals Index component', function () {
         Deal::factory()->count(20)->referredByAgent($agent)->forCustomer($customer)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
@@ -175,7 +174,7 @@ describe('Agent Deals Index component', function () {
         Deal::factory()->count(20)->referredByAgent($agent)->forCustomer($customer)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->set('stageFilter', 'lead')
             ->assertSet('paginators.page', 1);
     });
@@ -184,7 +183,7 @@ describe('Agent Deals Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSee('No deals found')
             ->assertSee('Deals from your referred customers will appear here.');
     });
@@ -198,7 +197,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->set('search', 'NonexistentDeal')
             ->assertSee('No deals found')
             ->assertSee('Try adjusting your search or filter criteria.');
@@ -215,7 +214,7 @@ describe('Agent Deals Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSee('Feb 15, 2026')
             ->assertSee('Mar 01, 2026');
     });
@@ -224,7 +223,7 @@ describe('Agent Deals Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.deals.index')
             ->assertSet('search', '')
             ->assertSet('stageFilter', '')
             ->assertSet('perPage', 15);
@@ -234,7 +233,7 @@ describe('Agent Deals Index component', function () {
         $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Index::class);
+            ->test('agent.deals.index');
 
         expect($component->instance()->getStageBadgeColor('lead'))->toBe('blue');
         expect($component->instance()->getStageBadgeColor('quoted'))->toBe('purple');
@@ -250,7 +249,7 @@ describe('Agent Deals Index component', function () {
         $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Index::class);
+            ->test('agent.deals.index');
 
         expect($component->instance()->calculateCommission(10000))->toBe(1000.0);
         expect($component->instance()->calculateCommission(5000))->toBe(500.0);
@@ -270,22 +269,26 @@ describe('Agent Deals Index page access', function () {
         $this->actingAs($agent, 'agent')
             ->get(route('agent.deals.index'))
             ->assertSuccessful()
-            ->assertSeeLivewire(Index::class);
+            ->assertSeeLivewire('agent.deals.index');
     });
 
-    it('forbids internal users from accessing agent deals', function () {
-        $internalUser = User::factory()->internal()->create();
+    it('redirects internal users from agent deals to internal dashboard', function () {
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
+        // Now redirects to internal dashboard instead of showing 403
         $this->actingAs($internalUser, 'agent')
             ->get(route('agent.deals.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHas('warning');
     });
 
-    it('forbids customer users from accessing agent deals', function () {
+    it('redirects customer users from agent deals to customer dashboard', function () {
         $customer = User::factory()->customer()->create();
 
+        // Now redirects to customer dashboard instead of showing 403
         $this->actingAs($customer, 'agent')
             ->get(route('agent.deals.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('customer.dashboard'))
+            ->assertSessionHas('warning');
     });
 });

@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customers\EditModal;
 use App\Models\Customer;
 use App\Models\User;
 use Livewire\Livewire;
@@ -9,15 +8,15 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('EditModal component', function () {
     it('renders the edit modal component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class)
+            ->test('customers.edit-modal')
             ->assertStatus(200);
     });
 
     it('loads customer data on mount with customer id', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -26,7 +25,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer->id])
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
             ->assertSet('customerId', $customer->id)
             ->assertSet('firstName', 'John')
             ->assertSet('lastName', 'Doe')
@@ -35,14 +34,14 @@ describe('EditModal component', function () {
     });
 
     it('opens modal with customer data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'Jane',
             'last_name' => 'Smith',
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class)
+            ->test('customers.edit-modal')
             ->call('openModal', $customer->id)
             ->assertSet('showModal', true)
             ->assertSet('customerId', $customer->id)
@@ -51,11 +50,11 @@ describe('EditModal component', function () {
     });
 
     it('closes modal and resets data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer->id])
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
             ->call('openModal')
             ->assertSet('showModal', true)
             ->call('closeModal')
@@ -66,11 +65,11 @@ describe('EditModal component', function () {
     });
 
     it('validates required fields on save', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer->id])
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
             ->set('firstName', '')
             ->set('lastName', '')
             ->set('email', '')
@@ -79,38 +78,38 @@ describe('EditModal component', function () {
     });
 
     it('validates email format', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer->id])
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
             ->set('email', 'invalid-email')
             ->call('save')
             ->assertHasErrors(['email']);
     });
 
     it('validates unique email excluding current customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create(['email' => 'first@example.com']);
         $customer2 = Customer::factory()->create(['email' => 'second@example.com']);
 
         // Should allow same email for same customer
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer1->id])
+            ->test('customers.edit-modal', ['customerId' => $customer1->id])
             ->set('email', 'first@example.com')
             ->call('save')
             ->assertHasNoErrors(['email']);
 
         // Should not allow email that belongs to another customer
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer1->id])
+            ->test('customers.edit-modal', ['customerId' => $customer1->id])
             ->set('email', 'second@example.com')
             ->call('save')
             ->assertHasErrors(['email']);
     });
 
     it('updates customer successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'Original',
             'last_name' => 'Name',
@@ -118,7 +117,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer->id])
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
             ->set('firstName', 'Updated')
             ->set('lastName', 'Customer')
             ->set('email', 'updated@example.com')
@@ -147,14 +146,14 @@ describe('EditModal component', function () {
     });
 
     it('clears optional fields when set to empty', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'phone' => '555-1234',
             'notes' => 'Some notes',
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['customerId' => $customer->id])
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
             ->set('phone', '')
             ->set('notes', '')
             ->call('save')

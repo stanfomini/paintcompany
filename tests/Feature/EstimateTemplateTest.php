@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CompanySetting;
 use App\Models\EstimateTemplate;
 use App\Models\EstimateTemplateCategory;
 use App\Models\ProductionRate;
@@ -137,10 +138,19 @@ describe('EstimateTemplate price calculation', function () {
     });
 
     it('calculates price using production rate pricing method', function () {
+        // Set up company settings with known hourly rate
+        CompanySetting::truncate();
+        CompanySetting::create([
+            'company_name' => 'Test Company',
+            'hourly_wage' => 25.00,
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 25.00,
+            'payroll_burden_multiplier' => 1.0, // No burden for simple calculation
+        ]);
+
         $productionRate = ProductionRate::factory()->create([
             'production_rate' => 200, // 200 sqft/hour
-            'hourly_labor_rate' => 60.00,
-            'material_cost_per_unit' => 0.25,
+            'scope' => 'interior',
             'default_coats' => 2,
             'coat_multipliers' => [
                 '1' => 1.0,
@@ -153,23 +163,32 @@ describe('EstimateTemplate price calculation', function () {
             ->withProductionRate($productionRate)
             ->create([
                 'default_coats' => 2,
+                'scope_type' => 'interior',
             ]);
 
         // 400 sqft, 2 coats
-        // Labor: (400 / 200) * 60 = $120
-        // Material: 400 * 0.25 = $100
-        // Total before multiplier: $220
-        // With 2-coat multiplier (1.8): $220 * 1.8 = $396
+        // Labor hours: (400 / 200) * 1.8 = 3.6 hours
+        // Labor cost: 3.6 * $25 = $90 (using effective rate which is hourly_wage with no burden)
+        // Material cost is now 0 (comes from paint products, not production rate)
         $price = $template->calculatePrice(400, 2);
 
-        expect($price)->toBe(396.0);
+        expect($price)->toBe(90.0);
     });
 
     it('uses default coats when coats parameter is null', function () {
+        // Set up company settings with known hourly rate
+        CompanySetting::truncate();
+        CompanySetting::create([
+            'company_name' => 'Test Company',
+            'hourly_wage' => 25.00,
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 25.00,
+            'payroll_burden_multiplier' => 1.0, // No burden for simple calculation
+        ]);
+
         $productionRate = ProductionRate::factory()->create([
             'production_rate' => 100,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.10,
+            'scope' => 'interior',
             'default_coats' => 1,
             'coat_multipliers' => [
                 '1' => 1.0,
@@ -181,16 +200,17 @@ describe('EstimateTemplate price calculation', function () {
             ->withProductionRate($productionRate)
             ->create([
                 'default_coats' => 2, // Template default is 2 coats
+                'scope_type' => 'interior',
             ]);
 
         // Should use template's default_coats (2)
         $priceWithDefault = $template->calculatePrice(100);
 
         // 100 sqft, 2 coats
-        // Labor: (100 / 100) * 50 = $50
-        // Material: 100 * 0.10 = $10
-        // Total: $60 * 1.8 = $108
-        expect($priceWithDefault)->toBe(108.0);
+        // Labor hours: (100 / 100) * 1.8 = 1.8 hours
+        // Labor cost: 1.8 * $25 = $45 (using effective rate with no burden)
+        // Material cost is now 0 (comes from paint products, not production rate)
+        expect($priceWithDefault)->toBe(45.0);
     });
 
     it('returns zero when production rate is null for production rate pricing', function () {
@@ -337,5 +357,146 @@ describe('EstimateTemplateCategory relationship', function () {
         expect($templates[0]->name)->toBe('First')
             ->and($templates[1]->name)->toBe('Second')
             ->and($templates[2]->name)->toBe('Third');
+    });
+});
+
+describe('EstimateTemplate fixed price cost tracking', function () {
+    it('calculates fixed price with per-template margin', function () {
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 21, // $21/hr
+            'interior_margin_percent' => 50, // Default margin
+        ]);
+
+        $template = EstimateTemplate::factory()
+            ->interior()
+            ->fixedPricingWithCostTracking(
+                laborHours: 2.0,
+                materialCost: 20.00,
+                marginPercent: 40.0 // Custom margin
+            )
+            ->create();
+
+        $breakdown = $template->calculateFixedPrice();
+
+        // Labor: 2 hrs × $21 = $42
+        // Materials: $20
+        // COGS: $62
+        // With 40% margin: $62 / (1 - 0.40) = $103.33
+        expect($breakdown['labor_hours'])->toBe(2.0)
+            ->and($breakdown['labor_cost'])->toBe(42.0)
+            ->and($breakdown['material_cost'])->toBe(20.0)
+            ->and($breakdown['cogs'])->toBe(62.0)
+            ->and($breakdown['margin_percent'])->toBe(40.0)
+            ->and($breakdown['final_price'])->toBe(155.0)
+            ->and($breakdown['profit'])->toBe(93.0);
+    });
+
+    it('falls back to scope margin when template margin is null', function () {
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 20, // $20/hr
+            'interior_margin_percent' => 50, // 50% margin = price is 2× COGS
+        ]);
+
+        $template = EstimateTemplate::factory()
+            ->interior()
+            ->fixedPricingWithCostTracking(
+                laborHours: 2.5,
+                materialCost: 30.00,
+                marginPercent: null // Falls back to scope margin
+            )
+            ->create();
+
+        $breakdown = $template->calculateFixedPrice();
+
+        // Labor: 2.5 hrs × $20 = $50
+        // Materials: $30
+        // COGS: $80
+        // With 50% margin: $80 / 0.50 = $160
+        expect($breakdown['labor_hours'])->toBe(2.5)
+            ->and($breakdown['labor_cost'])->toBe(50.0)
+            ->and($breakdown['material_cost'])->toBe(30.0)
+            ->and($breakdown['cogs'])->toBe(80.0)
+            ->and($breakdown['margin_percent'])->toBe(50.0)
+            ->and($breakdown['final_price'])->toBe(160.0)
+            ->and($breakdown['profit'])->toBe(80.0);
+    });
+
+    it('uses exterior hourly wage for exterior scope', function () {
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 21,
+            'exterior_hourly_wage' => 27, // Higher exterior rate
+            'exterior_margin_percent' => 41, // 41% exterior margin
+        ]);
+
+        $template = EstimateTemplate::factory()
+            ->exterior()
+            ->fixedPricingWithCostTracking(
+                laborHours: 4.0,
+                materialCost: 40.00,
+                marginPercent: null // Uses scope margin (41%)
+            )
+            ->create();
+
+        $breakdown = $template->calculateFixedPrice();
+
+        // Labor: 4 hrs × $27 = $108
+        // Materials: $40
+        // COGS: $148
+        // With 41% margin: $148 / 0.59 = $250.85
+        expect($breakdown['labor_hours'])->toBe(4.0)
+            ->and($breakdown['labor_cost'])->toBe(108.0)
+            ->and($breakdown['material_cost'])->toBe(40.0)
+            ->and($breakdown['cogs'])->toBe(148.0)
+            ->and($breakdown['margin_percent'])->toBe(41.0)
+            ->and($breakdown['final_price'])->toBe(360.98)
+            ->and($breakdown['profit'])->toBe(212.98);
+    });
+
+    it('returns effective price from calculateFixedPrice for templates with cost tracking', function () {
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 21,
+            'interior_margin_percent' => 50,
+        ]);
+
+        $template = EstimateTemplate::factory()
+            ->interior()
+            ->fixedPricingWithCostTracking(
+                laborHours: 1.5,
+                materialCost: 25.00,
+                marginPercent: 50.0
+            )
+            ->create();
+
+        // Labor: 1.5 hrs × $21 = $31.50
+        // Materials: $25
+        // COGS: $56.50
+        // With 50% margin: $56.50 / 0.50 = $113
+        expect($template->getEffectivePrice())->toBe(113.0);
+    });
+
+    it('returns base_price for legacy fixed templates without cost tracking', function () {
+        $template = EstimateTemplate::factory()
+            ->interior()
+            ->fixedPricing(500.00)
+            ->create();
+
+        expect($template->getEffectivePrice())->toBe(500.0);
+    });
+
+    it('returns calculated_price if stored', function () {
+        $template = EstimateTemplate::factory()
+            ->interior()
+            ->fixedPricing()
+            ->create(['calculated_price' => 250.00]);
+
+        expect($template->getEffectivePrice())->toBe(250.0);
     });
 });

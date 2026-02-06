@@ -40,7 +40,7 @@ describe('Listing Flyer Access', function () {
     });
 
     it('forbids internal users from accessing agent flyer route', function () {
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
         $listing = AgentListing::factory()->forAgent($agent)->create();
 

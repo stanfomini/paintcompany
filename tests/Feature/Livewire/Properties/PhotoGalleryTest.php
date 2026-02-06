@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Properties\PhotoGallery;
 use App\Models\Property;
 use App\Models\PropertyPhoto;
 use App\Models\User;
@@ -12,16 +11,16 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('PhotoGallery component', function () {
     it('renders the photo gallery component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->assertStatus(200);
     });
 
     it('displays existing photos', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Storage::fake('public');
@@ -33,17 +32,17 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->assertSee('Test photo caption')
             ->assertSee('Before');
     });
 
     it('opens and closes upload modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->assertSet('showUploadModal', false)
             ->call('openUploadModal')
             ->assertSet('showUploadModal', true)
@@ -52,11 +51,11 @@ describe('PhotoGallery component', function () {
     });
 
     it('resets form fields when closing upload modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->set('caption', 'Test caption')
             ->set('category', 'after')
             ->call('closeUploadModal')
@@ -65,36 +64,36 @@ describe('PhotoGallery component', function () {
     });
 
     it('validates photo is required for upload', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->call('uploadPhoto')
             ->assertHasErrors(['photo']);
     });
 
     it('validates photo must be an image', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Storage::fake('public');
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->set('photo', UploadedFile::fake()->create('document.pdf', 100))
             ->call('uploadPhoto')
             ->assertHasErrors(['photo']);
     });
 
     it('validates category is valid', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Storage::fake('public');
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->set('photo', UploadedFile::fake()->image('test.jpg'))
             ->set('category', 'invalid')
             ->call('uploadPhoto')
@@ -102,13 +101,13 @@ describe('PhotoGallery component', function () {
     });
 
     it('uploads photo successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Storage::fake('public');
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->set('photo', UploadedFile::fake()->image('test-photo.jpg'))
             ->set('caption', 'My test photo')
             ->set('category', 'before')
@@ -126,7 +125,7 @@ describe('PhotoGallery component', function () {
     });
 
     it('sets correct sort order for new photos', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Storage::fake('public');
@@ -142,7 +141,7 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->set('photo', UploadedFile::fake()->image('new.jpg'))
             ->call('uploadPhoto');
 
@@ -154,7 +153,7 @@ describe('PhotoGallery component', function () {
     });
 
     it('deletes photo successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         Storage::fake('public');
@@ -167,7 +166,7 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->call('deletePhoto', $photo->id)
             ->assertDispatched('photo-deleted');
 
@@ -177,7 +176,7 @@ describe('PhotoGallery component', function () {
     });
 
     it('cannot delete photo from different property', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
         $otherProperty = Property::factory()->create();
 
@@ -186,13 +185,13 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->call('deletePhoto', $photo->id)
             ->assertStatus(404);
     })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
 
     it('updates sort order', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         $photo1 = PropertyPhoto::factory()->create([
@@ -211,7 +210,7 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->call('updateSortOrder', [$photo3->id, $photo1->id, $photo2->id])
             ->assertDispatched('photos-reordered');
 
@@ -221,7 +220,7 @@ describe('PhotoGallery component', function () {
     });
 
     it('displays photo count', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         PropertyPhoto::factory()->count(3)->create([
@@ -229,12 +228,12 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->assertSee('3 photos');
     });
 
     it('displays correct category badges', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
         PropertyPhoto::factory()->create([
@@ -253,7 +252,7 @@ describe('PhotoGallery component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(PhotoGallery::class, ['property' => $property])
+            ->test('properties.photo-gallery', ['property' => $property])
             ->assertSee('Before')
             ->assertSee('During')
             ->assertSee('After');

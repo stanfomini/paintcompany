@@ -69,8 +69,10 @@ class EstimateAreaPaintSelection extends Model
     /**
      * Calculate and store the paint cost.
      */
-    public function calculateCost(float $recycleFeePerGallon = 0.54): void
+    public function calculateCost(?float $recycleFeePerGallon = null): void
     {
+        $recycleFeePerGallon ??= (float) \App\Models\CompanySetting::getInstance()->recycle_fee_per_gallon;
+
         if (! $this->paintProduct || $this->sqft_covered <= 0) {
             return;
         }

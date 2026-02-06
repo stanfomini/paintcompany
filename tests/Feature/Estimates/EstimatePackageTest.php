@@ -12,7 +12,7 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('EstimatePackage calculations', function () {
     it('calculates totals by summing included and approved items', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -66,7 +66,7 @@ describe('EstimatePackage calculations', function () {
     });
 
     it('excludes non-included items from total', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -115,7 +115,7 @@ describe('EstimatePackage calculations', function () {
     });
 
     it('excludes non-approved items from total', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -164,7 +164,7 @@ describe('EstimatePackage calculations', function () {
     });
 
     it('calculates deposit and balance correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -205,7 +205,7 @@ describe('EstimatePackage calculations', function () {
     });
 
     it('applies discount percent before tax', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -249,7 +249,7 @@ describe('EstimatePackage calculations', function () {
     });
 
     it('includes warranty price in calculations', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -294,7 +294,7 @@ describe('EstimatePackageService', function () {
     it('creates good better best packages', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -333,7 +333,7 @@ describe('EstimatePackageService', function () {
     it('selects a package and deselects others', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -363,7 +363,7 @@ describe('EstimatePackageService', function () {
     it('throws exception when selecting package from different estimate', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal1 = Deal::factory()->create();
         $deal2 = Deal::factory()->create();
 
@@ -386,7 +386,7 @@ describe('EstimatePackageService', function () {
     it('approves line item and recalculates total', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -433,7 +433,7 @@ describe('EstimatePackageService', function () {
     it('rejects line item and excludes from total', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -493,7 +493,7 @@ describe('EstimatePackageService', function () {
     it('adds item to package', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -525,7 +525,7 @@ describe('EstimatePackageService', function () {
     it('removes item from package', function () {
         $service = new EstimatePackageService;
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -563,7 +563,7 @@ describe('EstimatePackageService', function () {
 
 describe('EstimatePackage tier labels', function () {
     it('returns correct tier labels', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -583,7 +583,7 @@ describe('EstimatePackage tier labels', function () {
 
 describe('EstimatePackage scopes', function () {
     it('filters selected packages', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,
@@ -600,7 +600,7 @@ describe('EstimatePackage scopes', function () {
     });
 
     it('filters recommended packages', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
             'created_by' => $user->id,

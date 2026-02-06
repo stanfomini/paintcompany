@@ -41,6 +41,7 @@ class EstimateArea extends Model
         'fixed_price_amount',
         'notes',
         'sort_order',
+        'default_paint_product_id',
     ];
 
     protected function casts(): array
@@ -91,6 +92,39 @@ class EstimateArea extends Model
                 }
             }
         });
+
+        // Trigger estimate and package recalculation when an area is saved
+        // Skip recalculation if the estimate was just updated (it already has correct values from TemplateBuilder)
+        static::saved(function (EstimateArea $area) {
+            // Only recalculate if the estimate wasn't recently updated (within last second)
+            // This prevents the save flow from double-calculating
+            if ($area->estimate && $area->estimate->updated_at && $area->estimate->updated_at->lt(now()->subSecond())) {
+                $area->estimate->calculateTotals();
+                $area->estimate->calculateDepositAndBalance();
+                $area->estimate->save();
+
+                // Recalculate package totals since areas affect package pricing via effective_price
+                foreach ($area->estimate->packages as $package) {
+                    $package->calculateTotals();
+                    $package->save();
+                }
+            }
+        });
+
+        // Trigger estimate and package recalculation when an area is deleted
+        static::deleted(function (EstimateArea $area) {
+            if ($area->estimate && $area->estimate->exists) {
+                $area->estimate->calculateTotals();
+                $area->estimate->calculateDepositAndBalance();
+                $area->estimate->save();
+
+                // Recalculate package totals since areas affect package pricing
+                foreach ($area->estimate->packages as $package) {
+                    $package->calculateTotals();
+                    $package->save();
+                }
+            }
+        });
     }
 
     /**
@@ -134,6 +168,23 @@ class EstimateArea extends Model
     }
 
     /**
+     * Get the default paint product for this area (overrides estimate default).
+     */
+    public function defaultPaintProduct(): BelongsTo
+    {
+        return $this->belongsTo(PaintProduct::class, 'default_paint_product_id');
+    }
+
+    /**
+     * Get the effective paint product for this area.
+     * Cascades: Area default → Estimate default → null
+     */
+    public function getEffectivePaintProduct(): ?PaintProduct
+    {
+        return $this->defaultPaintProduct ?? $this->estimate?->defaultPaintProduct;
+    }
+
+    /**
      * Get the surfaces for this area.
      */
     public function surfaces(): HasMany
@@ -147,6 +198,14 @@ class EstimateArea extends Model
     public function paintSelections(): HasMany
     {
         return $this->hasMany(EstimateAreaPaintSelection::class);
+    }
+
+    /**
+     * Get addons (nested area templates) for this area.
+     */
+    public function addons(): HasMany
+    {
+        return $this->hasMany(EstimateAreaAddon::class);
     }
 
     /**
@@ -190,6 +249,105 @@ class EstimateArea extends Model
     public function getIsNestedAttribute(): bool
     {
         return $this->parent_area_id !== null;
+    }
+
+    // =========================================================================
+    // PRICING METHODS - CLEAR SEPARATION OF COGS vs CUSTOMER PRICE
+    // =========================================================================
+    // ARCHITECTURE: Areas calculate COGS from surfaces. Customer prices
+    // are calculated on-the-fly using CompanySetting margins.
+    // This prevents double-margin bugs and allows easy margin changes.
+    // =========================================================================
+
+    /**
+     * Get the raw COGS (Cost of Goods Sold) for this area.
+     * This is the sum of surface COGSs (labor + material).
+     * NO margins applied - this is what's stored in surface.total fields.
+     */
+    public function getCOGS(): float
+    {
+        // Fixed price areas don't have COGS - they are the price
+        if ($this->is_fixed_price) {
+            return (float) $this->fixed_price_amount;
+        }
+
+        return (float) $this->surfaces()
+            ->where('is_included', true)
+            ->sum('total'); // total = labor_cost + material_cost
+    }
+
+    /**
+     * Get the full COGS including cleanup, sundries, and addons.
+     * This is what the company actually spends to complete this area.
+     * NO margins applied - this is pure cost.
+     *
+     * Formula: labor + cleanup + sundries + materials + addons (with taxes)
+     */
+    public function getFullCOGS(): float
+    {
+        // Fixed price areas don't have COGS calculation
+        if ($this->is_fixed_price) {
+            return (float) $this->fixed_price_amount;
+        }
+
+        $settings = CompanySetting::getInstance();
+        $scope = $this->scope_type ?? 'interior';
+
+        // Sum from surfaces
+        $laborHours = (float) $this->surfaces()->where('is_included', true)->sum('labor_hours');
+        $laborCost = (float) $this->surfaces()->where('is_included', true)->sum('labor_cost');
+        $materialCost = (float) $this->surfaces()->where('is_included', true)->sum('material_cost');
+
+        // Add cleanup, sundries from CompanySetting (effective rate = base wage × payroll burden)
+        $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
+        $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+        $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
+
+        // Add addon costs (nested area templates like closets)
+        $addonCost = (float) $this->addons()->sum('total_price');
+
+        // Calculate COGS with taxes
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost + $addonCost);
+
+        return $cogsResult['cogs'];
+    }
+
+    /**
+     * Get the customer-facing price (OTD) for this area.
+     * This applies the scope-specific margin from CompanySetting.
+     * PBP Formula: COGS / (margin% / 100)
+     *
+     * USE THIS for displaying prices to customers.
+     * Margins are ALWAYS pulled fresh from CompanySetting - never hardcoded.
+     */
+    public function getCustomerPrice(): float
+    {
+        // Fixed price areas already include everything
+        if ($this->is_fixed_price) {
+            return (float) $this->fixed_price_amount;
+        }
+
+        $cogs = $this->getFullCOGS();
+
+        if ($cogs <= 0) {
+            return 0.0;
+        }
+
+        $settings = CompanySetting::getInstance();
+        $scope = $this->scope_type ?? 'interior';
+
+        return $settings->calculateOTDFromCOGS($cogs, $scope);
+    }
+
+    /**
+     * Calculate the OTD (Out The Door) price for this area using PBP formula.
+     * ALIAS for getCustomerPrice() - kept for backward compatibility.
+     *
+     * @deprecated Use getCustomerPrice() for clarity
+     */
+    public function calculateOTD(): float
+    {
+        return $this->getCustomerPrice();
     }
 
     /**

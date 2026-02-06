@@ -23,6 +23,7 @@ class Activity extends Model
 
     protected $fillable = [
         'user_id',
+        'assigned_to',
         'subject_type',
         'subject_id',
         'type',
@@ -56,6 +57,14 @@ class Activity extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the user assigned to this activity.
+     */
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
     }
 
     /**
@@ -139,11 +148,30 @@ class Activity extends Model
     }
 
     /**
-     * Scope to filter by user.
+     * Scope to filter by user (creator).
      */
     public function scopeForUser($query, User $user)
     {
         return $query->where('user_id', $user->id);
+    }
+
+    /**
+     * Scope to filter by assignee.
+     */
+    public function scopeAssignedTo($query, User $user)
+    {
+        return $query->where('assigned_to', $user->id);
+    }
+
+    /**
+     * Scope to filter activities assigned to or created by the user.
+     */
+    public function scopeForUserOrAssignedTo($query, User $user)
+    {
+        return $query->where(function ($q) use ($user) {
+            $q->where('user_id', $user->id)
+                ->orWhere('assigned_to', $user->id);
+        });
     }
 
     /**

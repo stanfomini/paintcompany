@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\RoomConfigurator;
 use App\Models\AreaTemplateSurface;
 use App\Models\CompanySetting;
 use App\Models\Deal;
@@ -39,18 +38,18 @@ beforeEach(function () {
 
 describe('RoomConfigurator component', function () {
     it('renders the room configurator component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->assertStatus(200)
             ->assertSee('Add Room');
     });
 
     it('displays existing areas', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
         EstimateArea::factory()->create([
@@ -62,14 +61,14 @@ describe('RoomConfigurator component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->assertSee('Living Room');
     });
 });
 
 describe('RoomConfigurator add room from template', function () {
     it('can add room from estimate template', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -107,7 +106,7 @@ describe('RoomConfigurator add room from template', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('addFromTemplate', $template->id)
             ->assertDispatched('area-added');
 
@@ -121,7 +120,7 @@ describe('RoomConfigurator add room from template', function () {
     });
 
     it('creates surfaces from template', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -168,7 +167,7 @@ describe('RoomConfigurator add room from template', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('addFromTemplate', $template->id);
 
         $estimate->refresh();
@@ -180,7 +179,7 @@ describe('RoomConfigurator add room from template', function () {
 
 describe('RoomConfigurator add custom room', function () {
     it('can add custom room with dimensions', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -195,7 +194,7 @@ describe('RoomConfigurator add custom room', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('openQuickAddDrawer')
             ->assertSet('showQuickAddDrawer', true)
             ->set('newRoomName', 'Custom Office')
@@ -219,12 +218,12 @@ describe('RoomConfigurator add custom room', function () {
     });
 
     it('validates custom room required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->set('newRoomName', '')
             ->set('newLength', 0)
             ->call('addCustomRoom')
@@ -232,7 +231,7 @@ describe('RoomConfigurator add custom room', function () {
     });
 
     it('calculates computed sqft values for custom room', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -247,7 +246,7 @@ describe('RoomConfigurator add custom room', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->set('newRoomName', 'Test Room')
             ->set('newLength', 12)
             ->set('newWidth', 14)
@@ -267,7 +266,7 @@ describe('RoomConfigurator add custom room', function () {
 
 describe('RoomConfigurator surface management', function () {
     it('can toggle surface inclusion', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -290,7 +289,7 @@ describe('RoomConfigurator surface management', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('toggleSurface', $area->id, $surface->id)
             ->assertDispatched('surface-toggled');
 
@@ -299,7 +298,7 @@ describe('RoomConfigurator surface management', function () {
 
         // Toggle back
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('toggleSurface', $area->id, $surface->id);
 
         $surface->refresh();
@@ -307,7 +306,7 @@ describe('RoomConfigurator surface management', function () {
     });
 
     it('can update surface production rate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -342,7 +341,7 @@ describe('RoomConfigurator surface management', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('updateSurfaceRate', $area->id, $surface->id, $newRate->id)
             ->assertDispatched('surface-updated');
 
@@ -354,7 +353,7 @@ describe('RoomConfigurator surface management', function () {
 
 describe('RoomConfigurator nested items', function () {
     it('can add nested item to area', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -366,7 +365,7 @@ describe('RoomConfigurator nested items', function () {
         $nestedTemplate = NestedAreaTemplate::factory()->smallCloset()->create();
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('openNestedItemModal', $area->id)
             ->assertSet('showNestedItemModal', true)
             ->assertSet('targetAreaIdForNested', $area->id)
@@ -383,14 +382,14 @@ describe('RoomConfigurator nested items', function () {
     });
 
     it('can add standalone nested item', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         $nestedTemplate = NestedAreaTemplate::factory()->laundryRoom()->create();
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('openNestedItemModal') // No area ID = standalone
             ->assertSet('addAsStandalone', true)
             ->set('selectedNestedTemplateId', $nestedTemplate->id)
@@ -406,7 +405,7 @@ describe('RoomConfigurator nested items', function () {
     });
 
     it('can remove nested item from area', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -427,7 +426,7 @@ describe('RoomConfigurator nested items', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('removeNestedItem', $parentArea->id, $nestedArea->id)
             ->assertDispatched('nested-item-removed');
 
@@ -437,7 +436,7 @@ describe('RoomConfigurator nested items', function () {
 
 describe('RoomConfigurator dimension updates', function () {
     it('recalculates prices when dimensions change', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -447,7 +446,6 @@ describe('RoomConfigurator dimension updates', function () {
             'scope' => 'interior',
             'surface_category' => 'walls',
             'production_rate' => 200,
-            'material_cost_per_unit' => 0.10,
             'is_active' => true,
         ]);
 
@@ -484,7 +482,7 @@ describe('RoomConfigurator dimension updates', function () {
 
         // Update dimensions - larger room should have more sqft
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('updateAreaDimension', $area->id, 'length', 18)
             ->assertDispatched('area-updated');
 
@@ -501,7 +499,7 @@ describe('RoomConfigurator dimension updates', function () {
 
 describe('RoomConfigurator area deletion', function () {
     it('can delete an area', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -522,7 +520,7 @@ describe('RoomConfigurator area deletion', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('deleteArea', $area->id)
             ->assertDispatched('area-deleted');
 
@@ -531,7 +529,7 @@ describe('RoomConfigurator area deletion', function () {
     });
 
     it('deletes child areas when parent is deleted', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -548,7 +546,7 @@ describe('RoomConfigurator area deletion', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->call('deleteArea', $parentArea->id);
 
         expect(EstimateArea::find($parentArea->id))->toBeNull();
@@ -558,7 +556,7 @@ describe('RoomConfigurator area deletion', function () {
 
 describe('RoomConfigurator totals calculation', function () {
     it('calculates area total including surfaces and nested items', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -622,7 +620,7 @@ describe('RoomConfigurator totals calculation', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate]);
+            ->test('estimates.room-configurator', ['estimate' => $estimate]);
 
         $total = $component->instance()->calculateAreaTotal($area->fresh(['surfaces', 'childAreas']));
 
@@ -633,7 +631,7 @@ describe('RoomConfigurator totals calculation', function () {
     });
 
     it('excludes non-included surfaces from total', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -680,7 +678,7 @@ describe('RoomConfigurator totals calculation', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate]);
+            ->test('estimates.room-configurator', ['estimate' => $estimate]);
 
         $total = $component->instance()->calculateAreaTotal($area->fresh(['surfaces', 'childAreas']));
 
@@ -690,7 +688,7 @@ describe('RoomConfigurator totals calculation', function () {
     });
 
     it('calculates overall areas total', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -741,7 +739,7 @@ describe('RoomConfigurator totals calculation', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate]);
+            ->test('estimates.room-configurator', ['estimate' => $estimate]);
 
         $areasTotal = $component->instance()->areasTotal;
 
@@ -753,7 +751,7 @@ describe('RoomConfigurator totals calculation', function () {
 
 describe('RoomConfigurator accordion behavior', function () {
     it('expands first area by default', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -763,13 +761,13 @@ describe('RoomConfigurator accordion behavior', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate]);
+            ->test('estimates.room-configurator', ['estimate' => $estimate]);
 
         expect($component->get('expandedAreaId'))->toBe($area->id);
     });
 
     it('can toggle area expansion', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
@@ -786,7 +784,7 @@ describe('RoomConfigurator accordion behavior', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->assertSet('expandedAreaId', $area1->id)
             ->call('toggleAreaExpansion', $area2->id)
             ->assertSet('expandedAreaId', $area2->id);
@@ -795,12 +793,12 @@ describe('RoomConfigurator accordion behavior', function () {
 
 describe('RoomConfigurator refresh event', function () {
     it('responds to refresh-areas event', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create(['created_by' => $user->id]);
 
         $component = Livewire::actingAs($user)
-            ->test(RoomConfigurator::class, ['estimate' => $estimate])
+            ->test('estimates.room-configurator', ['estimate' => $estimate])
             ->dispatch('refresh-areas')
             ->assertStatus(200);
     });

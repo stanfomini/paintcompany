@@ -34,6 +34,7 @@
 
                         <span class="sr-only">{{ config('app.name', 'Laravel') }}</span>
                     </a>
+                    @include('partials.flash-messages')
                     {{ $slot }}
                 </div>
             </div>

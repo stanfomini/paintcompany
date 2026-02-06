@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Estimates\Show;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -20,7 +19,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertStatus(200)
             ->assertSee('EST-2026-00001');
     });
@@ -49,7 +48,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertSee('EST-2026-00001')
             ->assertSee('Kitchen Renovation')
             ->assertSee('Full Kitchen Paint')
@@ -74,7 +73,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $otherEstimate])
+            ->test('customer.estimates.show', ['estimate' => $otherEstimate])
             ->assertNotFound();
     });
 
@@ -88,7 +87,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $draftEstimate])
+            ->test('customer.estimates.show', ['estimate' => $draftEstimate])
             ->assertNotFound();
     });
 
@@ -112,7 +111,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertSee('Line Items')
             ->assertSee('Wall Painting')
             ->assertSee('Paint all walls')
@@ -132,7 +131,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertSee('Action Required')
             ->assertSee('Accept Estimate')
             ->assertSee('Decline');
@@ -148,7 +147,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertDontSee('Action Required')
             ->assertDontSee('Accept Estimate');
     });
@@ -166,7 +165,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('accept')
             ->assertSee('Estimate accepted successfully');
 
@@ -188,7 +187,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('decline')
             ->assertSee('Estimate declined');
 
@@ -208,7 +207,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('accept')
             ->assertSee('This estimate can no longer be accepted');
     });
@@ -223,7 +222,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('decline')
             ->assertSee('This estimate can no longer be declined');
     });
@@ -238,7 +237,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertSet('showAcceptModal', false)
             ->call('confirmAccept')
             ->assertSet('showAcceptModal', true);
@@ -254,7 +253,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('confirmAccept')
             ->assertSet('showAcceptModal', true)
             ->call('cancelAccept')
@@ -271,7 +270,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertSet('showDeclineModal', false)
             ->call('confirmDecline')
             ->assertSet('showDeclineModal', true);
@@ -287,7 +286,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('confirmDecline')
             ->assertSet('showDeclineModal', true)
             ->call('cancelDecline')
@@ -307,7 +306,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->call('accept');
 
         $deal->refresh();
@@ -325,7 +324,7 @@ describe('Customer Estimates Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('customer.estimates.show', ['estimate' => $estimate])
             ->assertSee('Download PDF');
     });
 });

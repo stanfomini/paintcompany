@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Activities\QuickAdd;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
@@ -8,11 +7,11 @@ use Livewire\Livewire;
 
 describe('QuickAdd component', function () {
     it('renders the quick add component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -20,11 +19,11 @@ describe('QuickAdd component', function () {
     });
 
     it('renders with subject type and id', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -34,11 +33,11 @@ describe('QuickAdd component', function () {
     });
 
     it('creates activity with deal subject', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -58,11 +57,11 @@ describe('QuickAdd component', function () {
     });
 
     it('creates activity with customer subject', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Customer::class,
                 'subjectId' => $customer->id,
             ])
@@ -82,11 +81,11 @@ describe('QuickAdd component', function () {
     });
 
     it('validates title is required', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -96,11 +95,11 @@ describe('QuickAdd component', function () {
     });
 
     it('validates title max length', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -110,11 +109,11 @@ describe('QuickAdd component', function () {
     });
 
     it('validates type is required', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -125,11 +124,11 @@ describe('QuickAdd component', function () {
     });
 
     it('validates type is valid', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -140,11 +139,11 @@ describe('QuickAdd component', function () {
     });
 
     it('validates due date is a valid date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -156,11 +155,11 @@ describe('QuickAdd component', function () {
     });
 
     it('validates description max length', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -172,11 +171,11 @@ describe('QuickAdd component', function () {
     });
 
     it('allows optional due date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -193,11 +192,11 @@ describe('QuickAdd component', function () {
     });
 
     it('allows optional description', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -214,11 +213,11 @@ describe('QuickAdd component', function () {
     });
 
     it('resets form after saving', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -234,11 +233,11 @@ describe('QuickAdd component', function () {
     });
 
     it('dispatches activity-created event', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -249,11 +248,11 @@ describe('QuickAdd component', function () {
     });
 
     it('has correct default values', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -266,11 +265,11 @@ describe('QuickAdd component', function () {
     });
 
     it('accepts all valid activity types', function ($type) {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -286,11 +285,11 @@ describe('QuickAdd component', function () {
     })->with(['task', 'note', 'call', 'email', 'meeting', 'other']);
 
     it('creates activity with is_completed set to false', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(QuickAdd::class, [
+            ->test('activities.quick-add', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])

@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\OptionsManager;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimateArea;
@@ -11,7 +10,7 @@ use Livewire\Livewire;
 
 describe('OptionsManager component', function () {
     beforeEach(function () {
-        $this->internalUser = User::factory()->internal()->create();
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
         $this->deal = Deal::factory()->create();
         $this->estimate = Estimate::factory()->forDeal($this->deal)->draft()->create([
             'created_by' => $this->internalUser->id,
@@ -20,7 +19,7 @@ describe('OptionsManager component', function () {
 
     it('renders for internal user', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->assertStatus(200);
     });
 
@@ -35,7 +34,7 @@ describe('OptionsManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal')
             ->assertSet('showModal', true)
             ->set('optionName', 'Premium Paint Upgrade')
@@ -68,7 +67,7 @@ describe('OptionsManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal')
             ->set('optionName', 'Extra Coat')
             ->set('optionPricingType', 'per_sqft')
@@ -100,7 +99,7 @@ describe('OptionsManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal', $option->id)
             ->assertSet('showModal', true)
             ->assertSet('optionName', 'Original Name')
@@ -123,7 +122,7 @@ describe('OptionsManager component', function () {
         expect(EstimateOption::where('id', $option->id)->exists())->toBeTrue();
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('delete', $option->id)
             ->assertDispatched('options-updated');
 
@@ -136,7 +135,7 @@ describe('OptionsManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('toggleSelected', $option->id)
             ->assertDispatched('options-updated');
 
@@ -145,7 +144,7 @@ describe('OptionsManager component', function () {
 
         // Toggle back
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('toggleSelected', $option->id);
 
         $option->refresh();
@@ -162,7 +161,7 @@ describe('OptionsManager component', function () {
         $initialTotal = (float) $this->estimate->total;
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('toggleSelected', $option->id);
 
         $this->estimate->refresh();
@@ -182,7 +181,7 @@ describe('OptionsManager component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.options-manager', ['estimate' => $this->estimate]);
 
         $options = $component->get('options');
         expect($options)->toHaveCount(2);
@@ -192,7 +191,7 @@ describe('OptionsManager component', function () {
 
     it('validates required fields', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal')
             ->set('optionName', '')
             ->call('save')
@@ -205,7 +204,7 @@ describe('OptionsManager component', function () {
         $surface = EstimateAreaSurface::factory()->forArea($area)->wall()->create();
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal')
             ->set('optionName', 'Test Option')
             ->set('optionPricingType', 'per_sqft')
@@ -217,7 +216,7 @@ describe('OptionsManager component', function () {
 
     it('validates surface is required for per_sqft pricing type', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal')
             ->set('optionName', 'Test Option')
             ->set('optionPricingType', 'per_sqft')
@@ -231,7 +230,7 @@ describe('OptionsManager component', function () {
         $otherOption = EstimateOption::factory()->forEstimate($otherEstimate)->create();
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('delete', $otherOption->id);
 
         // Option should still exist since it belongs to another estimate
@@ -245,7 +244,7 @@ describe('OptionsManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(OptionsManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.options-manager', ['estimate' => $this->estimate])
             ->call('openModal', $otherOption->id)
             ->set('optionName', 'Hacked Name')
             ->call('save');

@@ -41,8 +41,6 @@ class ProductionRateFactory extends Factory
             'unit_type' => fake()->randomElement(['sqft', 'lnft', 'unit']),
             'production_rate' => fake()->randomFloat(2, 100, 400),
             'rate_type' => fake()->randomElement(['sqft_hr', 'lnft_hr', 'units_hr']),
-            'hourly_labor_rate' => fake()->randomFloat(2, 45, 75),
-            'material_cost_per_unit' => fake()->randomFloat(2, 0.15, 0.50),
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,

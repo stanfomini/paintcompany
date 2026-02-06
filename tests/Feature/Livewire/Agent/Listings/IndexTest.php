@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Listings\Index;
 use App\Models\AgentListing;
 use App\Models\User;
 use Livewire\Livewire;
@@ -10,7 +9,7 @@ describe('Agent Listings Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertStatus(200)
             ->assertSee('My Listings');
     });
@@ -27,7 +26,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSee('123 Own Street')
             ->assertDontSee('456 Other Street');
     });
@@ -43,7 +42,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->set('search', 'Main')
             ->assertSee('123 Main Street')
             ->assertDontSee('456 Oak Avenue');
@@ -62,7 +61,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->set('search', 'Los Angeles')
             ->assertSee('123 Main Street')
             ->assertDontSee('456 Oak Avenue');
@@ -79,7 +78,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->set('statusFilter', 'active')
             ->assertSee('123 Active Street')
             ->assertDontSee('456 Sold Avenue');
@@ -96,7 +95,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSet('statusFilter', 'all')
             ->assertSee('123 Active Street')
             ->assertSee('456 Sold Avenue');
@@ -107,7 +106,7 @@ describe('Agent Listings Index component', function () {
         AgentListing::factory()->count(20)->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
@@ -117,7 +116,7 @@ describe('Agent Listings Index component', function () {
         AgentListing::factory()->count(20)->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->set('statusFilter', 'active')
             ->assertSet('paginators.page', 1);
     });
@@ -126,7 +125,7 @@ describe('Agent Listings Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSee('No listings found')
             ->assertSee('Get started by adding your first property listing.');
     });
@@ -138,7 +137,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->set('search', 'NonexistentAddress')
             ->assertSee('No listings found')
             ->assertSee('Try adjusting your search or filter criteria.');
@@ -151,7 +150,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->call('delete', $listing->id)
             ->assertSee('Listing archived successfully.');
 
@@ -166,7 +165,7 @@ describe('Agent Listings Index component', function () {
         $otherListing = AgentListing::factory()->forAgent($otherAgent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->call('delete', $otherListing->id)
             ->assertForbidden();
     });
@@ -181,7 +180,7 @@ describe('Agent Listings Index component', function () {
 
         // Agent should only see their own listing
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSee('My Listing')
             ->assertDontSee('Other Agent Listing');
     });
@@ -200,7 +199,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSee('Active')
             ->assertSee('Pending')
             ->assertSee('Sold');
@@ -215,7 +214,7 @@ describe('Agent Listings Index component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSee('$500,000');
     });
 
@@ -223,7 +222,7 @@ describe('Agent Listings Index component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Index::class)
+            ->test('agent.listings.index')
             ->assertSet('search', '')
             ->assertSet('statusFilter', 'all')
             ->assertSet('perPage', 15);

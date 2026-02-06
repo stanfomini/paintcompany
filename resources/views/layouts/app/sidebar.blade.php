@@ -16,8 +16,8 @@
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                     @if (auth()->user()?->isInternal())
-                        <flux:sidebar.item icon="users" :href="route('customers.index')" :current="request()->routeIs('customers.*')" wire:navigate>
-                            {{ __('Customers') }}
+                        <flux:sidebar.item icon="users" :href="route('people.index')" :current="request()->routeIs('people.*') || request()->routeIs('customers.*') || request()->routeIs('agents.*') || request()->routeIs('crews.*')" wire:navigate>
+                            {{ __('People') }}
                         </flux:sidebar.item>
                         <flux:sidebar.item icon="home" :href="route('properties.index')" :current="request()->routeIs('properties.*')" wire:navigate>
                             {{ __('Properties') }}
@@ -28,14 +28,14 @@
                         <flux:sidebar.item icon="document-text" :href="route('estimates.index')" :current="request()->routeIs('estimates.*')" wire:navigate>
                             {{ __('Estimates') }}
                         </flux:sidebar.item>
-                        <flux:sidebar.item icon="check-circle" :href="route('activities.index')" :current="request()->routeIs('activities.*')" wire:navigate>
-                            {{ __('Tasks') }}
+                        <flux:sidebar.item icon="clipboard-document-check" :href="route('jobs.index')" :current="request()->routeIs('jobs.*')" wire:navigate>
+                            {{ __('Jobs') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="check-circle" :href="route('planner.index')" :current="request()->routeIs('planner.*')" wire:navigate>
+                            {{ __('Planner') }}
                         </flux:sidebar.item>
                         <flux:sidebar.item icon="building-office" :href="route('agent-listings.index')" :current="request()->routeIs('agent-listings.*')" wire:navigate>
                             {{ __('Agent Listings') }}
-                        </flux:sidebar.item>
-                        <flux:sidebar.item icon="user-group" :href="route('agents.index')" :current="request()->routeIs('agents.*')" wire:navigate>
-                            {{ __('Agents') }}
                         </flux:sidebar.item>
                         <flux:sidebar.item icon="chart-bar" :href="route('production-rates.index')" :current="request()->routeIs('production-rates.*')" wire:navigate>
                             {{ __('Production Rates') }}
@@ -43,6 +43,16 @@
                         <flux:sidebar.item icon="chat-bubble-left-right" :href="route('chat.index')" :current="request()->routeIs('chat.*')" wire:navigate>
                             {{ __('Messages') }}
                         </flux:sidebar.item>
+                        @can('view roadmap')
+                            <flux:sidebar.item icon="map" :href="route('roadmap.index')" :current="request()->routeIs('roadmap.*')" wire:navigate>
+                                {{ __('Roadmap') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('view kpis')
+                            <flux:sidebar.item icon="chart-bar-square" :href="route('kpis.sales')" :current="request()->routeIs('kpis.*')" wire:navigate>
+                                {{ __('KPIs') }}
+                            </flux:sidebar.item>
+                        @endcan
                     @endif
                 </flux:sidebar.group>
 
@@ -134,7 +144,18 @@
             </flux:dropdown>
         </flux:header>
 
+        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4">
+            @include('partials.flash-messages')
+        </div>
+
         {{ $slot }}
+
+        {{-- Global notification listener for internal users --}}
+        @auth
+            @if (auth()->user()->isInternal())
+                @livewire('notifications.new-lead-alert')
+            @endif
+        @endauth
 
         @fluxScripts
     </body>

@@ -4,11 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @auth('agent')
+    <meta name="user-id" content="{{ auth('agent')->id() }}">
+    <meta name="user-type" content="agent">
+    @endauth
 
     <title>{{ $title ?? 'Agent Portal' }} - {{ config('app.name') }}</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    @livewireStyles
     @fluxAppearance
 </head>
 <body class="min-h-screen bg-white dark:bg-zinc-800">
@@ -89,10 +92,10 @@
     </flux:header>
 
     <flux:main>
+        @include('partials.flash-messages')
         {{ $slot }}
     </flux:main>
 
-    @livewireScripts
     @fluxScripts
 </body>
 </html>

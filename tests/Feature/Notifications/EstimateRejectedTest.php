@@ -13,7 +13,7 @@ describe('EstimateRejected Notification', function () {
     it('can be sent to internal users', function () {
         Notification::fake();
 
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create();
 
         $internalUser->notify(new EstimateRejected($estimate));

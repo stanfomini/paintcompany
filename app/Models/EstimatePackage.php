@@ -94,16 +94,47 @@ class EstimatePackage extends Model
     }
 
     /**
-     * Calculate totals from included and approved items, applying tax and discount.
+     * Calculate totals using area-level margin (not per-surface margin).
+     * Groups surface items by area and uses EstimateArea::getCustomerPrice().
+     * Service items (EstimateItem) use their stored total (user-priced).
      */
     public function calculateTotals(): void
     {
-        // Sum the effective price of all included and approved items
-        $this->subtotal = $this->items()
+        $items = $this->items()
             ->included()
             ->approved()
-            ->get()
-            ->sum(fn (EstimatePackageItem $item) => $item->effective_price);
+            ->with('itemable')
+            ->get();
+
+        $subtotal = 0.0;
+        $areaIds = [];
+
+        foreach ($items as $item) {
+            $itemable = $item->itemable;
+            if (! $itemable) {
+                continue;
+            }
+
+            if ($item->price_override !== null) {
+                $subtotal += (float) $item->price_override;
+            } elseif ($itemable instanceof EstimateAreaSurface) {
+                // Group surfaces by area - only count each area once
+                $areaId = $itemable->area_id;
+                if (! in_array($areaId, $areaIds) && $itemable->area) {
+                    $areaIds[] = $areaId;
+                    $subtotal += $itemable->area->getCustomerPrice();
+                }
+            } elseif ($itemable instanceof EstimateItem) {
+                $subtotal += (float) $itemable->total;
+            } elseif ($itemable instanceof EstimateArea) {
+                if (! in_array($itemable->id, $areaIds)) {
+                    $areaIds[] = $itemable->id;
+                    $subtotal += $itemable->getCustomerPrice();
+                }
+            }
+        }
+
+        $this->subtotal = round($subtotal, 2);
 
         // Add warranty price to subtotal
         $baseAmount = $this->subtotal + ($this->warranty_price ?? 0);

@@ -28,6 +28,7 @@ class EstimateItemFactory extends Factory
             'unit' => fake()->randomElement(['each', 'sq ft', 'linear ft', 'hour', 'day', 'gallon']),
             'unit_price' => $unitPrice,
             'total' => $quantity * $unitPrice,
+            'cost' => null, // Defaults to total when null
             'sort_order' => 0,
         ];
     }
@@ -90,6 +91,45 @@ class EstimateItemFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'estimate_id' => $estimate->id,
+        ]);
+    }
+
+    /**
+     * Set as a service item with vendor cost (e.g., house cleaning).
+     */
+    public function withVendorCost(float $customerPrice, float $vendorCost): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'quantity' => 1,
+            'unit' => 'service',
+            'unit_price' => $customerPrice,
+            'total' => $customerPrice,
+            'cost' => $vendorCost,
+        ]);
+    }
+
+    /**
+     * Set as a third-party service (house cleaning, pressure washing, etc.).
+     */
+    public function thirdPartyService(): static
+    {
+        $services = [
+            ['name' => 'House Cleaning', 'price' => 400.00, 'cost' => 350.00],
+            ['name' => 'Pressure Washing', 'price' => 250.00, 'cost' => 175.00],
+            ['name' => 'Window Cleaning', 'price' => 200.00, 'cost' => 140.00],
+            ['name' => 'Gutter Cleaning', 'price' => 150.00, 'cost' => 100.00],
+            ['name' => 'Furniture Moving', 'price' => 300.00, 'cost' => 200.00],
+        ];
+
+        $service = fake()->randomElement($services);
+
+        return $this->state(fn (array $attributes) => [
+            'description' => $service['name'],
+            'quantity' => 1,
+            'unit' => 'service',
+            'unit_price' => $service['price'],
+            'total' => $service['price'],
+            'cost' => $service['cost'],
         ]);
     }
 }

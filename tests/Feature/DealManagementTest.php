@@ -1,10 +1,5 @@
 <?php
 
-use App\Livewire\Deals\CreateModal;
-use App\Livewire\Deals\EditModal;
-use App\Livewire\Deals\NoteForm;
-use App\Livewire\Deals\Pipeline;
-use App\Livewire\Deals\Show;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DealNote;
@@ -15,13 +10,13 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('Deal pipeline access', function () {
     it('allows internal user to view deal pipeline', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $response = $this->actingAs($user)
             ->get(route('deals.index'));
 
         $response->assertOk();
-        $response->assertSeeLivewire(Pipeline::class);
+        $response->assertSeeLivewire('deals.pipeline');
     });
 
     it('denies agent access to deal pipeline', function () {
@@ -51,14 +46,14 @@ describe('Deal pipeline access', function () {
 
 describe('Deal detail access', function () {
     it('allows internal user to view deal detail', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $response = $this->actingAs($user)
             ->get(route('deals.show', $deal));
 
         $response->assertOk();
-        $response->assertSeeLivewire(Show::class);
+        $response->assertSeeLivewire('deals.show');
     });
 
     it('denies agent access to deal detail', function () {
@@ -84,11 +79,11 @@ describe('Deal detail access', function () {
 
 describe('Deal creation', function () {
     it('allows internal user to create deal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', 'New Painting Project')
             ->set('stage', 'lead')
@@ -104,10 +99,10 @@ describe('Deal creation', function () {
     });
 
     it('validates required customer field', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', '')
             ->set('title', 'Test Deal')
             ->call('save')
@@ -115,11 +110,11 @@ describe('Deal creation', function () {
     });
 
     it('validates required title field', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('deals.create-modal')
             ->set('customerId', $customer->id)
             ->set('title', '')
             ->call('save')
@@ -129,7 +124,7 @@ describe('Deal creation', function () {
 
 describe('Deal editing', function () {
     it('allows internal user to update deal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $deal = Deal::factory()->create([
             'customer_id' => $customer->id,
@@ -138,7 +133,7 @@ describe('Deal editing', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('title', 'Updated Title')
             ->set('description', 'Updated description')
             ->call('save')
@@ -152,11 +147,11 @@ describe('Deal editing', function () {
     });
 
     it('can move deal to different stage', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->lead()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('stage', 'quoted')
             ->call('save')
             ->assertHasNoErrors();
@@ -166,7 +161,7 @@ describe('Deal editing', function () {
     });
 
     it('deal belongs to correct customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create();
         $customer2 = Customer::factory()->create();
         $deal = Deal::factory()->create([
@@ -174,7 +169,7 @@ describe('Deal editing', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('customerId', $customer2->id)
             ->call('save')
             ->assertHasNoErrors();
@@ -188,7 +183,7 @@ describe('Deal editing', function () {
 
 describe('Deal filters', function () {
     it('can search deals by title', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Deal::factory()->forCustomer($customer)->create([
@@ -201,14 +196,14 @@ describe('Deal filters', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('search', 'Kitchen')
             ->assertSee('Kitchen Renovation')
             ->assertDontSee('Bathroom Remodel');
     });
 
     it('can filter by stage', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Deal::factory()->forCustomer($customer)->lead()->create([
@@ -221,13 +216,13 @@ describe('Deal filters', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->assertSee('Lead Stage Deal')
             ->assertSee('Quoted Stage Deal');
     });
 
     it('can filter by customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create([
             'first_name' => 'Alice',
             'last_name' => 'Test',
@@ -247,16 +242,16 @@ describe('Deal filters', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('customerFilter', $customer1->id)
             ->assertSee('Alice Project')
             ->assertDontSee('Bob Project');
     });
 
     it('can filter by assigned user', function () {
-        $user = User::factory()->internal()->create();
-        $assignee1 = User::factory()->internal()->create(['name' => 'John Worker']);
-        $assignee2 = User::factory()->internal()->create(['name' => 'Jane Worker']);
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee1 = User::factory()->internal()->withFullAccess()->create(['name' => 'John Worker']);
+        $assignee2 = User::factory()->internal()->withFullAccess()->create(['name' => 'Jane Worker']);
         $customer = Customer::factory()->create();
 
         Deal::factory()->forCustomer($customer)->assignedTo($assignee1)->create([
@@ -269,7 +264,7 @@ describe('Deal filters', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Pipeline::class)
+            ->test('deals.pipeline')
             ->set('assignedToFilter', $assignee1->id)
             ->assertSee('John Assigned Deal')
             ->assertDontSee('Jane Assigned Deal');
@@ -278,11 +273,11 @@ describe('Deal filters', function () {
 
 describe('Deal notes', function () {
     it('can add note to deal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(NoteForm::class, ['dealId' => $deal->id])
+            ->test('deals.note-form', ['dealId' => $deal->id])
             ->set('content', 'This is a test note')
             ->set('isInternal', false)
             ->call('saveNote')
@@ -297,11 +292,11 @@ describe('Deal notes', function () {
     });
 
     it('can add internal note', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(NoteForm::class, ['dealId' => $deal->id])
+            ->test('deals.note-form', ['dealId' => $deal->id])
             ->set('content', 'Internal staff note')
             ->set('isInternal', true)
             ->call('saveNote')
@@ -316,11 +311,11 @@ describe('Deal notes', function () {
     });
 
     it('internal note marked correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(NoteForm::class, ['dealId' => $deal->id])
+            ->test('deals.note-form', ['dealId' => $deal->id])
             ->set('content', 'Staff only note')
             ->set('isInternal', true)
             ->call('saveNote');
@@ -331,14 +326,14 @@ describe('Deal notes', function () {
     });
 
     it('can delete own note', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $note = DealNote::factory()->forDeal($deal)->writtenBy($user)->create([
             'content' => 'Note to delete',
         ]);
 
         Livewire::actingAs($user)
-            ->test(NoteForm::class, ['dealId' => $deal->id])
+            ->test('deals.note-form', ['dealId' => $deal->id])
             ->call('deleteNote', $note->id)
             ->assertDispatched('note-deleted');
 
@@ -348,15 +343,15 @@ describe('Deal notes', function () {
     });
 
     it('cannot delete other users note', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $note = DealNote::factory()->forDeal($deal)->writtenBy($otherUser)->create([
             'content' => 'Other user note',
         ]);
 
         Livewire::actingAs($user)
-            ->test(NoteForm::class, ['dealId' => $deal->id])
+            ->test('deals.note-form', ['dealId' => $deal->id])
             ->call('deleteNote', $note->id);
 
         $this->assertDatabaseHas('deal_notes', [

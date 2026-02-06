@@ -62,6 +62,11 @@ class EstimateTemplate extends Model
         'default_paint_product_id',
         'pricing_method',
         'base_price',
+        'estimated_labor_hours',
+        'labor_cost',
+        'material_cost',
+        'margin_percent',
+        'calculated_price',
         'per_sqft_rate',
         'percent_of_total',
         'scope_type',
@@ -81,6 +86,11 @@ class EstimateTemplate extends Model
             'default_quantity' => 'decimal:2',
             'default_coats' => 'integer',
             'base_price' => 'decimal:2',
+            'estimated_labor_hours' => 'decimal:2',
+            'labor_cost' => 'decimal:2',
+            'material_cost' => 'decimal:2',
+            'margin_percent' => 'decimal:2',
+            'calculated_price' => 'decimal:2',
             'per_sqft_rate' => 'decimal:4',
             'percent_of_total' => 'decimal:2',
             'default_surfaces' => 'array',
@@ -391,5 +401,153 @@ class EstimateTemplate extends Model
     public function canBeDeletedBy(User $user): bool
     {
         return $this->canBeModifiedBy($user);
+    }
+
+    /**
+     * Calculate price with margins applied (OTD price).
+     *
+     * This method calculates the full PBP formula including:
+     * - Labor cost at scope-specific hourly wage
+     * - Material cost
+     * - Cleanup hours and cost
+     * - Sundries cost
+     * - Tax on labor and materials
+     * - Margin applied to COGS
+     *
+     * @param  float  $quantity  Area quantity (sqft, lnft, etc.)
+     * @param  int|null  $coats  Number of coats (optional, uses default if not provided)
+     * @return float OTD (Out The Door) price with margins
+     */
+    public function calculatePriceWithMargins(float $quantity, ?int $coats = null): float
+    {
+        $coats = $coats ?? $this->default_coats ?? 2;
+        $scopeType = $this->scope_type ?? 'interior';
+        $settings = CompanySetting::getInstance();
+
+        // For non-production-rate pricing methods, apply simple margin
+        if ($this->pricing_method !== self::PRICING_PRODUCTION_RATE) {
+            $basePrice = $this->calculatePrice($quantity, $coats);
+
+            return $settings->calculateOTDFromCOGS($basePrice, $scopeType);
+        }
+
+        // Full PBP formula for production rate pricing
+        if (! $this->productionRate) {
+            return 0.0;
+        }
+
+        $rate = $this->productionRate;
+        $coatMultiplier = match ($coats) {
+            1 => 1.0,
+            2 => 1.8,
+            3 => 2.5,
+            4 => 3.1,
+            default => 1.0 + (($coats - 1) * 0.7),
+        };
+
+        // Calculate labor hours and cost
+        $laborHours = ($quantity / $rate->production_rate) * $coatMultiplier;
+        $hourlyWage = $settings->getHourlyWageForScope($scopeType);
+        $laborCost = $laborHours * $hourlyWage;
+
+        // Calculate material cost from paint product if available
+        // Since material_cost_per_unit was removed from ProductionRate, we default to 0
+        // Full pricing with materials should use paint products via EstimateCostBreakdownService
+        $materialCost = 0.0;
+
+        // Calculate cleanup and sundries
+        $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
+        $cleanupCost = $cleanupHours * $hourlyWage;
+        $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
+
+        // Calculate COGS with taxes
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+        $cogs = $cogsResult['cogs'];
+
+        // Apply margin: OTD = COGS / (margin% / 100)
+        return $settings->calculateOTDFromCOGS($cogs, $scopeType);
+    }
+
+    /**
+     * Calculate and return the full cost breakdown for a fixed-cost template.
+     * Uses per-template margin if set, otherwise falls back to scope margin.
+     *
+     * @param  string|null  $scopeType  Override scope type (interior/exterior)
+     * @return array{
+     *     labor_hours: float,
+     *     labor_cost: float,
+     *     material_cost: float,
+     *     cogs: float,
+     *     margin_percent: float,
+     *     final_price: float,
+     *     profit: float
+     * }
+     */
+    public function calculateFixedPrice(?string $scopeType = null): array
+    {
+        $settings = CompanySetting::getInstance();
+        $scopeType = $scopeType ?? $this->scope_type ?? 'interior';
+
+        // Get labor cost (from field or calculate from hours)
+        $laborHours = (float) ($this->estimated_labor_hours ?? 0);
+        $laborCost = (float) ($this->labor_cost ?? 0);
+
+        // If no labor_cost set but hours exist, calculate from wage
+        if ($laborCost === 0.0 && $laborHours > 0) {
+            $hourlyWage = $settings->getHourlyWageForScope($scopeType);
+            $laborCost = $laborHours * $hourlyWage;
+        }
+
+        $materialCost = (float) ($this->material_cost ?? 0);
+
+        // COGS = labor + materials
+        $cogs = $laborCost + $materialCost;
+
+        // Use per-template margin if set, otherwise scope margin
+        $marginPercent = $this->margin_percent !== null
+            ? (float) $this->margin_percent
+            : $settings->getMarginPercentForScope($scopeType);
+
+        // PBP formula: OTD = COGS / (margin% / 100)
+        $finalPrice = $marginPercent <= 0
+            ? $cogs
+            : $cogs / ($marginPercent / 100);
+
+        return [
+            'labor_hours' => $laborHours,
+            'labor_cost' => round($laborCost, 2),
+            'material_cost' => round($materialCost, 2),
+            'cogs' => round($cogs, 2),
+            'margin_percent' => $marginPercent,
+            'final_price' => round($finalPrice, 2),
+            'profit' => round($finalPrice - $cogs, 2),
+        ];
+    }
+
+    /**
+     * Get the effective price (calculated or base_price fallback).
+     * For fixed templates with cost tracking, uses the calculated price.
+     * Otherwise falls back to base_price.
+     */
+    public function getEffectivePrice(?string $scopeType = null): float
+    {
+        // If we have a stored calculated_price, use it
+        if ($this->calculated_price !== null) {
+            return (float) $this->calculated_price;
+        }
+
+        // For fixed pricing with cost tracking, calculate the price
+        if ($this->pricing_method === self::PRICING_FIXED) {
+            $hasCosting = $this->estimated_labor_hours !== null
+                || $this->labor_cost !== null
+                || $this->material_cost !== null;
+
+            if ($hasCosting) {
+                return $this->calculateFixedPrice($scopeType)['final_price'];
+            }
+        }
+
+        // Fallback to base_price
+        return (float) ($this->base_price ?? 0);
     }
 }

@@ -22,8 +22,6 @@ beforeEach(function () {
         'category_id' => $this->category->id,
         'name' => 'Wall Painting',
         'production_rate' => 200,
-        'hourly_labor_rate' => 50.00,
-        'material_cost_per_unit' => 0.50,
     ]);
 
     // Create substrate for testing

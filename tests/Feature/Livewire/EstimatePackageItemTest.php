@@ -81,8 +81,8 @@ it('returns itemable total as effective price when no override', function () {
     expect($packageItem->effective_price)->toBe(500.00);
 });
 
-it('returns surface total as effective price for area surface', function () {
-    // Create surface with values that will produce a known total
+it('returns surface OTD (margin-applied) price as effective price for area surface', function () {
+    // Create surface with explicit values that will produce a known total
     // Total is calculated as: labor_cost + material_cost
     // Labor cost = (quantity / production_rate_value) * coats * hourly_labor_rate
     // Material cost = quantity * material_cost_per_unit * coats
@@ -92,7 +92,11 @@ it('returns surface total as effective price for area surface', function () {
         'hourly_labor_rate' => 50,
         'material_cost_per_unit' => 1,
         'coats' => 1,
-        // total = (100/100)*1*50 + 100*1*1 = 50 + 100 = 150
+        // Explicitly set calculated values to ensure they're not overwritten by factory defaults
+        'labor_hours' => 1.0, // 100/100 * 1 = 1
+        'labor_cost' => 50.0, // 1 * 50 = 50
+        'material_cost' => 100.0, // 100 * 1 * 1 = 100
+        'total' => 150.0, // 50 + 100 = 150 (raw cost)
     ]);
     $package = EstimatePackage::factory()->create();
 
@@ -101,7 +105,13 @@ it('returns surface total as effective price for area surface', function () {
         ->forEstimateAreaSurface($surface)
         ->create(['price_override' => null]);
 
-    expect($packageItem->effective_price)->toBe(150.0);
+    // effective_price now returns OTD (margin-applied) price via calculateOTD()
+    // This will be greater than the raw total due to margins, cleanup, and sundries
+    $rawTotal = 150.0;
+    expect($packageItem->effective_price)->toBeGreaterThan($rawTotal);
+
+    // Verify it matches what calculateOTD() returns
+    expect($packageItem->effective_price)->toBe($surface->calculateOTD());
 });
 
 it('returns zero as effective price when itemable is missing', function () {

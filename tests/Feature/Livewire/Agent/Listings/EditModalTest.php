@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Listings\EditModal;
 use App\Models\AgentListing;
 use App\Models\User;
 use Livewire\Livewire;
@@ -10,7 +9,7 @@ describe('Agent Listings EditModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->assertStatus(200);
     });
 
@@ -26,7 +25,7 @@ describe('Agent Listings EditModal component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->assertSet('showModal', false)
             ->dispatch('edit-listing', listingId: $listing->id)
             ->assertSet('showModal', true)
@@ -44,7 +43,7 @@ describe('Agent Listings EditModal component', function () {
         $otherListing = AgentListing::factory()->forAgent($otherAgent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $otherListing->id)
             ->assertForbidden();
     });
@@ -54,7 +53,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->assertSet('showModal', true)
             ->call('closeModal')
@@ -69,7 +68,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('address', '')
             ->set('city', '')
@@ -84,7 +83,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('state', 'CAL')
             ->call('save')
@@ -96,7 +95,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('listingPrice', 'not-a-number')
             ->call('save')
@@ -108,7 +107,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('status', 'invalid-status')
             ->call('save')
@@ -122,7 +121,7 @@ describe('Agent Listings EditModal component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('address', 'New Address')
             ->set('city', 'San Francisco')
@@ -151,7 +150,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('state', 'ny')
             ->call('save')
@@ -170,7 +169,7 @@ describe('Agent Listings EditModal component', function () {
 
         // Try to forcefully set listing and save
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class);
+            ->test('agent.listings.edit-modal');
 
         // Manually set the listing property (simulating a malicious attempt)
         $component->set('listing', $otherListing)
@@ -187,7 +186,7 @@ describe('Agent Listings EditModal component', function () {
 
         // Call save without opening modal first (no listing loaded)
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->call('save')
             ->assertHasNoErrors();
     });
@@ -197,7 +196,7 @@ describe('Agent Listings EditModal component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('address', 'Updated Address')
             ->call('save');
@@ -215,7 +214,7 @@ describe('Agent Listings EditModal component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->assertSet('openHouseDate', '2025-02-15T14:00');
     });
@@ -230,7 +229,7 @@ describe('Agent Listings EditModal component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->assertSet('listingPrice', null)
             ->assertSet('description', '')
@@ -247,7 +246,7 @@ describe('Agent Listings EditModal component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(EditModal::class)
+            ->test('agent.listings.edit-modal')
             ->dispatch('edit-listing', listingId: $listing->id)
             ->set('listingPrice', '')
             ->set('description', '')

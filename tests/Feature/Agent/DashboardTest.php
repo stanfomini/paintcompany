@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Dashboard;
 use App\Models\AgentListing;
 use App\Models\Customer;
 use App\Models\User;
@@ -20,11 +19,11 @@ describe('Agent Dashboard Access', function () {
         $this->actingAs($agent, 'agent')
             ->get(route('agent.dashboard'))
             ->assertSuccessful()
-            ->assertSeeLivewire(Dashboard::class);
+            ->assertSeeLivewire('agent.dashboard');
     });
 
     it('forbids internal users from accessing agent dashboard', function () {
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $this->actingAs($internalUser, 'agent')
             ->get(route('agent.dashboard'))
@@ -50,10 +49,10 @@ describe('Agent Dashboard Stats', function () {
         AgentListing::factory()->count(2)->forAgent($otherAgent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Total Listings');
 
-        expect($component->viewData('totalListings'))->toBe(3);
+        expect($component->get('totalListings'))->toBe(3);
     });
 
     it('displays correct active listings count', function () {
@@ -63,10 +62,10 @@ describe('Agent Dashboard Stats', function () {
         AgentListing::factory()->sold()->forAgent($agent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Active Listings');
 
-        expect($component->viewData('activeListings'))->toBe(2);
+        expect($component->get('activeListings'))->toBe(2);
     });
 
     it('displays correct referred customers count', function () {
@@ -78,10 +77,10 @@ describe('Agent Dashboard Stats', function () {
         Customer::factory()->count(2)->referredByAgent($otherAgent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Referred Customers');
 
-        expect($component->viewData('referredCustomers'))->toBe(4);
+        expect($component->get('referredCustomers'))->toBe(4);
     });
 
     it('displays correct upcoming open houses count within 7 days', function () {
@@ -108,22 +107,22 @@ describe('Agent Dashboard Stats', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Upcoming Open Houses');
 
-        expect($component->viewData('upcomingOpenHousesCount'))->toBe(2);
+        expect($component->get('upcomingOpenHousesCount'))->toBe(2);
     });
 
     it('displays zero stats for new agent', function () {
         $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        expect($component->viewData('totalListings'))->toBe(0);
-        expect($component->viewData('activeListings'))->toBe(0);
-        expect($component->viewData('referredCustomers'))->toBe(0);
-        expect($component->viewData('upcomingOpenHousesCount'))->toBe(0);
+        expect($component->get('totalListings'))->toBe(0);
+        expect($component->get('activeListings'))->toBe(0);
+        expect($component->get('referredCustomers'))->toBe(0);
+        expect($component->get('upcomingOpenHousesCount'))->toBe(0);
     });
 });
 
@@ -140,7 +139,7 @@ describe('Agent Dashboard Sections', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('123 Main Street')
             ->assertSee('Springfield');
     });
@@ -155,7 +154,7 @@ describe('Agent Dashboard Sections', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('John Smith')
             ->assertSee('john.smith@example.com');
     });
@@ -172,9 +171,9 @@ describe('Agent Dashboard Sections', function () {
         }
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        expect($component->viewData('upcomingOpenHouses'))->toHaveCount(5);
+        expect($component->get('upcomingOpenHouses'))->toHaveCount(5);
     });
 
     it('limits recent customers to 5', function () {
@@ -184,16 +183,16 @@ describe('Agent Dashboard Sections', function () {
         Customer::factory()->count(7)->referredByAgent($agent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        expect($component->viewData('recentCustomers'))->toHaveCount(5);
+        expect($component->get('recentCustomers'))->toHaveCount(5);
     });
 
     it('shows empty state for no upcoming open houses', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('No upcoming open houses scheduled.');
     });
 
@@ -201,7 +200,7 @@ describe('Agent Dashboard Sections', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('No customers referred yet.');
     });
 });
@@ -211,7 +210,7 @@ describe('Agent Dashboard Quick Actions', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Add New Listing');
     });
 
@@ -219,7 +218,7 @@ describe('Agent Dashboard Quick Actions', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('View My Customers');
     });
 });

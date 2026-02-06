@@ -27,6 +27,7 @@ return new class extends Migration
                 'in_progress',
                 'completed',
                 'paid',
+                'signed_accepted',
                 'cancelled',
             ])->default('lead');
             $table->decimal('estimated_value', 10, 2)->nullable();

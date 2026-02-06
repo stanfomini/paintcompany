@@ -24,6 +24,8 @@ class NestedAreaTemplate extends Model
 
     public const SCOPE_EXTERIOR = 'exterior';
 
+    public const SCOPE_BOTH = 'both';
+
     protected $fillable = [
         'name',
         'code',
@@ -133,10 +135,14 @@ class NestedAreaTemplate extends Model
 
     /**
      * Scope by scope type.
+     * Returns templates matching the scope OR templates with 'both' scope.
      */
     public function scopeForScope(Builder $query, string $scopeType): Builder
     {
-        return $query->where('scope_type', $scopeType);
+        return $query->where(function ($q) use ($scopeType) {
+            $q->where('scope_type', $scopeType)
+                ->orWhere('scope_type', self::SCOPE_BOTH);
+        });
     }
 
     /**
@@ -203,6 +209,7 @@ class NestedAreaTemplate extends Model
         return [
             self::SCOPE_INTERIOR => 'Interior',
             self::SCOPE_EXTERIOR => 'Exterior',
+            self::SCOPE_BOTH => 'Both',
         ];
     }
 }

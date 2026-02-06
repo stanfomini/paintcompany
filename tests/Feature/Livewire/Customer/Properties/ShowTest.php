@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Properties\Show;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Property;
@@ -17,7 +16,7 @@ describe('Customer Properties Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $property])
+            ->test('customer.properties.show', ['property' => $property])
             ->assertStatus(200)
             ->assertSee('123 Main Street');
     });
@@ -38,7 +37,7 @@ describe('Customer Properties Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $property])
+            ->test('customer.properties.show', ['property' => $property])
             ->assertSee('456 Oak Avenue')
             ->assertSee('Springfield')
             ->assertSee('IL')
@@ -56,7 +55,7 @@ describe('Customer Properties Show component', function () {
         $otherProperty = Property::factory()->create(['customer_id' => $otherCustomer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $otherProperty])
+            ->test('customer.properties.show', ['property' => $otherProperty])
             ->assertNotFound();
     });
 
@@ -73,7 +72,7 @@ describe('Customer Properties Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $property])
+            ->test('customer.properties.show', ['property' => $property])
             ->assertSee('Associated Projects')
             ->assertSee('Interior Painting')
             ->assertSee('In Progress');
@@ -85,7 +84,7 @@ describe('Customer Properties Show component', function () {
         $property = Property::factory()->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $property])
+            ->test('customer.properties.show', ['property' => $property])
             ->assertSee('No projects for this property yet');
     });
 
@@ -95,7 +94,7 @@ describe('Customer Properties Show component', function () {
         $property = Property::factory()->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $property])
+            ->test('customer.properties.show', ['property' => $property])
             ->assertSee('No photos available yet');
     });
 
@@ -105,7 +104,7 @@ describe('Customer Properties Show component', function () {
         $property = Property::factory()->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['property' => $property])
+            ->test('customer.properties.show', ['property' => $property])
             ->assertSee('Back to Properties');
     });
 });

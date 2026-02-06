@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\ProductionRates\Index;
 use App\Models\CompanySetting;
 use App\Models\ProductionRate;
 use App\Models\ProductionRateCategory;
@@ -28,17 +27,15 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('can open the calculator modal with a rate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'name' => 'Wall Painting Test',
             'production_rate' => 300,
-            'hourly_labor_rate' => 45.00, // Not used in PBP, CompanySetting rates are used
-            'material_cost_per_unit' => 0.15,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->assertSet('showCalculatorModal', false)
             ->call('openCalculator', $rate->id)
             ->assertSet('showCalculatorModal', true)
@@ -51,7 +48,7 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('initializes calculator with default values', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'name' => 'Wall Painting',
@@ -59,7 +56,7 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->assertSet('calculatorSqft', 500)
             ->assertSet('calculatorCoats', 2)
@@ -67,12 +64,10 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('calculates preview when opening calculator', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 300,
-            'hourly_labor_rate' => 45.00,
-            'material_cost_per_unit' => 0.15,
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,
@@ -81,7 +76,7 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id);
 
         $result = $component->get('calculatorResult');
@@ -95,11 +90,10 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('updates calculation when sqft changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 300,
-            'material_cost_per_unit' => 0.15,
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,
@@ -108,7 +102,7 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id);
 
         $initialResult = $component->get('calculatorResult');
@@ -124,11 +118,10 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('updates calculation when coats changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 300,
-            'material_cost_per_unit' => 0.15,
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,
@@ -137,7 +130,7 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id);
 
         // Change from 2 coats to 3 coats
@@ -150,15 +143,14 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('updates calculation when scope type changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 300,
-            'material_cost_per_unit' => 0.15,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id);
 
         $interiorResult = $component->get('calculatorResult');
@@ -174,12 +166,12 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('can close the calculator modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->assertSet('showCalculatorModal', true)
             ->call('closeCalculator')
@@ -192,24 +184,23 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('displays rate name in calculator modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'name' => 'Custom Rate Name',
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->assertSee('Custom Rate Name');
     });
 
     it('calculates labor hours with coat multiplier', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200, // 200 sqft/hr
-            'material_cost_per_unit' => 0.20,
             'coat_multipliers' => [
                 '1' => 1.0,
                 '2' => 1.8,
@@ -217,7 +208,7 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->set('calculatorSqft', 400)
             ->set('calculatorCoats', 2);
@@ -229,15 +220,14 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('calculates labor cost using scope-specific rates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200,
-            'material_cost_per_unit' => 0.20,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->set('calculatorSqft', 400)
             ->set('calculatorCoats', 1)
@@ -253,36 +243,18 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
             ->and($result['labor_cost'])->toBe(56.70);
     });
 
-    it('calculates material cost correctly', function () {
-        $user = User::factory()->internal()->create();
-        $category = ProductionRateCategory::factory()->interior()->create();
-        $rate = ProductionRate::factory()->forCategory($category)->create([
-            'production_rate' => 200,
-            'material_cost_per_unit' => 0.25,
-        ]);
-
-        $component = Livewire::actingAs($user)
-            ->test(Index::class)
-            ->call('openCalculator', $rate->id)
-            ->set('calculatorSqft', 400)
-            ->set('calculatorCoats', 1);
-
-        $result = $component->get('calculatorResult');
-
-        // Material: 400 × $0.25 × 1.0 coat multiplier = $100
-        expect($result['material_cost'])->toBe(100.0);
-    });
+    // Material cost is calculated from Paint Products, not ProductionRate
+    // This test is removed as material_cost_per_unit no longer exists on ProductionRate
 
     it('calculates cleanup hours and cost', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200,
-            'material_cost_per_unit' => 0.20,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->set('calculatorSqft', 400)
             ->set('calculatorCoats', 1)
@@ -300,15 +272,14 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('calculates sundries cost', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200,
-            'material_cost_per_unit' => 0.20,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->set('calculatorSqft', 400)
             ->set('calculatorCoats', 1)
@@ -323,15 +294,14 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('calculates with margins for scope', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200,
-            'material_cost_per_unit' => 0.20,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->set('calculatorSqft', 400)
             ->set('calculatorCoats', 1)
@@ -346,26 +316,26 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('shows test button for each rate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'name' => 'Test Rate For Button',
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->assertSee('Test Rate For Button')
             ->assertSee('Test'); // The test button text
     });
 
     it('resets calculator state when closing and reopening', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate1 = ProductionRate::factory()->forCategory($category)->create(['name' => 'Rate One']);
         $rate2 = ProductionRate::factory()->forCategory($category)->create(['name' => 'Rate Two']);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate1->id)
             ->set('calculatorSqft', 1000)
             ->set('calculatorCoats', 3)
@@ -381,27 +351,26 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
     });
 
     it('defaults scope type based on rate category', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $exteriorCategory = ProductionRateCategory::factory()->exterior()->create();
         $exteriorRate = ProductionRate::factory()->forCategory($exteriorCategory)->create();
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $exteriorRate->id);
 
         expect($component->get('calculatorScopeType'))->toBe('exterior');
     });
 
     it('displays all PBP breakdown fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $category = ProductionRateCategory::factory()->interior()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200,
-            'material_cost_per_unit' => 0.20,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCalculator', $rate->id)
             ->assertSee('Labor Hours')
             ->assertSee('Effective Rate')
@@ -409,7 +378,6 @@ describe('Production Rates Index Calculator (PBP Formula)', function () {
             ->assertSee('Cleanup Hours')
             ->assertSee('Cleanup Cost')
             ->assertSee('Sundries Cost')
-            ->assertSee('Material Cost')
             ->assertSee('Base Total')
             ->assertSee('With Margins');
     });

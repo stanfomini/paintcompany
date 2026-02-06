@@ -72,8 +72,8 @@ class PaintingEstimateCalculatorService
 
         $subtotal = $labor['total_cost'] + $materials['total'];
 
-        // Use scope-specific margins
-        $withMargins = $this->settings->calculateWithMarginsForScope($subtotal, $scopeType);
+        // Use scope-specific margin: OTD = COGS / (margin% / 100)
+        $withMargins = $this->settings->calculateOTDFromCOGS($subtotal, $scopeType);
 
         // Add nested areas (already have margins applied)
         $total = $withMargins + $nestedAreas['total'];
@@ -205,7 +205,7 @@ class PaintingEstimateCalculatorService
 
         foreach ($area->paintSelections as $selection) {
             // Recalculate costs using current paint product pricing
-            $selection->calculateCost((float) ($this->settings->recycle_fee_per_gallon ?? 0.54));
+            $selection->calculateCost((float) $this->settings->recycle_fee_per_gallon);
 
             $breakdown[] = [
                 'surface_type' => $selection->surface_type,
@@ -301,9 +301,9 @@ class PaintingEstimateCalculatorService
                 'total' => round($grandTotal, 2),
             ],
             'pricing' => [
-                'profit_percent' => (float) ($this->settings->net_profit_margin_percent ?? 30),
-                'overhead_percent' => (float) ($this->settings->overhead_percent ?? 12),
-                'markup_percent' => (float) ($this->settings->markup_percent ?? 45),
+                'profit_percent' => (float) $this->settings->net_profit_margin_percent,
+                'overhead_percent' => (float) $this->settings->overhead_percent,
+                'markup_percent' => (float) $this->settings->markup_percent,
                 'effective_hourly_rate' => $this->settings->effective_hourly_rate,
             ],
         ];
@@ -370,7 +370,7 @@ class PaintingEstimateCalculatorService
         $baseHours = $sqft / $productionRate;
         $adjustedHours = $baseHours * $prepMultiplier * $paintMultiplier * $coatMultiplier;
         $laborCost = $this->settings->calculateLaborCost($adjustedHours);
-        $priceWithMargins = $this->settings->calculateWithMargins($laborCost);
+        $priceWithMargins = $this->settings->calculateOTD($laborCost);
 
         return [
             'sqft' => $sqft,
@@ -408,7 +408,7 @@ class PaintingEstimateCalculatorService
             $sqft,
             $coats,
             $applicationMethod,
-            (float) ($this->settings->recycle_fee_per_gallon ?? 0.54)
+            (float) $this->settings->recycle_fee_per_gallon
         );
     }
 
@@ -419,9 +419,9 @@ class PaintingEstimateCalculatorService
      */
     public function getPricingExplanation(): array
     {
-        $profitPercent = (float) ($this->settings->net_profit_margin_percent ?? 30);
-        $overheadPercent = (float) ($this->settings->overhead_percent ?? 12);
-        $markupPercent = (float) ($this->settings->markup_percent ?? 45);
+        $profitPercent = (float) $this->settings->net_profit_margin_percent;
+        $overheadPercent = (float) $this->settings->overhead_percent;
+        $markupPercent = (float) $this->settings->markup_percent;
 
         return [
             'formula' => '(sqft ÷ production_rate) × substrate_multipliers × coat_multiplier × hourly_rate + cleanup + sundries + materials → Apply margins',
@@ -439,15 +439,15 @@ class PaintingEstimateCalculatorService
             ],
             'settings' => [
                 // Backward compatible keys
-                'base_hourly_wage' => (float) ($this->settings->base_hourly_wage ?? 25.00),
-                'payroll_burden_multiplier' => (float) ($this->settings->payroll_burden_multiplier ?? 1.35),
+                'base_hourly_wage' => (float) $this->settings->base_hourly_wage,
+                'payroll_burden_multiplier' => (float) $this->settings->payroll_burden_multiplier,
                 'effective_hourly_rate' => $this->settings->effective_hourly_rate,
                 'profit_percent' => $profitPercent,
                 'overhead_percent' => $overheadPercent,
                 'markup_percent' => $markupPercent,
-                'recycle_fee_per_gallon' => (float) ($this->settings->recycle_fee_per_gallon ?? 0.54),
-                'spray_coverage_multiplier' => (float) ($this->settings->spray_paint_coverage_multiplier ?? 2.0),
-                'brush_roll_coverage_multiplier' => (float) ($this->settings->brush_roll_coverage_multiplier ?? 1.3),
+                'recycle_fee_per_gallon' => (float) $this->settings->recycle_fee_per_gallon,
+                'spray_coverage_multiplier' => (float) $this->settings->spray_paint_coverage_multiplier,
+                'brush_roll_coverage_multiplier' => (float) $this->settings->brush_roll_coverage_multiplier,
             ],
             'scope_settings' => [
                 'interior' => $this->settings->getPricingConfigForScope('interior'),

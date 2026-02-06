@@ -1,15 +1,6 @@
 <?php
 
 use App\Http\Controllers\Customer\LoginController;
-use App\Livewire\Customer\Chat\ThreadList as ChatIndex;
-use App\Livewire\Customer\Chat\ThreadView as ChatShow;
-use App\Livewire\Customer\Dashboard;
-use App\Livewire\Customer\Estimates\Index as EstimatesIndex;
-use App\Livewire\Customer\Estimates\Show as EstimatesShow;
-use App\Livewire\Customer\Projects\Index as ProjectsIndex;
-use App\Livewire\Customer\Projects\Show as ProjectsShow;
-use App\Livewire\Customer\Properties\Index as PropertiesIndex;
-use App\Livewire\Customer\Properties\Show as PropertiesShow;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -33,21 +24,25 @@ Route::middleware(['auth:customer', 'auth.customer'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
 
     // Dashboard
-    Route::get('dashboard', Dashboard::class)->name('dashboard');
+    Route::livewire('dashboard', 'customer.dashboard')->name('dashboard');
 
     // Projects (Deals)
-    Route::get('projects', ProjectsIndex::class)->name('projects.index');
-    Route::get('projects/{deal}', ProjectsShow::class)->name('projects.show');
+    Route::livewire('projects', 'customer.projects.index')->name('projects.index');
+    Route::livewire('projects/{deal}', 'customer.projects.show')->name('projects.show');
 
     // Properties
-    Route::get('properties', PropertiesIndex::class)->name('properties.index');
-    Route::get('properties/{property}', PropertiesShow::class)->name('properties.show');
+    Route::livewire('properties', 'customer.properties.index')->name('properties.index');
+    Route::livewire('properties/{property}', 'customer.properties.show')->name('properties.show');
 
     // Estimates
-    Route::get('estimates', EstimatesIndex::class)->name('estimates.index');
-    Route::get('estimates/{estimate}', EstimatesShow::class)->name('estimates.show');
+    Route::livewire('estimates', 'customer.estimates.index')->name('estimates.index');
+    Route::livewire('estimates/{estimate}', 'customer.estimates.show')->name('estimates.show');
+
+    // Jobs
+    Route::livewire('jobs', 'customer.jobs-index')->name('jobs.index');
+    Route::livewire('jobs/{job}', 'customer.job-progress')->name('jobs.show');
 
     // Chat / Messages
-    Route::get('chat', ChatIndex::class)->name('chat.index');
-    Route::get('chat/{thread}', ChatShow::class)->name('chat.show');
+    Route::livewire('chat', 'customer.chat.thread-list')->name('chat.index');
+    Route::livewire('chat/{thread}', 'customer.chat.thread-view')->name('chat.show');
 });

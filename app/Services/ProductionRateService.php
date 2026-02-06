@@ -19,53 +19,50 @@ class ProductionRateService
     ];
 
     /**
-     * Calculate price using the production rate formula.
+     * Calculate price using the PBP (Painting Business Pricing) formula.
      *
-     * Formula: ((quantity / productionRate) * hourlyLaborRate + (quantity * materialCostPerUnit)) * coatMultiplier
+     * Uses CompanySetting for scope-specific hourly rates. Material costs
+     * should be calculated separately using PaintProduct pricing.
      *
      * @param  array<int, float>|null  $coatMultipliers
-     * @return array{labor_hours: float, labor_cost: float, material_cost: float, total: float, coat_multiplier: float}
+     * @return array{labor_hours: float, labor_cost: float, coat_multiplier: float}
      */
     public function calculatePrice(
         float $quantity,
         float $productionRate,
-        float $hourlyLaborRate,
-        float $materialCostPerUnit,
         int $coats = 2,
+        string $scopeType = 'interior',
         ?array $coatMultipliers = null
     ): array {
         $coatMultiplier = $this->getCoatMultiplier($coats, $coatMultipliers);
 
-        $laborHours = $quantity / $productionRate;
-        $laborCost = $laborHours * $hourlyLaborRate;
-        $materialCost = $quantity * $materialCostPerUnit;
+        $settings = CompanySetting::getInstance();
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
 
-        $total = ($laborCost + $materialCost) * $coatMultiplier;
+        $laborHours = ($quantity / $productionRate) * $coatMultiplier;
+        $laborCost = $laborHours * $effectiveRate;
 
         return [
             'labor_hours' => round($laborHours, 2),
             'labor_cost' => round($laborCost, 2),
-            'material_cost' => round($materialCost, 2),
-            'total' => round($total, 2),
             'coat_multiplier' => $coatMultiplier,
         ];
     }
 
     /**
-     * Calculate price from a ProductionRate model.
+     * Calculate price from a ProductionRate model using CompanySetting rates.
      *
-     * @return array{labor_hours: float, labor_cost: float, material_cost: float, total: float, coat_multiplier: float}
+     * @return array{labor_hours: float, labor_cost: float, coat_multiplier: float}
      */
-    public function calculatePriceFromRate(ProductionRate $rate, float $quantity, ?int $coats = null): array
+    public function calculatePriceFromRate(ProductionRate $rate, float $quantity, ?int $coats = null, string $scopeType = 'interior'): array
     {
         $coats = $coats ?? $rate->default_coats ?? 2;
 
         return $this->calculatePrice(
             quantity: $quantity,
             productionRate: (float) $rate->production_rate,
-            hourlyLaborRate: (float) $rate->hourly_labor_rate,
-            materialCostPerUnit: (float) $rate->material_cost_per_unit,
             coats: $coats,
+            scopeType: $scopeType,
             coatMultipliers: $rate->coat_multipliers
         );
     }
@@ -188,10 +185,11 @@ class ProductionRateService
      * Test calculator for the settings UI.
      *
      * Returns a detailed breakdown for testing production rate calculations.
+     * Now uses CompanySetting for scope-specific rates.
      *
-     * @return array{rate: ProductionRate|null, sqft: float, coats: int, labor_hours: float, labor_cost: float, material_cost: float, total: float, coat_multiplier: float, error: string|null}
+     * @return array{rate: ProductionRate|null, sqft: float, coats: int, scope_type: string, labor_hours: float, labor_cost: float, coat_multiplier: float, error: string|null}
      */
-    public function testCalculator(float $sqft, int $rateId, int $coats = 2): array
+    public function testCalculator(float $sqft, int $rateId, int $coats = 2, string $scopeType = 'interior'): array
     {
         $rate = ProductionRate::find($rateId);
 
@@ -200,25 +198,23 @@ class ProductionRateService
                 'rate' => null,
                 'sqft' => $sqft,
                 'coats' => $coats,
+                'scope_type' => $scopeType,
                 'labor_hours' => 0,
                 'labor_cost' => 0,
-                'material_cost' => 0,
-                'total' => 0,
                 'coat_multiplier' => 0,
                 'error' => 'Production rate not found.',
             ];
         }
 
-        $calculation = $this->calculatePriceFromRate($rate, $sqft, $coats);
+        $calculation = $this->calculatePriceFromRate($rate, $sqft, $coats, $scopeType);
 
         return [
             'rate' => $rate,
             'sqft' => $sqft,
             'coats' => $coats,
+            'scope_type' => $scopeType,
             'labor_hours' => $calculation['labor_hours'],
             'labor_cost' => $calculation['labor_cost'],
-            'material_cost' => $calculation['material_cost'],
-            'total' => $calculation['total'],
             'coat_multiplier' => $calculation['coat_multiplier'],
             'error' => null,
         ];
@@ -231,7 +227,9 @@ class ProductionRateService
      * - Interior: $21/hr wage × 1.35 burden, 50% markup, 16:1 cleanup, $3.30 sundries
      * - Exterior: $27/hr wage × 1.35 burden, 41% markup, 20:1 cleanup, $1.00 sundries
      *
-     * @return array{rate: ProductionRate|null, quantity: float, coats: int, scope_type: string, labor_hours: float, labor_cost: float, cleanup_hours: float, cleanup_cost: float, sundries_cost: float, material_cost: float, base_total: float, with_margins: float, coat_multiplier: float, effective_hourly_rate: float, error: string|null}
+     * Note: Material cost is no longer stored on production rates - use PaintProduct pricing.
+     *
+     * @return array{rate: ProductionRate|null, quantity: float, coats: int, scope_type: string, labor_hours: float, labor_cost: float, cleanup_hours: float, cleanup_cost: float, sundries_cost: float, base_total: float, with_margins: float, coat_multiplier: float, effective_hourly_rate: float, error: string|null}
      */
     public function testCalculatorPBP(float $quantity, int $rateId, int $coats = 2, string $scopeType = 'interior'): array
     {
@@ -248,7 +246,6 @@ class ProductionRateService
                 'cleanup_hours' => 0,
                 'cleanup_cost' => 0,
                 'sundries_cost' => 0,
-                'material_cost' => 0,
                 'base_total' => 0,
                 'with_margins' => 0,
                 'coat_multiplier' => 0,
@@ -276,14 +273,11 @@ class ProductionRateService
         // PBP Formula Step 5: Calculate sundries cost
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
 
-        // PBP Formula Step 6: Calculate material cost
-        $materialCost = $quantity * $rate->material_cost_per_unit * $coatMultiplier;
+        // PBP Formula Step 6: Calculate base total (labor only - materials from PaintProduct)
+        $baseTotal = $laborCost + $cleanupCost + $sundriesCost;
 
-        // PBP Formula Step 7: Calculate base total
-        $baseTotal = $laborCost + $cleanupCost + $sundriesCost + $materialCost;
-
-        // PBP Formula Step 8: Apply scope-specific margins
-        $withMargins = $settings->calculateWithMarginsForScope($baseTotal, $scopeType);
+        // PBP Formula Step 7: Apply scope-specific margin (OTD = COGS / (margin% / 100))
+        $withMargins = $settings->calculateOTDFromCOGS($baseTotal, $scopeType);
 
         return [
             'rate' => $rate,
@@ -295,7 +289,6 @@ class ProductionRateService
             'cleanup_hours' => round($cleanupHours, 2),
             'cleanup_cost' => round($cleanupCost, 2),
             'sundries_cost' => round($sundriesCost, 2),
-            'material_cost' => round($materialCost, 2),
             'base_total' => round($baseTotal, 2),
             'with_margins' => round($withMargins, 2),
             'coat_multiplier' => $coatMultiplier,
@@ -305,191 +298,278 @@ class ProductionRateService
     }
 
     /**
-     * Seed default painting industry production rates.
+     * Seed production rates from the PBP spreadsheets.
      *
-     * Creates standard production rates for interior, exterior, and specialty work.
+     * Data sources:
+     * - Interior: Frederick Est spreadsheet (columns F-P)
+     * - Exterior: PBP Exterior 2.0 spreadsheet (columns G-BA)
+     *
+     * These are exact values from the spreadsheets.
      */
     public function seedDefaultRates(): void
     {
-        $defaultCoatMultipliers = [
+        $this->seedInteriorRates();
+        $this->seedExteriorRates();
+    }
+
+    /**
+     * Seed interior production rates from Frederick Est spreadsheet.
+     */
+    private function seedInteriorRates(): void
+    {
+        $category = $this->getOrCreateCategory('Interior Painting', 'interior');
+
+        // Interior Prep Inputs (Column F-G)
+        $this->seedRates($category, 'interior', 'prep', [
+            ['Masking flooring', 250, 'sqft_hr'],
+            ['Tape line with Caulking', 30, 'lnft_hr'],
+            ['Tape line', 40, 'lnft_hr'],
+            ['Prep for newly installed baseboards, puttying & caulking', 50, 'lnft_hr'],
+            ['Smooth Walls prime new drywall', 150, 'sqft_hr'],
+            ['Textured prime new drywall', 100, 'sqft_hr'],
+            ['Hand cut line same color (Walls to Ceiling only)', 60, 'lnft_hr'],
+            ['Hand cut line change color (Walls to Ceiling only)', 40, 'lnft_hr'],
+            ['Caulking in baseboards', 75, 'lnft_hr'],
+        ]);
+
+        // Interior Wall Types (Column H-J)
+        $this->seedRates($category, 'interior', 'walls', [
+            ['Textured Walls same color', 265, 'sqft_hr'],
+            ['Textured Walls change color', 150, 'sqft_hr'],
+            ['Smooth Walls same color', 210, 'sqft_hr'],
+            ['Smooth Walls change color', 120, 'sqft_hr'],
+            ['Prime and paint new textured drywall', 95.78, 'sqft_hr'],
+            ['Prime and paint new smooth drywall', 76.36, 'sqft_hr'],
+        ]);
+
+        // Interior Ceiling Types (Column K-L)
+        $this->seedRates($category, 'interior', 'ceiling', [
+            ['Textured Ceiling same color', 175, 'sqft_hr'],
+            ['Textured Ceiling change color', 100, 'sqft_hr'],
+            ['Textured Vaulted or > 18ft ceilings same color', 100, 'sqft_hr'],
+            ['Textured Vaulted or > 18ft ceilings change color', 50, 'sqft_hr'],
+            ['Smooth Ceiling same color', 100, 'sqft_hr'],
+            ['Smooth Ceiling change color', 50, 'sqft_hr'],
+            ['Smooth Vaulted or over 18ft ceilings same color', 75, 'sqft_hr'],
+            ['Smooth Vaulted or over 18ft ceilings change color', 50, 'sqft_hr'],
+            ['Popcorn Ceiling same color', 100, 'sqft_hr'],
+            ['Popcorn Ceiling change color', 65, 'sqft_hr'],
+            ['Popcorn Vaulted or over 18ft ceilings same color', 75, 'sqft_hr'],
+            ['Popcorn Vaulted or over 18ft ceilings change color', 40, 'sqft_hr'],
+            ['Prime and paint new drywall textured Ceilings', 63.64, 'sqft_hr'],
+        ]);
+
+        // Interior Baseboard Types (Column M-N)
+        $this->seedRates($category, 'interior', 'baseboard', [
+            ['Baseboards same color', 40, 'lnft_hr'],
+            ['Baseboards change color', 30, 'lnft_hr'],
+            ['Baseboards change stain to paint', 12, 'lnft_hr'],
+            ['New Baseboards (never been painted)', 18.75, 'lnft_hr'],
+            ['Prime & 2 coats Baseboards', 25, 'lnft_hr'],
+            ['Prime & 2 coats Baseboards & caulk in', 21.43, 'lnft_hr'],
+        ]);
+
+        // Interior Door Types (Column O-P) - Note: these are hours/door
+        $this->seedRates($category, 'interior', 'doors', [
+            ['Doors 1 side', 1, 'hours_per_unit'],
+            ['Doors both sides', 2, 'hours_per_unit'],
+            ['Closet Doors 1 side', 2, 'hours_per_unit'],
+            ['Closet Doors both sides', 4, 'hours_per_unit'],
+            ['Commercial Steel Doors 1 side', 1.38, 'hours_per_unit'],
+            ['Commercial Steel Doors both sides', 2.75, 'hours_per_unit'],
+            ['Same Color Doors 1 side', 0.75, 'hours_per_unit'],
+            ['Same Color Doors both sides', 1.5, 'hours_per_unit'],
+            ['Same Color Closet Doors 1 side', 1, 'hours_per_unit'],
+            ['Same Color Closet Doors both sides', 3, 'hours_per_unit'],
+            ['Same Color Commercial Steel Doors 1 side', 1.03, 'hours_per_unit'],
+            ['Same Color Commercial Steel Doors both sides', 2.06, 'hours_per_unit'],
+            ['Stain to paint (full sand) Doors 1 side', 2.5, 'hours_per_unit'],
+        ]);
+    }
+
+    /**
+     * Seed exterior production rates from PBP Exterior 2.0 spreadsheet.
+     */
+    private function seedExteriorRates(): void
+    {
+        $category = $this->getOrCreateCategory('Exterior Painting', 'exterior');
+
+        // Exterior Prep Work (Column G-H)
+        $this->seedRates($category, 'exterior', 'prep', [
+            ['Power Wash (SqFt)', 1500, 'sqft_hr'],
+            ['Scrape 1 Side of Board (LnFt)', 40, 'lnft_hr'],
+            ['Scrape Surface (SqFt)', 100, 'sqft_hr'],
+            ['Scuff Sand (SqFt)', 100, 'sqft_hr'],
+            ['Light Sand (SqFt)', 50, 'sqft_hr'],
+            ['Heavy Sand (SqFt)', 25, 'sqft_hr'],
+            ['Priming w/ brush (SqFt)', 150, 'sqft_hr'],
+            ['Priming w/ brush (LnFt)', 60, 'lnft_hr'],
+            ['Scrape, Sand, & Prime (LnFt)', 25, 'lnft_hr'],
+            ['Scrape, Sand, & Prime 75-100% Peeling (SqFt)', 10, 'sqft_hr'],
+            ['Scrape, Sand, & Prime 50-75% Peeling (SqFt)', 50, 'sqft_hr'],
+            ['Scrape, Sand, & Prime 25-50% Peeling (SqFt)', 50, 'sqft_hr'],
+            ['Scrape, Sand, & Prime 25% or less Peeling (SqFt)', 200, 'sqft_hr'],
+            ['Scrape, Sand, & Prime Localized Failure (#/Hr)', 6, 'units_hr'],
+            ['Caulking a 1 Story home (LnFt)', 100, 'lnft_hr'],
+            ['Caulking a 2 Story home (LnFt)', 75, 'lnft_hr'],
+            ['Caulking the 3rd story of a home (LnFt)', 35, 'lnft_hr'],
+        ]);
+
+        // Exterior Body Application (Column I-J)
+        $this->seedRates($category, 'exterior', 'body', [
+            ['Siding Spray', 200, 'sqft_hr'],
+            ['Siding Spray w/light backroll', 150, 'sqft_hr'],
+            ['Siding Roll', 125, 'sqft_hr'],
+            ['Masonry Spray', 150, 'sqft_hr'],
+            ['Masonry Spray w/light backroll', 125, 'sqft_hr'],
+            ['Masonry Roll', 100, 'sqft_hr'],
+            ['Siding Brush', 100, 'sqft_hr'],
+            ['Masonry Brush', 75, 'sqft_hr'],
+            ['Accent siding Spray', 200, 'sqft_hr'],
+            ['Accent siding Spray w/light backroll', 150, 'sqft_hr'],
+            ['Accent siding Roll', 125, 'sqft_hr'],
+            ['Accent Masonry Spray', 150, 'sqft_hr'],
+        ]);
+
+        // Exterior Eaves (Column K-L)
+        $this->seedRates($category, 'exterior', 'eaves', [
+            ['Eaves Body Color', 75, 'lnft_hr'],
+            ['Eaves Trim Color', 20, 'lnft_hr'],
+            ['Eaves Separate Color', 15, 'lnft_hr'],
+            ['3rd Story Eaves body color', 50, 'lnft_hr'],
+            ['3rd Story eaves trim color', 10, 'lnft_hr'],
+            ['3rd story eaves separate color', 5, 'lnft_hr'],
+        ]);
+
+        // Exterior Fascia (Column M-N)
+        $this->seedRates($category, 'exterior', 'fascia', [
+            ['Fascia on 1 story home', 40, 'lnft_hr'],
+            ['Fascia on 2 story home', 35, 'lnft_hr'],
+            ['3rd Story Fascia', 15, 'lnft_hr'],
+        ]);
+
+        // Exterior Windows (Column O-Q)
+        $this->seedRates($category, 'exterior', 'windows', [
+            ['Window Vinyl with no trim', 6, 'units_hr'],
+            ['Windows Wood with no trim (Body Color)', 2, 'units_hr'],
+            ['Windows Vinyl with trim', 2, 'units_hr'],
+            ['Windows Wood that don\'t open', 2, 'units_hr'],
+            ['Windows Wood that open', 0.67, 'units_hr'],
+            ['Windows 3D Vinyl', 1, 'units_hr'],
+            ['Windows 3D Wood that don\'t open', 0.8, 'units_hr'],
+            ['Windows 3D Wood that open', 0.57, 'units_hr'],
+            ['Windows 2 tone wood that don\'t open', 0.67, 'units_hr'],
+            ['Windows 2 tone wood that open', 0.5, 'units_hr'],
+            ['Windows 3D 2 tone wood that don\'t open', 0.57, 'units_hr'],
+            ['Windows 3D 2 tone wood that open', 0.44, 'units_hr'],
+        ]);
+
+        // Exterior Other Trim (Column S-T)
+        $this->seedRates($category, 'exterior', 'trim', [
+            ['Other trim on 1 story home', 40, 'lnft_hr'],
+            ['Other trim on 2+ story home', 35, 'lnft_hr'],
+            ['Downspouts or Posts with 3-4 sides', 20, 'lnft_hr'],
+            ['3D trim', 20, 'lnft_hr'],
+            ['Tudor trim facing', 50, 'lnft_hr'],
+            ['Tudor trim 3D', 30, 'lnft_hr'],
+            ['Remove & Reinstall Downspouts', 20, 'lnft_hr'],
+            ['Just remove Downspouts', 60, 'lnft_hr'],
+        ]);
+
+        // Exterior Doors (Column U-V)
+        $this->seedRates($category, 'exterior', 'exterior_doors', [
+            ['Door Body Color with no trim', 4, 'units_hr'],
+            ['Door Body Color with Trim', 1.33, 'units_hr'],
+            ['Door Trim Color with no trim', 1.33, 'units_hr'],
+            ['Door Trim Color with Trim', 1, 'units_hr'],
+            ['Door Accent Color with no trim', 1.33, 'units_hr'],
+            ['Door Accent Color with Trim', 0.8, 'units_hr'],
+            ['Door Stained to painted with no trim', 0.57, 'units_hr'],
+            ['Door Stained to painted with trim', 0.36, 'units_hr'],
+        ]);
+
+        // Exterior Wood Replacement (Column AZ-BA) - cost_per_lnft
+        $this->seedRates($category, 'exterior', 'wood_replacement', [
+            ['1st story trim replacement', 6.84, 'cost_per_lnft'],
+            ['2nd story trim replacement', 7.57, 'cost_per_lnft'],
+            ['1st story regular siding replacement', 5.08, 'cost_per_lnft'],
+            ['2nd story regular siding replacement', 6.10, 'cost_per_lnft'],
+            ['1st story cement fiber siding (hardy board) replacement', 5.88, 'cost_per_lnft'],
+            ['2nd story cement fiber siding (hardy board) replacement', 6.85, 'cost_per_lnft'],
+            ['Part of or entire door frame replacement', 113.48, 'cost_per_lnft'],
+            ['1st story fascia replacement', 9.15, 'cost_per_lnft'],
+            ['2nd story fascia replacement', 11.85, 'cost_per_lnft'],
+            ['1st story fascia w/gutter replacement', 13.57, 'cost_per_lnft'],
+            ['2nd story fascia w/gutter replacement', 17.20, 'cost_per_lnft'],
+            ['Railings replacement', 9.20, 'cost_per_lnft'],
+            ['1st story eave/soffit replacement', 9.45, 'cost_per_lnft'],
+            ['2nd story eave/soffit replacement', 12.18, 'cost_per_lnft'],
+        ]);
+    }
+
+    /**
+     * Get or create a production rate category.
+     */
+    private function getOrCreateCategory(string $name, string $type): ProductionRateCategory
+    {
+        return ProductionRateCategory::firstOrCreate(
+            ['name' => $name],
+            [
+                'type' => $type,
+                'description' => "{$name} production rates from PBP spreadsheet",
+                'sort_order' => $type === 'interior' ? 1 : 2,
+                'is_active' => true,
+            ]
+        );
+    }
+
+    /**
+     * Seed production rates for a category.
+     *
+     * @param  array<int, array{0: string, 1: float, 2: string}>  $rates  [name, rate, rate_type]
+     */
+    private function seedRates(
+        ProductionRateCategory $category,
+        string $scope,
+        string $surfaceCategory,
+        array $rates
+    ): void {
+        $coatMultipliers = [
             '1' => 1.0,
             '2' => 1.8,
             '3' => 2.5,
         ];
 
-        // Create Interior category
-        $interiorCategory = ProductionRateCategory::firstOrCreate(
-            ['name' => 'Interior Painting'],
-            [
-                'type' => ProductionRateCategory::TYPE_INTERIOR,
-                'description' => 'Interior painting services',
-                'sort_order' => 1,
-                'is_active' => true,
-            ]
-        );
+        foreach ($rates as $index => $rateData) {
+            [$name, $rate, $rateType] = $rateData;
 
-        // Create Exterior category
-        $exteriorCategory = ProductionRateCategory::firstOrCreate(
-            ['name' => 'Exterior Painting'],
-            [
-                'type' => ProductionRateCategory::TYPE_EXTERIOR,
-                'description' => 'Exterior painting services',
-                'sort_order' => 2,
-                'is_active' => true,
-            ]
-        );
+            // Determine unit_type based on rate_type
+            $unitType = match ($rateType) {
+                'sqft_hr' => ProductionRate::UNIT_TYPE_SQFT,
+                'lnft_hr' => ProductionRate::UNIT_TYPE_LNFT,
+                'units_hr', 'hours_per_unit' => ProductionRate::UNIT_TYPE_UNIT,
+                'cost_per_lnft' => ProductionRate::UNIT_TYPE_LNFT,
+                default => ProductionRate::UNIT_TYPE_SQFT,
+            };
 
-        // Create Specialty category
-        $specialtyCategory = ProductionRateCategory::firstOrCreate(
-            ['name' => 'Specialty Services'],
-            [
-                'type' => ProductionRateCategory::TYPE_SPECIALTY,
-                'description' => 'Specialty painting and finishing services',
-                'sort_order' => 3,
-                'is_active' => true,
-            ]
-        );
-
-        // Interior rates
-        $this->createRate($interiorCategory, [
-            'name' => 'Wall Painting',
-            'description' => 'Standard interior wall painting',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 300.00,
-            'hourly_labor_rate' => 45.00,
-            'material_cost_per_unit' => 0.15,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 1,
-        ]);
-
-        $this->createRate($interiorCategory, [
-            'name' => 'Ceiling Painting',
-            'description' => 'Standard interior ceiling painting',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 400.00,
-            'hourly_labor_rate' => 45.00,
-            'material_cost_per_unit' => 0.12,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 2,
-        ]);
-
-        $this->createRate($interiorCategory, [
-            'name' => 'Trim Painting',
-            'description' => 'Interior trim, baseboards, and molding',
-            'unit_type' => ProductionRate::UNIT_TYPE_LNFT,
-            'production_rate' => 100.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.25,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 3,
-        ]);
-
-        $this->createRate($interiorCategory, [
-            'name' => 'Door Painting',
-            'description' => 'Interior door painting (per door)',
-            'unit_type' => ProductionRate::UNIT_TYPE_UNIT,
-            'production_rate' => 4.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 8.00,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 4,
-        ]);
-
-        $this->createRate($interiorCategory, [
-            'name' => 'Cabinet Painting',
-            'description' => 'Kitchen and bathroom cabinet painting',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 50.00,
-            'hourly_labor_rate' => 55.00,
-            'material_cost_per_unit' => 0.50,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 5,
-        ]);
-
-        // Exterior rates
-        $this->createRate($exteriorCategory, [
-            'name' => 'Siding Painting',
-            'description' => 'Exterior siding painting',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 250.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.20,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 1,
-        ]);
-
-        $this->createRate($exteriorCategory, [
-            'name' => 'Exterior Trim',
-            'description' => 'Exterior trim and fascia painting',
-            'unit_type' => ProductionRate::UNIT_TYPE_LNFT,
-            'production_rate' => 80.00,
-            'hourly_labor_rate' => 55.00,
-            'material_cost_per_unit' => 0.30,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 2,
-        ]);
-
-        $this->createRate($exteriorCategory, [
-            'name' => 'Deck Staining',
-            'description' => 'Deck staining and sealing',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 200.00,
-            'hourly_labor_rate' => 45.00,
-            'material_cost_per_unit' => 0.35,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 3,
-        ]);
-
-        // Specialty rates
-        $this->createRate($specialtyCategory, [
-            'name' => 'Faux Finishing',
-            'description' => 'Decorative faux finishing techniques',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 75.00,
-            'hourly_labor_rate' => 65.00,
-            'material_cost_per_unit' => 0.75,
-            'coat_multipliers' => $defaultCoatMultipliers,
-            'default_coats' => 2,
-            'sort_order' => 1,
-        ]);
-
-        $this->createRate($specialtyCategory, [
-            'name' => 'Wallpaper Removal',
-            'description' => 'Wallpaper removal and wall preparation',
-            'unit_type' => ProductionRate::UNIT_TYPE_SQFT,
-            'production_rate' => 100.00,
-            'hourly_labor_rate' => 40.00,
-            'material_cost_per_unit' => 0.10,
-            'coat_multipliers' => ['1' => 1.0],
-            'default_coats' => 1,
-            'sort_order' => 2,
-        ]);
-    }
-
-    /**
-     * Create a production rate if it doesn't exist.
-     *
-     * @param  array<string, mixed>  $data
-     */
-    private function createRate(ProductionRateCategory $category, array $data): ProductionRate
-    {
-        return ProductionRate::firstOrCreate(
-            [
-                'category_id' => $category->id,
-                'name' => $data['name'],
-            ],
-            array_merge($data, [
-                'category_id' => $category->id,
-                'is_active' => true,
-            ])
-        );
+            ProductionRate::updateOrCreate(
+                [
+                    'scope' => $scope,
+                    'surface_category' => $surfaceCategory,
+                    'name' => $name,
+                ],
+                [
+                    'category_id' => $category->id,
+                    'description' => 'Production rate from PBP spreadsheet',
+                    'unit_type' => $unitType,
+                    'production_rate' => $rate,
+                    'rate_type' => $rateType,
+                    'coat_multipliers' => $coatMultipliers,
+                    'default_coats' => 2,
+                    'is_active' => true,
+                    'sort_order' => $index + 1,
+                ]
+            );
+        }
     }
 }

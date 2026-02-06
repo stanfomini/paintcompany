@@ -11,7 +11,7 @@ describe('Internal user authentication', function () {
     });
 
     it('can login with valid credentials', function () {
-        $user = User::factory()->internal()->create([
+        $user = User::factory()->internal()->withFullAccess()->create([
             'email' => 'internal@test.com',
         ]);
 
@@ -24,7 +24,7 @@ describe('Internal user authentication', function () {
     });
 
     it('cannot login with invalid credentials', function () {
-        User::factory()->internal()->create([
+        User::factory()->internal()->withFullAccess()->create([
             'email' => 'internal@test.com',
         ]);
 
@@ -57,7 +57,7 @@ describe('Agent authentication', function () {
     });
 
     it('cannot login with internal user credentials', function () {
-        User::factory()->internal()->create([
+        User::factory()->internal()->withFullAccess()->create([
             'email' => 'internal@test.com',
         ]);
 
@@ -156,7 +156,7 @@ describe('Customer authentication', function () {
 
 describe('Access control', function () {
     it('internal user can access internal dashboard', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $this->actingAs($user, 'web')
             ->get(route('dashboard'))
@@ -166,17 +166,21 @@ describe('Access control', function () {
     it('agent cannot access internal dashboard', function () {
         $user = User::factory()->agent()->create();
 
+        // Now redirects to agent dashboard instead of showing 403
         $this->actingAs($user, 'web')
             ->get(route('dashboard'))
-            ->assertForbidden();
+            ->assertRedirect(route('agent.dashboard'))
+            ->assertSessionHas('warning');
     });
 
     it('customer cannot access internal dashboard', function () {
         $user = User::factory()->customer()->create();
 
+        // Now redirects to customer dashboard instead of showing 403
         $this->actingAs($user, 'web')
             ->get(route('dashboard'))
-            ->assertForbidden();
+            ->assertRedirect(route('customer.dashboard'))
+            ->assertSessionHas('warning');
     });
 
     it('agent can access agent dashboard', function () {
@@ -188,11 +192,13 @@ describe('Access control', function () {
     });
 
     it('internal user cannot access agent dashboard', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
+        // Now redirects to internal dashboard instead of showing 403
         $this->actingAs($user, 'agent')
             ->get(route('agent.dashboard'))
-            ->assertForbidden();
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHas('warning');
     });
 
     it('customer can access customer dashboard', function () {
@@ -206,9 +212,11 @@ describe('Access control', function () {
     it('agent cannot access customer dashboard', function () {
         $user = User::factory()->agent()->create();
 
+        // Now redirects to agent dashboard instead of showing 403
         $this->actingAs($user, 'customer')
             ->get(route('customer.dashboard'))
-            ->assertForbidden();
+            ->assertRedirect(route('agent.dashboard'))
+            ->assertSessionHas('warning');
     });
 });
 

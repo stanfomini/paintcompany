@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Projects\Show;
 use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
@@ -19,7 +18,7 @@ describe('Customer Projects Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertStatus(200)
             ->assertSee('Kitchen Painting Project');
     });
@@ -38,7 +37,7 @@ describe('Customer Projects Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertSee('Master Bedroom')
             ->assertSee('Complete repaint of master bedroom')
             ->assertSee('In Progress')
@@ -54,7 +53,7 @@ describe('Customer Projects Show component', function () {
         $otherDeal = Deal::factory()->create(['customer_id' => $otherCustomer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $otherDeal])
+            ->test('customer.projects.show', ['deal' => $otherDeal])
             ->assertNotFound();
     });
 
@@ -75,7 +74,7 @@ describe('Customer Projects Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertSee('Property')
             ->assertSee('123 Main Street')
             ->assertSee('Springfield')
@@ -97,7 +96,7 @@ describe('Customer Projects Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertSee('Estimates')
             ->assertSee('EST-2026-00001')
             ->assertSee('$3,500.00')
@@ -116,7 +115,7 @@ describe('Customer Projects Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertDontSee('EST-DRAFT-001');
     });
 
@@ -132,7 +131,7 @@ describe('Customer Projects Show component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertSee('Activity Timeline')
             ->assertSee('Project update')
             ->assertSee('Work is progressing well');
@@ -144,7 +143,7 @@ describe('Customer Projects Show component', function () {
         $deal = Deal::factory()->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertSee('No activity recorded yet');
     });
 
@@ -154,7 +153,7 @@ describe('Customer Projects Show component', function () {
         $deal = Deal::factory()->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Show::class, ['deal' => $deal])
+            ->test('customer.projects.show', ['deal' => $deal])
             ->assertSee('No estimates available yet');
     });
 });

@@ -9,6 +9,34 @@
 - **`.claude/plans/technical-decisions.md`** - Architecture decisions and rationale
 - **`.claude/plans/phase-2-crm-plan.md`** - Detailed plan for next phase (Core CRM)
 
+## Livewire Components - ENFORCED CONVENTION
+
+**ALWAYS use Livewire 4 single-file components (SFC).** Every Livewire component must be a single `.blade.php` file with PHP at the top and template below. **Never** create separate class-based components in `app/Livewire/`.
+
+- **Location**: `resources/views/components/` for reusable components, `resources/views/pages/` for page components
+- **Filename prefix**: `⚡` (e.g., `⚡create-modal.blade.php`)
+- **Format**: PHP class in `<?php ... ?>` tags at top, then `?>`, then Blade template below
+- **Reference in tests/routes**: Use string names like `'customers.create-modal'`, never `ClassName::class`
+- **Keep components focused** on a single responsibility
+- **Use `#[Computed]`** for data passed to templates (no `return view(..., ['data' => $value])`)
+
+```blade
+<?php
+use Livewire\Component;
+
+new class extends Component {
+    public string $name = '';
+
+    public function save(): void { /* ... */ }
+};
+?>
+
+<div>
+    <input wire:model="name" />
+    <button wire:click="save">Save</button>
+</div>
+```
+
 ## Quick Status
 
 - **Phase 1: Multi-Auth** - COMPLETE
@@ -241,6 +269,7 @@ This application is a Laravel application and its main Laravel ecosystems packag
 - laravel/sail (SAIL) - v1
 - pestphp/pest (PEST) - v4
 - phpunit/phpunit (PHPUNIT) - v12
+- laravel-echo (ECHO) - v2
 - react (REACT) - v19
 - tailwindcss (TAILWINDCSS) - v4
 

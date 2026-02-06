@@ -10,7 +10,7 @@ describe('ChatMessage visibleTo scope', function () {
     it('returns all messages for internal users', function () {
         Event::fake();
 
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         ChatMessage::factory()->forThread($thread)->fromUser($internal)->count(3)->create();
@@ -24,7 +24,7 @@ describe('ChatMessage visibleTo scope', function () {
     it('filters out internal messages for agent users', function () {
         Event::fake();
 
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
 
@@ -40,7 +40,7 @@ describe('ChatMessage visibleTo scope', function () {
     it('filters out internal messages for customer users', function () {
         Event::fake();
 
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $customer = User::factory()->customer()->create();
         $thread = ChatThread::factory()->create();
 
@@ -58,7 +58,7 @@ describe('ChatMessage isReadBy', function () {
     it('returns true when message has been read by user', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
@@ -71,7 +71,7 @@ describe('ChatMessage isReadBy', function () {
     it('returns false when message has not been read by user', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
@@ -82,7 +82,7 @@ describe('ChatMessage isReadBy', function () {
     it('returns false for different users who have not read', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader1 = User::factory()->agent()->create();
         $reader2 = User::factory()->customer()->create();
         $thread = ChatThread::factory()->create();
@@ -99,7 +99,7 @@ describe('ChatMessage markAsReadBy', function () {
     it('creates read receipt for user', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
@@ -115,7 +115,7 @@ describe('ChatMessage markAsReadBy', function () {
     it('does not create duplicate read receipt', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
@@ -129,7 +129,7 @@ describe('ChatMessage markAsReadBy', function () {
     it('returns existing read receipt when already read', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader = User::factory()->agent()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
@@ -145,7 +145,7 @@ describe('ChatMessage helper methods', function () {
     it('isEdited returns true for edited messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->edited()->create();
 
@@ -155,7 +155,7 @@ describe('ChatMessage helper methods', function () {
     it('isEdited returns false for non-edited messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -165,7 +165,7 @@ describe('ChatMessage helper methods', function () {
     it('isReply returns true for reply messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $parentMessage = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
         $replyMessage = ChatMessage::factory()->replyTo($parentMessage)->fromUser($user)->create();
@@ -176,7 +176,7 @@ describe('ChatMessage helper methods', function () {
     it('isReply returns false for top-level messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -186,7 +186,7 @@ describe('ChatMessage helper methods', function () {
     it('isSystem returns true for system messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->system()->create();
 
@@ -196,7 +196,7 @@ describe('ChatMessage helper methods', function () {
     it('isSystem returns false for regular messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -206,7 +206,7 @@ describe('ChatMessage helper methods', function () {
     it('markAsEdited sets edited_at timestamp', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -223,7 +223,7 @@ describe('ChatMessage scopes', function () {
     it('public scope returns only non-internal messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         ChatMessage::factory()->forThread($thread)->fromUser($user)->count(3)->create();
@@ -238,7 +238,7 @@ describe('ChatMessage scopes', function () {
     it('internal scope returns only internal messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         ChatMessage::factory()->forThread($thread)->fromUser($user)->count(3)->create();
@@ -253,7 +253,7 @@ describe('ChatMessage scopes', function () {
     it('ofType scope filters by message type', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         ChatMessage::factory()->forThread($thread)->fromUser($user)->text()->count(2)->create();
@@ -272,7 +272,7 @@ describe('ChatMessage scopes', function () {
     it('notSystem scope excludes system messages', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         ChatMessage::factory()->forThread($thread)->fromUser($user)->text()->count(3)->create();
@@ -289,7 +289,7 @@ describe('ChatMessage relationships', function () {
     it('belongs to a thread', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -299,7 +299,7 @@ describe('ChatMessage relationships', function () {
     it('belongs to a user', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -309,7 +309,7 @@ describe('ChatMessage relationships', function () {
     it('belongs to a parent message for replies', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $parentMessage = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
         $replyMessage = ChatMessage::factory()->replyTo($parentMessage)->fromUser($user)->create();
@@ -320,7 +320,7 @@ describe('ChatMessage relationships', function () {
     it('has many replies', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $parentMessage = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -332,7 +332,7 @@ describe('ChatMessage relationships', function () {
     it('has many read receipts', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $reader1 = User::factory()->agent()->create();
         $reader2 = User::factory()->customer()->create();
         $thread = ChatThread::factory()->create();
@@ -349,7 +349,7 @@ describe('ChatMessage soft deletes', function () {
     it('can be soft deleted', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -362,7 +362,7 @@ describe('ChatMessage soft deletes', function () {
     it('can be restored', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->create();
 
@@ -377,7 +377,7 @@ describe('ChatMessage casts', function () {
     it('casts metadata to array', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->withMetadata([
             'key' => 'value',
@@ -392,9 +392,9 @@ describe('ChatMessage casts', function () {
     it('casts is_internal to boolean', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
-        $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->internal()->create();
+        $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->internal()->withFullAccess()->create();
 
         expect($message->is_internal)->toBeBool();
         expect($message->is_internal)->toBeTrue();
@@ -403,7 +403,7 @@ describe('ChatMessage casts', function () {
     it('casts edited_at to datetime', function () {
         Event::fake();
 
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $message = ChatMessage::factory()->forThread($thread)->fromUser($user)->edited()->create();
 

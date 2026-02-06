@@ -135,15 +135,15 @@ class EstimateTemplateService
         // 1. Calculate labor hours
         $laborHours = ($quantity / $rate->production_rate) * $coatMultiplier;
 
-        // 2. Get scope-specific effective hourly rate (wage × payroll burden)
-        $effectiveHourlyRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        // 2. Get base hourly wage (payroll burden is factored into markup, not COGS)
+        $hourlyWage = $settings->getHourlyWageForScope($scopeType);
 
         // 3. Calculate labor cost
-        $laborCost = $laborHours * $effectiveHourlyRate;
+        $laborCost = $laborHours * $hourlyWage;
 
         // 4. Calculate cleanup hours and cost
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
-        $cleanupCost = $cleanupHours * $effectiveHourlyRate;
+        $cleanupCost = $cleanupHours * $hourlyWage;
 
         // 5. Calculate sundries cost
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
@@ -151,11 +151,12 @@ class EstimateTemplateService
         // 6. Calculate material cost
         $materialCost = $quantity * $rate->material_cost_per_unit * $coatMultiplier;
 
-        // 7. Calculate base total (before margins)
-        $baseTotal = $laborCost + $cleanupCost + $sundriesCost + $materialCost;
+        // 7. Calculate COGS with taxes
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+        $cogs = $cogsResult['cogs'];
 
-        // 8. Apply scope-specific margins (profit × overhead × markup)
-        return round($settings->calculateWithMarginsForScope($baseTotal, $scopeType), 2);
+        // 8. Apply scope-specific margin: OTD = COGS / (margin% / 100)
+        return round($settings->calculateOTDFromCOGS($cogs, $scopeType), 2);
     }
 
     /**
@@ -185,9 +186,13 @@ class EstimateTemplateService
                 ->value('id');
         }
 
+        // Get effective paint product ID (cascade: template → estimate)
+        $areaPaintProductId = $template->default_paint_product_id ?? $estimate->default_paint_product_id;
+
         $area = EstimateArea::create([
             'estimate_id' => $estimate->id,
             'substrate_id' => $substrateId,
+            'default_paint_product_id' => $areaPaintProductId,
             'name' => $template->name,
             'scope_type' => $template->scope_type ?? EstimateArea::SCOPE_INTERIOR,
             'length' => $dimensions['length'],
@@ -196,6 +201,9 @@ class EstimateTemplateService
             'notes' => $template->description,
             'sort_order' => 0,
         ]);
+
+        // Refresh to get auto-calculated values (wall_sqft, ceiling_sqft, etc.)
+        $area->refresh();
 
         // Create default surfaces if template has them and production rate exists
         if ($template->productionRate && ! empty($template->default_surfaces)) {
@@ -249,10 +257,10 @@ class EstimateTemplateService
             return null;
         }
 
-        // Get scope-specific hourly rate from CompanySetting (PBP formula)
+        // Get base hourly wage from CompanySetting (payroll burden factored into markup)
         $settings = CompanySetting::getInstance();
         $scopeType = $area->scope_type ?? $template->scope_type ?? 'interior';
-        $effectiveHourlyRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $hourlyWage = $settings->getHourlyWageForScope($scopeType);
 
         $productionRate = $template->productionRate;
         if (! $productionRate) {
@@ -265,14 +273,14 @@ class EstimateTemplateService
                 'unit' => $template->default_unit ?? 'unit',
                 'coats' => $coats,
                 'production_rate_value' => 1,
-                'hourly_labor_rate' => $effectiveHourlyRate, // Use scope-specific rate
+                'hourly_labor_rate' => $hourlyWage, // Use base wage (payroll burden in markup)
                 'material_cost_per_unit' => 0,
                 'is_included' => true,
                 'sort_order' => 0,
             ]);
         }
 
-        // Create surface with scope-specific hourly rate from CompanySetting
+        // Create surface with base hourly wage from CompanySetting
         return EstimateAreaSurface::create([
             'area_id' => $area->id,
             'production_rate_id' => $productionRate->id,
@@ -282,8 +290,8 @@ class EstimateTemplateService
             'unit' => $productionRate->unit_type,
             'coats' => $coats,
             'production_rate_value' => $productionRate->production_rate,
-            'hourly_labor_rate' => $effectiveHourlyRate, // Use scope-specific rate from CompanySetting
-            'material_cost_per_unit' => $productionRate->material_cost_per_unit,
+            'hourly_labor_rate' => $hourlyWage, // Use base wage (payroll burden in markup)
+            'material_cost_per_unit' => 0.0, // Material costs come from PaintProduct, not ProductionRate
             'is_included' => true,
             'sort_order' => 0,
         ]);
@@ -624,6 +632,7 @@ class EstimateTemplateService
      * the production rate's hourly_labor_rate.
      *
      * Applies substrate multipliers for prep and paint time if a substrate is set.
+     * Now includes paint product data for accurate material cost calculations.
      */
     private function createDefaultSurfaces(EstimateArea $area, EstimateTemplate $template, int $coats): void
     {
@@ -638,10 +647,13 @@ class EstimateTemplateService
         $substrate = $area->substrate ?? $template->substrate;
         $paintMultiplier = $substrate ? (float) $substrate->paint_time_multiplier : 1.0;
 
-        // Get scope-specific hourly rate from CompanySetting (PBP formula)
+        // Get base hourly wage from CompanySetting (payroll burden factored into markup)
         $settings = CompanySetting::getInstance();
         $scopeType = $area->scope_type ?? 'interior';
-        $effectiveHourlyRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $hourlyWage = $settings->getHourlyWageForScope($scopeType);
+
+        // Get estimate for category-based paint resolution
+        $estimate = $area->estimate;
 
         foreach ($defaultSurfaces as $index => $surfaceType) {
             $quantity = match ($surfaceType) {
@@ -658,9 +670,88 @@ class EstimateTemplateService
                 default => ucfirst($surfaceType),
             };
 
+            // Determine the surface category for paint resolution
+            $surfaceCategory = match ($surfaceType) {
+                'walls', 'wall' => 'walls',
+                'ceiling' => 'ceiling',
+                'floor' => 'walls', // Floors use walls category
+                'trim', 'baseboard', 'crown' => 'trim',
+                'doors', 'door' => 'doors',
+                'body', 'siding' => 'body',
+                'fascia' => 'fascia',
+                'eaves', 'soffit' => 'eaves',
+                default => 'walls',
+            };
+
+            // Get paint product ID using category cascade:
+            // 1. Estimate category override
+            // 2. Company category default
+            // 3. Template default
+            // 4. Estimate default
+            $paintProductId = null;
+            $paintProduct = null;
+
+            // 1. Check estimate category override
+            if ($estimate) {
+                $paintProductId = $estimate->getPaintProductIdForCategory($surfaceCategory);
+            }
+
+            // 2. If no estimate override, check company default for category
+            if (! $paintProductId) {
+                $paintProductId = $settings->getDefaultPaintForCategory($surfaceCategory, $scopeType);
+            }
+
+            // 3. If no category default, fall back to template default
+            if (! $paintProductId) {
+                $paintProductId = $template->default_paint_product_id;
+            }
+
+            // 4. If no template default, fall back to estimate default
+            if (! $paintProductId && $estimate) {
+                $paintProductId = $estimate->default_paint_product_id;
+            }
+
+            // Load paint product if we have an ID
+            if ($paintProductId) {
+                $paintProduct = \App\Models\PaintProduct::find($paintProductId);
+            }
+
             // Adjust production rate by paint time multiplier
             // Higher multiplier = slower painting = lower effective production rate
             $adjustedProductionRate = $productionRate->production_rate / $paintMultiplier;
+
+            // Calculate material cost from paint product if available
+            $paintGallons = null;
+            $paintCost = null;
+            $materialCost = 0.0;
+            $coatMultiplier = $productionRate->getCoatMultiplier($coats);
+
+            // Track material cost per unit for snapshot
+            $materialCostPerUnit = 0.0;
+
+            if ($paintProduct) {
+                // Calculate using paint product's coverage and pricing
+                $recycleFee = $settings->recycle_fee_per_gallon ?? 0.54;
+                $costCalc = $paintProduct->calculateCost(
+                    (float) $quantity,
+                    $coats,
+                    'brush_roll',
+                    (float) $recycleFee
+                );
+                $paintGallons = $costCalc['gallons_rounded'];
+                $paintCost = $costCalc['paint_cost'];
+                $materialCost = $costCalc['total_cost']; // paint_cost + recycle_fee
+
+                // Calculate per-unit cost for snapshot
+                if ($quantity > 0) {
+                    $materialCostPerUnit = $materialCost / ($quantity * $coatMultiplier);
+                }
+            }
+            // else materialCost remains 0 (no fallback to production rate since that column is removed)
+
+            // Calculate labor hours and cost (using base wage, payroll burden is in markup)
+            $laborHours = ($quantity / $adjustedProductionRate) * $coatMultiplier;
+            $laborCost = $laborHours * $hourlyWage;
 
             EstimateAreaSurface::create([
                 'area_id' => $area->id,
@@ -671,8 +762,15 @@ class EstimateTemplateService
                 'unit' => $productionRate->unit_type,
                 'coats' => $coats,
                 'production_rate_value' => $adjustedProductionRate,
-                'hourly_labor_rate' => $effectiveHourlyRate, // Use scope-specific rate from CompanySetting
-                'material_cost_per_unit' => $productionRate->material_cost_per_unit,
+                'hourly_labor_rate' => $hourlyWage, // Base wage, payroll burden in markup
+                'material_cost_per_unit' => $materialCostPerUnit, // Calculated from paint product or 0
+                'labor_hours' => round($laborHours, 2),
+                'labor_cost' => round($laborCost, 2),
+                'material_cost' => round($materialCost, 2),
+                'paint_product_id' => $paintProductId,
+                'paint_gallons' => $paintGallons,
+                'paint_cost' => $paintCost ? round($paintCost, 2) : null,
+                'total' => round($laborCost + $materialCost, 2),
                 'is_included' => true,
                 'sort_order' => $index,
             ]);

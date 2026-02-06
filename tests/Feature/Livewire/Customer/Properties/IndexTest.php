@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Properties\Index;
 use App\Models\Customer;
 use App\Models\Property;
 use App\Models\User;
@@ -11,7 +10,7 @@ describe('Customer Properties Index component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->assertStatus(200)
             ->assertSee('My Properties');
     });
@@ -29,7 +28,7 @@ describe('Customer Properties Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->assertSee('456 Oak Avenue')
             ->assertSee('Chicago')
             ->assertSee('residential');
@@ -51,7 +50,7 @@ describe('Customer Properties Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->assertSee('123 My Street')
             ->assertDontSee('789 Other Street');
     });
@@ -71,7 +70,7 @@ describe('Customer Properties Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->set('search', 'Main')
             ->assertSee('123 Main Street')
             ->assertDontSee('456 Oak Avenue');
@@ -94,7 +93,7 @@ describe('Customer Properties Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->set('search', 'Chicago')
             ->assertSee('123 Main Street')
             ->assertDontSee('456 Oak Avenue');
@@ -105,7 +104,7 @@ describe('Customer Properties Index component', function () {
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->assertSee('No properties found')
             ->assertSee('Your properties will appear here once added');
     });
@@ -120,7 +119,7 @@ describe('Customer Properties Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->set('search', 'NonexistentAddress')
             ->assertSee('No properties found')
             ->assertSee('Try adjusting your search criteria');
@@ -133,7 +132,7 @@ describe('Customer Properties Index component', function () {
         Property::factory()->count(20)->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
@@ -148,7 +147,7 @@ describe('Customer Properties Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.properties.index')
             ->assertSee('photos')
             ->assertSee('projects');
     });

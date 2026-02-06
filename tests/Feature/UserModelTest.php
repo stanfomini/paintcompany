@@ -9,7 +9,7 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('User type methods', function () {
     it('identifies internal users correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         expect($user->isInternal())->toBeTrue()
             ->and($user->isAgent())->toBeFalse()
@@ -49,7 +49,7 @@ describe('User active status', function () {
 
 describe('User profile auto-creation', function () {
     it('creates internal user profile when internal user is created', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         expect($user->internalUser)->toBeInstanceOf(InternalUser::class)
             ->and($user->internalUser->user_id)->toBe($user->id);

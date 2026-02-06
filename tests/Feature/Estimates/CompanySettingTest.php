@@ -55,20 +55,20 @@ describe('CompanySetting pricing calculations', function () {
             'net_profit_margin_percent' => 30.00,
         ]);
 
-        // To achieve 30% margin: price = cost / (1 - 0.30) = cost / 0.70
-        // Cost of 70 with 30% margin = 70 / 0.70 = 100
+        // PBP formula: price = cost / (margin% / 100) = 70 / 0.30 = 233.33
+        // COGS (70) is 30% of sale price (233.33)
         $price = $settings->calculateWithProfitMargin(70.00);
 
-        expect($price)->toBe(100.00);
+        expect($price)->toBe(233.33);
     });
 
-    it('handles edge case of 100% profit margin', function () {
+    it('handles edge case of 0% profit margin', function () {
         $settings = CompanySetting::create([
             'company_name' => 'Test Company',
-            'net_profit_margin_percent' => 100.00,
+            'net_profit_margin_percent' => 0,
         ]);
 
-        // 100% margin would cause division by zero, so returns original cost
+        // 0% margin would cause division by zero, so returns original cost
         $price = $settings->calculateWithProfitMargin(500.00);
 
         expect($price)->toBe(500.00);
@@ -80,10 +80,10 @@ describe('CompanySetting pricing calculations', function () {
         ]);
 
         // Default margin is 30%
-        // Cost of 140 with 30% margin = 140 / 0.70 = 200
+        // PBP formula: 140 / 0.30 = 466.67
         $price = $settings->calculateWithProfitMargin(140.00);
 
-        expect($price)->toBe(200.00);
+        expect($price)->toBe(466.67);
     });
 
     it('calculates profit margin with different percentages', function () {
@@ -92,11 +92,11 @@ describe('CompanySetting pricing calculations', function () {
             'net_profit_margin_percent' => 25.00,
         ]);
 
-        // To achieve 25% margin: price = cost / (1 - 0.25) = cost / 0.75
-        // Cost of 75 with 25% margin = 75 / 0.75 = 100
+        // PBP formula: price = cost / (margin% / 100) = 75 / 0.25 = 300
+        // COGS (75) is 25% of sale price (300)
         $price = $settings->calculateWithProfitMargin(75.00);
 
-        expect($price)->toBe(100.00);
+        expect($price)->toBe(300.00);
     });
 
     it('gets paint price from catalog by brand and type', function () {

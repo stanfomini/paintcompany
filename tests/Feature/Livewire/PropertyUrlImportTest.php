@@ -1,12 +1,11 @@
 <?php
 
-use App\Livewire\Properties\CreateModal;
 use App\Models\User;
 use App\Services\ListingScraperService;
 use Livewire\Livewire;
 
 beforeEach(function () {
-    $this->user = User::factory()->internal()->create();
+    $this->user = User::factory()->internal()->withFullAccess()->create();
 });
 
 it('shows url import section when scraping is available', function () {
@@ -15,7 +14,7 @@ it('shows url import section when scraping is available', function () {
         ->andReturn(true);
 
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class)
+        ->test('properties.create-modal')
         ->call('openModal')
         ->assertSee('Import from Listing URL');
 });
@@ -26,7 +25,7 @@ it('hides url import section when scraping is unavailable', function () {
         ->andReturn(false);
 
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class)
+        ->test('properties.create-modal')
         ->call('openModal')
         ->assertDontSee('Import from Listing URL');
 });
@@ -37,7 +36,7 @@ it('shows error when import url is empty', function () {
         ->andReturn(true);
 
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class)
+        ->test('properties.create-modal')
         ->set('importUrl', '')
         ->call('importFromUrl')
         ->assertSet('importError', 'Please enter a listing URL.');
@@ -72,7 +71,7 @@ it('populates form fields from scraped data', function () {
         ->andReturn($mockData);
 
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class)
+        ->test('properties.create-modal')
         ->set('importUrl', 'https://zillow.com/homedetails/123')
         ->call('importFromUrl')
         ->assertSet('address', '123 Main St')
@@ -99,7 +98,7 @@ it('shows error when scraping fails', function () {
         ]);
 
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class)
+        ->test('properties.create-modal')
         ->set('importUrl', 'https://zillow.com/invalid')
         ->call('importFromUrl')
         ->assertSet('importError', 'Failed to scrape listing.');
@@ -111,7 +110,7 @@ it('resets import fields when modal is closed', function () {
         ->andReturn(true);
 
     Livewire::actingAs($this->user)
-        ->test(CreateModal::class)
+        ->test('properties.create-modal')
         ->set('importUrl', 'https://zillow.com/test')
         ->set('importError', 'Some error')
         ->set('importSource', 'zillow')

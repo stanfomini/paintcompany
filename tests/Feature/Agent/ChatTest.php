@@ -1,8 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Chat\MessageComposer;
-use App\Livewire\Agent\Chat\ThreadList;
-use App\Livewire\Agent\Chat\ThreadView;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\User;
@@ -22,12 +19,12 @@ describe('Agent Chat Thread List', function () {
         $this->actingAs($agent, 'agent')
             ->get(route('agent.chat.index'))
             ->assertSuccessful()
-            ->assertSeeLivewire(ThreadList::class);
+            ->assertSeeLivewire('agent.chat.thread-list');
     });
 
     it('shows threads where agent is a participant', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         // Create a thread where agent is a participant
         $thread = ChatThread::factory()
@@ -43,14 +40,14 @@ describe('Agent Chat Thread List', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadList::class)
+            ->test('agent.chat.thread-list')
             ->assertSee('Agent Thread');
     });
 
     it('does not show threads where agent is not a participant', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         // Create a thread where agent is NOT a participant
         $thread = ChatThread::factory()
@@ -59,13 +56,13 @@ describe('Agent Chat Thread List', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadList::class)
+            ->test('agent.chat.thread-list')
             ->assertDontSee('Other Thread');
     });
 
     it('shows unread count for threads', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Unread Thread')
@@ -80,7 +77,7 @@ describe('Agent Chat Thread List', function () {
             ->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(ThreadList::class);
+            ->test('agent.chat.thread-list');
 
         // Access computed property via the component instance
         $threads = $component->instance()->threads;
@@ -89,7 +86,7 @@ describe('Agent Chat Thread List', function () {
 
     it('filters threads by unread', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         // Thread with unread messages
         $unreadThread = ChatThread::factory()
@@ -113,32 +110,36 @@ describe('Agent Chat Thread List', function () {
         $participant->markAsRead();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadList::class)
+            ->test('agent.chat.thread-list')
             ->set('filter', 'unread')
             ->assertSee('Unread Thread');
     });
 
     it('forbids internal users from accessing agent chat', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
+        // Now redirects to internal dashboard instead of showing 403
         $this->actingAs($internal, 'agent')
             ->get(route('agent.chat.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHas('warning');
     });
 
     it('forbids customer users from accessing agent chat', function () {
         $customer = User::factory()->customer()->create();
 
+        // Now redirects to customer dashboard instead of showing 403
         $this->actingAs($customer, 'agent')
             ->get(route('agent.chat.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('customer.dashboard'))
+            ->assertSessionHas('warning');
     });
 });
 
 describe('Agent Chat Thread View', function () {
     it('renders thread view for authorized agent', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -148,13 +149,13 @@ describe('Agent Chat Thread View', function () {
         $this->actingAs($agent, 'agent')
             ->get(route('agent.chat.show', $thread))
             ->assertSuccessful()
-            ->assertSeeLivewire(ThreadView::class);
+            ->assertSeeLivewire('agent.chat.thread-view');
     });
 
     it('forbids agent from accessing threads they are not part of', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         // Thread where agent is NOT a participant
         $thread = ChatThread::factory()
@@ -169,7 +170,7 @@ describe('Agent Chat Thread View', function () {
 
     it('shows messages in the thread', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -189,14 +190,14 @@ describe('Agent Chat Thread View', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('agent.chat.thread-view', ['thread' => $thread])
             ->assertSee('Hello from internal!')
             ->assertSee('Hello from agent!');
     });
 
     it('does not show internal messages to agent', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -219,14 +220,14 @@ describe('Agent Chat Thread View', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('agent.chat.thread-view', ['thread' => $thread])
             ->assertSee('Public message')
             ->assertDontSee('Internal staff note');
     });
 
     it('marks thread as read on view', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -242,7 +243,7 @@ describe('Agent Chat Thread View', function () {
         expect($thread->getUnreadCountFor($agent))->toBe(1);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadView::class, ['thread' => $thread]);
+            ->test('agent.chat.thread-view', ['thread' => $thread]);
 
         // After viewing - should be marked as read
         $thread->refresh();
@@ -251,7 +252,7 @@ describe('Agent Chat Thread View', function () {
 
     it('shows participant avatars', function () {
         $agent = User::factory()->agent()->create(['name' => 'Test Agent']);
-        $internal = User::factory()->internal()->create(['name' => 'Staff Member']);
+        $internal = User::factory()->internal()->withFullAccess()->create(['name' => 'Staff Member']);
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -259,13 +260,13 @@ describe('Agent Chat Thread View', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('agent.chat.thread-view', ['thread' => $thread])
             ->assertSee('2 participants');
     });
 
     it('allows agent to delete their own messages', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -279,7 +280,7 @@ describe('Agent Chat Thread View', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('agent.chat.thread-view', ['thread' => $thread])
             ->call('deleteMessage', $message->id)
             ->assertDispatched('message-deleted');
 
@@ -288,7 +289,7 @@ describe('Agent Chat Thread View', function () {
 
     it('forbids agent from deleting other users messages', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -302,7 +303,7 @@ describe('Agent Chat Thread View', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(ThreadView::class, ['thread' => $thread])
+            ->test('agent.chat.thread-view', ['thread' => $thread])
             ->call('deleteMessage', $message->id)
             ->assertForbidden();
 
@@ -313,7 +314,7 @@ describe('Agent Chat Thread View', function () {
 describe('Agent Chat Message Composer', function () {
     it('allows agent to send messages', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -321,7 +322,7 @@ describe('Agent Chat Message Composer', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->set('content', 'Hello from agent!')
             ->call('send')
             ->assertDispatched('message-sent');
@@ -336,7 +337,7 @@ describe('Agent Chat Message Composer', function () {
 
     it('validates message content is required', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -344,7 +345,7 @@ describe('Agent Chat Message Composer', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->set('content', '')
             ->call('send')
             ->assertHasErrors(['content' => 'required']);
@@ -352,7 +353,7 @@ describe('Agent Chat Message Composer', function () {
 
     it('validates message content max length', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -360,7 +361,7 @@ describe('Agent Chat Message Composer', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->set('content', str_repeat('a', 10001))
             ->call('send')
             ->assertHasErrors(['content' => 'max']);
@@ -368,7 +369,7 @@ describe('Agent Chat Message Composer', function () {
 
     it('does not have internal message toggle for agents', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -377,7 +378,7 @@ describe('Agent Chat Message Composer', function () {
 
         // Agent sends a message - it should always be non-internal
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->set('content', 'Agent message')
             ->call('send');
 
@@ -388,7 +389,7 @@ describe('Agent Chat Message Composer', function () {
 
     it('clears content after sending', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -396,7 +397,7 @@ describe('Agent Chat Message Composer', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->set('content', 'Hello!')
             ->call('send')
             ->assertSet('content', '');
@@ -404,7 +405,7 @@ describe('Agent Chat Message Composer', function () {
 
     it('supports replying to messages', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -418,7 +419,7 @@ describe('Agent Chat Message Composer', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->call('setReplyTo', $parentMessage->id)
             ->assertSet('replyToMessageId', $parentMessage->id)
             ->set('content', 'My reply')
@@ -431,7 +432,7 @@ describe('Agent Chat Message Composer', function () {
 
     it('can clear reply state', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -444,7 +445,7 @@ describe('Agent Chat Message Composer', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->call('setReplyTo', $parentMessage->id)
             ->assertSet('replyToMessageId', $parentMessage->id)
             ->call('clearReply')
@@ -456,7 +457,7 @@ describe('Agent Chat Message Composer', function () {
 describe('Agent Chat Authorization', function () {
     it('agent cannot see internal messages in thread list preview', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -475,7 +476,7 @@ describe('Agent Chat Authorization', function () {
         $thread->touchLastMessage();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(ThreadList::class);
+            ->test('agent.chat.thread-list');
 
         // The thread should appear but the internal message content should not be shown
         // Access computed property via the component instance
@@ -489,7 +490,7 @@ describe('Agent Chat Authorization', function () {
 
     it('agent messages are never marked as internal', function () {
         $agent = User::factory()->agent()->create();
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
 
         $thread = ChatThread::factory()
             ->withSubject('Test Thread')
@@ -499,7 +500,7 @@ describe('Agent Chat Authorization', function () {
         // Even if an agent somehow tries to send an internal message (which shouldn't happen),
         // it should be saved as non-internal
         Livewire::actingAs($agent, 'agent')
-            ->test(MessageComposer::class, ['thread' => $thread])
+            ->test('agent.chat.message-composer', ['thread' => $thread])
             ->set('content', 'Agent message')
             ->call('send');
 

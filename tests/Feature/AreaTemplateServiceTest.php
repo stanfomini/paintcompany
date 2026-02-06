@@ -12,7 +12,7 @@ use App\Models\User;
 use App\Services\AreaTemplateService;
 
 beforeEach(function () {
-    $this->user = User::factory()->create();
+    $this->user = User::factory()->withFullAccess()->create();
     $this->service = new AreaTemplateService;
     $this->category = EstimateTemplateCategory::factory()->create();
 
@@ -252,7 +252,6 @@ describe('calculatePreview', function () {
         $wallRate = ProductionRate::factory()->create([
             'category_id' => $rateCategory->id,
             'production_rate' => 200, // 200 sqft/hr
-            'material_cost_per_unit' => 0.50,
         ]);
 
         $template = EstimateTemplate::factory()->configurable()->interior()->createdBy($this->user)->create([

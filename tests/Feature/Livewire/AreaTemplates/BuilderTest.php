@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\AreaTemplates\Builder;
 use App\Models\AreaTemplateSurface;
 use App\Models\EstimateTemplate;
 use App\Models\EstimateTemplateCategory;
@@ -14,7 +13,7 @@ use Livewire\Livewire;
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 beforeEach(function () {
-    $this->user = User::factory()->create();
+    $this->user = User::factory()->withFullAccess()->create();
 
     // Create a default category for area templates
     $this->category = EstimateTemplateCategory::factory()->create([
@@ -26,7 +25,7 @@ beforeEach(function () {
 
 it('renders the builder component for creating', function () {
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->assertOk()
         ->assertSee('Create Area Template')
         ->assertSet('isEditing', false);
@@ -34,7 +33,7 @@ it('renders the builder component for creating', function () {
 
 it('initializes with default dimensions', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class);
+        ->test('area-templates.builder');
 
     expect($component->get('roomLength'))->toBe(12.0);
     expect($component->get('roomWidth'))->toBe(12.0);
@@ -43,7 +42,7 @@ it('initializes with default dimensions', function () {
 
 it('initializes with default surfaces', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class);
+        ->test('area-templates.builder');
 
     // Component initializes with 3 default surfaces: Walls, Ceiling, Baseboards
     expect($component->get('surfaces'))->toHaveCount(3);
@@ -57,7 +56,7 @@ it('initializes with default surfaces', function () {
 
 it('computes wall square feet from dimensions', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('roomLength', 12)
         ->set('roomWidth', 14)
         ->set('roomHeight', 9);
@@ -71,7 +70,7 @@ it('computes wall square feet from dimensions', function () {
 
 it('computes ceiling square feet from dimensions', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('roomLength', 12)
         ->set('roomWidth', 14)
         ->set('roomHeight', 9);
@@ -84,7 +83,7 @@ it('computes ceiling square feet from dimensions', function () {
 
 it('computes perimeter linear feet from dimensions', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('roomLength', 12)
         ->set('roomWidth', 14)
         ->set('roomHeight', 9);
@@ -97,7 +96,7 @@ it('computes perimeter linear feet from dimensions', function () {
 
 it('updates computed quantities when dimensions change', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('roomLength', 10)
         ->set('roomWidth', 10)
         ->set('roomHeight', 8);
@@ -116,7 +115,7 @@ it('updates computed quantities when dimensions change', function () {
 
 it('handles exterior single side mode when length is zero', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('scopeType', 'exterior')
         ->set('roomLength', 0)
         ->set('roomWidth', 40)
@@ -138,7 +137,7 @@ it('handles exterior single side mode when length is zero', function () {
 
 it('resets surface categories when switching to exterior scope', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class);
+        ->test('area-templates.builder');
 
     // Initially interior with interior categories
     expect($component->get('scopeType'))->toBe('interior');
@@ -156,7 +155,7 @@ it('resets surface categories when switching to exterior scope', function () {
 
 it('can add a surface', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->call('addSurface');
 
     // Starts with 3 surfaces, adds 1 = 4 total
@@ -165,7 +164,7 @@ it('can add a surface', function () {
 
 it('can remove a surface', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->call('removeSurface', 0);
 
     // Starts with 3 surfaces, removes 1 = 2 remaining
@@ -174,7 +173,7 @@ it('can remove a surface', function () {
 
 it('cannot remove the last surface', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->call('removeSurface', 0)
         ->call('removeSurface', 0);
 
@@ -190,7 +189,7 @@ it('cannot remove the last surface', function () {
 
 it('can reorder surfaces', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('surfaces.0.name', 'First Surface')
         ->call('addSurface')
         ->set('surfaces.1.name', 'Second Surface');
@@ -211,7 +210,7 @@ it('can reorder surfaces', function () {
 
 it('can add nested options', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->call('addNestedOption');
 
     expect($component->get('nestedOptions'))->toHaveCount(1);
@@ -220,7 +219,7 @@ it('can add nested options', function () {
 
 it('can remove nested options', function () {
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->call('addNestedOption')
         ->call('addNestedOption')
         ->call('removeNestedOption', 0);
@@ -230,7 +229,7 @@ it('can remove nested options', function () {
 
 it('validates required fields on save', function () {
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('name', '')
         ->call('save')
         ->assertHasErrors(['name']);
@@ -238,7 +237,7 @@ it('validates required fields on save', function () {
 
 it('validates surface names on save', function () {
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('name', 'Test Template')
         ->set('surfaces.0.name', '')
         ->call('save')
@@ -280,7 +279,7 @@ it('loads template data in edit mode', function () {
     ]);
 
     $component = Livewire::actingAs($this->user)
-        ->test(Builder::class, ['template' => $template]);
+        ->test('area-templates.builder', ['template' => $template]);
 
     expect($component->get('isEditing'))->toBeTrue();
     expect($component->get('name'))->toBe('Test Template');
@@ -294,7 +293,7 @@ it('loads template data in edit mode', function () {
 
 it('can create a new template', function () {
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('name', 'New Room Template')
         ->set('description', 'A test room')
         ->set('templateCategoryId', $this->category->id)
@@ -333,7 +332,7 @@ it('can update an existing template', function () {
     ]);
 
     Livewire::actingAs($this->user)
-        ->test(Builder::class, ['template' => $template])
+        ->test('area-templates.builder', ['template' => $template])
         ->set('name', 'Updated Name')
         ->call('save')
         ->assertRedirect();
@@ -364,7 +363,7 @@ it('cannot modify system templates', function () {
     // When trying to save a system template, the save method should flash an error
     // and NOT redirect (since it fails)
     Livewire::actingAs($this->user)
-        ->test(Builder::class, ['template' => $template])
+        ->test('area-templates.builder', ['template' => $template])
         ->set('name', 'Modified Name')
         ->call('save')
         ->assertNoRedirect();
@@ -389,7 +388,7 @@ it('shows available substrates filtered by scope', function () {
 
     // Test that interior scope shows interior substrates
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('scopeType', 'interior')
         ->assertSee('Interior Drywall')
         ->assertDontSee('Exterior Wood');
@@ -410,7 +409,7 @@ it('shows available paint products filtered by scope', function () {
 
     // Test that interior scope shows interior products
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('scopeType', 'interior')
         ->assertSee('Interior Eggshell')
         ->assertDontSee('Exterior Satin');
@@ -421,8 +420,6 @@ it('shows live calculator section in sidebar', function () {
         'name' => 'Wall Paint',
         'production_rate' => 200,
         'unit_type' => 'sqft',
-        'hourly_labor_rate' => 25,
-        'material_cost_per_unit' => 0.15,
         'is_active' => true,
         'scope' => 'interior',
         'surface_category' => 'walls',
@@ -430,7 +427,7 @@ it('shows live calculator section in sidebar', function () {
 
     // Test that the live calculator section renders with dimensions and coats
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->set('scopeType', 'interior')
         ->set('surfaces.0.name', 'Walls')
         ->set('surfaces.0.surface_category', 'walls')
@@ -449,7 +446,7 @@ it('includes nested options in preview when default included', function () {
 
     // Test that nested option appears in preview
     Livewire::actingAs($this->user)
-        ->test(Builder::class)
+        ->test('area-templates.builder')
         ->call('addNestedOption')
         ->set('nestedOptions.0.nested_area_template_id', $nestedTemplate->id)
         ->set('nestedOptions.0.is_default_included', true)

@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Dashboard;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
@@ -11,7 +10,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertStatus(200)
             ->assertSee('Welcome');
     });
@@ -20,7 +19,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Commission Overview')
             ->assertSee('Total Earned')
             ->assertSee('Pending')
@@ -31,7 +30,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Performance Metrics')
             ->assertSee('Conversion Rate')
             ->assertSee('Avg Deal Value')
@@ -42,7 +41,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Deals by Stage');
     });
 
@@ -50,7 +49,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Recent Deals');
     });
 
@@ -58,7 +57,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('No deals yet.')
             ->assertSee('Deals from your referred customers will appear here.');
     });
@@ -76,7 +75,7 @@ describe('Agent Dashboard component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Kitchen Painting')
             ->assertSee('John Doe');
     });
@@ -85,7 +84,7 @@ describe('Agent Dashboard component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertSee('Listings & Referrals')
             ->assertSee('Total Listings')
             ->assertSee('Active Listings')
@@ -111,9 +110,9 @@ describe('Agent Dashboard commission calculations', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $commissionStats = $component->viewData('commissionStats');
+        $commissionStats = $component->get('commissionStats');
 
         expect($commissionStats['total_earned'])->toBe(1500.0);
     });
@@ -134,9 +133,9 @@ describe('Agent Dashboard commission calculations', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $commissionStats = $component->viewData('commissionStats');
+        $commissionStats = $component->get('commissionStats');
 
         expect($commissionStats['pending'])->toBe(1800.0);
     });
@@ -154,9 +153,9 @@ describe('Agent Dashboard commission calculations', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $commissionStats = $component->viewData('commissionStats');
+        $commissionStats = $component->get('commissionStats');
 
         expect($commissionStats['this_month'])->toBe(1000.0);
     });
@@ -172,9 +171,9 @@ describe('Agent Dashboard commission calculations', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $commissionStats = $component->viewData('commissionStats');
+        $commissionStats = $component->get('commissionStats');
 
         expect($commissionStats['pending'])->toBe(0.0);
     });
@@ -189,10 +188,10 @@ describe('Agent Dashboard commission calculations', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        expect($component->viewData('commissionRate'))->toBe(10);
-        expect($component->viewData('commissionStats')['total_earned'])->toBe(1000.0);
+        expect((float) $component->get('commissionRate'))->toBe(10.0);
+        expect($component->get('commissionStats')['total_earned'])->toBe(1000.0);
     });
 
     it('uses agent custom commission rate', function () {
@@ -205,10 +204,10 @@ describe('Agent Dashboard commission calculations', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        expect((float) $component->viewData('commissionRate'))->toBe(15.0);
-        expect($component->viewData('commissionStats')['total_earned'])->toBe(1500.0);
+        expect((float) $component->get('commissionRate'))->toBe(15.0);
+        expect($component->get('commissionStats')['total_earned'])->toBe(1500.0);
     });
 });
 
@@ -222,9 +221,9 @@ describe('Agent Dashboard performance metrics', function () {
         Deal::factory()->count(3)->referredByAgent($agent)->forCustomer($customer)->lead()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $performanceMetrics = $component->viewData('performanceMetrics');
+        $performanceMetrics = $component->get('performanceMetrics');
 
         expect($performanceMetrics['conversion_rate'])->toBe(40.0);
     });
@@ -233,9 +232,9 @@ describe('Agent Dashboard performance metrics', function () {
         $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $performanceMetrics = $component->viewData('performanceMetrics');
+        $performanceMetrics = $component->get('performanceMetrics');
 
         expect($performanceMetrics['conversion_rate'])->toBe(0.0);
     });
@@ -253,9 +252,9 @@ describe('Agent Dashboard performance metrics', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $performanceMetrics = $component->viewData('performanceMetrics');
+        $performanceMetrics = $component->get('performanceMetrics');
 
         // Average of 5000 and 15000 = 10000
         expect($performanceMetrics['average_deal_value'])->toBe(10000.0);
@@ -274,9 +273,9 @@ describe('Agent Dashboard performance metrics', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $performanceMetrics = $component->viewData('performanceMetrics');
+        $performanceMetrics = $component->get('performanceMetrics');
 
         expect($performanceMetrics['total_referral_value'])->toBe(20000.0);
     });
@@ -292,9 +291,9 @@ describe('Agent Dashboard deals by stage', function () {
         Deal::factory()->count(1)->referredByAgent($agent)->forCustomer($customer)->completed()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $dealsByStage = $component->viewData('dealsByStage');
+        $dealsByStage = $component->get('dealsByStage');
 
         expect($dealsByStage['lead'])->toBe(3);
         expect($dealsByStage['quoted'])->toBe(2);
@@ -313,9 +312,9 @@ describe('Agent Dashboard deals by stage', function () {
         Deal::factory()->count(5)->referredByAgent($otherAgent)->forCustomer($otherCustomer)->lead()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $dealsByStage = $component->viewData('dealsByStage');
+        $dealsByStage = $component->get('dealsByStage');
 
         expect($dealsByStage['lead'])->toBe(3);
     });
@@ -332,9 +331,9 @@ describe('Agent Dashboard monthly deal counts', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
-        $monthlyDealCounts = $component->viewData('monthlyDealCounts');
+        $monthlyDealCounts = $component->get('monthlyDealCounts');
 
         expect(count($monthlyDealCounts))->toBe(6);
 
@@ -349,7 +348,7 @@ describe('Agent Dashboard stage badge colors', function () {
         $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class);
+            ->test('agent.dashboard');
 
         expect($component->instance()->getStageBadgeColor('lead'))->toBe('blue');
         expect($component->instance()->getStageBadgeColor('quoted'))->toBe('purple');
@@ -367,11 +366,11 @@ describe('Agent Dashboard empty states', function () {
         $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertStatus(200);
 
-        $commissionStats = $component->viewData('commissionStats');
-        $performanceMetrics = $component->viewData('performanceMetrics');
+        $commissionStats = $component->get('commissionStats');
+        $performanceMetrics = $component->get('performanceMetrics');
 
         expect($commissionStats['total_earned'])->toBe(0.0);
         expect($commissionStats['pending'])->toBe(0.0);
@@ -385,7 +384,7 @@ describe('Agent Dashboard empty states', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertStatus(200)
             ->assertSee('No upcoming open houses scheduled.');
     });
@@ -394,7 +393,7 @@ describe('Agent Dashboard empty states', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Dashboard::class)
+            ->test('agent.dashboard')
             ->assertStatus(200)
             ->assertSee('No customers referred yet.');
     });
@@ -412,22 +411,26 @@ describe('Agent Dashboard page access', function () {
         $this->actingAs($agent, 'agent')
             ->get(route('agent.dashboard'))
             ->assertSuccessful()
-            ->assertSeeLivewire(Dashboard::class);
+            ->assertSeeLivewire('agent.dashboard');
     });
 
-    it('forbids internal users from accessing agent dashboard', function () {
-        $internalUser = User::factory()->internal()->create();
+    it('redirects internal users from agent dashboard to internal dashboard', function () {
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
 
+        // Now redirects to internal dashboard instead of showing 403
         $this->actingAs($internalUser, 'agent')
             ->get(route('agent.dashboard'))
-            ->assertForbidden();
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHas('warning');
     });
 
-    it('forbids customer users from accessing agent dashboard', function () {
+    it('redirects customer users from agent dashboard to customer dashboard', function () {
         $customer = User::factory()->customer()->create();
 
+        // Now redirects to customer dashboard instead of showing 403
         $this->actingAs($customer, 'agent')
             ->get(route('agent.dashboard'))
-            ->assertForbidden();
+            ->assertRedirect(route('customer.dashboard'))
+            ->assertSessionHas('warning');
     });
 });

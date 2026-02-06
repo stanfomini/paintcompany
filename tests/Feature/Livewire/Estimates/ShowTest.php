@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\Show;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -10,7 +9,7 @@ use Livewire\Livewire;
 
 describe('Estimate Show component', function () {
     it('renders the show component with estimate data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create(['first_name' => 'John', 'last_name' => 'Doe']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->create([
@@ -19,24 +18,26 @@ describe('Estimate Show component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertStatus(200)
             ->assertSee($estimate->estimate_number)
             ->assertSee('Interior Painting Estimate')
             ->assertSee('John Doe');
     });
 
-    it('denies access to non-internal users', function () {
+    it('redirects non-internal users to their dashboard', function () {
         $user = User::factory()->agent()->create();
         $estimate = Estimate::factory()->create();
 
+        // Now redirects to agent dashboard instead of showing 403
         $this->actingAs($user)
             ->get(route('estimates.show', $estimate))
-            ->assertForbidden();
+            ->assertRedirect(route('agent.dashboard'))
+            ->assertSessionHas('warning');
     });
 
     it('displays line items', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create(['created_by' => $user->id]);
         EstimateItem::factory()->forEstimate($estimate)->create([
             'description' => 'Wall Painting',
@@ -46,13 +47,13 @@ describe('Estimate Show component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Wall Painting')
             ->assertSee('sq ft');
     });
 
     it('displays item details when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create(['created_by' => $user->id]);
         EstimateItem::factory()->forEstimate($estimate)->create([
             'description' => 'Paint Work',
@@ -60,12 +61,12 @@ describe('Estimate Show component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Two coats of premium paint');
     });
 
     it('displays totals correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'subtotal' => 1000.00,
             'tax_rate' => 8.00,
@@ -76,7 +77,7 @@ describe('Estimate Show component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('$1,000.00')
             ->assertSee('8.00%')
             ->assertSee('$80.00')
@@ -85,11 +86,11 @@ describe('Estimate Show component', function () {
     });
 
     it('can mark draft estimate as sent', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('markAsSent')
             ->assertHasNoErrors();
 
@@ -99,11 +100,11 @@ describe('Estimate Show component', function () {
     });
 
     it('cannot mark non-draft estimate as sent', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('markAsSent');
 
         $estimate->refresh();
@@ -111,11 +112,11 @@ describe('Estimate Show component', function () {
     });
 
     it('can mark estimate as accepted', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('markAsAccepted')
             ->assertHasNoErrors();
 
@@ -125,11 +126,11 @@ describe('Estimate Show component', function () {
     });
 
     it('can mark draft estimate as accepted', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('markAsAccepted')
             ->assertHasNoErrors();
 
@@ -138,11 +139,11 @@ describe('Estimate Show component', function () {
     });
 
     it('cannot mark rejected estimate as accepted', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->rejected()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('markAsAccepted');
 
         $estimate->refresh();
@@ -150,11 +151,11 @@ describe('Estimate Show component', function () {
     });
 
     it('can mark estimate as rejected', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->call('markAsRejected')
             ->assertHasNoErrors();
 
@@ -164,143 +165,144 @@ describe('Estimate Show component', function () {
     });
 
     it('shows edit button for draft estimates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->draft()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
-            ->assertSee('Edit');
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertSeeHtml('href="'.route('estimates.edit', $estimate).'"');
     });
 
     it('hides edit button for non-draft estimates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
 
+        // The main Edit button should not show, but PackageBuilder may show "Edit package details" buttons
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
-            ->assertDontSee('Edit');
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertDontSeeHtml('href="'.route('estimates.edit', $estimate).'"');
     });
 
     it('displays status badge with correct color', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $draft = Estimate::factory()->draft()->create(['created_by' => $user->id]);
         $sent = Estimate::factory()->sent()->create(['created_by' => $user->id]);
         $accepted = Estimate::factory()->accepted()->create(['created_by' => $user->id]);
         $rejected = Estimate::factory()->rejected()->create(['created_by' => $user->id]);
 
-        $draftComponent = Livewire::actingAs($user)->test(Show::class, ['estimate' => $draft]);
+        $draftComponent = Livewire::actingAs($user)->test('estimates.show', ['estimate' => $draft]);
         expect($draftComponent->get('statusColor'))->toBe('zinc');
 
-        $sentComponent = Livewire::actingAs($user)->test(Show::class, ['estimate' => $sent]);
+        $sentComponent = Livewire::actingAs($user)->test('estimates.show', ['estimate' => $sent]);
         expect($sentComponent->get('statusColor'))->toBe('blue');
 
-        $acceptedComponent = Livewire::actingAs($user)->test(Show::class, ['estimate' => $accepted]);
+        $acceptedComponent = Livewire::actingAs($user)->test('estimates.show', ['estimate' => $accepted]);
         expect($acceptedComponent->get('statusColor'))->toBe('green');
 
-        $rejectedComponent = Livewire::actingAs($user)->test(Show::class, ['estimate' => $rejected]);
+        $rejectedComponent = Livewire::actingAs($user)->test('estimates.show', ['estimate' => $rejected]);
         expect($rejectedComponent->get('statusColor'))->toBe('red');
     });
 
     it('displays notes when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'notes' => 'This is a special note for the customer.',
             'created_by' => $user->id,
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('This is a special note for the customer.');
     });
 
     it('displays terms when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'terms' => 'Payment due within 30 days.',
             'created_by' => $user->id,
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Payment due within 30 days.');
     });
 
     it('displays valid until date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'valid_until' => '2025-12-31',
             'created_by' => $user->id,
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Dec 31, 2025');
     });
 
     it('shows expired indicator for past valid_until dates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'valid_until' => '2020-01-01',
             'created_by' => $user->id,
         ]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Expired');
     });
 
     it('displays status history when available', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->accepted()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Status History')
             ->assertSee('Sent:')
             ->assertSee('Accepted:');
     });
 
     it('links to deal show page', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create(['title' => 'Kitchen Project']);
         $estimate = Estimate::factory()->forDeal($deal)->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Kitchen Project');
     });
 
     it('links to customer show page', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create(['first_name' => 'Alice', 'last_name' => 'Wonder']);
         $deal = Deal::factory()->forCustomer($customer)->create();
         $estimate = Estimate::factory()->forDeal($deal)->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Alice Wonder');
     });
 
     it('displays created by information', function () {
-        $creator = User::factory()->internal()->create(['name' => 'John Creator']);
+        $creator = User::factory()->internal()->withFullAccess()->create(['name' => 'John Creator']);
         $estimate = Estimate::factory()->create(['created_by' => $creator->id]);
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('John Creator');
     });
 
     it('refreshes estimate on estimate-updated event', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->draft()->create([
             'title' => 'Original Title',
             'created_by' => $user->id,
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate]);
+            ->test('estimates.show', ['estimate' => $estimate]);
 
         $estimate->update(['title' => 'Updated Title']);
 
@@ -310,11 +312,11 @@ describe('Estimate Show component', function () {
     });
 
     it('has download PDF link', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create(['created_by' => $user->id]);
 
         Livewire::actingAs($user)
-            ->test(Show::class, ['estimate' => $estimate])
+            ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Download PDF');
     });
 });

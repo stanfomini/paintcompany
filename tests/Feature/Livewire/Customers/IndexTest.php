@@ -1,22 +1,21 @@
 <?php
 
-use App\Livewire\Customers\Index;
 use App\Models\Customer;
 use App\Models\User;
 use Livewire\Livewire;
 
 describe('Customer Index component', function () {
     it('renders the customer index component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->assertStatus(200)
             ->assertSee('Customers');
     });
 
     it('displays customers in the list', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->createdBy($user)->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -24,13 +23,13 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->assertSee('John Doe')
             ->assertSee('john.doe@example.com');
     });
 
     it('can search customers by name', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $john = Customer::factory()->createdBy($user)->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -41,14 +40,14 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('search', 'John')
             ->assertSee('John Doe')
             ->assertDontSee('Jane Smith');
     });
 
     it('can search customers by email', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $john = Customer::factory()->createdBy($user)->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
@@ -61,14 +60,14 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('search', 'john@example')
             ->assertSee('John Doe')
             ->assertDontSee('Jane Smith');
     });
 
     it('can filter customers by active status', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $activeCustomer = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Active',
             'last_name' => 'Customer',
@@ -81,14 +80,14 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('statusFilter', 'active')
             ->assertSee('Active Customer')
             ->assertDontSee('Inactive Customer');
     });
 
     it('can filter customers by inactive status', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $activeCustomer = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Active',
             'last_name' => 'Customer',
@@ -100,14 +99,14 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('statusFilter', 'inactive')
             ->assertSee('Inactive Customer')
             ->assertDontSee('Active Customer');
     });
 
     it('shows all statuses by default', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $activeCustomer = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Active',
             'last_name' => 'Customer',
@@ -119,56 +118,56 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->assertSet('statusFilter', 'all')
             ->assertSee('Active Customer')
             ->assertSee('Inactive Customer');
     });
 
     it('resets pagination when search changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         Customer::factory()->count(20)->createdBy($user)->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
 
     it('resets pagination when status filter changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         Customer::factory()->count(20)->createdBy($user)->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('statusFilter', 'active')
             ->assertSet('paginators.page', 1);
     });
 
     it('shows empty state when no customers exist', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->assertSee('No customers found');
     });
 
     it('shows empty state with appropriate message when search yields no results', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         Customer::factory()->createdBy($user)->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->set('search', 'NonexistentCustomer')
             ->assertSee('No customers found')
             ->assertSee('Try adjusting your search or filter criteria');
     });
 
     it('displays correct status badges', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $activeCustomer = Customer::factory()->createdBy($user)->create([
             'first_name' => 'Active',
             'last_name' => 'User',
@@ -176,15 +175,15 @@ describe('Customer Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->assertSee('Active');
     });
 
     it('has correct default values', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('customers.index')
             ->assertSet('search', '')
             ->assertSet('statusFilter', 'all')
             ->assertSet('perPage', 15);

@@ -40,7 +40,7 @@ return new class extends Migration
             $table->index('surface_type');
 
             // Each area can only have one paint selection per surface type
-            $table->unique(['estimate_area_id', 'surface_type']);
+            $table->unique(['estimate_area_id', 'surface_type'], 'est_area_paint_area_surface_unique');
         });
     }
 

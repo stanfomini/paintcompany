@@ -1,7 +1,5 @@
 <?php
 
-use App\Livewire\AreaTemplates\Builder;
-use App\Livewire\AreaTemplates\Index;
 use App\Models\EstimateTemplate;
 use App\Models\User;
 
@@ -27,25 +25,25 @@ describe('Area Templates Routes', function () {
     });
 
     it('allows internal users to access area templates index', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         actingAs($user)
             ->get(route('area-templates.index'))
             ->assertOk()
-            ->assertSeeLivewire(Index::class);
+            ->assertSeeLivewire('area-templates.index');
     });
 
     it('allows internal users to access area templates create', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         actingAs($user)
             ->get(route('area-templates.create'))
             ->assertOk()
-            ->assertSeeLivewire(Builder::class);
+            ->assertSeeLivewire('area-templates.builder');
     });
 
     it('allows internal users to access area templates edit', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $template = EstimateTemplate::factory()->create([
             'is_configurable' => true,
             'visibility' => EstimateTemplate::VISIBILITY_COMPANY,
@@ -54,7 +52,7 @@ describe('Area Templates Routes', function () {
         actingAs($user)
             ->get(route('area-templates.edit', $template))
             ->assertOk()
-            ->assertSeeLivewire(Builder::class);
+            ->assertSeeLivewire('area-templates.builder');
     });
 
     it('generates correct route URLs', function () {

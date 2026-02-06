@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\SimpleBuilder;
 use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Deal;
@@ -10,18 +9,18 @@ use Livewire\Livewire;
 
 describe('SimpleBuilder component', function () {
     it('renders the simple builder component for creating a new estimate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->assertStatus(200)
             ->assertSee('Quick Estimate ($/Sq Ft)')
             ->assertSee($deal->title);
     });
 
     it('renders the simple builder component for editing an existing estimate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create([
             'title' => 'Existing Simple Estimate',
@@ -32,7 +31,7 @@ describe('SimpleBuilder component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['estimate' => $estimate])
+            ->test('estimates.simple-builder', ['estimate' => $estimate])
             ->assertStatus(200)
             ->assertSee('Edit Simple Estimate')
             ->assertSet('title', 'Existing Simple Estimate')
@@ -42,7 +41,7 @@ describe('SimpleBuilder component', function () {
     });
 
     it('loads defaults from company settings on mount', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         CompanySetting::query()->delete();
@@ -56,7 +55,7 @@ describe('SimpleBuilder component', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal]);
+            ->test('estimates.simple-builder', ['deal' => $deal]);
 
         expect($component->get('taxRate'))->toBe(8.25);
         expect($component->get('depositPercent'))->toBe(50.0);
@@ -64,7 +63,7 @@ describe('SimpleBuilder component', function () {
     });
 
     it('updates rate per sqft when project type changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         CompanySetting::query()->delete();
@@ -75,7 +74,7 @@ describe('SimpleBuilder component', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal]);
+            ->test('estimates.simple-builder', ['deal' => $deal]);
 
         expect($component->get('ratePerSqft'))->toBe(4.0);
 
@@ -87,11 +86,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('calculates subtotal correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $component = Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00);
 
@@ -99,11 +98,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('calculates tax amount correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $component = Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00)
             ->set('taxRate', 10.0);
@@ -113,11 +112,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('calculates total correctly with tax and discount', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $component = Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00)
             ->set('taxRate', 10.0)
@@ -129,11 +128,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('calculates deposit amount correctly', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $component = Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00)
             ->set('taxRate', 0)
@@ -146,11 +145,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('validates required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', '')
             ->set('totalSqft', 0)
             ->call('saveAsDraft')
@@ -158,11 +157,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('validates minimum square footage', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Test')
             ->set('totalSqft', 0.5)
             ->set('ratePerSqft', 5.00)
@@ -171,11 +170,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('validates minimum rate per sqft', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Test')
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 0)
@@ -184,11 +183,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('validates project type is valid', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Test')
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00)
@@ -198,11 +197,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('validates valid_until date is not in the past', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Test')
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00)
@@ -212,11 +211,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('can save a new estimate as draft', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'New Simple Estimate')
             ->set('totalSqft', 2000)
             ->set('ratePerSqft', 4.50)
@@ -241,11 +240,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('can save a new estimate and mark as sent', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Sent Simple Estimate')
             ->set('totalSqft', 1500)
             ->set('ratePerSqft', 5.00)
@@ -260,7 +259,7 @@ describe('SimpleBuilder component', function () {
     });
 
     it('can update an existing estimate', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
         $estimate = Estimate::factory()->forDeal($deal)->draft()->create([
             'title' => 'Original Title',
@@ -271,7 +270,7 @@ describe('SimpleBuilder component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['estimate' => $estimate])
+            ->test('estimates.simple-builder', ['estimate' => $estimate])
             ->set('title', 'Updated Title')
             ->set('totalSqft', 2500)
             ->set('ratePerSqft', 5.50)
@@ -286,11 +285,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('calculates deposit and balance due on save', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Deposit Test Estimate')
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 10.00)
@@ -307,7 +306,7 @@ describe('SimpleBuilder component', function () {
     });
 
     it('displays deal and customer information', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'John',
             'last_name' => 'Smith',
@@ -317,17 +316,17 @@ describe('SimpleBuilder component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->assertSee('Kitchen Remodel')
             ->assertSee('John Smith');
     });
 
     it('allows null valid_until date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->set('title', 'Test')
             ->set('totalSqft', 1000)
             ->set('ratePerSqft', 5.00)
@@ -337,11 +336,11 @@ describe('SimpleBuilder component', function () {
     });
 
     it('shows all project type options', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(SimpleBuilder::class, ['deal' => $deal])
+            ->test('estimates.simple-builder', ['deal' => $deal])
             ->assertSee('Interior')
             ->assertSee('Exterior')
             ->assertSee('Interior & Exterior');

@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Listings\Show;
 use App\Models\AgentListing;
 use App\Models\Customer;
 use App\Models\User;
@@ -14,7 +13,7 @@ describe('Agent Listings Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertStatus(200)
             ->assertSee('123 Test Street');
     });
@@ -32,7 +31,7 @@ describe('Agent Listings Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSee('456 Oak Avenue')
             ->assertSee('Los Angeles')
             ->assertSee('CA')
@@ -48,7 +47,7 @@ describe('Agent Listings Show component', function () {
         $otherListing = AgentListing::factory()->forAgent($otherAgent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $otherListing])
+            ->test('agent.listings.show', ['agentListing' => $otherListing])
             ->assertForbidden();
     });
 
@@ -63,7 +62,7 @@ describe('Agent Listings Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSee('3');
     });
 
@@ -72,7 +71,7 @@ describe('Agent Listings Show component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSee('0');
     });
 
@@ -81,7 +80,7 @@ describe('Agent Listings Show component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSet('showDeleteModal', false)
             ->call('confirmDelete')
             ->assertSet('showDeleteModal', true);
@@ -92,7 +91,7 @@ describe('Agent Listings Show component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->call('confirmDelete')
             ->assertSet('showDeleteModal', true)
             ->call('cancelDelete')
@@ -104,7 +103,7 @@ describe('Agent Listings Show component', function () {
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->call('delete')
             ->assertRedirect(route('agent.listings.index'));
 
@@ -120,7 +119,7 @@ describe('Agent Listings Show component', function () {
 
         // Force the listing onto the component to test authorization on delete
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $otherListing])
+            ->test('agent.listings.show', ['agentListing' => $otherListing])
             ->assertForbidden();
     });
 
@@ -130,7 +129,7 @@ describe('Agent Listings Show component', function () {
         $activeListing = AgentListing::factory()->forAgent($agent)->active()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $activeListing])
+            ->test('agent.listings.show', ['agentListing' => $activeListing])
             ->assertSee('Active');
     });
 
@@ -141,7 +140,7 @@ describe('Agent Listings Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSee('Feb 15, 2025');
     });
 
@@ -152,7 +151,7 @@ describe('Agent Listings Show component', function () {
         ]);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSee('Not scheduled');
     });
 
@@ -163,7 +162,7 @@ describe('Agent Listings Show component', function () {
         ]);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(Show::class, ['agentListing' => $listing])
+            ->test('agent.listings.show', ['agentListing' => $listing])
             ->assertSee('Original Address');
 
         // Update listing directly in DB

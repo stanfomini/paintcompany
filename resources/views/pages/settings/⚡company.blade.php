@@ -23,15 +23,16 @@ new class extends Component {
 
     // Labor Configuration
     public string $base_hourly_wage = '';
+    public string $interior_hourly_wage = '';
+    public string $exterior_hourly_wage = '';
     public string $payroll_burden_multiplier = '';
 
     // Margins & Markup
     public string $net_profit_margin_percent = '';
-    public string $overhead_percent = '';
-    public string $marketing_percent = '';
-    public string $sales_percent = '';
-    public string $production_management_percent = '';
     public string $markup_percent = '';
+    public string $margin_percent = '';
+    public string $interior_margin_percent = '';
+    public string $exterior_margin_percent = '';
 
     // Simple Estimate Defaults
     public string $default_interior_sqft_rate = '';
@@ -41,7 +42,11 @@ new class extends Component {
 
     // Production Settings
     public string $cleanup_hours_ratio = '';
+    public string $interior_cleanup_hours_ratio = '';
+    public string $exterior_cleanup_hours_ratio = '';
     public string $sundries_cost_per_prep_hour = '';
+    public string $interior_sundries_cost_per_hour = '';
+    public string $exterior_sundries_cost_per_hour = '';
     public string $spray_paint_coverage_multiplier = '';
     public string $brush_roll_coverage_multiplier = '';
 
@@ -49,8 +54,14 @@ new class extends Component {
     public string $recycle_fee_per_gallon = '';
     public string $wood_replacement_minimum = '';
 
+    // Crew & Dispatch Settings
+    public string $total_painters = '';
+    public string $default_required_crew_size = '';
+
     // Computed values for display
     public string $effective_hourly_rate = '';
+    public string $interior_effective_rate = '';
+    public string $exterior_effective_rate = '';
     public string $sample_price_calculation = '';
 
     public function mount(): void
@@ -79,15 +90,16 @@ new class extends Component {
 
         // Labor Configuration
         $this->base_hourly_wage = $this->formatDecimal($settings->base_hourly_wage, '25.00');
+        $this->interior_hourly_wage = $this->formatDecimal($settings->interior_hourly_wage, '21.00');
+        $this->exterior_hourly_wage = $this->formatDecimal($settings->exterior_hourly_wage, '27.00');
         $this->payroll_burden_multiplier = $this->formatDecimal($settings->payroll_burden_multiplier, '1.35');
 
         // Margins & Markup
         $this->net_profit_margin_percent = $this->formatDecimal($settings->net_profit_margin_percent, '30.00');
-        $this->overhead_percent = $this->formatDecimal($settings->overhead_percent, '12.00');
-        $this->marketing_percent = $this->formatDecimal($settings->marketing_percent);
-        $this->sales_percent = $this->formatDecimal($settings->sales_percent);
-        $this->production_management_percent = $this->formatDecimal($settings->production_management_percent);
         $this->markup_percent = $this->formatDecimal($settings->markup_percent, '45.00');
+        $this->margin_percent = $this->formatDecimal($settings->margin_percent, '45.00');
+        $this->interior_margin_percent = $this->formatDecimal($settings->interior_margin_percent, '50.00');
+        $this->exterior_margin_percent = $this->formatDecimal($settings->exterior_margin_percent, '41.00');
 
         // Simple Estimate Defaults
         $this->default_interior_sqft_rate = $this->formatDecimal($settings->default_interior_sqft_rate, '4.50');
@@ -97,13 +109,21 @@ new class extends Component {
 
         // Production Settings
         $this->cleanup_hours_ratio = $this->formatDecimal($settings->cleanup_hours_ratio, '16.00');
+        $this->interior_cleanup_hours_ratio = $this->formatDecimal($settings->interior_cleanup_hours_ratio, '16.00');
+        $this->exterior_cleanup_hours_ratio = $this->formatDecimal($settings->exterior_cleanup_hours_ratio, '20.00');
         $this->sundries_cost_per_prep_hour = $this->formatDecimal($settings->sundries_cost_per_prep_hour, '3.30');
+        $this->interior_sundries_cost_per_hour = $this->formatDecimal($settings->interior_sundries_cost_per_hour, '3.30');
+        $this->exterior_sundries_cost_per_hour = $this->formatDecimal($settings->exterior_sundries_cost_per_hour, '1.00');
         $this->spray_paint_coverage_multiplier = $this->formatDecimal($settings->spray_paint_coverage_multiplier, '2.00');
         $this->brush_roll_coverage_multiplier = $this->formatDecimal($settings->brush_roll_coverage_multiplier, '1.30');
 
         // Misc Fees
         $this->recycle_fee_per_gallon = $this->formatDecimal($settings->recycle_fee_per_gallon, '0.54');
         $this->wood_replacement_minimum = $this->formatDecimal($settings->wood_replacement_minimum, '300.00');
+
+        // Crew & Dispatch Settings
+        $this->total_painters = $settings->total_painters !== null ? (string) $settings->total_painters : '4';
+        $this->default_required_crew_size = $settings->default_required_crew_size !== null ? (string) $settings->default_required_crew_size : '2';
 
         $this->updateCalculatedValues();
     }
@@ -119,33 +139,47 @@ new class extends Component {
 
     public function updated($property): void
     {
-        if (in_array($property, ['base_hourly_wage', 'payroll_burden_multiplier', 'net_profit_margin_percent', 'overhead_percent', 'markup_percent'])) {
+        $rateFields = [
+            'base_hourly_wage', 'interior_hourly_wage', 'exterior_hourly_wage',
+            'payroll_burden_multiplier', 'net_profit_margin_percent', 'overhead_percent',
+            'markup_percent', 'margin_percent', 'interior_margin_percent', 'exterior_margin_percent',
+        ];
+
+        if (in_array($property, $rateFields)) {
             $this->updateCalculatedValues();
         }
     }
 
     private function updateCalculatedValues(): void
     {
-        $wage = (float) ($this->base_hourly_wage ?: 25);
         $burden = (float) ($this->payroll_burden_multiplier ?: 1.35);
-        $effectiveRate = $wage * $burden;
-        $this->effective_hourly_rate = number_format($effectiveRate, 2);
 
-        // Calculate sample: 100 sqft at 50 sqft/hr production rate, 2 coats, $20 materials
+        $baseWage = (float) ($this->base_hourly_wage ?: 25);
+        $this->effective_hourly_rate = number_format($baseWage * $burden, 2);
+
+        $interiorWage = (float) ($this->interior_hourly_wage ?: 21);
+        $this->interior_effective_rate = number_format($interiorWage * $burden, 2);
+
+        $exteriorWage = (float) ($this->exterior_hourly_wage ?: 27);
+        $this->exterior_effective_rate = number_format($exteriorWage * $burden, 2);
+
+        // Calculate sample: 100 sqft at 50 sqft/hr production rate, 2 coats, $20 materials (interior)
         $hours = 100 / 50; // 2 hours
-        $laborCost = $hours * $effectiveRate * 2; // 2 coats
+        $interiorEffective = $interiorWage * $burden;
+        $laborCost = $hours * $interiorEffective * 2; // 2 coats
         $materialCost = 20 * 2; // 2 coats
-        $baseCost = $laborCost + $materialCost;
+        $cogs = $laborCost + $materialCost;
 
-        $profit = (float) ($this->net_profit_margin_percent ?: 30);
-        $overhead = (float) ($this->overhead_percent ?: 12);
-        $markup = (float) ($this->markup_percent ?: 45);
+        // PBP formula: OTD = COGS / (margin% / 100)
+        $margin = (float) ($this->interior_margin_percent ?: 50);
 
-        $withProfit = $baseCost * (1 + $profit / 100);
-        $withOverhead = $withProfit * (1 + $overhead / 100);
-        $withMarkup = $withOverhead * (1 + $markup / 100);
+        if ($margin <= 0) {
+            $this->sample_price_calculation = number_format($cogs, 2);
+            return;
+        }
 
-        $this->sample_price_calculation = number_format($withMarkup, 2);
+        $otd = $cogs / ($margin / 100);
+        $this->sample_price_calculation = number_format($otd, 2);
     }
 
     public function updateCompanySettings(): void
@@ -173,15 +207,16 @@ new class extends Component {
 
             // Labor Configuration
             'base_hourly_wage' => ['nullable', 'numeric', 'min:0', 'max:500'],
+            'interior_hourly_wage' => ['nullable', 'numeric', 'min:0', 'max:500'],
+            'exterior_hourly_wage' => ['nullable', 'numeric', 'min:0', 'max:500'],
             'payroll_burden_multiplier' => ['nullable', 'numeric', 'min:1', 'max:3'],
 
             // Margins & Markup
             'net_profit_margin_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'overhead_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'marketing_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'sales_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
-            'production_management_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'markup_percent' => ['nullable', 'numeric', 'min:0', 'max:200'],
+            'margin_percent' => ['nullable', 'numeric', 'min:0', 'max:99.99'],
+            'interior_margin_percent' => ['nullable', 'numeric', 'min:0', 'max:99.99'],
+            'exterior_margin_percent' => ['nullable', 'numeric', 'min:0', 'max:99.99'],
 
             // Simple Estimate Defaults
             'default_interior_sqft_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
@@ -191,13 +226,21 @@ new class extends Component {
 
             // Production Settings
             'cleanup_hours_ratio' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'interior_cleanup_hours_ratio' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'exterior_cleanup_hours_ratio' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'sundries_cost_per_prep_hour' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'interior_sundries_cost_per_hour' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'exterior_sundries_cost_per_hour' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'spray_paint_coverage_multiplier' => ['nullable', 'numeric', 'min:0.1', 'max:10'],
             'brush_roll_coverage_multiplier' => ['nullable', 'numeric', 'min:0.1', 'max:10'],
 
             // Misc Fees
             'recycle_fee_per_gallon' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'wood_replacement_minimum' => ['nullable', 'numeric', 'min:0', 'max:10000'],
+
+            // Crew & Dispatch Settings
+            'total_painters' => ['nullable', 'integer', 'min:1', 'max:100'],
+            'default_required_crew_size' => ['nullable', 'integer', 'min:1', 'max:20'],
         ]);
 
         $settings = CompanySetting::getInstance();
@@ -220,15 +263,16 @@ new class extends Component {
 
             // Labor Configuration
             'base_hourly_wage' => $validated['base_hourly_wage'] !== '' ? $validated['base_hourly_wage'] : 25.00,
+            'interior_hourly_wage' => $validated['interior_hourly_wage'] !== '' ? $validated['interior_hourly_wage'] : 21.00,
+            'exterior_hourly_wage' => $validated['exterior_hourly_wage'] !== '' ? $validated['exterior_hourly_wage'] : 27.00,
             'payroll_burden_multiplier' => $validated['payroll_burden_multiplier'] !== '' ? $validated['payroll_burden_multiplier'] : 1.35,
 
             // Margins & Markup
             'net_profit_margin_percent' => $validated['net_profit_margin_percent'] !== '' ? $validated['net_profit_margin_percent'] : 30.00,
-            'overhead_percent' => $validated['overhead_percent'] !== '' ? $validated['overhead_percent'] : 12.00,
-            'marketing_percent' => $validated['marketing_percent'] !== '' ? $validated['marketing_percent'] : null,
-            'sales_percent' => $validated['sales_percent'] !== '' ? $validated['sales_percent'] : null,
-            'production_management_percent' => $validated['production_management_percent'] !== '' ? $validated['production_management_percent'] : null,
             'markup_percent' => $validated['markup_percent'] !== '' ? $validated['markup_percent'] : 45.00,
+            'margin_percent' => $validated['margin_percent'] !== '' ? $validated['margin_percent'] : 45.00,
+            'interior_margin_percent' => $validated['interior_margin_percent'] !== '' ? $validated['interior_margin_percent'] : 50.00,
+            'exterior_margin_percent' => $validated['exterior_margin_percent'] !== '' ? $validated['exterior_margin_percent'] : 41.00,
 
             // Simple Estimate Defaults
             'default_interior_sqft_rate' => $validated['default_interior_sqft_rate'] !== '' ? $validated['default_interior_sqft_rate'] : 4.50,
@@ -238,13 +282,21 @@ new class extends Component {
 
             // Production Settings
             'cleanup_hours_ratio' => $validated['cleanup_hours_ratio'] !== '' ? $validated['cleanup_hours_ratio'] : 16.00,
+            'interior_cleanup_hours_ratio' => $validated['interior_cleanup_hours_ratio'] !== '' ? $validated['interior_cleanup_hours_ratio'] : 16.00,
+            'exterior_cleanup_hours_ratio' => $validated['exterior_cleanup_hours_ratio'] !== '' ? $validated['exterior_cleanup_hours_ratio'] : 20.00,
             'sundries_cost_per_prep_hour' => $validated['sundries_cost_per_prep_hour'] !== '' ? $validated['sundries_cost_per_prep_hour'] : 3.30,
+            'interior_sundries_cost_per_hour' => $validated['interior_sundries_cost_per_hour'] !== '' ? $validated['interior_sundries_cost_per_hour'] : 3.30,
+            'exterior_sundries_cost_per_hour' => $validated['exterior_sundries_cost_per_hour'] !== '' ? $validated['exterior_sundries_cost_per_hour'] : 1.00,
             'spray_paint_coverage_multiplier' => $validated['spray_paint_coverage_multiplier'] !== '' ? $validated['spray_paint_coverage_multiplier'] : 2.00,
             'brush_roll_coverage_multiplier' => $validated['brush_roll_coverage_multiplier'] !== '' ? $validated['brush_roll_coverage_multiplier'] : 1.30,
 
             // Misc Fees
             'recycle_fee_per_gallon' => $validated['recycle_fee_per_gallon'] !== '' ? $validated['recycle_fee_per_gallon'] : 0.54,
             'wood_replacement_minimum' => $validated['wood_replacement_minimum'] !== '' ? $validated['wood_replacement_minimum'] : 300.00,
+
+            // Crew & Dispatch Settings
+            'total_painters' => $validated['total_painters'] !== '' ? $validated['total_painters'] : 4,
+            'default_required_crew_size' => $validated['default_required_crew_size'] !== '' ? $validated['default_required_crew_size'] : 2,
         ]);
 
         $this->dispatch('company-settings-updated');
@@ -303,43 +355,46 @@ new class extends Component {
             {{-- Labor Configuration Section --}}
             <flux:heading size="sm">Labor Configuration</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Configure your base labor costs. The effective hourly rate is calculated as: Base Wage × Payroll Burden.
+                Configure labor costs per scope. Effective rate = Base Wage × Payroll Burden Multiplier.
             </flux:text>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-                <flux:input wire:model.live="base_hourly_wage" :label="__('Base Hourly Wage ($)')" type="number" step="0.01" min="0" max="500" />
-                <flux:input wire:model.live="payroll_burden_multiplier" :label="__('Payroll Burden Multiplier')" type="number" step="0.01" min="1" max="3" />
+            <flux:input wire:model.live="payroll_burden_multiplier" :label="__('Payroll Burden Multiplier')" type="number" step="0.01" min="1" max="3" description="Covers FICA, workers comp, insurance (e.g., 1.35 = 35% burden)" />
+
+            <div class="grid gap-4 sm:grid-cols-3">
+                <flux:input wire:model.live="base_hourly_wage" :label="__('Default Wage ($/hr)')" type="number" step="0.01" min="0" max="500" description="Fallback if scope not set" />
+                <flux:input wire:model.live="interior_hourly_wage" :label="__('Interior Wage ($/hr)')" type="number" step="0.01" min="0" max="500" />
+                <flux:input wire:model.live="exterior_hourly_wage" :label="__('Exterior Wage ($/hr)')" type="number" step="0.01" min="0" max="500" />
             </div>
 
             <flux:callout variant="info" icon="calculator">
-                <flux:callout.heading>Effective Hourly Rate: ${{ $effective_hourly_rate }}</flux:callout.heading>
-                <flux:callout.text>This is the actual cost per labor hour including payroll burden (taxes, insurance, benefits).</flux:callout.text>
+                <flux:callout.heading>Effective Hourly Rates</flux:callout.heading>
+                <flux:callout.text>
+                    Interior: ${{ $interior_effective_rate }}/hr &nbsp;|&nbsp;
+                    Exterior: ${{ $exterior_effective_rate }}/hr &nbsp;|&nbsp;
+                    Default: ${{ $effective_hourly_rate }}/hr
+                </flux:callout.text>
             </flux:callout>
 
             <flux:separator />
 
-            {{-- Margins & Markup Section --}}
-            <flux:heading size="sm">Margins & Markup</flux:heading>
+            {{-- Margin Configuration Section --}}
+            <flux:heading size="sm">Pricing Margin</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                These margins are applied sequentially to the base cost: Cost × (1 + Profit%) × (1 + Overhead%) × (1 + Markup%).
+                Margin represents the COGS percentage of the sale price. Formula: OTD = COGS / (margin% / 100). Example: 50% means COGS is 50% of the price (2x multiplier).
             </flux:text>
 
             <div class="grid gap-4 sm:grid-cols-3">
-                <flux:input wire:model.live="net_profit_margin_percent" :label="__('Net Profit Margin (%)')" type="number" step="0.01" min="0" max="100" />
-                <flux:input wire:model.live="overhead_percent" :label="__('Overhead (%)')" type="number" step="0.01" min="0" max="100" />
-                <flux:input wire:model.live="markup_percent" :label="__('Markup (%)')" type="number" step="0.01" min="0" max="200" />
-            </div>
-
-            <div class="grid gap-4 sm:grid-cols-3">
-                <flux:input wire:model="marketing_percent" :label="__('Marketing (%) (Optional)')" type="number" step="0.01" min="0" max="100" />
-                <flux:input wire:model="sales_percent" :label="__('Sales (%) (Optional)')" type="number" step="0.01" min="0" max="100" />
-                <flux:input wire:model="production_management_percent" :label="__('Prod. Mgmt (%) (Optional)')" type="number" step="0.01" min="0" max="100" />
+                <flux:input wire:model.live="margin_percent" :label="__('Default Margin (%)')" type="number" step="0.01" min="0" max="99.99" description="Fallback if scope not set" />
+                <flux:input wire:model.live="interior_margin_percent" :label="__('Interior Margin (%)')" type="number" step="0.01" min="0" max="99.99" description="50% = 2x COGS" />
+                <flux:input wire:model.live="exterior_margin_percent" :label="__('Exterior Margin (%)')" type="number" step="0.01" min="0" max="99.99" description="41% = ~2.44x COGS" />
             </div>
 
             <flux:callout variant="success" icon="currency-dollar">
-                <flux:callout.heading>Sample Price: ${{ $sample_price_calculation }}</flux:callout.heading>
-                <flux:callout.text>Example: 100 sqft wall at 50 sqft/hr, 2 coats, $20 materials → Final price with all margins.</flux:callout.text>
+                <flux:callout.heading>Sample Interior Price: ${{ $sample_price_calculation }}</flux:callout.heading>
+                <flux:callout.text>Example: 100 sqft wall at 50 sqft/hr, 2 coats, $20 materials using interior rates → OTD with {{ $interior_margin_percent ?: '50' }}% margin.</flux:callout.text>
             </flux:callout>
+
+            <flux:input wire:model="net_profit_margin_percent" :label="__('Target Net Profit (%)')" type="number" step="0.01" min="0" max="100" description="Your target net profit after all allocations. Used for comparison in cost breakdowns." />
 
             <flux:separator />
 
@@ -364,17 +419,37 @@ new class extends Component {
             {{-- Production Settings Section --}}
             <flux:heading size="sm">Production Settings</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Fine-tune production rate calculations.
+                Configure cleanup ratios and sundries costs per scope. Cleanup ratio = painting hours per 1 hour cleanup.
             </flux:text>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-                <flux:input wire:model="cleanup_hours_ratio" :label="__('Cleanup Hours Ratio')" type="number" step="0.01" min="0" max="100" description="Hours of painting before 1 hour of cleanup" />
-                <flux:input wire:model="sundries_cost_per_prep_hour" :label="__('Sundries Cost ($/prep hr)')" type="number" step="0.01" min="0" max="100" />
+            <div class="grid gap-4 sm:grid-cols-3">
+                <flux:input wire:model="cleanup_hours_ratio" :label="__('Default Cleanup Ratio')" type="number" step="0.01" min="0" max="100" description="Fallback if scope not set" />
+                <flux:input wire:model="interior_cleanup_hours_ratio" :label="__('Interior Cleanup Ratio')" type="number" step="0.01" min="0" max="100" description="e.g., 16 = 1hr cleanup per 16hrs paint" />
+                <flux:input wire:model="exterior_cleanup_hours_ratio" :label="__('Exterior Cleanup Ratio')" type="number" step="0.01" min="0" max="100" description="e.g., 20 = 1hr cleanup per 20hrs paint" />
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-3">
+                <flux:input wire:model="sundries_cost_per_prep_hour" :label="__('Default Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" description="Fallback if scope not set" />
+                <flux:input wire:model="interior_sundries_cost_per_hour" :label="__('Interior Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" />
+                <flux:input wire:model="exterior_sundries_cost_per_hour" :label="__('Exterior Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" />
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:input wire:model="spray_paint_coverage_multiplier" :label="__('Spray Coverage Multiplier')" type="number" step="0.01" min="0.1" max="10" description="Production rate multiplier for spray application" />
                 <flux:input wire:model="brush_roll_coverage_multiplier" :label="__('Brush/Roll Coverage Multiplier')" type="number" step="0.01" min="0.1" max="10" description="Production rate multiplier for brush/roll application" />
+            </div>
+
+            <flux:separator />
+
+            {{-- Crew & Dispatch Settings Section --}}
+            <flux:heading size="sm">Crew & Dispatch Settings</flux:heading>
+            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                Configure your painting team size for job dispatching. Jobs are dispatched to registered crews whose crew size meets the required minimum.
+            </flux:text>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+                <flux:input wire:model="total_painters" :label="__('Total Painters')" type="number" min="1" max="100" description="Total number of painters in your company" />
+                <flux:input wire:model="default_required_crew_size" :label="__('Default Required Crew Size')" type="number" min="1" max="20" description="Default minimum crew size for new jobs" />
             </div>
 
             <flux:separator />

@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Activities\Timeline;
 use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
@@ -9,11 +8,11 @@ use Livewire\Livewire;
 
 describe('Timeline component', function () {
     it('renders the timeline component for a deal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -21,11 +20,11 @@ describe('Timeline component', function () {
     });
 
     it('renders the timeline component for a customer', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Customer::class,
                 'subjectId' => $customer->id,
             ])
@@ -33,7 +32,7 @@ describe('Timeline component', function () {
     });
 
     it('displays activities for the subject', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $activity = Activity::factory()->forDeal($deal)->byUser($user)->create([
@@ -41,7 +40,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -49,7 +48,7 @@ describe('Timeline component', function () {
     });
 
     it('does not display activities from other subjects', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal1 = Deal::factory()->create();
         $deal2 = Deal::factory()->create();
 
@@ -61,7 +60,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal1->id,
             ])
@@ -70,7 +69,7 @@ describe('Timeline component', function () {
     });
 
     it('displays all activity types', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Activity::factory()->task()->forDeal($deal)->byUser($user)->create(['title' => 'Task Item']);
@@ -80,7 +79,7 @@ describe('Timeline component', function () {
         Activity::factory()->meeting()->forDeal($deal)->byUser($user)->create(['title' => 'Meeting Item']);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -92,7 +91,7 @@ describe('Timeline component', function () {
     });
 
     it('shows completion status for tasks', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Activity::factory()->task()->completed()->forDeal($deal)->byUser($user)->create([
@@ -100,7 +99,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -109,7 +108,7 @@ describe('Timeline component', function () {
     });
 
     it('can toggle task completion', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $activity = Activity::factory()->task()->forDeal($deal)->byUser($user)->create([
@@ -118,7 +117,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -129,11 +128,11 @@ describe('Timeline component', function () {
     });
 
     it('can create activity inline', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -157,11 +156,11 @@ describe('Timeline component', function () {
     });
 
     it('validates activity title is required', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -172,11 +171,11 @@ describe('Timeline component', function () {
     });
 
     it('validates activity type is valid', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -188,11 +187,11 @@ describe('Timeline component', function () {
     });
 
     it('can cancel form', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -204,7 +203,7 @@ describe('Timeline component', function () {
     });
 
     it('displays activities in descending order by creation date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $olderActivity = Activity::factory()->forDeal($deal)->byUser($user)->create([
@@ -217,18 +216,18 @@ describe('Timeline component', function () {
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ]);
 
-        $activities = $component->viewData('activities');
+        $activities = $component->get('activities');
         expect($activities->first()->id)->toBe($newerActivity->id);
         expect($activities->last()->id)->toBe($olderActivity->id);
     });
 
     it('displays author name', function () {
-        $user = User::factory()->internal()->create(['name' => 'John Doe']);
+        $user = User::factory()->internal()->withFullAccess()->create(['name' => 'John Doe']);
         $deal = Deal::factory()->create();
 
         Activity::factory()->forDeal($deal)->byUser($user)->create([
@@ -236,7 +235,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -244,11 +243,11 @@ describe('Timeline component', function () {
     });
 
     it('shows no activities message when empty', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -256,7 +255,7 @@ describe('Timeline component', function () {
     });
 
     it('shows overdue badge for overdue tasks', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Activity::factory()->task()->overdue()->forDeal($deal)->byUser($user)->create([
@@ -264,7 +263,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -273,7 +272,7 @@ describe('Timeline component', function () {
     });
 
     it('displays type badges', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Activity::factory()->call()->forDeal($deal)->byUser($user)->create([
@@ -281,7 +280,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -289,7 +288,7 @@ describe('Timeline component', function () {
     });
 
     it('displays activity description', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Activity::factory()->forDeal($deal)->byUser($user)->create([
@@ -298,7 +297,7 @@ describe('Timeline component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ])
@@ -306,11 +305,11 @@ describe('Timeline component', function () {
     });
 
     it('refreshes on activity-created event', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         $component = Livewire::actingAs($user)
-            ->test(Timeline::class, [
+            ->test('activities.timeline', [
                 'subjectType' => Deal::class,
                 'subjectId' => $deal->id,
             ]);

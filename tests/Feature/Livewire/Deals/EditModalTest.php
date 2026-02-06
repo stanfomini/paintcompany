@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Deals\EditModal;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Property;
@@ -11,15 +10,15 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('EditModal component', function () {
     it('renders the edit modal component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class)
+            ->test('deals.edit-modal')
             ->assertStatus(200);
     });
 
     it('loads deal data on mount with deal id', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $deal = Deal::factory()->create([
             'customer_id' => $customer->id,
@@ -30,7 +29,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->assertSet('dealId', $deal->id)
             ->assertSet('customerId', $customer->id)
             ->assertSet('title', 'Test Deal')
@@ -40,11 +39,11 @@ describe('EditModal component', function () {
     });
 
     it('opens modal with deal data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create(['title' => 'Exterior Project']);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class)
+            ->test('deals.edit-modal')
             ->call('openModal', $deal->id)
             ->assertSet('showModal', true)
             ->assertSet('dealId', $deal->id)
@@ -52,11 +51,11 @@ describe('EditModal component', function () {
     });
 
     it('closes modal and resets data', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->call('openModal')
             ->assertSet('showModal', true)
             ->call('closeModal')
@@ -66,11 +65,11 @@ describe('EditModal component', function () {
     });
 
     it('validates required fields on save', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('customerId', null)
             ->set('title', '')
             ->call('save')
@@ -78,22 +77,22 @@ describe('EditModal component', function () {
     });
 
     it('validates stage is valid', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('stage', 'invalid_stage')
             ->call('save')
             ->assertHasErrors(['stage']);
     });
 
     it('validates actual end date is after actual start date', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('actualStartDate', '2025-06-15')
             ->set('actualEndDate', '2025-06-01')
             ->call('save')
@@ -101,17 +100,17 @@ describe('EditModal component', function () {
     });
 
     it('updates deal successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
         $deal = Deal::factory()->create([
             'customer_id' => $customer->id,
             'title' => 'Original Title',
             'stage' => 'lead',
         ]);
-        $assignee = User::factory()->internal()->create();
+        $assignee = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('title', 'Updated Title')
             ->set('description', 'Updated description')
             ->set('stage', 'scheduled')
@@ -132,11 +131,11 @@ describe('EditModal component', function () {
     });
 
     it('updates actual values for completed deals', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->inProgress()->create();
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('stage', 'completed')
             ->set('actualValue', '18500.00')
             ->set('actualStartDate', '2025-05-01')
@@ -153,14 +152,14 @@ describe('EditModal component', function () {
     });
 
     it('clears optional fields when set to empty', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create([
             'description' => 'Some description',
             'estimated_value' => 5000.00,
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('description', '')
             ->set('estimatedValue', '')
             ->call('save')
@@ -173,14 +172,14 @@ describe('EditModal component', function () {
     });
 
     it('can change customer and property', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create();
         $customer2 = Customer::factory()->create();
         $property = Property::factory()->create(['customer_id' => $customer2->id]);
         $deal = Deal::factory()->create(['customer_id' => $customer1->id]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('customerId', $customer2->id)
             ->set('propertyId', $property->id)
             ->call('save')
@@ -193,7 +192,7 @@ describe('EditModal component', function () {
     });
 
     it('resets property when customer changes', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer1 = Customer::factory()->create();
         $customer2 = Customer::factory()->create();
         $property = Property::factory()->create(['customer_id' => $customer1->id]);
@@ -203,14 +202,14 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->assertSet('propertyId', $property->id)
             ->set('customerId', $customer2->id)
             ->assertSet('propertyId', null);
     });
 
     it('preserves dates when loading deal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create([
             'expected_start_date' => '2025-06-01',
             'expected_end_date' => '2025-06-30',
@@ -219,7 +218,7 @@ describe('EditModal component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(EditModal::class, ['dealId' => $deal->id])
+            ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->assertSet('expectedStartDate', '2025-06-01')
             ->assertSet('expectedEndDate', '2025-06-30')
             ->assertSet('actualStartDate', '2025-06-02')

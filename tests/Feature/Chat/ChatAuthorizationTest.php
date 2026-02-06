@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Gate;
 
 describe('ChatThread view authorization', function () {
     it('allows internal user to view thread they are in', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
 
@@ -14,7 +14,7 @@ describe('ChatThread view authorization', function () {
     });
 
     it('prevents internal user from viewing thread they are not in', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($internal)->allows('view', $thread))->toBeFalse();
@@ -55,7 +55,7 @@ describe('ChatThread view authorization', function () {
     });
 
     it('prevents user from viewing thread they have left', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
         $thread->removeParticipant($user);
@@ -66,7 +66,7 @@ describe('ChatThread view authorization', function () {
 
 describe('ChatThread sendMessage authorization', function () {
     it('allows participant to send message', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
 
@@ -74,14 +74,14 @@ describe('ChatThread sendMessage authorization', function () {
     });
 
     it('prevents non-participant from sending message', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($user)->allows('sendMessage', $thread))->toBeFalse();
     });
 
     it('prevents user who left from sending message', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($user);
         $thread->removeParticipant($user);
@@ -92,7 +92,7 @@ describe('ChatThread sendMessage authorization', function () {
 
 describe('ChatThread sendInternalMessage authorization', function () {
     it('allows internal user to send internal messages when participant', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
 
@@ -100,7 +100,7 @@ describe('ChatThread sendInternalMessage authorization', function () {
     });
 
     it('prevents internal user from sending internal messages when not participant', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($internal)->allows('sendInternalMessage', $thread))->toBeFalse();
@@ -125,7 +125,7 @@ describe('ChatThread sendInternalMessage authorization', function () {
 
 describe('ChatThread addParticipant authorization', function () {
     it('allows only internal users to add participants', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($internal)->allows('addParticipant', $thread))->toBeTrue();
@@ -150,7 +150,7 @@ describe('ChatThread addParticipant authorization', function () {
 
 describe('ChatThread removeParticipant authorization', function () {
     it('allows only internal users to remove participants', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($internal)->allows('removeParticipant', $thread))->toBeTrue();
@@ -175,7 +175,7 @@ describe('ChatThread removeParticipant authorization', function () {
 
 describe('ChatThread update authorization', function () {
     it('allows internal user to update any thread they are in', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
 
@@ -183,7 +183,7 @@ describe('ChatThread update authorization', function () {
     });
 
     it('allows internal user to update thread they are not in', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($internal)->allows('update', $thread))->toBeTrue();
@@ -222,7 +222,7 @@ describe('ChatThread update authorization', function () {
 
 describe('ChatThread delete authorization', function () {
     it('allows only internal users to delete threads', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
 
         expect(Gate::forUser($internal)->allows('delete', $thread))->toBeTrue();
@@ -247,7 +247,7 @@ describe('ChatThread delete authorization', function () {
 
 describe('ChatThread create authorization', function () {
     it('allows any authenticated user to create threads', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
         $customer = User::factory()->customer()->create();
 
@@ -259,7 +259,7 @@ describe('ChatThread create authorization', function () {
 
 describe('ChatThread viewAny authorization', function () {
     it('allows any authenticated user to view their threads list', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
         $customer = User::factory()->customer()->create();
 
@@ -271,7 +271,7 @@ describe('ChatThread viewAny authorization', function () {
 
 describe('Authorization integration scenarios', function () {
     it('internal user can view, send, update thread', function () {
-        $internal = User::factory()->internal()->create();
+        $internal = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->create();
         $thread->addParticipant($internal);
 

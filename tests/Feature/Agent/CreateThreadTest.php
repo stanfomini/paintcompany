@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Chat\CreateThread;
 use App\Models\ChatThread;
 use App\Models\Deal;
 use App\Models\User;
@@ -11,7 +10,7 @@ describe('CreateThread component for agents', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->assertSet('showModal', false)
             ->call('openModal')
             ->assertSet('showModal', true);
@@ -21,7 +20,7 @@ describe('CreateThread component for agents', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->assertSet('showModal', true)
             ->call('closeModal')
@@ -32,7 +31,7 @@ describe('CreateThread component for agents', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->set('selectedDealId', 456)
             ->set('dealSearch', 'deal search')
             ->call('openModal')
@@ -54,7 +53,7 @@ describe('CreateThread component for agents', function () {
         $noDeal = Deal::factory()->create(['title' => 'No Agent Deal']);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal');
 
         $availableDeals = $component->instance()->availableDeals;
@@ -72,7 +71,7 @@ describe('CreateThread component for agents', function () {
         $deal2 = Deal::factory()->referredByAgent($agent)->create(['title' => 'Interior Renovation']);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->set('dealSearch', 'Exterior');
 
@@ -86,7 +85,7 @@ describe('CreateThread component for agents', function () {
         $deal = Deal::factory()->referredByAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->call('selectDeal', $deal->id)
             ->assertSet('selectedDealId', $deal->id);
@@ -97,7 +96,7 @@ describe('CreateThread component for agents', function () {
         $deal = Deal::factory()->referredByAgent($agent)->create(['title' => 'Test Deal']);
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->call('selectDeal', $deal->id)
             ->call('createThread')
@@ -112,7 +111,7 @@ describe('CreateThread component for agents', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->call('createThread')
             ->assertHasErrors('general');
@@ -123,7 +122,7 @@ describe('CreateThread component for agents', function () {
         $deal = Deal::factory()->referredByAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->call('selectDeal', $deal->id)
             ->call('createThread')
@@ -140,7 +139,7 @@ describe('CreateThread component for agents', function () {
         // The component queries Deal::where('agent_id', $user->id)->findOrFail(),
         // which throws ModelNotFoundException when deal is not owned by this agent
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->set('selectedDealId', $otherDeal->id);
 
@@ -159,7 +158,7 @@ describe('CreateThread component for agents', function () {
         $dealWithoutThread = Deal::factory()->referredByAgent($agent)->create(['title' => 'Deal Without Thread']);
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal');
 
         $availableDeals = $component->instance()->availableDeals;
@@ -173,7 +172,7 @@ describe('CreateThread component for agents', function () {
         $deal = Deal::factory()->referredByAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->call('selectDeal', $deal->id)
             ->call('createThread')
@@ -187,7 +186,7 @@ describe('CreateThread component for agents', function () {
         // Note: The redirect happens before we can assert showModal,
         // but we can verify by checking the thread was created
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->assertSet('showModal', true)
             ->call('selectDeal', $deal->id)
@@ -199,7 +198,7 @@ describe('CreateThread component for agents', function () {
 
     it('adds appropriate participants when creating deal thread', function () {
         $agent = User::factory()->agent()->create();
-        $internalUser = User::factory()->internal()->create();
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
         $customerUser = User::factory()->customer()->create();
 
         // Create a customer with a user account
@@ -213,7 +212,7 @@ describe('CreateThread component for agents', function () {
             ->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateThread::class)
+            ->test('agent.chat.create-thread')
             ->call('openModal')
             ->call('selectDeal', $deal->id)
             ->call('createThread');

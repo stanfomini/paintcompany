@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Agent\Listings\CreateModal;
 use App\Models\AgentListing;
 use App\Models\User;
 use Livewire\Livewire;
@@ -10,7 +9,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->assertStatus(200);
     });
 
@@ -18,7 +17,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->assertSet('showModal', false)
             ->call('openModal')
             ->assertSet('showModal', true)
@@ -30,7 +29,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test St')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')
@@ -46,7 +45,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->call('save')
             ->assertHasErrors(['address', 'city', 'state', 'zip']);
     });
@@ -55,7 +54,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test St')
             ->set('city', 'Los Angeles')
             ->set('state', 'CAL')
@@ -68,7 +67,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test St')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')
@@ -82,7 +81,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test St')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')
@@ -96,7 +95,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test Street')
             ->set('city', 'Los Angeles')
             ->set('state', 'ca')
@@ -120,7 +119,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '456 Full Address')
             ->set('city', 'San Francisco')
             ->set('state', 'CA')
@@ -151,7 +150,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test Street')
             ->set('city', 'Los Angeles')
             ->set('state', 'ca')
@@ -168,7 +167,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test Street')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')
@@ -184,7 +183,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('status', 'sold')
             ->call('closeModal')
             ->assertSet('status', 'active');
@@ -194,7 +193,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->assertSet('status', 'active');
     });
 
@@ -202,7 +201,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test Street')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')
@@ -228,7 +227,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test St')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')
@@ -242,7 +241,7 @@ describe('Agent Listings CreateModal component', function () {
         $agent = User::factory()->agent()->create();
 
         Livewire::actingAs($agent, 'agent')
-            ->test(CreateModal::class)
+            ->test('agent.listings.create-modal')
             ->set('address', '123 Test St')
             ->set('city', 'Los Angeles')
             ->set('state', 'CA')

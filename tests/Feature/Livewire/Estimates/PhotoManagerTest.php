@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Estimates\PhotoManager;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimatePhoto;
@@ -12,7 +11,7 @@ use Livewire\Livewire;
 describe('PhotoManager component', function () {
     beforeEach(function () {
         Storage::fake('local');
-        $this->internalUser = User::factory()->internal()->create();
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
         $this->deal = Deal::factory()->create();
         $this->estimate = Estimate::factory()->forDeal($this->deal)->draft()->create([
             'created_by' => $this->internalUser->id,
@@ -21,7 +20,7 @@ describe('PhotoManager component', function () {
 
     it('renders for internal user', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->assertStatus(200);
     });
 
@@ -29,7 +28,7 @@ describe('PhotoManager component', function () {
         $file = UploadedFile::fake()->image('test-photo.jpg', 800, 600);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openUploadModal')
             ->assertSet('showUploadModal', true)
             ->set('uploadedPhotos', [$file])
@@ -54,7 +53,7 @@ describe('PhotoManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openEditModal', $photo->id)
             ->assertSet('showEditModal', true)
             ->assertSet('photoCaption', 'Original Caption')
@@ -75,7 +74,7 @@ describe('PhotoManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openEditModal', $photo->id)
             ->set('photoCategory', 'before')
             ->call('savePhoto')
@@ -93,7 +92,7 @@ describe('PhotoManager component', function () {
         expect(EstimatePhoto::where('id', $photo->id)->exists())->toBeTrue();
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('deletePhoto', $photo->id)
             ->assertDispatched('photos-updated');
 
@@ -112,7 +111,7 @@ describe('PhotoManager component', function () {
         ]);
 
         $component = Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate]);
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate]);
 
         // Initially shows all
         expect($component->get('filterCategory'))->toBe('all');
@@ -121,7 +120,7 @@ describe('PhotoManager component', function () {
         $component->call('setFilterCategory', 'before');
         expect($component->get('filterCategory'))->toBe('before');
 
-        $filteredPhotos = $component->viewData('filteredPhotos');
+        $filteredPhotos = $component->get('filteredPhotos');
         expect($filteredPhotos)->toHaveCount(1);
         expect($filteredPhotos->first()->category)->toBe('before');
     });
@@ -133,7 +132,7 @@ describe('PhotoManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openEditModal', $photo->id)
             ->assertSet('photoShowOnProposal', true)
             ->set('photoShowOnProposal', false)
@@ -146,7 +145,7 @@ describe('PhotoManager component', function () {
 
     it('validates photo upload requires at least one photo', function () {
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openUploadModal')
             ->set('uploadedPhotos', [])
             ->call('uploadPhotos')
@@ -158,7 +157,7 @@ describe('PhotoManager component', function () {
         $file = UploadedFile::fake()->image('large-photo.jpg')->size(6000);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openUploadModal')
             ->set('uploadedPhotos', [$file])
             ->call('uploadPhotos')
@@ -171,7 +170,7 @@ describe('PhotoManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openEditModal', $photo->id)
             ->set('photoCategory', '')
             ->call('savePhoto')
@@ -189,7 +188,7 @@ describe('PhotoManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('reorderPhotos', [$photo2->id, $photo1->id])
             ->assertDispatched('photos-updated');
 
@@ -205,7 +204,7 @@ describe('PhotoManager component', function () {
         $otherPhoto = EstimatePhoto::factory()->forEstimate($otherEstimate)->create();
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('deletePhoto', $otherPhoto->id);
 
         expect(EstimatePhoto::where('id', $otherPhoto->id)->exists())->toBeTrue();
@@ -215,7 +214,7 @@ describe('PhotoManager component', function () {
         $file = UploadedFile::fake()->image('test-photo.jpg');
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openUploadModal')
             ->set('uploadedPhotos', [$file])
             ->set('defaultCategory', 'before')
@@ -232,7 +231,7 @@ describe('PhotoManager component', function () {
         ]);
 
         Livewire::actingAs($this->internalUser)
-            ->test(PhotoManager::class, ['estimate' => $this->estimate])
+            ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openEditModal', $photo->id)
             ->assertSet('editingPhotoId', $photo->id)
             ->call('closeEditModal')

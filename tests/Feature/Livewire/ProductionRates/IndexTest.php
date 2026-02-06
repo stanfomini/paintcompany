@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\ProductionRates\Index;
 use App\Models\ProductionRate;
 use App\Models\ProductionRateCategory;
 use App\Models\User;
@@ -8,27 +7,31 @@ use Livewire\Livewire;
 
 describe('ProductionRates Index component access', function () {
     it('internal user can access the page', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $this->actingAs($user)
             ->get(route('production-rates.index'))
             ->assertOk();
     });
 
-    it('agent users are forbidden', function () {
+    it('redirects agent users to their dashboard', function () {
         $user = User::factory()->agent()->create();
 
+        // Now redirects to agent dashboard instead of showing 403
         $this->actingAs($user)
             ->get(route('production-rates.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('agent.dashboard'))
+            ->assertSessionHas('warning');
     });
 
-    it('customer users are forbidden', function () {
+    it('redirects customer users to their dashboard', function () {
         $user = User::factory()->customer()->create();
 
+        // Now redirects to customer dashboard instead of showing 403
         $this->actingAs($user)
             ->get(route('production-rates.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('customer.dashboard'))
+            ->assertSessionHas('warning');
     });
 
     it('unauthenticated users are redirected to login', function () {
@@ -39,32 +42,32 @@ describe('ProductionRates Index component access', function () {
 
 describe('ProductionRates Index tab switching', function () {
     beforeEach(function () {
-        $this->user = User::factory()->internal()->create();
+        $this->user = User::factory()->internal()->withFullAccess()->create();
     });
 
     it('starts with interior tab active', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->assertSet('activeTab', 'interior');
     });
 
     it('can switch to exterior tab', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('switchTab', 'exterior')
             ->assertSet('activeTab', 'exterior');
     });
 
     it('can switch to specialty tab', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('switchTab', 'specialty')
             ->assertSet('activeTab', 'specialty');
     });
 
     it('can switch back to interior tab', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('switchTab', 'exterior')
             ->call('switchTab', 'interior')
             ->assertSet('activeTab', 'interior');
@@ -73,12 +76,12 @@ describe('ProductionRates Index tab switching', function () {
 
 describe('ProductionRates Index category management', function () {
     beforeEach(function () {
-        $this->user = User::factory()->internal()->create();
+        $this->user = User::factory()->internal()->withFullAccess()->create();
     });
 
     it('can create a category', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCategoryModal')
             ->assertSet('showCategoryModal', true)
             ->set('categoryName', 'New Category')
@@ -91,7 +94,7 @@ describe('ProductionRates Index category management', function () {
 
     it('creates category with correct type based on active tab', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('switchTab', 'exterior')
             ->call('openCategoryModal')
             ->set('categoryName', 'Exterior Category')
@@ -108,7 +111,7 @@ describe('ProductionRates Index category management', function () {
         ]);
 
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCategoryModal', $category->id)
             ->assertSet('showCategoryModal', true)
             ->assertSet('categoryName', 'Original Name')
@@ -127,7 +130,7 @@ describe('ProductionRates Index category management', function () {
         $categoryId = $category->id;
 
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('confirmDelete', 'category', $category->id)
             ->assertSet('showDeleteModal', true)
             ->assertSet('deleteType', 'category')
@@ -144,7 +147,7 @@ describe('ProductionRates Index category management', function () {
         $rateId = $rate->id;
 
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('confirmDelete', 'category', $category->id)
             ->call('delete');
 
@@ -153,7 +156,7 @@ describe('ProductionRates Index category management', function () {
 
     it('validates category name is required', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCategoryModal')
             ->set('categoryName', '')
             ->call('saveCategory')
@@ -162,7 +165,7 @@ describe('ProductionRates Index category management', function () {
 
     it('validates category name max length', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCategoryModal')
             ->set('categoryName', str_repeat('a', 256))
             ->call('saveCategory')
@@ -172,21 +175,19 @@ describe('ProductionRates Index category management', function () {
 
 describe('ProductionRates Index rate management', function () {
     beforeEach(function () {
-        $this->user = User::factory()->internal()->create();
+        $this->user = User::factory()->internal()->withFullAccess()->create();
         $this->category = ProductionRateCategory::factory()->interior()->create();
     });
 
     it('can create a rate', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->assertSet('showRateModal', true)
             ->set('rateName', 'Test Rate')
             ->set('rateDescription', 'Test description')
             ->set('rateUnitType', 'sqft')
             ->set('rateProductionRate', '250')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->set('rateDefaultCoats', 2)
             ->call('saveRate')
             ->assertSet('showRateModal', false);
@@ -204,7 +205,7 @@ describe('ProductionRates Index rate management', function () {
         ]);
 
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', $rate->id)
             ->assertSet('showRateModal', true)
             ->assertSet('rateName', 'Original Rate')
@@ -222,7 +223,7 @@ describe('ProductionRates Index rate management', function () {
         $rateId = $rate->id;
 
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('confirmDelete', 'rate', $rate->id)
             ->assertSet('showDeleteModal', true)
             ->assertSet('deleteType', 'rate')
@@ -235,73 +236,61 @@ describe('ProductionRates Index rate management', function () {
 
     it('validates rate name is required', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->set('rateName', '')
             ->set('rateProductionRate', '250')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->call('saveRate')
             ->assertHasErrors(['rateName' => 'required']);
     });
 
     it('validates production rate is required', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->set('rateName', 'Test Rate')
             ->set('rateProductionRate', '')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->call('saveRate')
             ->assertHasErrors(['rateProductionRate' => 'required']);
     });
 
     it('validates production rate is numeric', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->set('rateName', 'Test Rate')
             ->set('rateProductionRate', 'not-a-number')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->call('saveRate')
             ->assertHasErrors(['rateProductionRate' => 'numeric']);
     });
 
     it('validates production rate is greater than zero', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->set('rateName', 'Test Rate')
             ->set('rateProductionRate', '0')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->call('saveRate')
             ->assertHasErrors(['rateProductionRate' => 'min']);
     });
 
     it('validates unit type is valid', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->set('rateName', 'Test Rate')
             ->set('rateUnitType', 'invalid')
             ->set('rateProductionRate', '250')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->call('saveRate')
             ->assertHasErrors(['rateUnitType' => 'in']);
     });
 
     it('validates category id exists', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal')
             ->set('rateName', 'Test Rate')
             ->set('rateProductionRate', '250')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->set('rateCategoryId', 99999)
             ->call('saveRate')
             ->assertHasErrors(['rateCategoryId' => 'exists']);
@@ -309,12 +298,10 @@ describe('ProductionRates Index rate management', function () {
 
     it('validates default coats is between 1 and 5', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', null, $this->category->id)
             ->set('rateName', 'Test Rate')
             ->set('rateProductionRate', '250')
-            ->set('rateHourlyLaborRate', '50')
-            ->set('rateMaterialCostPerUnit', '0.25')
             ->set('rateDefaultCoats', 10)
             ->call('saveRate')
             ->assertHasErrors(['rateDefaultCoats' => 'max']);
@@ -323,7 +310,7 @@ describe('ProductionRates Index rate management', function () {
 
 describe('ProductionRates Index seed defaults', function () {
     beforeEach(function () {
-        $this->user = User::factory()->internal()->create();
+        $this->user = User::factory()->internal()->withFullAccess()->create();
     });
 
     it('can seed default rates', function () {
@@ -331,7 +318,7 @@ describe('ProductionRates Index seed defaults', function () {
         expect(ProductionRate::count())->toBe(0);
 
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('seedDefaults');
 
         expect(ProductionRateCategory::count())->toBe(3);
@@ -340,7 +327,7 @@ describe('ProductionRates Index seed defaults', function () {
 
     it('does not duplicate when seeding multiple times', function () {
         Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('seedDefaults')
             ->call('seedDefaults');
 
@@ -351,7 +338,7 @@ describe('ProductionRates Index seed defaults', function () {
 
 describe('ProductionRates Index categories computed property', function () {
     beforeEach(function () {
-        $this->user = User::factory()->internal()->create();
+        $this->user = User::factory()->internal()->withFullAccess()->create();
     });
 
     it('returns categories for current active tab', function () {
@@ -359,7 +346,7 @@ describe('ProductionRates Index categories computed property', function () {
         ProductionRateCategory::factory()->exterior()->count(3)->create();
 
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class);
+            ->test('production-rates.index');
 
         expect($component->get('categories'))->toHaveCount(2);
 
@@ -373,7 +360,7 @@ describe('ProductionRates Index categories computed property', function () {
         ProductionRate::factory()->forCategory($category)->count(3)->create();
 
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class);
+            ->test('production-rates.index');
 
         $categories = $component->get('categories');
         expect($categories->first()->relationLoaded('rates'))->toBeTrue();
@@ -387,7 +374,7 @@ describe('ProductionRates Index categories computed property', function () {
         ProductionRate::factory()->forCategory($category)->create(['name' => 'Second', 'sort_order' => 2]);
 
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class);
+            ->test('production-rates.index');
 
         $rates = $component->get('categories')->first()->rates;
         expect($rates[0]->name)->toBe('First');
@@ -398,12 +385,12 @@ describe('ProductionRates Index categories computed property', function () {
 
 describe('ProductionRates Index modal state management', function () {
     beforeEach(function () {
-        $this->user = User::factory()->internal()->create();
+        $this->user = User::factory()->internal()->withFullAccess()->create();
     });
 
     it('resets category form when opening modal for new category', function () {
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->set('categoryName', 'Previous Value')
             ->set('categoryDescription', 'Previous Description')
             ->call('openCategoryModal');
@@ -420,7 +407,7 @@ describe('ProductionRates Index modal state management', function () {
         ]);
 
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openCategoryModal', $category->id);
 
         expect($component->get('categoryName'))->toBe('Test Category');
@@ -432,7 +419,7 @@ describe('ProductionRates Index modal state management', function () {
         $category = ProductionRateCategory::factory()->interior()->create();
 
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->set('rateName', 'Previous Value')
             ->call('openRateModal', null, $category->id);
 
@@ -450,21 +437,17 @@ describe('ProductionRates Index modal state management', function () {
             'description' => 'Test Description',
             'unit_type' => 'lnft',
             'production_rate' => 150.00,
-            'hourly_labor_rate' => 55.00,
-            'material_cost_per_unit' => 0.30,
             'default_coats' => 3,
         ]);
 
         $component = Livewire::actingAs($this->user)
-            ->test(Index::class)
+            ->test('production-rates.index')
             ->call('openRateModal', $rate->id);
 
         expect($component->get('rateName'))->toBe('Test Rate');
         expect($component->get('rateDescription'))->toBe('Test Description');
         expect($component->get('rateUnitType'))->toBe('lnft');
         expect($component->get('rateProductionRate'))->toBe('150.00');
-        expect($component->get('rateHourlyLaborRate'))->toBe('55.00');
-        expect($component->get('rateMaterialCostPerUnit'))->toBe('0.30');
         expect($component->get('rateDefaultCoats'))->toBe(3);
         expect($component->get('editingRateId'))->toBe($rate->id);
         expect($component->get('rateCategoryId'))->toBe($category->id);

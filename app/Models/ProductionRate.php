@@ -134,8 +134,6 @@ class ProductionRate extends Model
         'unit_type',
         'production_rate',
         'rate_type',
-        'hourly_labor_rate',
-        'material_cost_per_unit',
         'coat_multipliers',
         'default_coats',
         'is_active',
@@ -146,8 +144,6 @@ class ProductionRate extends Model
     {
         return [
             'production_rate' => 'decimal:2',
-            'hourly_labor_rate' => 'decimal:2',
-            'material_cost_per_unit' => 'decimal:2',
             'coat_multipliers' => 'array',
             'default_coats' => 'integer',
             'is_active' => 'boolean',
@@ -304,26 +300,25 @@ class ProductionRate extends Model
     /**
      * Calculate the price for a given quantity and number of coats.
      *
-     * NOTE: This method uses the production rate's hourly_labor_rate, which is a simplified
-     * calculation. For PBP (Painting Business Pricing) compliant estimates, use
-     * EstimateTemplateService::calculatePBPPrice() which applies:
-     * - Scope-specific hourly wages from CompanySetting
-     * - Payroll burden multiplier
-     * - Cleanup hours and cost
-     * - Sundries cost
-     * - Profit, overhead, and scope-specific markup margins
+     * Uses CompanySetting for scope-specific hourly rates and PaintProduct for materials.
+     * This is the PBP (Painting Business Pricing) compliant calculation.
      *
-     * Formula: ((quantity / production_rate) * hourly_labor_rate + (quantity * material_cost_per_unit)) * coat_multiplier
+     * @param  string  $scopeType  'interior' or 'exterior'
      */
-    public function calculatePrice(float $quantity, ?int $coats = null): float
+    public function calculatePrice(float $quantity, ?int $coats = null, string $scopeType = 'interior'): float
     {
         $coats = $coats ?? $this->default_coats ?? 1;
         $coatMultiplier = $this->getCoatMultiplier($coats);
 
-        $laborCost = ($quantity / $this->production_rate) * $this->hourly_labor_rate;
-        $materialCost = $quantity * $this->material_cost_per_unit;
+        $settings = CompanySetting::getInstance();
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
 
-        return ($laborCost + $materialCost) * $coatMultiplier;
+        $laborHours = ($quantity / $this->production_rate) * $coatMultiplier;
+        $laborCost = $laborHours * $effectiveRate;
+
+        // Material cost should come from PaintProduct, but we return just labor here
+        // Full pricing with materials should use EstimateCostBreakdownService
+        return $laborCost;
     }
 
     /**

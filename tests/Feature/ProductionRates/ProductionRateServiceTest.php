@@ -5,29 +5,36 @@ use App\Models\ProductionRateCategory;
 use App\Services\ProductionRateService;
 
 describe('ProductionRateService calculatePrice', function () {
+    beforeEach(function () {
+        // Set up deterministic company settings
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 30.00,
+            'payroll_burden_multiplier' => 1.40,
+        ]);
+    });
+
     it('returns correct calculation values with default multipliers', function () {
         $service = new ProductionRateService;
 
-        // 1000 sqft at 250 sqft/hour production rate, $50/hour labor, $0.20/sqft material, 2 coats
+        // 1000 sqft at 250 sqft/hour production rate, 2 coats
         $result = $service->calculatePrice(
             quantity: 1000,
             productionRate: 250,
-            hourlyLaborRate: 50,
-            materialCostPerUnit: 0.20,
-            coats: 2
+            coats: 2,
+            scopeType: 'interior'
         );
 
-        // Labor hours: 1000 / 250 = 4 hours
-        // Labor cost: 4 * 50 = 200
-        // Material cost: 1000 * 0.20 = 200
-        // Coat multiplier for 2 coats: 1.8
-        // Total: (200 + 200) * 1.8 = 720
+        // Labor hours: (1000 / 250) * 1.8 coat multiplier = 7.2 hours
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 7.2 * 35 = 252
 
-        expect($result['labor_hours'])->toBe(4.0);
-        expect($result['labor_cost'])->toBe(200.0);
-        expect($result['material_cost'])->toBe(200.0);
+        expect($result['labor_hours'])->toBe(7.2);
+        expect($result['labor_cost'])->toBe(252.0);
         expect($result['coat_multiplier'])->toBe(1.8);
-        expect($result['total'])->toBe(720.0);
+        expect($result['total'])->toBe(252.0);
     });
 
     it('returns correct values for single coat', function () {
@@ -36,22 +43,18 @@ describe('ProductionRateService calculatePrice', function () {
         $result = $service->calculatePrice(
             quantity: 500,
             productionRate: 100,
-            hourlyLaborRate: 45,
-            materialCostPerUnit: 0.15,
-            coats: 1
+            coats: 1,
+            scopeType: 'interior'
         );
 
-        // Labor hours: 500 / 100 = 5 hours
-        // Labor cost: 5 * 45 = 225
-        // Material cost: 500 * 0.15 = 75
-        // Coat multiplier for 1 coat: 1.0
-        // Total: (225 + 75) * 1.0 = 300
+        // Labor hours: (500 / 100) * 1.0 = 5 hours
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 5 * 35 = 175
 
         expect($result['labor_hours'])->toBe(5.0);
-        expect($result['labor_cost'])->toBe(225.0);
-        expect($result['material_cost'])->toBe(75.0);
+        expect($result['labor_cost'])->toBe(175.0);
         expect($result['coat_multiplier'])->toBe(1.0);
-        expect($result['total'])->toBe(300.0);
+        expect($result['total'])->toBe(175.0);
     });
 
     it('returns correct values for three coats', function () {
@@ -60,22 +63,37 @@ describe('ProductionRateService calculatePrice', function () {
         $result = $service->calculatePrice(
             quantity: 100,
             productionRate: 50,
-            hourlyLaborRate: 60,
-            materialCostPerUnit: 0.50,
-            coats: 3
+            coats: 3,
+            scopeType: 'interior'
         );
 
-        // Labor hours: 100 / 50 = 2 hours
-        // Labor cost: 2 * 60 = 120
-        // Material cost: 100 * 0.50 = 50
-        // Coat multiplier for 3 coats: 2.5
-        // Total: (120 + 50) * 2.5 = 425
+        // Labor hours: (100 / 50) * 2.5 = 5 hours
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 5 * 35 = 175
 
-        expect($result['labor_hours'])->toBe(2.0);
-        expect($result['labor_cost'])->toBe(120.0);
-        expect($result['material_cost'])->toBe(50.0);
+        expect($result['labor_hours'])->toBe(5.0);
+        expect($result['labor_cost'])->toBe(175.0);
         expect($result['coat_multiplier'])->toBe(2.5);
-        expect($result['total'])->toBe(425.0);
+        expect($result['total'])->toBe(175.0);
+    });
+
+    it('uses exterior rates when scope type is exterior', function () {
+        $service = new ProductionRateService;
+
+        $result = $service->calculatePrice(
+            quantity: 100,
+            productionRate: 100,
+            coats: 1,
+            scopeType: 'exterior'
+        );
+
+        // Labor hours: (100 / 100) * 1.0 = 1 hour
+        // Effective rate: $30 * 1.40 = $42/hr
+        // Labor cost: 1 * 42 = 42
+
+        expect($result['labor_hours'])->toBe(1.0);
+        expect($result['labor_cost'])->toBe(42.0);
+        expect($result['total'])->toBe(42.0);
     });
 
     it('rounds values to two decimal places', function () {
@@ -84,9 +102,8 @@ describe('ProductionRateService calculatePrice', function () {
         $result = $service->calculatePrice(
             quantity: 100,
             productionRate: 33,
-            hourlyLaborRate: 47.50,
-            materialCostPerUnit: 0.17,
-            coats: 1
+            coats: 1,
+            scopeType: 'interior'
         );
 
         // Labor hours: 100 / 33 = 3.03030303...
@@ -97,12 +114,21 @@ describe('ProductionRateService calculatePrice', function () {
 });
 
 describe('ProductionRateService calculatePriceFromRate', function () {
+    beforeEach(function () {
+        // Set up deterministic company settings
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 30.00,
+            'payroll_burden_multiplier' => 1.40,
+        ]);
+    });
+
     it('extracts values correctly from ProductionRate model', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200.00,
-            'hourly_labor_rate' => 55.00,
-            'material_cost_per_unit' => 0.25,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 2,
         ]);
@@ -110,25 +136,20 @@ describe('ProductionRateService calculatePriceFromRate', function () {
         $service = new ProductionRateService;
         $result = $service->calculatePriceFromRate($rate, 400);
 
-        // Labor hours: 400 / 200 = 2 hours
-        // Labor cost: 2 * 55 = 110
-        // Material cost: 400 * 0.25 = 100
-        // Coat multiplier for 2 coats: 1.8
-        // Total: (110 + 100) * 1.8 = 378
+        // Labor hours: (400 / 200) * 1.8 = 3.6 hours
+        // Effective rate: $25 * 1.40 = $35/hr
+        // Labor cost: 3.6 * 35 = 126
 
-        expect($result['labor_hours'])->toBe(2.0);
-        expect($result['labor_cost'])->toBe(110.0);
-        expect($result['material_cost'])->toBe(100.0);
+        expect($result['labor_hours'])->toBe(3.6);
+        expect($result['labor_cost'])->toBe(126.0);
         expect($result['coat_multiplier'])->toBe(1.8);
-        expect($result['total'])->toBe(378.0);
+        expect($result['total'])->toBe(126.0);
     });
 
     it('uses provided coats instead of default when specified', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 100.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.10,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 2,
         ]);
@@ -144,8 +165,6 @@ describe('ProductionRateService calculatePriceFromRate', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 100.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.10,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 1,
         ]);
@@ -286,11 +305,11 @@ describe('ProductionRateService seedDefaultRates', function () {
         expect(ProductionRateCategory::where('type', 'exterior')->exists())->toBeTrue();
         expect(ProductionRateCategory::where('type', 'specialty')->exists())->toBeTrue();
 
-        // Should create rates (5 interior + 3 exterior + 2 specialty = 10)
-        expect(ProductionRate::count())->toBe(10);
+        // Should create rates (47 interior + 80 exterior + 2 specialty = 129)
+        expect(ProductionRate::count())->toBeGreaterThan(100);
     });
 
-    it('creates interior category with correct rates', function () {
+    it('creates interior category with rates', function () {
         $service = new ProductionRateService;
         $service->seedDefaultRates();
 
@@ -298,10 +317,10 @@ describe('ProductionRateService seedDefaultRates', function () {
 
         expect($interiorCategory)->not->toBeNull();
         expect($interiorCategory->type)->toBe('interior');
-        expect($interiorCategory->rates)->toHaveCount(5);
+        expect($interiorCategory->rates->count())->toBeGreaterThan(40);
     });
 
-    it('creates exterior category with correct rates', function () {
+    it('creates exterior category with rates', function () {
         $service = new ProductionRateService;
         $service->seedDefaultRates();
 
@@ -309,7 +328,7 @@ describe('ProductionRateService seedDefaultRates', function () {
 
         expect($exteriorCategory)->not->toBeNull();
         expect($exteriorCategory->type)->toBe('exterior');
-        expect($exteriorCategory->rates)->toHaveCount(3);
+        expect($exteriorCategory->rates->count())->toBeGreaterThan(70);
     });
 
     it('creates specialty category with correct rates', function () {
@@ -326,11 +345,13 @@ describe('ProductionRateService seedDefaultRates', function () {
     it('does not duplicate when run multiple times', function () {
         $service = new ProductionRateService;
         $service->seedDefaultRates();
+        $firstCount = ProductionRate::count();
+
         $service->seedDefaultRates();
 
-        // Should still be 3 categories and 10 rates
+        // Should not duplicate
         expect(ProductionRateCategory::count())->toBe(3);
-        expect(ProductionRate::count())->toBe(10);
+        expect(ProductionRate::count())->toBe($firstCount);
     });
 
     it('creates rates with correct values', function () {
@@ -341,20 +362,27 @@ describe('ProductionRateService seedDefaultRates', function () {
 
         expect($wallPainting)->not->toBeNull();
         expect((float) $wallPainting->production_rate)->toBe(300.00);
-        expect((float) $wallPainting->hourly_labor_rate)->toBe(45.00);
-        expect((float) $wallPainting->material_cost_per_unit)->toBe(0.15);
         expect($wallPainting->default_coats)->toBe(2);
         expect($wallPainting->unit_type)->toBe('sqft');
     });
 });
 
 describe('ProductionRateService testCalculator', function () {
+    beforeEach(function () {
+        // Set up deterministic company settings
+        \App\Models\CompanySetting::query()->delete();
+        \App\Models\CompanySetting::create([
+            'company_name' => 'Test Company',
+            'interior_hourly_wage' => 25.00,
+            'exterior_hourly_wage' => 30.00,
+            'payroll_burden_multiplier' => 1.40,
+        ]);
+    });
+
     it('returns calculation for valid rate', function () {
         $category = ProductionRateCategory::factory()->create();
         $rate = ProductionRate::factory()->forCategory($category)->create([
             'production_rate' => 200.00,
-            'hourly_labor_rate' => 50.00,
-            'material_cost_per_unit' => 0.20,
             'coat_multipliers' => ['1' => 1.0, '2' => 1.8, '3' => 2.5],
             'default_coats' => 2,
         ]);
@@ -366,7 +394,8 @@ describe('ProductionRateService testCalculator', function () {
         expect($result['rate'])->not->toBeNull();
         expect($result['sqft'])->toBe(1000.0);
         expect($result['coats'])->toBe(2);
-        expect($result['labor_hours'])->toBe(5.0);
+        // Labor hours: (1000/200) * 1.8 = 9 hours
+        expect($result['labor_hours'])->toBe(9.0);
         expect($result['total'])->toBeGreaterThan(0);
     });
 

@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Agent\LoginController;
 use App\Http\Controllers\Agent\RegisterController;
-use App\Livewire\Agent;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -27,23 +26,23 @@ Route::middleware('guest:agent')->group(function () {
 Route::middleware(['auth:agent', 'auth.agent'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
 
-    Route::get('dashboard', Agent\Dashboard::class)->name('dashboard');
+    Route::livewire('dashboard', 'agent.dashboard')->name('dashboard');
 
     Route::view('invitations', 'agent.invitations')->name('invitations');
 
     // Listing routes
-    Route::get('listings', Agent\Listings\Index::class)->name('listings.index');
-    Route::get('listings/{agentListing}', Agent\Listings\Show::class)->name('listings.show');
+    Route::livewire('listings', 'agent.listings.index')->name('listings.index');
+    Route::livewire('listings/{agentListing}', 'agent.listings.show')->name('listings.show');
     Route::get('listings/{agentListing}/flyer', [\App\Http\Controllers\Agent\AgentListingFlyerController::class, 'download'])->name('listings.flyer');
 
     // Customer routes (read-only)
-    Route::get('customers', Agent\Customers\Index::class)->name('customers.index');
-    Route::get('customers/{customer}', Agent\Customers\Show::class)->name('customers.show');
+    Route::livewire('customers', 'agent.customers.index')->name('customers.index');
+    Route::livewire('customers/{customer}', 'agent.customers.show')->name('customers.show');
 
     // Deal routes (read-only)
-    Route::get('deals', Agent\Deals\Index::class)->name('deals.index');
+    Route::livewire('deals', 'agent.deals.index')->name('deals.index');
 
     // Chat routes
-    Route::get('chat', Agent\Chat\ThreadList::class)->name('chat.index');
-    Route::get('chat/{thread}', Agent\Chat\ThreadView::class)->name('chat.show');
+    Route::livewire('chat', 'agent.chat.thread-list')->name('chat.index');
+    Route::livewire('chat/{thread}', 'agent.chat.thread-view')->name('chat.show');
 });

@@ -1,22 +1,21 @@
 <?php
 
-use App\Livewire\AreaTemplates\Index;
 use App\Models\EstimateTemplate;
 use App\Models\User;
 use Livewire\Livewire;
 
 describe('AreaTemplates Index component', function () {
     it('renders the component for internal users', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertStatus(200)
             ->assertSee('Area Templates');
     });
 
     it('displays templates visible to the user', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $systemTemplate = EstimateTemplate::factory()->create([
             'name' => 'System Living Room',
@@ -41,15 +40,15 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertSee('System Living Room')
             ->assertSee('Company Kitchen')
             ->assertSee('My Private Template');
     });
 
     it('does not show private templates from other users', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $otherPrivateTemplate = EstimateTemplate::factory()->create([
             'name' => 'Other User Private',
@@ -59,12 +58,12 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertDontSee('Other User Private');
     });
 
     it('filters templates by scope type', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $interiorTemplate = EstimateTemplate::factory()->create([
             'name' => 'Interior Bedroom',
@@ -81,7 +80,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertSee('Interior Bedroom')
             ->assertSee('Exterior Deck')
             ->call('switchTab', 'interior')
@@ -93,7 +92,7 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('filters templates by visibility', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $systemTemplate = EstimateTemplate::factory()->create([
             'name' => 'System Test Template',
@@ -115,7 +114,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->set('visibilityFilter', 'system')
             ->assertSee('System Test Template')
             ->assertDontSee('Company Test Template')
@@ -131,7 +130,7 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('searches templates by name', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         EstimateTemplate::factory()->create([
             'name' => 'Living Room',
@@ -146,7 +145,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertSee('Living Room')
             ->assertSee('Bedroom')
             ->set('search', 'Living')
@@ -155,7 +154,7 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('can clone a template', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $template = EstimateTemplate::factory()->create([
             'name' => 'Original Template',
@@ -164,7 +163,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->call('clone', $template->id)
             ->assertSee('Template cloned successfully');
 
@@ -176,7 +175,7 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('can delete own private template', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $template = EstimateTemplate::factory()->create([
             'name' => 'My Deletable Template',
@@ -186,7 +185,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->call('confirmDelete', $template->id)
             ->assertSet('showDeleteModal', true)
             ->assertSet('deleteName', 'My Deletable Template')
@@ -199,7 +198,7 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('cannot delete system templates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $template = EstimateTemplate::factory()->create([
             'name' => 'System Template',
@@ -208,7 +207,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->call('confirmDelete', $template->id)
             ->assertSee('You do not have permission to delete this template');
 
@@ -218,8 +217,8 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('cannot delete other user private templates', function () {
-        $user = User::factory()->internal()->create();
-        $otherUser = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
 
         $template = EstimateTemplate::factory()->create([
             'name' => 'Other User Template',
@@ -229,7 +228,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->call('confirmDelete', $template->id)
             ->assertSee('You do not have permission to delete this template');
 
@@ -239,16 +238,16 @@ describe('AreaTemplates Index component', function () {
     });
 
     it('shows empty state when no templates exist', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertSee('No templates found')
             ->assertSee('Get started by creating your first area template');
     });
 
     it('shows appropriate message when filters return no results', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         EstimateTemplate::factory()->create([
             'name' => 'Interior Template',
@@ -258,14 +257,14 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->set('search', 'nonexistent')
             ->assertSee('No templates found')
             ->assertSee('Try adjusting your search or filter criteria');
     });
 
     it('displays surface count for each template', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $template = EstimateTemplate::factory()->create([
             'name' => 'Template With Surfaces',
@@ -274,12 +273,12 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertSee('Template With Surfaces');
     });
 
     it('only shows configurable templates', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         $configurableTemplate = EstimateTemplate::factory()->create([
             'name' => 'Configurable Template',
@@ -294,7 +293,7 @@ describe('AreaTemplates Index component', function () {
         ]);
 
         Livewire::actingAs($user)
-            ->test(Index::class)
+            ->test('area-templates.index')
             ->assertSee('Configurable Template')
             ->assertDontSee('Fixed Price Template');
     });

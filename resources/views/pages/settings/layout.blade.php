@@ -10,6 +10,11 @@
             @if (auth()->user()->type === 'internal')
                 <flux:navlist.item :href="route('signature.edit')" wire:navigate>{{ __('Signature') }}</flux:navlist.item>
                 <flux:navlist.item :href="route('company.edit')" wire:navigate>{{ __('Company') }}</flux:navlist.item>
+                <flux:navlist.item :href="route('packages.edit')" wire:navigate>{{ __('Packages') }}</flux:navlist.item>
+                <flux:navlist.item :href="route('allocations.edit')" wire:navigate>{{ __('Allocations') }}</flux:navlist.item>
+                @can('manage roles')
+                    <flux:navlist.item :href="route('roles.edit')" wire:navigate>{{ __('Roles & Access') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>

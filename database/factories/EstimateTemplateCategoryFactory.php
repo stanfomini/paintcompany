@@ -64,7 +64,7 @@ class EstimateTemplateCategoryFactory extends Factory
             'name' => $name,
             'slug' => Str::slug($name).'-'.fake()->unique()->randomNumber(4),
             'description' => fake()->optional(0.7)->sentence(),
-            'icon' => fake()->optional(0.5)->randomElement(['home', 'paint-bucket', 'brush', 'layers', 'grid', 'square']),
+            'icon' => fake()->optional(0.5)->randomElement(['home', 'squares-2x2', 'rectangle-stack', 'square-2-stack', 'view-columns', 'cube']),
             'type' => $type,
             'is_active' => true,
             'sort_order' => fake()->numberBetween(1, 100),

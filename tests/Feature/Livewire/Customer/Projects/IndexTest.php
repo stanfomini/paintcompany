@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Customer\Projects\Index;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
@@ -11,7 +10,7 @@ describe('Customer Projects Index component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->assertStatus(200)
             ->assertSee('My Projects');
     });
@@ -27,7 +26,7 @@ describe('Customer Projects Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->assertSee('Kitchen Painting')
             ->assertSee('In Progress');
     });
@@ -48,7 +47,7 @@ describe('Customer Projects Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->assertSee('My Project')
             ->assertDontSee('Other Project');
     });
@@ -68,7 +67,7 @@ describe('Customer Projects Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->set('search', 'Kitchen')
             ->assertSee('Kitchen Painting')
             ->assertDontSee('Bathroom Remodel');
@@ -91,7 +90,7 @@ describe('Customer Projects Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->set('stage', 'in_progress')
             ->assertSee('Active Project')
             ->assertDontSee('Completed Project');
@@ -102,7 +101,7 @@ describe('Customer Projects Index component', function () {
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->assertSee('No projects found')
             ->assertSee('Your projects will appear here once created');
     });
@@ -117,7 +116,7 @@ describe('Customer Projects Index component', function () {
         ]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->set('search', 'NonexistentProject')
             ->assertSee('No projects found')
             ->assertSee('Try adjusting your search criteria');
@@ -130,7 +129,7 @@ describe('Customer Projects Index component', function () {
         Deal::factory()->count(20)->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->set('search', 'test')
             ->assertSet('paginators.page', 1);
     });
@@ -142,7 +141,7 @@ describe('Customer Projects Index component', function () {
         Deal::factory()->count(20)->create(['customer_id' => $customer->id]);
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->set('stage', 'in_progress')
             ->assertSet('paginators.page', 1);
     });
@@ -151,7 +150,7 @@ describe('Customer Projects Index component', function () {
         $customerUser = User::factory()->customer()->create();
 
         Livewire::actingAs($customerUser, 'customer')
-            ->test(Index::class)
+            ->test('customer.projects.index')
             ->assertSee('All Stages')
             ->assertSee('Lead')
             ->assertSee('Quoted')

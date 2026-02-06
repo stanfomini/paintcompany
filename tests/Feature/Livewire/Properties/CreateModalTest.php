@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Properties\CreateModal;
 use App\Models\Customer;
 use App\Models\User;
 use Livewire\Livewire;
@@ -9,18 +8,18 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('CreateModal component', function () {
     it('renders the create modal component', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->assertStatus(200);
     });
 
     it('opens and closes the modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->assertSet('showModal', false)
             ->call('openModal')
             ->assertSet('showModal', true)
@@ -29,11 +28,11 @@ describe('CreateModal component', function () {
     });
 
     it('resets form fields when closing modal', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', (string) $customer->id)
             ->set('address', '123 Main St')
             ->set('city', 'Los Angeles')
@@ -44,19 +43,19 @@ describe('CreateModal component', function () {
     });
 
     it('validates required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->call('save')
             ->assertHasErrors(['customerId', 'address', 'city', 'state', 'zip']);
     });
 
     it('validates customer exists', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', '99999')
             ->set('address', '123 Main St')
             ->call('save')
@@ -64,11 +63,11 @@ describe('CreateModal component', function () {
     });
 
     it('validates property type', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', (string) $customer->id)
             ->set('address', '123 Main St')
             ->set('type', 'invalid')
@@ -77,11 +76,11 @@ describe('CreateModal component', function () {
     });
 
     it('creates a property successfully', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', (string) $customer->id)
             ->set('name', 'Main Office')
             ->set('address', '123 Main St')
@@ -112,11 +111,11 @@ describe('CreateModal component', function () {
     });
 
     it('creates property with only required fields', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', (string) $customer->id)
             ->set('address', '456 Oak Ave')
             ->set('city', 'Test City')
@@ -137,25 +136,25 @@ describe('CreateModal component', function () {
     });
 
     it('displays customers in dropdown', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
         ]);
 
         $component = Livewire::actingAs($user)
-            ->test(CreateModal::class);
+            ->test('properties.create-modal');
 
         expect($component->get('customers'))->toHaveCount(1);
         expect($component->get('customers')->first()->first_name)->toBe('John');
     });
 
     it('validates year built range', function () {
-        $user = User::factory()->internal()->create();
+        $user = User::factory()->internal()->withFullAccess()->create();
         $customer = Customer::factory()->create();
 
         Livewire::actingAs($user)
-            ->test(CreateModal::class)
+            ->test('properties.create-modal')
             ->set('customerId', (string) $customer->id)
             ->set('address', '123 Main St')
             ->set('city', 'Test City')

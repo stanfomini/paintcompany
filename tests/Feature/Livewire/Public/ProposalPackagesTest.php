@@ -1,6 +1,5 @@
 <?php
 
-use App\Livewire\Public\ProposalPackages;
 use App\Models\Estimate;
 use App\Models\EstimateItem;
 use App\Models\EstimateOptionalItem;
@@ -14,7 +13,7 @@ it('renders successfully', function () {
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     $package = EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertStatus(200);
 });
 
@@ -34,7 +33,7 @@ it('displays packages', function () {
         ->withPricing(2000, 0, 0)
         ->create(['name' => 'Standard Package']);
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSee('Basic Package')
         ->assertSee('Standard Package')
         ->assertSee('$1,000.00')
@@ -50,7 +49,7 @@ it('selects a package when clicked', function () {
         ->withPricing(1000, 0, 0)
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSet('selectedPackageId', null)
         ->call('selectPackage', $package->id)
         ->assertSet('selectedPackageId', $package->id)
@@ -64,7 +63,7 @@ it('cannot select package when estimate is accepted', function () {
         ->basic()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id)
         ->assertSet('selectedPackageId', null);
 });
@@ -75,7 +74,7 @@ it('displays package items after selection', function () {
         ->forEstimate($estimate)
         ->basic()
         ->withPricing(1000, 0, 0)
-        ->create();
+        ->create(['name' => 'Basic Package']);
 
     $estimateItem = EstimateItem::factory()->create([
         'estimate_id' => $estimate->id,
@@ -89,13 +88,17 @@ it('displays package items after selection', function () {
         ->approved()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    // In the simplified view, package items are shown as features within the package card
+    // The simplified view displays the package and its contents
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id)
-        ->assertSee('Interior Painting')
-        ->assertSee('Package Details');
+        ->assertSee('Basic Package')
+        ->assertSee('Summary');
 });
 
-it('toggles line item approval', function () {
+it('does not allow customers to toggle line item approval', function () {
+    // Customers can only select a package tier, they cannot modify individual line items
+    // Only estimators (via PackageBuilder) can toggle items to differentiate packages
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     $package = EstimatePackage::factory()
         ->forEstimate($estimate)
@@ -115,11 +118,13 @@ it('toggles line item approval', function () {
         ->approved()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    // Calling toggleLineItemApproval should do nothing for customers
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id)
         ->call('toggleLineItemApproval', $packageItem->id);
 
-    expect($packageItem->fresh()->customer_approved)->toBeFalse();
+    // Item should STILL be approved (no change)
+    expect($packageItem->fresh()->customer_approved)->toBeTrue();
 });
 
 it('toggles optional items', function () {
@@ -132,7 +137,7 @@ it('toggles optional items', function () {
         ->notSelected()
         ->create(['name' => 'Extended Warranty']);
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSee('Extended Warranty')
         ->call('toggleOptionalItem', $optionalItem->id);
 
@@ -188,7 +193,7 @@ it('calculates selected package total correctly', function () {
     // Test component - total should only include approved items
     // The EstimatePackageItem model triggers recalculation, so we verify
     // that non-approved items are excluded from the selectedPackageTotal
-    $component = Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id);
 
     // Get the package from the component's packages array
@@ -227,7 +232,7 @@ it('calculates optional items total', function () {
         ->notSelected()
         ->create();
 
-    $component = Livewire::test(ProposalPackages::class, ['estimate' => $estimate]);
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
 
     expect($component->get('optionalItemsTotal'))->toBe(300.0);
 });
@@ -262,7 +267,7 @@ it('calculates deposit based on deposit percent', function () {
         ->approved()
         ->create();
 
-    $component = Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id);
 
     // Deposit should be 25% of package total (calculated from items)
@@ -298,7 +303,7 @@ it('dispatches proceed-to-signature event when package selected', function () {
         ->approved()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id)
         ->call('proceedToSignature')
         ->assertDispatched('proceed-to-signature');
@@ -308,7 +313,7 @@ it('shows error when proceeding without package selection', function () {
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('proceedToSignature')
         ->assertSee('Please select a package before proceeding');
 });
@@ -323,7 +328,7 @@ it('cannot proceed to signature when estimate is accepted', function () {
 
     $estimate->update(['selected_package_id' => $package->id]);
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('proceedToSignature')
         ->assertSee('This proposal has already been accepted');
 });
@@ -335,7 +340,7 @@ it('updates estimate selected_package_id when package selected', function () {
         ->basic()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id);
 
     expect($estimate->fresh()->selected_package_id)->toBe($package->id);
@@ -345,7 +350,7 @@ it('shows sign button as disabled when no package selected', function () {
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSee('Please select a package above to continue');
 });
 
@@ -356,7 +361,7 @@ it('shows summary section when package is selected', function () {
         ->basic()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id)
         ->assertSee('Summary')
         ->assertSee('Total');
@@ -372,7 +377,7 @@ it('loads pre-selected package from estimate', function () {
 
     $estimate->update(['selected_package_id' => $package->id]);
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSet('selectedPackageId', $package->id);
 });
 
@@ -383,13 +388,14 @@ it('logs activity when package is selected', function () {
         ->basic()
         ->create(['name' => 'Test Package']);
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id);
 
     expect($estimate->activities()->where('activity_type', 'package_selected')->exists())->toBeTrue();
 });
 
-it('logs activity when item approval is toggled', function () {
+it('does not log activity when customer attempts to toggle item approval', function () {
+    // Customers cannot toggle items, so no activity should be logged
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     $package = EstimatePackage::factory()
         ->forEstimate($estimate)
@@ -406,10 +412,11 @@ it('logs activity when item approval is toggled', function () {
         ->approved()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('toggleLineItemApproval', $packageItem->id);
 
-    expect($estimate->activities()->where('activity_type', 'item_approval_toggled')->exists())->toBeTrue();
+    // No activity should be logged since the method does nothing for customers
+    expect($estimate->activities()->where('activity_type', 'item_approval_toggled')->exists())->toBeFalse();
 });
 
 it('logs activity when optional item is toggled', function () {
@@ -422,7 +429,7 @@ it('logs activity when optional item is toggled', function () {
         ->notSelected()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('toggleOptionalItem', $optionalItem->id);
 
     expect($estimate->activities()->where('activity_type', 'optional_item_toggled')->exists())->toBeTrue();
@@ -439,7 +446,7 @@ it('cannot modify when estimate is expired', function () {
         ->basic()
         ->create();
 
-    $component = Livewire::test(ProposalPackages::class, ['estimate' => $estimate]);
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
 
     expect($component->instance()->canModify())->toBeFalse();
 });
@@ -462,8 +469,243 @@ it('shows tier labels correctly', function () {
         ->premium()
         ->create();
 
-    Livewire::test(ProposalPackages::class, ['estimate' => $estimate])
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSee('Good')
         ->assertSee('Better')
         ->assertSee('Best');
+});
+
+// ===== NEW PACKAGE TEMPLATE SYSTEM TESTS =====
+
+use App\Models\PackageTemplate;
+use App\Models\PackageTemplateItem;
+
+it('uses package templates when no legacy packages exist and templates are active', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 2500,
+    ]);
+
+    // No legacy packages created
+
+    // Create package templates
+    PackageTemplate::factory()->good()->create(['is_active' => true]);
+    PackageTemplate::factory()->better()->create(['is_active' => true]);
+    PackageTemplate::factory()->best()->create(['is_active' => true]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
+
+    expect($component->get('usePackageTemplates'))->toBeTrue()
+        ->and($component->get('packageTemplates'))->toHaveCount(3);
+});
+
+it('uses legacy packages when they exist even if templates are active', function () {
+    $estimate = Estimate::factory()->create(['status' => 'sent']);
+
+    // Create a legacy package
+    EstimatePackage::factory()
+        ->forEstimate($estimate)
+        ->basic()
+        ->create();
+
+    // Create package templates too
+    PackageTemplate::factory()->good()->create(['is_active' => true]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
+
+    expect($component->get('usePackageTemplates'))->toBeFalse()
+        ->and($component->get('packages'))->toHaveCount(1);
+});
+
+it('loads package templates with correct calculated values', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 2000,
+    ]);
+
+    $template = PackageTemplate::factory()->better()->create([
+        'is_active' => true,
+        'warranty_months' => 6,
+        'warranty_percent' => 5,
+    ]);
+
+    PackageTemplateItem::factory()->create([
+        'package_template_id' => $template->id,
+        'name' => 'Cleaning Service',
+        'pricing_type' => 'fixed',
+        'cost' => 200,
+        'price' => 300,
+        'is_optional' => true,
+        'is_included_by_default' => false,
+    ]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
+
+    $templates = $component->get('packageTemplates');
+    $betterTemplate = collect($templates)->firstWhere('tier', 'better');
+
+    expect($betterTemplate)->not->toBeNull()
+        ->and($betterTemplate['warranty_amount'])->toBe(100.0) // 5% of 2000
+        ->and($betterTemplate['painting_total'])->toBe(2000.0)
+        ->and($betterTemplate['items'])->toHaveCount(1)
+        ->and($betterTemplate['items'][0]['price'])->toBe(300.0);
+});
+
+it('selects tier when using package templates', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 1500,
+    ]);
+
+    PackageTemplate::factory()->good()->create(['is_active' => true]);
+    PackageTemplate::factory()->better()->create(['is_active' => true, 'is_default' => true]);
+
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->assertSet('selectedTier', 'better') // Default tier
+        ->call('selectTier', 'good')
+        ->assertSet('selectedTier', 'good')
+        ->assertDispatched('tier-selected');
+});
+
+it('calculates selected template total correctly', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 2000,
+    ]);
+
+    $template = PackageTemplate::factory()->good()->create([
+        'is_active' => true,
+        'warranty_months' => 3,
+        'warranty_percent' => 2, // $40 warranty
+    ]);
+
+    PackageTemplateItem::factory()->create([
+        'package_template_id' => $template->id,
+        'name' => 'Paint Protection',
+        'pricing_type' => 'fixed',
+        'price' => 150,
+        'is_optional' => false,
+        'is_included_by_default' => true,
+    ]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'good');
+
+    // Total = painting (2000) + warranty (40) + included item (150) = 2190
+    expect($component->get('selectedTemplateTotal'))->toBe(2190.0);
+});
+
+it('toggles optional package items in template system', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 1000,
+    ]);
+
+    $template = PackageTemplate::factory()->better()->create([
+        'is_active' => true,
+        'warranty_percent' => 0,
+    ]);
+
+    $item = PackageTemplateItem::factory()->create([
+        'package_template_id' => $template->id,
+        'name' => 'Color Consultation',
+        'pricing_type' => 'fixed',
+        'price' => 125,
+        'is_optional' => true,
+        'is_included_by_default' => false,
+    ]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'better');
+
+    // Initially, optional item is NOT selected
+    $initialTotal = $component->get('selectedTemplateTotal');
+    expect($initialTotal)->toBe(1000.0);
+
+    // Toggle the item on
+    $component->call('togglePackageItem', 'item_'.$item->id);
+
+    // Now total should include the item
+    expect($component->get('selectedTemplateTotal'))->toBe(1125.0);
+});
+
+it('proceeds to signature with template data', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 3000,
+        'deposit_percent' => 25,
+    ]);
+
+    PackageTemplate::factory()->best()->create([
+        'is_active' => true,
+        'warranty_percent' => 3,
+    ]);
+
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'best')
+        ->call('proceedToSignature')
+        ->assertDispatched('proceed-to-signature');
+});
+
+it('shows error when proceeding without tier selection in template mode', function () {
+    $estimate = Estimate::factory()->create(['status' => 'sent']);
+
+    PackageTemplate::factory()->good()->create(['is_active' => true]);
+
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->set('selectedTier', null)
+        ->call('proceedToSignature')
+        ->assertSee('Please select a package before proceeding');
+});
+
+it('uses final total from template for deposit calculation', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 4000,
+        'deposit_percent' => 30,
+    ]);
+
+    PackageTemplate::factory()->better()->create([
+        'is_active' => true,
+        'warranty_percent' => 5, // $200 warranty
+    ]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'better');
+
+    // Total = 4000 + 200 = 4200
+    // Deposit = 4200 * 0.30 = 1260
+    expect($component->get('finalTotal'))->toBe(4200.0)
+        ->and($component->get('depositAmount'))->toBe(1260.0)
+        ->and($component->get('balanceDue'))->toBe(2940.0);
+});
+
+it('cannot select tier when estimate is accepted', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'accepted',
+        'areas_subtotal' => 2000,
+    ]);
+
+    PackageTemplate::factory()->good()->create(['is_active' => true]);
+    PackageTemplate::factory()->better()->create(['is_active' => true, 'is_default' => true]);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'good');
+
+    // Should stay on default (better) because canModify() returns false
+    expect($component->get('selectedTier'))->toBe('better');
+});
+
+it('logs activity when tier is selected', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 2500,
+    ]);
+
+    PackageTemplate::factory()->good()->create(['is_active' => true]);
+
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'good');
+
+    expect($estimate->activities()->where('activity_type', 'package_tier_selected')->exists())->toBeTrue();
 });

@@ -78,6 +78,16 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user is a crew member (paint crew).
+     */
+    public function crew(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => 'crew',
+        ]);
+    }
+
+    /**
      * Indicate that the user account is inactive.
      */
     public function inactive(): static
@@ -97,6 +107,29 @@ class UserFactory extends Factory
             'two_factor_recovery_codes' => encrypt(json_encode(['recovery-code-1'])),
             'two_factor_confirmed_at' => now(),
         ]);
+    }
+
+    /**
+     * Give the user full access (owner role with all permissions).
+     * Must be used with internal() state. Seeds permissions if needed.
+     */
+    public function withFullAccess(): static
+    {
+        return $this->afterCreating(function (\App\Models\User $user) {
+            $registrar = app(\Spatie\Permission\PermissionRegistrar::class);
+            $registrar->forgetCachedPermissions();
+
+            // Seed permissions if none exist yet
+            if (\Spatie\Permission\Models\Permission::count() === 0) {
+                (new \Database\Seeders\RolesAndPermissionsSeeder)->run();
+            }
+
+            $ownerRole = \Spatie\Permission\Models\Role::firstOrCreate(
+                ['name' => 'owner', 'guard_name' => 'web']
+            );
+            $ownerRole->syncPermissions(\Spatie\Permission\Models\Permission::all());
+            $user->assignRole('owner');
+        });
     }
 
     /**

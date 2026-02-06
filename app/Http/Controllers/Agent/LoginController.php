@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Agent;
 
+use App\Http\Controllers\Concerns\HandlesMultiGuardLogin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -10,6 +11,8 @@ use Illuminate\View\View;
 
 class LoginController extends Controller
 {
+    use HandlesMultiGuardLogin;
+
     public function showLoginForm(): View
     {
         return view('agent.auth.login');
@@ -28,6 +31,12 @@ class LoginController extends Controller
 
         if (Auth::guard('agent')->attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
+
+            // Clear intended URL if it's for a different guard's area
+            $this->clearCrossGuardIntendedUrl($request, 'agent');
+
+            // Logout from other guards to prevent session confusion
+            $this->logoutOtherGuards($request, 'agent');
 
             return redirect()->intended(route('agent.dashboard'));
         }

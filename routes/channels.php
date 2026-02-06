@@ -27,7 +27,7 @@ Broadcast::channel('chat.thread.{threadId}', function (User $user, int $threadId
     }
 
     return $thread->hasParticipant($user);
-});
+}, ['guards' => ['web', 'agent', 'customer', 'crew']]);
 
 /**
  * Authorize access to a user's personal notification channel.
@@ -35,4 +35,12 @@ Broadcast::channel('chat.thread.{threadId}', function (User $user, int $threadId
  */
 Broadcast::channel('chat.user.{userId}', function (User $user, int $userId) {
     return $user->id === $userId;
+}, ['guards' => ['web', 'agent', 'customer', 'crew']]);
+
+/**
+ * Authorize access to the internal team channel.
+ * Only internal users can listen to this channel.
+ */
+Broadcast::channel('internal-team', function (User $user) {
+    return $user->isInternal();
 });
