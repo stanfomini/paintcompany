@@ -14,47 +14,47 @@ describe('KPI Routes - Authentication', function () {
     });
 });
 
-describe('KPI Routes - Without Permission', function () {
-    it('forbids internal user without view kpis permission from sales KPIs', function () {
+describe('KPI Routes - Legacy Redirects', function () {
+    it('redirects legacy sales KPI URL to business plan', function () {
         $user = User::factory()->internal()->create();
 
         $this->actingAs($user)
             ->get(route('kpis.sales'))
-            ->assertForbidden();
+            ->assertRedirect(route('business-plan.index', ['tab' => 'sales-plan']));
     });
 
-    it('forbids internal user without view kpis permission from production KPIs', function () {
+    it('redirects legacy production KPI URL to business plan', function () {
         $user = User::factory()->internal()->create();
 
         $this->actingAs($user)
             ->get(route('kpis.production'))
-            ->assertForbidden();
+            ->assertRedirect(route('business-plan.index', ['tab' => 'production-plan']));
     });
 });
 
 describe('KPI Routes - With Permission', function () {
-    it('allows internal user with view kpis permission to access sales KPIs', function () {
+    it('redirects legacy sales KPI URL for authorized users', function () {
         $user = User::factory()->internal()->create();
         $user->givePermissionTo('view kpis');
 
         $this->actingAs($user)
             ->get(route('kpis.sales'))
-            ->assertSuccessful();
+            ->assertRedirect(route('business-plan.index', ['tab' => 'sales-plan']));
     });
 
-    it('allows internal user with view kpis permission to access production KPIs', function () {
+    it('redirects legacy production KPI URL for authorized users', function () {
         $user = User::factory()->internal()->create();
         $user->givePermissionTo('view kpis');
 
         $this->actingAs($user)
             ->get(route('kpis.production'))
-            ->assertSuccessful();
+            ->assertRedirect(route('business-plan.index', ['tab' => 'production-plan']));
     });
 
-    it('allows full access user to access all KPI routes', function () {
+    it('redirects all legacy KPI routes for full access user', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
 
-        $this->actingAs($user)->get(route('kpis.sales'))->assertSuccessful();
-        $this->actingAs($user)->get(route('kpis.production'))->assertSuccessful();
+        $this->actingAs($user)->get(route('kpis.sales'))->assertRedirect(route('business-plan.index', ['tab' => 'sales-plan']));
+        $this->actingAs($user)->get(route('kpis.production'))->assertRedirect(route('business-plan.index', ['tab' => 'production-plan']));
     });
 });

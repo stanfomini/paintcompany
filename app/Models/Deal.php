@@ -40,6 +40,7 @@ class Deal extends Model
         'expected_end_date',
         'actual_start_date',
         'actual_end_date',
+        'lead_source',
         'sort_order',
     ];
 

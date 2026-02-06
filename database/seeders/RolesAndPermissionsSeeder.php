@@ -94,6 +94,10 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // General admin (legacy)
             'access admin settings',
+
+            // Business Plan
+            'business_plan.view',
+            'business_plan.manage',
         ];
 
         foreach ($permissions as $permission) {
@@ -139,6 +143,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage users', 'manage invitations',
             // Admin
             'access admin settings',
+            // Business Plan
+            'business_plan.view', 'business_plan.manage',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -170,6 +176,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'view kpis', 'edit kpi targets', 'enter kpi actuals',
             // Team
             'manage invitations',
+            // Business Plan
+            'business_plan.view', 'business_plan.manage',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -195,6 +203,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'view roadmap',
             // KPIs
             'view kpis',
+            // Business Plan (view only)
+            'business_plan.view',
         ]);
 
         // Crew Lead - minimal internal access

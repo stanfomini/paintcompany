@@ -10,7 +10,9 @@ use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     // Create permissions
-    Permission::firstOrCreate(['name' => 'view kpis', 'guard_name' => 'web']);
+    foreach (['view kpis', 'edit kpi targets', 'enter kpi actuals', 'manage kpis'] as $perm) {
+        Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
+    }
 
     // Create roles
     $ownerRole = Role::firstOrCreate(['name' => 'owner', 'guard_name' => 'web']);
@@ -34,22 +36,23 @@ it('requires internal user', function () {
         ->assertRedirect();
 });
 
-it('requires view kpis permission', function () {
+it('legacy kpis/sales URL redirects to business plan', function () {
     $user = User::factory()->internal()->create();
-    // No permission assigned
 
+    // Legacy /kpis/sales route redirects to business plan page (permission check is on the target)
     $this->actingAs($user)
         ->get(route('kpis.sales'))
-        ->assertForbidden();
+        ->assertRedirect(route('business-plan.index', ['tab' => 'sales-plan']));
 });
 
-it('allows users with view kpis permission to access', function () {
+it('legacy kpis/sales URL redirects for authorized users', function () {
     $user = User::factory()->internal()->create();
     $user->assignRole('owner');
 
+    // Legacy /kpis/sales redirects to business plan
     $this->actingAs($user)
         ->get(route('kpis.sales'))
-        ->assertOk();
+        ->assertRedirect(route('business-plan.index', ['tab' => 'sales-plan']));
 });
 
 it('displays annual goals', function () {

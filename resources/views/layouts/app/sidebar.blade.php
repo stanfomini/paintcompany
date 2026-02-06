@@ -60,14 +60,9 @@
                             {{ __('Messages') }}
                         </flux:sidebar.item>
                     @endcan
-                    @can('view roadmap')
-                        <flux:sidebar.item icon="map" :href="route('roadmap.index')" :current="request()->routeIs('roadmap.*')" wire:navigate>
-                            {{ __('Roadmap') }}
-                        </flux:sidebar.item>
-                    @endcan
-                    @can('view kpis')
-                        <flux:sidebar.item icon="chart-bar-square" :href="route('kpis.sales')" :current="request()->routeIs('kpis.*')" wire:navigate>
-                            {{ __('KPIs') }}
+                    @can('business_plan.view')
+                        <flux:sidebar.item icon="presentation-chart-bar" :href="route('business-plan.index')" :current="request()->routeIs('business-plan.*')" wire:navigate>
+                            {{ __('Business Plan') }}
                         </flux:sidebar.item>
                     @endcan
                 </flux:sidebar.group>

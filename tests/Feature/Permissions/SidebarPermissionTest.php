@@ -23,7 +23,7 @@ describe('Sidebar - Permission Gating', function () {
         $response->assertDontSee(route('jobs.index'));
         $response->assertDontSee(route('planner.index'));
         $response->assertDontSee(route('chat.index'));
-        $response->assertDontSee(route('roadmap.index'));
+        $response->assertDontSee(route('business-plan.index'));
     });
 
     it('shows only the People link when user has people.view permission', function () {
@@ -44,7 +44,7 @@ describe('Sidebar - Permission Gating', function () {
         $response->assertDontSee(route('jobs.index'));
         $response->assertDontSee(route('planner.index'));
         $response->assertDontSee(route('chat.index'));
-        $response->assertDontSee(route('roadmap.index'));
+        $response->assertDontSee(route('business-plan.index'));
     });
 
     it('shows only permitted sidebar items for a user with selective permissions', function () {
@@ -66,7 +66,7 @@ describe('Sidebar - Permission Gating', function () {
         $response->assertDontSee(route('deals.index'));
         $response->assertDontSee(route('jobs.index'));
         $response->assertDontSee(route('planner.index'));
-        $response->assertDontSee(route('roadmap.index'));
+        $response->assertDontSee(route('business-plan.index'));
     });
 
     it('shows all permission-gated sidebar items for full access user', function () {
@@ -84,6 +84,6 @@ describe('Sidebar - Permission Gating', function () {
         $response->assertSee(route('jobs.index'));
         $response->assertSee(route('planner.index'));
         $response->assertSee(route('chat.index'));
-        $response->assertSee(route('roadmap.index'));
+        $response->assertSee(route('business-plan.index'));
     });
 });

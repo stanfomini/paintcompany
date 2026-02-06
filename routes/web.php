@@ -154,20 +154,18 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         ->middleware('permission:video_call.access')
         ->name('video-call.room');
 
-    // Roadmap routes (permission-based access)
-    Route::livewire('/roadmap', 'roadmap.index')
-        ->name('roadmap.index')
-        ->middleware('permission:view roadmap');
+    // Master Business Plan (unified page with tabs)
+    Route::livewire('/business-plan', 'business-plan.index')
+        ->name('business-plan.index')
+        ->middleware('permission:business_plan.view');
 
-    // KPI routes
-    Route::prefix('kpis')->group(function () {
-        Route::livewire('/sales', 'kpis.sales-plan')
-            ->name('kpis.sales')
-            ->middleware('permission:view kpis');
-        Route::livewire('/production', 'kpis.production-plan')
-            ->name('kpis.production')
-            ->middleware('permission:view kpis');
-    });
+    // Legacy redirects - keep old URLs working
+    Route::get('/roadmap', fn () => redirect()->route('business-plan.index', ['tab' => 'roadmap']))
+        ->name('roadmap.index');
+    Route::get('/kpis/sales', fn () => redirect()->route('business-plan.index', ['tab' => 'sales-plan']))
+        ->name('kpis.sales');
+    Route::get('/kpis/production', fn () => redirect()->route('business-plan.index', ['tab' => 'production-plan']))
+        ->name('kpis.production');
 });
 
 // Video API endpoint (public for player embeds)

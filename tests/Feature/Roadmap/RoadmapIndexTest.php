@@ -12,6 +12,8 @@ beforeEach(function () {
     // Create permissions if they don't exist
     Permission::firstOrCreate(['name' => 'view roadmap', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'edit roadmap', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'business_plan.view', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'business_plan.manage', 'guard_name' => 'web']);
 
     // Create owner role with all permissions
     $ownerRole = Role::firstOrCreate(['name' => 'owner', 'guard_name' => 'web']);
@@ -37,21 +39,23 @@ it('requires internal user type to view roadmap', function () {
         ->assertRedirect();
 });
 
-it('requires view roadmap permission', function () {
+it('legacy roadmap URL redirects to business plan', function () {
     $user = User::factory()->internal()->create();
 
+    // Legacy /roadmap route redirects to business plan page (permission check is on the target)
     $this->actingAs($user)
         ->get(route('roadmap.index'))
-        ->assertForbidden();
+        ->assertRedirect(route('business-plan.index', ['tab' => 'roadmap']));
 });
 
-it('allows users with view roadmap permission to access', function () {
+it('allows users with view roadmap permission to access via business plan', function () {
     $user = User::factory()->internal()->withFullAccess()->create();
     $user->assignRole('owner');
 
+    // Legacy /roadmap redirects to business plan
     $this->actingAs($user)
         ->get(route('roadmap.index'))
-        ->assertOk();
+        ->assertRedirect(route('business-plan.index', ['tab' => 'roadmap']));
 });
 
 it('displays phases from the database', function () {
@@ -297,19 +301,19 @@ it('calculates progress percentage correctly', function () {
     expect($component->get('overallProgress'))->toBe(50.0);
 });
 
-it('shows roadmap link in sidebar for users with permission', function () {
+it('shows business plan link in sidebar for users with permission', function () {
     $user = User::factory()->internal()->withFullAccess()->create();
     $user->assignRole('owner');
 
     $this->actingAs($user)
         ->get(route('dashboard'))
-        ->assertSee('Roadmap');
+        ->assertSee('Business Plan');
 });
 
-it('hides roadmap link in sidebar for users without permission', function () {
+it('hides business plan link in sidebar for users without permission', function () {
     $user = User::factory()->internal()->create();
 
     $this->actingAs($user)
         ->get(route('dashboard'))
-        ->assertDontSee('Roadmap');
+        ->assertDontSee('Business Plan');
 });

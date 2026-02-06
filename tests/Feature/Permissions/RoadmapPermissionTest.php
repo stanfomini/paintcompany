@@ -13,29 +13,29 @@ describe('Roadmap Routes - Authentication', function () {
     });
 });
 
-describe('Roadmap Routes - Without Permission', function () {
-    it('forbids internal user without view roadmap permission from roadmap index', function () {
+describe('Roadmap Routes - Legacy Redirects', function () {
+    it('redirects legacy roadmap URL to business plan', function () {
         $user = User::factory()->internal()->create();
 
         $this->actingAs($user)
             ->get(route('roadmap.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('business-plan.index', ['tab' => 'roadmap']));
     });
 });
 
 describe('Roadmap Routes - With Permission', function () {
-    it('allows internal user with view roadmap permission to access roadmap index', function () {
+    it('redirects legacy roadmap URL for authorized users', function () {
         $user = User::factory()->internal()->create();
         $user->givePermissionTo('view roadmap');
 
         $this->actingAs($user)
             ->get(route('roadmap.index'))
-            ->assertSuccessful();
+            ->assertRedirect(route('business-plan.index', ['tab' => 'roadmap']));
     });
 
-    it('allows full access user to access roadmap', function () {
+    it('redirects legacy roadmap URL for full access user', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
 
-        $this->actingAs($user)->get(route('roadmap.index'))->assertSuccessful();
+        $this->actingAs($user)->get(route('roadmap.index'))->assertRedirect(route('business-plan.index', ['tab' => 'roadmap']));
     });
 });
