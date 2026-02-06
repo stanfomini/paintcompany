@@ -10,6 +10,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('deals.view')) {
+            abort(403);
+        }
+    }
+
     public string $search = '';
 
     public string $assignedToFilter = '';
@@ -149,15 +156,6 @@ new class extends Component {
             ->orderBy('first_name')
             ->orderBy('last_name')
             ->get();
-    }
-
-    public function boot(): void
-    {
-        $user = Auth::user();
-
-        if (! $user || ! $user->isInternal()) {
-            abort(403, 'Only internal users can access the deal pipeline.');
-        }
     }
 
     #[Computed]

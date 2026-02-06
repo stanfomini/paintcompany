@@ -9,9 +9,15 @@
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
             @if (auth()->user()->type === 'internal')
                 <flux:navlist.item :href="route('signature.edit')" wire:navigate>{{ __('Signature') }}</flux:navlist.item>
-                <flux:navlist.item :href="route('company.edit')" wire:navigate>{{ __('Company') }}</flux:navlist.item>
-                <flux:navlist.item :href="route('packages.edit')" wire:navigate>{{ __('Packages') }}</flux:navlist.item>
-                <flux:navlist.item :href="route('allocations.edit')" wire:navigate>{{ __('Allocations') }}</flux:navlist.item>
+                @can('settings.company')
+                    <flux:navlist.item :href="route('company.edit')" wire:navigate>{{ __('Company') }}</flux:navlist.item>
+                @endcan
+                @can('settings.packages')
+                    <flux:navlist.item :href="route('packages.edit')" wire:navigate>{{ __('Packages') }}</flux:navlist.item>
+                @endcan
+                @can('settings.allocations')
+                    <flux:navlist.item :href="route('allocations.edit')" wire:navigate>{{ __('Allocations') }}</flux:navlist.item>
+                @endcan
                 @can('manage roles')
                     <flux:navlist.item :href="route('roles.edit')" wire:navigate>{{ __('Roles & Access') }}</flux:navlist.item>
                 @endcan
@@ -25,7 +31,7 @@
         <flux:heading>{{ $heading ?? '' }}</flux:heading>
         <flux:subheading>{{ $subheading ?? '' }}</flux:subheading>
 
-        <div class="mt-5 w-full max-w-lg">
+        <div class="mt-5 w-full {{ ($fullWidth ?? false) ? 'max-w-5xl' : 'max-w-lg' }}">
             {{ $slot }}
         </div>
     </div>

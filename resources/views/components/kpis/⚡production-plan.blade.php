@@ -44,7 +44,7 @@ new class extends Component
     #[Computed]
     public function settings(): CompanySetting
     {
-        return CompanySetting::getSettings();
+        return CompanySetting::getInstance();
     }
 
     #[Computed]

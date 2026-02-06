@@ -12,6 +12,13 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('planner.view')) {
+            abort(403);
+        }
+    }
+
     public string $view = 'my_day';
 
     public string $typeFilter = 'all';

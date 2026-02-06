@@ -15,45 +15,61 @@
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
-                    @if (auth()->user()?->isInternal())
+                    @can('people.view')
                         <flux:sidebar.item icon="users" :href="route('people.index')" :current="request()->routeIs('people.*') || request()->routeIs('customers.*') || request()->routeIs('agents.*') || request()->routeIs('crews.*')" wire:navigate>
                             {{ __('People') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('properties.view')
                         <flux:sidebar.item icon="home" :href="route('properties.index')" :current="request()->routeIs('properties.*')" wire:navigate>
                             {{ __('Properties') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('deals.view')
                         <flux:sidebar.item icon="briefcase" :href="route('deals.index')" :current="request()->routeIs('deals.*')" wire:navigate>
                             {{ __('Deals') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('estimates.view')
                         <flux:sidebar.item icon="document-text" :href="route('estimates.index')" :current="request()->routeIs('estimates.*')" wire:navigate>
                             {{ __('Estimates') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('jobs.view')
                         <flux:sidebar.item icon="clipboard-document-check" :href="route('jobs.index')" :current="request()->routeIs('jobs.*')" wire:navigate>
                             {{ __('Jobs') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('planner.view')
                         <flux:sidebar.item icon="check-circle" :href="route('planner.index')" :current="request()->routeIs('planner.*')" wire:navigate>
                             {{ __('Planner') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('agent_listings.view')
                         <flux:sidebar.item icon="building-office" :href="route('agent-listings.index')" :current="request()->routeIs('agent-listings.*')" wire:navigate>
                             {{ __('Agent Listings') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('production_rates.view')
                         <flux:sidebar.item icon="chart-bar" :href="route('production-rates.index')" :current="request()->routeIs('production-rates.*')" wire:navigate>
                             {{ __('Production Rates') }}
                         </flux:sidebar.item>
+                    @endcan
+                    @can('chat.access')
                         <flux:sidebar.item icon="chat-bubble-left-right" :href="route('chat.index')" :current="request()->routeIs('chat.*')" wire:navigate>
                             {{ __('Messages') }}
                         </flux:sidebar.item>
-                        @can('view roadmap')
-                            <flux:sidebar.item icon="map" :href="route('roadmap.index')" :current="request()->routeIs('roadmap.*')" wire:navigate>
-                                {{ __('Roadmap') }}
-                            </flux:sidebar.item>
-                        @endcan
-                        @can('view kpis')
-                            <flux:sidebar.item icon="chart-bar-square" :href="route('kpis.sales')" :current="request()->routeIs('kpis.*')" wire:navigate>
-                                {{ __('KPIs') }}
-                            </flux:sidebar.item>
-                        @endcan
-                    @endif
+                    @endcan
+                    @can('view roadmap')
+                        <flux:sidebar.item icon="map" :href="route('roadmap.index')" :current="request()->routeIs('roadmap.*')" wire:navigate>
+                            {{ __('Roadmap') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('view kpis')
+                        <flux:sidebar.item icon="chart-bar-square" :href="route('kpis.sales')" :current="request()->routeIs('kpis.*')" wire:navigate>
+                            {{ __('KPIs') }}
+                        </flux:sidebar.item>
+                    @endcan
                 </flux:sidebar.group>
 
                 @if (auth()->user() && app(\App\Services\InvitationService::class)->canSendInvitations(auth()->user()))
@@ -64,13 +80,13 @@
                     </flux:sidebar.group>
                 @endif
 
-                @if (auth()->user()?->isInternal())
+                @can('settings.company')
                     <flux:sidebar.group :heading="__('Settings')" class="grid">
                         <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
                             {{ __('Company') }}
                         </flux:sidebar.item>
                     </flux:sidebar.group>
-                @endif
+                @endcan
             </flux:sidebar.nav>
 
             <flux:spacer />

@@ -18,7 +18,7 @@ class SalesPlanGoalFactory extends Factory
     public function definition(): array
     {
         return [
-            'company_setting_id' => CompanySetting::factory(),
+            'company_setting_id' => CompanySetting::getInstance()->id,
             'year' => now()->year,
             'annual_revenue_goal' => fake()->randomElement([500000, 750000, 1000000, 1500000]),
             'avg_job_size' => fake()->randomElement([3000, 4000, 5000, 6000]),

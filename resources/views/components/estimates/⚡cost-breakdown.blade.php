@@ -19,6 +19,10 @@ new class extends Component {
 
     public function boot(EstimateCostBreakdownService $service): void
     {
+        if (! auth()->user()?->can('financials.view_cost_breakdown')) {
+            abort(403);
+        }
+
         $this->service = $service;
     }
 

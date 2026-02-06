@@ -7,6 +7,13 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('financials.view_painter_breakdown')) {
+            abort(403);
+        }
+    }
+
     public Estimate $estimate;
 
     public array $expandedAreas = [];

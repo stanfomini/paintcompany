@@ -9,6 +9,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('jobs.view')) {
+            abort(403);
+        }
+    }
+
     public string $search = '';
 
     public string $assignedCrewFilter = '';
@@ -128,15 +135,6 @@ new class extends Component {
             ->where('is_active', true)
             ->orderBy('name')
             ->get();
-    }
-
-    public function boot(): void
-    {
-        $user = Auth::user();
-
-        if (! $user || ! $user->isInternal()) {
-            abort(403, 'Only internal users can access job management.');
-        }
     }
 
     #[Computed]

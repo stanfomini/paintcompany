@@ -18,9 +18,9 @@ class ProductionPlanWeekFactory extends Factory
     public function definition(): array
     {
         return [
-            'company_setting_id' => CompanySetting::factory(),
+            'company_setting_id' => CompanySetting::getInstance()->id,
             'year' => now()->year,
-            'week_number' => fake()->numberBetween(1, 52),
+            'week_number' => fake()->unique()->numberBetween(1, 52),
             'revenue_plan' => fake()->randomFloat(2, 15000, 40000),
             'revenue_actual' => fake()->randomFloat(2, 10000, 50000),
             'jobs_completed_plan' => fake()->numberBetween(2, 5),

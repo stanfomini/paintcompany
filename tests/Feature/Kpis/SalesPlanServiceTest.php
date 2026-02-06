@@ -10,7 +10,7 @@ use Carbon\Carbon;
 
 beforeEach(function () {
     $this->settings = CompanySetting::getInstance();
-    $this->service = new SalesPlanService();
+    $this->service = new SalesPlanService;
 });
 
 it('creates goal for year if not exists', function () {
@@ -54,29 +54,32 @@ it('returns all weeks for year', function () {
 });
 
 it('calculates weekly actuals from deals and estimates', function () {
-    // Set a specific week
-    $weekStart = Carbon::parse('2026-02-02'); // Week 6 of 2026
+    // Use a different year to avoid conflicts with current test date
+    $weekStart = Carbon::parse('2025-02-03'); // Week 6 of 2025
     $weekEnd = $weekStart->copy()->endOfWeek();
 
     // Create deals in this week
-    Deal::factory()->count(3)->create([
+    $deals = Deal::factory()->count(3)->create([
         'created_at' => $weekStart->copy()->addDay(),
     ]);
 
-    // Create estimates in this week
+    // Create estimates in this week (reuse the deals we created)
     Estimate::factory()->count(2)->create([
+        'deal_id' => $deals->first()->id,
         'status' => 'draft',
         'created_at' => $weekStart->copy()->addDays(2),
     ]);
 
     // Create accepted estimates in this week
     Estimate::factory()->count(2)->create([
+        'deal_id' => $deals->last()->id,
         'status' => 'accepted',
+        'created_at' => $weekStart->copy()->addDays(3),
         'accepted_at' => $weekStart->copy()->addDays(3),
         'subtotal' => 5000,
     ]);
 
-    $actuals = $this->service->calculateWeeklyActuals(6, 2026);
+    $actuals = $this->service->calculateWeeklyActuals(6, 2025);
 
     expect($actuals['leads'])->toBe(3)
         ->and($actuals['estimates'])->toBe(4) // 2 draft + 2 accepted

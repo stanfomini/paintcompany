@@ -5,6 +5,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('properties.view')) {
+            abort(403);
+        }
+    }
+
     public Property $property;
 
     public function mount(Property $property): void

@@ -38,8 +38,7 @@ it('requires internal user type to view roadmap', function () {
 });
 
 it('requires view roadmap permission', function () {
-    $user = User::factory()->internal()->withFullAccess()->create();
-    // No permissions assigned
+    $user = User::factory()->internal()->create();
 
     $this->actingAs($user)
         ->get(route('roadmap.index'))
@@ -207,8 +206,8 @@ it('cycles status from done back to not_started', function () {
 });
 
 it('prevents users without edit permission from changing status', function () {
-    $user = User::factory()->internal()->withFullAccess()->create();
-    $user->assignRole('estimator'); // Only has view permission
+    $user = User::factory()->internal()->create();
+    $user->assignRole('estimator'); // Only has view permission, not edit
 
     $phase = RoadmapPhase::factory()->create();
     $category = RoadmapCategory::factory()->create(['roadmap_phase_id' => $phase->id]);
@@ -308,8 +307,7 @@ it('shows roadmap link in sidebar for users with permission', function () {
 });
 
 it('hides roadmap link in sidebar for users without permission', function () {
-    $user = User::factory()->internal()->withFullAccess()->create();
-    // No roles or permissions
+    $user = User::factory()->internal()->create();
 
     $this->actingAs($user)
         ->get(route('dashboard'))

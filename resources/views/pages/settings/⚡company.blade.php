@@ -5,6 +5,13 @@ use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('settings.company')) {
+            abort(403);
+        }
+    }
+
     // Company Information
     public string $company_name = '';
     public string $company_email = '';

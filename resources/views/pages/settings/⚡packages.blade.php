@@ -6,6 +6,13 @@ use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('settings.packages')) {
+            abort(403);
+        }
+    }
+
     /** @var array<int, array> */
     public array $packages = [];
 

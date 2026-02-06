@@ -9,6 +9,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('estimates.view')) {
+            abort(403);
+        }
+    }
+
     public Estimate $estimate;
 
     public bool $showSendModal = false;

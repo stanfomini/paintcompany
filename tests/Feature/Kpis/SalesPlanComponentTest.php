@@ -28,9 +28,10 @@ it('requires authentication', function () {
 it('requires internal user', function () {
     $customer = User::factory()->customer()->create();
 
+    // Customer type mismatch results in redirect
     $this->actingAs($customer)
         ->get(route('kpis.sales'))
-        ->assertForbidden();
+        ->assertRedirect();
 });
 
 it('requires view kpis permission', function () {

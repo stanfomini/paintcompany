@@ -10,6 +10,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('jobs.view')) {
+            abort(403);
+        }
+    }
+
     public Job $job;
 
     public function mount(Job $job): void
@@ -54,15 +61,6 @@ new class extends Component {
             ->latest()
             ->limit(20)
             ->get();
-    }
-
-    public function boot(): void
-    {
-        $user = Auth::user();
-
-        if (! $user || ! $user->isInternal()) {
-            abort(403);
-        }
     }
 
     #[On('job-updated')]

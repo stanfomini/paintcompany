@@ -11,6 +11,13 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('estimates.view')) {
+            abort(403);
+        }
+    }
+
     #[Url]
     public string $search = '';
 

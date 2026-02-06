@@ -8,6 +8,13 @@ use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('settings.allocations')) {
+            abort(403);
+        }
+    }
+
     // Form state for adding/editing allocations
     public bool $showModal = false;
     public ?int $editingId = null;

@@ -5,6 +5,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('deals.view')) {
+            abort(403);
+        }
+    }
+
     public Deal $deal;
 
     public function mount(Deal $deal): void

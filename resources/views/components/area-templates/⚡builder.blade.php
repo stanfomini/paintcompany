@@ -16,6 +16,13 @@ use Livewire\Component;
 
 new class extends Component
 {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('production_rates.manage')) {
+            abort(403);
+        }
+    }
+
     public ?EstimateTemplate $template = null;
 
     public bool $isEditing = false;

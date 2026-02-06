@@ -12,6 +12,13 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('production_rates.view')) {
+            abort(403);
+        }
+    }
+
     #[Url]
     public string $search = '';
 

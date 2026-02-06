@@ -9,6 +9,13 @@ use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('chat.access')) {
+            abort(403);
+        }
+    }
+
     public string $search = '';
 
     public string $filter = 'all';

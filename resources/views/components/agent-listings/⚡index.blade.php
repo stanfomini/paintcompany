@@ -9,6 +9,13 @@ use Livewire\WithPagination;
 new class extends Component {
     use WithPagination;
 
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('agent_listings.view')) {
+            abort(403);
+        }
+    }
+
     public string $search = '';
 
     public string $statusFilter = 'all';

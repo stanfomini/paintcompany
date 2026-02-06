@@ -10,6 +10,7 @@ beforeEach(function () {
     Permission::firstOrCreate(['name' => 'manage roles', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'view roadmap', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'edit roadmap', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'settings.company', 'guard_name' => 'web']);
 
     // Create all roles
     $ownerRole = Role::firstOrCreate(['name' => 'owner', 'guard_name' => 'web']);
@@ -34,8 +35,7 @@ it('requires authentication to access roles page', function () {
 });
 
 it('requires manage roles permission to access', function () {
-    $user = User::factory()->internal()->withFullAccess()->create();
-    // No permissions
+    $user = User::factory()->internal()->create();
 
     $this->actingAs($user)
         ->get(route('roles.edit'))
@@ -214,8 +214,9 @@ it('shows roles link in settings nav for users with permission', function () {
 });
 
 it('hides roles link in settings nav for users without permission', function () {
-    $user = User::factory()->internal()->withFullAccess()->create();
-    // No manage roles permission
+    $user = User::factory()->internal()->create();
+    // Give settings.company so they can access the page, but NOT manage roles
+    $user->givePermissionTo('settings.company');
 
     $this->actingAs($user)
         ->get(route('company.edit'))

@@ -28,7 +28,7 @@ class EstimateFactory extends Factory
         return [
             'deal_id' => Deal::factory(),
             'created_by' => User::factory()->internal(),
-            'estimate_number' => fn () => Estimate::generateEstimateNumber(),
+            'estimate_number' => fn () => 'EST-'.date('Y').'-'.str_pad(fake()->unique()->numberBetween(1, 99999), 5, '0', STR_PAD_LEFT),
             'title' => fake()->sentence(4),
             'description' => fake()->optional(0.5)->paragraph(),
             'status' => 'draft',
