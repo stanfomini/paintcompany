@@ -5,9 +5,10 @@ use App\Models\Job;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-new class extends Component {
+new #[Layout('components.layouts.customer', ['title' => 'My Jobs'])] class extends Component {
     public function boot(): void
     {
         $user = Auth::guard('customer')->user();

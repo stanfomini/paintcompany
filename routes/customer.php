@@ -42,6 +42,10 @@ Route::middleware(['auth:customer', 'auth.customer'])->group(function () {
     Route::livewire('jobs', 'customer.jobs-index')->name('jobs.index');
     Route::livewire('jobs/{job}', 'customer.job-progress')->name('jobs.show');
 
+    // Invoices
+    Route::livewire('invoices', 'customer.invoices.index')->name('invoices.index');
+    Route::livewire('invoices/{invoice}', 'customer.invoices.show')->name('invoices.show');
+
     // Chat / Messages
     Route::livewire('chat', 'customer.chat.thread-list')->name('chat.index');
     Route::livewire('chat/{thread}', 'customer.chat.thread-view')->name('chat.show');

@@ -36,7 +36,7 @@
             <flux:navlist.item icon="clipboard-document-check" href="{{ route('customer.jobs.index') }}" :current="request()->routeIs('customer.jobs.*')">
                 {{ __('My Jobs') }}
             </flux:navlist.item>
-            <flux:navlist.item icon="credit-card" href="#" :current="false">
+            <flux:navlist.item icon="credit-card" href="{{ route('customer.invoices.index') }}" :current="request()->routeIs('customer.invoices.*')">
                 {{ __('Invoices') }}
             </flux:navlist.item>
         </flux:navlist>
