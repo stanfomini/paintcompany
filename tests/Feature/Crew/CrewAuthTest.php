@@ -122,12 +122,12 @@ it('redirects to crew login when not authenticated', function () {
         ->assertRedirect(route('crew.login'));
 });
 
-it('denies non-crew user access to crew routes', function () {
+it('redirects non-crew user away from crew routes', function () {
     $user = User::factory()->internal()->withFullAccess()->create();
 
     $this->actingAs($user, 'crew')
         ->get(route('crew.dashboard'))
-        ->assertForbidden();
+        ->assertRedirect();
 });
 
 it('has isCrew method on User model', function () {

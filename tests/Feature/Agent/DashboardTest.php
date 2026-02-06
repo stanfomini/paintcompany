@@ -22,20 +22,20 @@ describe('Agent Dashboard Access', function () {
             ->assertSeeLivewire('agent.dashboard');
     });
 
-    it('forbids internal users from accessing agent dashboard', function () {
+    it('redirects internal users away from agent dashboard', function () {
         $internalUser = User::factory()->internal()->withFullAccess()->create();
 
         $this->actingAs($internalUser, 'agent')
             ->get(route('agent.dashboard'))
-            ->assertForbidden();
+            ->assertRedirect();
     });
 
-    it('forbids customer users from accessing agent dashboard', function () {
+    it('redirects customer users away from agent dashboard', function () {
         $customer = User::factory()->customer()->create();
 
         $this->actingAs($customer, 'agent')
             ->get(route('agent.dashboard'))
-            ->assertForbidden();
+            ->assertRedirect();
     });
 });
 

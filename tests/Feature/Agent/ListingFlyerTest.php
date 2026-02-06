@@ -39,14 +39,14 @@ describe('Listing Flyer Access', function () {
             ->assertRedirect(route('agent.login'));
     });
 
-    it('forbids internal users from accessing agent flyer route', function () {
+    it('redirects internal users away from agent flyer route', function () {
         $internalUser = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
         $listing = AgentListing::factory()->forAgent($agent)->create();
 
         $this->actingAs($internalUser, 'agent')
             ->get(route('agent.listings.flyer', $listing))
-            ->assertForbidden();
+            ->assertRedirect();
     });
 });
 

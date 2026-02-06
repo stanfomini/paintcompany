@@ -33,19 +33,19 @@ describe('Job Routes', function () {
             ->assertRedirect();
     });
 
-    it('blocks customer users from kanban', function () {
+    it('redirects customer users away from kanban', function () {
         $user = User::factory()->customer()->create();
 
         $this->actingAs($user)
             ->get(route('jobs.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('customer.dashboard'));
     });
 
-    it('blocks agent users from kanban', function () {
+    it('redirects agent users away from kanban', function () {
         $user = User::factory()->agent()->create();
 
         $this->actingAs($user)
             ->get(route('jobs.index'))
-            ->assertForbidden();
+            ->assertRedirect(route('agent.dashboard'));
     });
 });
