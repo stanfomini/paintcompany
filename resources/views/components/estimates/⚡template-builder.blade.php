@@ -137,7 +137,7 @@ new class extends Component {
         $this->projectScope = 'interior';
         $this->scopeFilter = 'interior';
 
-        if ($estimate && $estimate->exists && $estimate->isTemplateMode()) {
+        if ($estimate && $estimate->exists) {
             $this->estimate = $estimate;
             $this->deal = $estimate->deal;
             $this->isEditing = true;
@@ -163,11 +163,13 @@ new class extends Component {
                 $this->paintMode = 'single';
             }
 
-            // Load existing template usages
-            $this->loadExistingTemplateUsages();
+            // Load existing template usages (template mode only)
+            if ($estimate->isTemplateMode()) {
+                $this->loadExistingTemplateUsages();
 
-            // Detect project scope from existing templates
-            $this->detectProjectScopeFromTemplates();
+                // Detect project scope from existing templates
+                $this->detectProjectScopeFromTemplates();
+            }
         } else {
             $this->deal = $deal;
 
