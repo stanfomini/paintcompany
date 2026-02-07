@@ -3,6 +3,7 @@
 use App\Models\Activity;
 use App\Models\ChatThread;
 use App\Models\Customer;
+use App\Models\Property;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -32,12 +33,18 @@ new class extends Component {
 
     public string $crewSearch = '';
 
+    public string $propertySearch = '';
+
     // Tab-specific status filters
     public string $customerStatusFilter = 'all';
 
     public string $agentStatusFilter = 'all';
 
     public string $crewStatusFilter = 'all';
+
+    public string $propertyTypeFilter = 'all';
+
+    public string $propertySourceFilter = 'all';
 
     public int $perPage = 15;
 
@@ -63,6 +70,11 @@ new class extends Component {
     }
 
     public function updatedCrewSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedPropertySearch(): void
     {
         $this->resetPage();
     }
@@ -246,10 +258,24 @@ new class extends Component {
                 'url' => route('crews.show', $c),
             ]);
 
+        // Search properties
+        $properties = Property::query()
+            ->search($search)
+            ->with('customer')
+            ->limit(5)
+            ->get()
+            ->map(fn ($p) => [
+                'id' => $p->id,
+                'name' => $p->address,
+                'subtitle' => $p->customer?->full_name ?? ($p->isListing() ? 'Agent Listing' : 'No customer'),
+                'url' => route('properties.show', $p),
+            ]);
+
         return [
             'customers' => $customers,
             'agents' => $agents,
             'crews' => $crews,
+            'properties' => $properties,
         ];
     }
 
@@ -309,6 +335,17 @@ new class extends Component {
             ->latest()
             ->paginate($this->perPage);
     }
+    #[Computed]
+    public function properties()
+    {
+        return Property::query()
+            ->with(['customer', 'agent'])
+            ->when($this->propertySearch, fn ($q) => $q->search($this->propertySearch))
+            ->when($this->propertyTypeFilter !== 'all', fn ($q) => $q->ofType($this->propertyTypeFilter))
+            ->when($this->propertySourceFilter !== 'all', fn ($q) => $q->ofSource($this->propertySourceFilter))
+            ->latest()
+            ->paginate($this->perPage);
+    }
 }; ?>
 
 <div>
@@ -330,7 +367,7 @@ new class extends Component {
         @if ($globalSearch && $this->globalSearchResults)
             <!-- Global Search Results -->
             <div class="space-y-6">
-                @foreach (['customers' => 'Customers', 'agents' => 'Agents', 'crews' => 'Crews'] as $key => $label)
+                @foreach (['customers' => 'Customers', 'agents' => 'Agents', 'crews' => 'Crews', 'properties' => 'Properties'] as $key => $label)
                     @if ($this->globalSearchResults[$key]->count() > 0)
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg">
                             <div class="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex justify-between items-center">
@@ -354,7 +391,7 @@ new class extends Component {
                     @endif
                 @endforeach
 
-                @if ($this->globalSearchResults['customers']->isEmpty() && $this->globalSearchResults['agents']->isEmpty() && $this->globalSearchResults['crews']->isEmpty())
+                @if (collect($this->globalSearchResults)->every(fn ($r) => $r->isEmpty()))
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="magnifying-glass" class="mx-auto h-12 w-12 text-zinc-400" />
                         <flux:heading size="sm" class="mt-4">No results found</flux:heading>
@@ -389,6 +426,12 @@ new class extends Component {
                         class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'crews' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                     >
                         Crews
+                    </button>
+                    <button
+                        wire:click="setTab('properties')"
+                        class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'properties' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
+                    >
+                        Properties
                     </button>
                 </nav>
             </div>
@@ -684,6 +727,94 @@ new class extends Component {
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="user-group" class="mx-auto h-12 w-12 text-zinc-400" />
                         <flux:heading size="sm" class="mt-4">No crews found</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">Try adjusting your search or filter.</flux:text>
+                    </div>
+                @endif
+            @endif
+
+            @if ($activeTab === 'properties')
+                <div class="flex flex-col sm:flex-row gap-4 mb-6">
+                    <div class="flex-1">
+                        <flux:input
+                            wire:model.live.debounce.300ms="propertySearch"
+                            type="search"
+                            placeholder="Search properties by address, city, customer..."
+                            icon="magnifying-glass"
+                        />
+                    </div>
+                    <div class="sm:w-40">
+                        <flux:select wire:model.live="propertyTypeFilter">
+                            <option value="all">All Types</option>
+                            <option value="residential">Residential</option>
+                            <option value="commercial">Commercial</option>
+                            <option value="industrial">Industrial</option>
+                        </flux:select>
+                    </div>
+                    <div class="sm:w-40">
+                        <flux:select wire:model.live="propertySourceFilter">
+                            <option value="all">All Sources</option>
+                            <option value="direct">Direct</option>
+                            <option value="agent_referral">Agent Referral</option>
+                            <option value="open_house">Open House</option>
+                            <option value="manual">Manual</option>
+                        </flux:select>
+                    </div>
+                </div>
+
+                @if ($this->properties->count() > 0)
+                    <div class="overflow-x-auto border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                        <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
+                            <thead class="bg-zinc-50 dark:bg-zinc-800">
+                                <tr>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Address</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">City/State</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Customer</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Type</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Source</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Agent</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-700">
+                                @foreach ($this->properties as $property)
+                                    <tr wire:key="property-{{ $property->id }}">
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <flux:text class="font-medium">{{ $property->address }}</flux:text>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <flux:text>{{ $property->city }}, {{ $property->state }}</flux:text>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <flux:text>{{ $property->customer?->full_name ?? '-' }}</flux:text>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <flux:badge size="sm" color="zinc">{{ ucfirst($property->type) }}</flux:badge>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            @if ($property->source)
+                                                <flux:text class="text-sm">{{ App\Models\Property::SOURCES[$property->source] ?? $property->source }}</flux:text>
+                                            @else
+                                                <flux:text class="text-zinc-400">-</flux:text>
+                                            @endif
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap">
+                                            <flux:text>{{ $property->agent?->name ?? '-' }}</flux:text>
+                                        </td>
+                                        <td class="px-6 py-4 whitespace-nowrap text-right">
+                                            <flux:button variant="ghost" size="sm" icon="eye" :href="route('properties.show', $property)" wire:navigate />
+                                        </td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="mt-4">
+                        {{ $this->properties->links() }}
+                    </div>
+                @else
+                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+                        <flux:icon name="home" class="mx-auto h-12 w-12 text-zinc-400" />
+                        <flux:heading size="sm" class="mt-4">No properties found</flux:heading>
                         <flux:text class="mt-2 text-zinc-500">Try adjusting your search or filter.</flux:text>
                     </div>
                 @endif

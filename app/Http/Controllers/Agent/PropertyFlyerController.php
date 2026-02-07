@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\Agent;
 
 use App\Http\Controllers\Controller;
-use App\Models\AgentListing;
+use App\Models\Property;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -12,19 +12,19 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 use Illuminate\Support\Str;
 
-class AgentListingFlyerController extends Controller
+class PropertyFlyerController extends Controller
 {
-    public function download(AgentListing $agentListing): Response
+    public function download(Property $property): Response
     {
         // Authorize: Only the agent who owns the listing can download
-        if ($agentListing->agent_id !== auth('agent')->id()) {
+        if ($property->agent_id !== auth('agent')->id()) {
             abort(403, 'Unauthorized access to this listing flyer.');
         }
 
-        $agentListing->load(['agent.agentProfile']);
+        $property->load(['agent.agentProfile']);
 
         // Generate the sign-up URL
-        $signupUrl = url("/open-house/{$agentListing->id}");
+        $signupUrl = url("/open-house/{$property->id}");
 
         // Generate QR code SVG
         $renderer = new ImageRenderer(
@@ -35,14 +35,14 @@ class AgentListingFlyerController extends Controller
         $qrCodeSvg = $writer->writeString($signupUrl);
 
         $pdf = Pdf::loadView('pdf.open-house-flyer', [
-            'listing' => $agentListing,
-            'agent' => $agentListing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => $qrCodeSvg,
             'signupUrl' => $signupUrl,
         ]);
 
         // Generate filename based on address
-        $addressSlug = Str::slug($agentListing->address);
+        $addressSlug = Str::slug($property->address);
         $filename = "open-house-flyer-{$addressSlug}.pdf";
 
         return $pdf->download($filename);

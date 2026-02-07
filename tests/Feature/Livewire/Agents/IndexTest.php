@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\AgentListing;
 use App\Models\Customer;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -174,7 +174,7 @@ describe('Agent Index component', function () {
     it('displays listings count', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create(['name' => 'Test Agent']);
-        AgentListing::factory()->count(3)->forAgent($agent)->create();
+        Property::factory()->agentListing()->count(3)->forAgent($agent)->create();
 
         Livewire::actingAs($user)
             ->test('agents.index')

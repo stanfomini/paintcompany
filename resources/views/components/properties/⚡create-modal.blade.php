@@ -2,6 +2,7 @@
 
 use App\Models\Customer;
 use App\Models\Property;
+use App\Models\User;
 use App\Services\ListingScraperService;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -27,6 +28,15 @@ new class extends Component {
     public string $yearBuilt = '';
 
     public string $notes = '';
+
+    // Optional agent/listing fields
+    public string $agentId = '';
+
+    public string $source = '';
+
+    public string $listingStatus = '';
+
+    public string $listingPrice = '';
 
     public bool $showModal = false;
 
@@ -61,6 +71,10 @@ new class extends Component {
             'squareFootage',
             'yearBuilt',
             'notes',
+            'agentId',
+            'source',
+            'listingStatus',
+            'listingPrice',
             'importUrl',
             'importError',
             'importSource',
@@ -156,10 +170,19 @@ new class extends Component {
             ->get(['id', 'first_name', 'last_name']);
     }
 
+    #[Computed]
+    public function agents(): Collection
+    {
+        return User::where('type', 'agent')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+    }
+
     public function save(): void
     {
         $this->validate([
-            'customerId' => ['required', 'exists:customers,id'],
+            'customerId' => ['nullable', 'exists:customers,id'],
             'address' => ['required', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'city' => ['required', 'string', 'max:100'],
@@ -169,10 +192,14 @@ new class extends Component {
             'squareFootage' => ['nullable', 'integer', 'min:1'],
             'yearBuilt' => ['nullable', 'integer', 'min:1800', 'max:'.date('Y')],
             'notes' => ['nullable', 'string', 'max:5000'],
+            'agentId' => ['nullable', 'exists:users,id'],
+            'source' => ['nullable', 'string', 'in:direct,agent_referral,open_house,manual'],
+            'listingStatus' => ['nullable', 'string', 'in:active,pending,sold,inactive'],
+            'listingPrice' => ['nullable', 'numeric', 'min:0'],
         ]);
 
         Property::create([
-            'customer_id' => $this->customerId,
+            'customer_id' => $this->customerId ?: null,
             'name' => $this->name ?: null,
             'address' => $this->address,
             'city' => $this->city,
@@ -182,6 +209,10 @@ new class extends Component {
             'square_footage' => $this->squareFootage ?: null,
             'year_built' => $this->yearBuilt ?: null,
             'notes' => $this->notes ?: null,
+            'agent_id' => $this->agentId ?: null,
+            'source' => $this->source ?: null,
+            'listing_status' => $this->listingStatus ?: null,
+            'listing_price' => $this->listingPrice ?: null,
         ]);
 
         $this->dispatch('property-created');
@@ -235,13 +266,56 @@ new class extends Component {
                 <flux:field>
                     <flux:label>Customer</flux:label>
                     <flux:select wire:model="customerId">
-                        <option value="">Select a customer...</option>
+                        <option value="">None (agent listing)</option>
                         @foreach ($this->customers as $customer)
                             <option value="{{ $customer->id }}">{{ $customer->first_name }} {{ $customer->last_name }}</option>
                         @endforeach
                     </flux:select>
                     <flux:error name="customerId" />
                 </flux:field>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>Agent (optional)</flux:label>
+                        <flux:select wire:model="agentId">
+                            <option value="">None</option>
+                            @foreach ($this->agents as $agent)
+                                <option value="{{ $agent->id }}">{{ $agent->name }}</option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="agentId" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>Source (optional)</flux:label>
+                        <flux:select wire:model="source">
+                            <option value="">None</option>
+                            @foreach (\App\Models\Property::SOURCES as $key => $label)
+                                <option value="{{ $key }}">{{ $label }}</option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="source" />
+                    </flux:field>
+                </div>
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>Listing Status (optional)</flux:label>
+                        <flux:select wire:model="listingStatus">
+                            <option value="">None</option>
+                            @foreach (\App\Models\Property::LISTING_STATUSES as $key => $label)
+                                <option value="{{ $key }}">{{ $label }}</option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="listingStatus" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>Listing Price (optional)</flux:label>
+                        <flux:input wire:model="listingPrice" type="number" step="0.01" placeholder="0.00" />
+                        <flux:error name="listingPrice" />
+                    </flux:field>
+                </div>
 
                 <flux:field>
                     <flux:label>Property Name (optional)</flux:label>

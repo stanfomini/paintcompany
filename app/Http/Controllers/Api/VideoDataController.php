@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\AgentListing;
 use App\Models\Property;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -27,17 +26,17 @@ class VideoDataController extends Controller
     }
 
     /**
-     * Get video data for an agent listing.
+     * Get video data for an agent listing (now a Property with agent_id).
      */
     protected function getListingData(int $id): JsonResponse
     {
-        $listing = AgentListing::with(['photos', 'agent'])->find($id);
+        $property = Property::with(['photos', 'agent'])->whereNotNull('agent_id')->find($id);
 
-        if (! $listing) {
+        if (! $property) {
             return response()->json(['error' => 'Listing not found.'], 404);
         }
 
-        $photos = $listing->photos->map(fn ($photo) => [
+        $photos = $property->photos->map(fn ($photo) => [
             'url' => asset('storage/'.$photo->path),
             'caption' => $photo->caption,
             'category' => $photo->category,
@@ -45,17 +44,15 @@ class VideoDataController extends Controller
 
         return response()->json([
             'type' => 'listing',
-            'id' => $listing->id,
-            'address' => $listing->address,
-            'city' => $listing->city,
-            'state' => $listing->state,
-            'zip' => $listing->zip,
+            'id' => $property->id,
+            'address' => $property->address,
+            'city' => $property->city,
+            'state' => $property->state,
+            'zip' => $property->zip,
             'photos' => $photos,
-            // Estimate placeholder - will be populated when estimates are ready
             'estimate' => null,
-            'scopeOfWork' => $listing->description ?? 'Professional painting services for your property.',
+            'scopeOfWork' => $property->description ?? 'Professional painting services for your property.',
             'completionWeeks' => 3,
-            // Branding - can be customized per company
             'companyName' => config('app.name', 'Apex Negotiations'),
             'companyPhone' => config('services.company.phone', '(555) 123-4567'),
             'companyTagline' => config('services.company.tagline', 'Professional Painting Services'),
@@ -89,11 +86,9 @@ class VideoDataController extends Controller
             'state' => $property->state,
             'zip' => $property->zip,
             'photos' => $photos,
-            // Estimate placeholder - will be populated when estimates are ready
             'estimate' => null,
             'scopeOfWork' => $property->notes ?? 'Professional painting services for your property.',
             'completionWeeks' => 3,
-            // Branding
             'companyName' => config('app.name', 'Apex Negotiations'),
             'companyPhone' => config('services.company.phone', '(555) 123-4567'),
             'companyTagline' => config('services.company.tagline', 'Professional Painting Services'),

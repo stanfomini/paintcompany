@@ -24,7 +24,7 @@ new class extends Component {
 
         $this->user = $user->load([
             'agentProfile',
-            'agentListings',
+            'agentProperties',
             'referredCustomers',
         ]);
     }
@@ -61,7 +61,7 @@ new class extends Component {
         <div class="grid gap-4 md:grid-cols-3 mb-6">
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                 <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Total Listings</flux:text>
-                <flux:heading size="xl" class="mt-1">{{ $user->agentListings->count() }}</flux:heading>
+                <flux:heading size="xl" class="mt-1">{{ $user->agentProperties->count() }}</flux:heading>
             </div>
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                 <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customers Referred</flux:text>
@@ -69,7 +69,7 @@ new class extends Component {
             </div>
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                 <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Active Listings</flux:text>
-                <flux:heading size="xl" class="mt-1">{{ $user->agentListings->where('status', 'active')->count() }}</flux:heading>
+                <flux:heading size="xl" class="mt-1">{{ $user->agentProperties->where('status', 'active')->count() }}</flux:heading>
             </div>
         </div>
 
@@ -86,7 +86,7 @@ new class extends Component {
                     wire:click="setTab('listings')"
                     class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'listings' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                 >
-                    Listings ({{ $user->agentListings->count() }})
+                    Listings ({{ $user->agentProperties->count() }})
                 </button>
                 <button
                     wire:click="setTab('customers')"
@@ -146,7 +146,7 @@ new class extends Component {
         @endif
 
         @if ($activeTab === 'listings')
-            @if ($user->agentListings->count() > 0)
+            @if ($user->agentProperties->count() > 0)
                 <div class="overflow-x-auto border border-zinc-200 dark:border-zinc-700 rounded-lg">
                     <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                         <thead class="bg-zinc-50 dark:bg-zinc-800">
@@ -166,7 +166,7 @@ new class extends Component {
                             </tr>
                         </thead>
                         <tbody class="bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-700">
-                            @foreach ($user->agentListings as $listing)
+                            @foreach ($user->agentProperties as $listing)
                                 <tr wire:key="listing-{{ $listing->id }}">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <flux:text class="font-medium">{{ $listing->address }}</flux:text>

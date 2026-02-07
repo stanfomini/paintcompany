@@ -50,6 +50,11 @@ class BudgetCategorySeeder extends Seeder
                 'W/C & Insurance',
                 'Materials',
                 'Sales Commissions',
+                'Credit Card Processing Fee',
+                'Agent Referral Commission',
+                'Exterior Equipment Reserve',
+                'Interior Protection & Supplies',
+                'Spray Equipment & Materials',
             ],
             BudgetCategory::SECTION_VEHICLE_EXPENSE => [
                 'Lease',

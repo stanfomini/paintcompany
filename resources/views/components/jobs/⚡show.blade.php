@@ -464,6 +464,18 @@ new class extends Component {
             </div>
         @endif
 
+        {{-- Photos Section --}}
+        @if ($job->deal?->property)
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+                <livewire:shared.photo-gallery
+                    :property="$job->deal->property"
+                    :job="$job"
+                    context="job-internal"
+                    :key="'photos-'.$job->id"
+                />
+            </div>
+        @endif
+
         {{-- Invoices Section --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
             <div class="flex items-center justify-between mb-4">

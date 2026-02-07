@@ -122,8 +122,11 @@ new class extends Component {
         @endif
 
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-            <flux:heading size="sm" class="mb-4">Photo Gallery</flux:heading>
-            @livewire('properties.photo-gallery', ['property' => $property])
+            <livewire:shared.photo-gallery
+                :property="$property"
+                context="property"
+                :key="'property-photos-'.$property->id"
+            />
         </div>
 
         {{-- Deals Section --}}

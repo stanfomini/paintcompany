@@ -24,7 +24,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
     {
         return Customer::query()
             ->where('referred_by', auth('agent')->id())
-            ->with('listing')
+            ->with('originProperty')
             ->when($this->search, fn ($q) => $q->where(function ($q) {
                 $q->where('first_name', 'like', '%'.$this->search.'%')
                     ->orWhere('last_name', 'like', '%'.$this->search.'%')
@@ -90,7 +90,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
                                     <flux:text>{{ $customer->phone ?? '-' }}</flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <flux:text>{{ $customer->listing?->full_address ?? '-' }}</flux:text>
+                                    <flux:text>{{ $customer->originProperty?->full_address ?? '-' }}</flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <flux:text>{{ $customer->created_at->format('M d, Y') }}</flux:text>

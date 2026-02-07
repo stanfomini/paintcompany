@@ -1,7 +1,7 @@
 <?php
 
 use App\Models\Estimate;
-use App\Models\EstimatePhoto;
+use App\Models\PropertyPhoto;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -13,7 +13,7 @@ new class extends Component {
 
     public Estimate $estimate;
 
-    /** @var Collection<int, EstimatePhoto> */
+    /** @var Collection<int, PropertyPhoto> */
     public Collection $photos;
 
     /** @var array<int, \Livewire\Features\SupportFileUploads\TemporaryUploadedFile> */
@@ -27,13 +27,13 @@ new class extends Component {
 
     public string $photoCaption = '';
 
-    public string $photoCategory = 'other';
+    public string $photoCategory = 'general';
 
     public bool $photoShowOnProposal = true;
 
     public ?int $photoAreaId = null;
 
-    public string $defaultCategory = 'other';
+    public string $defaultCategory = 'general';
 
     public bool $defaultShowOnProposal = true;
 
@@ -45,7 +45,7 @@ new class extends Component {
             'uploadedPhotos' => ['required', 'array', 'min:1'],
             'uploadedPhotos.*' => ['image', 'max:5120', 'mimes:jpg,jpeg,png,gif,webp'],
             'photoCaption' => ['nullable', 'string', 'max:255'],
-            'photoCategory' => ['required', 'string', 'in:before,during,reference,other'],
+            'photoCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'photoShowOnProposal' => ['boolean'],
             'photoAreaId' => ['nullable', 'integer', 'exists:estimate_areas,id'],
         ];
@@ -69,13 +69,13 @@ new class extends Component {
 
     public function loadPhotos(): void
     {
-        $this->photos = $this->estimate->photos()->with('area')->orderBy('sort_order')->get();
+        $this->photos = $this->estimate->photos()->with('estimateArea')->orderBy('sort_order')->get();
     }
 
     public function openUploadModal(): void
     {
         $this->reset(['uploadedPhotos', 'defaultCategory', 'defaultShowOnProposal']);
-        $this->defaultCategory = 'other';
+        $this->defaultCategory = 'general';
         $this->defaultShowOnProposal = true;
         $this->showUploadModal = true;
     }
@@ -100,21 +100,27 @@ new class extends Component {
         $this->validate([
             'uploadedPhotos' => ['required', 'array', 'min:1'],
             'uploadedPhotos.*' => ['image', 'max:5120', 'mimes:jpg,jpeg,png,gif,webp'],
-            'defaultCategory' => ['required', 'string', 'in:before,during,reference,other'],
+            'defaultCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'defaultShowOnProposal' => ['boolean'],
         ]);
 
-        $storagePath = "public/estimates/{$this->estimate->id}";
+        $property = $this->estimate->deal?->property;
+        $storagePath = $property
+            ? "photos/properties/{$property->id}/originals"
+            : "photos/estimates/{$this->estimate->id}";
         $maxSortOrder = $this->estimate->photos()->max('sort_order') ?? 0;
 
         foreach ($this->uploadedPhotos as $photo) {
             $filename = $photo->hashName();
-            $path = $photo->storeAs($storagePath, $filename);
+            $path = $photo->storeAs($storagePath, $filename, 'public');
 
-            $this->estimate->photos()->create([
+            PropertyPhoto::create([
+                'property_id' => $property?->id,
+                'estimate_id' => $this->estimate->id,
                 'uploaded_by' => auth()->id(),
                 'path' => $path,
                 'filename' => $photo->getClientOriginalName(),
+                'original_filename' => $photo->getClientOriginalName(),
                 'category' => $this->defaultCategory,
                 'show_on_proposal' => $this->defaultShowOnProposal,
                 'sort_order' => ++$maxSortOrder,
@@ -138,7 +144,7 @@ new class extends Component {
         $this->photoCaption = $photo->caption ?? '';
         $this->photoCategory = $photo->category;
         $this->photoShowOnProposal = $photo->show_on_proposal;
-        $this->photoAreaId = $photo->area_id;
+        $this->photoAreaId = $photo->estimate_area_id;
         $this->showEditModal = true;
     }
 
@@ -153,7 +159,7 @@ new class extends Component {
     {
         $this->validate([
             'photoCaption' => ['nullable', 'string', 'max:255'],
-            'photoCategory' => ['required', 'string', 'in:before,during,reference,other'],
+            'photoCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'photoShowOnProposal' => ['boolean'],
             'photoAreaId' => ['nullable', 'integer', 'exists:estimate_areas,id'],
         ]);
@@ -168,7 +174,7 @@ new class extends Component {
             'caption' => $this->photoCaption ?: null,
             'category' => $this->photoCategory,
             'show_on_proposal' => $this->photoShowOnProposal,
-            'area_id' => $this->photoAreaId,
+            'estimate_area_id' => $this->photoAreaId,
         ]);
 
         $this->loadPhotos();
@@ -204,7 +210,7 @@ new class extends Component {
     #[Computed]
     public function categories(): array
     {
-        return EstimatePhoto::CATEGORIES;
+        return PropertyPhoto::CATEGORIES;
     }
 
     public function setFilterCategory(string $category): void
@@ -215,7 +221,7 @@ new class extends Component {
     /**
      * Get photos grouped by category.
      *
-     * @return Collection<string, Collection<int, EstimatePhoto>>
+     * @return Collection<string, Collection<int, PropertyPhoto>>
      */
     public function getPhotosByCategory(): Collection
     {
@@ -225,7 +231,7 @@ new class extends Component {
     /**
      * Get filtered photos based on category filter.
      *
-     * @return Collection<int, EstimatePhoto>
+     * @return Collection<int, PropertyPhoto>
      */
     public function getFilteredPhotosProperty(): Collection
     {
@@ -350,9 +356,9 @@ new class extends Component {
                                 @else
                                     <flux:text class="text-sm text-zinc-400 truncate">{{ $photo->filename }}</flux:text>
                                 @endif
-                                @if ($photo->area)
+                                @if ($photo->estimateArea)
                                     <flux:text class="text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                                        {{ $photo->area->name }}
+                                        {{ $photo->estimateArea->name }}
                                     </flux:text>
                                 @endif
                             </div>

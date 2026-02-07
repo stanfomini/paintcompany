@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -18,10 +18,10 @@ describe('Agent Listings Index component', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
 
-        $ownListing = AgentListing::factory()->forAgent($agent)->create([
+        $ownProperty = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Own Street',
         ]);
-        $otherListing = AgentListing::factory()->forAgent($otherAgent)->create([
+        $otherProperty = Property::factory()->agentListing()->forAgent($otherAgent)->create([
             'address' => '456 Other Street',
         ]);
 
@@ -34,10 +34,10 @@ describe('Agent Listings Index component', function () {
     it('can search listings by address', function () {
         $agent = User::factory()->agent()->create();
 
-        $listing1 = AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Main Street',
         ]);
-        $listing2 = AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '456 Oak Avenue',
         ]);
 
@@ -51,11 +51,11 @@ describe('Agent Listings Index component', function () {
     it('can search listings by city', function () {
         $agent = User::factory()->agent()->create();
 
-        $listing1 = AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Main Street',
             'city' => 'Los Angeles',
         ]);
-        $listing2 = AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '456 Oak Avenue',
             'city' => 'San Francisco',
         ]);
@@ -70,10 +70,10 @@ describe('Agent Listings Index component', function () {
     it('can filter listings by status', function () {
         $agent = User::factory()->agent()->create();
 
-        $activeListing = AgentListing::factory()->forAgent($agent)->active()->create([
+        Property::factory()->agentListing()->forAgent($agent)->active()->create([
             'address' => '123 Active Street',
         ]);
-        $soldListing = AgentListing::factory()->forAgent($agent)->sold()->create([
+        Property::factory()->agentListing()->forAgent($agent)->sold()->create([
             'address' => '456 Sold Avenue',
         ]);
 
@@ -87,10 +87,10 @@ describe('Agent Listings Index component', function () {
     it('shows all statuses by default', function () {
         $agent = User::factory()->agent()->create();
 
-        $activeListing = AgentListing::factory()->forAgent($agent)->active()->create([
+        Property::factory()->agentListing()->forAgent($agent)->active()->create([
             'address' => '123 Active Street',
         ]);
-        $soldListing = AgentListing::factory()->forAgent($agent)->sold()->create([
+        Property::factory()->agentListing()->forAgent($agent)->sold()->create([
             'address' => '456 Sold Avenue',
         ]);
 
@@ -103,7 +103,7 @@ describe('Agent Listings Index component', function () {
 
     it('resets pagination when search changes', function () {
         $agent = User::factory()->agent()->create();
-        AgentListing::factory()->count(20)->forAgent($agent)->create();
+        Property::factory()->agentListing()->count(20)->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.index')
@@ -113,7 +113,7 @@ describe('Agent Listings Index component', function () {
 
     it('resets pagination when status filter changes', function () {
         $agent = User::factory()->agent()->create();
-        AgentListing::factory()->count(20)->forAgent($agent)->create();
+        Property::factory()->agentListing()->count(20)->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.index')
@@ -132,7 +132,7 @@ describe('Agent Listings Index component', function () {
 
     it('shows empty state with appropriate message when search yields no results', function () {
         $agent = User::factory()->agent()->create();
-        AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Main Street',
         ]);
 
@@ -145,28 +145,28 @@ describe('Agent Listings Index component', function () {
 
     it('can delete own listing', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Delete Street',
         ]);
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.index')
-            ->call('delete', $listing->id)
+            ->call('delete', $property->id)
             ->assertSee('Listing archived successfully.');
 
-        $this->assertSoftDeleted('agent_listings', [
-            'id' => $listing->id,
+        $this->assertSoftDeleted('properties', [
+            'id' => $property->id,
         ]);
     });
 
     it('cannot delete another agent\'s listing', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
-        $otherListing = AgentListing::factory()->forAgent($otherAgent)->create();
+        $otherProperty = Property::factory()->agentListing()->forAgent($otherAgent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.index')
-            ->call('delete', $otherListing->id)
+            ->call('delete', $otherProperty->id)
             ->assertForbidden();
     });
 
@@ -175,8 +175,8 @@ describe('Agent Listings Index component', function () {
         $otherAgent = User::factory()->agent()->create();
 
         // Create listings for both agents
-        AgentListing::factory()->forAgent($agent)->create(['address' => 'My Listing']);
-        AgentListing::factory()->forAgent($otherAgent)->create(['address' => 'Other Agent Listing']);
+        Property::factory()->agentListing()->forAgent($agent)->create(['address' => 'My Listing']);
+        Property::factory()->agentListing()->forAgent($otherAgent)->create(['address' => 'Other Agent Listing']);
 
         // Agent should only see their own listing
         Livewire::actingAs($agent, 'agent')
@@ -188,13 +188,13 @@ describe('Agent Listings Index component', function () {
     it('displays correct status badges', function () {
         $agent = User::factory()->agent()->create();
 
-        AgentListing::factory()->forAgent($agent)->active()->create([
+        Property::factory()->agentListing()->forAgent($agent)->active()->create([
             'address' => '123 Active St',
         ]);
-        AgentListing::factory()->forAgent($agent)->pending()->create([
+        Property::factory()->agentListing()->forAgent($agent)->pending()->create([
             'address' => '456 Pending St',
         ]);
-        AgentListing::factory()->forAgent($agent)->sold()->create([
+        Property::factory()->agentListing()->forAgent($agent)->sold()->create([
             'address' => '789 Sold St',
         ]);
 
@@ -208,7 +208,7 @@ describe('Agent Listings Index component', function () {
     it('displays listing price when set', function () {
         $agent = User::factory()->agent()->create();
 
-        AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Price St',
             'listing_price' => 500000,
         ]);

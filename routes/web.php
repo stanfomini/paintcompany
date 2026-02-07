@@ -27,7 +27,7 @@ Route::livewire('/invitation/accept/{token}', 'invitations.accept-invitation')
     ->name('invitation.accept');
 
 // Public open house sign-up route
-Route::livewire('/open-house/{agentListing}', 'public.open-house-signup')
+Route::livewire('/open-house/{property}', 'public.open-house-signup')
     ->name('open-house.signup')
     ->middleware('throttle:60,1');
 
@@ -127,11 +127,6 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         ->middleware('permission:planner.view')
         ->name('planner.index');
     Route::redirect('/activities', '/planner');
-
-    // Agent Listings routes
-    Route::livewire('/agent-listings', 'agent-listings.index')
-        ->middleware('permission:agent_listings.view')
-        ->name('agent-listings.index');
 
     // Production rates routes
     Route::middleware(['permission:production_rates.view'])->group(function () {

@@ -39,6 +39,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         $estimate = Estimate::byPublicToken($token)
             ->with([
                 'deal.customer',
+                'deal.property',
                 'items',
                 'areas.surfaces.productionRate',
                 'options',
@@ -430,16 +431,29 @@ new #[Layout('components.layouts.public')] class extends Component {
         @endif
 
         {{-- Photos Gallery (moved up for visual context before pricing) --}}
-        @if ($estimate->photos->isNotEmpty())
+        @php
+            // Gather proposal photos: estimate-linked + property-level
+            $proposalPhotos = $estimate->photos;
+            if ($estimate->deal?->property) {
+                $propertyPhotos = \App\Models\PropertyPhoto::where('property_id', $estimate->deal->property->id)
+                    ->where('show_on_proposal', true)
+                    ->whereNull('estimate_id')
+                    ->orderBy('sort_order')
+                    ->get();
+                $proposalPhotos = $proposalPhotos->merge($propertyPhotos)->unique('id');
+            }
+        @endphp
+        @if ($proposalPhotos->isNotEmpty())
             <flux:card class="p-6 mb-6">
                 <flux:heading size="lg" class="mb-4">Project Photos</flux:heading>
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                    @foreach ($estimate->photos as $photo)
+                    @foreach ($proposalPhotos as $photo)
                         <div wire:key="photo-{{ $photo->id }}" class="relative group aspect-square">
                             <img
                                 src="{{ $photo->url }}"
                                 alt="{{ $photo->caption ?: 'Project photo' }}"
                                 class="w-full h-full object-cover rounded-lg"
+                                loading="lazy"
                             />
                             @if ($photo->caption)
                                 <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-2 rounded-b-lg">

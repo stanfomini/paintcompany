@@ -15,6 +15,8 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
+    'photos_disk' => env('PHOTOS_DISK', 'public'),
+
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks
@@ -58,6 +60,20 @@ return [
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'throw' => false,
             'report' => false,
+        ],
+
+        'photos' => [
+            'driver' => env('PHOTOS_DISK_DRIVER', 'local'),
+            'root' => storage_path('app/public/photos'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/photos',
+            'key' => env('PHOTOS_AWS_ACCESS_KEY_ID'),
+            'secret' => env('PHOTOS_AWS_SECRET_ACCESS_KEY'),
+            'region' => env('PHOTOS_AWS_DEFAULT_REGION', 'us-east-1'),
+            'bucket' => env('PHOTOS_AWS_BUCKET'),
+            'endpoint' => env('PHOTOS_AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('PHOTOS_AWS_USE_PATH_STYLE_ENDPOINT', true),
+            'visibility' => 'private',
+            'throw' => false,
         ],
 
     ],

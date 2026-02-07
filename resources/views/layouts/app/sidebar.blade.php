@@ -45,11 +45,6 @@
                             {{ __('Planner') }}
                         </flux:sidebar.item>
                     @endcan
-                    @can('agent_listings.view')
-                        <flux:sidebar.item icon="building-office" :href="route('agent-listings.index')" :current="request()->routeIs('agent-listings.*')" wire:navigate>
-                            {{ __('Agent Listings') }}
-                        </flux:sidebar.item>
-                    @endcan
                     @can('production_rates.view')
                         <flux:sidebar.item icon="chart-bar" :href="route('production-rates.index')" :current="request()->routeIs('production-rates.*')" wire:navigate>
                             {{ __('Production Rates') }}

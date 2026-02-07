@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\AgentListing;
-use App\Models\ListingPhoto;
+use App\Models\Property;
+use App\Models\PropertyPhoto;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -9,7 +9,7 @@ use Livewire\WithFileUploads;
 new class extends Component {
     use WithFileUploads;
 
-    public AgentListing $listing;
+    public Property $listing;
 
     #[Computed]
     public function photos()
@@ -25,7 +25,7 @@ new class extends Component {
 
     public bool $showUploadModal = false;
 
-    public function mount(AgentListing $listing): void
+    public function mount(Property $listing): void
     {
         $this->listing = $listing;
     }
@@ -54,8 +54,9 @@ new class extends Component {
 
         $maxSortOrder = $this->listing->photos()->max('sort_order') ?? -1;
 
-        ListingPhoto::create([
-            'listing_id' => $this->listing->id,
+        PropertyPhoto::create([
+            'property_id' => $this->listing->id,
+            'disk' => 'public',
             'uploaded_by' => auth()->id(),
             'path' => $path,
             'filename' => $this->photo->getClientOriginalName(),
@@ -72,7 +73,7 @@ new class extends Component {
 
     public function deletePhoto(int $photoId): void
     {
-        $photo = ListingPhoto::where('listing_id', $this->listing->id)
+        $photo = PropertyPhoto::where('property_id', $this->listing->id)
             ->findOrFail($photoId);
 
         $photo->delete();
@@ -85,7 +86,7 @@ new class extends Component {
     public function updateSortOrder(array $orderedIds): void
     {
         foreach ($orderedIds as $index => $photoId) {
-            ListingPhoto::where('listing_id', $this->listing->id)
+            PropertyPhoto::where('property_id', $this->listing->id)
                 ->where('id', $photoId)
                 ->update(['sort_order' => $index]);
         }

@@ -35,7 +35,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
     public function mount(Job $job): void
     {
         $this->ensureCustomerOwnsJob($job);
-        $this->job = $job->load(['deal.customer', 'deal.chatThread', 'colors.selectedBy', 'estimate', 'prepPlan.days.tasks']);
+        $this->job = $job->load(['deal.customer', 'deal.property', 'deal.chatThread', 'colors.selectedBy', 'estimate', 'prepPlan.days.tasks']);
 
         if ($job->scheduled_date) {
             $this->proposedDate = $job->scheduled_date->format('Y-m-d');
@@ -876,6 +876,31 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                             </div>
                         </div>
                     @endforeach
+                </div>
+            </div>
+        @endif
+
+        {{-- Project Photos --}}
+        @if ($job->deal?->property)
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" x-data="{ open: false }">
+                <button
+                    x-on:click="open = !open"
+                    type="button"
+                    class="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-colors text-left"
+                >
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="photo" class="w-5 h-5 text-zinc-500" />
+                        <flux:heading size="sm">Project Photos</flux:heading>
+                    </div>
+                    <flux:icon name="chevron-down" class="w-5 h-5 text-zinc-400 transition-transform" x-bind:class="open && 'rotate-180'" />
+                </button>
+                <div x-show="open" x-collapse x-cloak class="p-4 border-t border-zinc-200 dark:border-zinc-700">
+                    <livewire:shared.photo-gallery
+                        :property="$job->deal->property"
+                        :job="$job"
+                        context="job-customer"
+                        :key="'customer-photos-'.$job->id"
+                    />
                 </div>
             </div>
         @endif

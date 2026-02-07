@@ -121,16 +121,47 @@ class CompanyAllocation extends Model
     }
 
     /**
+     * Boolean context fields that should use boolean comparison.
+     */
+    protected static array $booleanFields = [
+        'has_agent_referral',
+        'is_repeat_customer',
+        'uses_premium_paint',
+        'has_spray_application',
+        'has_complex_substrate',
+        'requires_prime',
+        'has_subcontractor',
+        'has_nested_areas',
+        'has_options_selected',
+    ];
+
+    /**
+     * Array context fields that should use array-aware comparison.
+     */
+    protected static array $arrayFields = [
+        'has_scope',
+        'payment_methods',
+        'substrate_categories',
+    ];
+
+    /**
      * Evaluate a single condition rule.
      */
     protected function evaluateSingleCondition(string $field, string $operator, mixed $conditionValue, mixed $contextValue): bool
     {
+        // Special handler for scope conditions
         if ($field === 'has_scope') {
             return $this->evaluateScopeCondition($operator, $conditionValue, (array) $contextValue);
         }
 
-        if ($field === 'payment_methods') {
-            return $this->evaluatePaymentMethodCondition($operator, $conditionValue, (array) $contextValue);
+        // Array fields: payment_methods, substrate_categories
+        if (in_array($field, ['payment_methods', 'substrate_categories'])) {
+            return $this->evaluateArrayFieldCondition($operator, $conditionValue, (array) $contextValue);
+        }
+
+        // Boolean fields
+        if (in_array($field, static::$booleanFields)) {
+            return $this->evaluateBooleanCondition($operator, $conditionValue, $contextValue);
         }
 
         return match ($operator) {
@@ -141,6 +172,47 @@ class CompanyAllocation extends Model
             'less_than' => (float) $contextValue < (float) $conditionValue,
             default => false,
         };
+    }
+
+    /**
+     * Evaluate a boolean condition (true/false matching).
+     */
+    protected function evaluateBooleanCondition(string $operator, mixed $conditionValue, mixed $contextValue): bool
+    {
+        $contextBool = filter_var($contextValue, FILTER_VALIDATE_BOOLEAN);
+        $conditionBool = filter_var($conditionValue, FILTER_VALIDATE_BOOLEAN);
+
+        return match ($operator) {
+            'equals' => $contextBool === $conditionBool,
+            'not_equals' => $contextBool !== $conditionBool,
+            default => false,
+        };
+    }
+
+    /**
+     * Evaluate an array field condition (payment_methods, substrate_categories).
+     */
+    protected function evaluateArrayFieldCondition(string $operator, mixed $conditionValue, array $contextValues): bool
+    {
+        if ($operator === 'equals') {
+            return in_array($conditionValue, $contextValues);
+        }
+
+        if ($operator === 'in') {
+            foreach ((array) $conditionValue as $value) {
+                if (in_array($value, $contextValues)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        if ($operator === 'not_equals') {
+            return ! in_array($conditionValue, $contextValues);
+        }
+
+        return false;
     }
 
     /**
@@ -166,30 +238,6 @@ class CompanyAllocation extends Model
                 'both' => ! (in_array('interior', $contextScopes) && in_array('exterior', $contextScopes)),
                 default => true,
             };
-        }
-
-        return false;
-    }
-
-    /**
-     * Evaluate a payment method condition.
-     *
-     * @param  array<int, string>  $contextMethods
-     */
-    protected function evaluatePaymentMethodCondition(string $operator, mixed $conditionValue, array $contextMethods): bool
-    {
-        if ($operator === 'equals') {
-            return in_array($conditionValue, $contextMethods);
-        }
-
-        if ($operator === 'in') {
-            foreach ((array) $conditionValue as $value) {
-                if (in_array($value, $contextMethods)) {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         return false;

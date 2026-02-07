@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Attributes\Computed;
@@ -42,7 +42,7 @@ new class extends Component {
 
     public function openModal(): void
     {
-        $this->authorize('create', AgentListing::class);
+        $this->authorize('create', Property::class);
 
         $this->showModal = true;
     }
@@ -67,7 +67,7 @@ new class extends Component {
 
     public function save(): void
     {
-        $this->authorize('create', AgentListing::class);
+        $this->authorize('create', Property::class);
 
         $this->validate([
             'address' => ['required', 'string', 'max:255'],
@@ -83,13 +83,14 @@ new class extends Component {
 
         $agent = auth('agent')->user();
 
-        AgentListing::create([
+        Property::create([
             'agent_id' => $agent->id,
+            'source' => 'agent_referral',
             'address' => $this->address,
             'city' => $this->city,
             'state' => strtoupper($this->state),
             'zip' => $this->zip,
-            'status' => $this->status,
+            'listing_status' => $this->status,
             'listing_price' => $this->listingPrice ?: null,
             'description' => $this->description ?: null,
             'notes' => $this->notes ?: null,

@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\AgentListing;
 use App\Models\Customer;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -42,11 +42,11 @@ describe('Agent Dashboard Access', function () {
 describe('Agent Dashboard Stats', function () {
     it('displays correct total listings count', function () {
         $agent = User::factory()->agent()->create();
-        AgentListing::factory()->count(3)->forAgent($agent)->create();
+        Property::factory()->agentListing()->count(3)->forAgent($agent)->create();
 
         // Create listings for another agent to ensure they're not counted
         $otherAgent = User::factory()->agent()->create();
-        AgentListing::factory()->count(2)->forAgent($otherAgent)->create();
+        Property::factory()->agentListing()->count(2)->forAgent($otherAgent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
             ->test('agent.dashboard')
@@ -57,9 +57,9 @@ describe('Agent Dashboard Stats', function () {
 
     it('displays correct active listings count', function () {
         $agent = User::factory()->agent()->create();
-        AgentListing::factory()->count(2)->active()->forAgent($agent)->create();
-        AgentListing::factory()->pending()->forAgent($agent)->create();
-        AgentListing::factory()->sold()->forAgent($agent)->create();
+        Property::factory()->agentListing()->count(2)->active()->forAgent($agent)->create();
+        Property::factory()->agentListing()->pending()->forAgent($agent)->create();
+        Property::factory()->agentListing()->sold()->forAgent($agent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
             ->test('agent.dashboard')
@@ -87,22 +87,22 @@ describe('Agent Dashboard Stats', function () {
         $agent = User::factory()->agent()->create();
 
         // Open house in 3 days (should be counted)
-        AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => now()->addDays(3),
         ]);
 
         // Open house in 5 days (should be counted)
-        AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => now()->addDays(5),
         ]);
 
         // Open house in 10 days (should NOT be counted)
-        AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => now()->addDays(10),
         ]);
 
         // Past open house (should NOT be counted)
-        AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => now()->subDays(1),
         ]);
 
@@ -130,7 +130,7 @@ describe('Agent Dashboard Sections', function () {
     it('displays upcoming open houses list', function () {
         $agent = User::factory()->agent()->create();
 
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Main Street',
             'city' => 'Springfield',
             'state' => 'IL',
@@ -164,7 +164,7 @@ describe('Agent Dashboard Sections', function () {
 
         // Create 7 listings with open houses
         for ($i = 1; $i <= 7; $i++) {
-            AgentListing::factory()->forAgent($agent)->create([
+            Property::factory()->agentListing()->forAgent($agent)->create([
                 'address' => "Address $i",
                 'open_house_date' => now()->addDays($i),
             ]);

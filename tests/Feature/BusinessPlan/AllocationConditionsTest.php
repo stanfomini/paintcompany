@@ -3,8 +3,16 @@
 use App\Models\BudgetCategory;
 use App\Models\CompanyAllocation;
 use App\Models\CompanySetting;
+use App\Models\Customer;
+use App\Models\Deal;
+use App\Models\Estimate;
+use App\Models\EstimateArea;
+use App\Models\EstimateAreaSurface;
+use App\Models\Job;
 use App\Models\JobCostCard;
 use App\Models\JobCostCardAllocation;
+use App\Models\PaintProduct;
+use App\Models\Substrate;
 use App\Models\User;
 use App\Services\AllocationEvaluationService;
 use App\Services\JobCostCardService;
@@ -661,5 +669,453 @@ describe('Budget Sync Integration', function () {
             ->sum('amount');
 
         expect((float) $total)->toBe(800.00);
+    });
+});
+
+// ---- Expanded Context Fields ----
+
+describe('Expanded Context Fields', function () {
+
+    it('buildContext returns all expected keys', function () {
+        $card = JobCostCard::factory()->create(['price' => 5000]);
+
+        $service = app(AllocationEvaluationService::class);
+        $context = $service->buildContext($card);
+
+        $expectedKeys = [
+            'scope_type', 'has_scope', 'payment_methods', 'job_stage', 'job_price',
+            'total_sqft', 'total_labor_hours', 'area_count', 'crew_size', 'estimator_mode',
+            'lead_source', 'has_agent_referral', 'is_repeat_customer', 'customer_source',
+            'uses_premium_paint', 'max_coats', 'total_material_cost',
+            'has_spray_application', 'substrate_categories', 'has_complex_substrate', 'requires_prime',
+            'has_subcontractor', 'has_nested_areas', 'has_options_selected', 'deposit_percent',
+            'month', 'season',
+        ];
+
+        foreach ($expectedKeys as $key) {
+            expect($context)->toHaveKey($key);
+        }
+    });
+
+    it('gathers total_sqft from estimate areas', function () {
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+        // length=10, width=10, height=10 → wall_sqft=400, ceiling_sqft=100
+        $area1 = EstimateArea::factory()->forEstimate($estimate)->create([
+            'length' => 10, 'width' => 10, 'height' => 10,
+        ]);
+        // length=15, width=10, height=8 → wall_sqft=400, ceiling_sqft=150
+        $area2 = EstimateArea::factory()->forEstimate($estimate)->create([
+            'length' => 15, 'width' => 10, 'height' => 8,
+        ]);
+
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        // Area 1: wall=400 + ceiling=100 = 500; Area 2: wall=400 + ceiling=150 = 550
+        expect($context['total_sqft'])->toBe(1050.0)
+            ->and($context['area_count'])->toBe(2);
+    });
+
+    it('gathers labor hours and material cost from surfaces', function () {
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+        $area = EstimateArea::factory()->forEstimate($estimate)->create();
+        EstimateAreaSurface::factory()->forArea($area)->create([
+            'labor_hours' => 8.5,
+            'material_cost' => 120.00,
+            'is_included' => true,
+            'coats' => 2,
+        ]);
+        EstimateAreaSurface::factory()->forArea($area)->create([
+            'labor_hours' => 4.0,
+            'material_cost' => 60.00,
+            'is_included' => true,
+            'coats' => 1,
+        ]);
+
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['total_labor_hours'])->toBe(12.5)
+            ->and($context['total_material_cost'])->toBe(180.0)
+            ->and($context['max_coats'])->toBe(2);
+    });
+
+    it('detects spray application from area', function () {
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+        EstimateArea::factory()->forEstimate($estimate)->create([
+            'application_method' => 'spray',
+        ]);
+
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['has_spray_application'])->toBeTrue();
+    });
+
+    it('detects complex substrate from high multiplier', function () {
+        $substrate = Substrate::factory()->peelingPaint()->create();
+
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+        EstimateArea::factory()->forEstimate($estimate)->create([
+            'substrate_id' => $substrate->id,
+        ]);
+
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['has_complex_substrate'])->toBeTrue()
+            ->and($context['requires_prime'])->toBeTrue();
+    });
+
+    it('detects premium paint from surface paint product', function () {
+        $premiumPaint = PaintProduct::factory()->create(['is_premium' => true]);
+
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+        $area = EstimateArea::factory()->forEstimate($estimate)->create();
+        EstimateAreaSurface::factory()->forArea($area)->create([
+            'paint_product_id' => $premiumPaint->id,
+            'is_included' => true,
+        ]);
+
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['uses_premium_paint'])->toBeTrue();
+    });
+
+    it('detects agent referral from deal', function () {
+        $agent = User::factory()->agent()->create();
+        $deal = Deal::factory()->referredByAgent($agent)->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create(['subtotal' => 5000]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['has_agent_referral'])->toBeTrue();
+    });
+
+    it('detects repeat customer from multiple deals', function () {
+        $customer = Customer::factory()->create();
+        Deal::factory()->forCustomer($customer)->create();
+        $deal2 = Deal::factory()->forCustomer($customer)->create();
+        $estimate = Estimate::factory()->forDeal($deal2)->create(['subtotal' => 5000]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal2->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['is_repeat_customer'])->toBeTrue();
+    });
+
+    it('derives season from month correctly', function () {
+        $card = JobCostCard::factory()->create(['price' => 5000]);
+        $service = app(AllocationEvaluationService::class);
+        $context = $service->buildContext($card);
+
+        // Season depends on current month; just verify it's one of the valid values
+        expect($context['season'])->toBeIn(['winter', 'spring', 'summer', 'fall'])
+            ->and($context['month'])->toBeGreaterThanOrEqual(1)
+            ->and($context['month'])->toBeLessThanOrEqual(12);
+    });
+
+    it('detects lead source from deal', function () {
+        $deal = Deal::factory()->create(['lead_source' => 'google_ads']);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['lead_source'])->toBe('google_ads');
+    });
+
+    it('detects subcontractor from card cost', function () {
+        $card = JobCostCard::factory()->create([
+            'price' => 5000,
+            'subcontractor_cost' => 500,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['has_subcontractor'])->toBeTrue();
+    });
+
+    it('gets crew_size from job', function () {
+        $job = Job::factory()->create(['required_crew_size' => 5]);
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'price' => 5000,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)->buildContext($card);
+
+        expect($context['crew_size'])->toBe(5);
+    });
+});
+
+// ---- Boolean Condition Evaluation ----
+
+describe('Boolean Condition Evaluation', function () {
+
+    it('evaluates boolean true condition', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'has_agent_referral', 'operator' => 'equals', 'value' => true],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['has_agent_referral' => true]))->toBeTrue()
+            ->and($allocation->evaluateConditions(['has_agent_referral' => false]))->toBeFalse();
+    });
+
+    it('evaluates boolean false condition', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'has_subcontractor', 'operator' => 'equals', 'value' => false],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['has_subcontractor' => false]))->toBeTrue()
+            ->and($allocation->evaluateConditions(['has_subcontractor' => true]))->toBeFalse();
+    });
+
+    it('evaluates boolean with string values', function () {
+        // UI sends "1" and "0" as strings
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'uses_premium_paint', 'operator' => 'equals', 'value' => '1'],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['uses_premium_paint' => true]))->toBeTrue()
+            ->and($allocation->evaluateConditions(['uses_premium_paint' => false]))->toBeFalse();
+    });
+
+    it('evaluates season condition', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'season', 'operator' => 'equals', 'value' => 'winter'],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['season' => 'winter']))->toBeTrue()
+            ->and($allocation->evaluateConditions(['season' => 'summer']))->toBeFalse();
+    });
+
+    it('evaluates lead_source with in operator for array', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'lead_source', 'operator' => 'in', 'value' => ['google_ads', 'thumbtack']],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['lead_source' => 'google_ads']))->toBeTrue()
+            ->and($allocation->evaluateConditions(['lead_source' => 'thumbtack']))->toBeTrue()
+            ->and($allocation->evaluateConditions(['lead_source' => 'referral']))->toBeFalse();
+    });
+
+    it('evaluates substrate_categories with in operator', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'substrate_categories', 'operator' => 'equals', 'value' => 'masonry'],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['substrate_categories' => ['masonry', 'wood']]))->toBeTrue()
+            ->and($allocation->evaluateConditions(['substrate_categories' => ['standard']]))->toBeFalse();
+    });
+
+    it('evaluates crew_size with greater_than operator', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'crew_size', 'operator' => 'greater_than', 'value' => '3'],
+            ])->create();
+        });
+
+        expect($allocation->evaluateConditions(['crew_size' => 5]))->toBeTrue()
+            ->and($allocation->evaluateConditions(['crew_size' => 2]))->toBeFalse();
+    });
+});
+
+// ---- Default Allocations Seeder ----
+
+describe('Default Allocations Seeder', function () {
+
+    it('seeds 14 default conditional allocations', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $defaults = CompanyAllocation::where('company_setting_id', $settings->id)
+            ->where('is_system', false)
+            ->get();
+
+        expect($defaults)->toHaveCount(14);
+    });
+
+    it('default allocations are all inactive', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $activeDefaults = CompanyAllocation::where('company_setting_id', $settings->id)
+            ->where('is_system', false)
+            ->where('is_active', true)
+            ->count();
+
+        expect($activeDefaults)->toBe(0);
+    });
+
+    it('default allocations have conditions', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $withoutConditions = CompanyAllocation::where('company_setting_id', $settings->id)
+            ->where('is_system', false)
+            ->whereNull('conditions')
+            ->count();
+
+        expect($withoutConditions)->toBe(0);
+    });
+
+    it('seeder is idempotent', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+        $settings->seedDefaultAllocations(); // Run twice
+
+        $defaults = CompanyAllocation::where('company_setting_id', $settings->id)
+            ->where('is_system', false)
+            ->count();
+
+        expect($defaults)->toBe(14);
+    });
+
+    it('credit card processing fee has correct conditions', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $ccFee = CompanyAllocation::where('slug', 'credit_card_processing_fee')->first();
+
+        expect($ccFee)->not->toBeNull()
+            ->and($ccFee->type)->toBe(CompanyAllocation::TYPE_PERCENT_OF_REVENUE)
+            ->and((float) $ccFee->value)->toBe(3.00)
+            ->and($ccFee->hasConditions())->toBeTrue()
+            ->and($ccFee->conditions[0]['field'])->toBe('payment_methods');
+    });
+
+    it('credit card allocation applies only when card payment exists', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $ccFee = CompanyAllocation::where('slug', 'credit_card_processing_fee')->first();
+
+        expect($ccFee->evaluateConditions(['payment_methods' => ['credit_card']]))->toBeTrue()
+            ->and($ccFee->evaluateConditions(['payment_methods' => ['stripe']]))->toBeTrue()
+            ->and($ccFee->evaluateConditions(['payment_methods' => ['check']]))->toBeFalse()
+            ->and($ccFee->evaluateConditions(['payment_methods' => ['cash']]))->toBeFalse();
+    });
+
+    it('agent referral allocation applies only with agent', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $referral = CompanyAllocation::where('slug', 'agent_referral_commission')->first();
+
+        expect($referral->evaluateConditions(['has_agent_referral' => true]))->toBeTrue()
+            ->and($referral->evaluateConditions(['has_agent_referral' => false]))->toBeFalse();
+    });
+
+    it('small job minimum applies only under threshold', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $smallJob = CompanyAllocation::where('slug', 'small_job_minimum_overhead')->first();
+
+        expect($smallJob->evaluateConditions(['job_price' => 1000]))->toBeTrue()
+            ->and($smallJob->evaluateConditions(['job_price' => 2000]))->toBeFalse();
+    });
+
+    it('winter premium applies only in winter', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $winter = CompanyAllocation::where('slug', 'winter_season_premium')->first();
+
+        expect($winter->evaluateConditions(['season' => 'winter']))->toBeTrue()
+            ->and($winter->evaluateConditions(['season' => 'summer']))->toBeFalse();
     });
 });

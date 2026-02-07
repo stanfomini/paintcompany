@@ -16,7 +16,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
             abort(Response::HTTP_FORBIDDEN, 'You are not authorized to view this customer.');
         }
 
-        $this->customer = $customer->load(['listing', 'referredBy']);
+        $this->customer = $customer->load(['originProperty', 'referredBy']);
     }
 }; ?>
 
@@ -72,8 +72,8 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
                     <div>
                         <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Referred From Listing</dt>
                         <dd class="mt-1">
-                            @if ($customer->listing)
-                                <flux:text>{{ $customer->listing->full_address }}</flux:text>
+                            @if ($customer->originProperty)
+                                <flux:text>{{ $customer->originProperty->full_address }}</flux:text>
                             @else
                                 <flux:text>-</flux:text>
                             @endif

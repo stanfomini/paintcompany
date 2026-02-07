@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Attributes\Computed;
@@ -21,7 +21,7 @@ new class extends Component {
         ];
     }
 
-    public ?AgentListing $listing = null;
+    public ?Property $listing = null;
 
     public string $address = '';
 
@@ -46,7 +46,7 @@ new class extends Component {
     #[On('edit-listing')]
     public function openModal(int $listingId): void
     {
-        $this->listing = AgentListing::findOrFail($listingId);
+        $this->listing = Property::findOrFail($listingId);
 
         $this->authorize('update', $this->listing);
 
@@ -54,7 +54,7 @@ new class extends Component {
         $this->city = $this->listing->city;
         $this->state = $this->listing->state;
         $this->zip = $this->listing->zip;
-        $this->status = $this->listing->status;
+        $this->status = $this->listing->listing_status;
         $this->listingPrice = $this->listing->listing_price;
         $this->description = $this->listing->description ?? '';
         $this->notes = $this->listing->notes ?? '';
@@ -106,7 +106,7 @@ new class extends Component {
             'city' => $this->city,
             'state' => strtoupper($this->state),
             'zip' => $this->zip,
-            'status' => $this->status,
+            'listing_status' => $this->status,
             'listing_price' => $this->listingPrice ?: null,
             'description' => $this->description ?: null,
             'notes' => $this->notes ?: null,

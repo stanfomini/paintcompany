@@ -52,11 +52,44 @@ new class extends Component {
     public function conditionFields(): array
     {
         return [
-            'scope_type' => ['label' => 'Scope Type', 'operators' => ['equals', 'not_equals'], 'values' => ['interior' => 'Interior', 'exterior' => 'Exterior']],
-            'has_scope' => ['label' => 'Has Scope', 'operators' => ['equals'], 'values' => ['interior' => 'Interior', 'exterior' => 'Exterior', 'both' => 'Both']],
-            'payment_methods' => ['label' => 'Payment Method', 'operators' => ['equals', 'in'], 'values' => ['check' => 'Check', 'credit_card' => 'Credit Card', 'cash' => 'Cash', 'ach' => 'ACH', 'stripe' => 'Stripe']],
-            'job_stage' => ['label' => 'Job Stage', 'operators' => ['equals', 'in'], 'values' => ['estimate_accepted' => 'Estimate Accepted', 'scheduling_colors' => 'Scheduling Colors', 'job_prep' => 'Job Prep', 'in_progress' => 'In Progress', 'completed' => 'Completed']],
-            'job_price' => ['label' => 'Job Price', 'operators' => ['greater_than', 'less_than'], 'values' => []],
+            // ── Job Details ──
+            'scope_type' => ['label' => 'Scope Type', 'group' => 'Job Details', 'operators' => ['equals', 'not_equals'], 'input' => 'select', 'values' => ['interior' => 'Interior', 'exterior' => 'Exterior']],
+            'has_scope' => ['label' => 'Has Scope', 'group' => 'Job Details', 'operators' => ['equals'], 'input' => 'select', 'values' => ['interior' => 'Interior', 'exterior' => 'Exterior', 'both' => 'Both']],
+            'job_price' => ['label' => 'Job Price ($)', 'group' => 'Job Details', 'operators' => ['greater_than', 'less_than', 'equals'], 'input' => 'number', 'values' => []],
+            'job_stage' => ['label' => 'Job Stage', 'group' => 'Job Details', 'operators' => ['equals', 'in'], 'input' => 'select', 'values' => ['estimate_accepted' => 'Estimate Accepted', 'scheduling_colors' => 'Scheduling Colors', 'job_prep' => 'Job Prep', 'in_progress' => 'In Progress', 'completed' => 'Completed']],
+            'total_sqft' => ['label' => 'Total Sqft', 'group' => 'Job Details', 'operators' => ['greater_than', 'less_than'], 'input' => 'number', 'values' => []],
+            'total_labor_hours' => ['label' => 'Total Labor Hours', 'group' => 'Job Details', 'operators' => ['greater_than', 'less_than'], 'input' => 'number', 'values' => []],
+            'area_count' => ['label' => 'Area Count', 'group' => 'Job Details', 'operators' => ['greater_than', 'less_than', 'equals'], 'input' => 'number', 'values' => []],
+            'crew_size' => ['label' => 'Crew Size', 'group' => 'Job Details', 'operators' => ['greater_than', 'less_than', 'equals'], 'input' => 'number', 'values' => []],
+            'estimator_mode' => ['label' => 'Estimator Mode', 'group' => 'Job Details', 'operators' => ['equals'], 'input' => 'select', 'values' => ['simple' => 'Simple', 'template' => 'Template', 'detailed' => 'Detailed']],
+
+            // ── Paint & Materials ──
+            'uses_premium_paint' => ['label' => 'Uses Premium Paint', 'group' => 'Paint & Materials', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'max_coats' => ['label' => 'Max Coats', 'group' => 'Paint & Materials', 'operators' => ['greater_than', 'less_than', 'equals'], 'input' => 'number', 'values' => []],
+            'total_material_cost' => ['label' => 'Total Material Cost ($)', 'group' => 'Paint & Materials', 'operators' => ['greater_than', 'less_than'], 'input' => 'number', 'values' => []],
+            'has_spray_application' => ['label' => 'Has Spray Application', 'group' => 'Paint & Materials', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'substrate_categories' => ['label' => 'Substrate Category', 'group' => 'Paint & Materials', 'operators' => ['equals', 'in'], 'input' => 'select', 'values' => ['standard' => 'Standard', 'wood' => 'Wood', 'masonry' => 'Masonry', 'metal' => 'Metal']],
+            'has_complex_substrate' => ['label' => 'Complex Substrate', 'group' => 'Paint & Materials', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'requires_prime' => ['label' => 'Requires Primer', 'group' => 'Paint & Materials', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+
+            // ── Customer & Sales ──
+            'lead_source' => ['label' => 'Lead Source', 'group' => 'Customer & Sales', 'operators' => ['equals', 'in'], 'input' => 'select', 'values' => ['referral' => 'Referral', 'google_ads' => 'Google Ads', 'home_advisor' => 'HomeAdvisor', 'thumbtack' => 'Thumbtack', 'yelp' => 'Yelp', 'nextdoor' => 'Nextdoor', 'facebook' => 'Facebook', 'website' => 'Website', 'yard_sign' => 'Yard Sign', 'door_knock' => 'Door Knock', 'repeat' => 'Repeat', 'other' => 'Other']],
+            'has_agent_referral' => ['label' => 'Agent Referral', 'group' => 'Customer & Sales', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'is_repeat_customer' => ['label' => 'Repeat Customer', 'group' => 'Customer & Sales', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'customer_source' => ['label' => 'Customer Source', 'group' => 'Customer & Sales', 'operators' => ['equals'], 'input' => 'select', 'values' => ['referral' => 'Referral', 'online' => 'Online', 'agent' => 'Agent', 'walk_in' => 'Walk-in', 'other' => 'Other']],
+
+            // ── Payments ──
+            'payment_methods' => ['label' => 'Payment Method', 'group' => 'Payments', 'operators' => ['equals', 'in'], 'input' => 'select', 'values' => ['check' => 'Check', 'credit_card' => 'Credit Card', 'cash' => 'Cash', 'ach' => 'ACH', 'stripe' => 'Stripe']],
+            'deposit_percent' => ['label' => 'Deposit Percent', 'group' => 'Payments', 'operators' => ['greater_than', 'less_than', 'equals'], 'input' => 'number', 'values' => []],
+
+            // ── Timing ──
+            'month' => ['label' => 'Month (1-12)', 'group' => 'Timing', 'operators' => ['equals', 'greater_than', 'less_than'], 'input' => 'number', 'values' => []],
+            'season' => ['label' => 'Season', 'group' => 'Timing', 'operators' => ['equals'], 'input' => 'select', 'values' => ['winter' => 'Winter', 'spring' => 'Spring', 'summer' => 'Summer', 'fall' => 'Fall']],
+
+            // ── Complexity ──
+            'has_subcontractor' => ['label' => 'Has Subcontractor', 'group' => 'Complexity', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'has_nested_areas' => ['label' => 'Has Nested Areas', 'group' => 'Complexity', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
+            'has_options_selected' => ['label' => 'Has Options Selected', 'group' => 'Complexity', 'operators' => ['equals'], 'input' => 'boolean', 'values' => ['1' => 'Yes', '0' => 'No']],
         ];
     }
 
@@ -411,12 +444,19 @@ new class extends Component {
                 @foreach ($conditions as $i => $condition)
                     <div wire:key="condition-{{ $i }}" class="flex items-start gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
                         <div class="flex-1 space-y-2">
-                            <flux:select wire:model.live="conditions.{{ $i }}.field" placeholder="Select field...">
-                                <flux:select.option value="">Select field...</flux:select.option>
-                                @foreach ($this->conditionFields as $fieldKey => $fieldConfig)
-                                    <flux:select.option value="{{ $fieldKey }}">{{ $fieldConfig['label'] }}</flux:select.option>
+                            @php
+                                $groups = collect($this->conditionFields)->groupBy('group');
+                            @endphp
+                            <select wire:model.live="conditions.{{ $i }}.field" class="w-full rounded-lg border-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 text-sm">
+                                <option value="">Select field...</option>
+                                @foreach ($groups as $groupName => $fields)
+                                    <optgroup label="{{ $groupName }}">
+                                        @foreach ($fields as $fieldKey => $fieldConfig)
+                                            <option value="{{ $fieldKey }}">{{ $fieldConfig['label'] }}</option>
+                                        @endforeach
+                                    </optgroup>
                                 @endforeach
-                            </flux:select>
+                            </select>
 
                             @if (!empty($conditions[$i]['field']) && isset($this->conditionFields[$conditions[$i]['field']]))
                                 @php $fieldConfig = $this->conditionFields[$conditions[$i]['field']]; @endphp
@@ -427,7 +467,15 @@ new class extends Component {
                                         @endforeach
                                     </flux:select>
 
-                                    @if (!empty($fieldConfig['values']))
+                                    @if (($fieldConfig['input'] ?? 'select') === 'boolean')
+                                        <flux:select wire:model="conditions.{{ $i }}.value" class="flex-1">
+                                            <flux:select.option value="">Select...</flux:select.option>
+                                            <flux:select.option value="1">Yes</flux:select.option>
+                                            <flux:select.option value="0">No</flux:select.option>
+                                        </flux:select>
+                                    @elseif (($fieldConfig['input'] ?? 'select') === 'number')
+                                        <flux:input wire:model="conditions.{{ $i }}.value" type="number" step="0.01" placeholder="Value" class="flex-1" />
+                                    @elseif (!empty($fieldConfig['values']))
                                         <flux:select wire:model="conditions.{{ $i }}.value" class="flex-1">
                                             <flux:select.option value="">Select...</flux:select.option>
                                             @foreach ($fieldConfig['values'] as $val => $label)
@@ -435,7 +483,7 @@ new class extends Component {
                                             @endforeach
                                         </flux:select>
                                     @else
-                                        <flux:input wire:model="conditions.{{ $i }}.value" type="number" step="0.01" placeholder="Amount" class="flex-1" />
+                                        <flux:input wire:model="conditions.{{ $i }}.value" type="text" placeholder="Value" class="flex-1" />
                                     @endif
                                 </div>
                             @endif

@@ -48,7 +48,7 @@ describe('CreateModal component', function () {
         Livewire::actingAs($user)
             ->test('properties.create-modal')
             ->call('save')
-            ->assertHasErrors(['customerId', 'address', 'city', 'state', 'zip']);
+            ->assertHasErrors(['address', 'city', 'state', 'zip']);
     });
 
     it('validates customer exists', function () {

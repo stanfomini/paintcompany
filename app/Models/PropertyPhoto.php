@@ -5,11 +5,21 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Facades\Storage;
 
 class PropertyPhoto extends Model
 {
     use HasFactory;
+
+    public const CATEGORIES = [
+        'before' => 'Before',
+        'during' => 'During',
+        'after' => 'After',
+        'reference' => 'Reference',
+        'general' => 'General',
+    ];
 
     protected $fillable = [
         'property_id',
@@ -19,12 +29,37 @@ class PropertyPhoto extends Model
         'caption',
         'category',
         'sort_order',
+        'disk',
+        'original_path',
+        'thumbnail_path',
+        'medium_path',
+        'annotated_path',
+        'original_filename',
+        'mime_type',
+        'file_size',
+        'width',
+        'height',
+        'show_on_proposal',
+        'estimate_id',
+        'estimate_area_id',
+        'job_id',
+        'processing_status',
+        'taken_at',
+        'latitude',
+        'longitude',
     ];
 
     protected function casts(): array
     {
         return [
             'sort_order' => 'integer',
+            'show_on_proposal' => 'boolean',
+            'file_size' => 'integer',
+            'width' => 'integer',
+            'height' => 'integer',
+            'taken_at' => 'datetime',
+            'latitude' => 'float',
+            'longitude' => 'float',
         ];
     }
 
@@ -45,11 +80,61 @@ class PropertyPhoto extends Model
     }
 
     /**
+     * Get the estimate this photo is associated with.
+     */
+    public function estimate(): BelongsTo
+    {
+        return $this->belongsTo(Estimate::class);
+    }
+
+    /**
+     * Get the job this photo is associated with.
+     */
+    public function job(): BelongsTo
+    {
+        return $this->belongsTo(Job::class, 'job_id');
+    }
+
+    /**
+     * Get the estimate area this photo is associated with.
+     */
+    public function estimateArea(): BelongsTo
+    {
+        return $this->belongsTo(EstimateArea::class);
+    }
+
+    /**
+     * Get the annotation for this photo.
+     */
+    public function annotation(): HasOne
+    {
+        return $this->hasOne(PhotoAnnotation::class, 'property_photo_id');
+    }
+
+    /**
+     * Get the comments for this photo.
+     */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(PhotoComment::class, 'property_photo_id');
+    }
+
+    /**
+     * Get the category label.
+     */
+    public function getCategoryLabelAttribute(): string
+    {
+        return self::CATEGORIES[$this->category] ?? $this->category;
+    }
+
+    /**
      * Get the URL for this photo.
      */
     public function getUrlAttribute(): string
     {
-        return Storage::url($this->path);
+        $disk = $this->disk ?? config('filesystems.default');
+
+        return Storage::disk($disk)->url($this->path);
     }
 
     /**
@@ -57,7 +142,9 @@ class PropertyPhoto extends Model
      */
     public function getFullPathAttribute(): string
     {
-        return Storage::path($this->path);
+        $disk = $this->disk ?? config('filesystems.default');
+
+        return Storage::disk($disk)->path($this->path);
     }
 
     /**
@@ -85,13 +172,66 @@ class PropertyPhoto extends Model
     }
 
     /**
-     * Delete the photo file when the model is deleted.
+     * Scope to get during photos.
+     */
+    public function scopeDuring($query)
+    {
+        return $query->where('category', 'during');
+    }
+
+    /**
+     * Scope to get reference photos.
+     */
+    public function scopeReference($query)
+    {
+        return $query->where('category', 'reference');
+    }
+
+    /**
+     * Scope to filter photos for a specific estimate.
+     */
+    public function scopeForEstimate($query, int $id)
+    {
+        return $query->where('estimate_id', $id);
+    }
+
+    /**
+     * Scope to filter photos for a specific job.
+     */
+    public function scopeForJob($query, int $id)
+    {
+        return $query->where('job_id', $id);
+    }
+
+    /**
+     * Scope to filter photos shown on proposal.
+     */
+    public function scopeForProposal($query)
+    {
+        return $query->where('show_on_proposal', true);
+    }
+
+    /**
+     * Delete all storage variants when the model is deleted.
      */
     protected static function booted(): void
     {
         static::deleting(function (PropertyPhoto $photo) {
-            if (Storage::exists($photo->path)) {
-                Storage::delete($photo->path);
+            $disk = $photo->disk ?? config('filesystems.default');
+            $storage = Storage::disk($disk);
+
+            $paths = array_filter([
+                $photo->path,
+                $photo->original_path,
+                $photo->thumbnail_path,
+                $photo->medium_path,
+                $photo->annotated_path,
+            ]);
+
+            foreach ($paths as $path) {
+                if ($storage->exists($path)) {
+                    $storage->delete($path);
+                }
             }
         });
     }

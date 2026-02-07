@@ -1,13 +1,13 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\Customer;
 use App\Notifications\NewOpenHouseSignup;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 new #[Layout('components.layouts.guest')] class extends Component {
-    public AgentListing $agentListing;
+    public Property $property;
 
     public string $firstName = '';
 
@@ -31,13 +31,13 @@ new #[Layout('components.layouts.guest')] class extends Component {
 
     public bool $submitted = false;
 
-    public function mount(AgentListing $agentListing): void
+    public function mount(Property $property): void
     {
-        if (! $agentListing->isActive()) {
+        if ($property->listing_status !== 'active') {
             abort(404);
         }
 
-        $this->agentListing = $agentListing;
+        $this->property = $property;
     }
 
     public function submit(): void
@@ -76,15 +76,15 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'state' => $this->state ?: null,
             'zip' => $this->zip ?: null,
             'notes' => $this->notes ?: null,
-            'referred_by' => $this->agentListing->agent_id,
-            'listing_id' => $this->agentListing->id,
+            'referred_by' => $this->property->agent_id,
+            'property_id' => $this->property->id,
             'source' => 'open_house',
             'status' => 'active',
-            'created_by' => $this->agentListing->agent_id,
+            'created_by' => $this->property->agent_id,
         ]);
 
         // Notify the agent about the new sign-up
-        $this->agentListing->agent->notify(new NewOpenHouseSignup($customer, $this->agentListing));
+        $this->property->agent->notify(new NewOpenHouseSignup($customer, $this->property));
 
         $this->submitted = true;
     }
@@ -108,11 +108,11 @@ new #[Layout('components.layouts.guest')] class extends Component {
                         We appreciate you visiting our open house at:
                     </flux:text>
                     <flux:text class="font-medium text-zinc-800 dark:text-zinc-200">
-                        {{ $agentListing->full_address }}
+                        {{ $property->full_address }}
                     </flux:text>
                     <flux:text class="text-zinc-500 dark:text-zinc-400 mt-6 text-sm">
-                        @if ($agentListing->agent)
-                            {{ $agentListing->agent->name }} will be in touch soon.
+                        @if ($property->agent)
+                            {{ $property->agent->name }} will be in touch soon.
                         @else
                             Our team will be in touch soon.
                         @endif
@@ -120,15 +120,15 @@ new #[Layout('components.layouts.guest')] class extends Component {
                 </div>
             @else
                 <div class="mb-6">
-                    <flux:heading size="lg" class="mb-2">{{ $agentListing->full_address }}</flux:heading>
-                    @if ($agentListing->agent)
+                    <flux:heading size="lg" class="mb-2">{{ $property->full_address }}</flux:heading>
+                    @if ($property->agent)
                         <flux:text class="text-zinc-600 dark:text-zinc-400">
-                            Agent: {{ $agentListing->agent->name }}
+                            Agent: {{ $property->agent->name }}
                         </flux:text>
                     @endif
-                    @if ($agentListing->listing_price)
+                    @if ($property->listing_price)
                         <flux:text class="text-zinc-600 dark:text-zinc-400 mt-1">
-                            Listed at: ${{ number_format($agentListing->listing_price, 0) }}
+                            Listed at: ${{ number_format($property->listing_price, 0) }}
                         </flux:text>
                     @endif
                 </div>

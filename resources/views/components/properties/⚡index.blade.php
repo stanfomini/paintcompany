@@ -25,6 +25,8 @@ new class extends Component {
 
     public string $customerFilter = '';
 
+    public string $sourceFilter = 'all';
+
     public int $perPage = 15;
 
     #[On('property-created')]
@@ -49,6 +51,11 @@ new class extends Component {
         $this->resetPage();
     }
 
+    public function updatedSourceFilter(): void
+    {
+        $this->resetPage();
+    }
+
     public function getCustomersProperty(): Collection
     {
         return Customer::query()
@@ -67,13 +74,16 @@ new class extends Component {
         }
 
         return Property::query()
-            ->with(['customer', 'photos'])
+            ->with(['customer', 'photos', 'agent'])
             ->search($this->search)
             ->when($this->typeFilter !== 'all', function ($query) {
                 return $query->ofType($this->typeFilter);
             })
             ->when($this->customerFilter !== '', function ($query) {
                 return $query->where('customer_id', $this->customerFilter);
+            })
+            ->when($this->sourceFilter !== 'all', function ($query) {
+                return $query->ofSource($this->sourceFilter);
             })
             ->latest()
             ->paginate($this->perPage);
@@ -118,6 +128,14 @@ new class extends Component {
                     @endforeach
                 </flux:select>
             </div>
+            <div class="sm:w-48">
+                <flux:select wire:model.live="sourceFilter">
+                    <option value="all">All Sources</option>
+                    @foreach (\App\Models\Property::SOURCES as $key => $label)
+                        <option value="{{ $key }}">{{ $label }}</option>
+                    @endforeach
+                </flux:select>
+            </div>
         </div>
 
         @if ($this->properties->count() > 0)
@@ -136,6 +154,12 @@ new class extends Component {
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                                 Type
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                                Source
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                                Agent
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                                 Photos
@@ -170,6 +194,16 @@ new class extends Component {
                                     @else
                                         <flux:badge size="sm" color="zinc">{{ ucfirst($property->type) }}</flux:badge>
                                     @endif
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    @if ($property->source)
+                                        <flux:badge size="sm" color="zinc">{{ \App\Models\Property::SOURCES[$property->source] ?? ucfirst($property->source) }}</flux:badge>
+                                    @else
+                                        <flux:text class="text-zinc-400">-</flux:text>
+                                    @endif
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <flux:text>{{ $property->agent?->name ?? '-' }}</flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <flux:text>{{ $property->photos->count() }}</flux:text>

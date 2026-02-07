@@ -1,25 +1,23 @@
 <?php
 
-use App\Models\AgentListing;
 use App\Models\Customer;
-use App\Models\ListingPhoto;
 use App\Models\Property;
 use App\Models\PropertyPhoto;
 use App\Models\User;
 
 test('can get video data for a listing', function () {
     $agent = User::factory()->agent()->create();
-    $listing = AgentListing::factory()->for($agent, 'agent')->create([
+    $property = Property::factory()->agentListing()->forAgent($agent)->create([
         'address' => '123 Test Street',
         'city' => 'Denver',
         'state' => 'CO',
         'zip' => '80202',
     ]);
 
-    ListingPhoto::factory()->for($listing, 'listing')->before()->create();
-    ListingPhoto::factory()->for($listing, 'listing')->after()->create();
+    PropertyPhoto::factory()->forProperty($property)->before()->create();
+    PropertyPhoto::factory()->forProperty($property)->after()->create();
 
-    $response = $this->getJson("/api/video-data/listing/{$listing->id}");
+    $response = $this->getJson("/api/video-data/listing/{$property->id}");
 
     $response->assertOk()
         ->assertJsonStructure([
@@ -52,7 +50,7 @@ test('can get video data for a property', function () {
         'zip' => '80301',
     ]);
 
-    PropertyPhoto::factory()->for($property)->create(); // Default is 'general'
+    PropertyPhoto::factory()->forProperty($property)->create();
 
     $response = $this->getJson("/api/video-data/property/{$property->id}");
 

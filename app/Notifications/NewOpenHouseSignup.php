@@ -2,8 +2,8 @@
 
 namespace App\Notifications;
 
-use App\Models\AgentListing;
 use App\Models\Customer;
+use App\Models\Property;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -18,7 +18,7 @@ class NewOpenHouseSignup extends Notification implements ShouldQueue
      */
     public function __construct(
         public Customer $customer,
-        public AgentListing $listing
+        public Property $listing
     ) {}
 
     /**

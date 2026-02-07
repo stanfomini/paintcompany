@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\AgentListing;
 use App\Models\Customer;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -41,7 +41,7 @@ describe('Agent Customer Show component', function () {
 
     it('displays the listing the customer was referred from', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Main St',
             'city' => 'Springfield',
             'state' => 'IL',
@@ -51,7 +51,7 @@ describe('Agent Customer Show component', function () {
         $customer = Customer::factory()->referredByAgent($agent)->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
         ]);
 
         Livewire::actingAs($agent, 'agent')

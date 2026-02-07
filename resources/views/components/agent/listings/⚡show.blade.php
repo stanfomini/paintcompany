@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use Illuminate\Contracts\View\View;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Attributes\Computed;
@@ -11,33 +11,33 @@ use Livewire\Component;
 new #[Layout('components.layouts.agent', ['title' => 'Listing Details'])] class extends Component {
     use AuthorizesRequests;
 
-    public AgentListing $agentListing;
+    public Property $property;
 
     public bool $showDeleteModal = false;
 
-    public function mount(AgentListing $agentListing): void
+    public function mount(Property $property): void
     {
-        $this->authorize('view', $agentListing);
+        $this->authorize('view', $property);
 
-        $this->agentListing = $agentListing;
+        $this->property = $property;
     }
 
     #[Computed]
-    public function listing(): AgentListing
+    public function listing(): Property
     {
-        return $this->agentListing;
+        return $this->property;
     }
 
     #[Computed]
     public function referredCustomersCount(): int
     {
-        return $this->agentListing->referredCustomers()->count();
+        return $this->property->referredCustomers()->count();
     }
 
     #[On('listing-updated')]
     public function refreshListing(): void
     {
-        $this->agentListing->refresh();
+        $this->property->refresh();
     }
 
     public function confirmDelete(): void
@@ -52,9 +52,9 @@ new #[Layout('components.layouts.agent', ['title' => 'Listing Details'])] class 
 
     public function delete(): void
     {
-        $this->authorize('delete', $this->agentListing);
+        $this->authorize('delete', $this->property);
 
-        $this->agentListing->delete();
+        $this->property->delete();
 
         session()->flash('success', 'Listing archived successfully.');
 
@@ -96,7 +96,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Listing Details'])] class 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
                 <flux:text class="text-zinc-500 text-sm">{{ __('Status') }}</flux:text>
                 <div class="mt-1">
-                    @switch($this->listing->status)
+                    @switch($this->listing->listing_status)
                         @case('active')
                             <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                             @break

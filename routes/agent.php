@@ -32,8 +32,8 @@ Route::middleware(['auth:agent', 'auth.agent'])->group(function () {
 
     // Listing routes
     Route::livewire('listings', 'agent.listings.index')->name('listings.index');
-    Route::livewire('listings/{agentListing}', 'agent.listings.show')->name('listings.show');
-    Route::get('listings/{agentListing}/flyer', [\App\Http\Controllers\Agent\AgentListingFlyerController::class, 'download'])->name('listings.flyer');
+    Route::livewire('listings/{property}', 'agent.listings.show')->name('listings.show');
+    Route::get('listings/{property}/flyer', [\App\Http\Controllers\Agent\PropertyFlyerController::class, 'download'])->name('listings.flyer');
 
     // Customer routes (read-only)
     Route::livewire('customers', 'agent.customers.index')->name('customers.index');

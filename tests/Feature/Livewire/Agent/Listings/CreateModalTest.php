@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -105,13 +105,13 @@ describe('Agent Listings CreateModal component', function () {
             ->assertDispatched('listing-created')
             ->assertSet('showModal', false);
 
-        $this->assertDatabaseHas('agent_listings', [
+        $this->assertDatabaseHas('properties', [
             'agent_id' => $agent->id,
             'address' => '123 Test Street',
             'city' => 'Los Angeles',
             'state' => 'CA',
             'zip' => '90001',
-            'status' => 'active',
+            'listing_status' => 'active',
         ]);
     });
 
@@ -133,13 +133,13 @@ describe('Agent Listings CreateModal component', function () {
             ->assertHasNoErrors()
             ->assertDispatched('listing-created');
 
-        $this->assertDatabaseHas('agent_listings', [
+        $this->assertDatabaseHas('properties', [
             'agent_id' => $agent->id,
             'address' => '456 Full Address',
             'city' => 'San Francisco',
             'state' => 'CA',
             'zip' => '94102',
-            'status' => 'pending',
+            'listing_status' => 'pending',
             'listing_price' => 750000,
             'description' => 'Beautiful home with great view',
             'notes' => 'Owner is motivated',
@@ -157,7 +157,7 @@ describe('Agent Listings CreateModal component', function () {
             ->set('zip', '90001')
             ->call('save');
 
-        $this->assertDatabaseHas('agent_listings', [
+        $this->assertDatabaseHas('properties', [
             'agent_id' => $agent->id,
             'state' => 'CA',
         ]);
@@ -174,9 +174,9 @@ describe('Agent Listings CreateModal component', function () {
             ->set('zip', '90001')
             ->call('save');
 
-        $listing = AgentListing::where('address', '123 Test Street')->first();
+        $property = Property::where('address', '123 Test Street')->first();
 
-        expect($listing->agent_id)->toBe($agent->id);
+        expect($property->agent_id)->toBe($agent->id);
     });
 
     it('resets status to active after closing modal', function () {
@@ -213,7 +213,7 @@ describe('Agent Listings CreateModal component', function () {
             ->call('save')
             ->assertHasNoErrors();
 
-        $this->assertDatabaseHas('agent_listings', [
+        $this->assertDatabaseHas('properties', [
             'agent_id' => $agent->id,
             'address' => '123 Test Street',
             'listing_price' => null,

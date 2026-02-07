@@ -2,6 +2,8 @@
 
 namespace Database\Factories;
 
+use App\Models\Estimate;
+use App\Models\Job;
 use App\Models\Property;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -27,6 +29,36 @@ class PropertyPhotoFactory extends Factory
             'category' => 'general',
             'sort_order' => 0,
         ];
+    }
+
+    /**
+     * Associate with a specific estimate.
+     */
+    public function forEstimate(Estimate $estimate): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'estimate_id' => $estimate->id,
+        ]);
+    }
+
+    /**
+     * Associate with a specific job.
+     */
+    public function forJob(Job $job): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'job_id' => $job->id,
+        ]);
+    }
+
+    /**
+     * Set photo to be shown on proposal.
+     */
+    public function proposalPhoto(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'show_on_proposal' => true,
+        ]);
     }
 
     /**
@@ -56,6 +88,26 @@ class PropertyPhotoFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'category' => 'after',
+        ]);
+    }
+
+    /**
+     * Set photo category to reference.
+     */
+    public function reference(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'category' => 'reference',
+        ]);
+    }
+
+    /**
+     * Set photo to be hidden from proposal.
+     */
+    public function hiddenFromProposal(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'show_on_proposal' => false,
         ]);
     }
 

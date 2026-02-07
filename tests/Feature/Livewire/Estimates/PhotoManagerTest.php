@@ -2,7 +2,8 @@
 
 use App\Models\Deal;
 use App\Models\Estimate;
-use App\Models\EstimatePhoto;
+use App\Models\Property;
+use App\Models\PropertyPhoto;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -11,8 +12,10 @@ use Livewire\Livewire;
 describe('PhotoManager component', function () {
     beforeEach(function () {
         Storage::fake('local');
+        Storage::fake('public');
         $this->internalUser = User::factory()->internal()->withFullAccess()->create();
-        $this->deal = Deal::factory()->create();
+        $this->property = Property::factory()->create();
+        $this->deal = Deal::factory()->forProperty($this->property)->create();
         $this->estimate = Estimate::factory()->forDeal($this->deal)->draft()->create([
             'created_by' => $this->internalUser->id,
         ]);
@@ -39,7 +42,7 @@ describe('PhotoManager component', function () {
             ->assertSet('showUploadModal', false)
             ->assertDispatched('photos-updated');
 
-        $photo = EstimatePhoto::where('estimate_id', $this->estimate->id)->first();
+        $photo = PropertyPhoto::where('estimate_id', $this->estimate->id)->first();
         expect($photo)->not->toBeNull();
         expect($photo->category)->toBe('before');
         expect($photo->show_on_proposal)->toBeTrue();
@@ -47,7 +50,7 @@ describe('PhotoManager component', function () {
     });
 
     it('can edit photo caption', function () {
-        $photo = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'caption' => 'Original Caption',
             'uploaded_by' => $this->internalUser->id,
         ]);
@@ -68,8 +71,8 @@ describe('PhotoManager component', function () {
     });
 
     it('can change photo category', function () {
-        $photo = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
-            'category' => 'other',
+        $photo = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
+            'category' => 'general',
             'uploaded_by' => $this->internalUser->id,
         ]);
 
@@ -85,28 +88,28 @@ describe('PhotoManager component', function () {
     });
 
     it('can delete photo', function () {
-        $photo = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'uploaded_by' => $this->internalUser->id,
         ]);
 
-        expect(EstimatePhoto::where('id', $photo->id)->exists())->toBeTrue();
+        expect(PropertyPhoto::where('id', $photo->id)->exists())->toBeTrue();
 
         Livewire::actingAs($this->internalUser)
             ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('deletePhoto', $photo->id)
             ->assertDispatched('photos-updated');
 
-        expect(EstimatePhoto::where('id', $photo->id)->exists())->toBeFalse();
+        expect(PropertyPhoto::where('id', $photo->id)->exists())->toBeFalse();
     });
 
     it('filters photos by category', function () {
-        EstimatePhoto::factory()->forEstimate($this->estimate)->before()->create([
+        PropertyPhoto::factory()->forEstimate($this->estimate)->before()->create([
             'uploaded_by' => $this->internalUser->id,
         ]);
-        EstimatePhoto::factory()->forEstimate($this->estimate)->during()->create([
+        PropertyPhoto::factory()->forEstimate($this->estimate)->during()->create([
             'uploaded_by' => $this->internalUser->id,
         ]);
-        EstimatePhoto::factory()->forEstimate($this->estimate)->reference()->create([
+        PropertyPhoto::factory()->forEstimate($this->estimate)->reference()->create([
             'uploaded_by' => $this->internalUser->id,
         ]);
 
@@ -126,7 +129,7 @@ describe('PhotoManager component', function () {
     });
 
     it('show_on_proposal toggle works', function () {
-        $photo = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'show_on_proposal' => true,
             'uploaded_by' => $this->internalUser->id,
         ]);
@@ -165,7 +168,7 @@ describe('PhotoManager component', function () {
     });
 
     it('validates photo category is required', function () {
-        $photo = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'uploaded_by' => $this->internalUser->id,
         ]);
 
@@ -178,11 +181,11 @@ describe('PhotoManager component', function () {
     });
 
     it('can reorder photos', function () {
-        $photo1 = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo1 = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'sort_order' => 0,
             'uploaded_by' => $this->internalUser->id,
         ]);
-        $photo2 = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo2 = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'sort_order' => 1,
             'uploaded_by' => $this->internalUser->id,
         ]);
@@ -201,13 +204,13 @@ describe('PhotoManager component', function () {
 
     it('cannot delete photo from another estimate', function () {
         $otherEstimate = Estimate::factory()->create();
-        $otherPhoto = EstimatePhoto::factory()->forEstimate($otherEstimate)->create();
+        $otherPhoto = PropertyPhoto::factory()->forEstimate($otherEstimate)->create();
 
         Livewire::actingAs($this->internalUser)
             ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('deletePhoto', $otherPhoto->id);
 
-        expect(EstimatePhoto::where('id', $otherPhoto->id)->exists())->toBeTrue();
+        expect(PropertyPhoto::where('id', $otherPhoto->id)->exists())->toBeTrue();
     });
 
     it('closes upload modal and resets state', function () {
@@ -221,11 +224,11 @@ describe('PhotoManager component', function () {
             ->call('closeUploadModal')
             ->assertSet('showUploadModal', false)
             ->assertSet('uploadedPhotos', [])
-            ->assertSet('defaultCategory', 'other');
+            ->assertSet('defaultCategory', 'general');
     });
 
     it('closes edit modal and resets state', function () {
-        $photo = EstimatePhoto::factory()->forEstimate($this->estimate)->create([
+        $photo = PropertyPhoto::factory()->forEstimate($this->estimate)->create([
             'caption' => 'Test Caption',
             'uploaded_by' => $this->internalUser->id,
         ]);

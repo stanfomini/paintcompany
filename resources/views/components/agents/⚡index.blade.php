@@ -48,7 +48,7 @@ new class extends Component {
     {
         return User::query()
             ->where('type', 'agent')
-            ->with(['agentProfile', 'agentListings', 'referredCustomers'])
+            ->with(['agentProfile', 'agentProperties', 'referredCustomers'])
             ->when($this->search, function ($query) {
                 $query->where(function ($q) {
                     $q->where('name', 'like', "%{$this->search}%")
@@ -139,7 +139,7 @@ new class extends Component {
                                     <flux:text>{{ $agent->agentProfile?->license_number ?? '-' }}</flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <flux:text>{{ $agent->agentListings->count() }}</flux:text>
+                                    <flux:text>{{ $agent->agentProperties->count() }}</flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <flux:text>{{ $agent->referredCustomers->count() }}</flux:text>

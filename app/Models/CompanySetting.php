@@ -344,6 +344,211 @@ class CompanySetting extends Model
     }
 
     /**
+     * Seed smart default conditional allocations.
+     *
+     * Creates 14 practical business allocations that a painting company
+     * commonly needs. All are created inactive so the user can review
+     * and enable what they need.
+     */
+    public function seedDefaultAllocations(): void
+    {
+        $defaults = [
+            [
+                'name' => 'Credit Card Processing Fee',
+                'slug' => 'credit_card_processing_fee',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_informational' => false,
+                'description' => 'Card processing fee (Stripe/credit card payments)',
+                'sort_order' => 20,
+                'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'in', 'value' => ['credit_card', 'stripe']],
+                ],
+                'conditions_logic' => 'any',
+            ],
+            [
+                'name' => 'ACH Processing Fee',
+                'slug' => 'ach_processing_fee',
+                'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
+                'value' => 5.00,
+                'is_informational' => false,
+                'description' => 'Bank transfer processing fee',
+                'sort_order' => 21,
+                'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'ach'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Agent Referral Commission',
+                'slug' => 'agent_referral_commission',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 5.00,
+                'is_informational' => false,
+                'description' => 'Commission for agent-referred jobs',
+                'sort_order' => 22,
+                'conditions' => [
+                    ['field' => 'has_agent_referral', 'operator' => 'equals', 'value' => true],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Repeat Customer Loyalty Cost',
+                'slug' => 'repeat_customer_loyalty_cost',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 2.00,
+                'is_informational' => true,
+                'description' => 'Tracks loyalty discount cost for returning customers',
+                'sort_order' => 23,
+                'conditions' => [
+                    ['field' => 'is_repeat_customer', 'operator' => 'equals', 'value' => true],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Exterior Equipment Reserve',
+                'slug' => 'exterior_equipment_reserve',
+                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                'value' => 3.50,
+                'is_informational' => false,
+                'description' => 'Ladders, sprayers, power washers for exterior work',
+                'sort_order' => 24,
+                'conditions' => [
+                    ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Interior Protection & Supplies',
+                'slug' => 'interior_protection_supplies',
+                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                'value' => 1.50,
+                'is_informational' => false,
+                'description' => 'Drop cloths, tape, plastic sheeting for interior',
+                'sort_order' => 25,
+                'conditions' => [
+                    ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'interior'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Small Job Minimum Overhead',
+                'slug' => 'small_job_minimum_overhead',
+                'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
+                'value' => 75.00,
+                'is_informational' => false,
+                'description' => 'Fixed overhead for small jobs under $1,500',
+                'sort_order' => 26,
+                'conditions' => [
+                    ['field' => 'job_price', 'operator' => 'less_than', 'value' => '1500'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Large Job Efficiency Credit',
+                'slug' => 'large_job_efficiency_credit',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 0.00,
+                'is_informational' => true,
+                'description' => 'Tracks efficiency gains on large jobs over $15,000',
+                'sort_order' => 27,
+                'conditions' => [
+                    ['field' => 'job_price', 'operator' => 'greater_than', 'value' => '15000'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Winter Season Premium',
+                'slug' => 'winter_season_premium',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_informational' => true,
+                'description' => 'Tracks seasonal cost impact during winter months',
+                'sort_order' => 28,
+                'conditions' => [
+                    ['field' => 'season', 'operator' => 'equals', 'value' => 'winter'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Heavy Prep Equipment Wear',
+                'slug' => 'heavy_prep_equipment_wear',
+                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                'value' => 2.00,
+                'is_informational' => false,
+                'description' => 'Extra equipment wear for complex substrates (peeling, masonry)',
+                'sort_order' => 29,
+                'conditions' => [
+                    ['field' => 'has_complex_substrate', 'operator' => 'equals', 'value' => true],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Spray Equipment & Materials',
+                'slug' => 'spray_equipment_materials',
+                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                'value' => 4.00,
+                'is_informational' => false,
+                'description' => 'Spray equipment maintenance, tips, and masking materials',
+                'sort_order' => 30,
+                'conditions' => [
+                    ['field' => 'has_spray_application', 'operator' => 'equals', 'value' => true],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Multi-Crew Coordination',
+                'slug' => 'multi_crew_coordination',
+                'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
+                'value' => 150.00,
+                'is_informational' => false,
+                'description' => 'Coordination overhead for jobs requiring 4+ crew members',
+                'sort_order' => 31,
+                'conditions' => [
+                    ['field' => 'crew_size', 'operator' => 'greater_than', 'value' => '3'],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Subcontractor Management Fee',
+                'slug' => 'subcontractor_management_fee',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 2.00,
+                'is_informational' => false,
+                'description' => 'Oversight cost when subcontractors are used',
+                'sort_order' => 32,
+                'conditions' => [
+                    ['field' => 'has_subcontractor', 'operator' => 'equals', 'value' => true],
+                ],
+                'conditions_logic' => 'all',
+            ],
+            [
+                'name' => 'Lead Platform Cost Recovery',
+                'slug' => 'lead_platform_cost_recovery',
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 4.00,
+                'is_informational' => true,
+                'description' => 'Tracks cost of paid lead platforms (Google Ads, HomeAdvisor, Thumbtack)',
+                'sort_order' => 33,
+                'conditions' => [
+                    ['field' => 'lead_source', 'operator' => 'in', 'value' => ['google_ads', 'home_advisor', 'thumbtack']],
+                ],
+                'conditions_logic' => 'any',
+            ],
+        ];
+
+        foreach ($defaults as $data) {
+            $this->allocations()->updateOrCreate(
+                ['slug' => $data['slug']],
+                array_merge($data, [
+                    'is_active' => false,
+                    'is_system' => false,
+                ])
+            );
+        }
+    }
+
+    /**
      * Get default paint catalog with common paint brands, prices, and coverage.
      * Coverage is in sqft per gallon (standard coverage, adjusted by application method).
      *

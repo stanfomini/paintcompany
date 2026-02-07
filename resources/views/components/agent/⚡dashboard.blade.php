@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\Customer;
 use App\Models\Deal;
 use Illuminate\Contracts\View\View;
@@ -28,13 +28,13 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
     #[Computed]
     public function totalListings(): int
     {
-        return AgentListing::query()->forAgent(auth('agent')->user())->count();
+        return Property::query()->forAgent(auth('agent')->user())->count();
     }
 
     #[Computed]
     public function activeListings(): int
     {
-        return AgentListing::query()->forAgent(auth('agent')->user())->active()->count();
+        return Property::query()->forAgent(auth('agent')->user())->activeListing()->count();
     }
 
     #[Computed]
@@ -46,7 +46,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
     #[Computed]
     public function upcomingOpenHousesCount(): int
     {
-        return AgentListing::query()
+        return Property::query()
             ->forAgent(auth('agent')->user())
             ->withUpcomingOpenHouse()
             ->where('open_house_date', '<=', now()->addDays(7))
@@ -85,7 +85,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
     #[Computed]
     public function upcomingOpenHouses()
     {
-        return AgentListing::query()
+        return Property::query()
             ->forAgent(auth('agent')->user())
             ->withUpcomingOpenHouse()
             ->orderBy('open_house_date')
@@ -98,7 +98,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
     {
         return Customer::query()
             ->referredByAgent(auth('agent')->user())
-            ->with('listing')
+            ->with('originProperty')
             ->latest()
             ->limit(5)
             ->get();
@@ -521,9 +521,9 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
                                     <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 truncate">
                                         {{ $customer->email ?? $customer->phone ?? __('No contact info') }}
                                     </flux:text>
-                                    @if ($customer->listing)
+                                    @if ($customer->originProperty)
                                         <flux:text class="text-xs text-zinc-400 dark:text-zinc-500 truncate">
-                                            {{ __('From: :address', ['address' => $customer->listing->address]) }}
+                                            {{ __('From: :address', ['address' => $customer->originProperty->address]) }}
                                         </flux:text>
                                     @endif
                                 </div>

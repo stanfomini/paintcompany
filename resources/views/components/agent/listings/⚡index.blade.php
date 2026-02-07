@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -20,7 +20,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Listings'])] class exte
 
     public function mount(): void
     {
-        $this->authorize('viewAny', AgentListing::class);
+        $this->authorize('viewAny', Property::class);
     }
 
     public function updatedSearch(): void
@@ -42,7 +42,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Listings'])] class exte
 
     public function delete(int $id): void
     {
-        $listing = AgentListing::findOrFail($id);
+        $listing = Property::findOrFail($id);
 
         $this->authorize('delete', $listing);
 
@@ -56,11 +56,11 @@ new #[Layout('components.layouts.agent', ['title' => 'My Listings'])] class exte
     {
         $agent = auth('agent')->user();
 
-        return AgentListing::query()
+        return Property::query()
             ->forAgent($agent)
             ->search($this->search)
             ->when($this->statusFilter !== 'all', function ($query) {
-                return $query->ofStatus($this->statusFilter);
+                return $query->ofListingStatus($this->statusFilter);
             })
             ->latest()
             ->paginate($this->perPage);
@@ -69,7 +69,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Listings'])] class exte
     #[Computed]
     public function statuses(): array
     {
-        return AgentListing::STATUSES;
+        return Property::LISTING_STATUSES;
     }
 }; ?>
 
@@ -142,7 +142,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Listings'])] class exte
                                     <flux:text>{{ $listing->city }}, {{ $listing->state }} {{ $listing->zip }}</flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    @switch($listing->status)
+                                    @switch($listing->listing_status)
                                         @case('active')
                                             <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                                             @break

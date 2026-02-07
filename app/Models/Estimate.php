@@ -239,7 +239,7 @@ class Estimate extends Model
      */
     public function photos(): HasMany
     {
-        return $this->hasMany(EstimatePhoto::class)->orderBy('sort_order');
+        return $this->hasMany(PropertyPhoto::class)->orderBy('sort_order');
     }
 
     /**

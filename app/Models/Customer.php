@@ -19,7 +19,7 @@ class Customer extends Model
         'user_id',
         'created_by',
         'referred_by',
-        'listing_id',
+        'property_id',
         'first_name',
         'last_name',
         'email',
@@ -87,11 +87,11 @@ class Customer extends Model
     }
 
     /**
-     * Get the agent listing this customer was referred from.
+     * Get the property this customer was referred from (origin property/listing).
      */
-    public function listing(): BelongsTo
+    public function originProperty(): BelongsTo
     {
-        return $this->belongsTo(AgentListing::class, 'listing_id');
+        return $this->belongsTo(Property::class, 'property_id');
     }
 
     /**

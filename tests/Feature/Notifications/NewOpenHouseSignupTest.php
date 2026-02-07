@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\AgentListing;
 use App\Models\Customer;
+use App\Models\Property;
 use App\Models\User;
 use App\Notifications\NewOpenHouseSignup;
 use Illuminate\Support\Facades\Notification;
@@ -13,13 +13,13 @@ describe('NewOpenHouseSignup Notification', function () {
         Notification::fake();
 
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $agent->notify(new NewOpenHouseSignup($customer, $listing));
+        $agent->notify(new NewOpenHouseSignup($customer, $property));
 
         Notification::assertSentTo($agent, NewOpenHouseSignup::class);
     });
@@ -28,17 +28,17 @@ describe('NewOpenHouseSignup Notification', function () {
         Notification::fake();
 
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
         $customer = Customer::factory()->create([
             'first_name' => 'John',
             'last_name' => 'Doe',
             'email' => 'john.doe@example.com',
             'phone' => '555-123-4567',
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $agent->notify(new NewOpenHouseSignup($customer, $listing));
+        $agent->notify(new NewOpenHouseSignup($customer, $property));
 
         Notification::assertSentTo($agent, NewOpenHouseSignup::class, function ($notification) {
             expect($notification->customer->first_name)->toBe('John');
@@ -54,18 +54,18 @@ describe('NewOpenHouseSignup Notification', function () {
         Notification::fake();
 
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Main St',
             'city' => 'Springfield',
             'state' => 'IL',
             'zip' => '62701',
         ]);
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $agent->notify(new NewOpenHouseSignup($customer, $listing));
+        $agent->notify(new NewOpenHouseSignup($customer, $property));
 
         Notification::assertSentTo($agent, NewOpenHouseSignup::class, function ($notification) {
             expect($notification->listing->address)->toBe('123 Main St');
@@ -83,13 +83,13 @@ describe('NewOpenHouseSignup Notification', function () {
 
         $agent1 = User::factory()->agent()->create();
         $agent2 = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent1)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent1)->create();
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent1->id,
         ]);
 
-        $agent1->notify(new NewOpenHouseSignup($customer, $listing));
+        $agent1->notify(new NewOpenHouseSignup($customer, $property));
 
         Notification::assertSentTo($agent1, NewOpenHouseSignup::class);
         Notification::assertNotSentTo($agent2, NewOpenHouseSignup::class);
@@ -97,13 +97,13 @@ describe('NewOpenHouseSignup Notification', function () {
 
     it('has correct view customer link', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $notification = new NewOpenHouseSignup($customer, $listing);
+        $notification = new NewOpenHouseSignup($customer, $property);
         $mailMessage = $notification->toMail($agent);
 
         expect($mailMessage->actionUrl)->toBe(url('/agent/customers/'.$customer->id));
@@ -111,15 +111,15 @@ describe('NewOpenHouseSignup Notification', function () {
 
     it('has correct email subject with listing address', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '456 Oak Avenue',
         ]);
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $notification = new NewOpenHouseSignup($customer, $listing);
+        $notification = new NewOpenHouseSignup($customer, $property);
         $mailMessage = $notification->toMail($agent);
 
         expect($mailMessage->subject)->toBe('New Open House Sign-up: 456 Oak Avenue');
@@ -127,13 +127,13 @@ describe('NewOpenHouseSignup Notification', function () {
 
     it('greets agent by name', function () {
         $agent = User::factory()->agent()->create(['name' => 'Jane Smith']);
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $notification = new NewOpenHouseSignup($customer, $listing);
+        $notification = new NewOpenHouseSignup($customer, $property);
         $mailMessage = $notification->toMail($agent);
 
         expect($mailMessage->greeting)->toBe('Hello Jane Smith!');
@@ -141,14 +141,14 @@ describe('NewOpenHouseSignup Notification', function () {
 
     it('shows not provided when phone is missing', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
         $customer = Customer::factory()->create([
             'phone' => null,
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $notification = new NewOpenHouseSignup($customer, $listing);
+        $notification = new NewOpenHouseSignup($customer, $property);
         $mailMessage = $notification->toMail($agent);
 
         $phoneLineFound = false;
@@ -165,7 +165,7 @@ describe('NewOpenHouseSignup Notification', function () {
     it('implements ShouldQueue interface', function () {
         $notification = new NewOpenHouseSignup(
             Customer::factory()->make(),
-            AgentListing::factory()->make()
+            Property::factory()->agentListing()->make()
         );
 
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
@@ -173,13 +173,13 @@ describe('NewOpenHouseSignup Notification', function () {
 
     it('uses mail channel only', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
         $customer = Customer::factory()->create([
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $notification = new NewOpenHouseSignup($customer, $listing);
+        $notification = new NewOpenHouseSignup($customer, $property);
         $channels = $notification->via($agent);
 
         expect($channels)->toBe(['mail']);
@@ -187,22 +187,22 @@ describe('NewOpenHouseSignup Notification', function () {
 
     it('converts to array with correct structure', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '789 Pine St',
         ]);
         $customer = Customer::factory()->create([
             'first_name' => 'Bob',
             'last_name' => 'Johnson',
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'referred_by' => $agent->id,
         ]);
 
-        $notification = new NewOpenHouseSignup($customer, $listing);
+        $notification = new NewOpenHouseSignup($customer, $property);
         $array = $notification->toArray($agent);
 
         expect($array)->toHaveKeys(['customer_id', 'listing_id', 'customer_name', 'listing_address']);
         expect($array['customer_id'])->toBe($customer->id);
-        expect($array['listing_id'])->toBe($listing->id);
+        expect($array['listing_id'])->toBe($property->id);
         expect($array['customer_name'])->toBe('Bob Johnson');
         expect($array['listing_address'])->toBe('789 Pine St');
     });

@@ -1,12 +1,12 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\User;
 
 describe('Listing Flyer Access', function () {
     it('allows authenticated agent to download their own listing flyer', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Test Street',
             'city' => 'Springfield',
             'state' => 'IL',
@@ -14,7 +14,7 @@ describe('Listing Flyer Access', function () {
         ]);
 
         $response = $this->actingAs($agent, 'agent')
-            ->get(route('agent.listings.flyer', $listing));
+            ->get(route('agent.listings.flyer', $property));
 
         $response->assertSuccessful();
         $response->assertHeader('content-type', 'application/pdf');
@@ -24,28 +24,28 @@ describe('Listing Flyer Access', function () {
     it('returns 403 when agent tries to download another agent listing flyer', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($otherAgent)->create();
+        $property = Property::factory()->agentListing()->forAgent($otherAgent)->create();
 
         $this->actingAs($agent, 'agent')
-            ->get(route('agent.listings.flyer', $listing))
+            ->get(route('agent.listings.flyer', $property))
             ->assertForbidden();
     });
 
     it('redirects guests to agent login', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
-        $this->get(route('agent.listings.flyer', $listing))
+        $this->get(route('agent.listings.flyer', $property))
             ->assertRedirect(route('agent.login'));
     });
 
     it('redirects internal users away from agent flyer route', function () {
         $internalUser = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         $this->actingAs($internalUser, 'agent')
-            ->get(route('agent.listings.flyer', $listing))
+            ->get(route('agent.listings.flyer', $property))
             ->assertRedirect();
     });
 });
@@ -53,7 +53,7 @@ describe('Listing Flyer Access', function () {
 describe('Listing Flyer PDF Content', function () {
     it('contains the listing address', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '456 Unique Property Lane',
             'city' => 'Chicago',
             'state' => 'IL',
@@ -61,17 +61,17 @@ describe('Listing Flyer PDF Content', function () {
         ]);
 
         $response = $this->actingAs($agent, 'agent')
-            ->get(route('agent.listings.flyer', $listing));
+            ->get(route('agent.listings.flyer', $property));
 
         $response->assertSuccessful();
 
         // The PDF content is binary, but we can check that the view data is being passed correctly
         // by testing the view directly
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->toContain('456 Unique Property Lane');
@@ -82,14 +82,14 @@ describe('Listing Flyer PDF Content', function () {
 
     it('contains QR code SVG', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         // Test the view contains the QR code placeholder
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg xmlns="http://www.w3.org/2000/svg" class="qr-test"></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->toContain('<svg xmlns="http://www.w3.org/2000/svg" class="qr-test"></svg>');
@@ -105,13 +105,13 @@ describe('Listing Flyer PDF Content', function () {
             'phone' => '555-123-4567',
         ]);
 
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
+            'listing' => $property,
             'agent' => $agent->refresh(),
             'qrCodeSvg' => '<svg></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->toContain('Jane Smith');
@@ -122,32 +122,32 @@ describe('Listing Flyer PDF Content', function () {
 
     it('contains sign-up URL text', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
-        $signupUrl = url("/open-house/{$listing->id}");
+        $signupUrl = url("/open-house/{$property->id}");
 
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg></svg>',
             'signupUrl' => $signupUrl,
         ])->render();
 
         // The URL should appear without the protocol
-        expect($view)->toContain("open-house/{$listing->id}");
+        expect($view)->toContain("open-house/{$property->id}");
     });
 
     it('displays open house date when set', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => '2025-03-15 14:00:00',
         ]);
 
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->toContain('Saturday, March 15, 2025 at 2:00 PM');
@@ -155,15 +155,15 @@ describe('Listing Flyer PDF Content', function () {
 
     it('hides open house date section when not set', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => null,
         ]);
 
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->not->toContain('Date &amp; Time');
@@ -171,13 +171,13 @@ describe('Listing Flyer PDF Content', function () {
 
     it('contains Apex Negotiations branding', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->toContain('Apex Negotiations');
@@ -186,13 +186,13 @@ describe('Listing Flyer PDF Content', function () {
 
     it('contains services offered text', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         $view = view('pdf.open-house-flyer', [
-            'listing' => $listing,
-            'agent' => $listing->agent,
+            'listing' => $property,
+            'agent' => $property->agent,
             'qrCodeSvg' => '<svg></svg>',
-            'signupUrl' => url("/open-house/{$listing->id}"),
+            'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
         expect($view)->toContain('Free Property Tax Savings Consultation');
@@ -203,12 +203,12 @@ describe('Listing Flyer PDF Content', function () {
 describe('Listing Flyer PDF Generation', function () {
     it('generates PDF with correct filename based on address', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '789 Oak Avenue Unit 5B',
         ]);
 
         $response = $this->actingAs($agent, 'agent')
-            ->get(route('agent.listings.flyer', $listing));
+            ->get(route('agent.listings.flyer', $property));
 
         $response->assertSuccessful();
         $response->assertHeader('content-disposition', 'attachment; filename=open-house-flyer-789-oak-avenue-unit-5b.pdf');
@@ -216,10 +216,10 @@ describe('Listing Flyer PDF Generation', function () {
 
     it('returns response with PDF content type', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         $response = $this->actingAs($agent, 'agent')
-            ->get(route('agent.listings.flyer', $listing));
+            ->get(route('agent.listings.flyer', $property));
 
         $response->assertSuccessful();
         $response->assertHeader('content-type', 'application/pdf');

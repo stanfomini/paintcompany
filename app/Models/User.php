@@ -101,11 +101,11 @@ class User extends Authenticatable
     }
 
     /**
-     * Get the listings managed by this agent.
+     * Get the properties managed by this agent.
      */
-    public function agentListings(): HasMany
+    public function agentProperties(): HasMany
     {
-        return $this->hasMany(AgentListing::class, 'agent_id');
+        return $this->hasMany(Property::class, 'agent_id');
     }
 
     /**

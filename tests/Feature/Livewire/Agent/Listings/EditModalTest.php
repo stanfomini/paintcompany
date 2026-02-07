@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -15,19 +15,19 @@ describe('Agent Listings EditModal component', function () {
 
     it('opens modal with listing data on edit-listing event', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => '123 Test Street',
             'city' => 'Los Angeles',
             'state' => 'CA',
             'zip' => '90001',
-            'status' => 'active',
+            'listing_status' => 'active',
             'listing_price' => 500000,
         ]);
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
             ->assertSet('showModal', false)
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->assertSet('showModal', true)
             ->assertSet('address', '123 Test Street')
             ->assertSet('city', 'Los Angeles')
@@ -40,21 +40,21 @@ describe('Agent Listings EditModal component', function () {
     it('cannot open modal for another agent\'s listing', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
-        $otherListing = AgentListing::factory()->forAgent($otherAgent)->create();
+        $otherProperty = Property::factory()->agentListing()->forAgent($otherAgent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $otherListing->id)
+            ->dispatch('edit-listing', listingId: $otherProperty->id)
             ->assertForbidden();
     });
 
     it('closes modal and resets form', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->assertSet('showModal', true)
             ->call('closeModal')
             ->assertSet('showModal', false)
@@ -65,11 +65,11 @@ describe('Agent Listings EditModal component', function () {
 
     it('validates required fields', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('address', '')
             ->set('city', '')
             ->set('state', '')
@@ -80,11 +80,11 @@ describe('Agent Listings EditModal component', function () {
 
     it('validates state max length', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('state', 'CAL')
             ->call('save')
             ->assertHasErrors(['state']);
@@ -92,11 +92,11 @@ describe('Agent Listings EditModal component', function () {
 
     it('validates listing price is numeric', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('listingPrice', 'not-a-number')
             ->call('save')
             ->assertHasErrors(['listingPrice']);
@@ -104,11 +104,11 @@ describe('Agent Listings EditModal component', function () {
 
     it('validates status is valid', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('status', 'invalid-status')
             ->call('save')
             ->assertHasErrors(['status']);
@@ -116,13 +116,13 @@ describe('Agent Listings EditModal component', function () {
 
     it('updates listing successfully', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'address' => 'Old Address',
         ]);
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('address', 'New Address')
             ->set('city', 'San Francisco')
             ->set('state', 'ca')
@@ -134,30 +134,30 @@ describe('Agent Listings EditModal component', function () {
             ->assertDispatched('listing-updated')
             ->assertSet('showModal', false);
 
-        $this->assertDatabaseHas('agent_listings', [
-            'id' => $listing->id,
+        $this->assertDatabaseHas('properties', [
+            'id' => $property->id,
             'address' => 'New Address',
             'city' => 'San Francisco',
             'state' => 'CA',
             'zip' => '94102',
-            'status' => 'pending',
+            'listing_status' => 'pending',
             'listing_price' => 750000,
         ]);
     });
 
     it('converts state to uppercase on update', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('state', 'ny')
             ->call('save')
             ->assertHasNoErrors();
 
-        $this->assertDatabaseHas('agent_listings', [
-            'id' => $listing->id,
+        $this->assertDatabaseHas('properties', [
+            'id' => $property->id,
             'state' => 'NY',
         ]);
     });
@@ -165,14 +165,14 @@ describe('Agent Listings EditModal component', function () {
     it('cannot update another agent\'s listing', function () {
         $agent = User::factory()->agent()->create();
         $otherAgent = User::factory()->agent()->create();
-        $otherListing = AgentListing::factory()->forAgent($otherAgent)->create();
+        $otherProperty = Property::factory()->agentListing()->forAgent($otherAgent)->create();
 
         // Try to forcefully set listing and save
         $component = Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal');
 
         // Manually set the listing property (simulating a malicious attempt)
-        $component->set('listing', $otherListing)
+        $component->set('listing', $otherProperty)
             ->set('address', '123 Hack Street')
             ->set('city', 'Hackville')
             ->set('state', 'HK')
@@ -193,35 +193,35 @@ describe('Agent Listings EditModal component', function () {
 
     it('preserves agent_id when updating listing', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('address', 'Updated Address')
             ->call('save');
 
-        $this->assertDatabaseHas('agent_listings', [
-            'id' => $listing->id,
+        $this->assertDatabaseHas('properties', [
+            'id' => $property->id,
             'agent_id' => $agent->id,
         ]);
     });
 
     it('loads open house date in correct format', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'open_house_date' => '2025-02-15 14:00:00',
         ]);
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->assertSet('openHouseDate', '2025-02-15T14:00');
     });
 
     it('handles null optional fields', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'listing_price' => null,
             'description' => null,
             'notes' => null,
@@ -230,7 +230,7 @@ describe('Agent Listings EditModal component', function () {
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->assertSet('listingPrice', null)
             ->assertSet('description', '')
             ->assertSet('notes', '')
@@ -239,7 +239,7 @@ describe('Agent Listings EditModal component', function () {
 
     it('clears optional fields when set to empty', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->forAgent($agent)->create([
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
             'listing_price' => 500000,
             'description' => 'Original description',
             'notes' => 'Original notes',
@@ -247,15 +247,15 @@ describe('Agent Listings EditModal component', function () {
 
         Livewire::actingAs($agent, 'agent')
             ->test('agent.listings.edit-modal')
-            ->dispatch('edit-listing', listingId: $listing->id)
+            ->dispatch('edit-listing', listingId: $property->id)
             ->set('listingPrice', '')
             ->set('description', '')
             ->set('notes', '')
             ->call('save')
             ->assertHasNoErrors();
 
-        $this->assertDatabaseHas('agent_listings', [
-            'id' => $listing->id,
+        $this->assertDatabaseHas('properties', [
+            'id' => $property->id,
             'listing_price' => null,
             'description' => null,
             'notes' => null,

@@ -24,7 +24,7 @@ new class extends Component {
 
     public function mount(Estimate $estimate): void
     {
-        $this->estimate = $estimate->load(['deal.customer', 'createdBy.internalUser', 'items', 'areas.surfaces', 'templateUsages.template', 'packages', 'signature']);
+        $this->estimate = $estimate->load(['deal.customer', 'deal.property', 'createdBy.internalUser', 'items', 'areas.surfaces', 'templateUsages.template', 'packages', 'signature']);
         $this->publicUrl = $this->estimate->getPublicUrl();
     }
 
@@ -33,6 +33,7 @@ new class extends Component {
     {
         $this->estimate = $this->estimate->fresh([
             'deal.customer',
+            'deal.property',
             'createdBy.internalUser',
             'items',
             'areas.surfaces',
@@ -791,6 +792,18 @@ new class extends Component {
                             </div>
                         @endif
                     </div>
+                </div>
+            @endif
+
+            {{-- Photos --}}
+            @if ($estimate->deal?->property)
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden">
+                    <livewire:shared.photo-gallery
+                        :property="$estimate->deal->property"
+                        :estimate="$estimate"
+                        context="estimate"
+                        :key="'photos-'.$estimate->id"
+                    />
                 </div>
             @endif
 

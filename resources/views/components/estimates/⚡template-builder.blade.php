@@ -139,7 +139,7 @@ new class extends Component {
 
         if ($estimate && $estimate->exists) {
             $this->estimate = $estimate;
-            $this->deal = $estimate->deal;
+            $this->deal = $estimate->deal?->load('property');
             $this->isEditing = true;
 
             $this->title = $estimate->title;
@@ -171,7 +171,7 @@ new class extends Component {
                 $this->detectProjectScopeFromTemplates();
             }
         } else {
-            $this->deal = $deal;
+            $this->deal = $deal?->load('property');
 
             // Load company default paint products for the current scope (new estimates only)
             $companyDefaults = $settings->getPaintDefaultsForScope($this->projectScope);
@@ -3143,6 +3143,18 @@ new class extends Component {
                         <flux:error name="notes" />
                     </div>
                 </details>
+
+                {{-- Photos - Available when editing an estimate with a property --}}
+                @if ($estimate && $deal?->property)
+                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-white dark:bg-zinc-900">
+                        <livewire:shared.photo-gallery
+                            :property="$deal->property"
+                            :estimate="$estimate"
+                            context="estimate"
+                            :key="'builder-photos-'.$estimate->id"
+                        />
+                    </div>
+                @endif
             </div>
 
             {{-- Desktop Sidebar --}}

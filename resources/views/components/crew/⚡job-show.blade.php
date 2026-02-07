@@ -851,6 +851,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             ['key' => 'financials', 'label' => 'Financials', 'icon' => 'calculator'],
             ['key' => 'colors', 'label' => 'Colors', 'icon' => 'paint-brush'],
             ['key' => 'materials', 'label' => 'Materials', 'icon' => 'shopping-cart'],
+            ['key' => 'photos', 'label' => 'Photos', 'icon' => 'photo'],
         ];
     }
 }; ?>
@@ -2247,6 +2248,23 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     <flux:icon name="shopping-cart" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
                     <flux:heading>No Materials Listed</flux:heading>
                     <flux:text class="text-zinc-500 mt-2">Material requirements will appear here.</flux:text>
+                </div>
+            @endif
+        @endif
+
+        @if ($activeTab === 'photos')
+            @if ($job->deal?->property)
+                <livewire:shared.photo-gallery
+                    :property="$job->deal->property"
+                    :job="$job"
+                    context="job-crew"
+                    :key="'crew-photos-'.$job->id"
+                />
+            @else
+                <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                    <flux:icon name="photo" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
+                    <flux:heading>No Photos</flux:heading>
+                    <flux:text class="text-zinc-500 mt-2">No property is linked to this job.</flux:text>
                 </div>
             @endif
         @endif

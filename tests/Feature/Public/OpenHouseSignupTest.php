@@ -1,7 +1,7 @@
 <?php
 
-use App\Models\AgentListing;
 use App\Models\Customer;
+use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -9,9 +9,9 @@ uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
 describe('OpenHouseSignup component', function () {
     it('renders the open house signup page for valid active listing', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        $this->get(route('open-house.signup', $listing))
+        $this->get(route('open-house.signup', $property))
             ->assertStatus(200)
             ->assertSeeLivewire('public.open-house-signup');
     });
@@ -22,35 +22,35 @@ describe('OpenHouseSignup component', function () {
     });
 
     it('returns 404 for inactive listing', function () {
-        $listing = AgentListing::factory()->inactive()->create();
+        $property = Property::factory()->agentListing()->create(['listing_status' => 'inactive']);
 
-        $this->get(route('open-house.signup', $listing))
+        $this->get(route('open-house.signup', $property))
             ->assertNotFound();
     });
 
     it('returns 404 for pending listing', function () {
-        $listing = AgentListing::factory()->pending()->create();
+        $property = Property::factory()->agentListing()->pending()->create();
 
-        $this->get(route('open-house.signup', $listing))
+        $this->get(route('open-house.signup', $property))
             ->assertNotFound();
     });
 
     it('returns 404 for sold listing', function () {
-        $listing = AgentListing::factory()->sold()->create();
+        $property = Property::factory()->agentListing()->sold()->create();
 
-        $this->get(route('open-house.signup', $listing))
+        $this->get(route('open-house.signup', $property))
             ->assertNotFound();
     });
 
     it('displays listing address on the page', function () {
-        $listing = AgentListing::factory()->active()->create([
+        $property = Property::factory()->agentListing()->active()->create([
             'address' => '123 Test Street',
             'city' => 'Test City',
             'state' => 'TX',
             'zip' => '12345',
         ]);
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->assertSee('123 Test Street')
             ->assertSee('Test City')
             ->assertSee('TX')
@@ -59,24 +59,24 @@ describe('OpenHouseSignup component', function () {
 
     it('displays agent name when available', function () {
         $agent = User::factory()->agent()->create(['name' => 'John Agent']);
-        $listing = AgentListing::factory()->active()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->active()->forAgent($agent)->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->assertSee('John Agent');
     });
 
     it('validates required fields', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->call('submit')
             ->assertHasErrors(['firstName', 'lastName', 'email']);
     });
 
     it('validates email format', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'John')
             ->set('lastName', 'Doe')
             ->set('email', 'invalid-email')
@@ -86,9 +86,9 @@ describe('OpenHouseSignup component', function () {
 
     it('creates customer on valid submission', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->active()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->active()->forAgent($agent)->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'John')
             ->set('lastName', 'Doe')
             ->set('email', 'john.doe@example.com')
@@ -113,7 +113,7 @@ describe('OpenHouseSignup component', function () {
             'zip' => '90210',
             'notes' => 'Interested in the backyard',
             'referred_by' => $agent->id,
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'source' => 'open_house',
             'status' => 'active',
             'created_by' => $agent->id,
@@ -122,9 +122,9 @@ describe('OpenHouseSignup component', function () {
 
     it('creates customer with only required fields', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->active()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->active()->forAgent($agent)->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'Jane')
             ->set('lastName', 'Smith')
             ->set('email', 'jane.smith@example.com')
@@ -137,16 +137,16 @@ describe('OpenHouseSignup component', function () {
             'last_name' => 'Smith',
             'email' => 'jane.smith@example.com',
             'referred_by' => $agent->id,
-            'listing_id' => $listing->id,
+            'property_id' => $property->id,
             'source' => 'open_house',
         ]);
     });
 
     it('links customer to the listing agent as referred_by', function () {
         $agent = User::factory()->agent()->create();
-        $listing = AgentListing::factory()->active()->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->active()->forAgent($agent)->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'Test')
             ->set('lastName', 'Customer')
             ->set('email', 'test@example.com')
@@ -155,14 +155,14 @@ describe('OpenHouseSignup component', function () {
         $customer = Customer::where('email', 'test@example.com')->first();
 
         expect($customer->referred_by)->toBe($agent->id)
-            ->and($customer->listing_id)->toBe($listing->id)
+            ->and($customer->property_id)->toBe($property->id)
             ->and($customer->created_by)->toBe($agent->id);
     });
 
     it('sets source as open_house', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'Source')
             ->set('lastName', 'Test')
             ->set('email', 'source@example.com')
@@ -174,9 +174,9 @@ describe('OpenHouseSignup component', function () {
     });
 
     it('displays thank you message after submission', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'Thank')
             ->set('lastName', 'You')
             ->set('email', 'thankyou@example.com')
@@ -186,9 +186,9 @@ describe('OpenHouseSignup component', function () {
     });
 
     it('rejects submission when honeypot field is filled (spam protection)', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'Spam')
             ->set('lastName', 'Bot')
             ->set('email', 'spam@example.com')
@@ -203,9 +203,9 @@ describe('OpenHouseSignup component', function () {
     });
 
     it('accepts submission when honeypot field is empty', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', 'Real')
             ->set('lastName', 'User')
             ->set('email', 'realuser@example.com')
@@ -219,9 +219,9 @@ describe('OpenHouseSignup component', function () {
     });
 
     it('validates maximum lengths for fields', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->set('firstName', str_repeat('a', 256))
             ->set('lastName', 'Doe')
             ->set('email', 'test@example.com')
@@ -230,19 +230,19 @@ describe('OpenHouseSignup component', function () {
     });
 
     it('does not require authentication to access', function () {
-        $listing = AgentListing::factory()->active()->create();
+        $property = Property::factory()->agentListing()->active()->create();
 
         // Test without any authentication
-        $this->get(route('open-house.signup', $listing))
+        $this->get(route('open-house.signup', $property))
             ->assertStatus(200);
     });
 
     it('shows listing price when available', function () {
-        $listing = AgentListing::factory()->active()->create([
+        $property = Property::factory()->agentListing()->active()->create([
             'listing_price' => 450000,
         ]);
 
-        Livewire::test('public.open-house-signup', ['agentListing' => $listing])
+        Livewire::test('public.open-house-signup', ['property' => $property])
             ->assertSee('$450,000');
     });
 });

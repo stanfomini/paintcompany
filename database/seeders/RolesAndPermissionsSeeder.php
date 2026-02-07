@@ -117,6 +117,12 @@ class RolesAndPermissionsSeeder extends Seeder
             // Accounting
             'accounting.view',
             'accounting.manage',
+
+            // Photos
+            'photos.upload',
+            'photos.delete',
+            'photos.annotate',
+            'photos.comment',
         ];
 
         foreach ($permissions as $permission) {
@@ -172,6 +178,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'vendors.view', 'vendors.manage',
             // Accounting
             'accounting.view', 'accounting.manage',
+            // Photos
+            'photos.upload', 'photos.delete', 'photos.annotate', 'photos.comment',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -213,6 +221,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'vendors.view', 'vendors.manage',
             // Accounting
             'accounting.view',
+            // Photos
+            'photos.upload', 'photos.annotate', 'photos.comment',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -242,6 +252,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'business_plan.view',
             // Invoices (view only)
             'invoices.view',
+            // Photos
+            'photos.upload', 'photos.comment',
         ]);
 
         // Crew Lead - minimal internal access
@@ -255,6 +267,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'chat.access', 'walkie_talkie.access', 'video_call.access',
             // Roadmap
             'view roadmap',
+            // Photos
+            'photos.upload', 'photos.annotate', 'photos.comment',
         ]);
     }
 }

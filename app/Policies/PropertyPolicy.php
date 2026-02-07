@@ -2,10 +2,10 @@
 
 namespace App\Policies;
 
-use App\Models\AgentListing;
+use App\Models\Property;
 use App\Models\User;
 
-class AgentListingPolicy
+class PropertyPolicy
 {
     /**
      * Determine whether the user can view any models.
@@ -18,13 +18,13 @@ class AgentListingPolicy
     /**
      * Determine whether the user can view the model.
      */
-    public function view(User $user, AgentListing $agentListing): bool
+    public function view(User $user, Property $property): bool
     {
         if ($user->isInternal()) {
             return true;
         }
 
-        return $user->isAgent() && $agentListing->agent_id === $user->id;
+        return $user->isAgent() && $property->agent_id === $user->id;
     }
 
     /**
@@ -38,43 +38,43 @@ class AgentListingPolicy
     /**
      * Determine whether the user can update the model.
      */
-    public function update(User $user, AgentListing $agentListing): bool
+    public function update(User $user, Property $property): bool
     {
         if ($user->isInternal()) {
             return true;
         }
 
-        return $user->isAgent() && $agentListing->agent_id === $user->id;
+        return $user->isAgent() && $property->agent_id === $user->id;
     }
 
     /**
      * Determine whether the user can delete the model.
      */
-    public function delete(User $user, AgentListing $agentListing): bool
+    public function delete(User $user, Property $property): bool
     {
         if ($user->isInternal()) {
             return true;
         }
 
-        return $user->isAgent() && $agentListing->agent_id === $user->id;
+        return $user->isAgent() && $property->agent_id === $user->id;
     }
 
     /**
      * Determine whether the user can restore the model.
      */
-    public function restore(User $user, AgentListing $agentListing): bool
+    public function restore(User $user, Property $property): bool
     {
         if ($user->isInternal()) {
             return true;
         }
 
-        return $user->isAgent() && $agentListing->agent_id === $user->id;
+        return $user->isAgent() && $property->agent_id === $user->id;
     }
 
     /**
      * Determine whether the user can permanently delete the model.
      */
-    public function forceDelete(User $user, AgentListing $agentListing): bool
+    public function forceDelete(User $user, Property $property): bool
     {
         return $user->isInternal();
     }
