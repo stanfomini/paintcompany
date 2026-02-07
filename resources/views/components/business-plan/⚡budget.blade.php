@@ -3,6 +3,7 @@
 use App\Models\BudgetCategory;
 use App\Models\BudgetLineItem;
 use App\Models\CompanySetting;
+use App\Services\BudgetSyncService;
 use App\Services\BusinessPlanService;
 use Database\Seeders\BudgetCategorySeeder;
 use Illuminate\Support\Facades\Auth;
@@ -27,6 +28,10 @@ new class extends Component
     public string $editCurrentYearActual = '0';
 
     public string $editNotes = '';
+
+    public bool $syncing = false;
+
+    public ?string $lastSyncMessage = null;
 
     public function mount(): void
     {
@@ -54,6 +59,12 @@ new class extends Component
     }
 
     #[Computed]
+    public function accountingMode(): string
+    {
+        return CompanySetting::getInstance()->accounting_mode ?? 'cash';
+    }
+
+    #[Computed]
     public function yearOptions(): array
     {
         $current = now()->year;
@@ -67,6 +78,20 @@ new class extends Component
 
     public function updatedYear(): void
     {
+        unset($this->budget);
+        $this->lastSyncMessage = null;
+    }
+
+    public function syncActuals(): void
+    {
+        $this->authorize('business_plan.manage');
+
+        $this->syncing = true;
+
+        $result = app(BudgetSyncService::class)->syncActualsForYear($this->year);
+
+        $this->syncing = false;
+        $this->lastSyncMessage = "Synced {$result['synced']} categories from live data.";
         unset($this->budget);
     }
 
@@ -114,6 +139,8 @@ new class extends Component
                 'current_year_plan' => $this->editCurrentYearPlan,
                 'current_year_actual' => $this->editCurrentYearActual,
                 'notes' => $this->editNotes ?: null,
+                'sync_source' => 'manual',
+                'synced_at' => null,
             ]
         );
 
@@ -146,6 +173,15 @@ new class extends Component
 
         return round(($amount / $revenue) * 100, 1);
     }
+
+    private function accountingModeLabel(): string
+    {
+        return match ($this->accountingMode) {
+            'accrual' => 'Accrual',
+            'modified_cash' => 'Modified Cash',
+            default => 'Cash',
+        };
+    }
 };
 ?>
 
@@ -160,6 +196,10 @@ new class extends Component
         </div>
 
         <div class="flex items-center gap-3">
+            <flux:badge size="sm" variant="outline" icon="calculator">
+                {{ $this->accountingModeLabel() }} Basis
+            </flux:badge>
+
             <flux:select wire:model.live="year" class="w-28">
                 @foreach ($this->yearOptions as $value => $label)
                     <option value="{{ $value }}">{{ $label }}</option>
@@ -167,12 +207,31 @@ new class extends Component
             </flux:select>
 
             @if ($this->canManage)
+                <flux:button
+                    wire:click="syncActuals"
+                    wire:loading.attr="disabled"
+                    wire:target="syncActuals"
+                    variant="ghost"
+                    size="sm"
+                    icon="arrow-path"
+                >
+                    <span wire:loading.remove wire:target="syncActuals">Sync Actuals</span>
+                    <span wire:loading wire:target="syncActuals">Syncing...</span>
+                </flux:button>
                 <flux:button wire:click="exportCsv" variant="ghost" size="sm" icon="arrow-down-tray">
                     Export CSV
                 </flux:button>
             @endif
         </div>
     </div>
+
+    @if ($lastSyncMessage)
+        <div class="mb-4">
+            <flux:callout variant="outline" icon="check-circle" class="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20">
+                <flux:callout.text class="text-green-700 dark:text-green-300">{{ $lastSyncMessage }}</flux:callout.text>
+            </flux:callout>
+        </div>
+    @endif
 
     @php
         $budget = $this->budget;
@@ -252,7 +311,19 @@ new class extends Component
                                 @endif
                             >
                                 <td class="whitespace-nowrap px-4 py-2 text-sm text-zinc-900 dark:text-zinc-100">
-                                    {{ $row['name'] }}
+                                    <div class="flex items-center gap-2">
+                                        {{ $row['name'] }}
+                                        @if ($row['sync_source'] && $row['sync_source'] !== 'manual')
+                                            <flux:badge size="sm" variant="pill" color="sky" class="text-[10px]">
+                                                synced
+                                            </flux:badge>
+                                        @endif
+                                    </div>
+                                    @if ($row['synced_at'])
+                                        <div class="text-[10px] text-zinc-400 dark:text-zinc-500">
+                                            {{ $row['synced_at']->diffForHumans() }}
+                                        </div>
+                                    @endif
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-2 text-right text-sm text-zinc-600 dark:text-zinc-300">
                                     ${{ number_format($row['prior_year_actual'], 2) }}

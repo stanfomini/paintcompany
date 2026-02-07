@@ -23,6 +23,8 @@ new class extends Component {
     public string $value = '';
     public string $description = '';
     public bool $is_active = true;
+    public array $conditions = [];
+    public string $conditions_logic = 'all';
 
     public function mount(): void
     {
@@ -46,6 +48,18 @@ new class extends Component {
         return CompanyAllocation::getTypes();
     }
 
+    #[Computed]
+    public function conditionFields(): array
+    {
+        return [
+            'scope_type' => ['label' => 'Scope Type', 'operators' => ['equals', 'not_equals'], 'values' => ['interior' => 'Interior', 'exterior' => 'Exterior']],
+            'has_scope' => ['label' => 'Has Scope', 'operators' => ['equals'], 'values' => ['interior' => 'Interior', 'exterior' => 'Exterior', 'both' => 'Both']],
+            'payment_methods' => ['label' => 'Payment Method', 'operators' => ['equals', 'in'], 'values' => ['check' => 'Check', 'credit_card' => 'Credit Card', 'cash' => 'Cash', 'ach' => 'ACH', 'stripe' => 'Stripe']],
+            'job_stage' => ['label' => 'Job Stage', 'operators' => ['equals', 'in'], 'values' => ['estimate_accepted' => 'Estimate Accepted', 'scheduling_colors' => 'Scheduling Colors', 'job_prep' => 'Job Prep', 'in_progress' => 'In Progress', 'completed' => 'Completed']],
+            'job_price' => ['label' => 'Job Price', 'operators' => ['greater_than', 'less_than'], 'values' => []],
+        ];
+    }
+
     public function openAddModal(): void
     {
         $this->resetForm();
@@ -62,6 +76,8 @@ new class extends Component {
         $this->value = (string) $allocation->value;
         $this->description = $allocation->description ?? '';
         $this->is_active = $allocation->is_active;
+        $this->conditions = $allocation->conditions ?? [];
+        $this->conditions_logic = $allocation->conditions_logic ?? 'all';
         $this->showModal = true;
     }
 
@@ -69,6 +85,17 @@ new class extends Component {
     {
         $this->showModal = false;
         $this->resetForm();
+    }
+
+    public function addCondition(): void
+    {
+        $this->conditions[] = ['field' => '', 'operator' => 'equals', 'value' => ''];
+    }
+
+    public function removeCondition(int $index): void
+    {
+        unset($this->conditions[$index]);
+        $this->conditions = array_values($this->conditions);
     }
 
     public function save(): void
@@ -102,11 +129,17 @@ new class extends Component {
             // Update existing
             $allocation = CompanyAllocation::findOrFail($this->editingId);
 
-            // System allocations can only update value and is_active
+            $cleanedConditions = ! empty($this->conditions)
+                ? array_values(array_filter($this->conditions, fn ($c) => ! empty($c['field'])))
+                : null;
+
+            // System allocations can only update value, is_active, and conditions
             if ($allocation->is_system) {
                 $allocation->update([
                     'value' => $validated['value'],
                     'is_active' => $validated['is_active'],
+                    'conditions' => $cleanedConditions ?: null,
+                    'conditions_logic' => $this->conditions_logic,
                 ]);
             } else {
                 $allocation->update([
@@ -116,11 +149,17 @@ new class extends Component {
                     'value' => $validated['value'],
                     'description' => $validated['description'] ?: null,
                     'is_active' => $validated['is_active'],
+                    'conditions' => $cleanedConditions ?: null,
+                    'conditions_logic' => $this->conditions_logic,
                 ]);
             }
         } else {
             // Create new
             $maxOrder = $settings->allocations()->max('sort_order') ?? 0;
+
+            $newConditions = ! empty($this->conditions)
+                ? array_values(array_filter($this->conditions, fn ($c) => ! empty($c['field'])))
+                : null;
 
             $settings->allocations()->create([
                 'name' => $validated['name'],
@@ -132,6 +171,8 @@ new class extends Component {
                 'is_system' => false,
                 'is_informational' => false,
                 'sort_order' => $maxOrder + 1,
+                'conditions' => $newConditions ?: null,
+                'conditions_logic' => $this->conditions_logic,
             ]);
         }
 
@@ -177,6 +218,8 @@ new class extends Component {
         $this->value = '';
         $this->description = '';
         $this->is_active = true;
+        $this->conditions = [];
+        $this->conditions_logic = 'all';
     }
 }; ?>
 
@@ -222,6 +265,11 @@ new class extends Component {
                             </div>
                             @if ($allocation->description)
                                 <div class="text-xs text-zinc-400 mt-1">{{ $allocation->description }}</div>
+                            @endif
+                            @if ($allocation->hasConditions())
+                                <div class="text-xs text-indigo-600 dark:text-indigo-400 mt-1">
+                                    {{ $allocation->getConditionsSummary() }}
+                                </div>
                             @endif
                         </div>
                         <div class="flex items-center gap-2">
@@ -343,6 +391,63 @@ new class extends Component {
                 rows="2"
                 :disabled="$isSystemEdit"
             />
+
+            {{-- Conditions Rule Builder --}}
+            <div class="space-y-3 border-t border-zinc-200 dark:border-zinc-700 pt-4">
+                <div class="flex items-center justify-between">
+                    <flux:heading size="sm">Conditions</flux:heading>
+                    @if (count($conditions) > 1)
+                        <flux:select wire:model.live="conditions_logic" class="!w-24">
+                            <flux:select.option value="all">AND</flux:select.option>
+                            <flux:select.option value="any">OR</flux:select.option>
+                        </flux:select>
+                    @endif
+                </div>
+
+                @if (empty($conditions))
+                    <p class="text-xs text-zinc-500">Always applies. Add conditions to restrict when this allocation is used.</p>
+                @endif
+
+                @foreach ($conditions as $i => $condition)
+                    <div wire:key="condition-{{ $i }}" class="flex items-start gap-2 rounded-lg border border-zinc-200 dark:border-zinc-700 p-3">
+                        <div class="flex-1 space-y-2">
+                            <flux:select wire:model.live="conditions.{{ $i }}.field" placeholder="Select field...">
+                                <flux:select.option value="">Select field...</flux:select.option>
+                                @foreach ($this->conditionFields as $fieldKey => $fieldConfig)
+                                    <flux:select.option value="{{ $fieldKey }}">{{ $fieldConfig['label'] }}</flux:select.option>
+                                @endforeach
+                            </flux:select>
+
+                            @if (!empty($conditions[$i]['field']) && isset($this->conditionFields[$conditions[$i]['field']]))
+                                @php $fieldConfig = $this->conditionFields[$conditions[$i]['field']]; @endphp
+                                <div class="flex gap-2">
+                                    <flux:select wire:model.live="conditions.{{ $i }}.operator" class="!w-32">
+                                        @foreach ($fieldConfig['operators'] as $op)
+                                            <flux:select.option value="{{ $op }}">{{ str_replace('_', ' ', ucfirst($op)) }}</flux:select.option>
+                                        @endforeach
+                                    </flux:select>
+
+                                    @if (!empty($fieldConfig['values']))
+                                        <flux:select wire:model="conditions.{{ $i }}.value" class="flex-1">
+                                            <flux:select.option value="">Select...</flux:select.option>
+                                            @foreach ($fieldConfig['values'] as $val => $label)
+                                                <flux:select.option value="{{ $val }}">{{ $label }}</flux:select.option>
+                                            @endforeach
+                                        </flux:select>
+                                    @else
+                                        <flux:input wire:model="conditions.{{ $i }}.value" type="number" step="0.01" placeholder="Amount" class="flex-1" />
+                                    @endif
+                                </div>
+                            @endif
+                        </div>
+                        <flux:button variant="ghost" size="sm" icon="x-mark" wire:click="removeCondition({{ $i }})" class="mt-1 shrink-0" />
+                    </div>
+                @endforeach
+
+                <flux:button variant="ghost" size="sm" icon="plus" wire:click="addCondition">
+                    Add Condition
+                </flux:button>
+            </div>
 
             <flux:switch wire:model="is_active" label="Active" description="Inactive allocations are not deducted from profit" />
 

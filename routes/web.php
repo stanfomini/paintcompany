@@ -1,9 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\VideoDataController;
+use App\Http\Controllers\CalendarFeedController;
 use App\Http\Controllers\EstimateBreakdownExportController;
 use App\Http\Controllers\EstimatePdfController;
+use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PainterBreakdownExportController;
+use App\Http\Controllers\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -31,6 +34,11 @@ Route::livewire('/open-house/{agentListing}', 'public.open-house-signup')
 // Public estimate proposal route
 Route::livewire('/proposal/{token}', 'public.estimate-proposal')
     ->name('estimates.public')
+    ->middleware('throttle:60,1');
+
+// Public iCal calendar feed (for Google Calendar / Apple Calendar subscription)
+Route::get('/calendar/{token}.ics', CalendarFeedController::class)
+    ->name('calendar.feed')
     ->middleware('throttle:60,1');
 
 // Invitation management routes (authenticated)
@@ -159,6 +167,14 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         ->name('business-plan.index')
         ->middleware('permission:business_plan.view');
 
+    // Invoice routes
+    Route::middleware(['permission:invoices.view'])->group(function () {
+        Route::livewire('/invoices', 'invoices.index')->name('invoices.index');
+        Route::livewire('/invoices/{invoice}', 'invoices.show')->name('invoices.show');
+        Route::get('/invoices/{invoice}/pdf', [InvoicePdfController::class, 'download'])
+            ->name('invoices.pdf');
+    });
+
     // Legacy redirects - keep old URLs working
     Route::get('/roadmap', fn () => redirect()->route('business-plan.index', ['tab' => 'roadmap']))
         ->name('roadmap.index');
@@ -167,6 +183,26 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::get('/kpis/production', fn () => redirect()->route('business-plan.index', ['tab' => 'production-plan']))
         ->name('kpis.production');
 });
+
+// Public invoice payment page
+Route::livewire('/pay/{token}', 'public.invoice-payment')
+    ->name('invoice.pay')
+    ->middleware('throttle:60,1');
+
+// Stripe webhook (no auth - verified by Stripe signature)
+Route::post('/webhooks/stripe', [StripeWebhookController::class, 'handle'])
+    ->name('webhooks.stripe')
+    ->middleware('throttle:120,1');
+
+// Increase OAuth callback
+Route::get('/increase/oauth/callback', [\App\Http\Controllers\IncreaseOAuthController::class, 'callback'])
+    ->middleware(['auth', 'verified', 'permission:settings.payment_integrations'])
+    ->name('increase.oauth.callback');
+
+// Increase webhook (no auth - verified by Increase signature)
+Route::post('/webhooks/increase', [\App\Http\Controllers\IncreaseWebhookController::class, 'handle'])
+    ->name('webhooks.increase')
+    ->middleware('throttle:120,1');
 
 // Video API endpoint (public for player embeds)
 Route::get('/api/video-data/{type}/{id}', [VideoDataController::class, 'show'])

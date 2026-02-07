@@ -1,8 +1,10 @@
 <?php
 
 use App\Models\ChatThread;
+use App\Models\Invoice;
 use App\Models\Job;
 use App\Services\ChatService;
+use App\Services\InvoiceService;
 use App\Services\JobService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -63,6 +65,58 @@ new class extends Component {
             ->get();
     }
 
+    #[Computed]
+    public function invoices()
+    {
+        return $this->job->invoices()
+            ->with('payments')
+            ->latest()
+            ->get();
+    }
+
+    public function createDepositInvoice(): void
+    {
+        abort_unless(auth()->user()->can('invoices.create'), 403);
+
+        if ($this->invoices->where('type', Invoice::TYPE_DEPOSIT)->isNotEmpty()) {
+            session()->flash('error', 'A deposit invoice already exists for this job.');
+            return;
+        }
+
+        $service = app(InvoiceService::class);
+        $service->createDepositInvoice($this->job->estimate, $this->job);
+
+        unset($this->invoices);
+        session()->flash('success', 'Deposit invoice created.');
+    }
+
+    public function createFinalInvoice(): void
+    {
+        abort_unless(auth()->user()->can('invoices.create'), 403);
+
+        if ($this->invoices->where('type', Invoice::TYPE_FINAL)->isNotEmpty()) {
+            session()->flash('error', 'A final invoice already exists for this job.');
+            return;
+        }
+
+        $service = app(InvoiceService::class);
+        $service->createFinalInvoice($this->job);
+
+        unset($this->invoices);
+        session()->flash('success', 'Final invoice created.');
+    }
+
+    public function sendInvoice(int $invoiceId): void
+    {
+        abort_unless(auth()->user()->can('invoices.send'), 403);
+
+        $invoice = Invoice::findOrFail($invoiceId);
+        app(InvoiceService::class)->sendInvoice($invoice);
+
+        unset($this->invoices);
+        session()->flash('success', "Invoice {$invoice->invoice_number} sent to customer.");
+    }
+
     #[On('job-updated')]
     #[On('color-updated')]
     #[On('crew-dispatched')]
@@ -78,7 +132,7 @@ new class extends Component {
             'acceptedCrew',
         ]);
 
-        unset($this->jobActivities);
+        unset($this->jobActivities, $this->invoices);
     }
 
     #[On('message-sent')]
@@ -101,6 +155,12 @@ new class extends Component {
 
         if ($this->job->stage === 'scheduling_colors' && ! $this->job->isReadyForDispatch()) {
             session()->flash('error', 'All confirmations must be completed before advancing.');
+
+            return;
+        }
+
+        if ($this->job->stage === 'job_prep' && ! $this->job->isPrepApproved()) {
+            session()->flash('error', 'All three parties must approve the prep plan before advancing.');
 
             return;
         }
@@ -403,6 +463,89 @@ new class extends Component {
                 </div>
             </div>
         @endif
+
+        {{-- Invoices Section --}}
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <flux:heading size="sm">Invoices</flux:heading>
+                @can('invoices.create')
+                    <div class="flex gap-2">
+                        @if ($this->invoices->where('type', 'deposit')->isEmpty() && $job->estimate)
+                            <flux:button wire:click="createDepositInvoice" size="sm" variant="ghost" icon="plus">
+                                Deposit Invoice
+                            </flux:button>
+                        @endif
+                        @if ($job->stage === 'completed' && $this->invoices->where('type', 'final')->isEmpty())
+                            <flux:button wire:click="createFinalInvoice" size="sm" variant="ghost" icon="plus">
+                                Final Invoice
+                            </flux:button>
+                        @endif
+                    </div>
+                @endcan
+            </div>
+
+            @if ($this->invoices->isEmpty())
+                <div class="text-center py-6">
+                    <flux:icon name="document-text" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-2" />
+                    <flux:text class="text-zinc-500">No invoices yet.</flux:text>
+                </div>
+            @else
+                <div class="space-y-3">
+                    @foreach ($this->invoices as $invoice)
+                        <div class="flex items-center justify-between p-4 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="invoice-{{ $invoice->id }}">
+                            <div class="flex items-center gap-4">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <flux:text class="font-medium text-sm">{{ $invoice->invoice_number }}</flux:text>
+                                        <flux:badge size="sm" color="{{ match($invoice->type) {
+                                            'deposit' => 'blue',
+                                            'final' => 'green',
+                                            'change_order' => 'yellow',
+                                            default => 'zinc',
+                                        } }}">{{ \App\Models\Invoice::TYPES[$invoice->type] ?? $invoice->type }}</flux:badge>
+                                    </div>
+                                    <flux:text class="text-xs text-zinc-500 mt-0.5">
+                                        Due {{ $invoice->due_date?->format('M j, Y') ?? 'N/A' }}
+                                        @if ($invoice->sent_at)
+                                            &middot; Sent {{ $invoice->sent_at->format('M j, Y') }}
+                                        @endif
+                                    </flux:text>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-4">
+                                <div class="text-right">
+                                    <flux:text class="font-semibold text-sm">${{ number_format($invoice->total, 2) }}</flux:text>
+                                    @if ((float) $invoice->amount_paid > 0 && ! $invoice->isPaid())
+                                        <flux:text class="text-xs text-zinc-500">
+                                            Paid: ${{ number_format($invoice->amount_paid, 2) }}
+                                        </flux:text>
+                                    @endif
+                                </div>
+                                @php
+                                    $statusColor = match($invoice->status) {
+                                        'paid' => 'green',
+                                        'sent' => 'blue',
+                                        'partially_paid' => 'yellow',
+                                        'overdue' => 'red',
+                                        'void' => 'zinc',
+                                        default => 'zinc',
+                                    };
+                                @endphp
+                                <flux:badge size="sm" color="{{ $statusColor }}">{{ \App\Models\Invoice::STATUSES[$invoice->status] ?? $invoice->status }}</flux:badge>
+                                @can('invoices.send')
+                                    @if ($invoice->status === 'draft')
+                                        <flux:button wire:click="sendInvoice({{ $invoice->id }})" size="sm" variant="ghost" icon="paper-airplane">
+                                            Send
+                                        </flux:button>
+                                    @endif
+                                @endcan
+                                <flux:button :href="route('invoices.index')" size="sm" variant="ghost" icon="arrow-top-right-on-square" wire:navigate />
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
+        </div>
 
         {{-- Activity History --}}
         @if ($this->jobActivities->isNotEmpty())

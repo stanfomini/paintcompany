@@ -5,9 +5,11 @@ use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimateSignature;
+use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\JobColor;
 use App\Models\User;
+use App\Notifications\InvoiceSent;
 use App\Notifications\JobCreated;
 use App\Services\JobService;
 use Illuminate\Support\Facades\Notification;
@@ -227,6 +229,100 @@ describe('JobService', function () {
         expect($job->fresh()->stage)->toBe('completed')
             ->and($job->fresh()->actual_end_date)->not->toBeNull()
             ->and($deal->fresh()->stage)->toBe('completed');
+    });
+
+    it('creates and sends a final invoice when job is completed', function () {
+        Notification::fake();
+
+        $customer = Customer::factory()->create();
+        $deal = Deal::factory()->create([
+            'customer_id' => $customer->id,
+            'stage' => 'in_progress',
+        ]);
+        $estimate = Estimate::factory()->forDeal($deal)->accepted()->create([
+            'total' => 8000,
+            'tax_rate' => 0,
+        ]);
+        $job = Job::factory()->inProgress()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        app(JobService::class)->completeJob($job);
+
+        $invoice = Invoice::where('job_id', $job->id)->where('type', 'final')->first();
+
+        expect($invoice)->not->toBeNull()
+            ->and($invoice->status)->toBe('sent')
+            ->and((float) $invoice->subtotal)->toBe(8000.0)
+            ->and((float) $invoice->total)->toBe(8000.0)
+            ->and($invoice->customer_id)->toBe($customer->id);
+    });
+
+    it('subtracts paid deposits from the final invoice', function () {
+        Notification::fake();
+
+        $customer = Customer::factory()->create();
+        $deal = Deal::factory()->create([
+            'customer_id' => $customer->id,
+            'stage' => 'in_progress',
+        ]);
+        $estimate = Estimate::factory()->forDeal($deal)->accepted()->create([
+            'total' => 10000,
+            'tax_rate' => 0,
+        ]);
+        $job = Job::factory()->inProgress()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        // Simulate a paid deposit invoice
+        Invoice::factory()->deposit()->paid()->create([
+            'job_id' => $job->id,
+            'total' => 5000,
+        ]);
+
+        app(JobService::class)->completeJob($job);
+
+        $invoice = Invoice::where('job_id', $job->id)->where('type', 'final')->first();
+
+        expect($invoice)->not->toBeNull()
+            ->and((float) $invoice->subtotal)->toBe(5000.0)
+            ->and($invoice->status)->toBe('sent');
+    });
+
+    it('marks zero-balance final invoice as paid without sending', function () {
+        Notification::fake();
+
+        $customer = Customer::factory()->create();
+        $deal = Deal::factory()->create([
+            'customer_id' => $customer->id,
+            'stage' => 'in_progress',
+        ]);
+        $estimate = Estimate::factory()->forDeal($deal)->accepted()->create([
+            'total' => 5000,
+            'tax_rate' => 0,
+        ]);
+        $job = Job::factory()->inProgress()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        // Deposit fully covers the estimate
+        Invoice::factory()->deposit()->paid()->create([
+            'job_id' => $job->id,
+            'total' => 5000,
+        ]);
+
+        app(JobService::class)->completeJob($job);
+
+        $invoice = Invoice::where('job_id', $job->id)->where('type', 'final')->first();
+
+        expect($invoice)->not->toBeNull()
+            ->and((float) $invoice->total)->toBe(0.0)
+            ->and($invoice->status)->toBe('paid');
+
+        Notification::assertNotSentTo($customer, InvoiceSent::class);
     });
 
     it('confirms company date', function () {

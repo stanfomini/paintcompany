@@ -21,6 +21,9 @@
                 @can('manage roles')
                     <flux:navlist.item :href="route('roles.edit')" wire:navigate>{{ __('Roles & Access') }}</flux:navlist.item>
                 @endcan
+                @can('settings.payment_integrations')
+                    <flux:navlist.item :href="route('payment-integrations.edit')" wire:navigate>{{ __('Payment Integrations') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>

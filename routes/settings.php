@@ -36,4 +36,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ),
         )
         ->name('two-factor.show');
+
+    Route::livewire('settings/payment-integrations', 'pages::settings.payment-integrations')
+        ->middleware('permission:settings.payment_integrations')
+        ->name('payment-integrations.edit');
 });

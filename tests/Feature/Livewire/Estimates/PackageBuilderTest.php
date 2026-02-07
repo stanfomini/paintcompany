@@ -317,10 +317,23 @@ describe('PackageBuilder component', function () {
 
     it('calculates package totals correctly', function () {
         $package = EstimatePackage::factory()->forEstimate($this->estimate)->withPricing(
-            subtotal: 1000,
+            subtotal: 0,
             taxRate: 10,
             discountPercent: 10
-        )->create();
+        )->create([
+            'warranty_price' => 0,
+        ]);
+
+        // Create a service item worth $1000 and link it to the package
+        // Must set quantity and unit_price since saving hook calculates total = quantity * unit_price
+        $item = EstimateItem::factory()->forEstimate($this->estimate)->create([
+            'quantity' => 1,
+            'unit_price' => 1000,
+        ]);
+        EstimatePackageItem::factory()
+            ->forPackage($package)
+            ->forEstimateItem($item)
+            ->create(['is_included' => true, 'customer_approved' => true]);
 
         $component = Livewire::actingAs($this->internalUser)
             ->test('estimates.package-builder', ['estimate' => $this->estimate]);

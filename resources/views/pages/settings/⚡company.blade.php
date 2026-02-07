@@ -22,7 +22,11 @@ new class extends Component {
     public string $state = '';
     public string $zip_code = '';
 
+    // Timezone
+    public string $timezone = 'America/New_York';
+
     // Defaults
+    public string $accounting_mode = 'cash';
     public string $default_tax_rate = '';
     public string $default_payment_terms_days = '';
     public string $estimate_validity_days = '';
@@ -89,7 +93,11 @@ new class extends Component {
         $this->state = $settings->state ?? '';
         $this->zip_code = $settings->zip_code ?? '';
 
+        // Timezone
+        $this->timezone = $settings->timezone ?? 'America/New_York';
+
         // Defaults
+        $this->accounting_mode = $settings->accounting_mode ?? 'cash';
         $this->default_tax_rate = $this->formatDecimal($settings->default_tax_rate);
         $this->default_payment_terms_days = $settings->default_payment_terms_days !== null ? (string) $settings->default_payment_terms_days : '';
         $this->estimate_validity_days = $settings->estimate_validity_days !== null ? (string) $settings->estimate_validity_days : '';
@@ -206,7 +214,11 @@ new class extends Component {
             'state' => ['nullable', 'string', 'max:50'],
             'zip_code' => ['nullable', 'string', 'max:20'],
 
+            // Timezone
+            'timezone' => ['required', 'timezone:all'],
+
             // Defaults
+            'accounting_mode' => ['required', 'in:cash,accrual,modified_cash'],
             'default_tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'default_payment_terms_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'estimate_validity_days' => ['nullable', 'integer', 'min:1', 'max:365'],
@@ -262,7 +274,11 @@ new class extends Component {
             'state' => $validated['state'] ?: null,
             'zip_code' => $validated['zip_code'] ?: null,
 
+            // Timezone
+            'timezone' => $validated['timezone'],
+
             // Defaults
+            'accounting_mode' => $validated['accounting_mode'],
             'default_tax_rate' => $validated['default_tax_rate'] !== '' ? $validated['default_tax_rate'] : 0,
             'default_payment_terms_days' => $validated['default_payment_terms_days'] !== '' ? $validated['default_payment_terms_days'] : 30,
             'estimate_validity_days' => $validated['estimate_validity_days'] !== '' ? $validated['estimate_validity_days'] : 30,
@@ -344,8 +360,36 @@ new class extends Component {
 
             <flux:separator />
 
+            {{-- Timezone Section --}}
+            <flux:heading size="sm">Timezone</flux:heading>
+            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                Used for calendar feeds, scheduling, and time displays across the application.
+            </flux:text>
+
+            <flux:select wire:model="timezone" :label="__('Company Timezone')">
+                @foreach ([
+                    'America/New_York' => 'Eastern Time (ET)',
+                    'America/Chicago' => 'Central Time (CT)',
+                    'America/Denver' => 'Mountain Time (MT)',
+                    'America/Los_Angeles' => 'Pacific Time (PT)',
+                    'America/Anchorage' => 'Alaska Time (AKT)',
+                    'Pacific/Honolulu' => 'Hawaii Time (HT)',
+                    'America/Phoenix' => 'Arizona (no DST)',
+                ] as $tz => $label)
+                    <option value="{{ $tz }}">{{ $label }}</option>
+                @endforeach
+            </flux:select>
+
+            <flux:separator />
+
             {{-- Estimate Defaults Section --}}
             <flux:heading size="sm">Estimate Defaults</flux:heading>
+
+            <flux:select wire:model="accounting_mode" :label="__('Accounting Method')" description="Cash = revenue when paid. Accrual = revenue when invoiced. Modified Cash = hybrid approach.">
+                <option value="cash">Cash Basis</option>
+                <option value="accrual">Accrual Basis</option>
+                <option value="modified_cash">Modified Cash</option>
+            </flux:select>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:input wire:model="default_tax_rate" :label="__('Default Tax Rate (%)')" type="number" step="0.01" min="0" max="100" />

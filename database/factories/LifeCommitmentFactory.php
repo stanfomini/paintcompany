@@ -39,6 +39,11 @@ class LifeCommitmentFactory extends Factory
                 'ongoing',
             ]),
             'sort_order' => fake()->numberBetween(0, 100),
+            'is_active' => true,
+            'start_date' => null,
+            'recurrence_days' => null,
+            'recurrence_time' => null,
+            'recurrence_day_of_month' => null,
         ];
     }
 }

@@ -2,17 +2,26 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class JobCostCard extends Model
 {
     /** @use HasFactory<\Database\Factories\JobCostCardFactory> */
     use HasFactory;
 
+    public const STATUS_PROJECTED = 'projected';
+
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_COMPLETED = 'completed';
+
     protected $fillable = [
         'job_id',
+        'estimate_id',
         'company_setting_id',
         'year',
         'client_name',
@@ -22,7 +31,9 @@ class JobCostCard extends Model
         'wc_insurance_burden',
         'material_cost',
         'sales_commission',
+        'allocation_total',
         'is_manual',
+        'status',
         'notes',
     ];
 
@@ -35,9 +46,16 @@ class JobCostCard extends Model
             'wc_insurance_burden' => 'decimal:2',
             'material_cost' => 'decimal:2',
             'sales_commission' => 'decimal:2',
+            'allocation_total' => 'decimal:2',
             'is_manual' => 'boolean',
+            'status' => 'string',
             'year' => 'integer',
         ];
+    }
+
+    public function scopeByStatus(Builder $query, string $status): Builder
+    {
+        return $query->where('status', $status);
     }
 
     /**
@@ -54,6 +72,22 @@ class JobCostCard extends Model
     public function job(): BelongsTo
     {
         return $this->belongsTo(Job::class);
+    }
+
+    /**
+     * Get the estimate this card is associated with (nullable).
+     */
+    public function estimate(): BelongsTo
+    {
+        return $this->belongsTo(Estimate::class);
+    }
+
+    /**
+     * Get the allocations for this cost card.
+     */
+    public function cardAllocations(): HasMany
+    {
+        return $this->hasMany(JobCostCardAllocation::class);
     }
 
     /**
@@ -146,5 +180,37 @@ class JobCostCard extends Model
         }
 
         return round((float) $this->sales_commission / (float) $this->price * 100, 1);
+    }
+
+    /**
+     * Get the net profit (gross profit minus allocation total).
+     */
+    public function getNetProfitAttribute(): float
+    {
+        return $this->gross_profit - (float) $this->allocation_total;
+    }
+
+    /**
+     * Get the net profit percentage.
+     */
+    public function getNetProfitPercentAttribute(): float
+    {
+        if ((float) $this->price <= 0) {
+            return 0.0;
+        }
+
+        return round($this->net_profit / (float) $this->price * 100, 1);
+    }
+
+    /**
+     * Get the allocation total percentage of price.
+     */
+    public function getAllocationPercentAttribute(): float
+    {
+        if ((float) $this->price <= 0) {
+            return 0.0;
+        }
+
+        return round((float) $this->allocation_total / (float) $this->price * 100, 1);
     }
 }

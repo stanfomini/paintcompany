@@ -69,10 +69,12 @@ it('cannot send proposal without signature', function () {
 });
 
 it('model hasCreatorSignature returns false when no signature', function () {
+    $this->actingAs($this->internalUser);
     expect($this->estimate->hasCreatorSignature())->toBeFalse();
 });
 
 it('model hasCreatorSignature returns true when signature exists', function () {
+    $this->actingAs($this->internalUser);
     $this->internalUser->internalUser->update([
         'signature_data' => 'John Smith',
         'signature_type' => 'typed',
@@ -83,6 +85,7 @@ it('model hasCreatorSignature returns true when signature exists', function () {
 });
 
 it('model hasCreatorSignature returns false for drawn signature with only type', function () {
+    $this->actingAs($this->internalUser);
     $this->internalUser->internalUser->update([
         'signature_data' => null,
         'signature_type' => 'drawn',
@@ -92,6 +95,7 @@ it('model hasCreatorSignature returns false for drawn signature with only type',
 });
 
 it('model hasCreatorSignature returns true for drawn signature with data', function () {
+    $this->actingAs($this->internalUser);
     $this->internalUser->internalUser->update([
         'signature_data' => 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
         'signature_type' => 'drawn',
@@ -99,4 +103,18 @@ it('model hasCreatorSignature returns true for drawn signature with data', funct
     ]);
 
     expect($this->estimate->fresh()->hasCreatorSignature())->toBeTrue();
+});
+
+it('hasCreatorSignature checks the authenticated user not the creator', function () {
+    // Estimate created by internalUser (no signature)
+    // A different user WITH a signature tries to send
+    $sender = User::factory()->withFullAccess()->create(['type' => 'internal']);
+    $sender->internalUser->update([
+        'signature_data' => 'Sender Name',
+        'signature_type' => 'typed',
+        'signature_updated_at' => now(),
+    ]);
+
+    $this->actingAs($sender);
+    expect($this->estimate->hasCreatorSignature())->toBeTrue();
 });

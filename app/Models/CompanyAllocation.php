@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use App\Services\AllocationEvaluationService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Represents a business cost allocation (marketing, sales, loans, etc.).
@@ -38,6 +40,8 @@ class CompanyAllocation extends Model
         'is_informational',
         'description',
         'sort_order',
+        'conditions',
+        'conditions_logic',
     ];
 
     protected function casts(): array
@@ -48,6 +52,8 @@ class CompanyAllocation extends Model
             'is_system' => 'boolean',
             'is_informational' => 'boolean',
             'sort_order' => 'integer',
+            'conditions' => 'array',
+            'conditions_logic' => 'string',
         ];
     }
 
@@ -57,6 +63,172 @@ class CompanyAllocation extends Model
     public function companySetting(): BelongsTo
     {
         return $this->belongsTo(CompanySetting::class);
+    }
+
+    /**
+     * Get the job cost card allocations for this allocation.
+     */
+    public function cardAllocations(): HasMany
+    {
+        return $this->hasMany(JobCostCardAllocation::class);
+    }
+
+    /**
+     * Check if this allocation has conditions.
+     */
+    public function hasConditions(): bool
+    {
+        return is_array($this->conditions) && count($this->conditions) > 0;
+    }
+
+    /**
+     * Evaluate conditions against a given context.
+     *
+     * @param  array<string, mixed>  $context  Context data to evaluate against
+     */
+    public function evaluateConditions(array $context): bool
+    {
+        if (! $this->hasConditions()) {
+            return true;
+        }
+
+        $logic = $this->conditions_logic ?? 'all';
+        $results = [];
+
+        foreach ($this->conditions as $condition) {
+            $field = $condition['field'] ?? null;
+            $operator = $condition['operator'] ?? 'equals';
+            $conditionValue = $condition['value'] ?? null;
+
+            if ($field === null) {
+                continue;
+            }
+
+            $contextValue = $context[$field] ?? null;
+            $passed = $this->evaluateSingleCondition($field, $operator, $conditionValue, $contextValue);
+            $results[] = $passed;
+        }
+
+        if (empty($results)) {
+            return true;
+        }
+
+        if ($logic === 'any') {
+            return in_array(true, $results, true);
+        }
+
+        return ! in_array(false, $results, true);
+    }
+
+    /**
+     * Evaluate a single condition rule.
+     */
+    protected function evaluateSingleCondition(string $field, string $operator, mixed $conditionValue, mixed $contextValue): bool
+    {
+        if ($field === 'has_scope') {
+            return $this->evaluateScopeCondition($operator, $conditionValue, (array) $contextValue);
+        }
+
+        if ($field === 'payment_methods') {
+            return $this->evaluatePaymentMethodCondition($operator, $conditionValue, (array) $contextValue);
+        }
+
+        return match ($operator) {
+            'equals' => $contextValue == $conditionValue,
+            'not_equals' => $contextValue != $conditionValue,
+            'in' => in_array($conditionValue, (array) $contextValue) || in_array($contextValue, (array) $conditionValue),
+            'greater_than' => (float) $contextValue > (float) $conditionValue,
+            'less_than' => (float) $contextValue < (float) $conditionValue,
+            default => false,
+        };
+    }
+
+    /**
+     * Evaluate a scope-specific condition.
+     *
+     * @param  array<int, string>  $contextScopes
+     */
+    protected function evaluateScopeCondition(string $operator, mixed $conditionValue, array $contextScopes): bool
+    {
+        if ($operator === 'equals') {
+            return match ($conditionValue) {
+                'interior' => in_array('interior', $contextScopes),
+                'exterior' => in_array('exterior', $contextScopes),
+                'both' => in_array('interior', $contextScopes) && in_array('exterior', $contextScopes),
+                default => false,
+            };
+        }
+
+        if ($operator === 'not_equals') {
+            return match ($conditionValue) {
+                'interior' => ! in_array('interior', $contextScopes),
+                'exterior' => ! in_array('exterior', $contextScopes),
+                'both' => ! (in_array('interior', $contextScopes) && in_array('exterior', $contextScopes)),
+                default => true,
+            };
+        }
+
+        return false;
+    }
+
+    /**
+     * Evaluate a payment method condition.
+     *
+     * @param  array<int, string>  $contextMethods
+     */
+    protected function evaluatePaymentMethodCondition(string $operator, mixed $conditionValue, array $contextMethods): bool
+    {
+        if ($operator === 'equals') {
+            return in_array($conditionValue, $contextMethods);
+        }
+
+        if ($operator === 'in') {
+            foreach ((array) $conditionValue as $value) {
+                if (in_array($value, $contextMethods)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get a human-readable summary of the conditions.
+     */
+    public function getConditionsSummary(): string
+    {
+        if (! $this->hasConditions()) {
+            return '';
+        }
+
+        $logic = $this->conditions_logic ?? 'all';
+        $parts = [];
+
+        foreach ($this->conditions as $condition) {
+            $field = $condition['field'] ?? 'unknown';
+            $operator = $condition['operator'] ?? 'equals';
+            $value = $condition['value'] ?? '';
+
+            $fieldLabel = str_replace('_', ' ', $field);
+            $operatorLabel = match ($operator) {
+                'equals' => 'is',
+                'not_equals' => 'is not',
+                'in' => 'includes',
+                'greater_than' => '>',
+                'less_than' => '<',
+                default => $operator,
+            };
+
+            $valueLabel = is_array($value) ? implode(', ', $value) : (string) $value;
+            $parts[] = "{$fieldLabel} {$operatorLabel} {$valueLabel}";
+        }
+
+        $joiner = $logic === 'any' ? ' OR ' : ' AND ';
+
+        return 'Applies when: '.implode($joiner, $parts);
     }
 
     /**
@@ -175,6 +347,23 @@ class CompanyAllocation extends Model
         static::deleting(function (CompanyAllocation $allocation) {
             if ($allocation->is_system) {
                 throw new \RuntimeException('System allocations cannot be deleted.');
+            }
+        });
+
+        static::saved(function (CompanyAllocation $allocation) {
+            try {
+                app(AllocationEvaluationService::class)->recalculateAllCards();
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        });
+
+        static::deleted(function (CompanyAllocation $allocation) {
+            try {
+                $allocation->cardAllocations()->delete();
+                app(AllocationEvaluationService::class)->recalculateAllCards();
+            } catch (\Throwable $e) {
+                report($e);
             }
         });
     }

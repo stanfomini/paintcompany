@@ -2,6 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\Invoice;
+use App\Models\OverheadEntry;
+use App\Models\Payment;
+use App\Observers\InvoiceObserver;
+use App\Observers\OverheadEntryObserver;
+use App\Observers\PaymentObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -24,6 +30,10 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+
+        Payment::observe(PaymentObserver::class);
+        OverheadEntry::observe(OverheadEntryObserver::class);
+        Invoice::observe(InvoiceObserver::class);
     }
 
     protected function configureDefaults(): void

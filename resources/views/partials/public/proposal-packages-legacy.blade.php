@@ -189,7 +189,7 @@
 @if ($selectedPackageId)
     @php
         $selectedPackage = collect($packages)->firstWhere('id', $selectedPackageId);
-        $depositPercent = $estimate->deposit_percent ?? 30;
+        $depositPercent = (float) \App\Models\CompanySetting::getInstance()->default_deposit_percent;
     @endphp
 
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -236,36 +236,54 @@
 
     {{-- Sign & Accept Button --}}
     <div class="text-center">
-        <button
-            wire:click="proceedToSignature"
-            wire:loading.attr="disabled"
-            @if (!$this->canModify()) disabled @endif
-            class="inline-flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-            </svg>
-            <span wire:loading.remove wire:target="proceedToSignature">Sign & Accept Proposal</span>
-            <span wire:loading wire:target="proceedToSignature">Processing...</span>
-        </button>
-        <p class="mt-3 text-sm text-gray-500">
-            By signing, you agree to the terms and conditions of this proposal.
-        </p>
+        @if ($estimate->status === 'accepted')
+            <div class="inline-flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-6 py-3 rounded-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span class="font-medium">Proposal Accepted</span>
+            </div>
+        @else
+            <button
+                wire:click="proceedToSignature"
+                wire:loading.attr="disabled"
+                @if (!$this->canModify()) disabled @endif
+                class="inline-flex items-center justify-center gap-2 px-8 py-4 bg-blue-600 text-white font-semibold rounded-xl hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                </svg>
+                <span wire:loading.remove wire:target="proceedToSignature">Sign & Accept Proposal</span>
+                <span wire:loading wire:target="proceedToSignature">Processing...</span>
+            </button>
+            <p class="mt-3 text-sm text-gray-500">
+                By signing, you agree to the terms and conditions of this proposal.
+            </p>
+        @endif
     </div>
 @else
     {{-- Disabled Sign Button when no package selected --}}
     <div class="text-center">
-        <button
-            disabled
-            class="inline-flex items-center justify-center gap-2 px-8 py-4 bg-gray-300 text-gray-500 font-semibold rounded-xl cursor-not-allowed"
-        >
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
-            </svg>
-            Sign & Accept Proposal
-        </button>
-        <p class="mt-3 text-sm text-gray-500">
-            Please select a package above to continue.
-        </p>
+        @if ($estimate->status === 'accepted')
+            <div class="inline-flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-6 py-3 rounded-lg">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                <span class="font-medium">Proposal Accepted</span>
+            </div>
+        @else
+            <button
+                disabled
+                class="inline-flex items-center justify-center gap-2 px-8 py-4 bg-gray-300 text-gray-500 font-semibold rounded-xl cursor-not-allowed"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                </svg>
+                Sign & Accept Proposal
+            </button>
+            <p class="mt-3 text-sm text-gray-500">
+                Please select a package above to continue.
+            </p>
+        @endif
     </div>
 @endif

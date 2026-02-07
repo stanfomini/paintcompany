@@ -717,37 +717,72 @@ new #[Layout('components.layouts.public')] class extends Component {
             </flux:card>
         @endif
 
-        {{-- Prepared By / Team Signature --}}
-        @if ($estimate->createdBy?->internalUser?->hasSignature())
+        {{-- Signatures Section --}}
+        @if ($estimate->createdBy?->internalUser?->hasSignature() || $estimate->signature)
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Prepared By</flux:heading>
-                <div class="flex flex-col sm:flex-row sm:items-end gap-4">
-                    <div class="flex-1">
-                        @if ($estimate->createdBy->internalUser->signature_type === 'drawn')
-                            <img
-                                src="{{ $estimate->createdBy->internalUser->signature_data }}"
-                                alt="Signature"
-                                class="max-h-20 mb-2"
-                            />
-                        @else
-                            <div
-                                class="text-3xl text-zinc-900 dark:text-white mb-2"
-                                style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;"
-                            >
-                                {{ $estimate->createdBy->internalUser->signature_data }}
-                            </div>
-                        @endif
-                        <div class="border-t border-zinc-300 dark:border-zinc-600 pt-2">
-                            <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
-                                {{ $estimate->createdBy->name }}
-                            </flux:text>
-                            @if ($estimate->createdBy->internalUser->job_title)
-                                <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
-                                    {{ $estimate->createdBy->internalUser->job_title }}
-                                </flux:text>
+                <flux:heading size="lg" class="mb-4">Signatures</flux:heading>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                    {{-- Prepared By / Estimator Signature --}}
+                    @if ($estimate->createdBy?->internalUser?->hasSignature())
+                        <div>
+                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3 font-medium uppercase tracking-wider">Prepared By</flux:text>
+                            @if ($estimate->createdBy->internalUser->signature_type === 'drawn')
+                                <img
+                                    src="{{ $estimate->createdBy->internalUser->signature_data }}"
+                                    alt="Signature"
+                                    class="max-h-20 mb-2"
+                                />
+                            @else
+                                <div
+                                    class="text-3xl text-zinc-900 dark:text-white mb-2"
+                                    style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;"
+                                >
+                                    {{ $estimate->createdBy->internalUser->signature_data }}
+                                </div>
                             @endif
+                            <div class="border-t border-zinc-300 dark:border-zinc-600 pt-2">
+                                <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
+                                    {{ $estimate->createdBy->name }}
+                                </flux:text>
+                                @if ($estimate->createdBy->internalUser->job_title)
+                                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
+                                        {{ $estimate->createdBy->internalUser->job_title }}
+                                    </flux:text>
+                                @endif
+                            </div>
                         </div>
-                    </div>
+                    @endif
+
+                    {{-- Accepted By / Customer Signature --}}
+                    @if ($estimate->signature)
+                        <div>
+                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3 font-medium uppercase tracking-wider">Accepted By</flux:text>
+                            @if ($estimate->signature->signature_type === 'drawn')
+                                <img
+                                    src="{{ $estimate->signature->signature_data }}"
+                                    alt="Customer Signature"
+                                    class="max-h-20 mb-2"
+                                />
+                            @else
+                                <div
+                                    class="text-3xl text-zinc-900 dark:text-white mb-2"
+                                    style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;"
+                                >
+                                    {{ $estimate->signature->signature_data }}
+                                </div>
+                            @endif
+                            <div class="border-t border-zinc-300 dark:border-zinc-600 pt-2">
+                                <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
+                                    {{ $estimate->signature->signer_name }}
+                                </flux:text>
+                                @if ($estimate->signature->signed_at)
+                                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
+                                        Signed {{ $estimate->signature->signed_at->format('F j, Y \a\t g:i A') }}
+                                    </flux:text>
+                                @endif
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </flux:card>
         @endif

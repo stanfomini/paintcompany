@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Notifications\EstimateAccepted;
+use App\Services\InvoiceService;
 use App\Services\JobService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -87,6 +88,14 @@ class EstimateSignature extends Model
 
                 // Auto-create job from the accepted estimate
                 app(JobService::class)->createFromEstimate($signature->estimate);
+
+                // Auto-create projected job cost card and deposit invoice
+                $signature->estimate->load('areas.surfaces');
+                $job = $signature->estimate->job;
+                if ($job) {
+                    app(\App\Services\JobCostCardService::class)->createFromEstimate($signature->estimate, $job);
+                    app(InvoiceService::class)->createDepositInvoice($signature->estimate, $job);
+                }
             }
         });
     }

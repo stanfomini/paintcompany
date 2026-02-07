@@ -26,6 +26,7 @@ class CompanySetting extends Model
         'city',
         'state',
         'zip_code',
+        'timezone',
         'default_tax_rate',
         'default_payment_terms_days',
         'estimate_validity_days',
@@ -49,6 +50,7 @@ class CompanySetting extends Model
         'exterior_margin_percent',
         // Defaults
         'default_deposit_percent',
+        'accounting_mode',
         'default_sales_discount_percent',
         'material_tax_rate',
         'labor_tax_rate',
@@ -74,6 +76,15 @@ class CompanySetting extends Model
         // Crew Settings
         'default_required_crew_size',
         'total_painters',
+        // Payment Integrations
+        'stripe_connect_enabled',
+        'stripe_ach_enabled',
+        'increase_enabled',
+        'increase_environment',
+        'increase_access_token',
+        'increase_oauth_state',
+        'payment_split_enabled',
+        'payment_split_config',
     ];
 
     protected function casts(): array
@@ -126,6 +137,13 @@ class CompanySetting extends Model
             // Crew Settings
             'default_required_crew_size' => 'integer',
             'total_painters' => 'integer',
+            // Payment Integrations
+            'stripe_connect_enabled' => 'boolean',
+            'stripe_ach_enabled' => 'boolean',
+            'increase_enabled' => 'boolean',
+            'increase_access_token' => 'encrypted',
+            'payment_split_enabled' => 'boolean',
+            'payment_split_config' => 'array',
         ];
     }
 
@@ -1097,5 +1115,39 @@ class CompanySetting extends Model
     public function hasPaintDefaultsForScope(string $scope): bool
     {
         return ! empty($this->getPaintDefaultsForScope($scope));
+    }
+
+    /**
+     * Check if Stripe Connect is configured and enabled.
+     */
+    public function isStripeConnectConfigured(): bool
+    {
+        return $this->stripe_connect_enabled && config('stripe.secret');
+    }
+
+    /**
+     * Check if Increase is configured and enabled.
+     */
+    public function isIncreaseConfigured(): bool
+    {
+        return $this->increase_enabled && ! empty($this->increase_access_token);
+    }
+
+    /**
+     * Check if payment splitting is enabled and configured.
+     */
+    public function isSplittingEnabled(): bool
+    {
+        return $this->payment_split_enabled && ! empty($this->payment_split_config);
+    }
+
+    /**
+     * Get the payment split configuration.
+     *
+     * @return array<int, array{name: string, percentage: float, stripe_account_id: string|null, increase_account_id: string|null}>
+     */
+    public function getPaymentSplitConfig(): array
+    {
+        return $this->payment_split_config ?? [];
     }
 }

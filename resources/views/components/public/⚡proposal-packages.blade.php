@@ -8,6 +8,7 @@ use App\Models\EstimatePackageItem;
 use App\Models\PackageTemplate;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -432,11 +433,15 @@ new class extends Component {
     }
 
     #[Computed]
+    public function depositPercent(): float
+    {
+        return (float) \App\Models\CompanySetting::getInstance()->default_deposit_percent;
+    }
+
+    #[Computed]
     public function depositAmount(): float
     {
-        $depositPercent = $this->estimate->deposit_percent ?? 30;
-
-        return round($this->finalTotal * ($depositPercent / 100), 2);
+        return round($this->finalTotal * ($this->depositPercent / 100), 2);
     }
 
     #[Computed]
@@ -475,6 +480,12 @@ new class extends Component {
             'depositAmount' => $this->depositAmount,
             'balanceDue' => $this->balanceDue,
         ]);
+    }
+
+    #[On('estimate-accepted')]
+    public function handleEstimateAccepted(): void
+    {
+        $this->estimate = $this->estimate->fresh();
     }
 
     public function canModify(): bool

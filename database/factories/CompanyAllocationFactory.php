@@ -172,6 +172,19 @@ class CompanyAllocationFactory extends Factory
     }
 
     /**
+     * Allocation with conditional rules.
+     *
+     * @param  array<int, array{field: string, operator: string, value: mixed}>  $conditions
+     */
+    public function withConditions(array $conditions, string $logic = 'all'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'conditions' => $conditions,
+            'conditions_logic' => $logic,
+        ]);
+    }
+
+    /**
      * Associate with specific company settings.
      */
     public function forCompanySetting(CompanySetting $setting): static

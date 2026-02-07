@@ -111,7 +111,7 @@ describe('Crew Job Show', function () {
             ->assertStatus(200)
             ->assertSee('Bedroom Paint')
             ->assertSee($job->job_number)
-            ->assertSee('Work Order');
+            ->assertSee('Progress');
     });
 
     it('denies access to crew not dispatched to this job', function () {
@@ -172,10 +172,11 @@ describe('Crew Job Show', function () {
         ]);
 
         app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+        app(JobDispatchService::class)->acceptJob($job, $crew);
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'colors')
+            ->call('setTab', 'colors')
             ->assertSee('Paint Colors')
             ->assertSee('Repose Gray')
             ->assertSee('Sherwin-Williams');
@@ -224,7 +225,7 @@ describe('Crew Job Show', function () {
         expect($systemMessage->content)->toContain('joined the conversation');
     });
 
-    it('shows chat button after accepting job', function () {
+    it('shows inline chat after accepting job', function () {
         $crew = User::factory()->crew()->create();
         $deal = \App\Models\Deal::factory()->create();
         $chatThread = \App\Models\ChatThread::factory()->create([
@@ -237,10 +238,10 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->assertSee('Group Chat');
+            ->assertSee('Job Conversation');
     });
 
-    it('hides chat button before accepting job', function () {
+    it('hides chat before accepting job', function () {
         $crew = User::factory()->crew()->create();
         $deal = \App\Models\Deal::factory()->create();
         $chatThread = \App\Models\ChatThread::factory()->create([
@@ -252,7 +253,7 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->assertDontSee('Group Chat');
+            ->assertDontSee('Job Conversation');
     });
 
     it('shows financials tab after accepting job', function () {
@@ -265,7 +266,7 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'financials')
+            ->call('setTab', 'financials')
             ->assertSee('For Crew Lead Only')
             ->assertSee('Job Profit Summary');
     });
@@ -280,7 +281,7 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'financials')
+            ->call('setTab', 'financials')
             ->assertSee('Pay Calculator')
             ->assertSee('Base Hourly Wage')
             ->assertSee('Payroll Burden');
@@ -296,7 +297,7 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'financials')
+            ->call('setTab', 'financials')
             ->assertSee('Crew Size Calculator')
             ->assertSee('Hours/Day');
     });
@@ -311,7 +312,7 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'financials')
+            ->call('setTab', 'financials')
             ->assertSet('painters', [])
             ->call('addPainter')
             ->assertCount('painters', 1);
@@ -327,7 +328,7 @@ describe('Crew Job Show', function () {
 
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'financials')
+            ->call('setTab', 'financials')
             ->call('addPainter')
             ->set('painters.0.name', 'John Doe')
             ->set('painters.0.hours', 16)
@@ -348,7 +349,7 @@ describe('Crew Job Show', function () {
         // Should not be able to access financials before accepting
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
-            ->call('setStage', 'financials')
+            ->call('setTab', 'financials')
             ->assertDontSee('Job Profit Summary');
     });
 });

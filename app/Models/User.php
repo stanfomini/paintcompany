@@ -28,6 +28,7 @@ class User extends Authenticatable
         'password',
         'type',
         'is_active',
+        'calendar_token',
     ];
 
     /**
@@ -187,6 +188,18 @@ class User extends Authenticatable
     public function isOwner(): bool
     {
         return $this->isInternal() && $this->hasRole('owner');
+    }
+
+    /**
+     * Get or create a calendar token for iCal feed subscriptions.
+     */
+    public function getOrCreateCalendarToken(): string
+    {
+        if (! $this->calendar_token) {
+            $this->update(['calendar_token' => Str::uuid()->toString()]);
+        }
+
+        return $this->calendar_token;
     }
 
     /**

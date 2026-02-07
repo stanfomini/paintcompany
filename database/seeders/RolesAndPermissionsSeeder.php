@@ -75,6 +75,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'settings.company',
             'settings.packages',
             'settings.allocations',
+            'settings.payment_integrations',
 
             // Roadmap (legacy names - keep for backward compatibility)
             'view roadmap',
@@ -98,6 +99,24 @@ class RolesAndPermissionsSeeder extends Seeder
             // Business Plan
             'business_plan.view',
             'business_plan.manage',
+
+            // Invoices
+            'invoices.view',
+            'invoices.create',
+            'invoices.send',
+            'invoices.manage',
+
+            // Payments
+            'payments.view',
+            'payments.record',
+
+            // Vendors
+            'vendors.view',
+            'vendors.manage',
+
+            // Accounting
+            'accounting.view',
+            'accounting.manage',
         ];
 
         foreach ($permissions as $permission) {
@@ -145,6 +164,14 @@ class RolesAndPermissionsSeeder extends Seeder
             'access admin settings',
             // Business Plan
             'business_plan.view', 'business_plan.manage',
+            // Invoices
+            'invoices.view', 'invoices.create', 'invoices.send', 'invoices.manage',
+            // Payments
+            'payments.view', 'payments.record',
+            // Vendors
+            'vendors.view', 'vendors.manage',
+            // Accounting
+            'accounting.view', 'accounting.manage',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -178,6 +205,14 @@ class RolesAndPermissionsSeeder extends Seeder
             'manage invitations',
             // Business Plan
             'business_plan.view', 'business_plan.manage',
+            // Invoices
+            'invoices.view', 'invoices.create', 'invoices.send',
+            // Payments
+            'payments.view', 'payments.record',
+            // Vendors
+            'vendors.view', 'vendors.manage',
+            // Accounting
+            'accounting.view',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -205,6 +240,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'view kpis',
             // Business Plan (view only)
             'business_plan.view',
+            // Invoices (view only)
+            'invoices.view',
         ]);
 
         // Crew Lead - minimal internal access

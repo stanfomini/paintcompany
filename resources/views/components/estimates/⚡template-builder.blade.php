@@ -323,7 +323,7 @@ new class extends Component {
 
                 $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
                 $cleanupCost = $cleanupHours * $hourlyWage; // Effective rate = base wage × payroll burden
-                $sundriesCost = $settings->getSundriesCostForScope($scopeType);
+                $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scopeType);
 
                 // Calculate COGS with taxes
                 $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonTotal);
@@ -1585,7 +1585,7 @@ new class extends Component {
         $laborCost = $totalLaborHours * $hourlyWage;
         $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
         $cleanupCost = $cleanupHours * $hourlyWage;
-        $sundriesCost = $settings->getSundriesCostForScope($scopeType);
+        $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scopeType);
         $addonCost = array_sum(array_column($areaData['addons'] ?? [], 'total_price'));
 
         // Calculate COGS with taxes

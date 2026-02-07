@@ -65,7 +65,7 @@ describe('Estimate Show component', function () {
             ->assertSee('Two coats of premium paint');
     });
 
-    it('displays totals correctly', function () {
+    it('does not show incorrect bottom totals section for template estimates', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'subtotal' => 1000.00,
@@ -76,13 +76,10 @@ describe('Estimate Show component', function () {
             'created_by' => $user->id,
         ]);
 
+        // Bottom totals were removed because they double-count service items across packages
         Livewire::actingAs($user)
             ->test('estimates.show', ['estimate' => $estimate])
-            ->assertSee('$1,000.00')
-            ->assertSee('8.00%')
-            ->assertSee('$80.00')
-            ->assertSee('-$50.00')
-            ->assertSee('$1,030.00');
+            ->assertDontSee('-$50.00');
     });
 
     it('can mark draft estimate as sent', function () {

@@ -486,16 +486,17 @@ class Estimate extends Model
     }
 
     /**
-     * Check if the creator has a signature configured.
+     * Check if the authenticated internal user has a signature configured.
+     * Used to gate sending proposals - the sender's signature appears on the proposal.
      */
     public function hasCreatorSignature(): bool
     {
-        $creator = $this->createdBy;
-        if (! $creator || $creator->type !== 'internal') {
+        $user = auth()->user();
+        if (! $user || $user->type !== 'internal') {
             return false;
         }
 
-        $internalUser = $creator->internalUser;
+        $internalUser = $user->internalUser;
 
         return $internalUser && $internalUser->hasSignature();
     }

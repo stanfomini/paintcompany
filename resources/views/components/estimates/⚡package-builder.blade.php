@@ -60,7 +60,21 @@ new class extends Component {
         // Auto-generate packages from templates if none exist
         $this->ensurePackagesExist();
 
+        // Recalculate package totals to reflect current pricing settings
+        $this->recalculatePackageTotals();
+
         $this->loadPackages();
+    }
+
+    /**
+     * Recalculate all package totals so stored values match live getCustomerPrice().
+     */
+    protected function recalculatePackageTotals(): void
+    {
+        $service = app(EstimatePackageService::class);
+        foreach ($this->estimate->packages as $package) {
+            $service->calculatePackageTotal($package);
+        }
     }
 
     /**

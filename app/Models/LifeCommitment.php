@@ -18,12 +18,21 @@ class LifeCommitment extends Model
         'commitment',
         'action_type',
         'sort_order',
+        'is_active',
+        'start_date',
+        'recurrence_days',
+        'recurrence_time',
+        'recurrence_day_of_month',
     ];
 
     protected function casts(): array
     {
         return [
             'sort_order' => 'integer',
+            'is_active' => 'boolean',
+            'start_date' => 'date',
+            'recurrence_days' => 'array',
+            'recurrence_day_of_month' => 'integer',
         ];
     }
 
@@ -41,5 +50,13 @@ class LifeCommitment extends Model
     public function scopeOrdered(Builder $query): Builder
     {
         return $query->orderBy('sort_order')->orderBy('created_at');
+    }
+
+    /**
+     * Scope to only active commitments.
+     */
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true);
     }
 }

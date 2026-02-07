@@ -24,7 +24,7 @@ new class extends Component {
 
     public function mount(Estimate $estimate): void
     {
-        $this->estimate = $estimate->load(['deal.customer', 'createdBy', 'items', 'areas.surfaces', 'templateUsages.template', 'packages']);
+        $this->estimate = $estimate->load(['deal.customer', 'createdBy.internalUser', 'items', 'areas.surfaces', 'templateUsages.template', 'packages', 'signature']);
         $this->publicUrl = $this->estimate->getPublicUrl();
     }
 
@@ -33,12 +33,13 @@ new class extends Component {
     {
         $this->estimate = $this->estimate->fresh([
             'deal.customer',
-            'createdBy',
+            'createdBy.internalUser',
             'items',
             'areas.surfaces',
             'options',
             'templateUsages.template',
             'packages',
+            'signature',
         ]);
         $this->publicUrl = $this->estimate->getPublicUrl();
     }
@@ -638,30 +639,6 @@ new class extends Component {
                     </div>
                 @endif
 
-                <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
-                    <dl class="space-y-2 w-full md:w-64 ml-auto">
-                        <div class="flex justify-between">
-                            <dt class="text-sm text-zinc-500 dark:text-zinc-400">Subtotal</dt>
-                            <dd class="font-medium">${{ number_format($estimate->subtotal, 2) }}</dd>
-                        </div>
-                        @if ($estimate->tax_rate > 0)
-                            <div class="flex justify-between">
-                                <dt class="text-sm text-zinc-500 dark:text-zinc-400">Tax ({{ number_format($estimate->tax_rate, 2) }}%)</dt>
-                                <dd class="font-medium">${{ number_format($estimate->tax_amount, 2) }}</dd>
-                            </div>
-                        @endif
-                        @if ($estimate->discount_amount > 0)
-                            <div class="flex justify-between">
-                                <dt class="text-sm text-zinc-500 dark:text-zinc-400">Discount</dt>
-                                <dd class="font-medium text-red-600">-${{ number_format($estimate->discount_amount, 2) }}</dd>
-                            </div>
-                        @endif
-                        <div class="flex justify-between pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                            <dt class="text-base font-medium">Total</dt>
-                            <dd class="text-lg font-bold">${{ number_format($estimate->total, 2) }}</dd>
-                        </div>
-                    </dl>
-                </div>
             </div>
 
             {{-- Package Builder Section --}}
@@ -750,6 +727,70 @@ new class extends Component {
                             </div>
                         @endif
                     </dl>
+                </div>
+            @endif
+
+            {{-- Signatures --}}
+            @if ($estimate->createdBy?->internalUser?->hasSignature() || $estimate->signature)
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                    <flux:heading size="sm" class="mb-4">Signatures</flux:heading>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                        {{-- Estimator Signature --}}
+                        @if ($estimate->createdBy?->internalUser?->hasSignature())
+                            <div>
+                                <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Prepared By</div>
+                                @if ($estimate->createdBy->internalUser->signature_type === 'drawn')
+                                    <img
+                                        src="{{ $estimate->createdBy->internalUser->signature_data }}"
+                                        alt="Estimator Signature"
+                                        class="max-h-16 mb-2"
+                                    />
+                                @else
+                                    <div
+                                        class="text-2xl text-zinc-900 dark:text-white mb-2"
+                                        style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;"
+                                    >
+                                        {{ $estimate->createdBy->internalUser->signature_data }}
+                                    </div>
+                                @endif
+                                <div class="border-t border-zinc-300 dark:border-zinc-600 pt-2">
+                                    <flux:text class="font-medium">{{ $estimate->createdBy->name }}</flux:text>
+                                    @if ($estimate->createdBy->internalUser->job_title)
+                                        <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ $estimate->createdBy->internalUser->job_title }}</flux:text>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
+
+                        {{-- Customer Signature --}}
+                        @if ($estimate->signature)
+                            <div>
+                                <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-3">Accepted By</div>
+                                @if ($estimate->signature->signature_type === 'drawn')
+                                    <img
+                                        src="{{ $estimate->signature->signature_data }}"
+                                        alt="Customer Signature"
+                                        class="max-h-16 mb-2"
+                                    />
+                                @else
+                                    <div
+                                        class="text-2xl text-zinc-900 dark:text-white mb-2"
+                                        style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;"
+                                    >
+                                        {{ $estimate->signature->signature_data }}
+                                    </div>
+                                @endif
+                                <div class="border-t border-zinc-300 dark:border-zinc-600 pt-2">
+                                    <flux:text class="font-medium">{{ $estimate->signature->signer_name }}</flux:text>
+                                    @if ($estimate->signature->signed_at)
+                                        <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
+                                            Signed {{ $estimate->signature->signed_at->format('M j, Y g:i A') }}
+                                        </flux:text>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
+                    </div>
                 </div>
             @endif
 

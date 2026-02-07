@@ -49,6 +49,8 @@ class BusinessPlanService
                     'current_year_plan' => $plan,
                     'current_year_actual' => $actual,
                     'notes' => $item?->notes,
+                    'sync_source' => $item?->sync_source,
+                    'synced_at' => $item?->synced_at,
                 ];
 
                 $sectionTotals['prior_year_actual'] += $prior;

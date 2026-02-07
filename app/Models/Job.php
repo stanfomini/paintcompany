@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\DB;
@@ -91,6 +92,29 @@ class Job extends Model
         return $this->belongsToMany(User::class, 'job_crew', 'job_id', 'crew_user_id')
             ->withPivot('status', 'dispatched_at', 'responded_at', 'notes')
             ->withTimestamps();
+    }
+
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
+    }
+
+    public function costCards(): HasMany
+    {
+        return $this->hasMany(JobCostCard::class);
+    }
+
+    public function prepPlan(): HasOne
+    {
+        return $this->hasOne(JobPrepPlan::class);
+    }
+
+    /**
+     * Check if the prep plan is fully approved by all three parties.
+     */
+    public function isPrepApproved(): bool
+    {
+        return $this->prepPlan?->isFullyApproved() ?? false;
     }
 
     public function activities(): MorphMany

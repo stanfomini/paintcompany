@@ -39,6 +39,8 @@ class JobCostCardFactory extends Factory
             'material_cost' => $material,
             'sales_commission' => $commission,
             'is_manual' => true,
+            'status' => 'active',
+            'estimate_id' => null,
             'notes' => fake()->optional(0.3)->sentence(),
         ];
     }
@@ -72,6 +74,26 @@ class JobCostCardFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'year' => $year,
+        ]);
+    }
+
+    /**
+     * Mark as projected status.
+     */
+    public function projected(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => 'projected',
+        ]);
+    }
+
+    /**
+     * Mark as completed status.
+     */
+    public function completed(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => 'completed',
         ]);
     }
 }

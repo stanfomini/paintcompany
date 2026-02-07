@@ -3,23 +3,36 @@
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
 use App\Models\Job;
+use App\Models\JobPrepPlan;
+use App\Models\JobPrepTask;
 use App\Services\ChatService;
 use App\Services\JobDispatchService;
+use App\Services\JobPrepService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
-new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class extends Component {
+new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class extends Component
+{
     public Job $job;
 
-    public string $activeStage = 'overview';
+    public string $activeTab = 'work-order';
 
     public array $expandedAreas = [];
 
     public int $crewSize = 2;
 
     public float $hoursPerDay = 8;
+
+    public int $activePrepDay = 1;
+
+    public string $crewCustomTaskTitle = '';
+
+    public ?float $crewCustomTaskHours = null;
+
+    public bool $showCrewTaskForm = false;
 
     /** @var array<int|string, float> Actual paint costs keyed by paint_product_id */
     public array $actualPaintCosts = [];
@@ -41,6 +54,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             'estimate.areas.addons.nestedAreaTemplate',
             'estimate.areas.substrate',
             'colors',
+            'prepPlan.days.tasks',
         ]);
 
         // Expand all areas by default
@@ -69,9 +83,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         }
     }
 
+    public function setTab(string $tab): void
+    {
+        $this->activeTab = $tab;
+    }
+
+    /** Backward-compatible alias used by tests */
     public function setStage(string $stage): void
     {
-        $this->activeStage = $stage;
+        $this->activeTab = $stage;
     }
 
     public function toggleArea(int $areaId): void
@@ -170,7 +190,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     $thread->messages()->create([
                         'user_id' => null,
                         'type' => 'system',
-                        'content' => $user->name . ' (Crew) has joined the conversation.',
+                        'content' => $user->name.' (Crew) has joined the conversation.',
                     ]);
                 }
             }
@@ -193,6 +213,72 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         } else {
             session()->flash('error', 'Unable to decline this job.');
         }
+    }
+
+    #[Computed]
+    public function prepPlan(): ?JobPrepPlan
+    {
+        return $this->job->prepPlan?->load(['days.tasks.completedByUser']);
+    }
+
+    #[Computed]
+    public function prepProgress(): array
+    {
+        $plan = $this->prepPlan;
+
+        if (! $plan) {
+            return ['total' => 0, 'completed' => 0, 'percent' => 0.0, 'per_day' => []];
+        }
+
+        return app(JobPrepService::class)->getProgress($plan);
+    }
+
+    public function approvePrepPlan(): void
+    {
+        $plan = $this->prepPlan;
+
+        if (! $plan || $plan->crew_approved) {
+            return;
+        }
+
+        app(JobPrepService::class)->approvePlan($plan, Auth::guard('crew')->user(), 'crew');
+        unset($this->prepPlan);
+        $this->job->refresh();
+    }
+
+    public function completeTask(int $taskId): void
+    {
+        $task = JobPrepTask::findOrFail($taskId);
+        app(JobPrepService::class)->completeTask($task, Auth::guard('crew')->user());
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function addCrewCustomTask(): void
+    {
+        if (empty(trim($this->crewCustomTaskTitle))) {
+            return;
+        }
+
+        $plan = $this->prepPlan;
+
+        if (! $plan) {
+            return;
+        }
+
+        $day = $plan->days()->where('day_number', $this->activePrepDay)->first();
+
+        if (! $day) {
+            return;
+        }
+
+        app(JobPrepService::class)->addCustomTask($day, $this->crewCustomTaskTitle, null, $this->crewCustomTaskHours);
+        $this->reset('crewCustomTaskTitle', 'crewCustomTaskHours', 'showCrewTaskForm');
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function setActivePrepDay(int $day): void
+    {
+        $this->activePrepDay = $day;
     }
 
     #[Computed]
@@ -726,7 +812,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         ]);
 
         if (! empty($cityState)) {
-            $parts[] = implode(', ', $cityState) . ' ' . $property->zip;
+            $parts[] = implode(', ', $cityState).' '.$property->zip;
         }
 
         return implode(', ', $parts) ?: 'No address';
@@ -739,21 +825,39 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     }
 
     #[Computed]
-    public function stages(): array
+    public function chatMessages()
+    {
+        $thread = $this->chatThread;
+        if (! $thread) {
+            return collect();
+        }
+
+        $user = Auth::guard('crew')->user();
+
+        return app(ChatService::class)->getMessagesForThread($thread, $user, 30);
+    }
+
+    #[On('message-sent')]
+    public function onMessageSent(): void
+    {
+        unset($this->chatMessages);
+    }
+
+    #[Computed]
+    public function referenceTabs(): array
     {
         return [
-            ['key' => 'overview', 'label' => 'Overview', 'icon' => 'document-text'],
-            ['key' => 'work-order', 'label' => 'Work Order', 'icon' => 'clipboard-document-list', 'requires_accepted' => true],
-            ['key' => 'financials', 'label' => 'Financials', 'icon' => 'calculator', 'requires_accepted' => true],
+            ['key' => 'work-order', 'label' => 'Work Order', 'icon' => 'clipboard-document-list'],
+            ['key' => 'financials', 'label' => 'Financials', 'icon' => 'calculator'],
             ['key' => 'colors', 'label' => 'Colors', 'icon' => 'paint-brush'],
-            ['key' => 'materials', 'label' => 'Materials', 'icon' => 'shopping-cart', 'requires_accepted' => true],
+            ['key' => 'materials', 'label' => 'Materials', 'icon' => 'shopping-cart'],
         ];
     }
 }; ?>
 
 <div>
     <div class="max-w-4xl mx-auto px-4 sm:px-0">
-        {{-- Header with Chat Button --}}
+        {{-- 1. Header --}}
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div class="flex items-center gap-3 sm:gap-4">
                 <flux:button variant="ghost" :href="$this->hasAccepted ? route('crew.jobs.mine') : route('crew.jobs.available')" icon="arrow-left" class="shrink-0">
@@ -765,11 +869,6 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 </div>
             </div>
             <div class="flex items-center gap-2 sm:gap-3">
-                @if ($this->hasAccepted && $this->chatThread)
-                    <flux:button :href="route('crew.chat.show', $this->chatThread)" variant="filled" icon="chat-bubble-left-right" class="flex-1 sm:flex-none">
-                        Group Chat
-                    </flux:button>
-                @endif
                 @php
                     $stageColor = match ($job->stage) {
                         'estimate_accepted' => 'blue',
@@ -784,19 +883,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             </div>
         </div>
 
-        @if (session('success'))
-            <flux:callout variant="success" class="mb-4">
-                {{ session('success') }}
-            </flux:callout>
-        @endif
-
-        @if (session('error'))
-            <flux:callout variant="danger" class="mb-4">
-                {{ session('error') }}
-            </flux:callout>
-        @endif
-
-        {{-- Accept/Reject Banner --}}
+        {{-- 2. Accept/Reject Banner --}}
         @if ($this->crewStatus === 'dispatched')
             <div class="border-2 border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4 sm:p-6 mb-6">
                 <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -819,121 +906,499 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             </div>
         @endif
 
-        {{-- Stage Navigation Tabs - Mobile Scrollable --}}
-        <div class="flex gap-2 mb-6 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
-            @foreach ($this->stages as $stage)
-                @php
-                    $isLocked = ! $this->hasAccepted && ($stage['requires_accepted'] ?? false);
-                    $isActive = $activeStage === $stage['key'];
-                @endphp
-                <flux:button
-                    wire:click="setStage('{{ $stage['key'] }}')"
-                    :variant="$isActive ? 'primary' : 'ghost'"
-                    :icon="$stage['icon']"
-                    :disabled="$isLocked"
-                    class="{{ $isLocked ? 'opacity-50' : '' }} whitespace-nowrap shrink-0"
-                    size="sm"
-                >
-                    <span class="hidden sm:inline">{{ $stage['label'] }}</span>
-                    <span class="sm:hidden">{{ Str::limit($stage['label'], 6) }}</span>
-                    @if ($isLocked)
-                        <flux:icon name="lock-closed" class="w-3 h-3 ml-1" />
-                    @endif
-                </flux:button>
-            @endforeach
-        </div>
-
-        {{-- OVERVIEW STAGE --}}
-        @if ($activeStage === 'overview')
-            {{-- Job Summary Card --}}
-            <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                    <div>
-                        <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Job Details</h3>
-                        <dl class="space-y-2 sm:space-y-3">
-                            <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">Customer</dt>
-                                <dd class="font-medium text-right">{{ $this->customerDisplay['name'] }}</dd>
-                            </div>
-                            <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">Location</dt>
-                                <dd class="font-medium text-right text-sm sm:text-base">{{ $this->customerDisplay['location'] }}</dd>
-                            </div>
-                            @if ($job->scheduled_date)
-                                <div class="flex justify-between gap-2">
-                                    <dt class="text-zinc-500">Start Date</dt>
-                                    <dd class="font-medium text-blue-600 dark:text-blue-400 text-right">
-                                        {{ $job->scheduled_date->format('M j, Y') }}
-                                    </dd>
-                                </div>
-                            @endif
-                            <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">Crew Size</dt>
-                                <dd class="font-medium text-right">{{ $job->required_crew_size }} {{ Str::plural('painter', $job->required_crew_size) }}</dd>
-                            </div>
-                        </dl>
-                    </div>
-                    <div>
-                        <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Time Estimate</h3>
-                        <dl class="space-y-2 sm:space-y-3">
-                            <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">Total Hours</dt>
-                                <dd class="font-bold text-lg">{{ number_format($this->crewSchedule['total_hours'], 1) }} hrs</dd>
-                            </div>
-                            <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">With {{ $this->crewSchedule['crew_size'] }} Painters</dt>
-                                <dd class="font-medium">~{{ $this->crewSchedule['hours_per_person'] }} hrs each</dd>
-                            </div>
-                            <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">Estimated Duration</dt>
-                                <dd class="font-bold text-green-600 dark:text-green-400">
-                                    {{ $this->crewSchedule['estimated_days'] }} {{ Str::plural('day', ceil($this->crewSchedule['estimated_days'])) }}
-                                </dd>
-                            </div>
-                        </dl>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Quick Stats - Mobile Grid --}}
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
-                <div class="bg-zinc-900 dark:bg-zinc-950 text-white rounded-lg p-3 sm:p-4 text-center">
-                    <div class="text-xl sm:text-2xl font-bold">{{ number_format($this->jobTotals['labor_hours'], 1) }}</div>
-                    <div class="text-xs sm:text-sm text-zinc-400">Labor Hours</div>
-                </div>
-                <div class="bg-zinc-900 dark:bg-zinc-950 text-white rounded-lg p-3 sm:p-4 text-center">
-                    <div class="text-xl sm:text-2xl font-bold">{{ number_format($this->jobTotals['cleanup_hours'], 1) }}</div>
-                    <div class="text-xs sm:text-sm text-zinc-400">Cleanup Hours</div>
-                </div>
-                <div class="bg-zinc-900 dark:bg-zinc-950 text-white rounded-lg p-3 sm:p-4 text-center">
-                    <div class="text-xl sm:text-2xl font-bold text-green-400">{{ number_format($this->jobTotals['total_hours'], 1) }}</div>
-                    <div class="text-xs sm:text-sm text-zinc-400">Total Hours</div>
-                </div>
-                <div class="bg-zinc-900 dark:bg-zinc-950 text-white rounded-lg p-3 sm:p-4 text-center">
-                    <div class="text-xl sm:text-2xl font-bold">{{ $this->jobTotals['area_count'] }}</div>
-                    <div class="text-xs sm:text-sm text-zinc-400">Areas</div>
-                </div>
-            </div>
-
-            @if ($job->description)
-                <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
-                    <h3 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-1">Notes</h3>
-                    <p class="text-yellow-700 dark:text-yellow-300 text-sm sm:text-base">{{ $job->description }}</p>
-                </div>
-            @endif
-
-            @if (! $this->hasAccepted)
-                <flux:callout variant="info">
-                    <flux:icon name="lock-closed" class="w-5 h-5" />
-                    <div class="text-sm sm:text-base">
-                        <strong>Limited Preview</strong> - Accept this job to view the full work order, complete address, financials, and access the group chat.
-                    </div>
-                </flux:callout>
-            @endif
+        {{-- 3. Flash Messages --}}
+        @if (session('success'))
+            <flux:callout variant="success" class="mb-4">
+                {{ session('success') }}
+            </flux:callout>
         @endif
 
-        {{-- WORK ORDER STAGE --}}
-        @if ($activeStage === 'work-order' && $this->hasAccepted)
+        @if (session('error'))
+            <flux:callout variant="danger" class="mb-4">
+                {{ session('error') }}
+            </flux:callout>
+        @endif
+
+        {{-- 4. Progress Timeline --}}
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+            <flux:heading size="sm" class="mb-4">Progress</flux:heading>
+            <div class="flex items-center justify-between">
+                @foreach (App\Models\Job::STAGES as $stageKey => $stageLabel)
+                    @php
+                        $stageNum = App\Models\Job::STAGE_ORDER[$stageKey];
+                        $currentNum = $job->stage_number;
+                        $isActive = $stageKey === $job->stage;
+                        $isCompleted = $stageNum < $currentNum;
+                        $isFuture = $stageNum > $currentNum;
+                    @endphp
+                    <div class="flex-1 flex flex-col items-center relative" wire:key="stage-{{ $stageKey }}">
+                        @if (! $loop->first)
+                            <div class="absolute top-4 -left-1/2 w-full h-0.5 {{ $isCompleted || $isActive ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600' }}"></div>
+                        @endif
+
+                        <div class="relative z-10 flex items-center justify-center w-8 h-8 rounded-full border-2
+                            {{ $isCompleted ? 'bg-green-500 border-green-500 text-white' : '' }}
+                            {{ $isActive ? 'bg-blue-500 border-blue-500 text-white' : '' }}
+                            {{ $isFuture ? 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400' : '' }}
+                        ">
+                            @if ($isCompleted)
+                                <flux:icon name="check" class="w-4 h-4" />
+                            @else
+                                <span class="text-xs font-bold">{{ $stageNum }}</span>
+                            @endif
+                        </div>
+
+                        <flux:text class="mt-2 text-xs text-center leading-tight {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
+                            {{ $stageLabel }}
+                        </flux:text>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
+        {{-- 5. Job Info Card (always visible) --}}
+        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                <div>
+                    <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Job Details</h3>
+                    <dl class="space-y-2 sm:space-y-3">
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-zinc-500">Customer</dt>
+                            <dd class="font-medium text-right">{{ $this->customerDisplay['name'] }}</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-zinc-500">Location</dt>
+                            <dd class="font-medium text-right text-sm sm:text-base">{{ $this->customerDisplay['location'] }}</dd>
+                        </div>
+                        @if ($job->scheduled_date)
+                            <div class="flex justify-between gap-2">
+                                <dt class="text-zinc-500">Start Date</dt>
+                                <dd class="font-medium text-blue-600 dark:text-blue-400 text-right">
+                                    {{ $job->scheduled_date->format('M j, Y') }}
+                                </dd>
+                            </div>
+                        @endif
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-zinc-500">Crew Size</dt>
+                            <dd class="font-medium text-right">{{ $job->required_crew_size }} {{ Str::plural('painter', $job->required_crew_size) }}</dd>
+                        </div>
+                    </dl>
+                </div>
+                <div>
+                    <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Time Estimate</h3>
+                    <dl class="space-y-2 sm:space-y-3">
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-zinc-500">Total Hours</dt>
+                            <dd class="font-bold text-lg">{{ number_format($this->crewSchedule['total_hours'], 1) }} hrs</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-zinc-500">With {{ $this->crewSchedule['crew_size'] }} Painters</dt>
+                            <dd class="font-medium">~{{ $this->crewSchedule['hours_per_person'] }} hrs each</dd>
+                        </div>
+                        <div class="flex justify-between gap-2">
+                            <dt class="text-zinc-500">Estimated Duration</dt>
+                            <dd class="font-bold text-green-600 dark:text-green-400">
+                                {{ $this->crewSchedule['estimated_days'] }} {{ Str::plural('day', ceil($this->crewSchedule['estimated_days'])) }}
+                            </dd>
+                        </div>
+                    </dl>
+                </div>
+            </div>
+        </div>
+
+        @if (! $this->hasAccepted)
+            <flux:callout variant="info" class="mb-6">
+                <flux:icon name="lock-closed" class="w-5 h-5" />
+                <div class="text-sm sm:text-base">
+                    <strong>Limited Preview</strong> - Accept this job to view the full work order, complete address, financials, and access the group chat.
+                </div>
+            </flux:callout>
+        @endif
+
+        {{-- 6. Stage-Specific Primary Content --}}
+
+        {{-- STAGE: estimate_accepted --}}
+        @if ($job->stage === 'estimate_accepted')
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 sm:p-8 text-center mb-6">
+                <flux:icon name="check-circle" class="w-12 h-12 mx-auto text-green-500 mb-3" />
+                <flux:heading size="lg">Job Confirmed</flux:heading>
+                <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
+                    This painting project has been confirmed. The team will begin scheduling and color selection soon.
+                </flux:text>
+                @if ($job->estimate)
+                    <div class="mt-3">
+                        <flux:badge size="sm" color="green">Estimate: {{ $job->estimate->estimate_number }}</flux:badge>
+                    </div>
+                @endif
+            </div>
+
+        {{-- STAGE: scheduling_colors --}}
+        @elseif ($job->stage === 'scheduling_colors')
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+                <flux:heading size="sm" class="mb-4">Scheduling & Colors</flux:heading>
+
+                <div class="space-y-4">
+                    {{-- Scheduled Date --}}
+                    <div class="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                        <div class="flex items-center gap-2">
+                            <flux:icon name="calendar" class="w-5 h-5 text-zinc-500" />
+                            <span class="font-medium text-zinc-700 dark:text-zinc-300">Scheduled Date</span>
+                        </div>
+                        <div class="text-right">
+                            @if ($job->scheduled_date)
+                                <span class="font-bold text-blue-600 dark:text-blue-400">{{ $job->scheduled_date->format('M j, Y') }}</span>
+                            @else
+                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Confirmation Status --}}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div class="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                            <span class="text-sm text-zinc-600 dark:text-zinc-400">Company Confirmed</span>
+                            @if ($job->company_confirmed_date)
+                                <flux:badge size="sm" color="green" icon="check">Confirmed</flux:badge>
+                            @else
+                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                            @endif
+                        </div>
+                        <div class="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                            <span class="text-sm text-zinc-600 dark:text-zinc-400">Customer Confirmed</span>
+                            @if ($job->customer_confirmed_date)
+                                <flux:badge size="sm" color="green" icon="check">Confirmed</flux:badge>
+                            @else
+                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Selected Colors --}}
+                    @if ($job->colors->count() > 0)
+                        <div>
+                            <h4 class="text-sm font-semibold text-zinc-500 mb-2">Selected Colors</h4>
+                            <div class="grid gap-2 grid-cols-1 sm:grid-cols-2">
+                                @foreach ($job->colors as $color)
+                                    <div class="flex items-center gap-3 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                                        @if ($color->hex_value)
+                                            <div class="w-8 h-8 rounded border border-zinc-300 shrink-0" style="background-color: {{ $color->hex_value }}"></div>
+                                        @else
+                                            <div class="w-8 h-8 rounded border border-zinc-300 bg-zinc-100 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                                                <flux:icon name="paint-brush" class="w-4 h-4 text-zinc-400" />
+                                            </div>
+                                        @endif
+                                        <div class="min-w-0">
+                                            <flux:text class="font-medium text-sm truncate">{{ $color->name }}</flux:text>
+                                            @if ($color->brand)
+                                                <flux:text class="text-xs text-zinc-500 truncate">{{ $color->brand }}</flux:text>
+                                            @endif
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    @if (! $job->company_confirmed_date || ! $job->customer_confirmed_date)
+                        <flux:callout variant="info">
+                            <flux:text class="text-sm">Waiting for all confirmations before moving to job prep.</flux:text>
+                        </flux:callout>
+                    @endif
+                </div>
+            </div>
+
+        {{-- STAGE: job_prep or in_progress (prep plan is primary content) --}}
+        @elseif (in_array($job->stage, ['job_prep', 'in_progress']) && $this->hasAccepted)
+            @if ($this->prepPlan)
+                @php
+                    $plan = $this->prepPlan;
+                    $progress = $this->prepProgress;
+                @endphp
+
+                {{-- Plan Summary --}}
+                <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                        <flux:heading size="lg">Prep Plan</flux:heading>
+                        <div class="flex items-center gap-2">
+                            @if ($plan->crew_approved)
+                                <flux:badge color="green">Crew Approved</flux:badge>
+                            @else
+                                <flux:badge color="yellow">Pending Crew Approval</flux:badge>
+                            @endif
+                            @if ($plan->team_approved)
+                                <flux:badge color="green">Team Approved</flux:badge>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                        <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                            <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $plan->crew_size }}</div>
+                            <div class="text-xs text-zinc-500">Crew Size</div>
+                        </div>
+                        <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                            <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $plan->hours_per_day }}h</div>
+                            <div class="text-xs text-zinc-500">Hours/Day</div>
+                        </div>
+                        <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                            <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $plan->total_days }}</div>
+                            <div class="text-xs text-zinc-500">Total {{ Str::plural('Day', $plan->total_days) }}</div>
+                        </div>
+                        <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
+                            <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ number_format($plan->total_labor_hours + $plan->total_cleanup_hours, 1) }}</div>
+                            <div class="text-xs text-zinc-500">Total Hours</div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Overall Progress Bar --}}
+                @if ($progress['total'] > 0)
+                    <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+                        <div class="flex items-center justify-between mb-2">
+                            <flux:text class="font-semibold text-zinc-700 dark:text-zinc-300">Overall Progress</flux:text>
+                            <flux:text class="text-sm text-zinc-500">{{ $progress['completed'] }}/{{ $progress['total'] }} tasks ({{ number_format($progress['percent'], 0) }}%)</flux:text>
+                        </div>
+                        <div class="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-3">
+                            <div
+                                class="h-3 rounded-full transition-all duration-300 {{ $progress['percent'] >= 100 ? 'bg-green-500' : 'bg-blue-500' }}"
+                                style="width: {{ min($progress['percent'], 100) }}%"
+                            ></div>
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Day Tabs --}}
+                <div class="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
+                    @foreach ($plan->days as $day)
+                        @php
+                            $dayProgress = collect($progress['per_day'])->firstWhere('day_number', $day->day_number);
+                            $dayPercent = $dayProgress['percent'] ?? 0;
+                        @endphp
+                        <flux:button
+                            wire:click="setActivePrepDay({{ $day->day_number }})"
+                            :variant="$activePrepDay === $day->day_number ? 'primary' : 'ghost'"
+                            size="sm"
+                            class="whitespace-nowrap shrink-0"
+                        >
+                            {{ $day->label }}
+                            @if ($dayPercent >= 100)
+                                <flux:icon name="check-circle" class="w-4 h-4 ml-1 text-green-400" />
+                            @elseif ($dayPercent > 0)
+                                <span class="ml-1 text-xs opacity-75">{{ number_format($dayPercent, 0) }}%</span>
+                            @endif
+                        </flux:button>
+                    @endforeach
+                </div>
+
+                {{-- Task List for Active Day --}}
+                @foreach ($plan->days as $day)
+                    @if ($day->day_number === $activePrepDay)
+                        <div class="space-y-3" wire:key="prep-day-{{ $day->id }}">
+                            @php
+                                $dayProgress = collect($progress['per_day'])->firstWhere('day_number', $day->day_number);
+                                $dayHours = $dayProgress['hours'] ?? 0;
+                            @endphp
+
+                            <div class="flex items-center justify-between mb-2">
+                                <flux:text class="text-sm text-zinc-500">
+                                    {{ $day->tasks->count() }} {{ Str::plural('task', $day->tasks->count()) }} &middot; {{ number_format($dayHours, 1) }} hrs estimated
+                                </flux:text>
+                            </div>
+
+                            @forelse ($day->tasks as $task)
+                                @php
+                                    $typeColor = match ($task->task_type) {
+                                        'surface' => 'blue',
+                                        'addon' => 'amber',
+                                        'custom' => 'zinc',
+                                        default => 'zinc',
+                                    };
+                                    $isCompleted = $task->status === 'completed';
+                                @endphp
+                                <div
+                                    class="flex items-start gap-3 p-3 sm:p-4 bg-white dark:bg-zinc-800 border rounded-lg {{ $isCompleted ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10' : 'border-zinc-200 dark:border-zinc-700' }}"
+                                    wire:key="prep-task-{{ $task->id }}"
+                                >
+                                    {{-- Completion Checkbox (only in in_progress stage) --}}
+                                    @if ($job->stage === 'in_progress' && ! $isCompleted)
+                                        <button
+                                            wire:click="completeTask({{ $task->id }})"
+                                            class="mt-0.5 shrink-0 w-5 h-5 sm:w-6 sm:h-6 border-2 border-zinc-300 dark:border-zinc-600 rounded hover:border-green-500 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                                            wire:loading.attr="disabled"
+                                            wire:target="completeTask({{ $task->id }})"
+                                        ></button>
+                                    @elseif ($isCompleted)
+                                        <div class="mt-0.5 shrink-0 w-5 h-5 sm:w-6 sm:h-6 bg-green-500 rounded flex items-center justify-center">
+                                            <flux:icon name="check" class="w-3 h-3 sm:w-4 sm:h-4 text-white" />
+                                        </div>
+                                    @else
+                                        <div class="mt-0.5 shrink-0 w-5 h-5 sm:w-6 sm:h-6 border-2 border-zinc-200 dark:border-zinc-700 rounded"></div>
+                                    @endif
+
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <span class="font-semibold text-sm sm:text-base {{ $isCompleted ? 'text-zinc-500 line-through' : 'text-zinc-900 dark:text-white' }}">
+                                                {{ $task->title }}
+                                            </span>
+                                            <flux:badge size="sm" color="{{ $typeColor }}">{{ $task->task_type }}</flux:badge>
+                                        </div>
+                                        @if ($task->area_name)
+                                            <flux:text class="text-xs sm:text-sm text-zinc-500 mt-1">{{ $task->area_name }}</flux:text>
+                                        @endif
+                                        @if ($isCompleted && $task->completedByUser)
+                                            <flux:text class="text-xs text-green-600 dark:text-green-400 mt-1">
+                                                Completed by {{ $task->completedByUser->name }} {{ $task->completed_at?->diffForHumans() }}
+                                            </flux:text>
+                                        @endif
+                                    </div>
+
+                                    @if ($task->estimated_hours)
+                                        <div class="shrink-0 text-right">
+                                            <flux:badge size="sm" color="zinc">{{ number_format($task->estimated_hours, 1) }}h</flux:badge>
+                                        </div>
+                                    @endif
+                                </div>
+                            @empty
+                                <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                                    No tasks assigned to this day.
+                                </div>
+                            @endforelse
+
+                            {{-- Add Custom Task (only in job_prep stage) --}}
+                            @if ($job->stage === 'job_prep')
+                                @if ($showCrewTaskForm)
+                                    <div class="bg-zinc-50 dark:bg-zinc-700/50 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                                        <div class="space-y-3">
+                                            <div>
+                                                <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Task Title</label>
+                                                <input
+                                                    type="text"
+                                                    wire:model="crewCustomTaskTitle"
+                                                    placeholder="e.g. Move furniture, Cover floors"
+                                                    class="w-full text-sm border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Estimated Hours (optional)</label>
+                                                <input
+                                                    type="number"
+                                                    step="0.5"
+                                                    min="0"
+                                                    wire:model="crewCustomTaskHours"
+                                                    placeholder="0.0"
+                                                    class="w-32 text-sm border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                                />
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <flux:button variant="primary" size="sm" wire:click="addCrewCustomTask" icon="plus">
+                                                    Add Task
+                                                </flux:button>
+                                                <flux:button variant="ghost" size="sm" wire:click="$set('showCrewTaskForm', false)">
+                                                    Cancel
+                                                </flux:button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @else
+                                    <flux:button variant="ghost" size="sm" wire:click="$set('showCrewTaskForm', true)" icon="plus" class="w-full justify-center border-dashed border border-zinc-300 dark:border-zinc-600">
+                                        Add Custom Task
+                                    </flux:button>
+                                @endif
+                            @endif
+                        </div>
+                    @endif
+                @endforeach
+
+                {{-- Approve Button (only in job_prep stage, if not yet approved) --}}
+                @if ($job->stage === 'job_prep' && ! $plan->crew_approved)
+                    <div class="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 sm:p-6">
+                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                                <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">Ready to approve?</flux:heading>
+                                <flux:text class="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                                    Review all tasks across each day, then approve the plan so work can begin.
+                                </flux:text>
+                            </div>
+                            <flux:button
+                                variant="primary"
+                                wire:click="approvePrepPlan"
+                                wire:confirm="Are you sure you want to approve this prep plan?"
+                                icon="check"
+                                class="shrink-0"
+                            >
+                                Approve Prep Plan
+                            </flux:button>
+                        </div>
+                    </div>
+                @elseif ($plan->crew_approved)
+                    <div class="mt-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                        <div class="flex items-center gap-3">
+                            <flux:icon name="check-circle" class="w-6 h-6 text-green-600 dark:text-green-400 shrink-0" />
+                            <div>
+                                <flux:text class="font-semibold text-green-800 dark:text-green-200">Crew Approved</flux:text>
+                                @if ($plan->crew_approved_at)
+                                    <flux:text class="text-sm text-green-700 dark:text-green-300">
+                                        Approved {{ $plan->crew_approved_at->diffForHumans() }}
+                                    </flux:text>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                @endif
+            @else
+                <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                    <flux:icon name="clipboard-document-check" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
+                    <flux:heading>No Prep Plan Yet</flux:heading>
+                    <flux:text class="text-zinc-500 mt-2">A prep plan will appear here once created by the team.</flux:text>
+                </div>
+            @endif
+
+        {{-- STAGE: completed --}}
+        @elseif ($job->stage === 'completed')
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 sm:p-8 text-center mb-6">
+                <flux:icon name="trophy" class="w-12 h-12 mx-auto text-green-500 mb-3" />
+                <flux:heading size="lg">Job Completed</flux:heading>
+                <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
+                    This job has been completed. Great work!
+                </flux:text>
+                @if ($job->completed_at)
+                    <flux:text class="text-sm text-zinc-400 mt-2">
+                        Completed {{ $job->completed_at->format('M j, Y') }}
+                    </flux:text>
+                @endif
+            </div>
+        @endif
+
+        @if ($job->description)
+            <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
+                <h3 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-1">Notes</h3>
+                <p class="text-yellow-700 dark:text-yellow-300 text-sm sm:text-base">{{ $job->description }}</p>
+            </div>
+        @endif
+
+        {{-- 7. Reference Tabs (only visible after accepting) --}}
+        @if ($this->hasAccepted)
+            <div class="mt-6">
+                <div class="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide">
+                    @foreach ($this->referenceTabs as $tab)
+                        @php
+                            $isActive = $activeTab === $tab['key'];
+                        @endphp
+                        <flux:button
+                            wire:click="setTab('{{ $tab['key'] }}')"
+                            :variant="$isActive ? 'primary' : 'ghost'"
+                            :icon="$tab['icon']"
+                            class="whitespace-nowrap shrink-0"
+                            size="sm"
+                        >
+                            <span class="hidden sm:inline">{{ $tab['label'] }}</span>
+                            <span class="sm:hidden">{{ Str::limit($tab['label'], 8) }}</span>
+                        </flux:button>
+                    @endforeach
+                </div>
+
+            {{-- WORK ORDER TAB --}}
+            @if ($activeTab === 'work-order')
             {{-- Expand/Collapse Controls --}}
             <div class="flex items-center justify-between mb-4">
                 <flux:heading size="lg">Areas to Paint</flux:heading>
@@ -1089,7 +1554,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @endif
 
         {{-- FINANCIALS STAGE --}}
-        @if ($activeStage === 'financials' && $this->hasAccepted)
+        @if ($activeTab === 'financials')
             {{-- Warning Notice --}}
             <flux:callout variant="warning" class="mb-6">
                 <flux:icon name="lock-closed" class="w-5 h-5" />
@@ -1716,7 +2181,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @endif
 
         {{-- COLORS STAGE --}}
-        @if ($activeStage === 'colors')
+        @if ($activeTab === 'colors')
             @if ($job->colors->count() > 0)
                 <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6">
                     <flux:heading size="sm" class="mb-4">Paint Colors</flux:heading>
@@ -1753,7 +2218,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @endif
 
         {{-- MATERIALS STAGE --}}
-        @if ($activeStage === 'materials' && $this->hasAccepted)
+        @if ($activeTab === 'materials')
             @if (count($this->materialsNeeded) > 0)
                 <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6">
                     <flux:heading size="sm" class="mb-4">Materials Needed</flux:heading>
@@ -1784,6 +2249,67 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     <flux:text class="text-zinc-500 mt-2">Material requirements will appear here.</flux:text>
                 </div>
             @endif
+        @endif
+            </div>
+        @endif {{-- end hasAccepted reference tabs --}}
+
+        {{-- 8. Embedded Chat --}}
+        @if ($this->hasAccepted && $this->chatThread)
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" wire:poll.10s>
+                <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
+                        <flux:heading size="sm">Job Conversation</flux:heading>
+                    </div>
+                    <flux:text class="text-xs text-zinc-400 mt-1">Discuss scheduling, tasks, or any questions about this job.</flux:text>
+                </div>
+
+                <div class="max-h-80 overflow-y-auto p-4 space-y-3 bg-white dark:bg-zinc-900" x-data x-init="$el.scrollTop = $el.scrollHeight">
+                    @forelse ($this->chatMessages as $message)
+                        @php
+                            $isOwnMessage = $message->user_id === auth('crew')->id();
+                            $isSystem = $message->type === 'system';
+                        @endphp
+
+                        <div wire:key="msg-{{ $message->id }}" class="{{ $isOwnMessage ? 'flex justify-end' : 'flex justify-start' }}">
+                            @if ($isSystem)
+                                <div class="w-full text-center py-1">
+                                    <flux:text class="text-xs text-zinc-400 italic">{{ $message->content }}</flux:text>
+                                </div>
+                            @else
+                                <div class="flex items-start gap-2 max-w-[80%] {{ $isOwnMessage ? 'flex-row-reverse' : '' }}">
+                                    @if ($message->user)
+                                        <flux:avatar size="xs" :initials="$message->user->initials()" class="bg-zinc-200 dark:bg-zinc-700 shrink-0" />
+                                    @else
+                                        <div class="w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center shrink-0">
+                                            <flux:icon name="user" class="w-3 h-3 text-zinc-500" />
+                                        </div>
+                                    @endif
+
+                                    <div class="{{ $isOwnMessage ? 'text-right' : 'text-left' }}">
+                                        <div class="flex items-center gap-1 mb-0.5 {{ $isOwnMessage ? 'flex-row-reverse' : '' }}">
+                                            <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? 'Unknown' }}</flux:text>
+                                            <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
+                                        </div>
+                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                            <flux:text class="whitespace-pre-wrap break-words">{{ $message->content }}</flux:text>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                    @empty
+                        <div class="text-center py-6">
+                            <flux:icon name="chat-bubble-left" class="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
+                            <flux:text class="text-sm text-zinc-500">No messages yet. Send a message to discuss this job.</flux:text>
+                        </div>
+                    @endforelse
+                </div>
+
+                <div class="border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 p-3">
+                    <livewire:crew.chat.message-composer :thread="$this->chatThread" :key="'job-composer-'.$this->chatThread->id" />
+                </div>
+            </div>
         @endif
     </div>
 

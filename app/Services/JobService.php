@@ -14,6 +14,7 @@ use App\Notifications\JobCompleted;
 use App\Notifications\JobCreated;
 use App\Notifications\JobStageAdvanced;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class JobService
 {
@@ -66,6 +67,11 @@ class JobService
             $assignedUser = $job->deal?->assignedTo;
             if ($assignedUser) {
                 $assignedUser->notify(new JobStageAdvanced($job, $oldStage, $job->stage));
+            }
+
+            // Update cost card status when job moves to in_progress
+            if ($job->stage === 'in_progress') {
+                app(JobCostCardService::class)->updateCardToActive($job);
             }
         }
 
@@ -214,7 +220,24 @@ class JobService
             $customerUser->notify(new JobCompleted($job));
         }
 
+        // Update cost card status to completed
+        app(JobCostCardService::class)->updateCardOnJobCompletion($job);
+
         // Also complete the deal
         $job->deal?->moveTo('completed');
+
+        // Auto-create and send final invoice
+        try {
+            $invoiceService = app(InvoiceService::class);
+            $invoice = $invoiceService->createFinalInvoice($job);
+
+            if ($invoice->total > 0) {
+                $invoiceService->sendInvoice($invoice);
+            } else {
+                $invoiceService->markAsPaid($invoice);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Failed to create final invoice for job #'.$job->job_number.': '.$e->getMessage());
+        }
     }
 }

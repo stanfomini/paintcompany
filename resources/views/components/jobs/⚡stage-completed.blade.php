@@ -45,12 +45,20 @@ new class extends Component {
             @endif
         </div>
 
-        @if ($job->estimate)
-            <div class="mt-6">
+        <div class="mt-6 flex items-center justify-center gap-3">
+            @if ($job->estimate)
                 <flux:button :href="route('estimates.show', $job->estimate)" variant="ghost" icon="document-text" wire:navigate>
                     View Estimate
                 </flux:button>
-            </div>
-        @endif
+            @endif
+            @php
+                $finalInvoice = $job->invoices()->where('type', 'final')->latest()->first();
+            @endphp
+            @if ($finalInvoice)
+                <flux:button :href="route('invoices.show', $finalInvoice)" variant="ghost" icon="banknotes" wire:navigate>
+                    View Final Invoice
+                </flux:button>
+            @endif
+        </div>
     </div>
 </div>
