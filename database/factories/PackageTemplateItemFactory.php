@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\PackageTemplate;
 use App\Models\PackageTemplateItem;
+use App\Models\ServiceCategory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -19,7 +20,8 @@ class PackageTemplateItemFactory extends Factory
     public function definition(): array
     {
         return [
-            'package_template_id' => PackageTemplate::factory(),
+            'package_template_id' => null,
+            'service_category_id' => null,
             'name' => fake()->randomElement(['Cleaning Service', 'Color Consultation', 'Touch-up Kit', 'Premium Tape']),
             'description' => fake()->sentence(),
             'pricing_type' => PackageTemplateItem::PRICING_FIXED,
@@ -28,6 +30,7 @@ class PackageTemplateItemFactory extends Factory
             'percent' => null,
             'is_optional' => true,
             'is_included_by_default' => true,
+            'is_customer_selectable' => false,
             'sort_order' => 0,
         ];
     }
@@ -113,12 +116,67 @@ class PackageTemplateItemFactory extends Factory
     }
 
     /**
-     * Associate with a specific package template.
+     * Associate with a specific package template (sets the direct FK).
      */
     public function forPackageTemplate(PackageTemplate $template): static
     {
         return $this->state(fn (array $attributes) => [
             'package_template_id' => $template->id,
         ]);
+    }
+
+    /**
+     * Associate with a specific service category.
+     */
+    public function forService(ServiceCategory $category): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => $category->id,
+        ]);
+    }
+
+    /**
+     * Mark this item as customer-selectable (toggle-able by customer on proposal).
+     */
+    public function customerSelectable(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_customer_selectable' => true,
+            'is_optional' => true,
+        ]);
+    }
+
+    /**
+     * Configure as a warranty item (percent pricing, customer-selectable).
+     */
+    public function warranty(int $months = 12, float $percent = 5.0): static
+    {
+        $name = $months >= 12
+            ? floor($months / 12).'-Year Warranty'
+            : $months.'-Month Warranty';
+
+        return $this->state(fn (array $attributes) => [
+            'name' => $name,
+            'description' => "Warranty coverage for {$name}",
+            'pricing_type' => PackageTemplateItem::PRICING_PERCENT,
+            'cost' => 0,
+            'price' => 0,
+            'percent' => $percent,
+            'is_optional' => true,
+            'is_included_by_default' => true,
+            'is_customer_selectable' => true,
+        ]);
+    }
+
+    /**
+     * After creating, attach to specified package templates as defaults.
+     */
+    public function defaultingTo(PackageTemplate ...$templates): static
+    {
+        return $this->afterCreating(function (PackageTemplateItem $item) use ($templates) {
+            $item->defaultPackages()->attach(
+                collect($templates)->pluck('id')->toArray()
+            );
+        });
     }
 }

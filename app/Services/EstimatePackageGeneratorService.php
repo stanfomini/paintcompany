@@ -8,6 +8,7 @@ use App\Models\EstimateItem;
 use App\Models\EstimatePackage;
 use App\Models\EstimatePackageItem;
 use App\Models\PackageTemplate;
+use App\Models\PackageTemplateItem;
 use App\Models\ServiceCategory;
 use Illuminate\Support\Collection;
 
@@ -22,7 +23,7 @@ class EstimatePackageGeneratorService
     {
         $templates = PackageTemplate::active()
             ->forService($serviceCategory)
-            ->with('items')
+            ->with(['defaultItems', 'items'])
             ->ordered()
             ->get();
 
@@ -78,10 +79,31 @@ class EstimatePackageGeneratorService
         // Map template tier to package tier
         $packageTier = $this->mapTier($template->tier);
 
-        // Calculate warranty cost
-        $warrantyPrice = $template->calculateWarrantyCost($paintingTotal);
+        // Resolve items: prefer defaultItems (pivot), fall back to legacy items() if empty
+        $templateItems = $this->getTemplateItems($template);
 
-        // Calculate services total (included by default items only)
+        // Find warranty item from defaults (customer-selectable + percent pricing)
+        $warrantyItem = $templateItems->first(
+            fn (PackageTemplateItem $item) => $item->is_customer_selectable && $item->pricing_type === PackageTemplateItem::PRICING_PERCENT
+        );
+
+        // Calculate warranty cost from warranty item, fall back to template's warranty_percent
+        if ($warrantyItem) {
+            $warrantyPrice = $warrantyItem->calculatePrice($paintingTotal);
+            $warrantyYears = $this->deriveWarrantyYears($warrantyItem->name);
+            $warrantyType = $warrantyItem->name;
+        } elseif ($template->warranty_months > 0) {
+            // Backward compat: use template-level warranty settings
+            $warrantyPrice = $template->calculateWarrantyCost($paintingTotal);
+            $warrantyYears = ceil($template->warranty_months / 12);
+            $warrantyType = $template->warranty_description;
+        } else {
+            $warrantyPrice = 0;
+            $warrantyYears = 0;
+            $warrantyType = null;
+        }
+
+        // Calculate services total (included by default items only, excluding warranty)
         $servicesTotal = $this->calculateIncludedServicesTotal($template, $paintingTotal);
 
         // Subtotal = painting + services (warranty is shown separately in UI)
@@ -106,8 +128,8 @@ class EstimatePackageGeneratorService
             'discount_amount' => 0,
             'total' => $baseAmount + $taxAmount,
             'warranty_price' => $warrantyPrice,
-            'warranty_years' => $template->warranty_months > 0 ? ceil($template->warranty_months / 12) : 0,
-            'warranty_type' => $template->warranty_months > 0 ? $template->warranty_description : null,
+            'warranty_years' => $warrantyYears,
+            'warranty_type' => $warrantyType,
             'is_recommended' => $template->is_popular,
             'is_selected' => $template->is_default,
             'sort_order' => $sortIndex,
@@ -129,13 +151,16 @@ class EstimatePackageGeneratorService
     }
 
     /**
-     * Calculate total of services that are included by default.
+     * Calculate total of services that are included by default, excluding warranty items.
      */
     protected function calculateIncludedServicesTotal(PackageTemplate $template, float $paintingTotal): float
     {
-        return $template->items
-            ->filter(fn ($item) => $item->is_included_by_default)
-            ->sum(fn ($item) => $item->calculatePrice($paintingTotal));
+        $items = $this->getTemplateItems($template);
+
+        return $items
+            ->filter(fn (PackageTemplateItem $item) => $item->is_included_by_default)
+            ->reject(fn (PackageTemplateItem $item) => $this->isWarrantyItem($item))
+            ->sum(fn (PackageTemplateItem $item) => $item->calculatePrice($paintingTotal));
     }
 
     /**
@@ -168,7 +193,7 @@ class EstimatePackageGeneratorService
     }
 
     /**
-     * Add service items from template.
+     * Add service items from template (excluding warranty items, which are handled separately).
      */
     protected function addServiceItems(
         EstimatePackage $package,
@@ -182,7 +207,10 @@ class EstimatePackageGeneratorService
             $estimate->areas()->pluck('id')
         )->count();
 
-        foreach ($template->items as $index => $templateItem) {
+        $items = $this->getTemplateItems($template)
+            ->reject(fn (PackageTemplateItem $item) => $this->isWarrantyItem($item));
+
+        foreach ($items->values() as $index => $templateItem) {
             $price = $templateItem->calculatePrice($paintingTotal);
 
             // Create an EstimateItem for this service
@@ -207,6 +235,7 @@ class EstimatePackageGeneratorService
                     'quantity' => 1,
                     'price_override' => null,
                     'is_included' => true,
+                    'is_customer_selectable' => $templateItem->is_customer_selectable,
                     'customer_approved' => $templateItem->is_included_by_default,
                     'customer_approved_at' => $templateItem->is_included_by_default ? now() : null,
                     'sort_order' => $startSort + $index,
@@ -226,6 +255,47 @@ class EstimatePackageGeneratorService
             PackageTemplate::TIER_BEST => EstimatePackage::TIER_PREMIUM,
             default => EstimatePackage::TIER_CUSTOM,
         };
+    }
+
+    /**
+     * Get the items for a template, preferring defaultItems (pivot) over legacy items().
+     *
+     * @return \Illuminate\Support\Collection<int, PackageTemplateItem>
+     */
+    protected function getTemplateItems(PackageTemplate $template): Collection
+    {
+        $defaultItems = $template->defaultItems;
+
+        if ($defaultItems->isNotEmpty()) {
+            return $defaultItems;
+        }
+
+        // Backward compat: fall back to legacy direct FK relationship
+        return $template->items;
+    }
+
+    /**
+     * Check if a template item is a warranty item (customer-selectable + percent pricing).
+     */
+    protected function isWarrantyItem(PackageTemplateItem $item): bool
+    {
+        return $item->is_customer_selectable && $item->pricing_type === PackageTemplateItem::PRICING_PERCENT;
+    }
+
+    /**
+     * Derive warranty years from the item name (e.g., "2-Year Warranty" => 2).
+     */
+    protected function deriveWarrantyYears(string $name): int
+    {
+        if (preg_match('/(\d+)-Year/i', $name, $matches)) {
+            return (int) $matches[1];
+        }
+
+        if (preg_match('/(\d+)-Month/i', $name, $matches)) {
+            return (int) ceil((int) $matches[1] / 12);
+        }
+
+        return 0;
     }
 
     /**

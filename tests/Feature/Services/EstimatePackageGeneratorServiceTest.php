@@ -368,4 +368,35 @@ describe('estimate integration', function () {
         expect($usePackageTemplates)->toBeFalse()
             ->and($hasPackages)->toBeTrue();
     });
+
+    it('passes cost from template item to estimate item', function () {
+        $estimate = Estimate::factory()->create([
+            'areas_subtotal' => 1000,
+            'tax_rate' => 0,
+        ]);
+
+        $template = PackageTemplate::factory()->good()->create(['is_active' => true]);
+
+        PackageTemplateItem::factory()->create([
+            'package_template_id' => $template->id,
+            'name' => 'Cleaning Service',
+            'pricing_type' => 'fixed',
+            'cost' => 150.00,
+            'price' => 400.00,
+            'is_optional' => false,
+            'is_included_by_default' => true,
+        ]);
+
+        $this->service->generateFromTemplates($estimate);
+
+        $package = $estimate->packages()->with('items.itemable')->first();
+        $serviceItems = $package->items->filter(fn ($item) => $item->itemable_type === \App\Models\EstimateItem::class);
+
+        $estimateItem = $serviceItems->first()->itemable;
+        expect($estimateItem->description)->toBe('Cleaning Service');
+        expect((float) $estimateItem->total)->toBe(400.00);
+        expect((float) $estimateItem->getRawOriginal('cost'))->toBe(150.00);
+        expect($estimateItem->profit)->toBe(250.00);
+        expect($estimateItem->has_vendor_cost)->toBeTrue();
+    });
 });

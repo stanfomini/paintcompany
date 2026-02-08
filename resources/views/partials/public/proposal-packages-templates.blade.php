@@ -225,18 +225,19 @@
                 </div>
             </div>
 
-            {{-- Optional Service Items --}}
+            {{-- Service Items --}}
             @foreach ($selectedTemplate['items'] as $item)
                 @php
                     $itemSelected = $selectedPackageItems[$item['key']] ?? $item['is_included_by_default'];
+                    $isCustomerSelectable = $item['is_customer_selectable'] ?? false;
                 @endphp
                 <div
                     wire:key="item-{{ $item['id'] }}"
                     class="px-6 py-4 flex items-center justify-between gap-4 {{ $itemSelected ? '' : 'bg-gray-50 dark:bg-gray-900 opacity-60' }}"
                 >
                     <div class="flex items-start gap-3 flex-1">
-                        {{-- Toggle Checkbox (if optional) --}}
-                        @if ($item['is_optional'] && $this->canModify())
+                        {{-- Toggle Checkbox (only if customer-selectable and can modify) --}}
+                        @if ($isCustomerSelectable && $this->canModify())
                             <button
                                 wire:click.stop="togglePackageItem('{{ $item['key'] }}')"
                                 wire:loading.attr="disabled"
@@ -252,6 +253,7 @@
                                 @endif
                             </button>
                         @else
+                            {{-- Read-only checkmark (estimator decided, customer can't toggle) --}}
                             <div class="mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center {{ $itemSelected
                                 ? 'bg-green-500 border-green-500 text-white'
                                 : 'border-gray-300 dark:border-gray-600'
@@ -271,10 +273,12 @@
                             @if ($item['description'])
                                 <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ $item['description'] }}</p>
                             @endif
-                            @if ($item['is_optional'])
+                            @if ($isCustomerSelectable)
                                 <p class="text-xs {{ $itemSelected ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400' }} mt-1">
                                     {{ $itemSelected ? 'Included' : 'Click to add' }}
                                 </p>
+                            @elseif ($itemSelected)
+                                <p class="text-xs text-green-600 dark:text-green-400 mt-1">Included in package</p>
                             @endif
                         </div>
                     </div>

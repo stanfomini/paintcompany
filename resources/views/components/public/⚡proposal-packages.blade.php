@@ -65,16 +65,38 @@ new class extends Component {
     public function loadPackageTemplates(): void
     {
         $templates = PackageTemplate::active()
-            ->with('items')
+            ->with('defaultItems')
             ->ordered()
             ->get();
 
         $paintingTotal = $this->getPaintingTotal();
 
         $this->packageTemplates = $templates->map(function (PackageTemplate $template) use ($paintingTotal) {
-            $warrantyAmount = $template->calculateWarrantyCost($paintingTotal);
+            // Use defaultItems (pivot) if available, else fall back to items (legacy)
+            $templateItems = $template->defaultItems->isNotEmpty()
+                ? $template->defaultItems
+                : $template->items;
 
-            $items = $template->items->map(function ($item) use ($paintingTotal) {
+            // Separate warranty items from service items
+            $warrantyItem = $templateItems->first(fn ($item) => $item->is_customer_selectable && $item->pricing_type === 'percent');
+
+            // Calculate warranty from warranty item if available, else fall back to template fields
+            if ($warrantyItem) {
+                $warrantyAmount = $warrantyItem->calculatePrice($paintingTotal);
+                $warrantyDescription = $warrantyItem->name;
+                $warrantyPercent = (float) $warrantyItem->percent;
+            } else {
+                $warrantyAmount = $template->calculateWarrantyCost($paintingTotal);
+                $warrantyDescription = $template->warranty_description;
+                $warrantyPercent = (float) $template->warranty_percent;
+            }
+
+            // Build items array excluding warranty items (warranty shown separately)
+            $serviceItems = $templateItems
+                ->reject(fn ($item) => $item->is_customer_selectable && $item->pricing_type === 'percent')
+                ->values();
+
+            $items = $serviceItems->map(function ($item) use ($paintingTotal) {
                 $itemPrice = $item->calculatePrice($paintingTotal);
                 $itemKey = 'item_'.$item->id;
 
@@ -93,6 +115,7 @@ new class extends Component {
                     'price_display' => $item->price_display,
                     'is_optional' => $item->is_optional,
                     'is_included_by_default' => $item->is_included_by_default,
+                    'is_customer_selectable' => $item->is_customer_selectable,
                 ];
             })->toArray();
 
@@ -102,9 +125,10 @@ new class extends Component {
                 'tier' => $template->tier,
                 'description' => $template->description,
                 'warranty_months' => $template->warranty_months,
-                'warranty_description' => $template->warranty_description,
-                'warranty_percent' => (float) $template->warranty_percent,
+                'warranty_description' => $warrantyDescription,
+                'warranty_percent' => $warrantyPercent,
                 'warranty_amount' => $warrantyAmount,
+                'warranty_item_id' => $warrantyItem?->id,
                 'is_default' => $template->is_default,
                 'is_popular' => $template->is_popular,
                 'painting_total' => $paintingTotal,
@@ -373,11 +397,23 @@ new class extends Component {
 
     /**
      * Toggle an optional item in the selected package (for new template system).
+     * Only items with is_customer_selectable=true can be toggled by the customer.
      */
     public function togglePackageItem(string $itemKey): void
     {
         if (! $this->canModify()) {
             return;
+        }
+
+        // Find the item in the selected template and verify it's customer-selectable
+        if ($this->selectedTier) {
+            $selectedTemplate = collect($this->packageTemplates)->firstWhere('tier', $this->selectedTier);
+            if ($selectedTemplate) {
+                $item = collect($selectedTemplate['items'])->firstWhere('key', $itemKey);
+                if ($item && ! ($item['is_customer_selectable'] ?? false)) {
+                    return; // Not customer-selectable, ignore toggle
+                }
+            }
         }
 
         $this->selectedPackageItems[$itemKey] = ! ($this->selectedPackageItems[$itemKey] ?? false);

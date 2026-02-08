@@ -180,6 +180,7 @@ new class extends Component {
                         'effective_price' => (float) $item->effective_price,
                         'is_included' => $item->is_included,
                         'customer_approved' => $item->customer_approved,
+                        'is_customer_selectable' => (bool) $item->is_customer_selectable,
                     ];
                 })->values()->toArray();
 
@@ -495,7 +496,10 @@ new class extends Component {
 
         $paintingTotal = (float) $this->estimate->areas_subtotal;
 
-        $this->availableAddons = PackageTemplateItem::where('is_optional', true)
+        // Load ALL standalone items from the catalog (not just from one template)
+        $this->availableAddons = PackageTemplateItem::query()
+            ->where('is_optional', true)
+            ->with('serviceCategory')
             ->orderBy('sort_order')
             ->get()
             ->filter(fn ($item) => ! in_array($item->name, $existingServiceNames, true))
@@ -506,6 +510,8 @@ new class extends Component {
                 'price_display' => $item->price_display,
                 'calculated_price' => $item->calculatePrice($paintingTotal),
                 'cost' => (float) $item->cost,
+                'is_customer_selectable' => $item->is_customer_selectable,
+                'service_category' => $item->serviceCategory?->name,
             ])
             ->values()
             ->toArray();
@@ -553,7 +559,7 @@ new class extends Component {
 
         // Link to the package
         $maxSort = $package->items()->max('sort_order') ?? 0;
-        EstimatePackageItem::withoutEvents(function () use ($package, $estimateItem, $maxSort) {
+        EstimatePackageItem::withoutEvents(function () use ($package, $estimateItem, $templateItem, $maxSort) {
             EstimatePackageItem::create([
                 'package_id' => $package->id,
                 'itemable_type' => EstimateItem::class,
@@ -561,6 +567,7 @@ new class extends Component {
                 'quantity' => 1,
                 'price_override' => null,
                 'is_included' => true,
+                'is_customer_selectable' => $templateItem->is_customer_selectable,
                 'customer_approved' => true,
                 'customer_approved_at' => now(),
                 'sort_order' => $maxSort + 1,

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PackageTemplate extends Model
@@ -53,11 +54,24 @@ class PackageTemplate extends Model
     }
 
     /**
-     * Get the items for this package template.
+     * Get the items directly associated with this package template (legacy relationship).
      */
     public function items(): HasMany
     {
         return $this->hasMany(PackageTemplateItem::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Get the items that default to this package template (many-to-many via pivot).
+     */
+    public function defaultItems(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            PackageTemplateItem::class,
+            'package_template_item_defaults',
+            'package_template_id',
+            'package_template_item_id'
+        )->withTimestamps()->orderBy('sort_order');
     }
 
     /**

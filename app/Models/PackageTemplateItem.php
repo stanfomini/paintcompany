@@ -2,9 +2,11 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class PackageTemplateItem extends Model
 {
@@ -17,6 +19,7 @@ class PackageTemplateItem extends Model
 
     protected $fillable = [
         'package_template_id',
+        'service_category_id',
         'name',
         'description',
         'pricing_type',
@@ -25,6 +28,7 @@ class PackageTemplateItem extends Model
         'percent',
         'is_optional',
         'is_included_by_default',
+        'is_customer_selectable',
         'sort_order',
     ];
 
@@ -36,16 +40,58 @@ class PackageTemplateItem extends Model
             'percent' => 'decimal:2',
             'is_optional' => 'boolean',
             'is_included_by_default' => 'boolean',
+            'is_customer_selectable' => 'boolean',
             'sort_order' => 'integer',
         ];
     }
 
     /**
-     * Get the package template this item belongs to.
+     * Get the package template this item belongs to (nullable - items are standalone).
      */
     public function packageTemplate(): BelongsTo
     {
         return $this->belongsTo(PackageTemplate::class);
+    }
+
+    /**
+     * Get the service category for this item.
+     */
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
+    }
+
+    /**
+     * Get the package templates this item defaults to (many-to-many).
+     */
+    public function defaultPackages(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            PackageTemplate::class,
+            'package_template_item_defaults',
+            'package_template_item_id',
+            'package_template_id'
+        )->withTimestamps();
+    }
+
+    /**
+     * Scope to customer-selectable items only.
+     */
+    public function scopeCustomerSelectable(Builder $query): Builder
+    {
+        return $query->where('is_customer_selectable', true);
+    }
+
+    /**
+     * Scope to filter by service category.
+     */
+    public function scopeForService(Builder $query, ?ServiceCategory $category): Builder
+    {
+        if ($category) {
+            return $query->where('service_category_id', $category->id);
+        }
+
+        return $query;
     }
 
     /**

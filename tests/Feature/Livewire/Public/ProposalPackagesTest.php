@@ -270,13 +270,14 @@ it('calculates deposit based on deposit percent', function () {
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectPackage', $package->id);
 
-    // Deposit should be 25% of package total (calculated from items)
+    // Deposit should be depositPercent% of the final total (from CompanySetting)
     $finalTotal = $component->get('finalTotal');
+    $depositPercent = $component->get('depositPercent');
     $depositAmount = $component->get('depositAmount');
     $balanceDue = $component->get('balanceDue');
 
-    // The deposit should be 25% of the final total
-    expect($depositAmount)->toBe(round($finalTotal * 0.25, 2))
+    // The deposit should match the deposit percent from CompanySetting
+    expect($depositAmount)->toBe(round($finalTotal * ($depositPercent / 100), 2))
         ->and($balanceDue)->toBe(round($finalTotal - $depositAmount, 2));
 });
 
@@ -564,6 +565,10 @@ it('selects tier when using package templates', function () {
         ->assertSet('selectedTier', 'better') // Default tier
         ->call('selectTier', 'good')
         ->assertSet('selectedTier', 'good')
+        ->assertSet('showWarrantyPicker', true)
+        ->call('selectWarranty', 'good')
+        ->call('confirmSelection')
+        ->assertSet('showWarrantyPicker', false)
         ->assertDispatched('tier-selected');
 });
 
@@ -589,7 +594,9 @@ it('calculates selected template total correctly', function () {
     ]);
 
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good');
+        ->call('selectTier', 'good')
+        ->call('selectWarranty', 'good')
+        ->call('confirmSelection');
 
     // Total = painting (2000) + warranty (40) + included item (150) = 2190
     expect($component->get('selectedTemplateTotal'))->toBe(2190.0);
@@ -613,10 +620,13 @@ it('toggles optional package items in template system', function () {
         'price' => 125,
         'is_optional' => true,
         'is_included_by_default' => false,
+        'is_customer_selectable' => true,
     ]);
 
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'better');
+        ->call('selectTier', 'better')
+        ->call('selectWarranty', 'better')
+        ->call('confirmSelection');
 
     // Initially, optional item is NOT selected
     $initialTotal = $component->get('selectedTemplateTotal');
@@ -643,6 +653,8 @@ it('proceeds to signature with template data', function () {
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectTier', 'best')
+        ->call('selectWarranty', 'best')
+        ->call('confirmSelection')
         ->call('proceedToSignature')
         ->assertDispatched('proceed-to-signature');
 });
@@ -671,7 +683,9 @@ it('uses final total from template for deposit calculation', function () {
     ]);
 
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'better');
+        ->call('selectTier', 'better')
+        ->call('selectWarranty', 'better')
+        ->call('confirmSelection');
 
     // Total = 4000 + 200 = 4200
     // Deposit = 4200 * 0.30 = 1260
@@ -705,7 +719,9 @@ it('logs activity when tier is selected', function () {
     PackageTemplate::factory()->good()->create(['is_active' => true]);
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good');
+        ->call('selectTier', 'good')
+        ->call('selectWarranty', 'good')
+        ->call('confirmSelection');
 
     expect($estimate->activities()->where('activity_type', 'package_tier_selected')->exists())->toBeTrue();
 });

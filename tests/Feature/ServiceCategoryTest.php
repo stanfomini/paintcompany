@@ -101,7 +101,10 @@ it('identifies painting category via isPainting', function () {
 });
 
 it('identifies cleaning category via isCleaning', function () {
-    $cleaning = ServiceCategory::factory()->cleaning()->create();
+    $cleaning = ServiceCategory::firstOrCreate(
+        ['slug' => 'cleaning'],
+        ['name' => 'Cleaning', 'description' => 'Post-painting cleanup', 'icon' => 'sparkles', 'color' => 'green', 'is_active' => true, 'sort_order' => 2]
+    );
     $other = ServiceCategory::factory()->create(['slug' => 'carpentry']);
 
     expect($cleaning->isCleaning())->toBeTrue()
@@ -159,6 +162,9 @@ it('uses painting factory state correctly', function () {
 });
 
 it('uses cleaning factory state correctly', function () {
+    // Delete pre-existing cleaning category from backfill migration
+    ServiceCategory::where('slug', 'cleaning')->delete();
+
     $category = ServiceCategory::factory()->cleaning()->create();
 
     expect($category->name)->toBe('Cleaning')

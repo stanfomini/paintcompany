@@ -22,6 +22,7 @@ class EstimatePackageItem extends Model
         'is_included',
         'customer_approved',
         'customer_approved_at',
+        'is_customer_selectable',
         'sort_order',
     ];
 
@@ -33,6 +34,7 @@ class EstimatePackageItem extends Model
             'is_included' => 'boolean',
             'customer_approved' => 'boolean',
             'customer_approved_at' => 'datetime',
+            'is_customer_selectable' => 'boolean',
             'sort_order' => 'integer',
         ];
     }

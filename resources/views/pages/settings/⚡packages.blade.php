@@ -18,8 +18,12 @@ new class extends Component {
     public array $packages = [];
 
     /** @var array<int, array> */
+    public array $items = [];
+
+    /** @var array<int, array> */
     public array $serviceCategories = [];
     public ?int $filterCategoryId = null;
+    public ?int $itemFilterCategoryId = null;
 
     public bool $showEditModal = false;
     public ?int $editingPackageId = null;
@@ -28,8 +32,6 @@ new class extends Component {
     public string $editName = '';
     public string $editTier = '';
     public string $editDescription = '';
-    public string $editWarrantyMonths = '';
-    public string $editWarrantyPercent = '';
     public bool $editIsDefault = false;
     public bool $editIsPopular = false;
     public bool $editIsActive = true;
@@ -38,7 +40,6 @@ new class extends Component {
     // Item management
     public bool $showItemModal = false;
     public ?int $editingItemId = null;
-    public ?int $itemPackageId = null;
     public string $itemName = '';
     public string $itemDescription = '';
     public string $itemPricingType = 'fixed';
@@ -47,6 +48,9 @@ new class extends Component {
     public string $itemPercent = '';
     public bool $itemIsOptional = true;
     public bool $itemIsIncludedByDefault = true;
+    public string $itemServiceCategoryId = '';
+    public bool $itemIsCustomerSelectable = false;
+    public array $itemDefaultPackages = [];
 
     public function mount(): void
     {
@@ -56,6 +60,7 @@ new class extends Component {
 
         $this->loadServiceCategories();
         $this->loadPackages();
+        $this->loadItems();
     }
 
     public function loadServiceCategories(): void
@@ -70,6 +75,9 @@ new class extends Component {
         if (! $this->filterCategoryId && count($this->serviceCategories) > 0) {
             $this->filterCategoryId = $this->serviceCategories[0]['id'];
         }
+        if (! $this->itemFilterCategoryId && count($this->serviceCategories) > 0) {
+            $this->itemFilterCategoryId = $this->serviceCategories[0]['id'];
+        }
     }
 
     public function updatedFilterCategoryId(): void
@@ -77,11 +85,16 @@ new class extends Component {
         $this->loadPackages();
     }
 
+    public function updatedItemFilterCategoryId(): void
+    {
+        $this->loadItems();
+    }
+
     public function loadPackages(): void
     {
         $this->packages = PackageTemplate::query()
             ->when($this->filterCategoryId, fn ($q) => $q->where('service_category_id', $this->filterCategoryId))
-            ->with('items')
+            ->with(['items', 'defaultItems'])
             ->ordered()
             ->get()
             ->map(fn ($p) => [
@@ -109,8 +122,41 @@ new class extends Component {
                     'is_optional' => $i->is_optional,
                     'is_included_by_default' => $i->is_included_by_default,
                 ])->toArray(),
+                'default_items' => $p->defaultItems->map(fn ($i) => [
+                    'id' => $i->id,
+                    'name' => $i->name,
+                    'pricing_type' => $i->pricing_type,
+                    'price_display' => $i->price_display,
+                    'is_included_by_default' => $i->is_included_by_default,
+                    'is_customer_selectable' => $i->is_customer_selectable,
+                ])->toArray(),
             ])
             ->toArray();
+    }
+
+    public function loadItems(): void
+    {
+        $query = PackageTemplateItem::query()
+            ->with('defaultPackages')
+            ->when($this->itemFilterCategoryId, fn ($q) => $q->where('service_category_id', $this->itemFilterCategoryId))
+            ->orderBy('sort_order');
+
+        $this->items = $query->get()->map(fn ($i) => [
+            'id' => $i->id,
+            'name' => $i->name,
+            'description' => $i->description,
+            'pricing_type' => $i->pricing_type,
+            'pricing_type_label' => $i->pricing_type_label,
+            'cost' => (float) $i->cost,
+            'price' => (float) $i->price,
+            'percent' => $i->percent ? (float) $i->percent : null,
+            'price_display' => $i->price_display,
+            'is_optional' => $i->is_optional,
+            'is_included_by_default' => $i->is_included_by_default,
+            'is_customer_selectable' => $i->is_customer_selectable,
+            'service_category_id' => $i->service_category_id,
+            'default_packages' => $i->defaultPackages->map(fn ($p) => ['id' => $p->id, 'name' => $p->name])->toArray(),
+        ])->toArray();
     }
 
     public function openEditModal(?int $packageId = null): void
@@ -124,8 +170,6 @@ new class extends Component {
                 $this->editName = $package->name;
                 $this->editTier = $package->tier;
                 $this->editDescription = $package->description ?? '';
-                $this->editWarrantyMonths = (string) $package->warranty_months;
-                $this->editWarrantyPercent = (string) $package->warranty_percent;
                 $this->editIsDefault = $package->is_default;
                 $this->editIsPopular = $package->is_popular;
                 $this->editIsActive = $package->is_active;
@@ -135,8 +179,6 @@ new class extends Component {
             $this->editName = '';
             $this->editTier = '';
             $this->editDescription = '';
-            $this->editWarrantyMonths = '0';
-            $this->editWarrantyPercent = '0';
             $this->editIsDefault = false;
             $this->editIsPopular = false;
             $this->editIsActive = true;
@@ -159,8 +201,6 @@ new class extends Component {
             'editName' => ['required', 'string', 'max:255'],
             'editTier' => ['required', 'string', 'max:50'],
             'editDescription' => ['nullable', 'string', 'max:1000'],
-            'editWarrantyMonths' => ['required', 'integer', 'min:0', 'max:120'],
-            'editWarrantyPercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'editIsDefault' => ['boolean'],
             'editIsPopular' => ['boolean'],
             'editIsActive' => ['boolean'],
@@ -181,8 +221,6 @@ new class extends Component {
             'name' => $validated['editName'],
             'tier' => $validated['editTier'],
             'description' => $validated['editDescription'] ?: null,
-            'warranty_months' => (int) $validated['editWarrantyMonths'],
-            'warranty_percent' => (float) $validated['editWarrantyPercent'],
             'is_default' => $this->editIsDefault,
             'is_popular' => $this->editIsPopular,
             'is_active' => $this->editIsActive,
@@ -210,14 +248,13 @@ new class extends Component {
     }
 
     // Item management methods
-    public function openItemModal(int $packageId, ?int $itemId = null): void
+    public function openItemModal(?int $itemId = null): void
     {
         $this->resetValidation();
-        $this->itemPackageId = $packageId;
         $this->editingItemId = $itemId;
 
         if ($itemId) {
-            $item = PackageTemplateItem::find($itemId);
+            $item = PackageTemplateItem::with('defaultPackages')->find($itemId);
             if ($item) {
                 $this->itemName = $item->name;
                 $this->itemDescription = $item->description ?? '';
@@ -227,6 +264,9 @@ new class extends Component {
                 $this->itemPercent = $item->percent ? (string) $item->percent : '';
                 $this->itemIsOptional = $item->is_optional;
                 $this->itemIsIncludedByDefault = $item->is_included_by_default;
+                $this->itemServiceCategoryId = (string) ($item->service_category_id ?? '');
+                $this->itemIsCustomerSelectable = $item->is_customer_selectable;
+                $this->itemDefaultPackages = $item->defaultPackages->pluck('id')->toArray();
             }
         } else {
             $this->itemName = '';
@@ -237,6 +277,9 @@ new class extends Component {
             $this->itemPercent = '';
             $this->itemIsOptional = true;
             $this->itemIsIncludedByDefault = true;
+            $this->itemServiceCategoryId = (string) ($this->itemFilterCategoryId ?? '');
+            $this->itemIsCustomerSelectable = false;
+            $this->itemDefaultPackages = [];
         }
 
         $this->showItemModal = true;
@@ -246,7 +289,6 @@ new class extends Component {
     {
         $this->showItemModal = false;
         $this->editingItemId = null;
-        $this->itemPackageId = null;
         $this->resetValidation();
     }
 
@@ -259,6 +301,10 @@ new class extends Component {
             'itemCost' => ['nullable', 'numeric', 'min:0'],
             'itemIsOptional' => ['boolean'],
             'itemIsIncludedByDefault' => ['boolean'],
+            'itemIsCustomerSelectable' => ['boolean'],
+            'itemServiceCategoryId' => ['nullable', 'exists:service_categories,id'],
+            'itemDefaultPackages' => ['array'],
+            'itemDefaultPackages.*' => ['integer', 'exists:package_templates,id'],
         ];
 
         if ($this->itemPricingType === 'fixed') {
@@ -269,8 +315,9 @@ new class extends Component {
 
         $this->validate($rules);
 
+        $categoryId = $this->itemServiceCategoryId !== '' ? (int) $this->itemServiceCategoryId : null;
+
         $data = [
-            'package_template_id' => $this->itemPackageId,
             'name' => $this->itemName,
             'description' => $this->itemDescription ?: null,
             'pricing_type' => $this->itemPricingType,
@@ -279,18 +326,24 @@ new class extends Component {
             'percent' => $this->itemPricingType === 'percent' ? (float) $this->itemPercent : null,
             'is_optional' => $this->itemIsOptional,
             'is_included_by_default' => $this->itemIsIncludedByDefault,
+            'is_customer_selectable' => $this->itemIsCustomerSelectable,
+            'service_category_id' => $categoryId,
         ];
 
         if ($this->editingItemId) {
-            PackageTemplateItem::find($this->editingItemId)->update($data);
+            $item = PackageTemplateItem::find($this->editingItemId);
+            $item->update($data);
         } else {
-            $maxOrder = PackageTemplateItem::where('package_template_id', $this->itemPackageId)->max('sort_order') ?? 0;
+            $maxOrder = PackageTemplateItem::max('sort_order') ?? 0;
             $data['sort_order'] = $maxOrder + 1;
-            PackageTemplateItem::create($data);
+            $item = PackageTemplateItem::create($data);
         }
+
+        $item->defaultPackages()->sync($this->itemDefaultPackages);
 
         $this->closeItemModal();
         $this->loadPackages();
+        $this->loadItems();
         $this->dispatch('item-saved');
     }
 
@@ -298,6 +351,7 @@ new class extends Component {
     {
         PackageTemplateItem::find($itemId)?->delete();
         $this->loadPackages();
+        $this->loadItems();
         $this->dispatch('item-deleted');
     }
 
@@ -319,8 +373,8 @@ new class extends Component {
             'name' => 'Good',
             'tier' => 'good',
             'description' => 'Quality workmanship with basic warranty coverage.',
-            'warranty_months' => 3,
-            'warranty_percent' => 1.00,
+            'warranty_months' => 0,
+            'warranty_percent' => 0,
             'is_default' => false,
             'is_popular' => false,
             'is_active' => true,
@@ -333,8 +387,8 @@ new class extends Component {
             'name' => 'Better',
             'tier' => 'better',
             'description' => 'Enhanced warranty with post-project cleaning included.',
-            'warranty_months' => 6,
-            'warranty_percent' => 3.00,
+            'warranty_months' => 0,
+            'warranty_percent' => 0,
             'is_default' => true,
             'is_popular' => true,
             'is_active' => true,
@@ -342,25 +396,13 @@ new class extends Component {
             'service_category_id' => $categoryId,
         ]);
 
-        PackageTemplateItem::create([
-            'package_template_id' => $better->id,
-            'name' => 'Post-Project Cleaning',
-            'description' => 'Professional cleaning of all work areas after project completion.',
-            'pricing_type' => 'fixed',
-            'cost' => 200,
-            'price' => 400,
-            'is_optional' => true,
-            'is_included_by_default' => true,
-            'sort_order' => 1,
-        ]);
-
         // Best tier
         $best = PackageTemplate::create([
             'name' => 'Best',
             'tier' => 'best',
             'description' => 'Premium service with full warranty, cleaning, and color consultation.',
-            'warranty_months' => 12,
-            'warranty_percent' => 5.00,
+            'warranty_months' => 0,
+            'warranty_percent' => 0,
             'is_default' => false,
             'is_popular' => false,
             'is_active' => true,
@@ -368,8 +410,54 @@ new class extends Component {
             'service_category_id' => $categoryId,
         ]);
 
-        PackageTemplateItem::create([
-            'package_template_id' => $best->id,
+        // Create standalone warranty items linked via pivot
+        $warranty3m = PackageTemplateItem::create([
+            'name' => '3-Month Warranty',
+            'description' => 'Basic warranty coverage for 3 months.',
+            'pricing_type' => 'percent',
+            'cost' => 0,
+            'price' => 0,
+            'percent' => 1.00,
+            'is_optional' => true,
+            'is_included_by_default' => true,
+            'is_customer_selectable' => true,
+            'service_category_id' => $categoryId,
+            'sort_order' => 1,
+        ]);
+        $warranty3m->defaultPackages()->attach([$good->id]);
+
+        $warranty6m = PackageTemplateItem::create([
+            'name' => '6-Month Warranty',
+            'description' => 'Extended warranty coverage for 6 months.',
+            'pricing_type' => 'percent',
+            'cost' => 0,
+            'price' => 0,
+            'percent' => 3.00,
+            'is_optional' => true,
+            'is_included_by_default' => true,
+            'is_customer_selectable' => true,
+            'service_category_id' => $categoryId,
+            'sort_order' => 2,
+        ]);
+        $warranty6m->defaultPackages()->attach([$better->id]);
+
+        $warranty1y = PackageTemplateItem::create([
+            'name' => '1-Year Warranty',
+            'description' => 'Full warranty coverage for 1 year.',
+            'pricing_type' => 'percent',
+            'cost' => 0,
+            'price' => 0,
+            'percent' => 5.00,
+            'is_optional' => true,
+            'is_included_by_default' => true,
+            'is_customer_selectable' => true,
+            'service_category_id' => $categoryId,
+            'sort_order' => 3,
+        ]);
+        $warranty1y->defaultPackages()->attach([$best->id]);
+
+        // Create standalone service items linked via pivot
+        $cleaning = PackageTemplateItem::create([
             'name' => 'Post-Project Cleaning',
             'description' => 'Professional cleaning of all work areas after project completion.',
             'pricing_type' => 'fixed',
@@ -377,11 +465,13 @@ new class extends Component {
             'price' => 400,
             'is_optional' => true,
             'is_included_by_default' => true,
-            'sort_order' => 1,
+            'is_customer_selectable' => false,
+            'service_category_id' => $categoryId,
+            'sort_order' => 4,
         ]);
+        $cleaning->defaultPackages()->attach([$better->id, $best->id]);
 
-        PackageTemplateItem::create([
-            'package_template_id' => $best->id,
+        $consultation = PackageTemplateItem::create([
             'name' => 'Color Consultation',
             'description' => 'In-home consultation with our color expert to help you choose the perfect colors.',
             'pricing_type' => 'fixed',
@@ -389,10 +479,14 @@ new class extends Component {
             'price' => 125,
             'is_optional' => true,
             'is_included_by_default' => true,
-            'sort_order' => 2,
+            'is_customer_selectable' => false,
+            'service_category_id' => $categoryId,
+            'sort_order' => 5,
         ]);
+        $consultation->defaultPackages()->attach([$best->id]);
 
         $this->loadPackages();
+        $this->loadItems();
         $this->dispatch('packages-seeded');
     }
 }; ?>
@@ -409,8 +503,8 @@ new class extends Component {
             <flux:callout variant="info" icon="information-circle">
                 <flux:callout.heading>Value-Add Package System</flux:callout.heading>
                 <flux:callout.text>
-                    Packages add value on top of the painting work. Each tier includes warranty coverage and optional add-on services.
-                    The painting scope is the same across all packages - packages differentiate by warranty and services.
+                    Packages add value on top of the painting work. Each tier differentiates by the items assigned to it (warranty, services, etc.).
+                    Manage items in the Item Catalog below and assign them to packages as defaults.
                 </flux:callout.text>
             </flux:callout>
 
@@ -474,15 +568,6 @@ new class extends Component {
                                     @if ($package['description'])
                                         <flux:text size="sm" class="mt-1 text-zinc-500">{{ $package['description'] }}</flux:text>
                                     @endif
-                                    <div class="mt-2 flex items-center gap-4 text-sm">
-                                        <span class="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
-                                            <flux:icon name="shield-check" class="h-4 w-4" />
-                                            {{ $package['warranty_description'] }}
-                                        </span>
-                                        @if ($package['warranty_percent'] > 0)
-                                            <span class="text-zinc-500">({{ $package['warranty_percent'] }}% of job)</span>
-                                        @endif
-                                    </div>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <flux:button wire:click="openEditModal({{ $package['id'] }})" variant="ghost" size="sm" icon="pencil" />
@@ -490,49 +575,17 @@ new class extends Component {
                                 </div>
                             </div>
 
-                            {{-- Items --}}
-                            @if (count($package['items']) > 0)
-                                <div class="mt-4 border-t border-zinc-200 dark:border-zinc-700 pt-4">
-                                    <div class="flex items-center justify-between mb-2">
-                                        <flux:text size="sm" class="font-medium">Add-on Services</flux:text>
-                                        <flux:button wire:click="openItemModal({{ $package['id'] }})" variant="ghost" size="xs" icon="plus">
-                                            Add Item
-                                        </flux:button>
-                                    </div>
-                                    <div class="space-y-2">
-                                        @foreach ($package['items'] as $item)
-                                            <div class="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded px-3 py-2" wire:key="item-{{ $item['id'] }}">
-                                                <div class="flex items-center gap-3">
-                                                    <flux:icon name="{{ $item['is_included_by_default'] ? 'check-circle' : 'circle' }}" class="h-4 w-4 {{ $item['is_included_by_default'] ? 'text-green-500' : 'text-zinc-400' }}" />
-                                                    <div>
-                                                        <flux:text size="sm" class="font-medium">{{ $item['name'] }}</flux:text>
-                                                        <flux:text size="xs" class="text-zinc-500">
-                                                            {{ $item['price_display'] }}
-                                                            @if ($item['is_optional'])
-                                                                <span class="text-zinc-400">&bull; Optional</span>
-                                                            @else
-                                                                <span class="text-zinc-400">&bull; Required</span>
-                                                            @endif
-                                                        </flux:text>
-                                                    </div>
-                                                </div>
-                                                <div class="flex items-center gap-1">
-                                                    <flux:button wire:click="openItemModal({{ $package['id'] }}, {{ $item['id'] }})" variant="ghost" size="xs" icon="pencil" />
-                                                    <flux:button wire:click="deleteItem({{ $item['id'] }})" wire:confirm="Delete this item?" variant="ghost" size="xs" icon="trash" class="text-red-600 hover:text-red-700" />
-                                                </div>
-                                            </div>
-                                        @endforeach
-                                    </div>
+                            {{-- Default items linked via pivot --}}
+                            @if (count($package['default_items']) > 0)
+                                <div class="mt-3 flex flex-wrap gap-2">
+                                    @foreach ($package['default_items'] as $di)
+                                        <flux:badge size="sm" color="{{ $di['is_customer_selectable'] ? 'green' : 'zinc' }}">
+                                            {{ $di['name'] }} ({{ $di['price_display'] }})
+                                        </flux:badge>
+                                    @endforeach
                                 </div>
                             @else
-                                <div class="mt-4 border-t border-zinc-200 dark:border-zinc-700 pt-4">
-                                    <div class="flex items-center justify-between">
-                                        <flux:text size="sm" class="text-zinc-400">No add-on services configured</flux:text>
-                                        <flux:button wire:click="openItemModal({{ $package['id'] }})" variant="ghost" size="xs" icon="plus">
-                                            Add Item
-                                        </flux:button>
-                                    </div>
-                                </div>
+                                <flux:text size="sm" class="mt-3 text-zinc-400">No default items assigned</flux:text>
                             @endif
                         </flux:card>
                     @endforeach
@@ -550,9 +603,27 @@ new class extends Component {
                     @foreach ($packages as $package)
                         @php
                             $paintingTotal = 2920;
-                            $warrantyAmount = $paintingTotal * ($package['warranty_percent'] / 100);
-                            $itemsTotal = collect($package['items'])->where('is_included_by_default', true)->sum(fn($i) => $i['pricing_type'] === 'percent' ? ($paintingTotal * ($i['percent'] / 100)) : $i['price']);
-                            $packageTotal = $paintingTotal + $warrantyAmount + $itemsTotal;
+                            // Pull warranty from default items (percent type items flagged as customer selectable)
+                            $defaultItems = collect($package['default_items'])->where('is_included_by_default', true);
+                            // Legacy items from direct FK relationship
+                            $legacyItems = collect($package['items'])->where('is_included_by_default', true);
+                            // Warranty amount from legacy warranty_percent (backwards compatible)
+                            $legacyWarrantyAmount = $paintingTotal * ($package['warranty_percent'] / 100);
+                            // Items total from default items (pivot)
+                            $defaultItemsTotal = 0;
+                            foreach ($this->items as $catalogItem) {
+                                $isDefault = collect($catalogItem['default_packages'])->contains('id', $package['id']);
+                                if ($isDefault && $catalogItem['is_included_by_default']) {
+                                    if ($catalogItem['pricing_type'] === 'percent') {
+                                        $defaultItemsTotal += $paintingTotal * (($catalogItem['percent'] ?? 0) / 100);
+                                    } else {
+                                        $defaultItemsTotal += $catalogItem['price'];
+                                    }
+                                }
+                            }
+                            // Legacy items total (direct FK)
+                            $legacyItemsTotal = $legacyItems->sum(fn($i) => $i['pricing_type'] === 'percent' ? ($paintingTotal * (($i['percent'] ?? 0) / 100)) : $i['price']);
+                            $packageTotal = $paintingTotal + $legacyWarrantyAmount + $legacyItemsTotal + $defaultItemsTotal;
                         @endphp
                         <flux:card class="p-4 text-center {{ $package['is_popular'] ? 'ring-2 ring-blue-500' : '' }}" wire:key="calc-{{ $package['id'] }}">
                             @if ($package['is_popular'])
@@ -562,15 +633,106 @@ new class extends Component {
                             <flux:heading size="xl" class="mt-2 text-blue-600 dark:text-blue-400">${{ number_format($packageTotal, 0) }}</flux:heading>
                             <div class="mt-3 text-xs text-zinc-500 space-y-1">
                                 <div>Painting: ${{ number_format($paintingTotal, 0) }}</div>
-                                <div>Warranty: ${{ number_format($warrantyAmount, 0) }}</div>
-                                @if ($itemsTotal > 0)
-                                    <div>Add-ons: ${{ number_format($itemsTotal, 0) }}</div>
+                                @if ($legacyWarrantyAmount > 0)
+                                    <div>Warranty (legacy): ${{ number_format($legacyWarrantyAmount, 0) }}</div>
+                                @endif
+                                @if ($legacyItemsTotal > 0)
+                                    <div>Add-ons (legacy): ${{ number_format($legacyItemsTotal, 0) }}</div>
+                                @endif
+                                @if ($defaultItemsTotal > 0)
+                                    <div>Default Items: ${{ number_format($defaultItemsTotal, 0) }}</div>
                                 @endif
                             </div>
                         </flux:card>
                     @endforeach
                 </div>
             @endif
+
+            {{-- Item Catalog Section --}}
+            <flux:separator />
+
+            <div class="space-y-4">
+                <div>
+                    <flux:heading size="sm">Item Catalog</flux:heading>
+                    <flux:text size="sm" class="text-zinc-500">Manage standalone items that can be assigned to any package</flux:text>
+                </div>
+
+                {{-- Item service category filter tabs --}}
+                @if (count($serviceCategories) > 1)
+                    <div class="flex gap-2">
+                        @foreach ($serviceCategories as $cat)
+                            <flux:button
+                                wire:click="$set('itemFilterCategoryId', {{ $cat['id'] }})"
+                                variant="{{ $itemFilterCategoryId === $cat['id'] ? 'primary' : 'ghost' }}"
+                                size="sm"
+                            >
+                                {{ $cat['name'] }}
+                            </flux:button>
+                        @endforeach
+                        <flux:button
+                            wire:click="$set('itemFilterCategoryId', null)"
+                            variant="{{ $itemFilterCategoryId === null ? 'primary' : 'ghost' }}"
+                            size="sm"
+                        >
+                            All
+                        </flux:button>
+                    </div>
+                @endif
+
+                {{-- Add Item button --}}
+                <div class="flex justify-end">
+                    <flux:button wire:click="openItemModal()" variant="primary" size="sm" icon="plus">
+                        Add Item
+                    </flux:button>
+                </div>
+
+                {{-- Items list --}}
+                @if (count($items) === 0)
+                    <flux:card class="p-8 text-center">
+                        <flux:icon name="rectangle-stack" class="mx-auto h-12 w-12 text-zinc-400" />
+                        <flux:heading size="base" class="mt-4">No items in catalog</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">
+                            Add items like warranty, cleaning services, or color consultation to assign to packages.
+                        </flux:text>
+                    </flux:card>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($items as $item)
+                            <div class="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-4 py-3" wire:key="catalog-item-{{ $item['id'] }}">
+                                <div class="flex items-center gap-3 flex-1 min-w-0">
+                                    <flux:icon name="{{ $item['is_included_by_default'] ? 'check-circle' : 'circle' }}" class="h-5 w-5 shrink-0 {{ $item['is_included_by_default'] ? 'text-green-500' : 'text-zinc-400' }}" />
+                                    <div class="min-w-0">
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <flux:text size="sm" class="font-medium">{{ $item['name'] }}</flux:text>
+                                            <flux:badge size="sm" color="zinc">{{ $item['price_display'] }}</flux:badge>
+                                            @if ($item['is_customer_selectable'])
+                                                <flux:badge size="sm" color="green">Customer Selectable</flux:badge>
+                                            @endif
+                                            @if ($item['is_optional'])
+                                                <flux:badge size="sm" color="zinc" class="opacity-60">Optional</flux:badge>
+                                            @else
+                                                <flux:badge size="sm" color="amber">Required</flux:badge>
+                                            @endif
+                                        </div>
+                                        @if (count($item['default_packages']) > 0)
+                                            <div class="flex items-center gap-1 mt-1 flex-wrap">
+                                                <flux:text size="xs" class="text-zinc-400">Defaults to:</flux:text>
+                                                @foreach ($item['default_packages'] as $dp)
+                                                    <flux:badge size="sm" color="blue">{{ $dp['name'] }}</flux:badge>
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0 ml-2">
+                                    <flux:button wire:click="openItemModal({{ $item['id'] }})" variant="ghost" size="xs" icon="pencil" />
+                                    <flux:button wire:click="deleteItem({{ $item['id'] }})" wire:confirm="Delete this item?" variant="ghost" size="xs" icon="trash" class="text-red-600 hover:text-red-700" />
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
         </div>
 
         {{-- Edit Package Modal --}}
@@ -593,11 +755,6 @@ new class extends Component {
 
                 <flux:textarea wire:model="editDescription" label="Description" rows="2" placeholder="Brief description of this package tier" />
 
-                <div class="grid gap-4 sm:grid-cols-2">
-                    <flux:input wire:model="editWarrantyMonths" type="number" label="Warranty (months)" min="0" max="120" required />
-                    <flux:input wire:model="editWarrantyPercent" type="number" step="0.01" label="Warranty Cost (%)" min="0" max="100" description="% of painting total" required />
-                </div>
-
                 <div class="flex flex-wrap gap-4">
                     <flux:checkbox wire:model="editIsDefault" label="Default selection" />
                     <flux:checkbox wire:model="editIsPopular" label="Show 'Popular' badge" />
@@ -616,11 +773,20 @@ new class extends Component {
         {{-- Edit Item Modal --}}
         <flux:modal wire:model.live="showItemModal" class="max-w-lg">
             <div class="space-y-6">
-                <flux:heading size="lg">{{ $editingItemId ? 'Edit Service Item' : 'Add Service Item' }}</flux:heading>
+                <flux:heading size="lg">{{ $editingItemId ? 'Edit Item' : 'Add Item' }}</flux:heading>
 
-                <flux:input wire:model="itemName" label="Service Name" placeholder="e.g., Post-Project Cleaning" required />
+                <flux:input wire:model="itemName" label="Item Name" placeholder="e.g., Post-Project Cleaning, 1-Year Warranty" required />
 
-                <flux:textarea wire:model="itemDescription" label="Description" rows="2" placeholder="Brief description of this service" />
+                <flux:textarea wire:model="itemDescription" label="Description" rows="2" placeholder="Brief description of this item" />
+
+                @if (count($serviceCategories) > 0)
+                    <flux:select wire:model="itemServiceCategoryId" label="Service Category">
+                        <option value="">-- None --</option>
+                        @foreach ($serviceCategories as $cat)
+                            <option value="{{ $cat['id'] }}">{{ $cat['name'] }}</option>
+                        @endforeach
+                    </flux:select>
+                @endif
 
                 <flux:select wire:model.live="itemPricingType" label="Pricing Type">
                     <option value="fixed">Fixed Price</option>
@@ -639,7 +805,32 @@ new class extends Component {
                 <div class="flex flex-wrap gap-4">
                     <flux:checkbox wire:model="itemIsOptional" label="Customer can toggle on/off" />
                     <flux:checkbox wire:model="itemIsIncludedByDefault" label="Included by default" />
+                    <flux:checkbox wire:model="itemIsCustomerSelectable" label="Visible to customer on proposal" />
                 </div>
+
+                {{-- Default to Packages (checkboxes) --}}
+                @if (count($packages) > 0)
+                    <div>
+                        <flux:text size="sm" class="font-medium mb-2">Default to Packages</flux:text>
+                        <flux:text size="xs" class="text-zinc-500 mb-3">Select which packages this item should be included in by default</flux:text>
+                        <div class="space-y-2">
+                            @foreach ($packages as $pkg)
+                                <label class="flex items-center gap-2 cursor-pointer" wire:key="pkg-checkbox-{{ $pkg['id'] }}">
+                                    <input
+                                        type="checkbox"
+                                        value="{{ $pkg['id'] }}"
+                                        wire:model="itemDefaultPackages"
+                                        class="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800"
+                                    />
+                                    <flux:text size="sm">{{ $pkg['name'] }}</flux:text>
+                                    @if ($pkg['is_default'])
+                                        <flux:badge size="sm" color="blue">Default</flux:badge>
+                                    @endif
+                                </label>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
 
                 <div class="flex justify-end gap-3">
                     <flux:button wire:click="closeItemModal" variant="ghost">Cancel</flux:button>
