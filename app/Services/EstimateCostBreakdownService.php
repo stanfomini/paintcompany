@@ -157,7 +157,7 @@ class EstimateCostBreakdownService
      *
      * @return array<string, mixed>
      */
-    protected function calculatePackageBreakdown(Estimate $estimate, EstimatePackage $package): array
+    public function calculatePackageBreakdown(Estimate $estimate, EstimatePackage $package): array
     {
         $companySettings = CompanySetting::getInstance();
 
@@ -260,12 +260,17 @@ class EstimateCostBreakdownService
         $totals['cogs'] += $itemsVendorCost; // Only vendor cost is COGS
         $totals['customer_price'] += $itemsTotal; // Customer pays the full total
 
-        // Customer price = sum of per-area customer prices + items
-        // This should match $estimate->subtotal (which was calculated the same way)
-        $customerPrice = $totals['customer_price'];
+        // The package total IS the customer price (authoritative, stored at generation time)
+        $packageTotal = (float) $package->total;
+        $customerPrice = $packageTotal;
+
+        // COGS is calculated from the package's included areas/surfaces
         $totalCogs = $totals['cogs'];
 
-        // Gross profit = customer price - COGS (margin already included in customer price)
+        // Keep the dynamically calculated price for reconciliation reference
+        $calculatedPrice = $totals['customer_price'];
+
+        // Gross profit = package total - COGS
         $grossProfit = $customerPrice - $totalCogs;
         $grossMarginPercent = $customerPrice > 0 ? ($grossProfit / $customerPrice) * 100 : 0;
 
@@ -286,14 +291,14 @@ class EstimateCostBreakdownService
         $targetNetMargin = $defaultSettings['net_profit_margin_percent'];
         $marginDelta = $netMarginPercent - $targetNetMargin;
 
-        // Use package total as the customer-facing price (includes warranty, discounts, etc.)
-        $packageTotal = (float) $package->total;
-
         // Add warranty price if present
         $warrantyPrice = (float) ($package->warranty_price ?? 0);
 
         // Get warranty reserve info
         $warrantyReserve = $this->getWarrantyReserveInfo($package);
+
+        // Get crew bonus info
+        $crewBonus = $this->getCrewBonusInfo($estimate, $customerPrice);
 
         return [
             'estimate_id' => $estimate->id,
@@ -338,6 +343,7 @@ class EstimateCostBreakdownService
                 'percent' => round($grossMarginPercent, 2),
             ],
             'allocations' => $allocations,
+            'crew_bonus' => $crewBonus,
             'net_profit' => [
                 'amount' => round($netProfit, 2),
                 'percent' => round($netMarginPercent, 2),
@@ -345,11 +351,13 @@ class EstimateCostBreakdownService
                 'delta_percent' => round($marginDelta, 2),
                 'is_profitable' => $netProfit > 0,
                 'meets_target' => $netMarginPercent >= $targetNetMargin,
+                'after_bonus_amount' => $crewBonus ? round($netProfit - $crewBonus['bonus_amount'], 2) : null,
+                'after_bonus_percent' => $crewBonus && $customerPrice > 0 ? round(($netProfit - $crewBonus['bonus_amount']) / $customerPrice * 100, 2) : null,
             ],
             'reconciliation' => [
                 'stored_subtotal' => round($packageTotal, 2),
-                'calculated_price' => round($customerPrice, 2),
-                'difference' => round($packageTotal - $customerPrice, 2),
+                'calculated_price' => round($calculatedPrice, 2),
+                'difference' => round($packageTotal - $calculatedPrice, 2),
             ],
             'settings_used' => $defaultSettings,
         ];
@@ -446,6 +454,9 @@ class EstimateCostBreakdownService
         $targetNetMargin = $defaultSettings['net_profit_margin_percent'];
         $marginDelta = $netMarginPercent - $targetNetMargin;
 
+        // Get crew bonus info
+        $crewBonus = $this->getCrewBonusInfo($estimate, $customerPrice);
+
         return [
             'estimate_id' => $estimate->id,
             'estimate_number' => $estimate->estimate_number,
@@ -489,6 +500,7 @@ class EstimateCostBreakdownService
                 'percent' => round($grossMarginPercent, 2),
             ],
             'allocations' => $allocations,
+            'crew_bonus' => $crewBonus,
             'net_profit' => [
                 'amount' => round($netProfit, 2),
                 'percent' => round($netMarginPercent, 2),
@@ -496,6 +508,8 @@ class EstimateCostBreakdownService
                 'delta_percent' => round($marginDelta, 2),
                 'is_profitable' => $netProfit > 0,
                 'meets_target' => $netMarginPercent >= $targetNetMargin,
+                'after_bonus_amount' => $crewBonus ? round($netProfit - $crewBonus['bonus_amount'], 2) : null,
+                'after_bonus_percent' => $crewBonus && $customerPrice > 0 ? round(($netProfit - $crewBonus['bonus_amount']) / $customerPrice * 100, 2) : null,
             ],
             'reconciliation' => [
                 'stored_subtotal' => round((float) $estimate->subtotal, 2),
@@ -1013,6 +1027,137 @@ class EstimateCostBreakdownService
         $scope = $estimate->project_type ?? 'interior';
 
         return $this->getSettingsForScope($settings, $scope);
+    }
+
+    /**
+     * Get crew lead bonus info for an estimate's assigned crew.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getCrewBonusInfo(Estimate $estimate, float $customerPrice): ?array
+    {
+        $job = $estimate->job;
+        if (! $job) {
+            return null;
+        }
+
+        $acceptedCrew = $job->acceptedCrew()->with('crewProfile')->first();
+        if (! $acceptedCrew || ! $acceptedCrew->crewProfile) {
+            return null;
+        }
+
+        $profile = $acceptedCrew->crewProfile;
+        $bonusAmount = $profile->calculateBonusAmount($customerPrice);
+
+        if ($bonusAmount === null) {
+            return null;
+        }
+
+        return [
+            'crew_name' => $acceptedCrew->name,
+            'bonus_percent' => (float) $profile->bonus_percent,
+            'bonus_amount' => $bonusAmount,
+        ];
+    }
+
+    /**
+     * Get cost breakdown grouped by service category.
+     *
+     * Returns data for each service category that has packages on the estimate.
+     * Only meaningful when an estimate has packages with different service categories.
+     *
+     * @return array<string, array{
+     *   category_name: string,
+     *   category_color: string,
+     *   cogs: float,
+     *   price: float,
+     *   margin_percent: float,
+     *   packages: array
+     * }>
+     */
+    public function getPerServiceBreakdown(Estimate $estimate): array
+    {
+        $packages = $estimate->packages()
+            ->with(['serviceCategory', 'items.itemable'])
+            ->get();
+
+        $breakdown = [];
+
+        foreach ($packages as $package) {
+            $categoryName = $package->serviceCategory?->name ?? 'Painting';
+            $categoryColor = $package->serviceCategory?->color ?? 'blue';
+            $categorySlug = $package->serviceCategory?->slug ?? 'painting';
+
+            if (! isset($breakdown[$categorySlug])) {
+                $breakdown[$categorySlug] = [
+                    'category_name' => $categoryName,
+                    'category_color' => $categoryColor,
+                    'cogs' => 0,
+                    'price' => 0,
+                    'margin_percent' => 0,
+                    'packages' => [],
+                ];
+            }
+
+            // Calculate COGS from package items
+            $packageCogs = 0;
+            $packageItems = $package->items()->included()->with('itemable')->get();
+
+            $areaIds = [];
+            foreach ($packageItems as $packageItem) {
+                $itemable = $packageItem->itemable;
+                if (! $itemable) {
+                    continue;
+                }
+
+                if ($itemable instanceof EstimateAreaSurface) {
+                    $areaId = $itemable->area_id;
+                    if ($areaId && ! in_array($areaId, $areaIds)) {
+                        $areaIds[] = $areaId;
+                    }
+                } elseif ($itemable instanceof EstimateArea) {
+                    if (! in_array($itemable->id, $areaIds)) {
+                        $areaIds[] = $itemable->id;
+                        $packageCogs += $itemable->getFullCOGS();
+                    }
+                } elseif ($itemable instanceof EstimateItem) {
+                    $packageCogs += $itemable->cost;
+                }
+            }
+
+            // Add COGS from areas referenced via surfaces
+            foreach ($areaIds as $areaId) {
+                $area = EstimateArea::find($areaId);
+                if ($area && ! ($area instanceof EstimateArea && in_array($areaId, array_column($breakdown[$categorySlug]['packages'], 'area_id', null) ?? []))) {
+                    // Only add COGS for areas not already counted via direct EstimateArea items
+                    if (! collect($packageItems)->contains(fn ($pi) => $pi->itemable instanceof EstimateArea && $pi->itemable->id === $areaId)) {
+                        $packageCogs += $area->getFullCOGS();
+                    }
+                }
+            }
+
+            $packagePrice = (float) $package->subtotal;
+
+            $breakdown[$categorySlug]['cogs'] += $packageCogs;
+            $breakdown[$categorySlug]['price'] += $packagePrice;
+            $breakdown[$categorySlug]['packages'][] = [
+                'name' => $package->name,
+                'tier' => $package->tier_label,
+                'subtotal' => $packagePrice,
+            ];
+        }
+
+        // Calculate margins
+        foreach ($breakdown as &$service) {
+            if ($service['price'] > 0) {
+                $service['margin_percent'] = round(
+                    (($service['price'] - $service['cogs']) / $service['price']) * 100,
+                    1
+                );
+            }
+        }
+
+        return $breakdown;
     }
 
     /**

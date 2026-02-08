@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -21,6 +22,8 @@ new class extends Component {
 
     public string $complianceFilter = 'all';
 
+    public string $serviceCategoryFilter = '';
+
     public int $perPage = 15;
 
     public function updatedSearch(): void
@@ -34,6 +37,11 @@ new class extends Component {
     }
 
     public function updatedComplianceFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedServiceCategoryFilter(): void
     {
         $this->resetPage();
     }
@@ -55,7 +63,7 @@ new class extends Component {
     {
         return User::query()
             ->where('type', 'crew')
-            ->with(['crewProfile', 'crewJobs'])
+            ->with(['crewProfile.serviceCategory', 'crewJobs'])
             ->when($this->search, function ($query) {
                 $query->where(function ($q) {
                     $q->where('name', 'like', "%{$this->search}%")
@@ -68,6 +76,13 @@ new class extends Component {
             })
             ->when($this->statusFilter !== 'all', function ($query) {
                 return $query->where('is_active', $this->statusFilter === 'active');
+            })
+            ->when($this->serviceCategoryFilter !== '', function ($query) {
+                if ($this->serviceCategoryFilter === 'unassigned') {
+                    $query->whereHas('crewProfile', fn ($q) => $q->whereNull('service_category_id'));
+                } else {
+                    $query->whereHas('crewProfile', fn ($q) => $q->where('service_category_id', $this->serviceCategoryFilter));
+                }
             })
             ->when($this->complianceFilter !== 'all', function ($query) {
                 return $query->whereHas('crewProfile', function ($q) {
@@ -151,6 +166,15 @@ new class extends Component {
                     <option value="expired">Expired</option>
                 </flux:select>
             </div>
+            <div class="sm:w-48">
+                <flux:select wire:model.live="serviceCategoryFilter">
+                    <option value="">All Services</option>
+                    <option value="unassigned">Unassigned</option>
+                    @foreach (ServiceCategory::active()->ordered()->get() as $category)
+                        <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
         </div>
 
         @if ($this->crews->count() > 0)
@@ -166,6 +190,9 @@ new class extends Component {
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                                 Crew Size
+                            </th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                                Service
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
                                 Specialties
@@ -199,6 +226,15 @@ new class extends Component {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <flux:text>{{ $crew->crewProfile?->crew_size ?? 1 }}</flux:text>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    @if ($crew->crewProfile?->serviceCategory)
+                                        <flux:badge size="sm" color="{{ $crew->crewProfile->serviceCategory->color ?? 'zinc' }}">
+                                            {{ $crew->crewProfile->serviceCategory->name }}
+                                        </flux:badge>
+                                    @else
+                                        <flux:text class="text-zinc-400">-</flux:text>
+                                    @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     @if ($crew->crewProfile?->specialties)
@@ -269,7 +305,7 @@ new class extends Component {
                 <flux:icon name="user-group" class="mx-auto h-12 w-12 text-zinc-400" />
                 <flux:heading size="sm" class="mt-4">No crews found</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
-                    @if ($search || $statusFilter !== 'all' || $complianceFilter !== 'all')
+                    @if ($search || $statusFilter !== 'all' || $complianceFilter !== 'all' || $serviceCategoryFilter !== '')
                         Try adjusting your search or filter criteria.
                     @else
                         There are no crews in the system yet.

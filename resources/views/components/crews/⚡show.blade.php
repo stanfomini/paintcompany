@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -37,6 +38,10 @@ new class extends Component {
     public array $editSpecialties = [];
 
     public ?string $editHourlyRate = null;
+
+    public ?string $editBonusPercent = null;
+
+    public ?int $editServiceCategoryId = null;
 
     public string $editBio = '';
 
@@ -91,7 +96,7 @@ new class extends Component {
         }
 
         $this->user = $user->load([
-            'crewProfile',
+            'crewProfile.serviceCategory',
             'crewJobs.deal.customer',
             'crewJobs.deal.property',
         ]);
@@ -112,6 +117,8 @@ new class extends Component {
         $this->editCrewSize = $profile?->crew_size ?? 1;
         $this->editSpecialties = $profile?->specialties ?? [];
         $this->editHourlyRate = $profile?->hourly_rate;
+        $this->editBonusPercent = $profile?->bonus_percent;
+        $this->editServiceCategoryId = $profile?->service_category_id;
         $this->editBio = $profile?->bio ?? '';
 
         $this->showEditProfileModal = true;
@@ -127,6 +134,8 @@ new class extends Component {
             'editPhone' => 'nullable|string|max:20',
             'editCrewSize' => 'required|integer|min:1|max:20',
             'editHourlyRate' => 'nullable|numeric|min:0',
+            'editBonusPercent' => 'nullable|numeric|min:0|max:100',
+            'editServiceCategoryId' => 'nullable|exists:service_categories,id',
             'editBio' => 'nullable|string',
         ]);
 
@@ -138,6 +147,8 @@ new class extends Component {
             'crew_size' => $this->editCrewSize,
             'specialties' => $this->editSpecialties,
             'hourly_rate' => $this->editHourlyRate ?: null,
+            'bonus_percent' => $this->editBonusPercent ?: null,
+            'service_category_id' => $this->editServiceCategoryId,
             'bio' => $this->editBio ?: null,
         ]);
 
@@ -307,6 +318,11 @@ new class extends Component {
                     Back
                 </flux:button>
                 <flux:heading size="xl">{{ $user->name }}</flux:heading>
+                @if ($user->crewProfile?->serviceCategory)
+                    <flux:badge size="sm" color="{{ $user->crewProfile->serviceCategory->color ?? 'zinc' }}">
+                        {{ $user->crewProfile->serviceCategory->name }}
+                    </flux:badge>
+                @endif
                 @if ($user->is_active)
                     <flux:badge size="sm" color="green">Active</flux:badge>
                 @else
@@ -451,6 +467,18 @@ new class extends Component {
                                 <flux:text>
                                     @if ($user->crewProfile?->hourly_rate)
                                         ${{ number_format($user->crewProfile->hourly_rate, 2) }}/hr
+                                    @else
+                                        Not set
+                                    @endif
+                                </flux:text>
+                            </dd>
+                        </div>
+                        <div>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Crew Lead Bonus</dt>
+                            <dd class="mt-1">
+                                <flux:text>
+                                    @if ($user->crewProfile?->bonus_percent)
+                                        {{ number_format($user->crewProfile->bonus_percent, 1) }}% of job price (conditional)
                                     @else
                                         Not set
                                     @endif
@@ -826,6 +854,23 @@ new class extends Component {
                 <flux:label>Hourly Rate</flux:label>
                 <flux:input wire:model="editHourlyRate" type="number" step="0.01" min="0" prefix="$" />
                 <flux:error name="editHourlyRate" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>Crew Lead Bonus (%)</flux:label>
+                <flux:input wire:model="editBonusPercent" type="number" step="0.5" min="0" max="100" />
+                <flux:text class="text-xs text-zinc-500 mt-1">% of job price paid to crew lead if they meet contract standards</flux:text>
+                <flux:error name="editBonusPercent" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>Service Category</flux:label>
+                <flux:select wire:model="editServiceCategoryId" placeholder="Select service...">
+                    @foreach (ServiceCategory::active()->ordered()->get() as $category)
+                        <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:error name="editServiceCategoryId" />
             </flux:field>
 
             <flux:field>

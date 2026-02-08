@@ -9,6 +9,40 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 new #[Layout('components.layouts.crew')] class extends Component {
+    /** @var array<int, string> Job IDs that have been taken by another crew */
+    public array $takenJobs = [];
+
+    /** @var array<int> Job IDs to subscribe to for broadcast events */
+    public array $subscribedJobIds = [];
+
+    public function mount(): void
+    {
+        $this->subscribedJobIds = app(JobDispatchService::class)
+            ->getAvailableJobsForCrew(Auth::guard('crew')->user())
+            ->pluck('id')
+            ->toArray();
+    }
+
+    public function getListeners(): array
+    {
+        $listeners = [];
+
+        foreach ($this->subscribedJobIds as $jobId) {
+            $listeners["echo-private:crew.job.{$jobId},.job.accepted"] = 'handleJobAccepted';
+        }
+
+        return $listeners;
+    }
+
+    public function handleJobAccepted(array $data): void
+    {
+        $currentUser = Auth::guard('crew')->user();
+
+        if (($data['accepted_by_id'] ?? null) !== $currentUser->id) {
+            $this->takenJobs[$data['job_id']] = $data['accepted_by_name'] ?? 'Another crew';
+        }
+    }
+
     /**
      * @return Collection<int, Job>
      */
@@ -19,6 +53,12 @@ new #[Layout('components.layouts.crew')] class extends Component {
             ->getAvailableJobsForCrew(Auth::guard('crew')->user());
     }
 
+    #[Computed]
+    public function crewServiceCategoryName(): ?string
+    {
+        return Auth::guard('crew')->user()->crewProfile?->serviceCategory?->name;
+    }
+
     public function acceptJob(int $jobId): void
     {
         $job = Job::findOrFail($jobId);
@@ -27,7 +67,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
         if (app(JobDispatchService::class)->acceptJob($job, $user)) {
             session()->flash('success', 'Job accepted! View it in My Jobs.');
         } else {
-            session()->flash('error', 'Unable to accept this job.');
+            session()->flash('error', 'This job has already been accepted by another crew.');
         }
     }
 
@@ -42,10 +82,32 @@ new #[Layout('components.layouts.crew')] class extends Component {
             session()->flash('error', 'Unable to decline this job.');
         }
     }
+
+    public function getBonusForJob(Job $job): ?array
+    {
+        $user = Auth::guard('crew')->user();
+        $profile = $user->crewProfile;
+
+        if (! $profile || ! ($profile->bonus_percent > 0)) {
+            return null;
+        }
+
+        $customerPrice = $job->estimate?->selectedPackage?->total
+            ?? $job->estimate?->packages()->where('is_active', true)->value('total');
+
+        if (! $customerPrice || $customerPrice <= 0) {
+            return null;
+        }
+
+        return [
+            'bonus_percent' => (float) $profile->bonus_percent,
+            'bonus_amount' => round($customerPrice * ($profile->bonus_percent / 100), 2),
+        ];
+    }
 };
 ?>
 
-<div>
+<div wire:poll.30s>
     <flux:heading size="xl" class="mb-6">{{ __('Available Jobs') }}</flux:heading>
 
     @if (session('success'))
@@ -60,17 +122,42 @@ new #[Layout('components.layouts.crew')] class extends Component {
         </flux:callout>
     @endif
 
+    @if (! auth('crew')->user()->crewProfile?->service_category_id)
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20 mb-6">
+            <div class="flex items-start gap-3">
+                <flux:icon name="exclamation-triangle" class="size-5 text-amber-600 shrink-0" />
+                <div>
+                    <p class="font-medium text-amber-800 dark:text-amber-200">Service Category Required</p>
+                    <p class="text-sm text-amber-600 dark:text-amber-400">
+                        Please set your service category in your
+                        <a href="{{ route('crew.settings') }}" class="underline font-medium" wire:navigate>settings</a>
+                        to see available jobs.
+                    </p>
+                </div>
+            </div>
+        </div>
+    @endif
+
     @if ($this->availableJobs->count() > 0)
         <div class="space-y-4">
             @foreach ($this->availableJobs as $job)
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden" wire:key="available-{{ $job->id }}">
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden {{ isset($this->takenJobs[$job->id]) ? 'opacity-60' : '' }}" wire:key="available-{{ $job->id }}">
                     <div class="p-6">
                         <div class="flex items-start justify-between mb-4">
                             <div>
                                 <flux:heading size="lg">{{ $job->title }}</flux:heading>
                                 <flux:text class="text-sm text-zinc-500">{{ $job->job_number }}</flux:text>
                             </div>
-                            <flux:badge size="sm" color="blue">New</flux:badge>
+                            <div class="flex items-center gap-2">
+                                @if ($this->crewServiceCategoryName)
+                                    <flux:badge size="sm" color="purple">{{ $this->crewServiceCategoryName }}</flux:badge>
+                                @endif
+                                @if (isset($this->takenJobs[$job->id]))
+                                    <flux:badge size="sm" color="red">Taken</flux:badge>
+                                @else
+                                    <flux:badge size="sm" color="blue">New</flux:badge>
+                                @endif
+                            </div>
                         </div>
 
                         <div class="grid gap-4 sm:grid-cols-2 mb-4">
@@ -114,28 +201,50 @@ new #[Layout('components.layouts.crew')] class extends Component {
                             </div>
                         @endif
 
-                        <div class="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-                            <flux:button href="{{ route('crew.jobs.show', $job) }}" size="sm" variant="ghost" icon="eye">
-                                View Details
-                            </flux:button>
-                            <div class="flex items-center gap-2">
-                                <flux:button
-                                    wire:click="rejectJob({{ $job->id }})"
-                                    wire:confirm="Are you sure you want to decline this job?"
-                                    size="sm"
-                                    variant="ghost"
-                                >
-                                    Decline
-                                </flux:button>
-                                <flux:button
-                                    wire:click="acceptJob({{ $job->id }})"
-                                    size="sm"
-                                    variant="primary"
-                                    icon="check"
-                                >
-                                    Accept Job
-                                </flux:button>
+                        @php $jobBonus = $this->getBonusForJob($job); @endphp
+                        @if ($jobBonus)
+                            <div class="bg-gradient-to-r from-amber-50 to-green-50 dark:from-amber-900/20 dark:to-green-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mt-4">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <span class="text-sm font-bold text-amber-800 dark:text-amber-300">
+                                            <flux:icon name="gift" class="w-4 h-4 inline mr-1" />
+                                            Crew Lead Bonus ({{ number_format($jobBonus['bonus_percent'], 1) }}%)
+                                        </span>
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">Performance bonus available on this job</p>
+                                    </div>
+                                    <span class="text-xl font-bold text-green-600 dark:text-green-400">${{ number_format($jobBonus['bonus_amount'], 2) }}</span>
+                                </div>
                             </div>
+                        @endif
+
+                        <div class="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                            @if (isset($this->takenJobs[$job->id]))
+                                <flux:text class="text-sm text-red-600 dark:text-red-400">
+                                    Accepted by {{ $this->takenJobs[$job->id] }}
+                                </flux:text>
+                            @else
+                                <flux:button href="{{ route('crew.jobs.show', $job) }}" size="sm" variant="ghost" icon="eye">
+                                    View Details
+                                </flux:button>
+                                <div class="flex items-center gap-2">
+                                    <flux:button
+                                        wire:click="rejectJob({{ $job->id }})"
+                                        wire:confirm="Are you sure you want to decline this job?"
+                                        size="sm"
+                                        variant="ghost"
+                                    >
+                                        Decline
+                                    </flux:button>
+                                    <flux:button
+                                        wire:click="acceptJob({{ $job->id }})"
+                                        size="sm"
+                                        variant="primary"
+                                        icon="check"
+                                    >
+                                        Accept Job
+                                    </flux:button>
+                                </div>
+                            @endif
                         </div>
                     </div>
                 </div>

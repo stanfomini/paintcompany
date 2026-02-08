@@ -15,6 +15,8 @@ new class extends Component {
 
     public bool $showWhatIf = false;
 
+    public ?int $selectedPackageId = null;
+
     protected EstimateCostBreakdownService $service;
 
     public function boot(EstimateCostBreakdownService $service): void
@@ -28,16 +30,48 @@ new class extends Component {
 
     public function mount(Estimate $estimate): void
     {
-        $this->estimate = $estimate->load(['areas.surfaces.productionRate', 'areas.addons', 'items']);
+        $this->estimate = $estimate->load(['areas.surfaces.productionRate', 'areas.addons', 'items', 'job.crews.crewProfile']);
 
         // Set initial what-if margin to current settings
         $currentSettings = $this->service->getCurrentSettings($estimate);
         $this->whatIfMargin = $currentSettings['margin_percent'];
+
+        // Default to the active package (signed > selected > recommended)
+        $activePackage = $this->service->getActivePackage($estimate);
+        if ($activePackage) {
+            $this->selectedPackageId = $activePackage->id;
+        }
+    }
+
+    #[Computed]
+    public function packages(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->estimate->packages()
+            ->orderBy('sort_order')
+            ->get();
+    }
+
+    public function selectPackage(int $packageId): void
+    {
+        // Verify the package belongs to this estimate
+        $package = $this->estimate->packages()->where('id', $packageId)->first();
+        if ($package) {
+            $this->selectedPackageId = $packageId;
+            unset($this->currentBreakdown);
+        }
     }
 
     #[Computed]
     public function currentBreakdown(): array
     {
+        // If a specific package is selected, use it
+        if ($this->selectedPackageId) {
+            $package = $this->estimate->packages()->where('id', $this->selectedPackageId)->first();
+            if ($package) {
+                return $this->service->calculatePackageBreakdown($this->estimate, $package);
+            }
+        }
+
         return $this->service->calculateBreakdown($this->estimate);
     }
 
@@ -128,48 +162,55 @@ new class extends Component {
 
         @php $breakdown = $this->currentBreakdown; @endphp
 
-        {{-- Package Indicator --}}
-        @if (isset($breakdown['package']) && $breakdown['package'])
-            <div class="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="flex-shrink-0">
-                            @if ($breakdown['package']['is_signed'])
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/></svg>
-                                    Signed
+        {{-- Package Switcher --}}
+        @if ($this->packages->count() > 0)
+            <div class="mb-6">
+                <div class="grid gap-3 {{ $this->packages->count() === 2 ? 'grid-cols-2' : ($this->packages->count() >= 3 ? 'grid-cols-3' : 'grid-cols-1') }}">
+                    @foreach ($this->packages as $pkg)
+                        @php
+                            $isActive = $selectedPackageId === $pkg->id;
+                            $isSigned = $pkg->signed_at !== null;
+                            $isSelected = $pkg->is_selected;
+                            $isRecommended = $pkg->is_recommended;
+                        @endphp
+                        <button
+                            wire:click="selectPackage({{ $pkg->id }})"
+                            wire:key="pkg-{{ $pkg->id }}"
+                            class="relative rounded-lg border-2 p-4 text-left transition-all {{ $isActive ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-500' : 'border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-600' }}"
+                        >
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="font-semibold text-sm {{ $isActive ? 'text-blue-900 dark:text-blue-100' : 'text-zinc-900 dark:text-white' }}">
+                                    {{ $pkg->name ?: ($pkg->tier_label ?? ucfirst($pkg->tier)) }}
                                 </span>
-                            @elseif ($breakdown['package']['is_selected'])
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                                    Selected
-                                </span>
-                            @else
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-                                    Recommended
-                                </span>
-                            @endif
-                        </div>
-                        <div>
-                            <span class="font-semibold text-blue-900 dark:text-blue-100">
-                                Calculating: {{ $breakdown['package']['name'] ?? $breakdown['package']['tier_label'] . ' Package' }}
-                            </span>
-                            @if ($breakdown['package']['is_signed'] && $breakdown['package']['signed_at'])
-                                <span class="text-blue-700 dark:text-blue-300 text-sm ml-2">
-                                    (Signed {{ $breakdown['package']['signed_at'] }})
-                                </span>
-                            @endif
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        <div class="text-lg font-bold text-blue-900 dark:text-blue-100">
-                            ${{ number_format($breakdown['package']['total'], 2) }}
-                        </div>
-                        @if ($breakdown['package']['warranty_years'] > 0)
-                            <div class="text-xs text-blue-600 dark:text-blue-400">
-                                Includes {{ $breakdown['package']['warranty_years'] }}-Year Warranty
+                                <div class="flex items-center gap-1">
+                                    @if ($isSigned)
+                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                                            Signed
+                                        </span>
+                                    @elseif ($isSelected)
+                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                            Selected
+                                        </span>
+                                    @elseif ($isRecommended)
+                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
+                                            Recommended
+                                        </span>
+                                    @endif
+                                </div>
                             </div>
-                        @endif
-                    </div>
+                            <div class="text-lg font-bold {{ $isActive ? 'text-blue-900 dark:text-blue-100' : 'text-zinc-900 dark:text-white' }}">
+                                ${{ number_format($pkg->total, 2) }}
+                            </div>
+                            @if ($pkg->warranty_years > 0)
+                                <div class="text-[11px] {{ $isActive ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
+                                    {{ $pkg->warranty_years }}-Year Warranty
+                                </div>
+                            @endif
+                            @if ($isActive)
+                                <div class="absolute -top-px -left-px -right-px h-1 bg-blue-500 rounded-t-lg"></div>
+                            @endif
+                        </button>
+                    @endforeach
                 </div>
             </div>
         @endif
@@ -462,8 +503,8 @@ new class extends Component {
                                         <div class="text-lg font-semibold">Line Items ({{ count($breakdown['items']) }})</div>
                                     </div>
                                     <div class="text-right">
-                                        <div class="text-sm text-zinc-500">Customer: ${{ number_format($breakdown['cogs']['items_total'], 2) }}</div>
-                                        <div class="text-sm text-zinc-500">Vendor: ${{ number_format($breakdown['cogs']['items_vendor_cost'], 2) }}</div>
+                                        <div class="text-sm text-zinc-500">Price: ${{ number_format($breakdown['cogs']['items_total'], 2) }}</div>
+                                        <div class="text-sm text-zinc-500">Cost: ${{ number_format($breakdown['cogs']['items_vendor_cost'], 2) }}</div>
                                         <div class="font-bold text-green-600">Profit: ${{ number_format($breakdown['cogs']['items_profit'], 2) }}</div>
                                     </div>
                                 </div>
@@ -557,6 +598,36 @@ new class extends Component {
                             @endif
                         </div>
 
+                        {{-- CREW LEAD BONUS --}}
+                        @if (isset($breakdown['crew_bonus']) && $breakdown['crew_bonus'])
+                            @php $crewBonus = $breakdown['crew_bonus']; @endphp
+                            <div class="px-6 py-4">
+                                <div class="flex justify-between items-center mb-3">
+                                    <div>
+                                        <span class="text-xs font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wider">Conditional Bonus</span>
+                                        <div class="text-lg font-semibold">Crew Lead Bonus</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-xl font-bold text-green-600 dark:text-green-400">${{ number_format($crewBonus['bonus_amount'], 2) }}</div>
+                                        <div class="text-xs text-zinc-500">{{ $crewBonus['crew_name'] }} ({{ number_format($crewBonus['bonus_percent'], 1) }}%)</div>
+                                    </div>
+                                </div>
+                                <div class="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                                    <div class="text-xs font-medium text-amber-700 dark:text-amber-300 mb-2">How to Earn This Bonus:</div>
+                                    <ul class="text-xs text-zinc-600 dark:text-zinc-400 space-y-1 list-disc list-inside">
+                                        <li>Actively use and engage with the job software throughout the project</li>
+                                        <li>Be active in the Job Chat - communicate with the team and customer</li>
+                                        <li>Upload, view, and manage team and customer photos and communications</li>
+                                        <li>Participate in Job Prep to help build a plan the team can follow</li>
+                                        <li>Follow the plan as outlined during prep</li>
+                                        <li>Do not promote personal business on the job site</li>
+                                        <li>Dress appropriately and maintain a professional appearance</li>
+                                        <li>Ensure all touchups are completed before job closeout</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        @endif
+
                         {{-- NET PROFIT --}}
                         <div class="px-6 py-4 {{ $breakdown['net_profit']['is_profitable'] ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30' }}">
                             <div class="flex justify-between items-center">
@@ -574,6 +645,26 @@ new class extends Component {
                                 </div>
                             </div>
                         </div>
+
+                        {{-- NET PROFIT AFTER CREW LEAD BONUS --}}
+                        @if (isset($breakdown['crew_bonus']) && $breakdown['crew_bonus'])
+                            <div class="px-6 py-4 border-t border-dashed border-zinc-200 dark:border-zinc-700">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <span class="text-xs font-medium text-zinc-500 uppercase tracking-wider">If Bonus Paid</span>
+                                        <div class="text-lg font-semibold">Net Profit After Bonus</div>
+                                    </div>
+                                    <div class="text-right">
+                                        <div class="text-2xl font-bold {{ ($breakdown['net_profit']['after_bonus_amount'] ?? 0) >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400' }}">
+                                            ${{ number_format($breakdown['net_profit']['after_bonus_amount'], 2) }}
+                                        </div>
+                                        <div class="text-sm text-zinc-500">
+                                            {{ number_format($breakdown['net_profit']['after_bonus_percent'], 1) }}% margin
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
 
                         {{-- VERIFICATION ROW --}}
                         @php
@@ -661,27 +752,64 @@ new class extends Component {
                     </div>
                 </div>
 
+                {{-- Per Service Breakdown --}}
+                @php
+                    $perService = app(\App\Services\EstimateCostBreakdownService::class)->getPerServiceBreakdown($estimate);
+                @endphp
+
+                @if (count($perService) > 1)
+                    <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                        <flux:heading size="sm" class="mb-4">Breakdown by Service</flux:heading>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            @foreach ($perService as $slug => $service)
+                                <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4" wire:key="service-{{ $slug }}">
+                                    <div class="flex items-center gap-2 mb-3">
+                                        <flux:badge size="sm" color="{{ $service['category_color'] }}">
+                                            {{ $service['category_name'] }}
+                                        </flux:badge>
+                                        <span class="text-sm text-zinc-500">{{ $service['margin_percent'] }}% margin</span>
+                                    </div>
+                                    <div class="space-y-1 text-sm">
+                                        <div class="flex justify-between">
+                                            <span class="text-zinc-600 dark:text-zinc-400">COGS</span>
+                                            <span class="font-medium font-mono">${{ number_format($service['cogs'], 2) }}</span>
+                                        </div>
+                                        <div class="flex justify-between">
+                                            <span class="text-zinc-600 dark:text-zinc-400">Price</span>
+                                            <span class="font-medium font-mono">${{ number_format($service['price'], 2) }}</span>
+                                        </div>
+                                        <div class="flex justify-between border-t border-zinc-100 dark:border-zinc-800 pt-1 mt-1">
+                                            <span class="text-zinc-600 dark:text-zinc-400">Gross Profit</span>
+                                            <span class="font-medium font-mono text-green-600">${{ number_format($service['price'] - $service['cogs'], 2) }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Reconciliation --}}
                 @if (isset($breakdown['reconciliation']) && abs($breakdown['reconciliation']['difference']) > 1)
-                    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-6">
-                        <flux:heading size="sm" class="mb-4 text-amber-800 dark:text-amber-200">Price Reconciliation</flux:heading>
+                    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+                        <flux:heading size="sm" class="mb-4 text-blue-800 dark:text-blue-200">Settings Drift Check</flux:heading>
+                        <flux:text size="sm" class="text-blue-700 dark:text-blue-300 mb-3">
+                            Compares the package price (what the customer sees) against what the current settings would calculate. A difference means settings have changed since the package was generated.
+                        </flux:text>
                         <div class="space-y-2">
                             <div class="flex justify-between text-sm">
-                                <span>Stored Subtotal (on estimate)</span>
+                                <span>Package Price (customer sees)</span>
                                 <span class="font-medium">${{ number_format($breakdown['reconciliation']['stored_subtotal'], 2) }}</span>
                             </div>
                             <div class="flex justify-between text-sm">
-                                <span>Calculated from Areas (model methods)</span>
+                                <span>Current Settings Would Price At</span>
                                 <span class="font-medium">${{ number_format($breakdown['reconciliation']['calculated_price'], 2) }}</span>
                             </div>
-                            <div class="flex justify-between text-sm font-bold pt-2 border-t border-amber-200 dark:border-amber-800">
-                                <span>Difference</span>
-                                <span class="{{ $breakdown['reconciliation']['difference'] > 0 ? 'text-green-600' : 'text-red-600' }}">
+                            <div class="flex justify-between text-sm font-bold pt-2 border-t border-blue-200 dark:border-blue-800">
+                                <span>Drift</span>
+                                <span class="{{ $breakdown['reconciliation']['difference'] > 0 ? 'text-amber-600' : 'text-amber-600' }}">
                                     {{ $breakdown['reconciliation']['difference'] > 0 ? '+' : '' }}${{ number_format($breakdown['reconciliation']['difference'], 2) }}
                                 </span>
-                            </div>
-                            <div class="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                                This may indicate manual price adjustments or settings changes since estimate creation.
                             </div>
                         </div>
                     </div>

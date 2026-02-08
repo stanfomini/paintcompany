@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class PackageTemplate extends Model
@@ -28,6 +29,7 @@ class PackageTemplate extends Model
         'is_popular',
         'is_active',
         'sort_order',
+        'service_category_id',
     ];
 
     protected function casts(): array
@@ -43,11 +45,31 @@ class PackageTemplate extends Model
     }
 
     /**
+     * Get the service category for this package template.
+     */
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
+    }
+
+    /**
      * Get the items for this package template.
      */
     public function items(): HasMany
     {
         return $this->hasMany(PackageTemplateItem::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Scope to filter by service category.
+     */
+    public function scopeForService(Builder $query, ?ServiceCategory $category): Builder
+    {
+        if ($category) {
+            return $query->where('service_category_id', $category->id);
+        }
+
+        return $query;
     }
 
     /**

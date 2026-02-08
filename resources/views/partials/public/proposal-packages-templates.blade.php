@@ -134,8 +134,54 @@
     </div>
 @endif
 
+{{-- Warranty Picker --}}
+@if ($showWarrantyPicker && $selectedTier)
+    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+        <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Choose Your Warranty</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Select a warranty level for your project</p>
+        </div>
+
+        <div class="p-6">
+            <div class="grid grid-cols-1 md:grid-cols-{{ min(count($this->warrantyOptions), 3) }} gap-4">
+                @foreach ($this->warrantyOptions as $option)
+                    <button
+                        wire:click="selectWarranty('{{ $option['tier'] }}')"
+                        wire:key="warranty-{{ $option['tier'] }}"
+                        class="p-4 rounded-lg border-2 text-left transition-all duration-200
+                            {{ $selectedWarrantyTier === $option['tier']
+                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md'
+                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600' }}"
+                    >
+                        <div class="flex items-center gap-2 mb-2">
+                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                            </svg>
+                            <p class="font-semibold text-gray-900 dark:text-white">{{ $option['name'] }}</p>
+                        </div>
+                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                            @if ($option['cost'] > 0)
+                                +${{ number_format($option['cost'], 2) }}
+                            @else
+                                Included
+                            @endif
+                        </p>
+                    </button>
+                @endforeach
+            </div>
+
+            <div class="mt-6 flex justify-end gap-3">
+                <flux:button wire:click="$set('showWarrantyPicker', false)" variant="ghost">Back</flux:button>
+                <flux:button wire:click="confirmSelection" variant="primary" :disabled="!$selectedWarrantyTier">
+                    Confirm Selection
+                </flux:button>
+            </div>
+        </div>
+    </div>
+@endif
+
 {{-- Selected Package Details --}}
-@if ($selectedTemplate)
+@if ($selectedTemplate && !$showWarrantyPicker)
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ $selectedTemplate['name'] }} Package Breakdown</h3>
@@ -301,6 +347,27 @@
                 </svg>
                 <span class="font-medium">Proposal Accepted</span>
             </div>
+        @elseif ($estimate->hasPendingAmendments())
+            <button
+                disabled
+                class="inline-flex items-center justify-center gap-2 px-8 py-4 bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-semibold rounded-xl cursor-not-allowed mb-3"
+            >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
+                </svg>
+                Sign & Accept Proposal
+            </button>
+            <div>
+                <a
+                    href="#amendments-section"
+                    class="inline-flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium hover:underline text-sm"
+                >
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+                    </svg>
+                    Review and acknowledge changes made to this estimate before signing
+                </a>
+            </div>
         @else
             <button
                 wire:click="proceedToSignature"
@@ -319,7 +386,7 @@
             </p>
         @endif
     </div>
-@else
+@elseif (!$showWarrantyPicker)
     {{-- No package selected --}}
     <div class="text-center">
         @if ($estimate->status === 'accepted')

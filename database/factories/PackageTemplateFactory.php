@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\PackageTemplate;
+use App\Models\ServiceCategory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -109,6 +110,16 @@ class PackageTemplateFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'is_active' => false,
+        ]);
+    }
+
+    /**
+     * Associate with a specific service category.
+     */
+    public function forService(ServiceCategory $category): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => $category->id,
         ]);
     }
 }

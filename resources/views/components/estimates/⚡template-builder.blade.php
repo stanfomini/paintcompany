@@ -12,6 +12,7 @@ use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
 use App\Models\ProductionRate;
 use App\Models\Substrate;
+use App\Services\EstimateAmendmentService;
 use App\Services\EstimatePackageGeneratorService;
 use App\Services\EstimateTemplateService;
 use Illuminate\Contracts\View\View;
@@ -91,7 +92,7 @@ new class extends Component {
             'discountAmount' => ['required', 'numeric', 'min:0'],
             'depositPercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:5000'],
-            'validUntil' => ['nullable', 'date', 'after_or_equal:today'],
+            'validUntil' => ['nullable', 'date', ...($this->isEditing ? [] : ['after_or_equal:today'])],
         ];
 
         if ($hasAreas) {
@@ -1936,8 +1937,28 @@ new class extends Component {
                 $this->estimate->markAsSent();
             }
 
+            // Create amendment if editing a sent estimate
+            if ($this->estimate->status === 'sent') {
+                $amendmentService = app(EstimateAmendmentService::class);
+
+                // Capture snapshot if missing (for estimates sent before amendment system)
+                if (! $this->estimate->sent_snapshot) {
+                    $this->estimate->sent_snapshot = $amendmentService->captureSnapshot($this->estimate);
+                    $this->estimate->save();
+                    session()->flash('success', 'Estimate updated successfully.');
+                } else {
+                    $amendment = $amendmentService->createAmendment($this->estimate, auth()->user());
+                    if ($amendment) {
+                        session()->flash('success', "Estimate updated. Amendment #{$amendment->amendment_number} created — customer will be notified.");
+                    } else {
+                        session()->flash('success', 'Estimate updated (no material changes detected).');
+                    }
+                }
+            } else {
+                session()->flash('success', 'Estimate updated successfully.');
+            }
+
             $this->dispatch('estimate-updated');
-            session()->flash('success', 'Estimate updated successfully.');
         } else {
             $estimateData['created_by'] = auth()->id();
             $estimateData['status'] = 'draft'; // Always create as draft first
@@ -3151,6 +3172,7 @@ new class extends Component {
                             :property="$deal->property"
                             :estimate="$estimate"
                             context="estimate"
+                            :compact="true"
                             :key="'builder-photos-'.$estimate->id"
                         />
                     </div>

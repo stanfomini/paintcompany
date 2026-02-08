@@ -2,6 +2,7 @@
 
 use App\Models\PackageTemplate;
 use App\Models\PackageTemplateItem;
+use App\Models\ServiceCategory;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Component;
 
@@ -16,6 +17,10 @@ new class extends Component {
     /** @var array<int, array> */
     public array $packages = [];
 
+    /** @var array<int, array> */
+    public array $serviceCategories = [];
+    public ?int $filterCategoryId = null;
+
     public bool $showEditModal = false;
     public ?int $editingPackageId = null;
 
@@ -28,6 +33,7 @@ new class extends Component {
     public bool $editIsDefault = false;
     public bool $editIsPopular = false;
     public bool $editIsActive = true;
+    public string $editServiceCategoryId = '';
 
     // Item management
     public bool $showItemModal = false;
@@ -48,12 +54,33 @@ new class extends Component {
             abort(403);
         }
 
+        $this->loadServiceCategories();
+        $this->loadPackages();
+    }
+
+    public function loadServiceCategories(): void
+    {
+        $this->serviceCategories = ServiceCategory::active()
+            ->ordered()
+            ->get()
+            ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'slug' => $c->slug])
+            ->toArray();
+
+        // Default to first category if available
+        if (! $this->filterCategoryId && count($this->serviceCategories) > 0) {
+            $this->filterCategoryId = $this->serviceCategories[0]['id'];
+        }
+    }
+
+    public function updatedFilterCategoryId(): void
+    {
         $this->loadPackages();
     }
 
     public function loadPackages(): void
     {
         $this->packages = PackageTemplate::query()
+            ->when($this->filterCategoryId, fn ($q) => $q->where('service_category_id', $this->filterCategoryId))
             ->with('items')
             ->ordered()
             ->get()
@@ -102,6 +129,7 @@ new class extends Component {
                 $this->editIsDefault = $package->is_default;
                 $this->editIsPopular = $package->is_popular;
                 $this->editIsActive = $package->is_active;
+                $this->editServiceCategoryId = (string) ($package->service_category_id ?? '');
             }
         } else {
             $this->editName = '';
@@ -112,6 +140,7 @@ new class extends Component {
             $this->editIsDefault = false;
             $this->editIsPopular = false;
             $this->editIsActive = true;
+            $this->editServiceCategoryId = (string) ($this->filterCategoryId ?? '');
         }
 
         $this->showEditModal = true;
@@ -135,11 +164,15 @@ new class extends Component {
             'editIsDefault' => ['boolean'],
             'editIsPopular' => ['boolean'],
             'editIsActive' => ['boolean'],
+            'editServiceCategoryId' => ['nullable', 'exists:service_categories,id'],
         ]);
 
-        // If setting as default, clear other defaults
+        $categoryId = $this->editServiceCategoryId !== '' ? (int) $this->editServiceCategoryId : null;
+
+        // If setting as default, clear other defaults within same service category
         if ($this->editIsDefault) {
             PackageTemplate::where('is_default', true)
+                ->where('service_category_id', $categoryId)
                 ->when($this->editingPackageId, fn ($q) => $q->where('id', '!=', $this->editingPackageId))
                 ->update(['is_default' => false]);
         }
@@ -153,6 +186,7 @@ new class extends Component {
             'is_default' => $this->editIsDefault,
             'is_popular' => $this->editIsPopular,
             'is_active' => $this->editIsActive,
+            'service_category_id' => $categoryId,
         ];
 
         if ($this->editingPackageId) {
@@ -269,10 +303,16 @@ new class extends Component {
 
     public function seedDefaultPackages(): void
     {
-        // Only seed if no packages exist
-        if (PackageTemplate::count() > 0) {
+        // Only seed if no packages exist for current category
+        $query = PackageTemplate::query();
+        if ($this->filterCategoryId) {
+            $query->where('service_category_id', $this->filterCategoryId);
+        }
+        if ($query->count() > 0) {
             return;
         }
+
+        $categoryId = $this->filterCategoryId;
 
         // Good tier
         $good = PackageTemplate::create([
@@ -285,6 +325,7 @@ new class extends Component {
             'is_popular' => false,
             'is_active' => true,
             'sort_order' => 1,
+            'service_category_id' => $categoryId,
         ]);
 
         // Better tier
@@ -298,6 +339,7 @@ new class extends Component {
             'is_popular' => true,
             'is_active' => true,
             'sort_order' => 2,
+            'service_category_id' => $categoryId,
         ]);
 
         PackageTemplateItem::create([
@@ -323,6 +365,7 @@ new class extends Component {
             'is_popular' => false,
             'is_active' => true,
             'sort_order' => 3,
+            'service_category_id' => $categoryId,
         ]);
 
         PackageTemplateItem::create([
@@ -370,6 +413,21 @@ new class extends Component {
                     The painting scope is the same across all packages - packages differentiate by warranty and services.
                 </flux:callout.text>
             </flux:callout>
+
+            {{-- Service category tabs --}}
+            @if (count($serviceCategories) > 1)
+                <div class="flex gap-2">
+                    @foreach ($serviceCategories as $cat)
+                        <flux:button
+                            wire:click="$set('filterCategoryId', {{ $cat['id'] }})"
+                            variant="{{ $filterCategoryId === $cat['id'] ? 'primary' : 'ghost' }}"
+                            size="sm"
+                        >
+                            {{ $cat['name'] }}
+                        </flux:button>
+                    @endforeach
+                </div>
+            @endif
 
             {{-- Action buttons --}}
             <div class="flex items-center justify-between">
@@ -523,6 +581,15 @@ new class extends Component {
                 <flux:input wire:model="editName" label="Package Name" placeholder="e.g., Good, Better, Best" required />
 
                 <flux:input wire:model="editTier" label="Tier Identifier" placeholder="e.g., good, better, best" description="Unique identifier used internally" required />
+
+                @if (count($serviceCategories) > 0)
+                    <flux:select wire:model="editServiceCategoryId" label="Service Category">
+                        <option value="">-- None --</option>
+                        @foreach ($serviceCategories as $cat)
+                            <option value="{{ $cat['id'] }}">{{ $cat['name'] }}</option>
+                        @endforeach
+                    </flux:select>
+                @endif
 
                 <flux:textarea wire:model="editDescription" label="Description" rows="2" placeholder="Brief description of this package tier" />
 

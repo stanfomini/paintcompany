@@ -3,10 +3,13 @@
 use App\Models\Estimate;
 use App\Models\EstimateActivity;
 use App\Models\EstimateAreaSurface;
+use App\Models\EstimateItem;
 use App\Models\EstimatePackage;
 use App\Models\EstimatePackageItem;
 use App\Models\PackageTemplate;
+use App\Models\PackageTemplateItem;
 use App\Notifications\EstimatePackageUpdated;
+use App\Services\EstimateAmendmentService;
 use App\Services\EstimatePackageGeneratorService;
 use App\Services\EstimatePackageService;
 use Illuminate\Contracts\View\View;
@@ -32,6 +35,13 @@ new class extends Component {
     public string $packageDescription = '';
 
     public float $packageDiscountPercent = 0;
+
+    // Add-on service selector
+    public bool $showAddonModal = false;
+    public ?int $addonPackageId = null;
+
+    /** @var array<int, array> */
+    public array $availableAddons = [];
 
     protected function rules(): array
     {
@@ -111,8 +121,10 @@ new class extends Component {
                 $surfaceItems->load('itemable.area');
 
                 // Build areas structure with their surfaces
-                // Surfaces show COGS only; area totals use area-level margin
+                // Surfaces show proportional customer prices (their share of area total)
                 $areasMap = [];
+                $areaPriceCache = [];
+
                 foreach ($surfaceItems as $item) {
                     $surface = $item->itemable;
                     if (! $surface || ! $surface->area) {
@@ -121,15 +133,16 @@ new class extends Component {
 
                     $areaId = $surface->area_id;
                     if (! isset($areasMap[$areaId])) {
-                        // Use area-level customer price (margin applied once per area)
                         $area = $surface->area;
                         $areasMap[$areaId] = [
                             'id' => $areaId,
                             'name' => $area->name,
                             'area_model' => $area,
                             'surfaces' => [],
-                            'included_total' => $area->getCustomerPrice(),
+                            'included_total' => 0, // calculated below after all surfaces collected
                         ];
+                        // Cache proportional customer prices for this area's surfaces
+                        $areaPriceCache[$areaId] = $area->getSurfaceCustomerPrices();
                     }
 
                     $surfaceData = [
@@ -139,12 +152,23 @@ new class extends Component {
                         'quantity' => (float) $surface->quantity,
                         'unit' => $surface->unit,
                         'labor_hours' => (float) $surface->labor_hours,
-                        'effective_price' => (float) $surface->total, // Surface COGS only
+                        'effective_price' => $areaPriceCache[$areaId][$surface->id] ?? $surface->getCustomerPrice(),
                         'is_included' => $item->is_included,
                     ];
 
                     $areasMap[$areaId]['surfaces'][] = $surfaceData;
                 }
+
+                // Calculate included_total per area based on package-specific surface inclusions
+                foreach ($areasMap as $areaId => &$areaData) {
+                    $includedSurfaceIds = collect($areaData['surfaces'])
+                        ->where('is_included', true)
+                        ->pluck('surface_id')
+                        ->toArray();
+
+                    $areaData['included_total'] = $areaData['area_model']->getPartialCustomerPrice($includedSurfaceIds);
+                }
+                unset($areaData);
 
                 // Get service items (non-surface items)
                 $serviceItems = $package->items->filter(
@@ -389,6 +413,12 @@ new class extends Component {
             ]
         );
 
+        // Create amendment for tracking and customer acknowledgment
+        if ($this->estimate->sent_snapshot) {
+            $amendmentService = app(EstimateAmendmentService::class);
+            $amendmentService->createAmendment($this->estimate, auth()->user());
+        }
+
         // Send notification to customer
         $customer->notify(new EstimatePackageUpdated($this->estimate, $changes, $type));
     }
@@ -437,6 +467,159 @@ new class extends Component {
         // Set this package as recommended
         $package->is_recommended = true;
         $package->save();
+
+        $this->loadPackages();
+        $this->dispatch('packages-updated');
+    }
+
+    /**
+     * Open modal to add a service add-on to a specific package.
+     */
+    public function openAddonModal(int $packageId): void
+    {
+        $package = EstimatePackage::find($packageId);
+        if (! $package || $package->estimate_id !== $this->estimate->id) {
+            return;
+        }
+
+        $this->addonPackageId = $packageId;
+
+        // Get all optional template items not already in this package
+        $existingServiceNames = $package->items()
+            ->where('itemable_type', EstimateItem::class)
+            ->with('itemable')
+            ->get()
+            ->pluck('itemable.description')
+            ->filter()
+            ->toArray();
+
+        $paintingTotal = (float) $this->estimate->areas_subtotal;
+
+        $this->availableAddons = PackageTemplateItem::where('is_optional', true)
+            ->orderBy('sort_order')
+            ->get()
+            ->filter(fn ($item) => ! in_array($item->name, $existingServiceNames, true))
+            ->map(fn ($item) => [
+                'id' => $item->id,
+                'name' => $item->name,
+                'description' => $item->description,
+                'price_display' => $item->price_display,
+                'calculated_price' => $item->calculatePrice($paintingTotal),
+                'cost' => (float) $item->cost,
+            ])
+            ->values()
+            ->toArray();
+
+        $this->showAddonModal = true;
+    }
+
+    public function closeAddonModal(): void
+    {
+        $this->showAddonModal = false;
+        $this->addonPackageId = null;
+        $this->availableAddons = [];
+    }
+
+    /**
+     * Add a template item as a service add-on to the package.
+     */
+    public function addServiceAddon(int $templateItemId): void
+    {
+        $package = EstimatePackage::find($this->addonPackageId);
+        if (! $package || $package->estimate_id !== $this->estimate->id) {
+            return;
+        }
+
+        $templateItem = PackageTemplateItem::find($templateItemId);
+        if (! $templateItem) {
+            return;
+        }
+
+        $paintingTotal = (float) $this->estimate->areas_subtotal;
+        $price = $templateItem->calculatePrice($paintingTotal);
+
+        // Create EstimateItem for this service
+        $estimateItem = EstimateItem::create([
+            'estimate_id' => $this->estimate->id,
+            'description' => $templateItem->name,
+            'details' => $templateItem->description,
+            'quantity' => 1,
+            'unit' => 'service',
+            'unit_price' => $price,
+            'total' => $price,
+            'cost' => (float) $templateItem->cost,
+            'sort_order' => 1000 + EstimateItem::where('estimate_id', $this->estimate->id)->count(),
+        ]);
+
+        // Link to the package
+        $maxSort = $package->items()->max('sort_order') ?? 0;
+        EstimatePackageItem::withoutEvents(function () use ($package, $estimateItem, $maxSort) {
+            EstimatePackageItem::create([
+                'package_id' => $package->id,
+                'itemable_type' => EstimateItem::class,
+                'itemable_id' => $estimateItem->id,
+                'quantity' => 1,
+                'price_override' => null,
+                'is_included' => true,
+                'customer_approved' => true,
+                'customer_approved_at' => now(),
+                'sort_order' => $maxSort + 1,
+            ]);
+        });
+
+        // Recalculate package totals
+        $service = app(EstimatePackageService::class);
+        $service->calculatePackageTotal($package);
+
+        // Notify customer if estimate is sent
+        $this->notifyPackageChange($package, ["{$templateItem->name} added to {$package->name} package"], 'item_added');
+
+        $this->closeAddonModal();
+        $this->loadPackages();
+        $this->dispatch('packages-updated');
+    }
+
+    /**
+     * Remove a service item from a package and delete the orphaned EstimateItem.
+     */
+    public function removeServiceItem(int $packageId, int $packageItemId): void
+    {
+        $package = EstimatePackage::find($packageId);
+        if (! $package || $package->estimate_id !== $this->estimate->id) {
+            return;
+        }
+
+        $packageItem = EstimatePackageItem::find($packageItemId);
+        if (! $packageItem || $packageItem->package_id !== $packageId) {
+            return;
+        }
+
+        // Only allow removal of service items (not surfaces)
+        if ($packageItem->itemable_type !== EstimateItem::class) {
+            return;
+        }
+
+        $itemName = $this->getItemName($packageItem);
+        $estimateItemId = $packageItem->itemable_id;
+
+        // Delete the package item link
+        $packageItem->delete();
+
+        // Check if EstimateItem is orphaned (not linked to any other package)
+        $otherLinks = EstimatePackageItem::where('itemable_type', EstimateItem::class)
+            ->where('itemable_id', $estimateItemId)
+            ->exists();
+
+        if (! $otherLinks) {
+            EstimateItem::find($estimateItemId)?->delete();
+        }
+
+        // Recalculate package totals
+        $service = app(EstimatePackageService::class);
+        $service->calculatePackageTotal($package);
+
+        // Notify
+        $this->notifyPackageChange($package, ["{$itemName} removed from {$package->name} package"], 'item_removed');
 
         $this->loadPackages();
         $this->dispatch('packages-updated');
@@ -585,10 +768,19 @@ new class extends Component {
                             @endforelse
 
                             {{-- Service Items --}}
+                            <div class="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-between">
+                                <flux:text size="xs" class="font-medium text-zinc-500 uppercase tracking-wide">Add-on Services</flux:text>
+                                <flux:button
+                                    wire:click="openAddonModal({{ $package['id'] }})"
+                                    type="button"
+                                    variant="ghost"
+                                    size="xs"
+                                    icon="plus"
+                                >
+                                    Add Service
+                                </flux:button>
+                            </div>
                             @if (count($package['services']) > 0)
-                                <div class="px-4 py-2 bg-zinc-100 dark:bg-zinc-800">
-                                    <flux:text size="xs" class="font-medium text-zinc-500 uppercase tracking-wide">Add-on Services</flux:text>
-                                </div>
                                 @foreach ($package['services'] as $service)
                                     <div
                                         wire:key="package-{{ $package['id'] }}-service-{{ $service['id'] }}"
@@ -604,8 +796,21 @@ new class extends Component {
                                         <flux:text size="sm" class="font-medium {{ $service['is_included'] ? '' : 'line-through' }}">
                                             ${{ number_format($service['effective_price'], 2) }}
                                         </flux:text>
+                                        <flux:button
+                                            wire:click="removeServiceItem({{ $package['id'] }}, {{ $service['id'] }})"
+                                            wire:confirm="Remove this service from the package?"
+                                            type="button"
+                                            variant="ghost"
+                                            size="xs"
+                                            icon="x-mark"
+                                            class="text-red-500 hover:text-red-700 shrink-0"
+                                        />
                                     </div>
                                 @endforeach
+                            @else
+                                <div class="px-4 py-3 text-center">
+                                    <flux:text size="sm" class="text-zinc-400">No add-on services</flux:text>
+                                </div>
                             @endif
                         </div>
 
@@ -747,6 +952,46 @@ new class extends Component {
                     <span wire:loading.remove wire:target="savePackage">Update Package</span>
                     <span wire:loading wire:target="savePackage">Saving...</span>
                 </flux:button>
+            </div>
+        </div>
+    </flux:modal>
+
+    {{-- Add-on Service Selector Modal --}}
+    <flux:modal wire:model="showAddonModal" class="max-w-md">
+        <div class="space-y-4">
+            <flux:heading size="lg">Add Service</flux:heading>
+            <flux:text size="sm" class="text-zinc-500">Select a service to add to this package.</flux:text>
+
+            @if (count($availableAddons) > 0)
+                <div class="space-y-2 max-h-80 overflow-y-auto">
+                    @foreach ($availableAddons as $addon)
+                        <button
+                            wire:click="addServiceAddon({{ $addon['id'] }})"
+                            wire:key="addon-{{ $addon['id'] }}"
+                            type="button"
+                            class="w-full text-left px-4 py-3 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                        >
+                            <div class="flex items-center justify-between">
+                                <flux:text size="sm" class="font-medium">{{ $addon['name'] }}</flux:text>
+                                <flux:text size="sm" class="font-medium text-green-600 dark:text-green-400">
+                                    ${{ number_format($addon['calculated_price'], 2) }}
+                                </flux:text>
+                            </div>
+                            @if ($addon['description'])
+                                <flux:text size="xs" class="text-zinc-500 mt-1">{{ $addon['description'] }}</flux:text>
+                            @endif
+                        </button>
+                    @endforeach
+                </div>
+            @else
+                <div class="py-6 text-center">
+                    <flux:icon name="check-circle" class="w-10 h-10 mx-auto text-zinc-400 mb-2" />
+                    <flux:text size="sm" class="text-zinc-500">All available services have been added to this package.</flux:text>
+                </div>
+            @endif
+
+            <div class="flex justify-end pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                <flux:button wire:click="closeAddonModal" type="button" variant="ghost">Close</flux:button>
             </div>
         </div>
     </flux:modal>

@@ -47,6 +47,7 @@ class EstimatePackage extends Model
         'is_recommended',
         'is_selected',
         'sort_order',
+        'service_category_id',
         'signature_id',
         'signed_at',
     ];
@@ -75,6 +76,14 @@ class EstimatePackage extends Model
     public function estimate(): BelongsTo
     {
         return $this->belongsTo(Estimate::class);
+    }
+
+    /**
+     * Get the service category for this package.
+     */
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
     }
 
     /**
@@ -107,7 +116,8 @@ class EstimatePackage extends Model
             ->get();
 
         $subtotal = 0.0;
-        $areaIds = [];
+        $areaSurfaceIds = []; // areaId => [surfaceId, ...]
+        $areaFullIds = []; // areas added via direct EstimateArea items
 
         foreach ($items as $item) {
             $itemable = $item->itemable;
@@ -118,19 +128,29 @@ class EstimatePackage extends Model
             if ($item->price_override !== null) {
                 $subtotal += (float) $item->price_override;
             } elseif ($itemable instanceof EstimateAreaSurface) {
-                // Group surfaces by area - only count each area once
+                // Collect included surface IDs per area for proportional pricing
                 $areaId = $itemable->area_id;
-                if (! in_array($areaId, $areaIds) && $itemable->area) {
-                    $areaIds[] = $areaId;
-                    $subtotal += $itemable->area->getCustomerPrice();
+                if (! isset($areaFullIds[$areaId])) {
+                    $areaSurfaceIds[$areaId][] = $itemable->id;
                 }
             } elseif ($itemable instanceof EstimateItem) {
                 $subtotal += (float) $itemable->total;
             } elseif ($itemable instanceof EstimateArea) {
-                if (! in_array($itemable->id, $areaIds)) {
-                    $areaIds[] = $itemable->id;
+                if (! isset($areaFullIds[$itemable->id])) {
+                    $areaFullIds[$itemable->id] = true;
                     $subtotal += $itemable->getCustomerPrice();
                 }
+            }
+        }
+
+        // Add proportional area pricing for surface-based items
+        foreach ($areaSurfaceIds as $areaId => $surfaceIds) {
+            if (isset($areaFullIds[$areaId])) {
+                continue;
+            }
+            $area = EstimateArea::find($areaId);
+            if ($area) {
+                $subtotal += $area->getPartialCustomerPrice($surfaceIds);
             }
         }
 

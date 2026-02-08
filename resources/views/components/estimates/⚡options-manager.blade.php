@@ -3,6 +3,7 @@
 use App\Models\Estimate;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateOption;
+use App\Models\ServiceCategory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -32,6 +33,8 @@ new class extends Component {
 
     public bool $optionIsRecommended = false;
 
+    public ?int $optionServiceCategoryId = null;
+
     protected function rules(): array
     {
         return [
@@ -42,6 +45,7 @@ new class extends Component {
             'optionSurfaceId' => ['required_if:optionPricingType,per_sqft', 'required_if:optionPricingType,per_surface', 'nullable', 'integer', 'exists:estimate_area_surfaces,id'],
             'optionMultiplier' => ['required_if:optionPricingType,per_sqft', 'required_if:optionPricingType,per_surface', 'numeric', 'min:0'],
             'optionIsRecommended' => ['boolean'],
+            'optionServiceCategoryId' => ['nullable', 'integer', 'exists:service_categories,id'],
         ];
     }
 
@@ -64,7 +68,7 @@ new class extends Component {
     public function loadOptions(): void
     {
         $this->options = $this->estimate->options()
-            ->with('surface.area')
+            ->with(['surface.area', 'serviceCategory'])
             ->orderBy('sort_order')
             ->get()
             ->map(function (EstimateOption $option) {
@@ -81,6 +85,8 @@ new class extends Component {
                     'calculated_price' => (float) $option->calculated_price,
                     'is_selected' => $option->is_selected,
                     'is_recommended' => $option->is_recommended,
+                    'service_category_id' => $option->service_category_id,
+                    'category_name' => $option->serviceCategory?->name,
                 ];
             })
             ->toArray();
@@ -101,6 +107,7 @@ new class extends Component {
                 $this->optionSurfaceId = $option->surface_id;
                 $this->optionMultiplier = (float) ($option->multiplier ?? 1);
                 $this->optionIsRecommended = $option->is_recommended;
+                $this->optionServiceCategoryId = $option->service_category_id;
             }
         } else {
             $this->optionName = '';
@@ -110,6 +117,7 @@ new class extends Component {
             $this->optionSurfaceId = null;
             $this->optionMultiplier = 1;
             $this->optionIsRecommended = false;
+            $this->optionServiceCategoryId = null;
         }
 
         $this->showModal = true;
@@ -135,6 +143,7 @@ new class extends Component {
             'surface_id' => in_array($this->optionPricingType, ['per_sqft', 'per_surface']) ? $this->optionSurfaceId : null,
             'multiplier' => in_array($this->optionPricingType, ['per_sqft', 'per_surface']) ? $this->optionMultiplier : null,
             'is_recommended' => $this->optionIsRecommended,
+            'service_category_id' => $this->optionServiceCategoryId,
         ];
 
         if ($this->editingOptionId) {
@@ -195,6 +204,12 @@ new class extends Component {
     }
 
     #[Computed]
+    public function serviceCategories(): Collection
+    {
+        return ServiceCategory::active()->ordered()->get();
+    }
+
+    #[Computed]
     public function surfaces(): Collection
     {
         return EstimateAreaSurface::query()
@@ -247,6 +262,10 @@ new class extends Component {
 
                                 @if ($option['is_recommended'])
                                     <flux:badge color="green" size="sm">Recommended</flux:badge>
+                                @endif
+
+                                @if ($option['category_name'])
+                                    <flux:badge color="blue" size="sm">{{ $option['category_name'] }}</flux:badge>
                                 @endif
 
                                 <flux:badge color="zinc" size="sm">
@@ -341,6 +360,19 @@ new class extends Component {
                     />
                     <flux:error name="optionDescription" />
                 </flux:field>
+
+                @if ($this->serviceCategories->count() > 1)
+                    <flux:field>
+                        <flux:label>Service Category</flux:label>
+                        <flux:select wire:model="optionServiceCategoryId">
+                            <option value="">Painting (default)</option>
+                            @foreach ($this->serviceCategories as $category)
+                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="optionServiceCategoryId" />
+                    </flux:field>
+                @endif
 
                 <flux:field>
                     <flux:label>Pricing Type</flux:label>

@@ -8,6 +8,7 @@ use App\Models\EstimateItem;
 use App\Models\EstimatePackage;
 use App\Models\EstimatePackageItem;
 use App\Models\PackageTemplate;
+use App\Models\ServiceCategory;
 use Illuminate\Support\Collection;
 
 class EstimatePackageGeneratorService
@@ -17,9 +18,13 @@ class EstimatePackageGeneratorService
      *
      * @return Collection<int, EstimatePackage>
      */
-    public function generateFromTemplates(Estimate $estimate): Collection
+    public function generateFromTemplates(Estimate $estimate, ?ServiceCategory $serviceCategory = null): Collection
     {
-        $templates = PackageTemplate::active()->with('items')->ordered()->get();
+        $templates = PackageTemplate::active()
+            ->forService($serviceCategory)
+            ->with('items')
+            ->ordered()
+            ->get();
 
         if ($templates->isEmpty()) {
             return collect();
@@ -39,15 +44,15 @@ class EstimatePackageGeneratorService
     /**
      * Check if an estimate should use package templates.
      */
-    public function shouldUseTemplates(Estimate $estimate): bool
+    public function shouldUseTemplates(Estimate $estimate, ?ServiceCategory $serviceCategory = null): bool
     {
         // Don't use templates if estimate already has legacy packages
         if ($estimate->packages()->exists()) {
             return false;
         }
 
-        // Use templates if active templates exist
-        return PackageTemplate::active()->exists();
+        // Use templates if active templates exist (optionally filtered by service category)
+        return PackageTemplate::active()->forService($serviceCategory)->exists();
     }
 
     /**
@@ -106,6 +111,7 @@ class EstimatePackageGeneratorService
             'is_recommended' => $template->is_popular,
             'is_selected' => $template->is_default,
             'sort_order' => $sortIndex,
+            'service_category_id' => $template->service_category_id,
         ]);
 
         // If this is the default package, set it as selected on the estimate
@@ -188,7 +194,7 @@ class EstimatePackageGeneratorService
                 'unit' => 'service',
                 'unit_price' => $price,
                 'total' => $price,
-                'is_optional' => $templateItem->is_optional,
+                'cost' => (float) $templateItem->cost,
                 'sort_order' => 1000 + $index, // Put services after regular items
             ]);
 
@@ -246,10 +252,10 @@ class EstimatePackageGeneratorService
      *
      * @return Collection<int, EstimatePackage>
      */
-    public function regenerateFromTemplates(Estimate $estimate): Collection
+    public function regenerateFromTemplates(Estimate $estimate, ?ServiceCategory $serviceCategory = null): Collection
     {
         $this->clearGeneratedPackages($estimate);
 
-        return $this->generateFromTemplates($estimate);
+        return $this->generateFromTemplates($estimate, $serviceCategory);
     }
 }

@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\Estimate;
 use App\Models\EstimatePackage;
 use App\Models\EstimateSignature;
+use App\Models\ServiceCategory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -174,6 +175,16 @@ class EstimatePackageFactory extends Factory
             'warranty_price' => $price,
             'warranty_years' => $years,
             'warranty_type' => $type,
+        ]);
+    }
+
+    /**
+     * Associate with a specific service category.
+     */
+    public function forService(ServiceCategory $category): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => $category->id,
         ]);
     }
 }

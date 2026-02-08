@@ -32,6 +32,10 @@ new class extends Component {
 
     public ?string $selectedTier = null;
 
+    public bool $showWarrantyPicker = false;
+
+    public ?string $selectedWarrantyTier = null;
+
     /** @var array<int, bool> */
     public array $selectedPackageItems = [];
 
@@ -278,6 +282,7 @@ new class extends Component {
 
     /**
      * Select a package tier (for new template system).
+     * Opens the warranty picker for the customer to choose warranty level.
      */
     public function selectTier(string $tier): void
     {
@@ -286,16 +291,84 @@ new class extends Component {
         }
 
         $this->selectedTier = $tier;
+        $this->showWarrantyPicker = true;
+        $this->selectedWarrantyTier = null;
+    }
+
+    /**
+     * Get available warranty options from all active package templates.
+     *
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    #[Computed]
+    public function warrantyOptions(): \Illuminate\Support\Collection
+    {
+        $paintingTotal = $this->getPaintingTotal();
+
+        return PackageTemplate::active()
+            ->ordered()
+            ->get()
+            ->map(fn (PackageTemplate $t) => [
+                'tier' => $t->tier,
+                'name' => $t->warranty_description,
+                'months' => $t->warranty_months,
+                'percent' => (float) $t->warranty_percent,
+                'cost' => $t->calculateWarrantyCost($paintingTotal),
+            ]);
+    }
+
+    /**
+     * Select a warranty level.
+     */
+    public function selectWarranty(string $tier): void
+    {
+        $this->selectedWarrantyTier = $tier;
+    }
+
+    /**
+     * Confirm the tier + warranty selection.
+     */
+    public function confirmSelection(): void
+    {
+        if (! $this->canModify() || ! $this->selectedTier) {
+            return;
+        }
+
+        // Apply the selected warranty tier to the template data
+        if ($this->selectedWarrantyTier) {
+            $warrantyTemplate = PackageTemplate::where('tier', $this->selectedWarrantyTier)->active()->first();
+            if ($warrantyTemplate) {
+                $paintingTotal = $this->getPaintingTotal();
+                $warrantyCost = $warrantyTemplate->calculateWarrantyCost($paintingTotal);
+
+                // Update the selected template's warranty data in the packageTemplates array
+                $this->packageTemplates = collect($this->packageTemplates)->map(function (array $template) use ($warrantyTemplate, $warrantyCost) {
+                    if ($template['tier'] === $this->selectedTier) {
+                        $template['warranty_months'] = $warrantyTemplate->warranty_months;
+                        $template['warranty_description'] = $warrantyTemplate->warranty_description;
+                        $template['warranty_percent'] = (float) $warrantyTemplate->warranty_percent;
+                        $template['warranty_amount'] = $warrantyCost;
+                    }
+
+                    return $template;
+                })->toArray();
+            }
+        }
+
+        $this->showWarrantyPicker = false;
 
         // Log activity
         EstimateActivity::log(
             $this->estimate,
             'package_tier_selected',
-            "Package tier '{$tier}' selected",
-            ['tier' => $tier]
+            "Package tier '{$this->selectedTier}' selected with warranty '{$this->selectedWarrantyTier}'",
+            [
+                'tier' => $this->selectedTier,
+                'warranty_tier' => $this->selectedWarrantyTier,
+            ]
         );
 
-        $this->dispatch('tier-selected', tier: $tier);
+        $this->dispatch('tier-selected', tier: $this->selectedTier);
     }
 
     /**
@@ -385,32 +458,10 @@ new class extends Component {
             return 0.0;
         }
 
-        // If package has no items, use the package's stored total
-        if (empty($selectedPackage['items'])) {
-            return (float) $selectedPackage['total'];
-        }
-
-        // Calculate total from approved items only
-        $approvedItemsTotal = collect($selectedPackage['items'])
-            ->filter(fn ($item) => $item['is_included'] && $item['customer_approved'])
-            ->sum('price');
-
-        // If no items are approved but package has items, still show $0
-        // But if ALL items are approved, we want to show the full amount
-
-        // Add warranty price if present
-        $warrantyPrice = $selectedPackage['warranty_price'] ?? 0;
-
-        // Apply discount
-        $baseAmount = $approvedItemsTotal + $warrantyPrice;
-        $discountAmount = $selectedPackage['discount_amount'] ?? 0;
-        $taxableAmount = $baseAmount - $discountAmount;
-
-        // Apply tax
-        $taxRate = $selectedPackage['tax_rate'] ?? 0;
-        $taxAmount = $taxableAmount * ($taxRate / 100);
-
-        return round($taxableAmount + $taxAmount, 2);
+        // Use the package's stored total which is calculated by EstimatePackage::calculateTotals().
+        // That method correctly groups surfaces by area and uses area-level pricing
+        // (which includes cleanup, sundries, and addon costs).
+        return (float) $selectedPackage['total'];
     }
 
     #[Computed]
@@ -476,6 +527,7 @@ new class extends Component {
         $this->dispatch('proceed-to-signature', [
             'packageId' => $this->usePackageTemplates ? null : $this->selectedPackageId,
             'packageTier' => $this->usePackageTemplates ? $this->selectedTier : null,
+            'warrantyTier' => $this->usePackageTemplates ? $this->selectedWarrantyTier : null,
             'finalTotal' => $this->finalTotal,
             'depositAmount' => $this->depositAmount,
             'balanceDue' => $this->balanceDue,
@@ -484,6 +536,12 @@ new class extends Component {
 
     #[On('estimate-accepted')]
     public function handleEstimateAccepted(): void
+    {
+        $this->estimate = $this->estimate->fresh();
+    }
+
+    #[On('amendments-acknowledged')]
+    public function handleAmendmentsAcknowledged(): void
     {
         $this->estimate = $this->estimate->fresh();
     }

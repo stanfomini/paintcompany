@@ -21,6 +21,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
     #[Validate('nullable|string|max:1000')]
     public string $bio = '';
 
+    #[Validate('nullable|exists:service_categories,id')]
+    public ?int $serviceCategoryId = null;
+
     /** @var array<string> */
     public array $specialties = [];
 
@@ -49,6 +52,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
         $this->hourly_rate = $profile->hourly_rate ? (string) $profile->hourly_rate : '';
         $this->bio = $profile->bio ?? '';
         $this->specialties = $profile->specialties ?? [];
+        $this->serviceCategoryId = $profile->service_category_id;
     }
 
     public function save(): void
@@ -65,6 +69,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
             'hourly_rate' => $this->hourly_rate !== '' ? $this->hourly_rate : null,
             'bio' => $this->bio ?: null,
             'specialties' => $this->specialties,
+            'service_category_id' => $this->serviceCategoryId,
         ]);
 
         session()->flash('success', 'Settings saved successfully.');
@@ -105,6 +110,17 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
                 <flux:label>Phone Number</flux:label>
                 <flux:input wire:model="phone" type="tel" placeholder="(555) 123-4567" />
                 <flux:error name="phone" />
+            </flux:field>
+
+            <flux:field>
+                <flux:label>Service Category</flux:label>
+                <flux:select wire:model="serviceCategoryId" placeholder="Select your service...">
+                    @foreach (\App\Models\ServiceCategory::active()->ordered()->get() as $category)
+                        <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:description>What type of work does your crew perform? This determines which jobs you're eligible for.</flux:description>
+                <flux:error name="serviceCategoryId" />
             </flux:field>
 
             <flux:field>

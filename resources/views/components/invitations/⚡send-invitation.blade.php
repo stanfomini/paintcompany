@@ -1,7 +1,10 @@
 <?php
 
+use App\Models\ServiceCategory;
 use App\Services\InvitationService;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 new class extends Component {
@@ -9,9 +12,17 @@ new class extends Component {
 
     public string $invitedUserType = '';
 
+    public ?int $serviceCategoryId = null;
+
     public bool $showModal = false;
 
     public array $invitableTypes = [];
+
+    #[Computed]
+    public function serviceCategories(): Collection
+    {
+        return ServiceCategory::active()->ordered()->get();
+    }
 
     public function mount(): void
     {
@@ -32,7 +43,7 @@ new class extends Component {
     public function closeModal(): void
     {
         $this->showModal = false;
-        $this->reset(['email', 'invitedUserType']);
+        $this->reset(['email', 'invitedUserType', 'serviceCategoryId']);
         $this->invitedUserType = $this->invitableTypes[0] ?? '';
     }
 
@@ -41,13 +52,14 @@ new class extends Component {
         $this->validate([
             'email' => ['required', 'email', 'max:255'],
             'invitedUserType' => ['required', 'in:internal,agent,customer,crew'],
+            'serviceCategoryId' => $this->invitedUserType === 'crew' ? ['required', 'exists:service_categories,id'] : ['nullable'],
         ]);
 
         $invitationService = app(InvitationService::class);
         $user = Auth::user();
 
         try {
-            $invitationService->sendInvitation($user, $this->email, $this->invitedUserType);
+            $invitationService->sendInvitation($user, $this->email, $this->invitedUserType, $this->serviceCategoryId);
 
             $this->dispatch('invitation-sent');
             session()->flash('success', "Invitation sent to {$this->email}");
@@ -89,7 +101,7 @@ new class extends Component {
                     </flux:field>
 
                     <flux:field>
-                        <flux:select wire:model="invitedUserType" label="User Type">
+                        <flux:select wire:model.live="invitedUserType" label="User Type">
                             @foreach ($invitableTypes as $type)
                                 <option value="{{ $type }}">
                                     {{ match($type) { 'internal' => 'Team Member', 'crew' => 'Crew Member', default => ucfirst($type) } }}
@@ -100,6 +112,19 @@ new class extends Component {
                             <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
                         @enderror
                     </flux:field>
+
+                    @if ($invitedUserType === 'crew')
+                        <flux:field>
+                            <flux:select wire:model="serviceCategoryId" label="Service Category" placeholder="Select service...">
+                                @foreach ($this->serviceCategories as $category)
+                                    <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                                @endforeach
+                            </flux:select>
+                            @error('serviceCategoryId')
+                                <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
+                            @enderror
+                        </flux:field>
+                    @endif
 
                     <div class="flex justify-end gap-3 pt-4">
                         <flux:button type="button" wire:click="closeModal" variant="ghost">
