@@ -35,6 +35,38 @@ class JobCostCard extends Model
         'is_manual',
         'status',
         'notes',
+        // COGS decomposition
+        'labor_cost',
+        'cleanup_cost',
+        'sundries_cost',
+        'material_tax',
+        'labor_tax',
+        'addon_cost',
+        'items_vendor_cost',
+        'warranty_reserve',
+        'total_cogs',
+        // Hours
+        'labor_hours',
+        'cleanup_hours',
+        'total_hours',
+        // Profit snapshot
+        'projected_gross_profit',
+        'projected_gross_profit_percent',
+        'crew_bonus',
+        // Actual tracking
+        'actual_material_cost',
+        'actual_labor_cost',
+        'actual_subcontractor_cost',
+        'actual_other_cost',
+        'actual_total_cost',
+        'actual_notes',
+        // Payment summary
+        'total_invoiced',
+        'total_collected',
+        'balance_due',
+        // Metadata
+        'scope_type',
+        'settings_snapshot',
     ];
 
     protected function casts(): array
@@ -50,6 +82,36 @@ class JobCostCard extends Model
             'is_manual' => 'boolean',
             'status' => 'string',
             'year' => 'integer',
+            // COGS decomposition
+            'labor_cost' => 'decimal:2',
+            'cleanup_cost' => 'decimal:2',
+            'sundries_cost' => 'decimal:2',
+            'material_tax' => 'decimal:2',
+            'labor_tax' => 'decimal:2',
+            'addon_cost' => 'decimal:2',
+            'items_vendor_cost' => 'decimal:2',
+            'warranty_reserve' => 'decimal:2',
+            'total_cogs' => 'decimal:2',
+            // Hours
+            'labor_hours' => 'decimal:2',
+            'cleanup_hours' => 'decimal:2',
+            'total_hours' => 'decimal:2',
+            // Profit snapshot
+            'projected_gross_profit' => 'decimal:2',
+            'projected_gross_profit_percent' => 'decimal:2',
+            'crew_bonus' => 'decimal:2',
+            // Actual tracking
+            'actual_material_cost' => 'decimal:2',
+            'actual_labor_cost' => 'decimal:2',
+            'actual_subcontractor_cost' => 'decimal:2',
+            'actual_other_cost' => 'decimal:2',
+            'actual_total_cost' => 'decimal:2',
+            // Payment summary
+            'total_invoiced' => 'decimal:2',
+            'total_collected' => 'decimal:2',
+            'balance_due' => 'decimal:2',
+            // Metadata
+            'settings_snapshot' => 'array',
         ];
     }
 
@@ -90,8 +152,10 @@ class JobCostCard extends Model
         return $this->hasMany(JobCostCardAllocation::class);
     }
 
+    // ─── Legacy computed attributes (unchanged for backwards compatibility) ───
+
     /**
-     * Get the total cost (sum of all cost columns).
+     * Get the total cost (sum of all legacy cost columns).
      */
     public function getTotalCostAttribute(): float
     {
@@ -212,5 +276,75 @@ class JobCostCard extends Model
         }
 
         return round((float) $this->allocation_total / (float) $this->price * 100, 1);
+    }
+
+    // ─── New computed attributes ───
+
+    /**
+     * Whether actual costs have been entered.
+     */
+    public function getHasActualsAttribute(): bool
+    {
+        return $this->actual_material_cost !== null
+            || $this->actual_labor_cost !== null
+            || $this->actual_subcontractor_cost !== null
+            || $this->actual_other_cost !== null;
+    }
+
+    /**
+     * Variance between projected total COGS and actual total cost.
+     * Positive = under budget, negative = over budget.
+     */
+    public function getCostVarianceAttribute(): ?float
+    {
+        if (! $this->has_actuals || $this->actual_total_cost === null) {
+            return null;
+        }
+
+        return round((float) $this->total_cogs - (float) $this->actual_total_cost, 2);
+    }
+
+    /**
+     * Variance percentage (positive = under budget).
+     */
+    public function getCostVariancePercentAttribute(): ?float
+    {
+        if ($this->cost_variance === null || (float) $this->total_cogs <= 0) {
+            return null;
+        }
+
+        return round($this->cost_variance / (float) $this->total_cogs * 100, 1);
+    }
+
+    /**
+     * Percentage of invoiced amount that has been collected.
+     */
+    public function getCollectionPercentAttribute(): float
+    {
+        if ((float) $this->total_invoiced <= 0) {
+            return 0.0;
+        }
+
+        return round((float) $this->total_collected / (float) $this->total_invoiced * 100, 1);
+    }
+
+    /**
+     * Whether the balance due is zero or negative (fully paid).
+     */
+    public function getIsFullyPaidAttribute(): bool
+    {
+        return (float) $this->total_invoiced > 0 && (float) $this->balance_due <= 0;
+    }
+
+    /**
+     * Gross profit using actuals if available, otherwise projected.
+     */
+    public function getEffectiveGrossProfitAttribute(): float
+    {
+        if ($this->has_actuals && $this->actual_total_cost !== null) {
+            return (float) $this->price - (float) $this->actual_total_cost;
+        }
+
+        return (float) $this->price - (float) $this->total_cogs;
     }
 }

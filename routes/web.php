@@ -120,6 +120,9 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::middleware(['permission:jobs.view'])->group(function () {
         Route::livewire('/jobs', 'jobs.kanban')->name('jobs.index');
         Route::livewire('/jobs/{job}', 'jobs.show')->name('jobs.show');
+        Route::livewire('/jobs/{job}/cost-card', 'jobs.cost-card')
+            ->middleware('permission:financials.view_cost_breakdown')
+            ->name('jobs.cost-card');
     });
 
     // Planner routes

@@ -3,6 +3,7 @@
 use App\Models\ChatThread;
 use App\Models\Invoice;
 use App\Models\Job;
+use App\Models\ServiceCategory;
 use App\Services\ChatService;
 use App\Services\InvoiceService;
 use App\Services\JobService;
@@ -29,11 +30,31 @@ new class extends Component {
             'deal.chatThread',
             'estimate',
             'colors.selectedBy',
-            'crews',
+            'crews.crewProfile',
             'acceptedCrew',
+            'serviceRequirements.serviceCategory',
         ]);
 
         $this->ensureChatParticipant();
+    }
+
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:job.{$this->job->id},stage.changed" => 'onStageChanged',
+            "echo-private:job.{$this->job->id},date.updated" => 'onDateUpdated',
+            "echo-private:job.{$this->job->id},color.updated" => 'onColorUpdated',
+            "echo-private:job.{$this->job->id},crew.dispatched" => 'onCrewDispatched',
+            "echo-private:job.{$this->job->id},job.accepted" => 'onJobAccepted',
+            "echo-private:job.{$this->job->id},prep.plan.updated" => 'onPrepPlanUpdated',
+            "echo-private:job.{$this->job->id},prep.approval.changed" => 'onPrepApprovalChanged',
+            "echo-private:job.{$this->job->id},photo.updated" => 'onPhotoUpdated',
+            "echo-private:job.{$this->job->id},job.notification" => 'onJobNotification',
+            'job-updated' => 'refreshJob',
+            'color-updated' => 'refreshJob',
+            'crew-dispatched' => 'refreshJob',
+            'message-sent' => 'onMessageSent',
+        ];
     }
 
     private function ensureChatParticipant(): void
@@ -72,6 +93,41 @@ new class extends Component {
             ->with('payments')
             ->latest()
             ->get();
+    }
+
+    #[Computed]
+    public function crewsByCategory(): array
+    {
+        $grouped = [];
+        $categories = [];
+
+        foreach ($this->job->crews as $crew) {
+            $categoryId = $crew->pivot->service_category_id;
+            $key = $categoryId ?? 0;
+
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = [];
+            }
+            $grouped[$key][] = $crew;
+
+            if ($categoryId && ! isset($categories[$key])) {
+                $categories[$key] = ServiceCategory::find($categoryId);
+            }
+        }
+
+        $result = [];
+        foreach ($grouped as $key => $crews) {
+            $category = $categories[$key] ?? null;
+            $result[] = [
+                'category' => $category,
+                'label' => $category ? $category->name . ' Crew' : 'General',
+                'icon' => $category->icon ?? 'users',
+                'color' => $category->color ?? 'zinc',
+                'crews' => $crews,
+            ];
+        }
+
+        return $result;
     }
 
     public function createDepositInvoice(): void
@@ -117,9 +173,6 @@ new class extends Component {
         session()->flash('success', "Invoice {$invoice->invoice_number} sent to customer.");
     }
 
-    #[On('job-updated')]
-    #[On('color-updated')]
-    #[On('crew-dispatched')]
     public function refreshJob(): void
     {
         $this->job = $this->job->fresh([
@@ -128,14 +181,61 @@ new class extends Component {
             'deal.chatThread',
             'estimate',
             'colors.selectedBy',
-            'crews',
+            'crews.crewProfile',
             'acceptedCrew',
+            'serviceRequirements.serviceCategory',
         ]);
 
-        unset($this->jobActivities, $this->invoices);
+        unset($this->jobActivities, $this->invoices, $this->crewsByCategory);
     }
 
-    #[On('message-sent')]
+    public function onStageChanged(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onDateUpdated(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onColorUpdated(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onCrewDispatched(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onJobAccepted(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onPrepPlanUpdated(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onPrepApprovalChanged(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onPhotoUpdated(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onJobNotification($data): void
+    {
+        $this->refreshJob();
+        $message = $data['message'] ?? 'Job updated.';
+        session()->flash('success', $message);
+    }
+
     public function onMessageSent(): void
     {
         $thread = $this->chatThread;
@@ -200,13 +300,20 @@ new class extends Component {
                     {{ $job->stage_label }}
                 </flux:badge>
             </div>
-            @can('jobs.edit')
-                @if (! $job->isCompleted())
-                    <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
-                        Advance Stage
+            <div class="flex items-center gap-2">
+                @can('financials.view_cost_breakdown')
+                    <flux:button variant="ghost" :href="route('jobs.cost-card', $job)" icon="calculator" size="sm" wire:navigate>
+                        Cost Card
                     </flux:button>
-                @endif
-            @endcan
+                @endcan
+                @can('jobs.edit')
+                    @if (! $job->isCompleted())
+                        <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
+                            Advance Stage
+                        </flux:button>
+                    @endif
+                @endcan
+            </div>
         </div>
 
         @if (session('success'))
@@ -432,32 +539,72 @@ new class extends Component {
             </div>
         @endif
 
-        {{-- Crew Section --}}
+        {{-- Service Requirements Summary --}}
+        @if ($job->serviceRequirements->isNotEmpty())
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+                <flux:heading size="sm" class="mb-4">Service Status</flux:heading>
+                <div class="flex flex-wrap gap-3">
+                    @foreach ($job->serviceRequirements as $req)
+                        @php
+                            $reqColor = match ($req->status) {
+                                'accepted' => 'green',
+                                'dispatched' => 'yellow',
+                                'completed' => 'green',
+                                default => 'zinc',
+                            };
+                            $reqIcon = match ($req->status) {
+                                'accepted' => 'check-circle',
+                                'dispatched' => 'clock',
+                                'completed' => 'check-badge',
+                                default => 'ellipsis-horizontal-circle',
+                            };
+                        @endphp
+                        <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800" wire:key="req-{{ $req->id }}">
+                            <flux:icon name="{{ $reqIcon }}" class="w-4 h-4 text-{{ $reqColor }}-500" />
+                            <flux:text class="text-sm font-medium">{{ $req->serviceCategory?->name ?? 'Unknown' }}:</flux:text>
+                            <flux:badge size="sm" color="{{ $reqColor }}">{{ ucfirst($req->status) }}</flux:badge>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
+        {{-- Crew Section (grouped by service category) --}}
         @if ($job->crews->count() > 0)
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
                 <flux:heading size="sm" class="mb-4">Assigned Crews</flux:heading>
-                <div class="space-y-3">
-                    @foreach ($job->crews as $crew)
-                        <div class="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="crew-{{ $crew->id }}">
-                            <div class="flex items-center gap-3">
-                                <flux:avatar size="sm" name="{{ $crew->name }}" />
-                                <div>
-                                    <flux:text class="font-medium text-sm">{{ $crew->name }}</flux:text>
-                                    @if ($crew->crewProfile)
-                                        <flux:text class="text-xs text-zinc-500">
-                                            Crew of {{ $crew->crewProfile->crew_size }}
-                                        </flux:text>
-                                    @endif
-                                </div>
+                <div class="space-y-5">
+                    @foreach ($this->crewsByCategory as $group)
+                        <div>
+                            <div class="flex items-center gap-2 mb-3">
+                                <flux:icon name="{{ $group['icon'] }}" class="w-4 h-4 text-{{ $group['color'] }}-500" />
+                                <flux:text class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ $group['label'] }}</flux:text>
                             </div>
-                            @php
-                                $statusColor = match ($crew->pivot->status) {
-                                    'accepted' => 'green',
-                                    'rejected' => 'red',
-                                    default => 'yellow',
-                                };
-                            @endphp
-                            <flux:badge size="sm" color="{{ $statusColor }}">{{ ucfirst($crew->pivot->status) }}</flux:badge>
+                            <div class="space-y-2">
+                                @foreach ($group['crews'] as $crew)
+                                    <div class="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="crew-{{ $crew->id }}-{{ $crew->pivot->service_category_id }}">
+                                        <div class="flex items-center gap-3">
+                                            <flux:avatar size="sm" name="{{ $crew->name }}" />
+                                            <div>
+                                                <flux:text class="font-medium text-sm">{{ $crew->name }}</flux:text>
+                                                @if ($crew->crewProfile)
+                                                    <flux:text class="text-xs text-zinc-500">
+                                                        Crew of {{ $crew->crewProfile->crew_size }}
+                                                    </flux:text>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        @php
+                                            $statusColor = match ($crew->pivot->status) {
+                                                'accepted' => 'green',
+                                                'rejected' => 'red',
+                                                default => 'yellow',
+                                            };
+                                        @endphp
+                                        <flux:badge size="sm" color="{{ $statusColor }}">{{ ucfirst($crew->pivot->status) }}</flux:badge>
+                                    </div>
+                                @endforeach
+                            </div>
                         </div>
                     @endforeach
                 </div>
@@ -573,6 +720,9 @@ new class extends Component {
                                 'colors_confirmed_company', 'colors_confirmed_customer', 'color_added' => 'bg-amber-500',
                                 'crew_dispatched', 'crew_accepted' => 'bg-teal-500',
                                 'crew_rejected' => 'bg-red-500',
+                                'photo_uploaded', 'photo_annotated' => 'bg-cyan-500',
+                                'photo_commented' => 'bg-indigo-500',
+                                'photo_deleted' => 'bg-red-500',
                                 default => 'bg-zinc-400',
                             } }}"></div>
                             <div class="flex-1 min-w-0">

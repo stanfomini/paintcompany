@@ -163,6 +163,18 @@ class Invoice extends Model
         }
 
         $this->save();
+
+        // Sync payment summary to the job's cost card
+        if ($this->job_id) {
+            try {
+                $job = $this->job;
+                if ($job) {
+                    app(\App\Services\JobCostCardService::class)->syncPaymentSummary($job);
+                }
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
     }
 
     public function isPaid(): bool

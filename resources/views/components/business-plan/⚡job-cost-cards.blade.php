@@ -11,23 +11,47 @@ use Livewire\Component;
 new class extends Component
 {
     public int $year;
+
     public string $viewMode = 'summary';
 
     // Modal state
     public bool $showModal = false;
+
     public bool $showDeleteModal = false;
+
     public ?int $editingCardId = null;
+
     public ?int $deletingCardId = null;
 
     // Form fields
     public string $clientName = '';
+
     public string $price = '0';
+
     public string $productionMgmtLabor = '0';
+
     public string $subcontractorCost = '0';
+
     public string $wcInsuranceBurden = '0';
+
     public string $materialCost = '0';
+
     public string $salesCommission = '0';
+
     public string $notes = '';
+
+    // COGS breakdown fields
+    public string $laborCost = '0';
+
+    public string $cleanupCost = '0';
+
+    public string $sundriesCost = '0';
+
+    public string $materialTax = '0';
+
+    public string $laborTax = '0';
+
+    public string $addonCost = '0';
 
     public string $syncMessage = '';
 
@@ -54,7 +78,7 @@ new class extends Component
     #[Computed]
     public function service(): JobCostCardService
     {
-        return new JobCostCardService();
+        return new JobCostCardService;
     }
 
     #[Computed]
@@ -79,12 +103,12 @@ new class extends Component
 
     public function syncFromJobs(): void
     {
-        $service = new JobCostCardService();
+        $service = new JobCostCardService;
         $synced = $service->backfillMissingCards($this->year);
 
         if ($synced > 0) {
             unset($this->cards, $this->totals);
-            $this->syncMessage = "{$synced} job cost " . Str::plural('card', $synced) . ' synced from estimates.';
+            $this->syncMessage = "{$synced} job cost ".Str::plural('card', $synced).' synced from estimates.';
         }
     }
 
@@ -134,6 +158,12 @@ new class extends Component
         $this->wcInsuranceBurden = (string) $card->wc_insurance_burden;
         $this->materialCost = (string) $card->material_cost;
         $this->salesCommission = (string) $card->sales_commission;
+        $this->laborCost = (string) $card->labor_cost;
+        $this->cleanupCost = (string) $card->cleanup_cost;
+        $this->sundriesCost = (string) $card->sundries_cost;
+        $this->materialTax = (string) $card->material_tax;
+        $this->laborTax = (string) $card->labor_tax;
+        $this->addonCost = (string) $card->addon_cost;
         $this->notes = $card->notes ?? '';
         $this->showModal = true;
     }
@@ -150,6 +180,12 @@ new class extends Component
             'wcInsuranceBurden' => 'required|numeric|min:0',
             'materialCost' => 'required|numeric|min:0',
             'salesCommission' => 'required|numeric|min:0',
+            'laborCost' => 'numeric|min:0',
+            'cleanupCost' => 'numeric|min:0',
+            'sundriesCost' => 'numeric|min:0',
+            'materialTax' => 'numeric|min:0',
+            'laborTax' => 'numeric|min:0',
+            'addonCost' => 'numeric|min:0',
         ]);
 
         $settings = CompanySetting::getInstance();
@@ -164,6 +200,12 @@ new class extends Component
             'wc_insurance_burden' => (float) $this->wcInsuranceBurden,
             'material_cost' => (float) $this->materialCost,
             'sales_commission' => (float) $this->salesCommission,
+            'labor_cost' => (float) $this->laborCost,
+            'cleanup_cost' => (float) $this->cleanupCost,
+            'sundries_cost' => (float) $this->sundriesCost,
+            'material_tax' => (float) $this->materialTax,
+            'labor_tax' => (float) $this->laborTax,
+            'addon_cost' => (float) $this->addonCost,
             'notes' => $this->notes ?: null,
             'is_manual' => true,
         ];
@@ -305,6 +347,12 @@ new class extends Component
         $this->wcInsuranceBurden = '0';
         $this->materialCost = '0';
         $this->salesCommission = '0';
+        $this->laborCost = '0';
+        $this->cleanupCost = '0';
+        $this->sundriesCost = '0';
+        $this->materialTax = '0';
+        $this->laborTax = '0';
+        $this->addonCost = '0';
         $this->notes = '';
         $this->editingCardId = null;
         $this->resetValidation();
@@ -418,6 +466,32 @@ new class extends Component
                     </div>
                 </div>
             </div>
+            @if ($this->totals['total_hours'] > 0 || $this->totals['total_invoiced'] > 0)
+                <div class="mt-3 grid grid-cols-2 gap-4 border-t border-blue-200 pt-3 dark:border-blue-800 sm:grid-cols-4">
+                    @if ($this->totals['total_hours'] > 0)
+                        <div>
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Total Hours</div>
+                            <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">{{ number_format($this->totals['total_hours'], 1) }}</div>
+                        </div>
+                    @endif
+                    @if ($this->totals['total_invoiced'] > 0)
+                        <div>
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Invoiced</div>
+                            <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['total_invoiced'], 0) }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Collected</div>
+                            <div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${{ number_format($this->totals['total_collected'], 0) }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Balance Due</div>
+                            <div class="text-lg font-bold {{ $this->totals['balance_due'] > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100' }}">
+                                ${{ number_format($this->totals['balance_due'], 0) }}
+                            </div>
+                        </div>
+                    @endif
+                </div>
+            @endif
         </div>
     @endif
 
@@ -478,7 +552,13 @@ new class extends Component
                         <tr wire:key="card-{{ $card->id ?? $card->job_id ?? $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
                                 <div class="flex items-center gap-2">
-                                    {{ $card->client_name }}
+                                    @if ($card->job_id)
+                                        <a href="{{ route('jobs.cost-card', $card->job_id) }}" class="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300" wire:navigate>
+                                            {{ $card->client_name }}
+                                        </a>
+                                    @else
+                                        {{ $card->client_name }}
+                                    @endif
                                     @if (! $card->is_manual)
                                         <flux:badge size="sm" color="blue">Auto</flux:badge>
                                     @endif
@@ -486,6 +566,15 @@ new class extends Component
                                         <flux:badge size="sm" :color="$this->statusBadgeColor($card->status)" inset="top bottom">
                                             {{ $this->statusLabel($card->status) }}
                                         </flux:badge>
+                                    @endif
+                                    @if ((float) $card->total_invoiced > 0)
+                                        @if ($card->is_fully_paid)
+                                            <flux:badge size="sm" color="green" inset="top bottom">Paid</flux:badge>
+                                        @elseif ((float) $card->total_collected > 0)
+                                            <flux:badge size="sm" color="amber" inset="top bottom">{{ $card->collection_percent }}%</flux:badge>
+                                        @else
+                                            <flux:badge size="sm" color="red" inset="top bottom">Unpaid</flux:badge>
+                                        @endif
                                     @endif
                                 </div>
                             </td>
@@ -723,6 +812,54 @@ new class extends Component
                     <flux:input wire:model="salesCommission" type="number" step="0.01" min="0" />
                     <flux:error name="salesCommission" />
                 </flux:field>
+            </div>
+
+            {{-- COGS Breakdown (Advanced) --}}
+            <div x-data="{ showCogs: false }">
+                <button type="button" @click="showCogs = !showCogs" class="flex items-center gap-1 text-sm text-blue-600 hover:underline dark:text-blue-400">
+                    <flux:icon x-show="!showCogs" name="chevron-right" variant="mini" class="size-4" />
+                    <flux:icon x-show="showCogs" name="chevron-down" variant="mini" class="size-4" />
+                    COGS Breakdown
+                </button>
+                <div x-show="showCogs" x-collapse class="mt-3 space-y-3">
+                    <div class="grid grid-cols-2 gap-4">
+                        <flux:field>
+                            <flux:label>Labor Cost</flux:label>
+                            <flux:input wire:model="laborCost" type="number" step="0.01" min="0" />
+                            <flux:error name="laborCost" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>Cleanup Cost</flux:label>
+                            <flux:input wire:model="cleanupCost" type="number" step="0.01" min="0" />
+                            <flux:error name="cleanupCost" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>Sundries Cost</flux:label>
+                            <flux:input wire:model="sundriesCost" type="number" step="0.01" min="0" />
+                            <flux:error name="sundriesCost" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>Material Tax</flux:label>
+                            <flux:input wire:model="materialTax" type="number" step="0.01" min="0" />
+                            <flux:error name="materialTax" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>Labor Tax</flux:label>
+                            <flux:input wire:model="laborTax" type="number" step="0.01" min="0" />
+                            <flux:error name="laborTax" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>Add-on Cost</flux:label>
+                            <flux:input wire:model="addonCost" type="number" step="0.01" min="0" />
+                            <flux:error name="addonCost" />
+                        </flux:field>
+                    </div>
+                </div>
             </div>
 
             <flux:field>

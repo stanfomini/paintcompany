@@ -20,6 +20,7 @@ class JobCostCardAllocation extends Model
         'value',
         'amount',
         'conditions_snapshot',
+        'applied_tier',
     ];
 
     protected function casts(): array
