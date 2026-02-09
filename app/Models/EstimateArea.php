@@ -340,6 +340,79 @@ class EstimateArea extends Model
     }
 
     /**
+     * Get proportionally-allocated customer prices for each surface.
+     * Distributes the area's customer price based on each surface's COGS contribution.
+     * Ensures surface prices sum exactly to the area customer price.
+     *
+     * @return array<int, float> Map of surface_id => proportional customer price
+     */
+    public function getSurfaceCustomerPrices(): array
+    {
+        $customerPrice = $this->getCustomerPrice();
+        $surfaces = $this->surfaces()->where('is_included', true)->get();
+
+        $totalCogs = (float) $surfaces->sum('total');
+
+        if ($totalCogs <= 0 || $surfaces->isEmpty()) {
+            return [];
+        }
+
+        $prices = [];
+        $allocated = 0.0;
+        $lastId = $surfaces->last()->id;
+
+        foreach ($surfaces as $surface) {
+            if ($surface->id === $lastId) {
+                // Last surface gets the remainder to prevent rounding drift
+                $prices[$surface->id] = round($customerPrice - $allocated, 2);
+            } else {
+                $price = round(((float) $surface->total / $totalCogs) * $customerPrice, 2);
+                $prices[$surface->id] = $price;
+                $allocated += $price;
+            }
+        }
+
+        return $prices;
+    }
+
+    /**
+     * Get the customer price for a subset of surfaces in this area.
+     * Uses proportional allocation: (included COGS / total COGS) × full area price.
+     *
+     * @param  array<int>  $includedSurfaceIds  Surface IDs to include in pricing
+     */
+    public function getPartialCustomerPrice(array $includedSurfaceIds): float
+    {
+        if (empty($includedSurfaceIds)) {
+            return 0.0;
+        }
+
+        if ($this->is_fixed_price) {
+            return (float) $this->fixed_price_amount;
+        }
+
+        $allSurfaces = $this->surfaces()->where('is_included', true)->get();
+        $totalCogs = (float) $allSurfaces->sum('total');
+
+        if ($totalCogs <= 0) {
+            return 0.0;
+        }
+
+        $includedCogs = (float) $allSurfaces->whereIn('id', $includedSurfaceIds)->sum('total');
+
+        if ($includedCogs <= 0) {
+            return 0.0;
+        }
+
+        // All surfaces included - return full price (avoids rounding drift)
+        if ($includedCogs >= $totalCogs) {
+            return $this->getCustomerPrice();
+        }
+
+        return round(($includedCogs / $totalCogs) * $this->getCustomerPrice(), 2);
+    }
+
+    /**
      * Calculate the OTD (Out The Door) price for this area using PBP formula.
      * ALIAS for getCustomerPrice() - kept for backward compatibility.
      *

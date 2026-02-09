@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\BudgetCategory;
 use App\Models\CompanySetting;
 use App\Models\Vendor;
 use Illuminate\Support\Facades\Auth;
@@ -33,6 +34,7 @@ new class extends Component
     public string $vendorCategory = 'supplier';
     public string $vendorPaymentTermsDays = '';
     public string $vendorNotes = '';
+    public ?string $vendorBudgetCategoryId = null;
 
     // Subcontractor compliance fields
     public bool $vendorW9OnFile = false;
@@ -56,6 +58,22 @@ new class extends Component
     public function canManage(): bool
     {
         return Auth::user()?->can('vendors.manage') ?? false;
+    }
+
+    #[Computed]
+    public function budgetCategories(): \Illuminate\Support\Collection
+    {
+        $settings = CompanySetting::getInstance();
+
+        return BudgetCategory::where('company_setting_id', $settings->id)
+            ->whereIn('section', [
+                BudgetCategory::SECTION_VARIABLE_EXPENSE,
+                BudgetCategory::SECTION_VEHICLE_EXPENSE,
+                BudgetCategory::SECTION_BUSINESS_EXPENSE,
+            ])
+            ->orderBy('section')
+            ->orderBy('sort_order')
+            ->get();
     }
 
     #[Computed]
@@ -101,6 +119,7 @@ new class extends Component
             'editingVendorId', 'vendorName', 'vendorContactName', 'vendorEmail',
             'vendorPhone', 'vendorAddressLine1', 'vendorAddressLine2', 'vendorCity',
             'vendorState', 'vendorZip', 'vendorPaymentTermsDays', 'vendorNotes',
+            'vendorBudgetCategoryId',
             'vendorW9OnFile', 'vendorHoldHarmless', 'vendorCertificateOfInsurance',
             'vendorInsuranceExpiration', 'vendorAdditionalInsured', 'vendorWorkersComp',
             'vendorWorkersCompExpiration', 'vendorRejectionForm',
@@ -127,6 +146,7 @@ new class extends Component
         $this->vendorCategory = $vendor->category;
         $this->vendorPaymentTermsDays = $vendor->payment_terms_days ? (string) $vendor->payment_terms_days : '';
         $this->vendorNotes = $vendor->notes ?? '';
+        $this->vendorBudgetCategoryId = $vendor->budget_category_id ? (string) $vendor->budget_category_id : null;
 
         // Compliance fields
         $this->vendorW9OnFile = (bool) $vendor->w9_on_file;
@@ -165,6 +185,7 @@ new class extends Component
             'state' => $this->vendorState ?: null,
             'zip' => $this->vendorZip ?: null,
             'category' => $this->vendorCategory,
+            'budget_category_id' => $this->vendorBudgetCategoryId ?: null,
             'payment_terms_days' => $this->vendorPaymentTermsDays ? (int) $this->vendorPaymentTermsDays : null,
             'notes' => $this->vendorNotes ?: null,
         ];
@@ -399,10 +420,22 @@ new class extends Component
                         </flux:field>
                     </div>
 
-                    <flux:field>
-                        <flux:label>Payment Terms (days)</flux:label>
-                        <flux:input wire:model="vendorPaymentTermsDays" type="number" min="0" placeholder="30" />
-                    </flux:field>
+                    <div class="grid grid-cols-2 gap-4">
+                        <flux:field>
+                            <flux:label>Payment Terms (days)</flux:label>
+                            <flux:input wire:model="vendorPaymentTermsDays" type="number" min="0" placeholder="30" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>Default Budget Category</flux:label>
+                            <flux:select wire:model="vendorBudgetCategoryId">
+                                <option value="">None</option>
+                                @foreach ($this->budgetCategories as $cat)
+                                    <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                                @endforeach
+                            </flux:select>
+                        </flux:field>
+                    </div>
 
                     {{-- Subcontractor Compliance Section --}}
                     @if ($vendorCategory === 'subcontractor')

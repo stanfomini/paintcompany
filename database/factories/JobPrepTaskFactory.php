@@ -55,6 +55,16 @@ class JobPrepTaskFactory extends Factory
     }
 
     /**
+     * In-progress task.
+     */
+    public function inProgress(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => JobPrepTask::STATUS_IN_PROGRESS,
+        ]);
+    }
+
+    /**
      * Completed task.
      */
     public function completed(): static

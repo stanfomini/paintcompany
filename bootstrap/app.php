@@ -57,6 +57,28 @@ return Application::configure(basePath: dirname(__DIR__))
                 if (auth()->guard($guard)->check()) {
                     $user = auth()->guard($guard)->user();
 
+                    // Determine which guard this user should be on based on their type
+                    $correctGuard = match ($user->type) {
+                        'internal' => 'web',
+                        'agent' => 'agent',
+                        'customer' => 'customer',
+                        'crew' => 'crew',
+                        default => 'web',
+                    };
+
+                    // If user is on the wrong guard (e.g. customer logged in via admin form),
+                    // log them out to break any redirect loop and send to correct login
+                    if ($guard !== $correctGuard) {
+                        auth()->guard($guard)->logout();
+
+                        return route(match ($user->type) {
+                            'agent' => 'agent.login',
+                            'customer' => 'customer.login',
+                            'crew' => 'crew.login',
+                            default => 'login',
+                        });
+                    }
+
                     return match ($user->type) {
                         'internal' => route('dashboard'),
                         'agent' => route('agent.dashboard'),
@@ -75,6 +97,30 @@ return Application::configure(basePath: dirname(__DIR__))
             foreach (['web', 'agent', 'customer', 'crew'] as $guard) {
                 if (auth()->guard($guard)->check()) {
                     $user = auth()->guard($guard)->user();
+
+                    // Determine which guard this user should be on
+                    $correctGuard = match ($user->type) {
+                        'internal' => 'web',
+                        'agent' => 'agent',
+                        'customer' => 'customer',
+                        'crew' => 'crew',
+                        default => 'web',
+                    };
+
+                    // If user is on the wrong guard, log them out to prevent redirect loops
+                    if ($guard !== $correctGuard) {
+                        auth()->guard($guard)->logout();
+                        session()->flash('warning', 'Please log in with the correct login page for your account.');
+
+                        return route(match ($user->type) {
+                            'agent' => 'agent.login',
+                            'customer' => 'customer.login',
+                            'crew' => 'crew.login',
+                            default => 'login',
+                        });
+                    }
+
+                    // User is on the correct guard but wrong area - redirect to their dashboard
                     $dashboardRoute = match ($user->type) {
                         'internal' => 'dashboard',
                         'agent' => 'agent.dashboard',
@@ -84,7 +130,6 @@ return Application::configure(basePath: dirname(__DIR__))
                     };
 
                     if ($dashboardRoute) {
-                        // Store flash message in session for next request
                         session()->flash('warning', 'You do not have access to that area.');
 
                         return route($dashboardRoute);
@@ -125,6 +170,33 @@ return Application::configure(basePath: dirname(__DIR__))
             foreach (['web', 'agent', 'customer', 'crew'] as $guard) {
                 if (auth()->guard($guard)->check()) {
                     $user = auth()->guard($guard)->user();
+
+                    // Determine which guard this user should be on
+                    $correctGuard = match ($user->type) {
+                        'internal' => 'web',
+                        'agent' => 'agent',
+                        'customer' => 'customer',
+                        'crew' => 'crew',
+                        default => 'web',
+                    };
+
+                    // If user is on the wrong guard (e.g. customer on web guard),
+                    // log them out to prevent redirect loops
+                    if ($guard !== $correctGuard) {
+                        auth()->guard($guard)->logout();
+                        session()->flash('warning', 'Please log in with the correct login page for your account.');
+
+                        $loginRoute = match ($user->type) {
+                            'agent' => 'agent.login',
+                            'customer' => 'customer.login',
+                            'crew' => 'crew.login',
+                            default => 'login',
+                        };
+
+                        return new \Illuminate\Http\RedirectResponse(route($loginRoute));
+                    }
+
+                    // User is on correct guard but trying to access wrong area
                     $dashboardRoute = match ($user->type) {
                         'internal' => 'dashboard',
                         'agent' => 'agent.dashboard',
@@ -134,7 +206,6 @@ return Application::configure(basePath: dirname(__DIR__))
                     };
 
                     if ($dashboardRoute) {
-                        // Use explicit RedirectResponse to avoid Livewire's Redirector
                         session()->flash('warning', 'You do not have access to that area.');
 
                         return new \Illuminate\Http\RedirectResponse(route($dashboardRoute));

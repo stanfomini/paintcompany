@@ -37,6 +37,7 @@ class Account extends Model
     protected $fillable = [
         'company_setting_id', 'code', 'name', 'type', 'parent_id',
         'is_system', 'normal_balance', 'is_active', 'sort_order',
+        'budget_category_id',
     ];
 
     protected function casts(): array
@@ -61,6 +62,11 @@ class Account extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_id');
+    }
+
+    public function budgetCategory(): BelongsTo
+    {
+        return $this->belongsTo(BudgetCategory::class);
     }
 
     public function journalEntryLines(): HasMany

@@ -24,6 +24,15 @@
                 @can('settings.payment_integrations')
                     <flux:navlist.item :href="route('payment-integrations.edit')" wire:navigate>{{ __('Payment Integrations') }}</flux:navlist.item>
                 @endcan
+                @can('settings.company')
+                    <flux:navlist.item :href="route('service-categories.edit')" wire:navigate>{{ __('Service Categories') }}</flux:navlist.item>
+                @endcan
+                @can('settings.company')
+                    <flux:navlist.item :href="route('budget-mappings.edit')" wire:navigate>{{ __('Budget Mappings') }}</flux:navlist.item>
+                @endcan
+                @can('settings.company')
+                    <flux:navlist.item :href="route('referral.edit')" wire:navigate>{{ __('Referral') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>

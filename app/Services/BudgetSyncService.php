@@ -76,8 +76,8 @@ class BudgetSyncService
         return match ($category->section) {
             BudgetCategory::SECTION_REVENUE => $this->getRevenueActual($category, $from, $to),
             BudgetCategory::SECTION_VARIABLE_EXPENSE => $this->getVariableExpenseActual($category, $year),
-            BudgetCategory::SECTION_VEHICLE_EXPENSE => $this->getJournalExpenseActual('6', $from, $to),
-            BudgetCategory::SECTION_BUSINESS_EXPENSE => $this->getJournalExpenseActual('7', $from, $to),
+            BudgetCategory::SECTION_VEHICLE_EXPENSE,
+            BudgetCategory::SECTION_BUSINESS_EXPENSE => $this->getCategoryExpenseActual($category, $from, $to),
             BudgetCategory::SECTION_MARKETING_EXPENSE => $this->getMarketingExpenseActual($year),
             default => null,
         };
@@ -129,8 +129,10 @@ class BudgetSyncService
         // Map budget category slugs to job cost card columns
         $jccMapping = [
             'production-management-labor' => 'production_mgmt_labor',
+            'production-mgmt-labor' => 'production_mgmt_labor',
             'subcontractors' => 'subcontractor_cost',
             'workers-comp-insurance' => 'wc_insurance_burden',
+            'wc-insurance' => 'wc_insurance_burden',
             'materials' => 'material_cost',
             'sales-commissions' => 'sales_commission',
         ];
@@ -160,24 +162,25 @@ class BudgetSyncService
     }
 
     /**
-     * Fixed expense actual from journal entries for account code series.
+     * Per-category expense actual from journal entries using the budget-account mapping.
+     * Each budget category pulls actuals only from its mapped GL accounts.
      */
-    protected function getJournalExpenseActual(string $codePrefix, Carbon $from, Carbon $to): float
+    protected function getCategoryExpenseActual(BudgetCategory $category, Carbon $from, Carbon $to): ?float
     {
         $mode = $this->accountingService->getAccountingMode();
         $column = $mode === 'accrual' ? 'recognition_date' : 'transaction_date';
 
-        $expenseAccounts = Account::where('company_setting_id', $this->settings->id)
-            ->where('type', Account::TYPE_EXPENSE)
-            ->where('code', 'like', "{$codePrefix}%")
+        // Get account IDs mapped to this specific budget category
+        $accountIds = Account::where('company_setting_id', $this->settings->id)
+            ->where('budget_category_id', $category->id)
             ->where('is_active', true)
             ->pluck('id');
 
-        if ($expenseAccounts->isEmpty()) {
-            return 0.0;
+        if ($accountIds->isEmpty()) {
+            return null;
         }
 
-        $total = JournalEntryLine::whereIn('account_id', $expenseAccounts)
+        $total = JournalEntryLine::whereIn('account_id', $accountIds)
             ->whereHas('journalEntry', function ($q) use ($column, $from, $to) {
                 $q->where('status', JournalEntry::STATUS_POSTED)
                     ->whereNotNull($column)

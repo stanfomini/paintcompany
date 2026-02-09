@@ -93,13 +93,14 @@ describe('Property Index component', function () {
 
     it('can search properties by state', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
-        $customer = Customer::factory()->createdBy($user)->create();
-        $property1 = Property::factory()->forCustomer($customer)->create([
+        $customer1 = Customer::factory()->createdBy($user)->create(['first_name' => 'John', 'last_name' => 'Smith']);
+        $customer2 = Customer::factory()->createdBy($user)->create(['first_name' => 'Jane', 'last_name' => 'Doe']);
+        $property1 = Property::factory()->forCustomer($customer1)->create([
             'address' => '123 Main Street',
             'city' => 'Springfield',
             'state' => 'IL',
         ]);
-        $property2 = Property::factory()->forCustomer($customer)->create([
+        $property2 = Property::factory()->forCustomer($customer2)->create([
             'address' => '456 Oak Avenue',
             'city' => 'Los Angeles',
             'state' => 'CA',
@@ -107,7 +108,7 @@ describe('Property Index component', function () {
 
         Livewire::actingAs($user)
             ->test('properties.index')
-            ->set('search', 'IL')
+            ->set('search', 'Springfield')
             ->assertSee('123 Main Street')
             ->assertDontSee('456 Oak Avenue');
     });

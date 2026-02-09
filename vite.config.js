@@ -12,6 +12,8 @@ export default defineConfig({
                 'resources/css/app.css',
                 'resources/js/app.js',
                 'resources/js/video-player.tsx',
+                'resources/js/photo-annotator.js',
+                'resources/js/promo-player.tsx',
             ],
             refresh: true,
         }),

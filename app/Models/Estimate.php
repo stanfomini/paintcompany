@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\EstimateAmendmentService;
 use App\Services\EstimatePackageGeneratorService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -73,6 +74,7 @@ class Estimate extends Model
         'actual_paint_costs',
         'actual_painters',
         'profit_snapshot',
+        'sent_snapshot',
     ];
 
     protected function casts(): array
@@ -101,6 +103,7 @@ class Estimate extends Model
             'actual_paint_costs' => 'array',
             'actual_painters' => 'array',
             'profit_snapshot' => 'array',
+            'sent_snapshot' => 'array',
         ];
     }
 
@@ -117,6 +120,14 @@ class Estimate extends Model
             // Capture company settings snapshot at creation time
             if (empty($estimate->settings_snapshot)) {
                 $estimate->settings_snapshot = $estimate->captureSettingsSnapshot();
+            }
+
+            // Auto-populate terms from company settings if not set
+            if (empty($estimate->terms)) {
+                $defaultTerms = CompanySetting::getInstance()->default_terms_and_conditions;
+                if ($defaultTerms) {
+                    $estimate->terms = $defaultTerms;
+                }
             }
         });
     }
@@ -315,6 +326,34 @@ class Estimate extends Model
         return $this->hasMany(EstimateOptionalItem::class);
     }
 
+    /**
+     * Get the amendments for this estimate.
+     */
+    public function amendments(): HasMany
+    {
+        return $this->hasMany(EstimateAmendment::class)->orderBy('amendment_number');
+    }
+
+    /**
+     * Check if there are pending (unacknowledged) amendments.
+     */
+    public function hasPendingAmendments(): bool
+    {
+        return $this->amendments()
+            ->whereNull('customer_acknowledged_at')
+            ->exists();
+    }
+
+    /**
+     * Get the count of pending amendments.
+     */
+    public function pendingAmendmentsCount(): int
+    {
+        return $this->amendments()
+            ->whereNull('customer_acknowledged_at')
+            ->count();
+    }
+
     // =========================================================================
     // PRICING METHODS - CLEAR SEPARATION OF COGS vs CUSTOMER PRICE
     // =========================================================================
@@ -504,6 +543,7 @@ class Estimate extends Model
     /**
      * Mark estimate as sent.
      * Generates packages from templates if applicable.
+     * Captures a snapshot of the current state for amendment tracking.
      */
     public function markAsSent(): bool
     {
@@ -517,7 +557,18 @@ class Estimate extends Model
         $this->status = 'sent';
         $this->sent_at = now();
 
-        return $this->save();
+        // Capture initial snapshot for amendment tracking
+        $amendmentService = app(EstimateAmendmentService::class);
+        $this->sent_snapshot = $amendmentService->captureSnapshot($this);
+
+        $saved = $this->save();
+
+        // Advance referral status if this estimate was referred
+        if ($saved) {
+            app(\App\Services\ReferralService::class)->onEstimateSent($this);
+        }
+
+        return $saved;
     }
 
     /**
@@ -584,7 +635,7 @@ class Estimate extends Model
      */
     public function isEditable(): bool
     {
-        return $this->status === 'draft';
+        return in_array($this->status, ['draft', 'sent']);
     }
 
     /**

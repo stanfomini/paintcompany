@@ -47,6 +47,7 @@ class PropertyPhoto extends Model
         'taken_at',
         'latitude',
         'longitude',
+        'content_updated_at',
     ];
 
     protected function casts(): array
@@ -60,6 +61,7 @@ class PropertyPhoto extends Model
             'taken_at' => 'datetime',
             'latitude' => 'float',
             'longitude' => 'float',
+            'content_updated_at' => 'datetime',
         ];
     }
 
@@ -104,11 +106,43 @@ class PropertyPhoto extends Model
     }
 
     /**
-     * Get the annotation for this photo.
+     * Get all annotations for this photo (one per author_type).
+     */
+    public function annotations(): HasMany
+    {
+        return $this->hasMany(PhotoAnnotation::class, 'property_photo_id');
+    }
+
+    /**
+     * Get a single annotation (backwards compat - returns first/latest).
      */
     public function annotation(): HasOne
     {
-        return $this->hasOne(PhotoAnnotation::class, 'property_photo_id');
+        return $this->hasOne(PhotoAnnotation::class, 'property_photo_id')->latestOfMany();
+    }
+
+    /**
+     * Get annotation for a specific author type.
+     */
+    public function annotationForType(string $authorType): ?PhotoAnnotation
+    {
+        return $this->annotations->firstWhere('author_type', $authorType);
+    }
+
+    /**
+     * Get author types that have annotations on this photo.
+     */
+    public function getAnnotationTypesAttribute(): array
+    {
+        return $this->annotations->pluck('author_type')->unique()->values()->all();
+    }
+
+    /**
+     * Check if photo has any annotations.
+     */
+    public function getHasAnnotationsAttribute(): bool
+    {
+        return $this->annotations->isNotEmpty();
     }
 
     /**
@@ -117,6 +151,32 @@ class PropertyPhoto extends Model
     public function comments(): HasMany
     {
         return $this->hasMany(PhotoComment::class, 'property_photo_id');
+    }
+
+    /**
+     * Get view tracking records for this photo.
+     */
+    public function views(): HasMany
+    {
+        return $this->hasMany(PhotoView::class, 'property_photo_id');
+    }
+
+    /**
+     * Check if a user has unviewed changes on this photo.
+     */
+    public function hasUnviewedChanges(?User $user): bool
+    {
+        if (! $user || ! $this->content_updated_at) {
+            return false;
+        }
+
+        $view = $this->views->firstWhere('user_id', $user->id);
+
+        if (! $view) {
+            return true;
+        }
+
+        return $this->content_updated_at->isAfter($view->viewed_at);
     }
 
     /**
@@ -135,6 +195,23 @@ class PropertyPhoto extends Model
         $disk = $this->disk ?? config('filesystems.default');
 
         return Storage::disk($disk)->url($this->path);
+    }
+
+    /**
+     * Get the display URL, preferring the annotated version when available.
+     */
+    public function getDisplayUrlAttribute(): string
+    {
+        if ($this->annotated_path) {
+            $disk = $this->disk ?? config('filesystems.default');
+
+            $url = Storage::disk($disk)->url($this->annotated_path);
+            if ($url) {
+                return $url;
+            }
+        }
+
+        return $this->url;
     }
 
     /**

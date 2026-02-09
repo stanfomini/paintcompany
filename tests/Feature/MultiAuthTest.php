@@ -166,20 +166,20 @@ describe('Access control', function () {
     it('agent cannot access internal dashboard', function () {
         $user = User::factory()->agent()->create();
 
-        // Now redirects to agent dashboard instead of showing 403
+        // Agent on web guard is a cross-guard mismatch - logs out and redirects to correct login
         $this->actingAs($user, 'web')
             ->get(route('dashboard'))
-            ->assertRedirect(route('agent.dashboard'))
+            ->assertRedirect(route('agent.login'))
             ->assertSessionHas('warning');
     });
 
     it('customer cannot access internal dashboard', function () {
         $user = User::factory()->customer()->create();
 
-        // Now redirects to customer dashboard instead of showing 403
+        // Customer on web guard is a cross-guard mismatch - logs out and redirects to correct login
         $this->actingAs($user, 'web')
             ->get(route('dashboard'))
-            ->assertRedirect(route('customer.dashboard'))
+            ->assertRedirect(route('customer.login'))
             ->assertSessionHas('warning');
     });
 
@@ -194,10 +194,10 @@ describe('Access control', function () {
     it('internal user cannot access agent dashboard', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
 
-        // Now redirects to internal dashboard instead of showing 403
+        // Internal user on agent guard is a cross-guard mismatch - logs out and redirects to correct login
         $this->actingAs($user, 'agent')
             ->get(route('agent.dashboard'))
-            ->assertRedirect(route('dashboard'))
+            ->assertRedirect(route('login'))
             ->assertSessionHas('warning');
     });
 
@@ -212,10 +212,10 @@ describe('Access control', function () {
     it('agent cannot access customer dashboard', function () {
         $user = User::factory()->agent()->create();
 
-        // Now redirects to agent dashboard instead of showing 403
+        // Agent on customer guard is a cross-guard mismatch - logs out and redirects to correct login
         $this->actingAs($user, 'customer')
             ->get(route('customer.dashboard'))
-            ->assertRedirect(route('agent.dashboard'))
+            ->assertRedirect(route('agent.login'))
             ->assertSessionHas('warning');
     });
 });

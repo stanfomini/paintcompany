@@ -1,8 +1,6 @@
 <?php
 
 use App\Models\Customer;
-use App\Models\Deal;
-use App\Models\Job;
 use App\Models\Property;
 use App\Models\PropertyPhoto;
 use App\Models\User;
@@ -69,48 +67,39 @@ describe('PhotoService', function () {
         expect($service->canUpload($user, $property))->toBeTrue();
     });
 
-    it('allows crew to upload during photos for assigned in-progress job', function () {
+    it('allows crew to upload any category', function () {
         $crewUser = User::factory()->create(['type' => 'crew']);
         $property = Property::factory()->create();
-        $deal = Deal::factory()->forProperty($property)->create();
-        $job = Job::factory()->inProgress()->create(['deal_id' => $deal->id]);
-        $job->crews()->attach($crewUser->id, ['status' => 'accepted']);
 
         $service = app(PhotoService::class);
 
-        expect($service->canUpload($crewUser, $property, 'during', $job))->toBeTrue();
+        expect($service->canUpload($crewUser, $property, 'before'))->toBeTrue()
+            ->and($service->canUpload($crewUser, $property, 'during'))->toBeTrue()
+            ->and($service->canUpload($crewUser, $property, 'after'))->toBeTrue()
+            ->and($service->canUpload($crewUser, $property, 'general'))->toBeTrue();
     });
 
-    it('prevents crew from uploading before photos', function () {
-        $crewUser = User::factory()->create(['type' => 'crew']);
-        $property = Property::factory()->create();
-        $deal = Deal::factory()->forProperty($property)->create();
-        $job = Job::factory()->inProgress()->create(['deal_id' => $deal->id]);
-        $job->crews()->attach($crewUser->id, ['status' => 'accepted']);
-
-        $service = app(PhotoService::class);
-
-        expect($service->canUpload($crewUser, $property, 'before', $job))->toBeFalse();
-    });
-
-    it('prevents customers from uploading general photos', function () {
+    it('allows customers to upload any category for their own property', function () {
         $customer = Customer::factory()->withPortalAccess()->create();
         $customerUser = $customer->user;
         $property = Property::factory()->forCustomer($customer)->create();
 
         $service = app(PhotoService::class);
 
-        expect($service->canUpload($customerUser, $property, 'general'))->toBeFalse();
+        expect($service->canUpload($customerUser, $property, 'before'))->toBeTrue()
+            ->and($service->canUpload($customerUser, $property, 'during'))->toBeTrue()
+            ->and($service->canUpload($customerUser, $property, 'after'))->toBeTrue()
+            ->and($service->canUpload($customerUser, $property, 'general'))->toBeTrue();
     });
 
-    it('allows customers to upload before photos for their own property', function () {
+    it('prevents customers from uploading to other properties', function () {
         $customer = Customer::factory()->withPortalAccess()->create();
         $customerUser = $customer->user;
-        $property = Property::factory()->forCustomer($customer)->create();
+        $otherProperty = Property::factory()->create();
 
         $service = app(PhotoService::class);
 
-        expect($service->canUpload($customerUser, $property, 'before'))->toBeTrue();
+        expect($service->canUpload($customerUser, $otherProperty, 'before'))->toBeFalse();
     });
 
     it('returns visible photos for internal users', function () {

@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Jobs\ProcessPhotoJob;
 use App\Models\Customer;
 use App\Models\Job;
+use App\Models\JobActivity;
+use App\Models\PhotoView;
 use App\Models\Property;
 use App\Models\PropertyPhoto;
 use App\Models\User;
@@ -49,7 +51,32 @@ class PhotoService
             'sort_order' => PropertyPhoto::where('property_id', $property->id)->max('sort_order') + 1,
         ]);
 
+        // Set content_updated_at and mark as viewed by uploader
+        $photo->update(['content_updated_at' => now()]);
+        PhotoView::markViewed($photo, $user);
+
+        // Log activity if photo is linked to a job
+        $jobId = $meta['job_id'] ?? null;
+
+        if ($jobId) {
+            $job = Job::find($jobId);
+
+            if ($job) {
+                $category = $meta['category'] ?? 'general';
+                JobActivity::log(
+                    $job,
+                    'photo_uploaded',
+                    "{$user->name} uploaded a {$category} photo",
+                    ['photo_id' => $photo->id, 'category' => $category]
+                );
+            }
+        }
+
         ProcessPhotoJob::dispatch($photo);
+
+        if ($jobId && isset($job) && $job) {
+            \App\Events\PhotoUpdated::dispatch($job, $photo->id, 'uploaded', $user->id);
+        }
 
         return $photo;
     }
@@ -76,6 +103,26 @@ class PhotoService
      */
     public function delete(PropertyPhoto $photo): void
     {
+        // Log activity before deletion if linked to a job
+        if ($photo->job_id) {
+            $job = Job::find($photo->job_id);
+            $user = auth()->user();
+
+            if ($job && $user) {
+                JobActivity::log(
+                    $job,
+                    'photo_deleted',
+                    "{$user->name} deleted a {$photo->category} photo",
+                    ['category' => $photo->category, 'filename' => $photo->original_filename]
+                );
+            }
+        }
+
+        // Capture job reference before deletion for broadcasting
+        $jobForBroadcast = ($photo->job_id) ? Job::find($photo->job_id) : null;
+        $photoId = $photo->id;
+        $actorId = auth()->id();
+
         $disk = $photo->disk ?? 'public';
 
         foreach (['path', 'original_path', 'thumbnail_path', 'medium_path', 'annotated_path'] as $field) {
@@ -85,6 +132,10 @@ class PhotoService
         }
 
         $photo->delete();
+
+        if ($jobForBroadcast) {
+            \App\Events\PhotoUpdated::dispatch($jobForBroadcast, $photoId, 'deleted', $actorId);
+        }
     }
 
     /**
@@ -96,25 +147,14 @@ class PhotoService
             return true;
         }
 
-        if ($user->type === 'crew' && $job && $category !== 'before') {
-            return $this->isCrewAssignedToJob($user, $job)
-                && in_array($job->stage, ['in_progress', 'completed']);
+        if ($user->type === 'crew') {
+            return true;
         }
 
         if ($user->type === 'customer') {
             $customer = Customer::where('user_id', $user->id)->first();
 
-            if (! $customer || $property->customer_id !== $customer->id) {
-                return false;
-            }
-
-            if ($category === 'before' && (! $job || $job->stage === 'estimate_accepted')) {
-                return true;
-            }
-
-            if ($category === 'after' && $job && $job->stage === 'completed') {
-                return true;
-            }
+            return $customer && $property->customer_id === $customer->id;
         }
 
         return false;
@@ -142,9 +182,13 @@ class PhotoService
         }
 
         if ($user->type === 'crew') {
-            $job = $photo->job;
+            return true;
+        }
 
-            return $job && $this->isCrewAssignedToJob($user, $job);
+        if ($user->type === 'customer') {
+            $customer = Customer::where('user_id', $user->id)->first();
+
+            return $customer && $photo->property && $photo->property->customer_id === $customer->id;
         }
 
         return false;
@@ -185,28 +229,12 @@ class PhotoService
             return ['before', 'during', 'after', 'reference', 'general'];
         }
 
-        if ($user->type === 'crew' && $job) {
-            $categories = [];
-
-            if ($job->stage === 'in_progress') {
-                $categories[] = 'during';
-            }
-
-            if (in_array($job->stage, ['in_progress', 'completed'])) {
-                $categories[] = 'after';
-            }
-
-            return $categories;
+        if ($user->type === 'crew') {
+            return ['before', 'during', 'after', 'general'];
         }
 
         if ($user->type === 'customer') {
-            if (! $job || $job->stage === 'estimate_accepted') {
-                return ['before'];
-            }
-
-            if ($job->stage === 'completed') {
-                return ['after'];
-            }
+            return ['before', 'during', 'after', 'general'];
         }
 
         return [];

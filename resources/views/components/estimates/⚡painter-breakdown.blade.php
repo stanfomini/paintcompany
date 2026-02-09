@@ -2,13 +2,17 @@
 
 use App\Models\CompanySetting;
 use App\Models\Estimate;
-use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public function boot(): void
     {
+        if (auth('crew')->check()) {
+            return;
+        }
+
         if (! auth()->user()?->can('financials.view_painter_breakdown')) {
             abort(403);
         }
@@ -41,6 +45,7 @@ new class extends Component {
             'areas.substrate',
             'deal.property',
             'deal.customer.user',
+            'job.crews.crewProfile',
         ]);
 
         // Expand all areas by default
@@ -123,6 +128,7 @@ new class extends Component {
             'captured_at' => now()->toIso8601String(),
             'painters' => $this->painters,
             'paint_costs' => $this->actualPaintCosts,
+            'crew_bonus' => $this->crewBonusInfo,
         ]);
         $this->estimate->save();
     }
@@ -268,13 +274,18 @@ new class extends Component {
         $recycleFeeRate = (float) ($settings->recycle_fee_per_gallon);
         $totalRecycleFee = round($totalGallons * $recycleFeeRate, 2);
 
+        $materialTaxRate = (float) ($settings->material_tax_rate ?? 0);
+        $materialTaxAmount = round($totalPaintCost * ($materialTaxRate / 100), 2);
+
         return [
             'items' => $materials,
             'total_gallons' => $totalGallons,
             'total_paint_cost' => round($totalPaintCost, 2),
             'recycle_fee_rate' => $recycleFeeRate,
             'total_recycle_fee' => $totalRecycleFee,
-            'total_materials_cost' => round($totalPaintCost + $totalRecycleFee, 2),
+            'material_tax_rate' => $materialTaxRate,
+            'material_tax_amount' => $materialTaxAmount,
+            'total_materials_cost' => round($totalPaintCost + $totalRecycleFee + $materialTaxAmount, 2),
         ];
     }
 
@@ -429,12 +440,14 @@ new class extends Component {
         $painterPay = $this->painterPayBreakdown;
         $sundriesCost = $this->sundriesBreakdown['total_cost'];
         $recycleFeeCost = $this->materialsWithCosts['total_recycle_fee'];
+        $materialTax = $this->materialsWithCosts['material_tax_amount'];
 
-        // Job price = company pays (loaded labor) + materials (catalog paint + sundries + recycle)
+        // Job price = company pays (loaded labor) + materials (catalog paint + sundries + recycle + tax)
         $jobPrice = $painterPay['company_pays_loaded']
             + $materialsProfit['total_catalog_cost']
             + $sundriesCost
-            + $recycleFeeCost;
+            + $recycleFeeCost
+            + $materialTax;
 
         // Crew wages: actual painters if entered, otherwise company-wide calc
         $crewWages = count($this->painters) > 0
@@ -451,7 +464,7 @@ new class extends Component {
             ? $materialsProfit['total_actual_cost']
             : $materialsProfit['total_catalog_cost'];
 
-        $totalCosts = $crewWages + $burdenCost + $paintCost + $sundriesCost + $recycleFeeCost;
+        $totalCosts = $crewWages + $burdenCost + $paintCost + $sundriesCost + $recycleFeeCost + $materialTax;
         $grossProfit = $jobPrice - $totalCosts;
         $grossMarginPercent = $jobPrice > 0 ? ($grossProfit / $jobPrice) * 100 : 0;
 
@@ -462,10 +475,46 @@ new class extends Component {
             'paint_cost' => round($paintCost, 2),
             'sundries_cost' => round($sundriesCost, 2),
             'recycle_fee' => round($recycleFeeCost, 2),
+            'material_tax' => round($materialTax, 2),
             'total_costs' => round($totalCosts, 2),
             'gross_profit' => round($grossProfit, 2),
             'gross_margin_percent' => round($grossMarginPercent, 1),
             'has_actuals' => count($this->painters) > 0 || $materialsProfit['has_actuals'],
+        ];
+    }
+
+    #[Computed]
+    public function crewBonusInfo(): ?array
+    {
+        $job = $this->estimate->job;
+        if (! $job) {
+            return null;
+        }
+
+        $crew = $job->acceptedCrew()->with('crewProfile')->first();
+        if (! $crew) {
+            return null;
+        }
+
+        if (! $crew->crewProfile || ! ($crew->crewProfile->bonus_percent > 0)) {
+            return null;
+        }
+
+        // Use the full customer price (selected package total), not the painter-level job price
+        $customerPrice = $this->estimate->selectedPackage?->total
+            ?? $this->estimate->packages()->where('is_active', true)->value('total')
+            ?? $this->profitSummary['job_price'];
+        $bonusAmount = $customerPrice * ($crew->crewProfile->bonus_percent / 100);
+
+        return [
+            'crew_name' => $crew->name,
+            'bonus_percent' => (float) $crew->crewProfile->bonus_percent,
+            'bonus_amount' => round($bonusAmount, 2),
+            'customer_price' => round($customerPrice, 2),
+            'profit_after_bonus' => round($this->profitSummary['gross_profit'] - $bonusAmount, 2),
+            'margin_after_bonus' => $customerPrice > 0
+                ? round(($this->profitSummary['gross_profit'] - $bonusAmount) / $customerPrice * 100, 1)
+                : 0,
         ];
     }
 
@@ -1085,6 +1134,21 @@ new class extends Component {
                                     <td class="py-2 px-3 text-right text-zinc-400">-</td>
                                     <td class="py-2 px-3 text-right text-zinc-400">-</td>
                                 </tr>
+                                {{-- Material Tax row --}}
+                                @if ($this->materialsWithCosts['material_tax_rate'] > 0)
+                                    <tr class="border-b border-zinc-100 dark:border-zinc-700/50">
+                                        <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">
+                                            Material Tax
+                                            <span class="text-xs text-zinc-500">({{ number_format($this->materialsWithCosts['material_tax_rate'], 1) }}%)</span>
+                                        </td>
+                                        <td class="py-2 px-3 text-right text-zinc-400">-</td>
+                                        <td class="py-2 px-3 text-right text-zinc-400">-</td>
+                                        <td class="py-2 px-3 text-right text-zinc-400">-</td>
+                                        <td class="py-2 px-3 text-right text-zinc-700 dark:text-zinc-300">${{ number_format($this->materialsWithCosts['material_tax_amount'], 2) }}</td>
+                                        <td class="py-2 px-3 text-right text-zinc-400">-</td>
+                                        <td class="py-2 px-3 text-right text-zinc-400">-</td>
+                                    </tr>
+                                @endif
                                 {{-- Sundries row --}}
                                 <tr class="border-b border-zinc-200 dark:border-zinc-700">
                                     <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">
@@ -1410,6 +1474,12 @@ new class extends Component {
                         <span class="text-zinc-300">Recycle Fees</span>
                         <span class="text-red-300 font-medium">−${{ number_format($this->profitSummary['recycle_fee'], 2) }}</span>
                     </div>
+                    @if ($this->profitSummary['material_tax'] > 0)
+                        <div class="flex justify-between items-center py-2 border-b border-zinc-700">
+                            <span class="text-zinc-300">Material Tax <span class="text-xs text-zinc-500">({{ number_format($this->materialsWithCosts['material_tax_rate'], 1) }}%)</span></span>
+                            <span class="text-red-300 font-medium">−${{ number_format($this->profitSummary['material_tax'], 2) }}</span>
+                        </div>
+                    @endif
                 </div>
 
                 {{-- Total Costs --}}
@@ -1428,6 +1498,33 @@ new class extends Component {
                         <span class="text-sm text-zinc-500 ml-1">({{ number_format($this->profitSummary['gross_margin_percent'], 1) }}%)</span>
                     </div>
                 </div>
+
+                @if ($this->crewBonusInfo)
+                    {{-- Crew Lead Bonus --}}
+                    <div class="mt-4 pt-4 border-t border-dashed border-zinc-600">
+                        <div class="flex justify-between items-center py-2">
+                            <span class="text-amber-300 font-semibold text-lg">
+                                Crew Lead Bonus
+                                <span class="text-sm text-zinc-400">({{ $this->crewBonusInfo['crew_name'] }} - {{ number_format($this->crewBonusInfo['bonus_percent'], 1) }}%)</span>
+                            </span>
+                            <span class="text-2xl font-bold text-green-400">${{ number_format($this->crewBonusInfo['bonus_amount'], 2) }}</span>
+                        </div>
+
+                        <div class="mt-3 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+                            <div class="text-sm font-medium text-amber-300 mb-2">How to Earn This Bonus:</div>
+                            <ul class="text-xs text-zinc-400 space-y-1.5 list-disc list-inside">
+                                <li>Actively use and engage with the job software throughout the project</li>
+                                <li>Be active in the Job Chat - communicate with the team and customer</li>
+                                <li>Upload, view, and manage team and customer photos and communications</li>
+                                <li>Participate in Job Prep to help build a plan the team can follow</li>
+                                <li>Follow the plan as outlined during prep</li>
+                                <li>Do not promote personal business on the job site</li>
+                                <li>Dress appropriately and maintain a professional appearance</li>
+                                <li>Ensure all touchups are completed before job closeout</li>
+                            </ul>
+                        </div>
+                    </div>
+                @endif
             </div>
 
             {{-- Save Controls --}}

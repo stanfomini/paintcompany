@@ -1,0 +1,51 @@
+<?php
+
+namespace App\Events;
+
+use App\Models\Job;
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Queue\SerializesModels;
+
+class JobDateUpdated implements ShouldBroadcast
+{
+    use Dispatchable, InteractsWithSockets, SerializesModels;
+
+    public function __construct(
+        public Job $job,
+        public ?int $proposedBy = null,
+        public ?string $date = null,
+        public bool $confirmed = false
+    ) {}
+
+    /**
+     * @return array<int, \Illuminate\Broadcasting\Channel>
+     */
+    public function broadcastOn(): array
+    {
+        return [
+            new PrivateChannel('job.'.$this->job->id),
+            new PrivateChannel('customer.job.'.$this->job->id),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function broadcastWith(): array
+    {
+        return [
+            'job_id' => $this->job->id,
+            'proposed_by' => $this->proposedBy,
+            'date' => $this->date,
+            'confirmed' => $this->confirmed,
+        ];
+    }
+
+    public function broadcastAs(): string
+    {
+        return 'date.updated';
+    }
+}

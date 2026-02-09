@@ -42,6 +42,7 @@ class CompanyAllocation extends Model
         'sort_order',
         'conditions',
         'conditions_logic',
+        'value_tiers',
     ];
 
     protected function casts(): array
@@ -54,6 +55,7 @@ class CompanyAllocation extends Model
             'sort_order' => 'integer',
             'conditions' => 'array',
             'conditions_logic' => 'string',
+            'value_tiers' => 'array',
         ];
     }
 
@@ -145,6 +147,17 @@ class CompanyAllocation extends Model
     ];
 
     /**
+     * String context fields that should use strict string comparison.
+     */
+    protected static array $stringFields = [
+        'lead_source',
+        'customer_source',
+        'season',
+        'scope_type',
+        'estimator_mode',
+    ];
+
+    /**
      * Evaluate a single condition rule.
      */
     protected function evaluateSingleCondition(string $field, string $operator, mixed $conditionValue, mixed $contextValue): bool
@@ -162,6 +175,16 @@ class CompanyAllocation extends Model
         // Boolean fields
         if (in_array($field, static::$booleanFields)) {
             return $this->evaluateBooleanCondition($operator, $conditionValue, $contextValue);
+        }
+
+        // String fields: use strict string comparison
+        if (in_array($field, static::$stringFields)) {
+            return match ($operator) {
+                'equals' => (string) $contextValue === (string) $conditionValue,
+                'not_equals' => (string) $contextValue !== (string) $conditionValue,
+                'in' => in_array((string) $contextValue, (array) $conditionValue),
+                default => false,
+            };
         }
 
         return match ($operator) {
@@ -277,6 +300,142 @@ class CompanyAllocation extends Model
         $joiner = $logic === 'any' ? ' OR ' : ' AND ';
 
         return 'Applies when: '.implode($joiner, $parts);
+    }
+
+    /**
+     * Check if this allocation has value tiers.
+     */
+    public function hasTiers(): bool
+    {
+        return is_array($this->value_tiers) && count($this->value_tiers) > 0;
+    }
+
+    /**
+     * Get a human-readable summary of the value tiers.
+     */
+    public function getTiersSummary(): string
+    {
+        if (! $this->hasTiers()) {
+            return '';
+        }
+
+        $parts = [];
+        foreach ($this->value_tiers as $tier) {
+            $label = $tier['label'] ?? '?';
+            $formatted = match ($tier['type'] ?? '') {
+                self::TYPE_PERCENT_OF_REVENUE => number_format((float) $tier['value'], 2).'%',
+                self::TYPE_FIXED_PER_JOB => '$'.number_format((float) $tier['value'], 2),
+                self::TYPE_PER_LABOR_HOUR => '$'.number_format((float) $tier['value'], 2).'/hr',
+                default => (string) $tier['value'],
+            };
+            $parts[] = "{$label} → {$formatted}";
+        }
+
+        return implode(' | ', $parts);
+    }
+
+    /**
+     * Resolve the first matching tier against a given context.
+     *
+     * Returns the matching tier's {label, type, value} or null if no tier matches.
+     *
+     * @param  array<string, mixed>  $context
+     * @return array{label: string, type: string, value: float}|null
+     */
+    public function resolveTier(array $context): ?array
+    {
+        if (! $this->hasTiers()) {
+            return null;
+        }
+
+        foreach ($this->value_tiers as $tier) {
+            $tierConditions = $tier['conditions'] ?? [];
+
+            if (empty($tierConditions)) {
+                return [
+                    'label' => $tier['label'] ?? '',
+                    'type' => $tier['type'],
+                    'value' => (float) $tier['value'],
+                ];
+            }
+
+            $allPassed = true;
+            foreach ($tierConditions as $condition) {
+                $field = $condition['field'] ?? null;
+                $operator = $condition['operator'] ?? 'equals';
+                $conditionValue = $condition['value'] ?? null;
+
+                if ($field === null) {
+                    continue;
+                }
+
+                $contextValue = $context[$field] ?? null;
+
+                if (! $this->evaluateSingleCondition($field, $operator, $conditionValue, $contextValue)) {
+                    $allPassed = false;
+                    break;
+                }
+            }
+
+            if ($allPassed) {
+                return [
+                    'label' => $tier['label'] ?? '',
+                    'type' => $tier['type'],
+                    'value' => (float) $tier['value'],
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Resolve the best tier (or fallback to base) and calculate the allocation amount.
+     *
+     * @param  array<string, mixed>  $context
+     * @return array{type: string, value: float, amount: float, tier_label: string|null}
+     */
+    public function resolveAndCalculate(array $context, float $customerPrice, float $laborHours = 0): array
+    {
+        $tier = $this->resolveTier($context);
+
+        if ($tier) {
+            $amount = $this->calculateAmountForTypeAndValue($tier['type'], $tier['value'], $customerPrice, $laborHours);
+
+            return [
+                'type' => $tier['type'],
+                'value' => $tier['value'],
+                'amount' => $amount,
+                'tier_label' => $tier['label'],
+            ];
+        }
+
+        // Fallback to base type + value
+        $amount = $this->calculateAmount($customerPrice, $laborHours);
+
+        return [
+            'type' => $this->type,
+            'value' => (float) $this->value,
+            'amount' => $amount,
+            'tier_label' => null,
+        ];
+    }
+
+    /**
+     * Calculate amount for a given type and value (used by tier resolution).
+     */
+    protected function calculateAmountForTypeAndValue(string $type, float $value, float $customerPrice, float $laborHours): float
+    {
+        if (! $this->is_active) {
+            return 0.0;
+        }
+
+        return match ($type) {
+            self::TYPE_PERCENT_OF_REVENUE => round($customerPrice * ($value / 100), 2),
+            self::TYPE_FIXED_PER_JOB => round($value, 2),
+            self::TYPE_PER_LABOR_HOUR => round($laborHours * $value, 2),
+            default => 0.0,
+        };
     }
 
     /**

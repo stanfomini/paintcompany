@@ -39,6 +39,9 @@
             <flux:navlist.item icon="credit-card" href="{{ route('customer.invoices.index') }}" :current="request()->routeIs('customer.invoices.*')">
                 {{ __('Invoices') }}
             </flux:navlist.item>
+            <flux:navlist.item icon="gift" href="{{ route('customer.referrals') }}" :current="request()->routeIs('customer.referrals')">
+                {{ __('Referrals') }}
+            </flux:navlist.item>
         </flux:navlist>
 
         <flux:spacer />

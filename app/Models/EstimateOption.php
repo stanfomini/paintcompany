@@ -20,6 +20,7 @@ class EstimateOption extends Model
 
     protected $fillable = [
         'estimate_id',
+        'service_category_id',
         'surface_id',
         'name',
         'description',
@@ -125,5 +126,10 @@ class EstimateOption extends Model
     public function scopeRecommended(Builder $query): Builder
     {
         return $query->where('is_recommended', true);
+    }
+
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
     }
 }

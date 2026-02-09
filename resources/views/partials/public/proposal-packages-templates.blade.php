@@ -33,10 +33,12 @@
         @foreach ($packageTemplates as $template)
             @php
                 $isSelected = $selectedTier === $template['tier'];
-                $warrantyAmount = $template['warranty_amount'];
+                $templateItems = collect($template['items']);
+                $warrantyItems = $templateItems->where('is_warranty', true);
+                $serviceItems = $templateItems->where('is_warranty', false);
 
                 // Calculate total for this template
-                $templateTotal = $template['painting_total'] + $warrantyAmount;
+                $templateTotal = $template['painting_total'];
                 foreach ($template['items'] as $item) {
                     $itemSelected = $selectedPackageItems[$item['key']] ?? $item['is_included_by_default'];
                     if ($itemSelected) {
@@ -80,29 +82,39 @@
                         <span class="text-3xl font-bold text-gray-900 dark:text-white">${{ number_format($templateTotal, 0) }}</span>
                     </div>
 
-                    {{-- Warranty --}}
-                    <div class="flex items-center justify-center gap-2 mb-4 text-sm">
-                        <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                        </svg>
-                        <span class="font-medium text-gray-700 dark:text-gray-300">{{ $template['warranty_description'] }}</span>
-                    </div>
+                    {{-- Warranty Items (dynamic from catalog) --}}
+                    @if ($warrantyItems->isNotEmpty())
+                        <div class="space-y-1 text-sm mb-3">
+                            @foreach ($warrantyItems as $wItem)
+                                @php $wSelected = $selectedPackageItems[$wItem['key']] ?? $wItem['is_included_by_default']; @endphp
+                                @if ($wSelected)
+                                    <div class="flex items-center justify-center gap-2">
+                                        <svg class="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                        </svg>
+                                        <span class="font-medium text-blue-700 dark:text-blue-300">{{ $wItem['name'] }}</span>
+                                    </div>
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
 
                     {{-- Description --}}
                     @if ($template['description'])
                         <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">{{ $template['description'] }}</p>
                     @endif
 
-                    {{-- Included Items Preview --}}
-                    @if (count($template['items']) > 0)
+                    {{-- Included Service Items Preview --}}
+                    @if ($serviceItems->isNotEmpty())
                         <div class="space-y-1 text-sm text-gray-600 dark:text-gray-400 mb-4">
-                            @foreach ($template['items'] as $item)
-                                @if ($item['is_included_by_default'])
+                            @foreach ($serviceItems as $sItem)
+                                @php $sSelected = $selectedPackageItems[$sItem['key']] ?? $sItem['is_included_by_default']; @endphp
+                                @if ($sSelected)
                                     <div class="flex items-center gap-2">
                                         <svg class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                         </svg>
-                                        <span>{{ $item['name'] }}</span>
+                                        <span>{{ $sItem['name'] }}</span>
                                     </div>
                                 @endif
                             @endforeach
@@ -134,58 +146,18 @@
     </div>
 @endif
 
-{{-- Warranty Picker --}}
-@if ($showWarrantyPicker && $selectedTier)
-    <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
-        <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Choose Your Warranty</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Select a warranty level for your project</p>
-        </div>
-
-        <div class="p-6">
-            <div class="grid grid-cols-1 md:grid-cols-{{ min(count($this->warrantyOptions), 3) }} gap-4">
-                @foreach ($this->warrantyOptions as $option)
-                    <button
-                        wire:click="selectWarranty('{{ $option['tier'] }}')"
-                        wire:key="warranty-{{ $option['tier'] }}"
-                        class="p-4 rounded-lg border-2 text-left transition-all duration-200
-                            {{ $selectedWarrantyTier === $option['tier']
-                                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 shadow-md'
-                                : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600' }}"
-                    >
-                        <div class="flex items-center gap-2 mb-2">
-                            <svg class="w-4 h-4 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                            </svg>
-                            <p class="font-semibold text-gray-900 dark:text-white">{{ $option['name'] }}</p>
-                        </div>
-                        <p class="text-sm text-gray-500 dark:text-gray-400">
-                            @if ($option['cost'] > 0)
-                                +${{ number_format($option['cost'], 2) }}
-                            @else
-                                Included
-                            @endif
-                        </p>
-                    </button>
-                @endforeach
-            </div>
-
-            <div class="mt-6 flex justify-end gap-3">
-                <flux:button wire:click="$set('showWarrantyPicker', false)" variant="ghost">Back</flux:button>
-                <flux:button wire:click="confirmSelection" variant="primary" :disabled="!$selectedWarrantyTier">
-                    Confirm Selection
-                </flux:button>
-            </div>
-        </div>
-    </div>
-@endif
-
 {{-- Selected Package Details --}}
-@if ($selectedTemplate && !$showWarrantyPicker)
+@if ($selectedTemplate)
+    @php
+        $allItems = collect($selectedTemplate['items']);
+        $warrantyItems = $allItems->where('is_warranty', true)->values();
+        $serviceItems = $allItems->where('is_warranty', false)->values();
+    @endphp
+
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ $selectedTemplate['name'] }} Package Breakdown</h3>
-            <p class="text-sm text-gray-600 dark:text-gray-400">Review what's included and customize optional services</p>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Review what's included and customize your selections</p>
         </div>
 
         <div class="divide-y divide-gray-100 dark:divide-gray-700">
@@ -207,26 +179,70 @@
                 </div>
             </div>
 
-            {{-- Warranty (always included) --}}
-            <div class="px-6 py-4 flex items-center justify-between gap-4 bg-blue-50/50 dark:bg-blue-900/20">
-                <div class="flex items-start gap-3 flex-1">
-                    <div class="mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center bg-blue-500 border-blue-500 text-white">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
-                        </svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-gray-900 dark:text-white">{{ $selectedTemplate['warranty_description'] }}</p>
-                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{{ $selectedTemplate['warranty_percent'] }}% of painting cost</p>
-                    </div>
-                </div>
-                <div class="text-right flex-shrink-0">
-                    <span class="text-sm font-medium text-gray-900 dark:text-white">${{ number_format($selectedTemplate['warranty_amount'], 2) }}</span>
-                </div>
-            </div>
+            {{-- Warranty Items (blue highlight, shield icon, customer-toggleable) --}}
+            @foreach ($warrantyItems as $item)
+                @php
+                    $itemSelected = $selectedPackageItems[$item['key']] ?? $item['is_included_by_default'];
+                    $isCustomerSelectable = $item['is_customer_selectable'] ?? false;
+                @endphp
+                <div
+                    wire:key="item-{{ $item['id'] }}"
+                    class="px-6 py-4 flex items-center justify-between gap-4 {{ $itemSelected ? 'bg-blue-50/50 dark:bg-blue-900/20' : 'bg-gray-50 dark:bg-gray-900 opacity-60' }}"
+                >
+                    <div class="flex items-start gap-3 flex-1">
+                        @if ($isCustomerSelectable && $this->canModify())
+                            <button
+                                wire:click.stop="togglePackageItem('{{ $item['key'] }}')"
+                                wire:loading.attr="disabled"
+                                class="mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors {{ $itemSelected
+                                    ? 'bg-blue-500 border-blue-500 text-white'
+                                    : 'border-gray-300 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500'
+                                }}"
+                            >
+                                @if ($itemSelected)
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                    </svg>
+                                @endif
+                            </button>
+                        @else
+                            <div class="mt-0.5 flex-shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center {{ $itemSelected
+                                ? 'bg-blue-500 border-blue-500 text-white'
+                                : 'border-gray-300 dark:border-gray-600'
+                            }}">
+                                @if ($itemSelected)
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                    </svg>
+                                @endif
+                            </div>
+                        @endif
 
-            {{-- Service Items --}}
-            @foreach ($selectedTemplate['items'] as $item)
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium {{ $itemSelected ? 'text-blue-900 dark:text-blue-100' : 'text-gray-500 dark:text-gray-400 line-through' }}">
+                                {{ $item['name'] }}
+                            </p>
+                            @if ($item['description'])
+                                <p class="text-xs text-blue-600/70 dark:text-blue-400/70 mt-0.5">{{ $item['description'] }}</p>
+                            @endif
+                            @if ($isCustomerSelectable)
+                                <p class="text-xs {{ $itemSelected ? 'text-blue-600 dark:text-blue-400' : 'text-amber-600 dark:text-amber-400' }} mt-1">
+                                    {{ $itemSelected ? 'Included - click to remove' : 'Click to add warranty' }}
+                                </p>
+                            @endif
+                        </div>
+                    </div>
+
+                    <div class="text-right flex-shrink-0">
+                        <span class="text-sm font-medium {{ $itemSelected ? 'text-blue-900 dark:text-blue-100' : 'text-gray-400 dark:text-gray-500 line-through' }}">
+                            +${{ number_format($item['price'], 2) }}
+                        </span>
+                    </div>
+                </div>
+            @endforeach
+
+            {{-- Service Items (green checkmark, standard styling) --}}
+            @foreach ($serviceItems as $item)
                 @php
                     $itemSelected = $selectedPackageItems[$item['key']] ?? $item['is_included_by_default'];
                     $isCustomerSelectable = $item['is_customer_selectable'] ?? false;
@@ -307,16 +323,18 @@
             </div>
 
             {{-- Warranty --}}
-            <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-600 dark:text-gray-400">{{ $selectedTemplate['warranty_description'] }}</span>
-                <span class="text-gray-900 dark:text-white">${{ number_format($selectedTemplate['warranty_amount'], 2) }}</span>
-            </div>
+            @if ($this->selectedTemplateWarrantyTotal > 0)
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-gray-600 dark:text-gray-400">Warranty Protection</span>
+                    <span class="text-gray-900 dark:text-white">${{ number_format($this->selectedTemplateWarrantyTotal, 2) }}</span>
+                </div>
+            @endif
 
-            {{-- Items --}}
-            @if ($this->selectedTemplateItemsTotal > 0)
+            {{-- Services --}}
+            @if ($this->selectedTemplateServicesTotal > 0)
                 <div class="flex justify-between items-center text-sm">
                     <span class="text-gray-600 dark:text-gray-400">Add-on Services</span>
-                    <span class="text-gray-900 dark:text-white">${{ number_format($this->selectedTemplateItemsTotal, 2) }}</span>
+                    <span class="text-gray-900 dark:text-white">${{ number_format($this->selectedTemplateServicesTotal, 2) }}</span>
                 </div>
             @endif
 
@@ -390,7 +408,7 @@
             </p>
         @endif
     </div>
-@elseif (!$showWarrantyPicker)
+@else
     {{-- No package selected --}}
     <div class="text-center">
         @if ($estimate->status === 'accepted')

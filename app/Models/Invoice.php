@@ -164,6 +164,15 @@ class Invoice extends Model
 
         $this->save();
 
+        // Advance referral status if deposit is paid
+        if ($this->status === self::STATUS_PAID && $this->type === self::TYPE_DEPOSIT) {
+            try {
+                app(\App\Services\ReferralService::class)->onDepositPaid($this);
+            } catch (\Throwable $e) {
+                report($e);
+            }
+        }
+
         // Sync payment summary to the job's cost card
         if ($this->job_id) {
             try {

@@ -39,6 +39,22 @@ class JobPrepDay extends Model
     }
 
     /**
+     * Get tasks filtered by service category.
+     */
+    public function tasksForService(?int $serviceCategoryId): \Illuminate\Database\Eloquent\Collection
+    {
+        if ($serviceCategoryId === null) {
+            return $this->tasks;
+        }
+
+        if ($this->relationLoaded('tasks')) {
+            return $this->tasks->where('service_category_id', $serviceCategoryId);
+        }
+
+        return $this->tasks()->where('service_category_id', $serviceCategoryId)->get();
+    }
+
+    /**
      * Get total estimated hours for tasks in this day.
      */
     public function getTotalEstimatedHours(): float

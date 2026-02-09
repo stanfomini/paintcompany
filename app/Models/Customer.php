@@ -15,6 +15,14 @@ class Customer extends Model
 {
     use HasFactory, Notifiable, SoftDeletes;
 
+    public const SOURCES = [
+        'referral' => 'Referral',
+        'online' => 'Online',
+        'agent' => 'Agent',
+        'walk_in' => 'Walk-in',
+        'other' => 'Other',
+    ];
+
     protected $fillable = [
         'user_id',
         'created_by',
@@ -31,6 +39,7 @@ class Customer extends Model
         'notes',
         'status',
         'source',
+        'estimate_preference',
     ];
 
     protected function casts(): array

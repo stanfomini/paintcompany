@@ -4,9 +4,12 @@ use App\Models\Estimate;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\Job;
+use App\Models\JobPrepApproval;
 use App\Models\JobPrepDay;
 use App\Models\JobPrepPlan;
+use App\Models\JobPrepServiceSetting;
 use App\Models\JobPrepTask;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -89,7 +92,6 @@ describe('Stage Prep Component', function () {
             ->test('jobs.stage-prep', ['job' => $job])
             ->set('showCustomTaskForm', true)
             ->set('customTaskTitle', 'Tape all trim')
-            ->set('customTaskHours', 1.5)
             ->call('addCustomTask')
             ->assertSee('Tape all trim');
     });
@@ -117,15 +119,29 @@ describe('Stage Prep Component', function () {
     it('can approve as team', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $job = Job::factory()->jobPrep()->create();
+        $category = ServiceCategory::firstOrCreate(
+            ['slug' => 'painting'],
+            ['name' => 'Painting', 'description' => 'Interior and exterior painting services', 'icon' => 'paint-brush', 'color' => 'blue', 'is_active' => true, 'sort_order' => 1]
+        );
 
         $plan = JobPrepPlan::factory()->create(['job_id' => $job->id]);
         JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+        JobPrepServiceSetting::factory()->create([
+            'job_prep_plan_id' => $plan->id,
+            'service_category_id' => $category->id,
+        ]);
 
         Livewire::actingAs($user)
             ->test('jobs.stage-prep', ['job' => $job])
-            ->call('approvePlan', 'team');
+            ->call('approveSection', 'team', $category->id);
 
-        expect($plan->fresh()->team_approved)->toBeTrue();
+        $approval = JobPrepApproval::where('job_prep_plan_id', $plan->id)
+            ->where('service_category_id', $category->id)
+            ->where('party', 'team')
+            ->first();
+
+        expect($approval)->not->toBeNull();
+        expect($approval->approved)->toBeTrue();
     });
 
     it('can start job when fully approved', function () {

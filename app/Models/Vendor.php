@@ -29,7 +29,7 @@ class Vendor extends Model
     protected $fillable = [
         'company_setting_id', 'name', 'contact_name', 'email', 'phone',
         'address_line_1', 'address_line_2', 'city', 'state', 'zip',
-        'category', 'payment_terms_days', 'is_active', 'notes',
+        'category', 'budget_category_id', 'payment_terms_days', 'is_active', 'notes',
         'w9_on_file', 'hold_harmless', 'certificate_of_insurance',
         'insurance_expiration', 'additional_insured', 'workers_comp',
         'workers_comp_expiration', 'rejection_form',
@@ -54,6 +54,11 @@ class Vendor extends Model
     public function companySetting(): BelongsTo
     {
         return $this->belongsTo(CompanySetting::class);
+    }
+
+    public function budgetCategory(): BelongsTo
+    {
+        return $this->belongsTo(BudgetCategory::class);
     }
 
     public function scopeActive(Builder $query): Builder

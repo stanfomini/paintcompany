@@ -147,4 +147,47 @@ describe('Multi-Auth Login Flow', function () {
             ->get('/customer/login')
             ->assertRedirect(route('customer.dashboard'));
     });
+
+    it('customer cannot login via admin login page', function () {
+        $customer = User::factory()->customer()->create();
+
+        $this->post('/login', [
+            'email' => $customer->email,
+            'password' => 'password',
+        ])->assertSessionHasErrors();
+
+        $this->assertGuest('web');
+    });
+
+    it('agent cannot login via admin login page', function () {
+        $agent = User::factory()->agent()->create();
+
+        $this->post('/login', [
+            'email' => $agent->email,
+            'password' => 'password',
+        ])->assertSessionHasErrors();
+
+        $this->assertGuest('web');
+    });
+
+    it('crew cannot login via admin login page', function () {
+        $crew = User::factory()->crew()->create();
+
+        $this->post('/login', [
+            'email' => $crew->email,
+            'password' => 'password',
+        ])->assertSessionHasErrors();
+
+        $this->assertGuest('web');
+    });
+
+    it('cross-guard authentication logs out and redirects to correct login', function () {
+        $customer = User::factory()->customer()->create();
+
+        // Simulate a customer somehow authenticated on the web guard (the bug scenario)
+        $this->actingAs($customer, 'web')
+            ->get(route('dashboard'))
+            ->assertRedirect(route('customer.login'))
+            ->assertSessionHas('warning');
+    });
 });

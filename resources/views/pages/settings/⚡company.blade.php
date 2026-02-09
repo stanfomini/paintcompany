@@ -27,6 +27,8 @@ new class extends Component {
 
     // Defaults
     public string $accounting_mode = 'cash';
+    public string $tax_reserve_percent = '30';
+    public string $profit_reserve_percent = '5';
     public string $default_tax_rate = '';
     public string $default_payment_terms_days = '';
     public string $estimate_validity_days = '';
@@ -69,6 +71,9 @@ new class extends Component {
     public string $total_painters = '';
     public string $default_required_crew_size = '';
 
+    // Terms & Conditions
+    public string $default_terms_and_conditions = '';
+
     // Computed values for display
     public string $effective_hourly_rate = '';
     public string $interior_effective_rate = '';
@@ -98,6 +103,8 @@ new class extends Component {
 
         // Defaults
         $this->accounting_mode = $settings->accounting_mode ?? 'cash';
+        $this->tax_reserve_percent = $this->formatDecimal($settings->tax_reserve_percent, '30.00');
+        $this->profit_reserve_percent = $this->formatDecimal($settings->profit_reserve_percent, '5.00');
         $this->default_tax_rate = $this->formatDecimal($settings->default_tax_rate);
         $this->default_payment_terms_days = $settings->default_payment_terms_days !== null ? (string) $settings->default_payment_terms_days : '';
         $this->estimate_validity_days = $settings->estimate_validity_days !== null ? (string) $settings->estimate_validity_days : '';
@@ -139,6 +146,9 @@ new class extends Component {
         // Crew & Dispatch Settings
         $this->total_painters = $settings->total_painters !== null ? (string) $settings->total_painters : '4';
         $this->default_required_crew_size = $settings->default_required_crew_size !== null ? (string) $settings->default_required_crew_size : '2';
+
+        // Terms & Conditions
+        $this->default_terms_and_conditions = $settings->default_terms_and_conditions ?? '';
 
         $this->updateCalculatedValues();
     }
@@ -219,6 +229,8 @@ new class extends Component {
 
             // Defaults
             'accounting_mode' => ['required', 'in:cash,accrual,modified_cash'],
+            'tax_reserve_percent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'profit_reserve_percent' => ['required', 'numeric', 'min:0', 'max:100'],
             'default_tax_rate' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'default_payment_terms_days' => ['nullable', 'integer', 'min:0', 'max:365'],
             'estimate_validity_days' => ['nullable', 'integer', 'min:1', 'max:365'],
@@ -260,6 +272,9 @@ new class extends Component {
             // Crew & Dispatch Settings
             'total_painters' => ['nullable', 'integer', 'min:1', 'max:100'],
             'default_required_crew_size' => ['nullable', 'integer', 'min:1', 'max:20'],
+
+            // Terms & Conditions
+            'default_terms_and_conditions' => ['nullable', 'string', 'max:10000'],
         ]);
 
         $settings = CompanySetting::getInstance();
@@ -279,6 +294,8 @@ new class extends Component {
 
             // Defaults
             'accounting_mode' => $validated['accounting_mode'],
+            'tax_reserve_percent' => $validated['tax_reserve_percent'],
+            'profit_reserve_percent' => $validated['profit_reserve_percent'],
             'default_tax_rate' => $validated['default_tax_rate'] !== '' ? $validated['default_tax_rate'] : 0,
             'default_payment_terms_days' => $validated['default_payment_terms_days'] !== '' ? $validated['default_payment_terms_days'] : 30,
             'estimate_validity_days' => $validated['estimate_validity_days'] !== '' ? $validated['estimate_validity_days'] : 30,
@@ -320,6 +337,9 @@ new class extends Component {
             // Crew & Dispatch Settings
             'total_painters' => $validated['total_painters'] !== '' ? $validated['total_painters'] : 4,
             'default_required_crew_size' => $validated['default_required_crew_size'] !== '' ? $validated['default_required_crew_size'] : 2,
+
+            // Terms & Conditions
+            'default_terms_and_conditions' => $validated['default_terms_and_conditions'] ?: null,
         ]);
 
         $this->dispatch('company-settings-updated');
@@ -390,6 +410,11 @@ new class extends Component {
                 <option value="accrual">Accrual Basis</option>
                 <option value="modified_cash">Modified Cash</option>
             </flux:select>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+                <flux:input wire:model="tax_reserve_percent" :label="__('Income Tax Reserve (%)')" type="number" step="0.01" min="0" max="100" description="Percentage of net profit set aside for estimated income taxes in journal entries." />
+                <flux:input wire:model="profit_reserve_percent" :label="__('Profit Reserve (%)')" type="number" step="0.01" min="0" max="100" description="Profit First: percentage of net profit moved to profit reserve. The remainder goes to retained earnings." />
+            </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:input wire:model="default_tax_rate" :label="__('Default Tax Rate (%)')" type="number" step="0.01" min="0" max="100" />
@@ -512,6 +537,21 @@ new class extends Component {
                 <flux:input wire:model="recycle_fee_per_gallon" :label="__('Recycle Fee ($/gallon)')" type="number" step="0.01" min="0" max="100" />
                 <flux:input wire:model="wood_replacement_minimum" :label="__('Wood Replacement Minimum ($)')" type="number" step="0.01" min="0" max="10000" />
             </div>
+
+            <flux:separator />
+
+            {{-- Terms & Conditions Section --}}
+            <flux:heading size="sm">Default Terms & Conditions</flux:heading>
+            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                These terms will be automatically included on new estimates. Customers must accept them before signing.
+            </flux:text>
+
+            <flux:textarea
+                wire:model="default_terms_and_conditions"
+                :label="__('Default Terms & Conditions')"
+                rows="10"
+                placeholder="Enter your company's default terms and conditions for estimates..."
+            />
 
             <flux:separator />
 

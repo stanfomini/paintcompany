@@ -316,14 +316,14 @@ describe('EstimateProposal public functionality', function () {
         expect($this->estimate->rejected_at)->not->toBeNull();
     });
 
-    it('estimate is editable only in draft status', function () {
+    it('estimate is editable in draft and sent status', function () {
         $this->estimate->status = 'draft';
         $this->estimate->save();
         expect($this->estimate->isEditable())->toBeTrue();
 
         $this->estimate->status = 'sent';
         $this->estimate->save();
-        expect($this->estimate->isEditable())->toBeFalse();
+        expect($this->estimate->isEditable())->toBeTrue();
 
         $this->estimate->status = 'accepted';
         $this->estimate->save();
@@ -770,5 +770,220 @@ describe('EstimateProposal acceptance actions', function () {
 
         // But should have the system message
         expect($existingThread->messages()->count())->toBe(1);
+    });
+});
+
+describe('EstimateProposal scope of work filtering by package', function () {
+    beforeEach(function () {
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
+        $this->customer = Customer::factory()->create([
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'email' => 'john@example.com',
+        ]);
+        $this->deal = Deal::factory()->forCustomer($this->customer)->create();
+
+        $settings = \App\Models\CompanySetting::getInstance();
+        $settings->update([
+            'interior_cleanup_hours_ratio' => 999999,
+            'interior_sundries_cost_per_hour' => 0,
+            'interior_margin_percent' => 50.0,
+            'material_tax_rate' => 0,
+            'labor_tax_rate' => 0,
+        ]);
+    });
+
+    it('shows all areas when no packages exist', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area1 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Living Room', 'scope_type' => 'interior']);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area1)->create(['is_included' => true, 'total' => 500, 'labor_cost' => 250, 'material_cost' => 250]);
+
+        $area2 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Bedroom', 'scope_type' => 'interior']);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area2)->create(['is_included' => true, 'total' => 300, 'labor_cost' => 150, 'material_cost' => 150]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        $filteredAreas = $component->instance()->getFilteredAreas();
+        expect($filteredAreas)->toHaveCount(2);
+    });
+
+    it('filters scope of work to selected package areas', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        // Create 2 areas with surfaces
+        $area1 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Living Room', 'scope_type' => 'interior']);
+        $surface1a = \App\Models\EstimateAreaSurface::factory()->forArea($area1)->create(['is_included' => true, 'total' => 500, 'labor_cost' => 250, 'material_cost' => 250]);
+
+        $area2 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Bedroom', 'scope_type' => 'interior']);
+        $surface2a = \App\Models\EstimateAreaSurface::factory()->forArea($area2)->create(['is_included' => true, 'total' => 300, 'labor_cost' => 150, 'material_cost' => 150]);
+
+        // Good package: only area1
+        $goodPackage = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($goodPackage)->forEstimateArea($area1)->approved()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($goodPackage)->forEstimateAreaSurface($surface1a)->approved()->create();
+
+        // Best package: both areas
+        $bestPackage = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->premium()->recommended()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($bestPackage)->forEstimateArea($area1)->approved()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($bestPackage)->forEstimateAreaSurface($surface1a)->approved()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($bestPackage)->forEstimateArea($area2)->approved()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($bestPackage)->forEstimateAreaSurface($surface2a)->approved()->create();
+
+        // Mount - should auto-select recommended (Best) package
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+        expect($component->instance()->selectedPackageId)->toBe($bestPackage->id);
+        expect($component->instance()->getFilteredAreas())->toHaveCount(2);
+
+        // Switch to Good package - should only show area1
+        $component->instance()->handlePackageSelected($goodPackage->id);
+        expect($component->instance()->selectedPackageId)->toBe($goodPackage->id);
+        expect($component->instance()->getFilteredAreas())->toHaveCount(1);
+        expect($component->instance()->getFilteredAreas()->first()->name)->toBe('Living Room');
+    });
+
+    it('filters surfaces within an area for partial inclusion', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        // Create area with 3 surfaces
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Living Room', 'scope_type' => 'interior']);
+        $surfaceWalls = \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['name' => 'Walls', 'is_included' => true, 'total' => 600, 'labor_cost' => 300, 'material_cost' => 300]);
+        $surfaceCeiling = \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['name' => 'Ceiling', 'is_included' => true, 'total' => 300, 'labor_cost' => 150, 'material_cost' => 150]);
+        $surfaceTrim = \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['name' => 'Trim', 'is_included' => true, 'total' => 100, 'labor_cost' => 50, 'material_cost' => 50]);
+
+        // Package with only walls and ceiling (not trim)
+        $package = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->basic()->recommended()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($package)->forEstimateAreaSurface($surfaceWalls)->approved()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($package)->forEstimateAreaSurface($surfaceCeiling)->approved()->create();
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Area should still show (it has surfaces in the package)
+        $filteredAreas = $component->instance()->getFilteredAreas();
+        expect($filteredAreas)->toHaveCount(1);
+
+        // Only walls and ceiling surface IDs should be returned
+        $surfaceIds = $component->instance()->getPackageSurfaceIds($area->id);
+        expect($surfaceIds)->toBeArray();
+        expect($surfaceIds)->toContain($surfaceWalls->id);
+        expect($surfaceIds)->toContain($surfaceCeiling->id);
+        expect($surfaceIds)->not->toContain($surfaceTrim->id);
+    });
+
+    it('shows all surfaces when whole area is included in package', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Kitchen', 'scope_type' => 'interior']);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['name' => 'Walls', 'is_included' => true, 'total' => 400, 'labor_cost' => 200, 'material_cost' => 200]);
+        \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['name' => 'Ceiling', 'is_included' => true, 'total' => 200, 'labor_cost' => 100, 'material_cost' => 100]);
+
+        // Package includes the whole area (not individual surfaces)
+        $package = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->basic()->recommended()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($package)->forEstimateArea($area)->approved()->create();
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // getPackageSurfaceIds should return null (= show all surfaces)
+        expect($component->instance()->getPackageSurfaceIds($area->id))->toBeNull();
+    });
+
+    it('auto-selects recommended package on mount', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['scope_type' => 'interior']);
+        $surface = \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['is_included' => true, 'total' => 500, 'labor_cost' => 250, 'material_cost' => 250]);
+
+        $goodPackage = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($goodPackage)->forEstimateArea($area)->approved()->create();
+
+        $betterPackage = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->standard()->recommended()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($betterPackage)->forEstimateArea($area)->approved()->create();
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        expect($component->instance()->selectedPackageId)->toBe($betterPackage->id);
+    });
+
+    it('auto-selects pre-selected package over recommended on mount', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['scope_type' => 'interior']);
+        $surface = \App\Models\EstimateAreaSurface::factory()->forArea($area)->create(['is_included' => true, 'total' => 500, 'labor_cost' => 250, 'material_cost' => 250]);
+
+        $goodPackage = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($goodPackage)->forEstimateArea($area)->approved()->create();
+
+        $betterPackage = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->standard()->recommended()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($betterPackage)->forEstimateArea($area)->approved()->create();
+
+        // Pre-select Good package
+        $estimate->update(['selected_package_id' => $goodPackage->id]);
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        expect($component->instance()->selectedPackageId)->toBe($goodPackage->id);
+    });
+
+    it('package selection event updates scope and clears cache', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'estimator_mode' => 'template',
+            'project_type' => 'interior',
+        ]);
+        $estimate->generatePublicToken(30);
+
+        $area1 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Room A', 'scope_type' => 'interior']);
+        $surface1 = \App\Models\EstimateAreaSurface::factory()->forArea($area1)->create(['is_included' => true, 'total' => 500, 'labor_cost' => 250, 'material_cost' => 250]);
+
+        $area2 = \App\Models\EstimateArea::factory()->forEstimate($estimate)->create(['name' => 'Room B', 'scope_type' => 'interior']);
+        $surface2 = \App\Models\EstimateAreaSurface::factory()->forArea($area2)->create(['is_included' => true, 'total' => 300, 'labor_cost' => 150, 'material_cost' => 150]);
+
+        $packageA = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->basic()->recommended()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($packageA)->forEstimateAreaSurface($surface1)->approved()->create();
+
+        $packageB = \App\Models\EstimatePackage::factory()->forEstimate($estimate)->premium()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($packageB)->forEstimateAreaSurface($surface1)->approved()->create();
+        \App\Models\EstimatePackageItem::factory()->forPackage($packageB)->forEstimateAreaSurface($surface2)->approved()->create();
+
+        $component = Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token]);
+
+        // Initially auto-selected recommended (packageA) - only area1
+        expect($component->instance()->getFilteredAreas())->toHaveCount(1);
+
+        // Dispatch package-selected event to switch to packageB
+        $component->dispatch('package-selected', packageId: $packageB->id);
+
+        expect($component->instance()->selectedPackageId)->toBe($packageB->id);
+        expect($component->instance()->getFilteredAreas())->toHaveCount(2);
     });
 });

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CompanyAllocation;
 use App\Models\CompanySetting;
 use App\Models\Estimate;
 use App\Models\EstimateArea;
@@ -135,7 +136,7 @@ class EstimateCostBreakdownService
      *
      * @return array<string, mixed>
      */
-    public function calculateBreakdown(Estimate $estimate): array
+    public function calculateBreakdown(Estimate $estimate, array $allocationContext = []): array
     {
         $companySettings = CompanySetting::getInstance();
 
@@ -143,11 +144,11 @@ class EstimateCostBreakdownService
         $activePackage = $this->getActivePackage($estimate);
 
         if ($activePackage) {
-            return $this->calculatePackageBreakdown($estimate, $activePackage);
+            return $this->calculatePackageBreakdown($estimate, $activePackage, $allocationContext);
         }
 
         // Legacy behavior for estimates without packages
-        return $this->calculateLegacyBreakdown($estimate);
+        return $this->calculateLegacyBreakdown($estimate, $allocationContext);
     }
 
     /**
@@ -157,7 +158,7 @@ class EstimateCostBreakdownService
      *
      * @return array<string, mixed>
      */
-    public function calculatePackageBreakdown(Estimate $estimate, EstimatePackage $package): array
+    public function calculatePackageBreakdown(Estimate $estimate, EstimatePackage $package, array $allocationContext = []): array
     {
         $companySettings = CompanySetting::getInstance();
 
@@ -281,7 +282,7 @@ class EstimateCostBreakdownService
         // Calculate allocations (marketing + sales + prod mgmt as % of revenue)
         $defaultSettings = $this->getCurrentSettings($estimate);
         $totalLaborHours = $totals['labor_hours'] + $totals['cleanup_hours'] + $totals['addon_labor_hours'];
-        $allocations = $this->calculateOverheadAllocations($customerPrice, $defaultSettings, $totalLaborHours);
+        $allocations = $this->calculateOverheadAllocations($customerPrice, $defaultSettings, $totalLaborHours, $allocationContext);
 
         // Net profit = gross profit minus allocations
         $netProfit = $grossProfit - $allocations['total'];
@@ -370,7 +371,7 @@ class EstimateCostBreakdownService
      *
      * @return array<string, mixed>
      */
-    protected function calculateLegacyBreakdown(Estimate $estimate): array
+    protected function calculateLegacyBreakdown(Estimate $estimate, array $allocationContext = []): array
     {
         $companySettings = CompanySetting::getInstance();
 
@@ -445,7 +446,7 @@ class EstimateCostBreakdownService
         // Calculate allocations
         $defaultSettings = $this->getCurrentSettings($estimate);
         $totalLaborHours = $totals['labor_hours'] + $totals['cleanup_hours'] + $totals['addon_labor_hours'];
-        $allocations = $this->calculateOverheadAllocations($customerPrice, $defaultSettings, $totalLaborHours);
+        $allocations = $this->calculateOverheadAllocations($customerPrice, $defaultSettings, $totalLaborHours, $allocationContext);
 
         // Net profit
         $netProfit = $grossProfit - $allocations['total'];
@@ -681,13 +682,13 @@ class EstimateCostBreakdownService
      * @param  array<string, mixed>  $settings
      * @return array<string, mixed>
      */
-    public function calculateOverheadAllocations(float $customerPrice, array $settings, float $laborHours = 0): array
+    public function calculateOverheadAllocations(float $customerPrice, array $settings, float $laborHours = 0, array $context = []): array
     {
         $companySettings = CompanySetting::getInstance();
 
         // Check if dynamic allocations are configured
         if ($companySettings->allocations()->exists()) {
-            return $this->calculateDynamicAllocations($companySettings, $customerPrice, $laborHours);
+            return $this->calculateDynamicAllocations($companySettings, $customerPrice, $laborHours, $context);
         }
 
         // Legacy fallback: use hardcoded settings
@@ -699,30 +700,87 @@ class EstimateCostBreakdownService
      *
      * @return array<string, mixed>
      */
-    protected function calculateDynamicAllocations(CompanySetting $settings, float $customerPrice, float $laborHours): array
+    protected function calculateDynamicAllocations(CompanySetting $settings, float $customerPrice, float $laborHours, array $context = []): array
     {
-        $result = $settings->calculateAllocations($customerPrice, $laborHours);
-        $details = $result['details'];
+        $hasContext = ! empty($context);
+
+        // Get all active, non-informational allocations
+        $allAllocations = $settings->allocations()
+            ->active()
+            ->where('is_informational', false)
+            ->ordered()
+            ->get();
+
+        $details = [];
+        $total = 0.0;
+
+        foreach ($allAllocations as $allocation) {
+            // When context is provided, evaluate gate conditions and resolve tiers
+            if ($hasContext) {
+                if (! $allocation->evaluateConditions($context)) {
+                    continue;
+                }
+
+                $resolved = $allocation->resolveAndCalculate($context, $customerPrice, $laborHours);
+                $amount = $resolved['amount'];
+                $type = $resolved['type'];
+                $value = $resolved['value'];
+                $tierLabel = $resolved['tier_label'];
+            } else {
+                // No context: use base value (legacy behavior)
+                $amount = $allocation->calculateAmount($customerPrice, $laborHours);
+                $type = $allocation->type;
+                $value = (float) $allocation->value;
+                $tierLabel = null;
+            }
+
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $details[] = [
+                'id' => $allocation->id,
+                'name' => $allocation->name,
+                'slug' => $allocation->slug,
+                'type' => $type,
+                'type_label' => match ($type) {
+                    CompanyAllocation::TYPE_PERCENT_OF_REVENUE => 'Percent of Revenue',
+                    CompanyAllocation::TYPE_FIXED_PER_JOB => 'Fixed per Job',
+                    CompanyAllocation::TYPE_PER_LABOR_HOUR => 'Per Labor Hour',
+                    default => 'Unknown',
+                },
+                'value' => $value,
+                'formatted_value' => match ($type) {
+                    CompanyAllocation::TYPE_PERCENT_OF_REVENUE => number_format($value, 2).'%',
+                    CompanyAllocation::TYPE_FIXED_PER_JOB => '$'.number_format($value, 2),
+                    CompanyAllocation::TYPE_PER_LABOR_HOUR => '$'.number_format($value, 2).'/hr',
+                    default => (string) $value,
+                },
+                'amount' => $amount,
+                'is_system' => $allocation->is_system,
+                'tier_label' => $tierLabel,
+            ];
+            $total += $amount;
+        }
 
         // Build allocations array with both indexed list and named keys for backwards compatibility
         $allocations = [
-            'items' => $details, // Full list of all allocations
-            'total' => $result['total'],
+            'items' => $details,
+            'total' => round($total, 2),
             'total_percent' => 0,
         ];
 
         // Calculate total percent for percent-based allocations
         $totalPercent = 0;
-        foreach ($details as $allocation) {
-            if ($allocation['type'] === 'percent_of_revenue') {
-                $totalPercent += $allocation['value'];
+        foreach ($details as $detail) {
+            if ($detail['type'] === 'percent_of_revenue') {
+                $totalPercent += $detail['value'];
             }
 
-            // Also add named keys for backwards compatibility
-            $allocations[$allocation['slug']] = [
-                'rate' => $allocation['value'],
-                'amount' => $allocation['amount'],
-                'informational' => false, // Dynamic allocations are not informational by default
+            $allocations[$detail['slug']] = [
+                'rate' => $detail['value'],
+                'amount' => $detail['amount'],
+                'informational' => false,
             ];
         }
         $allocations['total_percent'] = round($totalPercent, 2);
@@ -734,7 +792,17 @@ class EstimateCostBreakdownService
             ->get();
 
         foreach ($informational as $allocation) {
-            $amount = $allocation->calculateAmount($customerPrice, $laborHours);
+            if ($hasContext && ! $allocation->evaluateConditions($context)) {
+                continue;
+            }
+
+            if ($hasContext) {
+                $resolved = $allocation->resolveAndCalculate($context, $customerPrice, $laborHours);
+                $amount = $resolved['amount'];
+            } else {
+                $amount = $allocation->calculateAmount($customerPrice, $laborHours);
+            }
+
             $allocations[$allocation->slug] = [
                 'rate' => (float) $allocation->value,
                 'amount' => $amount,

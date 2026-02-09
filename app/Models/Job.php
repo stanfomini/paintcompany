@@ -90,8 +90,13 @@ class Job extends Model
     public function crews(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'job_crew', 'job_id', 'crew_user_id')
-            ->withPivot('status', 'dispatched_at', 'responded_at', 'notes')
+            ->withPivot('status', 'dispatched_at', 'responded_at', 'notes', 'service_category_id')
             ->withTimestamps();
+    }
+
+    public function serviceRequirements(): HasMany
+    {
+        return $this->hasMany(JobServiceRequirement::class);
     }
 
     public function invoices(): HasMany

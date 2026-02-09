@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\CompanyAllocation;
 use App\Models\CompanySetting;
+use App\Models\ProductionPlanWeek;
 use App\Models\SalesPlanGoal;
 use App\Models\SalesPlanWeek;
 use App\Services\SalesPlanService;
@@ -11,21 +13,31 @@ use Livewire\Component;
 new class extends Component
 {
     public int $year;
+
     public int $selectedWeek;
+
     public bool $showGoalModal = false;
+
     public bool $showWeekModal = false;
 
     // Goal form
-    public float $goalAnnualRevenue = 1500000;
+    public float $goalAnnualRevenue = 0;
+
     public float $goalAvgJobSize = 5000;
+
     public float $goalLeadConversion = 65;
+
     public float $goalCloseRate = 55;
 
     // Week form
     public int $editWeekNumber = 0;
+
     public int $leadsPlanned = 0;
+
     public int $estimatesPlanned = 0;
+
     public int $jobsPlanned = 0;
+
     public float $revenuePlanned = 0;
 
     public function boot(): void
@@ -51,7 +63,7 @@ new class extends Component
     #[Computed]
     public function service(): SalesPlanService
     {
-        return new SalesPlanService();
+        return new SalesPlanService;
     }
 
     #[Computed]
@@ -78,11 +90,85 @@ new class extends Component
         return $this->service->getWeek($this->settings, $this->selectedWeek, $this->year);
     }
 
+    /**
+     * Project the P&L if the revenue goal is hit, using actual allocation percentages.
+     *
+     * @return array{revenue: float, cogs: float, gross_profit: float, overhead_items: array, overhead_total: float, net_profit: float, net_margin: float, tax_reserve: float, owner_take_home: float}
+     */
+    #[Computed]
+    public function projectedPL(): array
+    {
+        $goal = $this->goal;
+        $revenue = (float) $goal->annual_revenue_goal;
+
+        if ($revenue <= 0) {
+            return [
+                'revenue' => 0, 'cogs' => 0, 'gross_profit' => 0,
+                'overhead_items' => [], 'overhead_total' => 0,
+                'net_profit' => 0, 'net_margin' => 0,
+                'tax_reserve' => 0, 'owner_take_home' => 0,
+            ];
+        }
+
+        $settings = $this->settings;
+
+        // COGS: labor hours from production plan × effective hourly rate
+        $totalLaborHours = (float) ProductionPlanWeek::where('company_setting_id', $settings->id)
+            ->where('year', $this->year)
+            ->sum('labor_hours_plan');
+
+        $effectiveRate = (float) $settings->interior_hourly_wage * (float) $settings->payroll_burden_multiplier;
+        $cogs = round($totalLaborHours * $effectiveRate, 2);
+        $grossProfit = $revenue - $cogs;
+
+        // Overhead from allocations
+        $totalJobs = $goal->required_jobs;
+        $allocations = CompanyAllocation::where('company_setting_id', $settings->id)
+            ->active()
+            ->reducesProfit()
+            ->ordered()
+            ->get();
+
+        $overheadItems = [];
+        $overheadTotal = 0;
+
+        foreach ($allocations as $allocation) {
+            $amount = $allocation->calculateAmount($revenue, $totalLaborHours);
+            $overheadItems[] = [
+                'name' => $allocation->name,
+                'amount' => $amount,
+                'formatted' => $allocation->formatted_value,
+            ];
+            $overheadTotal += $amount;
+        }
+
+        $netProfit = $grossProfit - $overheadTotal;
+        $netMargin = $revenue > 0 ? round(($netProfit / $revenue) * 100, 1) : 0;
+
+        $taxReservePercent = (float) ($settings->tax_reserve_percent ?? 30);
+        $taxReserve = round(max(0, $netProfit) * ($taxReservePercent / 100), 2);
+        $ownerTakeHome = $netProfit - $taxReserve;
+
+        return [
+            'revenue' => $revenue,
+            'cogs' => $cogs,
+            'gross_profit' => $grossProfit,
+            'gross_margin' => $revenue > 0 ? round(($grossProfit / $revenue) * 100, 1) : 0,
+            'overhead_items' => $overheadItems,
+            'overhead_total' => round($overheadTotal, 2),
+            'net_profit' => round($netProfit, 2),
+            'net_margin' => $netMargin,
+            'tax_reserve_percent' => $taxReservePercent,
+            'tax_reserve' => $taxReserve,
+            'owner_take_home' => round($ownerTakeHome, 2),
+        ];
+    }
+
     public function changeYear(int $year): void
     {
         $this->year = $year;
         $this->selectedWeek = min($this->selectedWeek, 52);
-        unset($this->goal, $this->weeks, $this->ytdProgress, $this->currentWeek);
+        unset($this->goal, $this->weeks, $this->ytdProgress, $this->currentWeek, $this->projectedPL);
     }
 
     public function selectWeek(int $week): void
@@ -140,7 +226,7 @@ new class extends Component
         ]);
 
         $this->showGoalModal = false;
-        unset($this->goal, $this->ytdProgress);
+        unset($this->goal, $this->ytdProgress, $this->projectedPL);
         session()->flash('success', 'Sales goals updated.');
     }
 
@@ -211,6 +297,109 @@ new class extends Component
         <flux:callout variant="success" class="mb-4">
             {{ session('success') }}
         </flux:callout>
+    @endif
+
+    {{-- Projected P&L Waterfall --}}
+    @php $pl = $this->projectedPL; @endphp
+    @if ($pl['revenue'] > 0)
+        <div class="mb-6 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-700">
+                <flux:heading size="sm">If You Hit ${{ number_format($pl['revenue']) }}</flux:heading>
+            </div>
+            <div class="px-5 py-4">
+                {{-- Waterfall bar --}}
+                @php
+                    $barSegments = [
+                        ['label' => 'COGS', 'value' => $pl['cogs'], 'color' => 'bg-red-400 dark:bg-red-500'],
+                        ['label' => 'Overhead', 'value' => $pl['overhead_total'], 'color' => 'bg-amber-400 dark:bg-amber-500'],
+                        ['label' => 'Taxes', 'value' => $pl['tax_reserve'], 'color' => 'bg-zinc-400 dark:bg-zinc-500'],
+                        ['label' => 'Take-Home', 'value' => max(0, $pl['owner_take_home']), 'color' => 'bg-green-500 dark:bg-green-400'],
+                    ];
+                @endphp
+                <div class="mb-4 flex h-8 w-full overflow-hidden rounded-lg">
+                    @foreach ($barSegments as $seg)
+                        @if ($seg['value'] > 0)
+                            <div
+                                class="{{ $seg['color'] }}"
+                                style="width: {{ round(($seg['value'] / $pl['revenue']) * 100, 1) }}%"
+                                title="{{ $seg['label'] }}: ${{ number_format($seg['value']) }}"
+                            ></div>
+                        @endif
+                    @endforeach
+                </div>
+
+                {{-- Legend --}}
+                <div class="mb-4 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                    @foreach ($barSegments as $seg)
+                        <span class="flex items-center gap-1.5">
+                            <span class="{{ $seg['color'] }} inline-block h-2.5 w-2.5 rounded-sm"></span>
+                            {{ $seg['label'] }}
+                            ({{ round(($seg['value'] / $pl['revenue']) * 100) }}%)
+                        </span>
+                    @endforeach
+                </div>
+
+                {{-- P&L Summary --}}
+                <div class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-4">
+                    <div>
+                        <div class="text-zinc-500 dark:text-zinc-400">Revenue</div>
+                        <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($pl['revenue']) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-zinc-500 dark:text-zinc-400">COGS (Labor)</div>
+                        <div class="text-lg font-bold text-red-600 dark:text-red-400">-${{ number_format($pl['cogs']) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-zinc-500 dark:text-zinc-400">Gross Profit</div>
+                        <div class="text-lg font-bold {{ $pl['gross_profit'] >= 0 ? 'text-zinc-900 dark:text-zinc-100' : 'text-red-600' }}">
+                            ${{ number_format($pl['gross_profit']) }}
+                            <span class="text-xs font-normal text-zinc-400">({{ $pl['gross_margin'] }}%)</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-zinc-500 dark:text-zinc-400">Overhead</div>
+                        <div class="text-lg font-bold text-amber-600 dark:text-amber-400">-${{ number_format($pl['overhead_total']) }}</div>
+                    </div>
+                </div>
+
+                <div class="mt-3 border-t border-zinc-200 pt-3 dark:border-zinc-700">
+                    <div class="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-4">
+                        <div>
+                            <div class="text-zinc-500 dark:text-zinc-400">Net Profit</div>
+                            <div class="text-lg font-bold {{ $pl['net_profit'] >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600' }}">
+                                ${{ number_format($pl['net_profit']) }}
+                                <span class="text-xs font-normal text-zinc-400">({{ $pl['net_margin'] }}%)</span>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-zinc-500 dark:text-zinc-400">Tax Reserve ({{ number_format($pl['tax_reserve_percent']) }}%)</div>
+                            <div class="text-lg font-bold text-zinc-500 dark:text-zinc-400">-${{ number_format($pl['tax_reserve']) }}</div>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <div class="text-zinc-500 dark:text-zinc-400">Owner Take-Home</div>
+                            <div class="text-2xl font-bold {{ $pl['owner_take_home'] >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600' }}">
+                                ${{ number_format($pl['owner_take_home']) }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Overhead breakdown toggle --}}
+                <details class="mt-3">
+                    <summary class="cursor-pointer text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                        Overhead breakdown
+                    </summary>
+                    <div class="mt-2 space-y-1 text-xs">
+                        @foreach ($pl['overhead_items'] as $item)
+                            <div class="flex justify-between text-zinc-500 dark:text-zinc-400">
+                                <span>{{ $item['name'] }} ({{ $item['formatted'] }})</span>
+                                <span>${{ number_format($item['amount']) }}</span>
+                            </div>
+                        @endforeach
+                    </div>
+                </details>
+            </div>
+        </div>
     @endif
 
     {{-- Annual Goals Card --}}

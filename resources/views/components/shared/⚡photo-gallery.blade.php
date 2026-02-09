@@ -2,6 +2,7 @@
 
 use App\Models\Estimate;
 use App\Models\Job;
+use App\Models\PhotoView;
 use App\Models\Property;
 use App\Models\PropertyPhoto;
 use App\Services\PhotoService;
@@ -10,7 +11,8 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public Property $property;
 
     public ?int $estimateId = null;
@@ -19,9 +21,13 @@ new class extends Component {
 
     public string $context = 'property';
 
+    public bool $compact = false;
+
     public string $categoryFilter = 'all';
 
     public ?int $selectedPhotoId = null;
+
+    public ?int $annotatingPhotoId = null;
 
     public bool $canUpload = false;
 
@@ -60,7 +66,9 @@ new class extends Component {
 
         $this->canUpload = $photoService->canUpload($user, $this->property, 'general', $job);
         $this->canDelete = $user->isInternal() && $user->can('photos.delete');
-        $this->canAnnotate = $user->isInternal() && $user->can('photos.annotate');
+        $this->canAnnotate = ($user->isInternal() && $user->can('photos.annotate'))
+            || $user->type === 'crew'
+            || $user->type === 'customer';
         $this->canComment = $user->isInternal() || $user->type === 'crew' || $user->type === 'customer';
         $this->canReorder = $user->isInternal();
         $this->canSetProposal = $user->isInternal() && $estimate !== null;
@@ -81,7 +89,7 @@ new class extends Component {
                 ->get();
         }
 
-        return $photos->load(['annotation', 'comments']);
+        return $photos->load(['annotations', 'comments', 'views']);
     }
 
     #[Computed]
@@ -104,6 +112,18 @@ new class extends Component {
         }
 
         return $counts;
+    }
+
+    #[Computed]
+    public function unviewedCount(): int
+    {
+        $user = auth()->user();
+
+        if (! $user) {
+            return 0;
+        }
+
+        return $this->photos->filter(fn ($photo) => $photo->hasUnviewedChanges($user))->count();
     }
 
     public function setCategoryFilter(string $category): void
@@ -159,24 +179,71 @@ new class extends Component {
         $this->selectedPhotoId = null;
     }
 
-    #[On('photos-uploaded')]
-    public function refreshPhotos(): void
+    #[On('open-annotator')]
+    public function openAnnotator(int $photoId): void
     {
-        unset($this->photos, $this->filteredPhotos, $this->categoryCounts);
+        $this->selectedPhotoId = null;
+        $this->annotatingPhotoId = $photoId;
     }
 
-    #[On('photo-deleted')]
+    #[On('close-annotator')]
+    public function closeAnnotator(): void
+    {
+        $this->annotatingPhotoId = null;
+        unset($this->photos, $this->filteredPhotos);
+    }
+
+    public function getListeners(): array
+    {
+        $listeners = [
+            'photos-uploaded' => 'refreshPhotos',
+            'photo-deleted' => 'handlePhotoDeleted',
+        ];
+
+        if ($this->jobId) {
+            $channel = match (auth()->user()?->type) {
+                'crew' => "echo-private:crew.job.{$this->jobId}",
+                'customer' => "echo-private:customer.job.{$this->jobId}",
+                default => "echo-private:job.{$this->jobId}",
+            };
+            $listeners["{$channel},photo.updated"] = 'onPhotoUpdated';
+        }
+
+        return $listeners;
+    }
+
+    public function onPhotoUpdated(array $event): void
+    {
+        if (($event['actor_id'] ?? null) == auth()->id()) {
+            return;
+        }
+
+        unset($this->photos, $this->filteredPhotos, $this->categoryCounts, $this->unviewedCount);
+    }
+
+    public function refreshPhotos(): void
+    {
+        unset($this->photos, $this->filteredPhotos, $this->categoryCounts, $this->unviewedCount);
+    }
+
     public function handlePhotoDeleted(): void
     {
         $this->selectedPhotoId = null;
-        unset($this->photos, $this->filteredPhotos, $this->categoryCounts);
+        unset($this->photos, $this->filteredPhotos, $this->categoryCounts, $this->unviewedCount);
     }
 }; ?>
 
 <div>
     {{-- Header --}}
     <div class="flex items-center justify-between mb-4">
-        <flux:heading size="lg">Photos</flux:heading>
+        <div class="flex items-center gap-2">
+            <flux:heading size="lg">Photos</flux:heading>
+            @if ($this->unviewedCount > 0)
+                <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-blue-500 rounded-full">
+                    {{ $this->unviewedCount }}
+                </span>
+            @endif
+        </div>
         @if ($canUpload)
             <flux:button wire:click="$dispatch('open-upload-modal')" icon="arrow-up-tray" size="sm">
                 Upload Photos
@@ -226,13 +293,13 @@ new class extends Component {
             @endif
         </div>
     @else
-        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div class="grid {{ $compact ? 'grid-cols-2 sm:grid-cols-3 gap-2' : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3' }}">
             @foreach ($this->filteredPhotos as $photo)
                 <div wire:key="photo-{{ $photo->id }}" class="group relative rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800 cursor-pointer">
                     {{-- Thumbnail --}}
                     <div class="aspect-square" wire:click="openLightbox({{ $photo->id }})">
                         <img
-                            src="{{ $photo->url }}"
+                            src="{{ $photo->display_url }}"
                             alt="{{ $photo->caption ?? $photo->filename }}"
                             class="w-full h-full object-cover"
                             loading="lazy"
@@ -240,7 +307,7 @@ new class extends Component {
                     </div>
 
                     {{-- Category Badge (top-left) --}}
-                    <div class="absolute top-2 left-2">
+                    <div class="absolute top-2 left-2 flex flex-col gap-1">
                         <flux:badge size="sm" color="{{ match($photo->category) {
                             'before' => 'yellow',
                             'during' => 'blue',
@@ -250,14 +317,24 @@ new class extends Component {
                         } }}">
                             {{ \App\Models\PropertyPhoto::CATEGORIES[$photo->category] ?? $photo->category }}
                         </flux:badge>
+                        @if ($photo->hasUnviewedChanges(auth()->user()))
+                            <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-white bg-blue-500 rounded-full shadow-sm">
+                                <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="5" fill="currentColor" /></svg>
+                                Edited
+                            </span>
+                        @endif
                     </div>
 
-                    {{-- Annotation Indicator (top-right) --}}
-                    @if ($photo->annotation)
-                        <div class="absolute top-2 right-2">
-                            <div class="bg-white/80 dark:bg-zinc-900/80 rounded-full p-1">
-                                <flux:icon name="pencil" class="w-3.5 h-3.5 text-zinc-700 dark:text-zinc-300" />
-                            </div>
+                    {{-- Annotation Indicators (top-right) --}}
+                    @if ($photo->has_annotations)
+                        <div class="absolute top-2 right-2 flex items-center gap-1">
+                            @foreach ($photo->annotations as $ann)
+                                <div
+                                    class="w-3 h-3 rounded-full border border-white/50"
+                                    style="background: {{ $ann->author_color }}"
+                                    title="{{ $ann->author_type_label }} annotation"
+                                ></div>
+                            @endforeach
                         </div>
                     @endif
 
@@ -307,7 +384,7 @@ new class extends Component {
 
                     {{-- Proposal Indicator --}}
                     @if ($photo->show_on_proposal && $canSetProposal)
-                        <div class="absolute top-2 right-2 {{ $photo->annotation ? 'top-8' : '' }}">
+                        <div class="absolute top-2 right-2 {{ $photo->has_annotations ? 'top-8' : '' }}">
                             <div class="bg-amber-100/90 dark:bg-amber-900/80 rounded-full p-1">
                                 <flux:icon name="star" class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                             </div>
@@ -342,6 +419,19 @@ new class extends Component {
                 :can-comment="$canComment"
                 :can-delete="$canDelete"
                 wire:key="lightbox-{{ $selectedPhotoId }}"
+            />
+        @endif
+    @endif
+
+    {{-- Annotation Editor --}}
+    @if ($annotatingPhotoId && $canAnnotate)
+        @php
+            $annotatingPhoto = PropertyPhoto::with('annotations')->find($annotatingPhotoId);
+        @endphp
+        @if ($annotatingPhoto)
+            <livewire:shared.photo-annotator
+                :photo="$annotatingPhoto"
+                wire:key="annotator-{{ $annotatingPhotoId }}"
             />
         @endif
     @endif

@@ -187,7 +187,7 @@ it('syncs all variable expense slugs correctly', function () {
     }
 });
 
-it('syncs vehicle expense from journal entries with 6-prefix accounts', function () {
+it('syncs vehicle expense from journal entries with mapped accounts', function () {
     $settings = CompanySetting::getInstance();
     $year = now()->year;
 
@@ -201,6 +201,7 @@ it('syncs vehicle expense from journal entries with 6-prefix accounts', function
         'company_setting_id' => $settings->id,
         'code' => '6100',
         'name' => 'Vehicle Fuel',
+        'budget_category_id' => $category->id,
     ]);
 
     $entry = JournalEntry::factory()->posted()->create([
@@ -222,7 +223,7 @@ it('syncs vehicle expense from journal entries with 6-prefix accounts', function
     expect($result['categories']['Vehicle Expenses'])->toBe(750.00);
 });
 
-it('syncs business expense from journal entries with 7-prefix accounts', function () {
+it('syncs business expense from journal entries with mapped accounts', function () {
     $settings = CompanySetting::getInstance();
     $year = now()->year;
 
@@ -236,6 +237,7 @@ it('syncs business expense from journal entries with 7-prefix accounts', functio
         'company_setting_id' => $settings->id,
         'code' => '7100',
         'name' => 'Office Manager',
+        'budget_category_id' => $category->id,
     ]);
 
     $entry = JournalEntry::factory()->posted()->create([

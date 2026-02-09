@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CompanyAllocation;
 use App\Models\CompanySetting;
+use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\JobCostCard;
 use App\Models\JobCostCardAllocation;
@@ -36,9 +37,9 @@ class AllocationEvaluationService
                 continue;
             }
 
-            $amount = $allocation->calculateAmount((float) $card->price, $laborHours);
+            $resolved = $allocation->resolveAndCalculate($context, (float) $card->price, $laborHours);
 
-            if ($amount <= 0) {
+            if ($resolved['amount'] <= 0) {
                 continue;
             }
 
@@ -47,13 +48,14 @@ class AllocationEvaluationService
                 'company_allocation_id' => $allocation->id,
                 'name' => $allocation->name,
                 'slug' => $allocation->slug,
-                'type' => $allocation->type,
-                'value' => $allocation->value,
-                'amount' => $amount,
+                'type' => $resolved['type'],
+                'value' => $resolved['value'],
+                'amount' => $resolved['amount'],
                 'conditions_snapshot' => $allocation->conditions,
+                'applied_tier' => $resolved['tier_label'],
             ]);
 
-            $totalAmount += $amount;
+            $totalAmount += $resolved['amount'];
         }
 
         $card->update(['allocation_total' => round($totalAmount, 2)]);
@@ -81,6 +83,7 @@ class AllocationEvaluationService
         $hasScope = [];
         if ($estimate) {
             $hasScope = $estimate->areas()
+                ->reorder()
                 ->distinct()
                 ->pluck('scope_type')
                 ->filter()
@@ -226,6 +229,162 @@ class AllocationEvaluationService
 
             // Subcontractor & Complexity
             'has_subcontractor' => $hasSubcontractor,
+            'has_nested_areas' => $hasNestedAreas,
+            'has_options_selected' => $hasOptionsSelected,
+            'deposit_percent' => $depositPercent,
+
+            // Timing
+            'month' => $month,
+            'season' => $season,
+        ];
+    }
+
+    /**
+     * Build evaluation context from an Estimate model (without requiring a JobCostCard).
+     *
+     * Used by the estimate cost breakdown page to enable conditional allocations
+     * (scope, season, sizing, etc.) at the estimate stage. Payment methods are
+     * always empty since no payments exist before a job is created.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildContextFromEstimate(Estimate $estimate): array
+    {
+        $deal = $estimate->deal;
+        $customer = $deal?->customer;
+        $job = $estimate->job;
+        $settings = CompanySetting::getInstance();
+
+        // === Scope ===
+        $scopeType = $estimate->project_type ?? 'interior';
+
+        $hasScope = $estimate->areas()
+            ->reorder()
+            ->distinct()
+            ->pluck('scope_type')
+            ->filter()
+            ->values()
+            ->toArray();
+
+        if (empty($hasScope)) {
+            $hasScope = [$scopeType];
+        }
+
+        // === Job Sizing ===
+        $totalSqft = 0.0;
+        $totalLaborHours = 0.0;
+        $totalMaterialCost = 0.0;
+        $areaCount = 0;
+        $maxCoats = 0;
+        $hasSpray = false;
+        $hasComplexSubstrate = false;
+        $requiresPrime = false;
+        $usesPremiumPaint = false;
+        $substrateCategories = [];
+        $hasNestedAreas = false;
+
+        $areas = $estimate->areas()->with(['surfaces.paintProduct', 'substrate'])->get();
+        $areaCount = $areas->count();
+
+        foreach ($areas as $area) {
+            $totalSqft += (float) ($area->wall_sqft ?? 0) + (float) ($area->ceiling_sqft ?? 0);
+
+            if ($area->application_method === 'spray') {
+                $hasSpray = true;
+            }
+
+            if ($area->is_fixed_price || $area->parent_area_id) {
+                $hasNestedAreas = true;
+            }
+
+            if ($area->substrate) {
+                $cat = $area->substrate->category ?? 'standard';
+                if (! in_array($cat, $substrateCategories)) {
+                    $substrateCategories[] = $cat;
+                }
+                $multiplier = max(
+                    (float) ($area->substrate->prep_time_multiplier ?? 1.0),
+                    (float) ($area->substrate->paint_time_multiplier ?? 1.0)
+                );
+                if ($multiplier > 1.3) {
+                    $hasComplexSubstrate = true;
+                }
+                if ($area->substrate->requires_prime ?? false) {
+                    $requiresPrime = true;
+                }
+            }
+
+            foreach ($area->surfaces->where('is_included', true) as $surface) {
+                $totalLaborHours += (float) ($surface->labor_hours ?? 0);
+                $totalMaterialCost += (float) ($surface->material_cost ?? 0);
+                $coats = (int) ($surface->coats ?? 1);
+                if ($coats > $maxCoats) {
+                    $maxCoats = $coats;
+                }
+                if ($surface->paintProduct && ($surface->paintProduct->is_premium ?? false)) {
+                    $usesPremiumPaint = true;
+                }
+            }
+        }
+
+        // === Customer & Sales ===
+        $leadSource = $deal?->lead_source;
+        $hasAgentReferral = $deal?->agent_id !== null;
+        $isRepeatCustomer = $customer && $customer->deals()->count() > 1;
+        $customerSource = $customer?->source;
+
+        // === Estimate details ===
+        $estimatorMode = $estimate->estimator_mode;
+        $depositPercent = (float) ($estimate->deposit_percent ?? 0);
+        $hasOptionsSelected = $estimate->options()->where('is_selected', true)->exists();
+
+        // === Crew Size ===
+        $crewSize = $job?->required_crew_size ?? $settings->default_required_crew_size ?? 2;
+
+        // === Timing ===
+        $dateRef = $job?->scheduled_date ?? $estimate->created_at;
+        $month = $dateRef ? (int) $dateRef->format('n') : (int) now()->format('n');
+        $season = match ((int) ceil($month / 3)) {
+            1 => 'winter',
+            2 => 'spring',
+            3 => 'summer',
+            4 => 'fall',
+            default => 'summer',
+        };
+
+        return [
+            'scope_type' => $scopeType,
+            'has_scope' => $hasScope,
+            'payment_methods' => [], // No payments at estimate stage
+            'job_stage' => $job?->stage,
+            'job_price' => (float) $estimate->subtotal,
+
+            // Job Sizing
+            'total_sqft' => round($totalSqft, 2),
+            'total_labor_hours' => round($totalLaborHours, 2),
+            'area_count' => $areaCount,
+            'crew_size' => (int) $crewSize,
+            'estimator_mode' => $estimatorMode,
+
+            // Customer & Sales
+            'lead_source' => $leadSource,
+            'has_agent_referral' => $hasAgentReferral,
+            'is_repeat_customer' => $isRepeatCustomer,
+            'customer_source' => $customerSource,
+
+            // Paint & Materials
+            'uses_premium_paint' => $usesPremiumPaint,
+            'max_coats' => $maxCoats,
+            'total_material_cost' => round($totalMaterialCost, 2),
+
+            // Application & Substrate
+            'has_spray_application' => $hasSpray,
+            'substrate_categories' => $substrateCategories,
+            'has_complex_substrate' => $hasComplexSubstrate,
+            'requires_prime' => $requiresPrime,
+
+            // Subcontractor & Complexity
+            'has_subcontractor' => false, // Not known at estimate stage
             'has_nested_areas' => $hasNestedAreas,
             'has_options_selected' => $hasOptionsSelected,
             'deposit_percent' => $depositPercent,

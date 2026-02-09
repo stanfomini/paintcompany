@@ -132,15 +132,20 @@
             @if ($estimate->terms)
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-zinc-50 dark:bg-zinc-800/50 max-h-32 overflow-y-auto">
                     <flux:text size="xs" class="font-medium text-zinc-600 dark:text-zinc-300 mb-2">Terms & Conditions:</flux:text>
-                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">{{ $estimate->terms }}</flux:text>
+                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">{{ Str::limit($estimate->terms, 200) }}</flux:text>
                 </div>
+                @if (Str::length($estimate->terms) > 200)
+                    <button type="button" wire:click="openTermsModal" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                        View Full Terms
+                    </button>
+                @endif
             @endif
 
             {{-- Terms Checkbox --}}
             <flux:field>
                 <div class="flex items-start gap-3">
                     <flux:checkbox
-                        wire:model="acceptedTerms"
+                        wire:model.live="acceptedTerms"
                         id="acceptedTerms"
                     />
                     <label for="acceptedTerms" class="text-sm text-zinc-600 dark:text-zinc-400 cursor-pointer">
@@ -165,7 +170,7 @@
                     variant="primary"
                     wire:loading.attr="disabled"
                     wire:target="submitSignature"
-                    :disabled="!$acceptedTerms || empty($signatureData)"
+                    :disabled="!$this->canSubmitSignature"
                 >
                     <span wire:loading.remove wire:target="submitSignature">
                         Sign & Accept Estimate

@@ -2,224 +2,217 @@
 
 use App\Models\Estimate;
 use App\Models\PackageTemplate;
+use App\Models\PackageTemplateItem;
+use App\Models\ServiceCategory;
 use Livewire\Livewire;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
-it('shows warranty picker after tier selection', function () {
+beforeEach(function () {
+    $this->category = ServiceCategory::firstOrCreate(
+        ['slug' => 'painting'],
+        ['name' => 'Painting', 'description' => 'Painting services', 'icon' => 'paint-brush', 'color' => 'blue', 'is_active' => true, 'sort_order' => 1]
+    );
+});
+
+it('selects tier directly without warranty picker step', function () {
     $estimate = Estimate::factory()->create([
         'status' => 'sent',
         'areas_subtotal' => 5000,
     ]);
 
-    PackageTemplate::factory()->good()->create();
-    PackageTemplate::factory()->better()->create();
-    PackageTemplate::factory()->best()->create();
+    PackageTemplate::factory()->good()->create(['service_category_id' => $this->category->id]);
+    PackageTemplate::factory()->better()->create(['service_category_id' => $this->category->id]);
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectTier', 'good')
-        ->assertSet('showWarrantyPicker', true)
         ->assertSet('selectedTier', 'good')
-        ->assertSee('Choose Your Warranty');
-});
-
-it('can select a warranty level', function () {
-    $estimate = Estimate::factory()->create([
-        'status' => 'sent',
-        'areas_subtotal' => 5000,
-    ]);
-
-    PackageTemplate::factory()->good()->create();
-    PackageTemplate::factory()->better()->create();
-    PackageTemplate::factory()->best()->create();
-
-    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'better')
-        ->assertSet('selectedWarrantyTier', 'better');
-});
-
-it('confirms selection with warranty and updates template data', function () {
-    $estimate = Estimate::factory()->create([
-        'status' => 'sent',
-        'areas_subtotal' => 5000,
-    ]);
-
-    PackageTemplate::factory()->good()->create([
-        'warranty_months' => 3,
-        'warranty_percent' => 1,
-    ]);
-    PackageTemplate::factory()->better()->create([
-        'warranty_months' => 12,
-        'warranty_percent' => 4,
-    ]);
-    PackageTemplate::factory()->best()->create([
-        'warranty_months' => 24,
-        'warranty_percent' => 6,
-    ]);
-
-    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'better')
-        ->call('confirmSelection');
-
-    // After confirming, warranty picker should be hidden
-    $component->assertSet('showWarrantyPicker', false);
-
-    // The good tier's warranty should now be overridden with better's values
-    $templates = $component->get('packageTemplates');
-    $goodTemplate = collect($templates)->firstWhere('tier', 'good');
-
-    // Better warranty = 4% of 5000 = 200
-    expect((float) $goodTemplate['warranty_amount'])->toBe(200.0)
-        ->and($goodTemplate['warranty_months'])->toBe(12);
-});
-
-it('can go back from warranty picker', function () {
-    $estimate = Estimate::factory()->create([
-        'status' => 'sent',
-        'areas_subtotal' => 5000,
-    ]);
-
-    PackageTemplate::factory()->good()->create();
-    PackageTemplate::factory()->better()->create();
-
-    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->assertSet('showWarrantyPicker', true)
-        ->set('showWarrantyPicker', false)
-        ->assertSet('showWarrantyPicker', false);
-});
-
-it('dispatches tier-selected event after confirming warranty', function () {
-    $estimate = Estimate::factory()->create([
-        'status' => 'sent',
-        'areas_subtotal' => 3000,
-    ]);
-
-    PackageTemplate::factory()->good()->create();
-
-    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'good')
-        ->call('confirmSelection')
         ->assertDispatched('tier-selected');
 });
 
-it('does not dispatch tier-selected on selectTier alone', function () {
+it('warranty items appear in template items with is_warranty flag', function () {
     $estimate = Estimate::factory()->create([
         'status' => 'sent',
-        'areas_subtotal' => 3000,
+        'areas_subtotal' => 5000,
     ]);
 
-    PackageTemplate::factory()->good()->create();
-    PackageTemplate::factory()->better()->create();
+    $template = PackageTemplate::factory()->better()->create([
+        'service_category_id' => $this->category->id,
+    ]);
 
-    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->assertNotDispatched('tier-selected');
+    $warrantyItem = PackageTemplateItem::factory()->warranty(12, 4.0)->create([
+        'service_category_id' => $this->category->id,
+    ]);
+    $warrantyItem->defaultPackages()->attach($template->id);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
+
+    $templates = $component->get('packageTemplates');
+    $betterTemplate = collect($templates)->firstWhere('tier', 'better');
+
+    $items = collect($betterTemplate['items']);
+    $warrantyItems = $items->where('is_warranty', true);
+
+    expect($warrantyItems)->toHaveCount(1)
+        ->and($warrantyItems->first()['name'])->toBe('1-Year Warranty')
+        ->and($warrantyItems->first()['price'])->toBe(200.0); // 4% of 5000
 });
 
-it('shows warranty options with correct costs', function () {
+it('customer can toggle warranty items on and off', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 5000,
+    ]);
+
+    $template = PackageTemplate::factory()->good()->create([
+        'service_category_id' => $this->category->id,
+    ]);
+
+    $warrantyItem = PackageTemplateItem::factory()->warranty(12, 4.0)->create([
+        'service_category_id' => $this->category->id,
+    ]);
+    $warrantyItem->defaultPackages()->attach($template->id);
+
+    $warrantyKey = 'item_'.$warrantyItem->id;
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->assertSet("selectedPackageItems.{$warrantyKey}", true);
+
+    // Toggle off
+    $component->call('togglePackageItem', $warrantyKey)
+        ->assertSet("selectedPackageItems.{$warrantyKey}", false);
+
+    // Toggle back on
+    $component->call('togglePackageItem', $warrantyKey)
+        ->assertSet("selectedPackageItems.{$warrantyKey}", true);
+});
+
+it('warranty total updates when warranty item is toggled', function () {
     $estimate = Estimate::factory()->create([
         'status' => 'sent',
         'areas_subtotal' => 10000,
     ]);
 
-    PackageTemplate::factory()->good()->create([
-        'warranty_months' => 6,
-        'warranty_percent' => 2,
-    ]);
-    PackageTemplate::factory()->better()->create([
-        'warranty_months' => 12,
-        'warranty_percent' => 4,
+    $template = PackageTemplate::factory()->good()->create([
+        'service_category_id' => $this->category->id,
     ]);
 
-    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good');
+    $warrantyItem = PackageTemplateItem::factory()->warranty(12, 2.0)->create([
+        'service_category_id' => $this->category->id,
+    ]);
+    $warrantyItem->defaultPackages()->attach($template->id);
 
-    $options = $component->get('warrantyOptions');
+    $warrantyKey = 'item_'.$warrantyItem->id;
 
-    // Good: 2% of 10000 = 200
-    $goodOption = collect($options)->firstWhere('tier', 'good');
-    expect($goodOption['cost'])->toBe(200.0)
-        ->and($goodOption['months'])->toBe(6);
+    // With warranty: total = 10000 + 200 = 10200
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
+    expect($component->get('selectedTemplateTotal'))->toBe(10200.0);
+    expect($component->get('selectedTemplateWarrantyTotal'))->toBe(200.0);
 
-    // Better: 4% of 10000 = 400
-    $betterOption = collect($options)->firstWhere('tier', 'better');
-    expect($betterOption['cost'])->toBe(400.0)
-        ->and($betterOption['months'])->toBe(12);
+    // Toggle off warranty: total = 10000
+    $component->call('togglePackageItem', $warrantyKey);
+    expect($component->get('selectedTemplateTotal'))->toBe(10000.0);
+    expect($component->get('selectedTemplateWarrantyTotal'))->toBe(0.0);
 });
 
-it('cannot confirm without selecting a warranty', function () {
+it('different templates can have different warranty items', function () {
     $estimate = Estimate::factory()->create([
         'status' => 'sent',
         'areas_subtotal' => 5000,
     ]);
 
-    PackageTemplate::factory()->good()->create();
+    $goodTemplate = PackageTemplate::factory()->good()->create([
+        'service_category_id' => $this->category->id,
+    ]);
+    $bestTemplate = PackageTemplate::factory()->best()->create([
+        'service_category_id' => $this->category->id,
+    ]);
 
-    // Confirm without selecting warranty - should still work but with null warranty
-    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('confirmSelection');
+    // Good gets 6-month warranty at 2%
+    $shortWarranty = PackageTemplateItem::factory()->warranty(6, 2.0)->create([
+        'name' => '6-Month Warranty',
+        'service_category_id' => $this->category->id,
+    ]);
+    $shortWarranty->defaultPackages()->attach($goodTemplate->id);
 
-    // showWarrantyPicker should be false after confirm
-    $component->assertSet('showWarrantyPicker', false);
-    // No warranty override applied since selectedWarrantyTier is null
-    $component->assertSet('selectedWarrantyTier', null);
+    // Best gets 2-year warranty at 6%
+    $longWarranty = PackageTemplateItem::factory()->warranty(24, 6.0)->create([
+        'name' => '2-Year Warranty',
+        'service_category_id' => $this->category->id,
+    ]);
+    $longWarranty->defaultPackages()->attach($bestTemplate->id);
+
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
+
+    $templates = $component->get('packageTemplates');
+
+    $good = collect($templates)->firstWhere('tier', 'good');
+    $best = collect($templates)->firstWhere('tier', 'best');
+
+    $goodWarranty = collect($good['items'])->where('is_warranty', true);
+    $bestWarranty = collect($best['items'])->where('is_warranty', true);
+
+    expect($goodWarranty)->toHaveCount(1)
+        ->and($goodWarranty->first()['name'])->toBe('6-Month Warranty')
+        ->and($goodWarranty->first()['price'])->toBe(100.0); // 2% of 5000
+
+    expect($bestWarranty)->toHaveCount(1)
+        ->and($bestWarranty->first()['name'])->toBe('2-Year Warranty')
+        ->and($bestWarranty->first()['price'])->toBe(300.0); // 6% of 5000
 });
 
-it('applies cross-tier warranty selection correctly', function () {
+it('template without warranty items shows no warranty in card', function () {
     $estimate = Estimate::factory()->create([
         'status' => 'sent',
-        'areas_subtotal' => 2000,
+        'areas_subtotal' => 5000,
     ]);
 
     PackageTemplate::factory()->good()->create([
-        'warranty_months' => 3,
-        'warranty_percent' => 1,
-    ]);
-    PackageTemplate::factory()->best()->create([
-        'warranty_months' => 24,
-        'warranty_percent' => 6,
+        'service_category_id' => $this->category->id,
     ]);
 
-    // Select good tier but best warranty
-    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'best')
-        ->call('confirmSelection');
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate]);
 
     $templates = $component->get('packageTemplates');
     $goodTemplate = collect($templates)->firstWhere('tier', 'good');
 
-    // Best warranty = 6% of 2000 = 120
-    expect((float) $goodTemplate['warranty_amount'])->toBe(120.0)
-        ->and($goodTemplate['warranty_months'])->toBe(24);
-
-    // Total should be painting (2000) + warranty (120) = 2120
-    expect($component->get('selectedTemplateTotal'))->toBe(2120.0);
+    $warrantyItems = collect($goodTemplate['items'])->where('is_warranty', true);
+    expect($warrantyItems)->toHaveCount(0);
 });
 
-it('logs activity with warranty tier on confirm', function () {
+it('logs activity when tier is selected', function () {
     $estimate = Estimate::factory()->create([
         'status' => 'sent',
         'areas_subtotal' => 2000,
     ]);
 
-    PackageTemplate::factory()->good()->create();
-    PackageTemplate::factory()->better()->create();
+    PackageTemplate::factory()->good()->create(['service_category_id' => $this->category->id]);
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'better')
-        ->call('confirmSelection');
+        ->call('selectTier', 'good');
 
     $activity = $estimate->activities()->where('activity_type', 'package_tier_selected')->first();
     expect($activity)->not->toBeNull();
+    expect($activity->metadata['tier'])->toBe('good');
+});
 
-    $metadata = $activity->metadata;
-    expect($metadata['tier'])->toBe('good')
-        ->and($metadata['warranty_tier'])->toBe('better');
+it('warranty items show with blue styling in breakdown', function () {
+    $estimate = Estimate::factory()->create([
+        'status' => 'sent',
+        'areas_subtotal' => 5000,
+    ]);
+
+    $template = PackageTemplate::factory()->better()->create([
+        'service_category_id' => $this->category->id,
+    ]);
+
+    $warrantyItem = PackageTemplateItem::factory()->warranty(12, 5.0)->create([
+        'service_category_id' => $this->category->id,
+    ]);
+    $warrantyItem->defaultPackages()->attach($template->id);
+
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectTier', 'better')
+        ->assertSee('1-Year Warranty')
+        ->assertSee('Included - click to remove');
 });

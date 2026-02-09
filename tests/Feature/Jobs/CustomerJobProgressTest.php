@@ -314,3 +314,167 @@ describe('Customer Job Progress Page', function () {
             ->assertSee('Confirm This Date');
     });
 });
+
+describe('Customer Job Quick Info Bar', function () {
+    it('shows estimate link in header when estimate exists', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $estimate = \App\Models\Estimate::factory()->create();
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertSee('View Estimate')
+            ->assertSee($estimate->estimate_number);
+    });
+
+    it('shows estimate total in info bar', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $estimate = \App\Models\Estimate::factory()->create(['total' => 4250.00]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertSee('$4,250.00');
+    });
+
+    it('shows scheduled date in info bar', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $date = now()->addWeeks(2);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'scheduled_date' => $date,
+        ]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertSee($date->format('M j, Y'));
+    });
+
+    it('shows current stage badge in info bar', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'stage' => 'in_progress',
+        ]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertSee('In Progress');
+    });
+
+    it('shows property address in info bar', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $property = \App\Models\Property::factory()->create(['address' => '123 Maple Street']);
+        $deal = Deal::factory()->create([
+            'customer_id' => $customer->id,
+            'property_id' => $property->id,
+        ]);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertSee('123 Maple Street');
+    });
+});
+
+describe('Customer Job Activity Feed', function () {
+    it('shows activity timeline when activities exist', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+
+        \App\Models\JobActivity::factory()
+            ->forJob($job)
+            ->stageChanged()
+            ->create(['description' => 'Stage changed to Scheduling']);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertSee('Activity Timeline')
+            ->assertSee('Stage changed to Scheduling');
+    });
+
+    it('hides internal-only activity types from customers', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+
+        // Create a customer-visible activity
+        \App\Models\JobActivity::factory()->forJob($job)->create([
+            'activity_type' => 'date_confirmed_customer',
+            'description' => 'Customer confirmed the date',
+        ]);
+
+        // Create internal-only activities that should be hidden
+        \App\Models\JobActivity::factory()->forJob($job)->create([
+            'activity_type' => 'crew_dispatched',
+            'description' => 'Dispatched to Pro Painters',
+        ]);
+
+        \App\Models\JobActivity::factory()->forJob($job)->create([
+            'activity_type' => 'crew_rejected',
+            'description' => 'Crew declined the job',
+        ]);
+
+        $component = Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job]);
+
+        // Should only have the 1 visible activity
+        expect($component->get('activityItems'))->toHaveCount(1);
+        expect($component->get('activityItems')->first()->description)->toBe('Customer confirmed the date');
+    });
+
+    it('loads more activities on scroll', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+
+        // Create 20 visible activities
+        \App\Models\JobActivity::factory()
+            ->forJob($job)
+            ->count(20)
+            ->create(['activity_type' => 'stage_changed']);
+
+        $component = Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job]);
+
+        // Should load 15 initially with more available
+        expect($component->get('activityItems'))->toHaveCount(15);
+        expect($component->get('hasMoreActivities'))->toBeTrue();
+
+        // Load more
+        $component->call('loadMoreActivities');
+
+        expect($component->get('activityItems'))->toHaveCount(20);
+        expect($component->get('hasMoreActivities'))->toBeFalse();
+    });
+
+    it('does not show activity section when no activities', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.job-progress', ['job' => $job])
+            ->assertDontSee('Activity Timeline');
+    });
+});

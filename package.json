@@ -16,6 +16,7 @@
         "autoprefixer": "^10.4.20",
         "axios": "^1.7.4",
         "concurrently": "^9.0.1",
+        "fabric": "^6.9.1",
         "laravel-echo": "^2.3.0",
         "laravel-vite-plugin": "^2.0",
         "playwright-extra": "^4.3.6",

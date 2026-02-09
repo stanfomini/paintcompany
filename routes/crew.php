@@ -31,7 +31,11 @@ Route::middleware(['auth:crew', 'auth.crew'])->group(function () {
     // Job routes
     Route::livewire('available-jobs', 'crew.available-jobs')->name('jobs.available');
     Route::livewire('available-jobs/{job}', 'crew.job-show')->name('jobs.show');
+    Route::livewire('available-jobs/{job}/breakdown', 'crew.job-breakdown')->name('jobs.breakdown');
     Route::livewire('my-jobs', 'crew.my-jobs')->name('jobs.mine');
+
+    // Referrals
+    Route::livewire('referrals', 'crew.referrals')->name('referrals');
 
     // Chat routes
     Route::livewire('chat', 'crew.chat.thread-list')->name('chat.index');

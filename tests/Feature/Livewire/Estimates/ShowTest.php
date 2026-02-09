@@ -170,11 +170,19 @@ describe('Estimate Show component', function () {
             ->assertSeeHtml('href="'.route('estimates.edit', $estimate).'"');
     });
 
-    it('hides edit button for non-draft estimates', function () {
+    it('shows edit button for sent estimates', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->sent()->create(['created_by' => $user->id]);
 
-        // The main Edit button should not show, but PackageBuilder may show "Edit package details" buttons
+        Livewire::actingAs($user)
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertSeeHtml('href="'.route('estimates.edit', $estimate).'"');
+    });
+
+    it('hides edit button for accepted estimates', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $estimate = Estimate::factory()->accepted()->create(['created_by' => $user->id]);
+
         Livewire::actingAs($user)
             ->test('estimates.show', ['estimate' => $estimate])
             ->assertDontSeeHtml('href="'.route('estimates.edit', $estimate).'"');

@@ -2,10 +2,15 @@
 
 namespace App\Services;
 
+use App\Events\JobColorUpdated;
+use App\Events\JobDateUpdated;
+use App\Events\JobStageChanged;
 use App\Models\CompanySetting;
 use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\JobActivity;
+use App\Models\JobServiceRequirement;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use App\Notifications\CustomerConfirmedColors;
 use App\Notifications\CustomerConfirmedDate;
@@ -20,6 +25,8 @@ class JobService
 {
     /**
      * Create a Job from an accepted estimate.
+     * Auto-creates painting JobServiceRequirement and additional requirements
+     * for estimate options that have a service_category_id.
      */
     public function createFromEstimate(Estimate $estimate): Job
     {
@@ -35,6 +42,38 @@ class JobService
             'description' => $estimate->description ?? $deal->description,
             'required_crew_size' => $settings->default_required_crew_size ?? 2,
         ]);
+
+        // Auto-create painting service requirement
+        $paintingCategory = ServiceCategory::where('slug', 'painting')->first();
+        if ($paintingCategory) {
+            JobServiceRequirement::create([
+                'job_id' => $job->id,
+                'service_category_id' => $paintingCategory->id,
+                'required_crew_size' => $settings->default_required_crew_size ?? 2,
+                'status' => JobServiceRequirement::STATUS_PENDING,
+            ]);
+        }
+
+        // Check estimate options for additional service categories
+        $optionServiceIds = $estimate->options()
+            ->whereNotNull('service_category_id')
+            ->where('is_selected', true)
+            ->pluck('service_category_id')
+            ->unique();
+
+        foreach ($optionServiceIds as $serviceCategoryId) {
+            // Skip if it's the painting category (already created)
+            if ($paintingCategory && $serviceCategoryId === $paintingCategory->id) {
+                continue;
+            }
+
+            JobServiceRequirement::create([
+                'job_id' => $job->id,
+                'service_category_id' => $serviceCategoryId,
+                'required_crew_size' => 1,
+                'status' => JobServiceRequirement::STATUS_PENDING,
+            ]);
+        }
 
         JobActivity::log($job, 'stage_changed', 'Job created from accepted estimate', [
             'stage' => 'estimate_accepted',
@@ -73,6 +112,8 @@ class JobService
             if ($job->stage === 'in_progress') {
                 app(JobCostCardService::class)->updateCardToActive($job);
             }
+
+            JobStageChanged::dispatch($job, $oldStage, $job->stage);
         }
 
         return $result;
@@ -88,6 +129,8 @@ class JobService
         JobActivity::log($job, 'date_proposed', 'Scheduled date set to '.$date->format('M j, Y'), [
             'date' => $date->toDateString(),
         ]);
+
+        JobDateUpdated::dispatch($job, null, $date->toDateString(), false);
     }
 
     /**
@@ -98,6 +141,8 @@ class JobService
         $job->update(['company_date_confirmed' => true]);
 
         JobActivity::log($job, 'date_confirmed_company', 'Company confirmed the scheduled date');
+
+        JobDateUpdated::dispatch($job, null, $job->scheduled_date?->toDateString(), true);
     }
 
     /**
@@ -113,6 +158,8 @@ class JobService
         if ($assignedUser) {
             $assignedUser->notify(new CustomerConfirmedDate($job));
         }
+
+        JobDateUpdated::dispatch($job, null, $job->scheduled_date?->toDateString(), true);
     }
 
     /**
@@ -131,6 +178,8 @@ class JobService
         $job->update(['company_colors_confirmed' => true]);
 
         JobActivity::log($job, 'colors_confirmed_company', 'Company confirmed color selections');
+
+        JobColorUpdated::dispatch($job, 'confirmed', 'company');
     }
 
     /**
@@ -146,6 +195,8 @@ class JobService
         if ($assignedUser) {
             $assignedUser->notify(new CustomerConfirmedColors($job));
         }
+
+        JobColorUpdated::dispatch($job, 'confirmed', 'customer');
     }
 
     /**
@@ -186,6 +237,9 @@ class JobService
                 $assignedUser->notify(new CustomerProposedDate($job, $date->format('l, F j, Y')));
             }
         }
+
+        $customerUser = $job->getCustomer()?->user;
+        JobDateUpdated::dispatch($job, $customerUser?->id, $date->toDateString(), false);
     }
 
     /**

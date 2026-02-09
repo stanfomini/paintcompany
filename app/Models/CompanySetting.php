@@ -51,11 +51,15 @@ class CompanySetting extends Model
         // Defaults
         'default_deposit_percent',
         'accounting_mode',
+        'tax_reserve_percent',
+        'profit_reserve_percent',
         'default_sales_discount_percent',
         'material_tax_rate',
         'labor_tax_rate',
         'default_interior_sqft_rate',
         'default_exterior_sqft_rate',
+        // Terms
+        'default_terms_and_conditions',
         // JSON fields
         'paint_catalog',
         'default_paint_products_by_category',
@@ -85,6 +89,9 @@ class CompanySetting extends Model
         'increase_oauth_state',
         'payment_split_enabled',
         'payment_split_config',
+        // Referral Program
+        'referral_reward_amount',
+        'referral_program_enabled',
     ];
 
     protected function casts(): array
@@ -110,6 +117,9 @@ class CompanySetting extends Model
             'interior_margin_percent' => 'decimal:2',
             'exterior_markup_percent' => 'decimal:2',
             'exterior_margin_percent' => 'decimal:2',
+            // Profit First Reserves
+            'tax_reserve_percent' => 'decimal:2',
+            'profit_reserve_percent' => 'decimal:2',
             // Defaults
             'default_deposit_percent' => 'decimal:2',
             'default_sales_discount_percent' => 'decimal:2',
@@ -144,6 +154,9 @@ class CompanySetting extends Model
             'increase_access_token' => 'encrypted',
             'payment_split_enabled' => 'boolean',
             'payment_split_config' => 'array',
+            // Referral Program
+            'referral_reward_amount' => 'decimal:2',
+            'referral_program_enabled' => 'boolean',
         ];
     }
 
@@ -354,30 +367,43 @@ class CompanySetting extends Model
     {
         $defaults = [
             [
-                'name' => 'Credit Card Processing Fee',
-                'slug' => 'credit_card_processing_fee',
+                'name' => 'Payment Processing Fee',
+                'slug' => 'payment_processing_fee',
                 'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
                 'value' => 3.00,
                 'is_informational' => false,
-                'description' => 'Card processing fee (Stripe/credit card payments)',
+                'description' => 'Payment processing costs (varies by method)',
                 'sort_order' => 20,
                 'conditions' => [
-                    ['field' => 'payment_methods', 'operator' => 'in', 'value' => ['credit_card', 'stripe']],
+                    ['field' => 'payment_methods', 'operator' => 'in', 'value' => ['stripe', 'check', 'cash', 'ach']],
                 ],
                 'conditions_logic' => 'any',
-            ],
-            [
-                'name' => 'ACH Processing Fee',
-                'slug' => 'ach_processing_fee',
-                'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
-                'value' => 5.00,
-                'is_informational' => false,
-                'description' => 'Bank transfer processing fee',
-                'sort_order' => 21,
-                'conditions' => [
-                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'ach'],
+                'value_tiers' => [
+                    [
+                        'label' => 'Stripe',
+                        'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                        'value' => 2.99,
+                        'conditions' => [
+                            ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                        ],
+                    ],
+                    [
+                        'label' => 'Check',
+                        'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
+                        'value' => 50.00,
+                        'conditions' => [
+                            ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'check'],
+                        ],
+                    ],
+                    [
+                        'label' => 'ACH',
+                        'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
+                        'value' => 5.00,
+                        'conditions' => [
+                            ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'ach'],
+                        ],
+                    ],
                 ],
-                'conditions_logic' => 'all',
             ],
             [
                 'name' => 'Agent Referral Commission',
@@ -386,7 +412,7 @@ class CompanySetting extends Model
                 'value' => 5.00,
                 'is_informational' => false,
                 'description' => 'Commission for agent-referred jobs',
-                'sort_order' => 22,
+                'sort_order' => 21,
                 'conditions' => [
                     ['field' => 'has_agent_referral', 'operator' => 'equals', 'value' => true],
                 ],
@@ -399,37 +425,40 @@ class CompanySetting extends Model
                 'value' => 2.00,
                 'is_informational' => true,
                 'description' => 'Tracks loyalty discount cost for returning customers',
-                'sort_order' => 23,
+                'sort_order' => 22,
                 'conditions' => [
                     ['field' => 'is_repeat_customer', 'operator' => 'equals', 'value' => true],
                 ],
                 'conditions_logic' => 'all',
             ],
             [
-                'name' => 'Exterior Equipment Reserve',
-                'slug' => 'exterior_equipment_reserve',
-                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
-                'value' => 3.50,
-                'is_informational' => false,
-                'description' => 'Ladders, sprayers, power washers for exterior work',
-                'sort_order' => 24,
-                'conditions' => [
-                    ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
-                ],
-                'conditions_logic' => 'all',
-            ],
-            [
-                'name' => 'Interior Protection & Supplies',
-                'slug' => 'interior_protection_supplies',
+                'name' => 'Equipment & Supplies',
+                'slug' => 'equipment_and_supplies',
                 'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
                 'value' => 1.50,
                 'is_informational' => false,
-                'description' => 'Drop cloths, tape, plastic sheeting for interior',
-                'sort_order' => 25,
-                'conditions' => [
-                    ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'interior'],
-                ],
+                'description' => 'Equipment and supplies per labor hour (varies by scope)',
+                'sort_order' => 23,
+                'conditions' => null,
                 'conditions_logic' => 'all',
+                'value_tiers' => [
+                    [
+                        'label' => 'Exterior',
+                        'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                        'value' => 3.50,
+                        'conditions' => [
+                            ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
+                        ],
+                    ],
+                    [
+                        'label' => 'Interior',
+                        'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                        'value' => 1.50,
+                        'conditions' => [
+                            ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'interior'],
+                        ],
+                    ],
+                ],
             ],
             [
                 'name' => 'Small Job Minimum Overhead',
@@ -438,7 +467,7 @@ class CompanySetting extends Model
                 'value' => 75.00,
                 'is_informational' => false,
                 'description' => 'Fixed overhead for small jobs under $1,500',
-                'sort_order' => 26,
+                'sort_order' => 24,
                 'conditions' => [
                     ['field' => 'job_price', 'operator' => 'less_than', 'value' => '1500'],
                 ],
@@ -451,7 +480,7 @@ class CompanySetting extends Model
                 'value' => 0.00,
                 'is_informational' => true,
                 'description' => 'Tracks efficiency gains on large jobs over $15,000',
-                'sort_order' => 27,
+                'sort_order' => 25,
                 'conditions' => [
                     ['field' => 'job_price', 'operator' => 'greater_than', 'value' => '15000'],
                 ],
@@ -464,7 +493,7 @@ class CompanySetting extends Model
                 'value' => 3.00,
                 'is_informational' => true,
                 'description' => 'Tracks seasonal cost impact during winter months',
-                'sort_order' => 28,
+                'sort_order' => 26,
                 'conditions' => [
                     ['field' => 'season', 'operator' => 'equals', 'value' => 'winter'],
                 ],
@@ -477,7 +506,7 @@ class CompanySetting extends Model
                 'value' => 2.00,
                 'is_informational' => false,
                 'description' => 'Extra equipment wear for complex substrates (peeling, masonry)',
-                'sort_order' => 29,
+                'sort_order' => 27,
                 'conditions' => [
                     ['field' => 'has_complex_substrate', 'operator' => 'equals', 'value' => true],
                 ],
@@ -490,7 +519,7 @@ class CompanySetting extends Model
                 'value' => 4.00,
                 'is_informational' => false,
                 'description' => 'Spray equipment maintenance, tips, and masking materials',
-                'sort_order' => 30,
+                'sort_order' => 28,
                 'conditions' => [
                     ['field' => 'has_spray_application', 'operator' => 'equals', 'value' => true],
                 ],
@@ -503,7 +532,7 @@ class CompanySetting extends Model
                 'value' => 150.00,
                 'is_informational' => false,
                 'description' => 'Coordination overhead for jobs requiring 4+ crew members',
-                'sort_order' => 31,
+                'sort_order' => 29,
                 'conditions' => [
                     ['field' => 'crew_size', 'operator' => 'greater_than', 'value' => '3'],
                 ],
@@ -516,26 +545,66 @@ class CompanySetting extends Model
                 'value' => 2.00,
                 'is_informational' => false,
                 'description' => 'Oversight cost when subcontractors are used',
-                'sort_order' => 32,
+                'sort_order' => 30,
                 'conditions' => [
                     ['field' => 'has_subcontractor', 'operator' => 'equals', 'value' => true],
                 ],
                 'conditions_logic' => 'all',
             ],
             [
-                'name' => 'Lead Platform Cost Recovery',
-                'slug' => 'lead_platform_cost_recovery',
+                'name' => 'Lead Cost Recovery',
+                'slug' => 'lead_cost_recovery',
                 'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
                 'value' => 4.00,
                 'is_informational' => true,
-                'description' => 'Tracks cost of paid lead platforms (Google Ads, HomeAdvisor, Thumbtack)',
-                'sort_order' => 33,
+                'description' => 'Tracks cost of paid lead platforms (varies by source)',
+                'sort_order' => 31,
                 'conditions' => [
                     ['field' => 'lead_source', 'operator' => 'in', 'value' => ['google_ads', 'home_advisor', 'thumbtack']],
                 ],
                 'conditions_logic' => 'any',
+                'value_tiers' => [
+                    [
+                        'label' => 'Google Ads',
+                        'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                        'value' => 5.00,
+                        'conditions' => [
+                            ['field' => 'lead_source', 'operator' => 'equals', 'value' => 'google_ads'],
+                        ],
+                    ],
+                    [
+                        'label' => 'HomeAdvisor',
+                        'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                        'value' => 4.00,
+                        'conditions' => [
+                            ['field' => 'lead_source', 'operator' => 'equals', 'value' => 'home_advisor'],
+                        ],
+                    ],
+                    [
+                        'label' => 'Thumbtack',
+                        'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                        'value' => 3.00,
+                        'conditions' => [
+                            ['field' => 'lead_source', 'operator' => 'equals', 'value' => 'thumbtack'],
+                        ],
+                    ],
+                ],
             ],
         ];
+
+        // Remove old slugs that were consolidated into tiered allocations
+        $deprecatedSlugs = [
+            'credit_card_processing_fee',
+            'ach_processing_fee',
+            'exterior_equipment_reserve',
+            'interior_protection_supplies',
+            'lead_platform_cost_recovery',
+        ];
+
+        $this->allocations()
+            ->whereIn('slug', $deprecatedSlugs)
+            ->where('is_system', false)
+            ->delete();
 
         foreach ($defaults as $data) {
             $this->allocations()->updateOrCreate(

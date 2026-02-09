@@ -865,7 +865,7 @@ describe('Package-Specific Breakdown', function () {
         expect($breakdown['items_total'])->toBe(200.00);
     });
 
-    it('displays package indicator in UI when package exists', function () {
+    it('displays package switcher in UI when package exists', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
 
         $estimate = Estimate::factory()->create(['project_type' => 'interior']);
@@ -882,7 +882,7 @@ describe('Package-Specific Breakdown', function () {
 
         Livewire::actingAs($user)
             ->test('estimates.cost-breakdown', ['estimate' => $estimate])
-            ->assertSee('Calculating: Better Package')
+            ->assertSee('Better Package')
             ->assertSee('Signed')
             ->assertSee('3-Year Warranty');
     });
@@ -1495,5 +1495,138 @@ describe('Warranty Reserve Integration', function () {
         expect($breakdown['warranty_reserve']['status'])->toBe('fully_claimed');
         expect($breakdown['warranty_reserve']['remaining_balance'])->toBe(0.0);
         expect($breakdown['warranty_reserve']['has_available_balance'])->toBeFalse();
+    });
+
+    it('defaults selectedPackageId to active package on mount', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+
+        $good = EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Good',
+            'tier' => 'basic',
+            'total' => 1000.00,
+            'sort_order' => 1,
+        ]);
+
+        $better = EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Better',
+            'tier' => 'standard',
+            'is_selected' => true,
+            'total' => 2000.00,
+            'sort_order' => 2,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.cost-breakdown', ['estimate' => $estimate])
+            ->assertSet('selectedPackageId', $better->id);
+    });
+
+    it('switches breakdown when selecting a different package', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+
+        $good = EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Good',
+            'tier' => 'basic',
+            'total' => 500.00,
+            'sort_order' => 1,
+        ]);
+
+        $best = EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Best',
+            'tier' => 'premium',
+            'is_selected' => true,
+            'total' => 1500.00,
+            'sort_order' => 3,
+        ]);
+
+        // Start on Best (selected), then switch to Good
+        $component = Livewire::actingAs($user)
+            ->test('estimates.cost-breakdown', ['estimate' => $estimate])
+            ->assertSet('selectedPackageId', $best->id);
+
+        // Switch to Good - breakdown should change
+        $component->call('selectPackage', $good->id)
+            ->assertSet('selectedPackageId', $good->id);
+
+        // Verify the breakdown is for the Good package
+        $breakdown = $component->get('currentBreakdown');
+        expect($breakdown['package']['id'])->toBe($good->id);
+        expect($breakdown['package']['name'])->toBe('Good');
+    });
+
+    it('shows all packages in switcher bar', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+
+        EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Good',
+            'tier' => 'basic',
+            'total' => 1000.00,
+            'sort_order' => 1,
+        ]);
+
+        EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Better',
+            'tier' => 'standard',
+            'is_recommended' => true,
+            'total' => 2000.00,
+            'sort_order' => 2,
+        ]);
+
+        EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Best',
+            'tier' => 'premium',
+            'is_selected' => true,
+            'total' => 3000.00,
+            'sort_order' => 3,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.cost-breakdown', ['estimate' => $estimate])
+            ->assertSee('Good')
+            ->assertSee('Better')
+            ->assertSee('Best')
+            ->assertSee('$1,000.00')
+            ->assertSee('$2,000.00')
+            ->assertSee('$3,000.00')
+            ->assertSee('Selected')
+            ->assertSee('Recommended');
+    });
+
+    it('ignores selectPackage for packages from other estimates', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+        $otherEstimate = Estimate::factory()->create(['project_type' => 'interior']);
+
+        $myPackage = EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'name' => 'Good',
+            'tier' => 'basic',
+            'is_recommended' => true,
+            'total' => 1000.00,
+            'sort_order' => 1,
+        ]);
+
+        $foreignPackage = EstimatePackage::factory()->create([
+            'estimate_id' => $otherEstimate->id,
+            'name' => 'Other',
+            'tier' => 'basic',
+            'total' => 9999.00,
+            'sort_order' => 1,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.cost-breakdown', ['estimate' => $estimate])
+            ->assertSet('selectedPackageId', $myPackage->id)
+            ->call('selectPackage', $foreignPackage->id)
+            ->assertSet('selectedPackageId', $myPackage->id); // Should not change
     });
 });

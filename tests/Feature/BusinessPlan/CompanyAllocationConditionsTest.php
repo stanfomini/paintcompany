@@ -62,16 +62,16 @@ it('evaluates scope not_equals', function () {
 
 it('evaluates payment_methods equals', function () {
     $allocation = CompanyAllocation::factory()->withConditions([
-        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'credit_card'],
+        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
     ])->create();
 
-    expect($allocation->evaluateConditions(['payment_methods' => ['credit_card', 'check']]))->toBeTrue();
+    expect($allocation->evaluateConditions(['payment_methods' => ['stripe', 'check']]))->toBeTrue();
     expect($allocation->evaluateConditions(['payment_methods' => ['check', 'cash']]))->toBeFalse();
 });
 
 it('evaluates payment_methods in', function () {
     $allocation = CompanyAllocation::factory()->withConditions([
-        ['field' => 'payment_methods', 'operator' => 'in', 'value' => ['credit_card', 'financing']],
+        ['field' => 'payment_methods', 'operator' => 'in', 'value' => ['stripe', 'financing']],
     ])->create();
 
     expect($allocation->evaluateConditions(['payment_methods' => ['financing']]))->toBeTrue();
@@ -127,32 +127,32 @@ it('evaluates in operator generically', function () {
 it('uses AND logic by default with multiple conditions', function () {
     $allocation = CompanyAllocation::factory()->withConditions([
         ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
-        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'credit_card'],
+        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
     ])->create();
 
     // Both pass
     expect($allocation->evaluateConditions([
         'has_scope' => ['exterior'],
-        'payment_methods' => ['credit_card'],
+        'payment_methods' => ['stripe'],
     ]))->toBeTrue();
 
     // Only one passes
     expect($allocation->evaluateConditions([
         'has_scope' => ['interior'],
-        'payment_methods' => ['credit_card'],
+        'payment_methods' => ['stripe'],
     ]))->toBeFalse();
 });
 
 it('uses OR logic when conditions_logic is any', function () {
     $allocation = CompanyAllocation::factory()->withConditions([
         ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
-        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'credit_card'],
+        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
     ], 'any')->create();
 
     // Only one passes - should still return true
     expect($allocation->evaluateConditions([
         'has_scope' => ['interior'],
-        'payment_methods' => ['credit_card'],
+        'payment_methods' => ['stripe'],
     ]))->toBeTrue();
 
     // Neither passes
@@ -171,7 +171,7 @@ it('returns empty string for conditions summary when no conditions', function ()
 it('generates conditions summary with AND logic', function () {
     $allocation = CompanyAllocation::factory()->withConditions([
         ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
-        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'credit_card'],
+        ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
     ])->create();
 
     $summary = $allocation->getConditionsSummary();
@@ -179,7 +179,7 @@ it('generates conditions summary with AND logic', function () {
     expect($summary)->toContain('Applies when:');
     expect($summary)->toContain('has scope is exterior');
     expect($summary)->toContain(' AND ');
-    expect($summary)->toContain('payment methods is credit_card');
+    expect($summary)->toContain('payment methods is stripe');
 });
 
 it('generates conditions summary with OR logic', function () {

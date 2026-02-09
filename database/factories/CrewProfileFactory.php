@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\CrewProfile;
+use App\Models\ServiceCategory;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -27,6 +28,7 @@ class CrewProfileFactory extends Factory
             'crew_size' => fake()->numberBetween(1, 8),
             'specialties' => fake()->randomElements(['interior', 'exterior', 'deck', 'cabinet', 'commercial'], rand(1, 3)),
             'hourly_rate' => fake()->randomFloat(2, 25, 75),
+            'bonus_percent' => null,
             'bio' => fake()->optional()->sentence(),
             'insurance_company' => fake()->optional()->company(),
             'policy_number' => fake()->optional()->uuid(),
@@ -47,6 +49,16 @@ class CrewProfileFactory extends Factory
             'license_expiration_date' => fake()->optional()->dateTimeBetween('+1 month', '+2 years'),
             'notes' => null,
         ];
+    }
+
+    /**
+     * Crew with a bonus percentage set.
+     */
+    public function withBonus(float $percent = 5.0): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'bonus_percent' => $percent,
+        ]);
     }
 
     /**
@@ -140,6 +152,27 @@ class CrewProfileFactory extends Factory
             'workers_comp_policy_number' => fake()->uuid(),
             'workers_comp_start_date' => now()->subMonths(14),
             'workers_comp_expiration_date' => now()->subDays(30),
+        ]);
+    }
+
+    public function forService(ServiceCategory $category): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => $category->id,
+        ]);
+    }
+
+    public function painting(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => ServiceCategory::factory()->painting(),
+        ]);
+    }
+
+    public function cleaning(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => ServiceCategory::factory()->cleaning(),
         ]);
     }
 }

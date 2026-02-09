@@ -21,9 +21,31 @@ class PhotoAnnotationFactory extends Factory
         return [
             'property_photo_id' => PropertyPhoto::factory(),
             'created_by' => User::factory()->internal(),
-            'canvas_json' => ['objects' => [], 'version' => '1.0'],
-            'canvas_version' => '1.0',
+            'author_type' => 'internal',
+            'canvas_json' => ['objects' => [], 'version' => '6.0'],
+            'canvas_version' => '6.0',
             'rendered_path' => null,
         ];
+    }
+
+    public function internal(): static
+    {
+        return $this->state(fn () => ['author_type' => 'internal']);
+    }
+
+    public function crew(): static
+    {
+        return $this->state(fn () => [
+            'author_type' => 'crew',
+            'created_by' => User::factory()->crew(),
+        ]);
+    }
+
+    public function customer(): static
+    {
+        return $this->state(fn () => [
+            'author_type' => 'customer',
+            'created_by' => User::factory()->customer(),
+        ]);
     }
 }

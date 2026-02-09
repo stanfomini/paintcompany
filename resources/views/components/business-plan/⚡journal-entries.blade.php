@@ -23,6 +23,8 @@ new class extends Component
     public string $dateFrom = '';
     public string $dateTo = '';
 
+    public ?int $expandedEntryId = null;
+
     // Create entry modal
     public bool $showCreateModal = false;
     public string $entryDescription = '';
@@ -96,6 +98,11 @@ new class extends Component
     {
         $this->resetPage();
         unset($this->entries);
+    }
+
+    public function toggleExpand(int $entryId): void
+    {
+        $this->expandedEntryId = $this->expandedEntryId === $entryId ? null : $entryId;
     }
 
     public function openCreateModal(): void
@@ -268,9 +275,17 @@ new class extends Component
                 </thead>
                 <tbody class="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
                     @foreach ($this->entries as $entry)
-                        <tr wire:key="entry-{{ $entry->id }}">
+                        @php
+                            $isExpanded = $expandedEntryId === $entry->id;
+                            $totalDebits = $entry->lines->sum('debit_amount');
+                            $totalCredits = $entry->lines->sum('credit_amount');
+                        @endphp
+                        <tr wire:key="entry-{{ $entry->id }}" wire:click="toggleExpand({{ $entry->id }})" class="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
                             <td class="whitespace-nowrap px-4 py-2 text-sm text-zinc-900 dark:text-zinc-100">
-                                {{ $entry->transaction_date?->format('M j, Y') ?? $entry->recognition_date?->format('M j, Y') ?? '-' }}
+                                <div class="flex items-center gap-2">
+                                    <svg class="h-4 w-4 shrink-0 text-zinc-400 transition-transform {{ $isExpanded ? 'rotate-90' : '' }}" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                    {{ $entry->transaction_date?->format('M j, Y') ?? $entry->recognition_date?->format('M j, Y') ?? '-' }}
+                                </div>
                             </td>
                             <td class="whitespace-nowrap px-4 py-2 text-sm font-mono text-zinc-600 dark:text-zinc-400">
                                 {{ $entry->entry_number }}
@@ -280,7 +295,7 @@ new class extends Component
                             </td>
                             <td class="whitespace-nowrap px-4 py-2 text-sm text-zinc-600 dark:text-zinc-400">
                                 @if ($entry->reference_type)
-                                    <flux:badge size="sm" color="zinc">{{ ucfirst($entry->reference_type) }}</flux:badge>
+                                    <flux:badge size="sm" color="zinc">{{ str_replace('_', ' ', ucfirst($entry->reference_type)) }}</flux:badge>
                                 @else
                                     -
                                 @endif
@@ -291,10 +306,10 @@ new class extends Component
                                 </flux:badge>
                             </td>
                             <td class="whitespace-nowrap px-4 py-2 text-right text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                ${{ number_format($entry->lines->sum('debit_amount'), 2) }}
+                                ${{ number_format($totalDebits, 2) }}
                             </td>
                             @if ($this->canManage)
-                                <td class="whitespace-nowrap px-4 py-2 text-right">
+                                <td class="whitespace-nowrap px-4 py-2 text-right" wire:click.stop>
                                     <div class="flex items-center justify-end gap-1">
                                         @if ($entry->status === 'draft')
                                             <flux:button variant="ghost" size="sm" icon="check-circle"
@@ -314,6 +329,70 @@ new class extends Component
                                 </td>
                             @endif
                         </tr>
+
+                        {{-- Expanded Detail: Journal Entry Lines --}}
+                        @if ($isExpanded)
+                            <tr wire:key="detail-{{ $entry->id }}">
+                                <td colspan="{{ $this->canManage ? 7 : 6 }}" class="bg-zinc-50/80 px-4 py-0 dark:bg-zinc-800/40">
+                                    <div class="py-4 pl-6">
+                                        <table class="w-full">
+                                            <thead>
+                                                <tr class="text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">
+                                                    <th class="pb-2 pr-4 text-left">Account</th>
+                                                    <th class="pb-2 pr-4 text-left">Description</th>
+                                                    <th class="pb-2 pr-4 text-right">Debit</th>
+                                                    <th class="pb-2 text-right">Credit</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="text-sm">
+                                                @foreach ($entry->lines->sortByDesc('debit_amount') as $line)
+                                                    <tr wire:key="line-{{ $line->id }}">
+                                                        <td class="py-1.5 pr-4 font-mono text-xs text-zinc-600 dark:text-zinc-400">
+                                                            {{ $line->account?->code }} - {{ $line->account?->name }}
+                                                        </td>
+                                                        <td class="py-1.5 pr-4 text-zinc-700 dark:text-zinc-300">
+                                                            {{ $line->description ?: '-' }}
+                                                        </td>
+                                                        <td class="py-1.5 pr-4 text-right tabular-nums {{ (float) $line->debit_amount > 0 ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-600' }}">
+                                                            {{ (float) $line->debit_amount > 0 ? '$'.number_format($line->debit_amount, 2) : '' }}
+                                                        </td>
+                                                        <td class="py-1.5 text-right tabular-nums {{ (float) $line->credit_amount > 0 ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-600' }}">
+                                                            {{ (float) $line->credit_amount > 0 ? '$'.number_format($line->credit_amount, 2) : '' }}
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                            <tfoot>
+                                                <tr class="border-t border-zinc-200 dark:border-zinc-700">
+                                                    <td class="pt-2 pr-4 text-right font-medium text-zinc-900 dark:text-zinc-100" colspan="2">Totals</td>
+                                                    <td class="pt-2 pr-4 text-right font-bold tabular-nums text-zinc-900 dark:text-zinc-100">${{ number_format($totalDebits, 2) }}</td>
+                                                    <td class="pt-2 text-right font-bold tabular-nums text-zinc-900 dark:text-zinc-100">${{ number_format($totalCredits, 2) }}</td>
+                                                </tr>
+                                                @if (round((float) $totalDebits, 2) === round((float) $totalCredits, 2))
+                                                    <tr>
+                                                        <td colspan="4" class="pt-1 text-right">
+                                                            <span class="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+                                                                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                                                                Balanced
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                @else
+                                                    <tr>
+                                                        <td colspan="4" class="pt-1 text-right">
+                                                            <span class="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                                                                <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                                                                Unbalanced ({{ '$'.number_format(abs($totalDebits - $totalCredits), 2) }} difference)
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                @endif
+                                            </tfoot>
+                                        </table>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
                     @endforeach
                 </tbody>
             </table>

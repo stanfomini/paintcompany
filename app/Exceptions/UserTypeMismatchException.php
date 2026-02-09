@@ -5,6 +5,7 @@ namespace App\Exceptions;
 use Exception;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class UserTypeMismatchException extends Exception
 {
@@ -79,8 +80,33 @@ class UserTypeMismatchException extends Exception
      */
     public function render(Request $request): RedirectResponse
     {
-        // If user is logged in as wrong type, redirect to their dashboard
         if ($this->actualType !== null) {
+            // Determine which guard this user should be on vs which they're actually on
+            $correctGuard = match ($this->actualType) {
+                'internal' => 'web',
+                'agent' => 'agent',
+                'customer' => 'customer',
+                'crew' => 'crew',
+                default => 'web',
+            };
+
+            // Check if user is on the wrong guard (e.g. customer authenticated on web guard).
+            // If so, log them out to prevent redirect loops and send to correct login.
+            if ($this->intendedGuard && $this->intendedGuard !== $correctGuard) {
+                Auth::guard($this->intendedGuard)->logout();
+                session()->flash('warning', $this->getUserMessage());
+
+                $loginRoute = match ($this->actualType) {
+                    'agent' => 'agent.login',
+                    'customer' => 'customer.login',
+                    'crew' => 'crew.login',
+                    default => 'login',
+                };
+
+                return new RedirectResponse(route($loginRoute));
+            }
+
+            // User is on the correct guard but wrong area - redirect to their dashboard
             $dashboardRoute = $this->getDashboardRoute();
 
             if ($dashboardRoute) {

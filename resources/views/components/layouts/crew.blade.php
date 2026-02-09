@@ -33,6 +33,9 @@
             <flux:navlist.item icon="chat-bubble-left-right" href="{{ route('crew.chat.index') }}" :current="request()->routeIs('crew.chat.*')">
                 {{ __('Messages') }}
             </flux:navlist.item>
+            <flux:navlist.item icon="gift" href="{{ route('crew.referrals') }}" :current="request()->routeIs('crew.referrals')">
+                {{ __('Referrals') }}
+            </flux:navlist.item>
             <flux:navlist.item icon="cog-6-tooth" href="{{ route('crew.settings') }}" :current="request()->routeIs('crew.settings')">
                 {{ __('Settings') }}
             </flux:navlist.item>

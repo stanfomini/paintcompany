@@ -53,13 +53,24 @@ class JobCostCard extends Model
         'projected_gross_profit',
         'projected_gross_profit_percent',
         'crew_bonus',
-        // Actual tracking
+        // Actual tracking (legacy)
         'actual_material_cost',
         'actual_labor_cost',
         'actual_subcontractor_cost',
         'actual_other_cost',
         'actual_total_cost',
         'actual_notes',
+        // Actual tracking (granular)
+        'actual_cleanup_cost',
+        'actual_sundries_cost',
+        'actual_material_tax',
+        'actual_labor_tax',
+        'actual_addon_cost',
+        'actual_items_vendor_cost',
+        'actual_warranty_reserve',
+        'actual_crew_bonus',
+        'actual_allocation_total',
+        'journal_entry_id',
         // Payment summary
         'total_invoiced',
         'total_collected',
@@ -100,12 +111,22 @@ class JobCostCard extends Model
             'projected_gross_profit' => 'decimal:2',
             'projected_gross_profit_percent' => 'decimal:2',
             'crew_bonus' => 'decimal:2',
-            // Actual tracking
+            // Actual tracking (legacy)
             'actual_material_cost' => 'decimal:2',
             'actual_labor_cost' => 'decimal:2',
             'actual_subcontractor_cost' => 'decimal:2',
             'actual_other_cost' => 'decimal:2',
             'actual_total_cost' => 'decimal:2',
+            // Actual tracking (granular)
+            'actual_cleanup_cost' => 'decimal:2',
+            'actual_sundries_cost' => 'decimal:2',
+            'actual_material_tax' => 'decimal:2',
+            'actual_labor_tax' => 'decimal:2',
+            'actual_addon_cost' => 'decimal:2',
+            'actual_items_vendor_cost' => 'decimal:2',
+            'actual_warranty_reserve' => 'decimal:2',
+            'actual_crew_bonus' => 'decimal:2',
+            'actual_allocation_total' => 'decimal:2',
             // Payment summary
             'total_invoiced' => 'decimal:2',
             'total_collected' => 'decimal:2',
@@ -150,6 +171,14 @@ class JobCostCard extends Model
     public function cardAllocations(): HasMany
     {
         return $this->hasMany(JobCostCardAllocation::class);
+    }
+
+    /**
+     * Get the journal entry linked to this card's actuals.
+     */
+    public function journalEntry(): BelongsTo
+    {
+        return $this->belongsTo(JournalEntry::class);
     }
 
     // ─── Legacy computed attributes (unchanged for backwards compatibility) ───
@@ -281,14 +310,22 @@ class JobCostCard extends Model
     // ─── New computed attributes ───
 
     /**
-     * Whether actual costs have been entered.
+     * Whether actual costs have been entered (checks both legacy and granular fields).
      */
     public function getHasActualsAttribute(): bool
     {
         return $this->actual_material_cost !== null
             || $this->actual_labor_cost !== null
             || $this->actual_subcontractor_cost !== null
-            || $this->actual_other_cost !== null;
+            || $this->actual_other_cost !== null
+            || $this->actual_cleanup_cost !== null
+            || $this->actual_sundries_cost !== null
+            || $this->actual_material_tax !== null
+            || $this->actual_labor_tax !== null
+            || $this->actual_addon_cost !== null
+            || $this->actual_items_vendor_cost !== null
+            || $this->actual_warranty_reserve !== null
+            || $this->actual_crew_bonus !== null;
     }
 
     /**
@@ -346,5 +383,67 @@ class JobCostCard extends Model
         }
 
         return (float) $this->price - (float) $this->total_cogs;
+    }
+
+    // ─── Granular actual computed attributes ───
+
+    /**
+     * Sum of all granular actual COGS line items.
+     */
+    public function getActualCogsAttribute(): float
+    {
+        return round(
+            (float) ($this->actual_labor_cost ?? 0)
+            + (float) ($this->actual_material_cost ?? 0)
+            + (float) ($this->actual_cleanup_cost ?? 0)
+            + (float) ($this->actual_sundries_cost ?? 0)
+            + (float) ($this->actual_material_tax ?? 0)
+            + (float) ($this->actual_labor_tax ?? 0)
+            + (float) ($this->actual_addon_cost ?? 0)
+            + (float) ($this->actual_items_vendor_cost ?? 0)
+            + (float) ($this->actual_warranty_reserve ?? 0)
+            + (float) ($this->actual_subcontractor_cost ?? 0)
+            + (float) ($this->actual_other_cost ?? 0),
+            2
+        );
+    }
+
+    /**
+     * Actual gross profit: price minus actual COGS.
+     */
+    public function getActualGrossProfitAttribute(): float
+    {
+        return round((float) $this->price - $this->actual_cogs, 2);
+    }
+
+    /**
+     * Actual net profit: actual gross profit minus actual allocation total.
+     */
+    public function getActualNetProfitAttribute(): float
+    {
+        return round($this->actual_gross_profit - (float) ($this->actual_allocation_total ?? 0), 2);
+    }
+
+    /**
+     * All granular actual field names (for iteration).
+     *
+     * @return array<string>
+     */
+    public static function granularActualFields(): array
+    {
+        return [
+            'actual_labor_cost',
+            'actual_material_cost',
+            'actual_cleanup_cost',
+            'actual_sundries_cost',
+            'actual_material_tax',
+            'actual_labor_tax',
+            'actual_addon_cost',
+            'actual_items_vendor_cost',
+            'actual_warranty_reserve',
+            'actual_subcontractor_cost',
+            'actual_other_cost',
+            'actual_crew_bonus',
+        ];
     }
 }

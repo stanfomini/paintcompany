@@ -152,6 +152,44 @@ class JobCostCardFactory extends Factory
     }
 
     /**
+     * Add granular actual cost tracking data for all COGS lines.
+     */
+    public function withGranularActuals(): static
+    {
+        return $this->state(function (array $attributes) {
+            $actualLabor = round(($attributes['labor_cost'] ?? 1000) * fake()->randomFloat(2, 0.85, 1.15), 2);
+            $actualMaterial = round(($attributes['material_cost'] ?? 500) * fake()->randomFloat(2, 0.85, 1.15), 2);
+            $actualCleanup = round(($attributes['cleanup_cost'] ?? 150) * fake()->randomFloat(2, 0.85, 1.15), 2);
+            $actualSundries = round(($attributes['sundries_cost'] ?? 50) * fake()->randomFloat(2, 0.85, 1.15), 2);
+            $actualMaterialTax = round($actualMaterial * 0.08, 2);
+            $actualLaborTax = round($actualLabor * 0.03, 2);
+            $actualAddon = round(fake()->randomFloat(2, 0, 100), 2);
+            $actualSub = round(fake()->randomFloat(2, 0, 300), 2);
+            $actualOther = round(fake()->randomFloat(2, 0, 100), 2);
+
+            $totalCost = round($actualLabor + $actualMaterial + $actualCleanup + $actualSundries
+                + $actualMaterialTax + $actualLaborTax + $actualAddon + $actualSub + $actualOther, 2);
+
+            return [
+                'actual_labor_cost' => $actualLabor,
+                'actual_material_cost' => $actualMaterial,
+                'actual_cleanup_cost' => $actualCleanup,
+                'actual_sundries_cost' => $actualSundries,
+                'actual_material_tax' => $actualMaterialTax,
+                'actual_labor_tax' => $actualLaborTax,
+                'actual_addon_cost' => $actualAddon,
+                'actual_subcontractor_cost' => $actualSub,
+                'actual_other_cost' => $actualOther,
+                'actual_items_vendor_cost' => 0,
+                'actual_warranty_reserve' => 0,
+                'actual_crew_bonus' => round(fake()->randomFloat(2, 0, 200), 2),
+                'actual_total_cost' => $totalCost,
+                'actual_notes' => fake()->optional(0.5)->sentence(),
+            ];
+        });
+    }
+
+    /**
      * Set payment summary to fully paid.
      */
     public function fullyPaid(): static

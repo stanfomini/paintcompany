@@ -29,6 +29,9 @@ class User extends Authenticatable
         'type',
         'is_active',
         'calendar_token',
+        'referral_code',
+        'referral_payment_method',
+        'referral_payment_handle',
     ];
 
     /**
@@ -114,6 +117,38 @@ class User extends Authenticatable
     public function referredCustomers(): HasMany
     {
         return $this->hasMany(Customer::class, 'referred_by');
+    }
+
+    /**
+     * Get the referrals made by this user.
+     */
+    public function referrals(): HasMany
+    {
+        return $this->hasMany(Referral::class, 'referrer_id');
+    }
+
+    /**
+     * Get or create a unique referral code for this user.
+     */
+    public function getOrCreateReferralCode(): string
+    {
+        if (! $this->referral_code) {
+            do {
+                $code = strtoupper(Str::random(8));
+            } while (static::where('referral_code', $code)->exists());
+
+            $this->update(['referral_code' => $code]);
+        }
+
+        return $this->referral_code;
+    }
+
+    /**
+     * Get the full referral link for this user.
+     */
+    public function referralLink(): string
+    {
+        return url('/?ref='.$this->getOrCreateReferralCode());
     }
 
     public function isInternal(): bool

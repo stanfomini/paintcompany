@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Job;
+use App\Models\JobActivity;
 use App\Models\PhotoComment;
 use App\Models\PropertyPhoto;
 use Illuminate\Support\Collection;
@@ -12,6 +14,36 @@ new class extends Component {
     public string $newComment = '';
 
     public ?int $replyingTo = null;
+
+    public function getListeners(): array
+    {
+        $jobId = $this->photo->job_id;
+
+        if (! $jobId) {
+            return [];
+        }
+
+        $channel = match (auth()->user()?->type) {
+            'crew' => "echo-private:crew.job.{$jobId}",
+            'customer' => "echo-private:customer.job.{$jobId}",
+            default => "echo-private:job.{$jobId}",
+        };
+
+        return [
+            "{$channel},photo.updated" => 'onPhotoUpdated',
+        ];
+    }
+
+    public function onPhotoUpdated(array $event): void
+    {
+        if (($event['actor_id'] ?? null) == auth()->id()) {
+            return;
+        }
+
+        if (($event['action'] ?? '') === 'commented' && ($event['photo_id'] ?? null) == $this->photo->id) {
+            unset($this->comments);
+        }
+    }
 
     #[Computed]
     public function comments(): Collection
@@ -29,12 +61,32 @@ new class extends Component {
             'newComment' => ['required', 'string', 'max:1000'],
         ]);
 
-        PhotoComment::create([
+        $comment = PhotoComment::create([
             'property_photo_id' => $this->photo->id,
             'user_id' => auth()->id(),
             'body' => $this->newComment,
             'parent_id' => $this->replyingTo,
         ]);
+
+        // Update content timestamp for notification badges
+        $this->photo->update(['content_updated_at' => now()]);
+
+        // Log job activity and broadcast
+        if ($this->photo->job_id) {
+            $job = Job::find($this->photo->job_id);
+            $user = auth()->user();
+
+            if ($job && $user) {
+                JobActivity::log(
+                    $job,
+                    'photo_commented',
+                    "{$user->name} commented on a photo",
+                    ['photo_id' => $this->photo->id, 'comment_id' => $comment->id]
+                );
+
+                \App\Events\PhotoUpdated::dispatch($job, $this->photo->id, 'commented', $user->id);
+            }
+        }
 
         $this->newComment = '';
         $this->replyingTo = null;
@@ -83,12 +135,14 @@ new class extends Component {
                         <p class="text-sm text-zinc-700 dark:text-zinc-300 mt-0.5 break-words">
                             {{ $comment->body }}
                         </p>
-                        <button
-                            wire:click="startReply({{ $comment->id }})"
-                            class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
-                        >
-                            Reply
-                        </button>
+                        @auth
+                            <button
+                                wire:click="startReply({{ $comment->id }})"
+                                class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
+                            >
+                                Reply
+                            </button>
+                        @endauth
                     </div>
                 </div>
 
@@ -126,33 +180,35 @@ new class extends Component {
         @endforelse
     </div>
 
-    {{-- New Comment Input --}}
-    <div class="border-t border-zinc-200 dark:border-zinc-700 px-4 py-3">
-        @if ($replyingTo)
-            @php
-                $replyTarget = $this->comments->firstWhere('id', $replyingTo);
-            @endphp
-            <div class="flex items-center justify-between mb-2 px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-xs">
-                <span class="text-zinc-600 dark:text-zinc-400">
-                    Replying to {{ $replyTarget?->user?->name ?? 'comment' }}
-                </span>
-                <button wire:click="cancelReply" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-                    <flux:icon name="x-mark" class="w-3 h-3" />
-                </button>
-            </div>
-        @endif
+    {{-- New Comment Input (authenticated users only) --}}
+    @auth
+        <div class="border-t border-zinc-200 dark:border-zinc-700 px-4 py-3">
+            @if ($replyingTo)
+                @php
+                    $replyTarget = $this->comments->firstWhere('id', $replyingTo);
+                @endphp
+                <div class="flex items-center justify-between mb-2 px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-xs">
+                    <span class="text-zinc-600 dark:text-zinc-400">
+                        Replying to {{ $replyTarget?->user?->name ?? 'comment' }}
+                    </span>
+                    <button wire:click="cancelReply" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                        <flux:icon name="x-mark" class="w-3 h-3" />
+                    </button>
+                </div>
+            @endif
 
-        <form wire:submit="addComment" class="flex gap-2">
-            <flux:input
-                wire:model="newComment"
-                placeholder="Add a comment..."
-                size="sm"
-                class="flex-1"
-            />
-            <flux:button type="submit" variant="primary" size="sm" icon="paper-airplane" wire:loading.attr="disabled" />
-        </form>
-        @error('newComment')
-            <p class="text-xs text-red-500 mt-1">{{ $message }}</p>
-        @enderror
-    </div>
+            <form wire:submit="addComment" class="flex gap-2">
+                <flux:input
+                    wire:model="newComment"
+                    placeholder="Add a comment..."
+                    size="sm"
+                    class="flex-1"
+                />
+                <flux:button type="submit" variant="primary" size="sm" icon="paper-airplane" wire:loading.attr="disabled" />
+            </form>
+            @error('newComment')
+                <p class="text-xs text-red-500 mt-1">{{ $message }}</p>
+            @enderror
+        </div>
+    @endauth
 </div>

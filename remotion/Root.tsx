@@ -3,6 +3,9 @@ import { Composition } from "remotion";
 import { HelloWorld } from "./components/HelloWorld";
 import { PropertyShowcase, calculateDuration } from "./components/PropertyShowcase";
 import { PropertyShowcaseProps, defaultProps } from "./types";
+import { PromoVideo } from "./promo/PromoVideo";
+import { defaultPromoProps } from "./promo/types";
+import { TOTAL_FRAMES, FPS } from "./promo/brand";
 
 // Default props for preview in Remotion Studio
 const previewProps: PropertyShowcaseProps = {
@@ -41,6 +44,17 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={previewProps}
+      />
+
+      {/* Promo Video */}
+      <Composition
+        id="PromoVideo"
+        component={PromoVideo}
+        durationInFrames={TOTAL_FRAMES}
+        fps={FPS}
+        width={1920}
+        height={1080}
+        defaultProps={defaultPromoProps}
       />
 
       {/* Original Hello World (for testing) */}

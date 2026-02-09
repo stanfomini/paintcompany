@@ -225,13 +225,12 @@ describe('addCustomTask', function () {
         $plan = JobPrepPlan::factory()->create();
         $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
 
-        $task = $this->service->addCustomTask($day, 'Move furniture', 'Move all furniture to center of room', 1.0);
+        $task = $this->service->addCustomTask($day, 'Move furniture', 'Move all furniture to center of room');
 
         expect($task)->toBeInstanceOf(JobPrepTask::class)
             ->and($task->task_type)->toBe(JobPrepTask::TYPE_CUSTOM)
             ->and($task->title)->toBe('Move furniture')
-            ->and($task->description)->toBe('Move all furniture to center of room')
-            ->and($task->estimated_hours)->toBe(1.0);
+            ->and($task->description)->toBe('Move all furniture to center of room');
     });
 
     it('resets approvals when custom task is added', function () {
@@ -398,6 +397,113 @@ describe('completeTask', function () {
     });
 });
 
+describe('cycleTaskStatus', function () {
+    it('cycles pending to in_progress', function () {
+        $user = User::factory()->crew()->create();
+        $plan = JobPrepPlan::factory()->create();
+        $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+        $task = JobPrepTask::factory()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+            'status' => JobPrepTask::STATUS_PENDING,
+        ]);
+
+        $result = $this->service->cycleTaskStatus($task, $user);
+
+        $task->refresh();
+        expect($result)->toBe(JobPrepTask::STATUS_IN_PROGRESS)
+            ->and($task->status)->toBe(JobPrepTask::STATUS_IN_PROGRESS)
+            ->and($task->completed_by)->toBeNull()
+            ->and($task->completed_at)->toBeNull();
+    });
+
+    it('cycles in_progress to completed', function () {
+        $user = User::factory()->crew()->create();
+        $plan = JobPrepPlan::factory()->create();
+        $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+        $task = JobPrepTask::factory()->inProgress()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+        ]);
+
+        $result = $this->service->cycleTaskStatus($task, $user);
+
+        $task->refresh();
+        expect($result)->toBe(JobPrepTask::STATUS_COMPLETED)
+            ->and($task->status)->toBe(JobPrepTask::STATUS_COMPLETED)
+            ->and($task->completed_by)->toBe($user->id)
+            ->and($task->completed_at)->not->toBeNull();
+    });
+
+    it('cycles completed back to pending', function () {
+        $user = User::factory()->crew()->create();
+        $plan = JobPrepPlan::factory()->create();
+        $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+        $task = JobPrepTask::factory()->completed()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+            'completed_by' => $user->id,
+        ]);
+
+        $result = $this->service->cycleTaskStatus($task, $user);
+
+        $task->refresh();
+        expect($result)->toBe(JobPrepTask::STATUS_PENDING)
+            ->and($task->status)->toBe(JobPrepTask::STATUS_PENDING)
+            ->and($task->completed_by)->toBeNull()
+            ->and($task->completed_at)->toBeNull();
+    });
+
+    it('logs activity for each status change', function () {
+        $user = User::factory()->crew()->create();
+        $plan = JobPrepPlan::factory()->create();
+        $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+        $task = JobPrepTask::factory()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+            'status' => JobPrepTask::STATUS_PENDING,
+        ]);
+
+        $this->service->cycleTaskStatus($task, $user);
+
+        $activity = JobActivity::where('job_id', $plan->job_id)
+            ->where('activity_type', 'prep_task_status_changed')
+            ->latest()
+            ->first();
+
+        expect($activity)->not->toBeNull()
+            ->and($activity->description)->toContain('started');
+    });
+
+    it('completes a full cycle: pending → in_progress → completed → pending', function () {
+        $user = User::factory()->crew()->create();
+        $plan = JobPrepPlan::factory()->create();
+        $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+        $task = JobPrepTask::factory()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+            'status' => JobPrepTask::STATUS_PENDING,
+        ]);
+
+        // pending → in_progress
+        $result1 = $this->service->cycleTaskStatus($task, $user);
+        expect($result1)->toBe(JobPrepTask::STATUS_IN_PROGRESS);
+
+        // in_progress → completed
+        $result2 = $this->service->cycleTaskStatus($task, $user);
+        expect($result2)->toBe(JobPrepTask::STATUS_COMPLETED);
+
+        // completed → pending
+        $result3 = $this->service->cycleTaskStatus($task, $user);
+        expect($result3)->toBe(JobPrepTask::STATUS_PENDING);
+
+        $task->refresh();
+        expect($task->status)->toBe(JobPrepTask::STATUS_PENDING)
+            ->and($task->completed_by)->toBeNull()
+            ->and($task->completed_at)->toBeNull();
+    });
+});
+
 describe('getProgress', function () {
     it('returns progress statistics', function () {
         $plan = JobPrepPlan::factory()->create();
@@ -420,10 +526,40 @@ describe('getProgress', function () {
 
         expect($progress['total'])->toBe(5)
             ->and($progress['completed'])->toBe(2)
+            ->and($progress['in_progress'])->toBe(0)
             ->and($progress['percent'])->toBe(40.0)
             ->and($progress['per_day'])->toHaveCount(1)
             ->and($progress['per_day'][0]['total'])->toBe(5)
-            ->and($progress['per_day'][0]['completed'])->toBe(2);
+            ->and($progress['per_day'][0]['completed'])->toBe(2)
+            ->and($progress['per_day'][0]['in_progress'])->toBe(0);
+    });
+
+    it('tracks in_progress tasks in progress stats', function () {
+        $plan = JobPrepPlan::factory()->create();
+        $day = JobPrepDay::factory()->create(['job_prep_plan_id' => $plan->id, 'day_number' => 1]);
+
+        JobPrepTask::factory()->count(2)->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+            'status' => JobPrepTask::STATUS_PENDING,
+        ]);
+
+        JobPrepTask::factory()->count(1)->inProgress()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+        ]);
+
+        JobPrepTask::factory()->count(1)->completed()->create([
+            'job_prep_day_id' => $day->id,
+            'job_prep_plan_id' => $plan->id,
+        ]);
+
+        $progress = $this->service->getProgress($plan);
+
+        expect($progress['total'])->toBe(4)
+            ->and($progress['completed'])->toBe(1)
+            ->and($progress['in_progress'])->toBe(1)
+            ->and($progress['per_day'][0]['in_progress'])->toBe(1);
     });
 });
 

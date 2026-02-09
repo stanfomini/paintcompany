@@ -216,9 +216,15 @@ new class extends Component {
                                 default => route('estimates.edit', $estimate),
                             };
                         @endphp
-                        <flux:button :href="$editRoute" icon="pencil" wire:navigate>
-                            Edit
-                        </flux:button>
+                        @if ($estimate->status === 'sent')
+                            <flux:button :href="$editRoute" icon="pencil" variant="filled" class="!bg-amber-600 hover:!bg-amber-700 !text-white" wire:navigate>
+                                Edit (Sent)
+                            </flux:button>
+                        @else
+                            <flux:button :href="$editRoute" icon="pencil" wire:navigate>
+                                Edit
+                            </flux:button>
+                        @endif
                     @endif
                 @endcan
                 @can('estimates.send')
@@ -263,6 +269,22 @@ new class extends Component {
             <flux:callout variant="danger" class="mb-4 print:hidden">
                 {{ session('error') }}
             </flux:callout>
+        @endif
+
+        @if ($estimate->status === 'sent' && $estimate->hasPendingAmendments())
+            <div class="border border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 mb-4 print:hidden">
+                <div class="flex items-center gap-2">
+                    <flux:icon name="exclamation-triangle" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <div>
+                        <flux:text class="font-medium text-amber-800 dark:text-amber-200">
+                            {{ $estimate->pendingAmendmentsCount() }} pending amendment(s) awaiting customer acknowledgment.
+                        </flux:text>
+                        <flux:text size="sm" class="text-amber-700 dark:text-amber-300">
+                            The customer must review and initial these changes before they can sign the proposal.
+                        </flux:text>
+                    </div>
+                </div>
+            </div>
         @endif
 
         @if ($publicUrl)
@@ -412,6 +434,9 @@ new class extends Component {
                                         <div class="p-4 space-y-4">
                                             {{-- Surfaces --}}
                                             @if ($area->surfaces->count() > 0)
+                                                @php
+                                                    $surfaceCustomerPrices = $area->getSurfaceCustomerPrices();
+                                                @endphp
                                                 <div>
                                                     <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase mb-2">Surfaces</div>
                                                     <div class="space-y-2">
@@ -424,7 +449,7 @@ new class extends Component {
                                                                 <div class="text-right">
                                                                     <span class="text-zinc-500">{{ number_format($surface->labor_hours, 1) }} hrs</span>
                                                                     <span class="mx-1">·</span>
-                                                                    <span class="font-medium">${{ number_format($surface->total, 2) }}</span>
+                                                                    <span class="font-medium">${{ number_format($surfaceCustomerPrices[$surface->id] ?? $surface->getCustomerPrice(), 2) }}</span>
                                                                 </div>
                                                             </div>
                                                         @endforeach
@@ -795,6 +820,67 @@ new class extends Component {
                 </div>
             @endif
 
+            {{-- Amendment History --}}
+            @if ($estimate->amendments()->count() > 0)
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden">
+                    <details>
+                        <summary class="cursor-pointer">
+                            <flux:heading size="sm" class="inline">
+                                Amendment History ({{ $estimate->amendments()->count() }})
+                            </flux:heading>
+                        </summary>
+                        <div class="mt-4 space-y-4">
+                            @foreach ($estimate->amendments()->with('amendedBy')->orderByDesc('amendment_number')->get() as $amendment)
+                                <div class="border rounded-lg p-4 {{ $amendment->isAcknowledged() ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10' : 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10' }}">
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="flex items-center gap-2">
+                                            <flux:text class="font-medium">Amendment #{{ $amendment->amendment_number }}</flux:text>
+                                            <flux:text size="sm" class="text-zinc-500">by {{ $amendment->amendedBy?->name ?? 'Unknown' }}</flux:text>
+                                            <flux:text size="sm" class="text-zinc-400">{{ $amendment->created_at->diffForHumans() }}</flux:text>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            @if ($amendment->isAcknowledged())
+                                                <flux:badge size="sm" color="green">
+                                                    Acknowledged ({{ $amendment->customer_initials }}) {{ $amendment->customer_acknowledged_at->format('M j') }}
+                                                </flux:badge>
+                                            @else
+                                                <flux:badge size="sm" color="amber">Pending</flux:badge>
+                                            @endif
+                                        </div>
+                                    </div>
+                                    <div class="space-y-1">
+                                        @foreach ($amendment->changes as $change)
+                                            <div class="text-sm text-zinc-600 dark:text-zinc-400">
+                                                @if (isset($change['field'], $change['old_value'], $change['new_value']))
+                                                    <span class="font-medium">{{ $change['label'] }}</span>:
+                                                    {{ $change['field'] }}
+                                                    <span class="line-through text-red-500">{{ $change['old_value'] }}</span>
+                                                    &rarr;
+                                                    <span class="text-green-600">{{ $change['new_value'] }}</span>
+                                                @else
+                                                    {{ $change['details'] ?? $change['label'] ?? 'Change' }}
+                                                @endif
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                    <div class="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 flex items-center gap-4">
+                                        <flux:text size="sm">
+                                            Previous: ${{ number_format($amendment->previous_total, 2) }}
+                                        </flux:text>
+                                        <flux:text size="sm">
+                                            New: ${{ number_format($amendment->new_total, 2) }}
+                                        </flux:text>
+                                        <flux:text size="sm" class="font-medium {{ $amendment->getTotalChangeAmount() >= 0 ? 'text-red-600' : 'text-green-600' }}">
+                                            ({{ $amendment->getTotalChangeFormatted() }})
+                                        </flux:text>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    </details>
+                </div>
+            @endif
+
             {{-- Photos --}}
             @if ($estimate->deal?->property)
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden">
@@ -806,6 +892,14 @@ new class extends Component {
                     />
                 </div>
             @endif
+
+            {{-- Activity Timeline --}}
+            <div class="print:hidden">
+                <livewire:estimates.activity-timeline
+                    :estimate="$estimate"
+                    :key="'activity-timeline-'.$estimate->id"
+                />
+            </div>
 
         </div>
     </div>

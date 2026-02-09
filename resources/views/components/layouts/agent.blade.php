@@ -36,6 +36,9 @@
             <flux:navlist.item icon="chat-bubble-left-right" href="{{ route('agent.chat.index') }}" :current="request()->routeIs('agent.chat.*')">
                 {{ __('Messages') }}
             </flux:navlist.item>
+            <flux:navlist.item icon="gift" href="{{ route('agent.referrals') }}" :current="request()->routeIs('agent.referrals')">
+                {{ __('Referrals') }}
+            </flux:navlist.item>
         </flux:navlist>
 
         <flux:spacer />

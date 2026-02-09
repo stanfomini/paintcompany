@@ -22,9 +22,15 @@ new class extends Component {
         'accepted' => 'check-circle',
         'rejected' => 'x-circle',
         'option_toggled' => 'adjustments-horizontal',
+        'optional_item_toggled' => 'adjustments-horizontal',
         'note_added' => 'chat-bubble-left',
         'signature_added' => 'pencil-square',
         'photo_added' => 'photo',
+        'amendment_created' => 'pencil-square',
+        'amendment_acknowledged' => 'check-badge',
+        'package_selected' => 'cube',
+        'package_tier_selected' => 'cube',
+        'packages_modified' => 'wrench-screwdriver',
     ];
 
     /** @var array<string, string> */
@@ -34,9 +40,15 @@ new class extends Component {
         'accepted' => 'green',
         'rejected' => 'red',
         'option_toggled' => 'amber',
+        'optional_item_toggled' => 'amber',
         'note_added' => 'cyan',
         'signature_added' => 'emerald',
         'photo_added' => 'purple',
+        'amendment_created' => 'amber',
+        'amendment_acknowledged' => 'green',
+        'package_selected' => 'indigo',
+        'package_tier_selected' => 'indigo',
+        'packages_modified' => 'amber',
     ];
 
     public function mount(Estimate $estimate): void

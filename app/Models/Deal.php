@@ -14,6 +14,21 @@ class Deal extends Model
 {
     use HasFactory, SoftDeletes;
 
+    public const LEAD_SOURCES = [
+        'referral' => 'Referral',
+        'google_ads' => 'Google Ads',
+        'home_advisor' => 'HomeAdvisor',
+        'thumbtack' => 'Thumbtack',
+        'yelp' => 'Yelp',
+        'nextdoor' => 'Nextdoor',
+        'facebook' => 'Facebook',
+        'website' => 'Website',
+        'yard_sign' => 'Yard Sign',
+        'door_knock' => 'Door Knock',
+        'repeat' => 'Repeat',
+        'other' => 'Other',
+    ];
+
     public const STAGES = [
         'lead' => 'Lead',
         'quoted' => 'Quoted',

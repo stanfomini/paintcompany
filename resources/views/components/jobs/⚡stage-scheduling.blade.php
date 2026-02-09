@@ -3,14 +3,19 @@
 use App\Models\CompanySetting;
 use App\Models\Job;
 use App\Models\JobColor;
+use App\Models\JobServiceRequirement;
+use App\Models\ServiceCategory;
 use App\Models\User;
+use App\Services\JobDispatchService;
 use App\Services\JobService;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public Job $job;
 
     #[Validate('required|date|after:today')]
@@ -18,8 +23,6 @@ new class extends Component {
 
     #[Validate('required|integer|min:1|max:20')]
     public int $allowedColors = 3;
-
-    public int $requiredCrewSize = 1;
 
     public bool $showDispatchModal = false;
 
@@ -36,33 +39,80 @@ new class extends Component {
     /** @var array<int> */
     public array $selectedCrewIds = [];
 
+    public ?int $activeDispatchServiceId = null;
+
+    /** @var array<int, int> */
+    public array $requirementCrewSizes = [];
+
+    /** @var array<int, string> */
+    public array $requirementDates = [];
+
     public function mount(Job $job): void
     {
         $this->job = $job;
         $this->scheduledDate = $job->scheduled_date?->format('Y-m-d') ?? '';
         $this->allowedColors = $job->allowed_colors ?: 3;
-        $this->requiredCrewSize = $job->required_crew_size;
+
+        foreach ($this->serviceRequirements as $req) {
+            $this->requirementCrewSizes[$req->id] = $req->required_crew_size;
+            $this->requirementDates[$req->id] = $req->scheduled_date?->format('Y-m-d') ?? '';
+        }
     }
 
     /**
-     * Save scheduling settings (date + allowed colors + crew size).
+     * Save scheduling settings (date + allowed colors).
      */
     public function saveScheduling(): void
     {
         $this->validate([
             'scheduledDate' => 'required|date|after:today',
             'allowedColors' => 'required|integer|min:1|max:20',
-            'requiredCrewSize' => 'required|integer|min:1|max:20',
         ]);
 
         $service = app(JobService::class);
         $service->setScheduledDate($this->job, \Carbon\Carbon::parse($this->scheduledDate));
         $service->setAllowedColors($this->job, $this->allowedColors);
-        $this->job->update(['required_crew_size' => $this->requiredCrewSize]);
         $this->job->refresh();
 
         session()->flash('success', 'Scheduling details saved.');
         $this->dispatch('job-updated');
+    }
+
+    /**
+     * Save a service requirement's crew size and date.
+     */
+    public function saveServiceRequirement(int $requirementId): void
+    {
+        $requirement = $this->job->serviceRequirements()->findOrFail($requirementId);
+
+        $crewSize = $this->requirementCrewSizes[$requirementId] ?? $requirement->required_crew_size;
+        $date = $this->requirementDates[$requirementId] ?? null;
+
+        $this->validate([
+            "requirementCrewSizes.{$requirementId}" => 'required|integer|min:1|max:20',
+            "requirementDates.{$requirementId}" => 'nullable|date',
+        ]);
+
+        $requirement->update([
+            'required_crew_size' => $crewSize,
+            'scheduled_date' => $date ?: null,
+        ]);
+
+        $this->job->refresh();
+        unset($this->serviceRequirements);
+
+        session()->flash('success', "{$requirement->serviceCategory->name} requirements saved.");
+    }
+
+    /**
+     * Open the dispatch modal for a specific service requirement.
+     */
+    public function openDispatchModal(int $requirementId): void
+    {
+        $this->activeDispatchServiceId = $requirementId;
+        $this->selectedCrewIds = [];
+        unset($this->eligibleCrews);
+        $this->showDispatchModal = true;
     }
 
     /**
@@ -145,7 +195,7 @@ new class extends Component {
     }
 
     /**
-     * Dispatch job to selected crews.
+     * Dispatch job to selected crews for the active service.
      */
     public function dispatchToCrews(): void
     {
@@ -155,22 +205,49 @@ new class extends Component {
             return;
         }
 
-        foreach ($this->selectedCrewIds as $crewUserId) {
-            if (! $this->job->crews()->where('crew_user_id', $crewUserId)->exists()) {
-                $this->job->crews()->attach($crewUserId, [
-                    'status' => 'dispatched',
-                    'dispatched_at' => now(),
-                ]);
-            }
+        $category = null;
+        if ($this->activeDispatchServiceId) {
+            $requirement = $this->job->serviceRequirements()->find($this->activeDispatchServiceId);
+            $category = $requirement?->serviceCategory;
         }
 
-        $this->job->update(['dispatched_at' => now()]);
+        $dispatched = app(JobDispatchService::class)->dispatchToCrews(
+            $this->job,
+            $this->selectedCrewIds,
+            $category
+        );
+
         $this->job->refresh();
         $this->showDispatchModal = false;
+        $this->activeDispatchServiceId = null;
         $this->selectedCrewIds = [];
+        unset($this->serviceRequirements);
 
-        session()->flash('success', 'Job dispatched to selected crews.');
+        $label = $category ? " for {$category->name}" : '';
+        session()->flash('success', "Dispatched to {$dispatched} crew(s){$label}.");
         $this->dispatch('crew-dispatched');
+    }
+
+    /**
+     * Replace an accepted crew for a specific service category.
+     */
+    public function replaceCrew(int $crewUserId, int $serviceCategoryId): void
+    {
+        $crew = User::findOrFail($crewUserId);
+        $category = ServiceCategory::findOrFail($serviceCategoryId);
+
+        app(JobDispatchService::class)->replaceCrew($this->job, $crew, $category);
+
+        $this->job->refresh();
+        unset($this->serviceRequirements);
+
+        session()->flash('success', "{$crew->name} replaced for {$category->name}.");
+    }
+
+    #[Computed]
+    public function serviceRequirements(): Collection
+    {
+        return $this->job->serviceRequirements()->with('serviceCategory')->get();
     }
 
     /**
@@ -179,15 +256,13 @@ new class extends Component {
     #[Computed]
     public function eligibleCrews(): Collection
     {
-        return User::query()
-            ->where('type', 'crew')
-            ->where('is_active', true)
-            ->whereHas('crewProfile', function ($q) {
-                $q->where('crew_size', '>=', $this->job->required_crew_size);
-            })
-            ->with('crewProfile')
-            ->orderBy('name')
-            ->get();
+        $category = null;
+        if ($this->activeDispatchServiceId) {
+            $requirement = $this->job->serviceRequirements()->find($this->activeDispatchServiceId);
+            $category = $requirement?->serviceCategory;
+        }
+
+        return app(JobDispatchService::class)->getEligibleCrews($this->job, $category);
     }
 
     #[Computed]
@@ -225,6 +300,42 @@ new class extends Component {
             ->get()
             ->sum(fn ($crew) => $crew->crewProfile->crew_size ?? 0);
     }
+
+    /**
+     * Get the crews dispatched/accepted for a given service category.
+     */
+    public function getCrewsForService(int $serviceCategoryId): \Illuminate\Support\Collection
+    {
+        return $this->job->crews()
+            ->wherePivot('service_category_id', $serviceCategoryId)
+            ->get();
+    }
+
+    /**
+     * Map a service requirement status to a Flux badge color.
+     */
+    public function statusColor(string $status): string
+    {
+        return match ($status) {
+            JobServiceRequirement::STATUS_PENDING => 'zinc',
+            JobServiceRequirement::STATUS_DISPATCHED => 'blue',
+            JobServiceRequirement::STATUS_ACCEPTED => 'green',
+            JobServiceRequirement::STATUS_COMPLETED => 'lime',
+            default => 'zinc',
+        };
+    }
+
+    /**
+     * Refresh on Echo events.
+     */
+    #[On('echo-private:job.{job.id},.crew.dispatched')]
+    #[On('echo-private:job.{job.id},.job.accepted')]
+    #[On('echo-private:job.{job.id},.stage.changed')]
+    public function refreshFromEcho(): void
+    {
+        $this->job->refresh();
+        unset($this->serviceRequirements);
+    }
 }; ?>
 
 <div>
@@ -257,11 +368,6 @@ new class extends Component {
                     <flux:label>Allowed Colors</flux:label>
                     <flux:input type="number" wire:model="allowedColors" min="1" max="20" />
                     <flux:error name="allowedColors" />
-                </flux:field>
-
-                <flux:field>
-                    <flux:label>Required Crew Size</flux:label>
-                    <flux:input type="number" wire:model="requiredCrewSize" min="1" max="20" />
                 </flux:field>
 
                 <flux:button wire:click="saveScheduling" variant="primary" size="sm">
@@ -366,27 +472,111 @@ new class extends Component {
         </div>
     </div>
 
-    {{-- Dispatch Section --}}
+    {{-- Service Requirements & Dispatch Section --}}
     <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
-        <div class="flex items-center justify-between">
-            <div>
-                <flux:heading size="xs">Crew Dispatch</flux:heading>
-                <flux:text class="text-sm text-zinc-500">
-                    @if ($this->dispatchStatus === 'not_ready')
-                        All 4 confirmations must be completed before dispatching.
-                    @elseif ($this->dispatchStatus === 'dispatched')
-                        Job has been dispatched to crews.
-                    @else
-                        Ready to dispatch to paint crews.
-                    @endif
-                </flux:text>
+        <flux:heading size="xs" class="mb-4">Crew Dispatch by Service</flux:heading>
+
+        @if ($this->serviceRequirements->isEmpty())
+            <flux:text class="text-zinc-500 text-sm">No service requirements configured for this job.</flux:text>
+        @else
+            <div class="space-y-4">
+                @foreach ($this->serviceRequirements as $requirement)
+                    @php
+                        $category = $requirement->serviceCategory;
+                        $serviceCrews = $this->getCrewsForService($category->id);
+                        $acceptedCrews = $serviceCrews->filter(fn ($c) => $c->pivot->status === 'accepted');
+                        $dispatchedCrews = $serviceCrews->filter(fn ($c) => $c->pivot->status === 'dispatched');
+                    @endphp
+                    <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4" wire:key="service-req-{{ $requirement->id }}">
+                        {{-- Service Header --}}
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                @if ($category->icon)
+                                    <flux:icon :name="$category->icon" class="w-5 h-5 text-zinc-500" />
+                                @endif
+                                <flux:heading size="xs">{{ $category->name }}</flux:heading>
+                                <flux:badge size="sm" :color="$this->statusColor($requirement->status)">
+                                    {{ ucfirst($requirement->status) }}
+                                </flux:badge>
+                            </div>
+                            @if ($this->dispatchStatus !== 'not_ready')
+                                <flux:button wire:click="openDispatchModal({{ $requirement->id }})" size="sm" icon="paper-airplane">
+                                    {{ $requirement->isDispatched() || $requirement->isAccepted() ? 'Dispatch More' : 'Dispatch' }}
+                                </flux:button>
+                            @endif
+                        </div>
+
+                        {{-- Service Settings --}}
+                        <div class="grid gap-3 sm:grid-cols-2 mb-3">
+                            <flux:field>
+                                <flux:label>Required Crew Size</flux:label>
+                                <flux:input
+                                    type="number"
+                                    wire:model="requirementCrewSizes.{{ $requirement->id }}"
+                                    min="1"
+                                    max="20"
+                                />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>Service Date</flux:label>
+                                <flux:input
+                                    type="date"
+                                    wire:model="requirementDates.{{ $requirement->id }}"
+                                />
+                            </flux:field>
+                        </div>
+                        <flux:button wire:click="saveServiceRequirement({{ $requirement->id }})" size="xs" variant="filled">
+                            Save {{ $category->name }} Settings
+                        </flux:button>
+
+                        {{-- Dispatched/Accepted Crews for this service --}}
+                        @if ($serviceCrews->isNotEmpty())
+                            <flux:separator class="my-3" />
+                            <div class="space-y-2">
+                                @foreach ($serviceCrews as $crew)
+                                    <div class="flex items-center justify-between p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800" wire:key="service-crew-{{ $requirement->id }}-{{ $crew->id }}">
+                                        <div class="flex items-center gap-2">
+                                            <flux:avatar size="sm" name="{{ $crew->name }}" />
+                                            <div>
+                                                <flux:text class="text-sm font-medium">{{ $crew->name }}</flux:text>
+                                                <flux:text class="text-xs text-zinc-500">
+                                                    Crew of {{ $crew->crewProfile->crew_size ?? '?' }}
+                                                </flux:text>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            @if ($crew->pivot->status === 'accepted')
+                                                <flux:badge size="sm" color="green">Accepted</flux:badge>
+                                                <flux:button
+                                                    wire:click="replaceCrew({{ $crew->id }}, {{ $category->id }})"
+                                                    wire:confirm="Replace {{ $crew->name }} for {{ $category->name }}? This will reset this service to dispatched status."
+                                                    size="xs"
+                                                    variant="ghost"
+                                                >
+                                                    Replace
+                                                </flux:button>
+                                            @elseif ($crew->pivot->status === 'dispatched')
+                                                <flux:badge size="sm" color="blue">Dispatched</flux:badge>
+                                            @elseif ($crew->pivot->status === 'rejected')
+                                                <flux:badge size="sm" color="red">Rejected</flux:badge>
+                                            @elseif ($crew->pivot->status === 'replaced')
+                                                <flux:badge size="sm" color="zinc">Replaced</flux:badge>
+                                            @endif
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+                    </div>
+                @endforeach
             </div>
-            @if ($this->dispatchStatus === 'ready' || $this->dispatchStatus === 'dispatched')
-                <flux:button wire:click="$set('showDispatchModal', true)" variant="primary" size="sm" icon="paper-airplane">
-                    {{ $this->dispatchStatus === 'dispatched' ? 'Dispatch to More' : 'Dispatch to Crews' }}
-                </flux:button>
-            @endif
-        </div>
+        @endif
+
+        @if ($this->dispatchStatus === 'not_ready')
+            <flux:text class="text-sm text-zinc-500 mt-3">
+                All 4 confirmations (company date, customer date, company colors, customer colors) must be completed before dispatching.
+            </flux:text>
+        @endif
     </div>
 
     {{-- Add Color Modal --}}
@@ -422,12 +612,20 @@ new class extends Component {
         </div>
     </flux:modal>
 
-    {{-- Dispatch Modal --}}
+    {{-- Per-Service Dispatch Modal --}}
     <flux:modal wire:model="showDispatchModal" class="max-w-lg">
         <div class="space-y-4">
-            <flux:heading size="lg">Dispatch to Crews</flux:heading>
+            @php
+                $activeReq = $activeDispatchServiceId
+                    ? $this->serviceRequirements->firstWhere('id', $activeDispatchServiceId)
+                    : null;
+                $activeCategoryName = $activeReq?->serviceCategory?->name ?? 'Crews';
+                $requiredSize = $activeReq?->required_crew_size ?? $job->required_crew_size;
+            @endphp
+
+            <flux:heading size="lg">Dispatch {{ $activeCategoryName }} Crews</flux:heading>
             <flux:text class="text-zinc-500">
-                Select crews to dispatch this job to. Only crews with {{ $job->required_crew_size }}+ members are shown.
+                Select crews to dispatch for {{ strtolower($activeCategoryName) }}. Only crews with {{ $requiredSize }}+ members in this service category are shown.
             </flux:text>
 
             {{-- Crew Stats --}}
@@ -448,7 +646,13 @@ new class extends Component {
                 <div class="space-y-2 max-h-64 overflow-y-auto">
                     @foreach ($this->eligibleCrews as $crew)
                         @php
-                            $alreadyDispatched = $job->crews->contains('id', $crew->id);
+                            $alreadyDispatched = $activeReq
+                                ? $job->crews()
+                                    ->wherePivot('service_category_id', $activeReq->service_category_id)
+                                    ->where('crew_user_id', $crew->id)
+                                    ->whereIn('job_crew.status', ['dispatched', 'accepted'])
+                                    ->exists()
+                                : $job->crews->contains('id', $crew->id);
                         @endphp
                         <label class="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-700/50 {{ $alreadyDispatched ? 'opacity-50' : '' }}" wire:key="dispatch-crew-{{ $crew->id }}">
                             <input
@@ -486,7 +690,7 @@ new class extends Component {
                     <flux:icon name="user-group" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
                     <flux:text class="text-zinc-500">No eligible crews found.</flux:text>
                     <flux:text class="text-sm text-zinc-400 mt-1">
-                        No registered crews meet the minimum size of {{ $job->required_crew_size }}.
+                        No registered {{ strtolower($activeCategoryName) }} crews meet the minimum size of {{ $requiredSize }}.
                     </flux:text>
                 </div>
             @endif

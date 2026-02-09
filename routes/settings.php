@@ -40,4 +40,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/payment-integrations', 'pages::settings.payment-integrations')
         ->middleware('permission:settings.payment_integrations')
         ->name('payment-integrations.edit');
+
+    Route::livewire('settings/service-categories', 'pages::settings.service-categories')
+        ->middleware('permission:settings.company')
+        ->name('service-categories.edit');
+
+    Route::livewire('settings/budget-mappings', 'pages::settings.budget-mappings')
+        ->middleware('permission:settings.company')
+        ->name('budget-mappings.edit');
+
+    Route::livewire('settings/referral', 'pages::settings.referral')
+        ->middleware('permission:settings.company')
+        ->name('referral.edit');
 });

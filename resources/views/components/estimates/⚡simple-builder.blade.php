@@ -3,6 +3,7 @@
 use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\Estimate;
+use App\Services\EstimateAmendmentService;
 use Illuminate\Contracts\View\View;
 use Livewire\Component;
 
@@ -162,8 +163,20 @@ new class extends Component {
                 $this->estimate->markAsSent();
             }
 
+            // Create amendment if editing a sent estimate
+            if ($this->estimate->status === 'sent' && $this->estimate->sent_snapshot) {
+                $amendmentService = app(EstimateAmendmentService::class);
+                $amendment = $amendmentService->createAmendment($this->estimate, auth()->user());
+                if ($amendment) {
+                    session()->flash('success', "Estimate updated. Amendment #{$amendment->amendment_number} created — customer will be notified.");
+                } else {
+                    session()->flash('success', 'Estimate updated (no material changes detected).');
+                }
+            } else {
+                session()->flash('success', 'Estimate updated successfully.');
+            }
+
             $this->dispatch('estimate-updated');
-            session()->flash('success', 'Estimate updated successfully.');
         } else {
             $estimateData['created_by'] = auth()->id();
             $estimateData['status'] = 'draft'; // Always create as draft first

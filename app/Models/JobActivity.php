@@ -35,6 +35,15 @@ class JobActivity extends Model
         'prep_approved_customer' => 'Customer Approved Prep Plan',
         'prep_approvals_reset' => 'Prep Approvals Reset',
         'job_started' => 'Job Started',
+        'photo_uploaded' => 'Photo Uploaded',
+        'photo_annotated' => 'Photo Annotated',
+        'photo_deleted' => 'Photo Deleted',
+        'photo_commented' => 'Photo Comment Added',
+        'service_dispatched' => 'Service Crews Dispatched',
+        'service_accepted' => 'Service Crew Accepted',
+        'prep_section_approved' => 'Prep Section Approved',
+        'crew_replaced' => 'Crew Replaced',
+        'prep_change_proposed' => 'Prep Change Proposed',
     ];
 
     protected $fillable = [

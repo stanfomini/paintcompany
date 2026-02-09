@@ -13,12 +13,38 @@ beforeEach(function () {
     $this->service = new SalesPlanService;
 });
 
-it('creates goal for year if not exists', function () {
+it('creates goal for year if not exists with zero revenue when no budget set', function () {
     $goal = $this->service->getGoalForYear($this->settings, 2026);
 
     expect($goal)->toBeInstanceOf(SalesPlanGoal::class)
         ->and($goal->year)->toBe(2026)
-        ->and($goal->annual_revenue_goal)->toBe('1500000.00');
+        ->and($goal->annual_revenue_goal)->toBe('0.00');
+});
+
+it('creates goal for year with revenue from budget when budget exists', function () {
+    // Seed budget categories and set a revenue plan
+    $category = \App\Models\BudgetCategory::create([
+        'company_setting_id' => $this->settings->id,
+        'section' => \App\Models\BudgetCategory::SECTION_REVENUE,
+        'name' => 'Cumulative Revenue',
+        'slug' => 'cumulative-revenue',
+        'sort_order' => 0,
+        'is_system' => true,
+    ]);
+
+    \App\Models\BudgetLineItem::create([
+        'company_setting_id' => $this->settings->id,
+        'budget_category_id' => $category->id,
+        'year' => 2026,
+        'current_year_plan' => 500000,
+        'prior_year_actual' => 0,
+        'current_year_actual' => 0,
+    ]);
+
+    $goal = $this->service->getGoalForYear($this->settings, 2026);
+
+    expect($goal)->toBeInstanceOf(SalesPlanGoal::class)
+        ->and($goal->annual_revenue_goal)->toBe('500000.00');
 });
 
 it('returns existing goal for year', function () {

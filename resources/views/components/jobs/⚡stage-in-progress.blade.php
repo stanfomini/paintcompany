@@ -40,11 +40,11 @@ new class extends Component {
         $this->activeDay = $dayNumber;
     }
 
-    public function completeTask(int $taskId): void
+    public function cycleTask(int $taskId): void
     {
         $task = JobPrepTask::findOrFail($taskId);
 
-        app(JobPrepService::class)->completeTask($task, auth()->user());
+        app(JobPrepService::class)->cycleTaskStatus($task, auth()->user());
 
         unset($this->plan, $this->progress);
         $this->job->refresh();
@@ -132,27 +132,39 @@ new class extends Component {
                                 @foreach ($day->tasks->sortBy('sort_order') as $task)
                                     @php
                                         $isCompleted = $task->status === 'completed';
+                                        $isInProgress = $task->status === 'in_progress';
+                                        $borderClass = match (true) {
+                                            $isCompleted => 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10',
+                                            $isInProgress => 'border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10',
+                                            default => 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50',
+                                        };
                                     @endphp
                                     <div
                                         wire:key="task-{{ $task->id }}"
-                                        class="flex items-center gap-3 p-3 rounded-lg border transition-colors
-                                            {{ $isCompleted
-                                                ? 'border-green-200 dark:border-green-800 bg-green-50/50 dark:bg-green-900/10'
-                                                : 'border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50' }}"
+                                        class="flex items-center gap-3 p-3 rounded-lg border transition-colors {{ $borderClass }}"
                                     >
-                                        {{-- Checkbox / Completed Indicator --}}
+                                        {{-- Task Status Button --}}
                                         <div class="shrink-0">
-                                            @if ($isCompleted)
-                                                <flux:icon name="check-circle" class="w-6 h-6 text-green-500" />
-                                            @else
-                                                <button
-                                                    wire:click="completeTask({{ $task->id }})"
-                                                    class="w-6 h-6 rounded-full border-2 border-zinc-300 dark:border-zinc-600 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors flex items-center justify-center"
-                                                    title="Mark complete"
-                                                >
-                                                    <flux:icon name="check" class="w-3 h-3 text-transparent hover:text-blue-500" />
-                                                </button>
-                                            @endif
+                                            <button
+                                                wire:click="cycleTask({{ $task->id }})"
+                                                wire:loading.attr="disabled"
+                                                wire:target="cycleTask({{ $task->id }})"
+                                                class="w-6 h-6 rounded-full flex items-center justify-center transition-colors
+                                                    @if ($isCompleted)
+                                                        bg-green-500 hover:bg-green-600
+                                                    @elseif ($isInProgress)
+                                                        bg-amber-500 hover:bg-amber-600
+                                                    @else
+                                                        border-2 border-zinc-300 dark:border-zinc-600 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20
+                                                    @endif"
+                                                title="{{ $isCompleted ? 'Reset to pending' : ($isInProgress ? 'Mark completed' : 'Start task') }}"
+                                            >
+                                                @if ($isCompleted)
+                                                    <flux:icon name="check" class="w-3 h-3 text-white" />
+                                                @elseif ($isInProgress)
+                                                    <flux:icon name="wrench" class="w-3 h-3 text-white" />
+                                                @endif
+                                            </button>
                                         </div>
 
                                         {{-- Task Info --}}
@@ -167,13 +179,17 @@ new class extends Component {
                                                 <flux:text class="text-xs text-green-500">
                                                     Completed by {{ $task->completedByUser->name }} {{ $task->completed_at?->diffForHumans() }}
                                                 </flux:text>
+                                            @elseif ($isInProgress)
+                                                <flux:text class="text-xs text-amber-500">
+                                                    In progress
+                                                </flux:text>
                                             @endif
                                         </div>
 
                                         {{-- Hours Badge --}}
                                         @if ($task->estimated_hours)
                                             <div class="shrink-0">
-                                                <flux:badge size="sm" :color="$isCompleted ? 'green' : 'blue'">
+                                                <flux:badge size="sm" :color="$isCompleted ? 'green' : ($isInProgress ? 'amber' : 'blue')">
                                                     {{ number_format($task->estimated_hours, 1) }}h
                                                 </flux:badge>
                                             </div>

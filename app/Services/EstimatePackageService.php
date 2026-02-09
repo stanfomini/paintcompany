@@ -160,19 +160,22 @@ class EstimatePackageService
             fn ($item) => $item->itemable_type !== EstimateAreaSurface::class
         );
 
-        // Group surfaces by area and use AREA-level customer price
-        // This ensures margin is applied once per area, not per surface
+        // Group surfaces by area and track which surface IDs are included per area
+        // Uses proportional pricing: only included surfaces contribute to the total
         $paintingTotal = 0.0;
-        $areaIds = $surfaceItems
-            ->map(fn ($item) => $item->itemable?->area_id)
-            ->filter()
-            ->unique();
+        $areaSurfaceIds = [];
 
-        foreach ($areaIds as $areaId) {
+        foreach ($surfaceItems as $item) {
+            $surface = $item->itemable;
+            if ($surface && $surface->area_id) {
+                $areaSurfaceIds[$surface->area_id][] = $surface->id;
+            }
+        }
+
+        foreach ($areaSurfaceIds as $areaId => $surfaceIds) {
             $area = EstimateArea::find($areaId);
             if ($area) {
-                // Use area's customer price (COGS + cleanup + sundries + margin)
-                $paintingTotal += $area->getCustomerPrice();
+                $paintingTotal += $area->getPartialCustomerPrice($surfaceIds);
             }
         }
 

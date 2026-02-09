@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Estimate;
+use App\Services\AllocationEvaluationService;
 use App\Services\EstimateCostBreakdownService;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
@@ -64,15 +65,20 @@ new class extends Component {
     #[Computed]
     public function currentBreakdown(): array
     {
+        // Build allocation context from estimate data so conditional allocations
+        // (scope, season, sizing, etc.) are evaluated on the breakdown page
+        $allocationContext = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($this->estimate);
+
         // If a specific package is selected, use it
         if ($this->selectedPackageId) {
             $package = $this->estimate->packages()->where('id', $this->selectedPackageId)->first();
             if ($package) {
-                return $this->service->calculatePackageBreakdown($this->estimate, $package);
+                return $this->service->calculatePackageBreakdown($this->estimate, $package, $allocationContext);
             }
         }
 
-        return $this->service->calculateBreakdown($this->estimate);
+        return $this->service->calculateBreakdown($this->estimate, $allocationContext);
     }
 
     #[Computed]

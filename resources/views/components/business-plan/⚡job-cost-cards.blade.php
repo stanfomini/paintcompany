@@ -23,6 +23,8 @@ new class extends Component
 
     public ?int $deletingCardId = null;
 
+    public ?int $expandedCardId = null;
+
     // Form fields
     public string $clientName = '';
 
@@ -101,14 +103,31 @@ new class extends Component
         unset($this->cards, $this->totals);
     }
 
+    public function toggleExpand(int $cardId): void
+    {
+        $this->expandedCardId = $this->expandedCardId === $cardId ? null : $cardId;
+    }
+
     public function syncFromJobs(): void
     {
         $service = new JobCostCardService;
         $synced = $service->backfillMissingCards($this->year);
 
+        // Recalculate allocations for all cards (evaluates conditions, tiers, payment methods)
+        $allocService = new \App\Services\AllocationEvaluationService;
+        $recalculated = $allocService->recalculateAllCards($this->year);
+
+        unset($this->cards, $this->totals);
+
+        $parts = [];
         if ($synced > 0) {
-            unset($this->cards, $this->totals);
-            $this->syncMessage = "{$synced} job cost ".Str::plural('card', $synced).' synced from estimates.';
+            $parts[] = "{$synced} ".Str::plural('card', $synced).' synced';
+        }
+        if ($recalculated > 0) {
+            $parts[] = "{$recalculated} ".Str::plural('allocation', $recalculated).' recalculated';
+        }
+        if (! empty($parts)) {
+            $this->syncMessage = implode(', ', $parts).'.';
         }
     }
 
@@ -263,23 +282,13 @@ new class extends Component
             // Header row
             fputcsv($handle, [
                 'Client',
-                'Price',
-                'Prod Mgmt Labor',
-                'Prod Mgmt %',
-                'Subcontractors',
-                'Subcontractors %',
-                'WC & Insurance',
-                'WC & Insurance %',
-                'Materials',
-                'Materials %',
-                'Sales Commission',
-                'Commission %',
-                'Total Cost',
+                'Revenue',
+                'COGS',
                 'Gross Profit',
-                'Gross Profit %',
+                'GP %',
                 'Allocations',
                 'Net Profit',
-                'Net Profit %',
+                'NP %',
                 'Type',
                 'Notes',
             ]);
@@ -289,16 +298,6 @@ new class extends Component
                 fputcsv($handle, [
                     $card->client_name,
                     number_format((float) $card->price, 2, '.', ''),
-                    number_format((float) $card->production_mgmt_labor, 2, '.', ''),
-                    $card->production_mgmt_percent,
-                    number_format((float) $card->subcontractor_cost, 2, '.', ''),
-                    $card->subcontractor_percent,
-                    number_format((float) $card->wc_insurance_burden, 2, '.', ''),
-                    $card->wc_insurance_percent,
-                    number_format((float) $card->material_cost, 2, '.', ''),
-                    $card->material_percent,
-                    number_format((float) $card->sales_commission, 2, '.', ''),
-                    $card->commission_percent,
                     number_format($card->total_cost, 2, '.', ''),
                     number_format($card->gross_profit, 2, '.', ''),
                     $card->gross_profit_percent,
@@ -314,16 +313,6 @@ new class extends Component
             fputcsv($handle, [
                 'TOTALS',
                 number_format($totals['price'], 2, '.', ''),
-                number_format($totals['production_mgmt_labor'], 2, '.', ''),
-                '',
-                number_format($totals['subcontractor_cost'], 2, '.', ''),
-                '',
-                number_format($totals['wc_insurance_burden'], 2, '.', ''),
-                '',
-                number_format($totals['material_cost'], 2, '.', ''),
-                '',
-                number_format($totals['sales_commission'], 2, '.', ''),
-                '',
                 number_format($totals['total_cost'], 2, '.', ''),
                 number_format($totals['gross_profit'], 2, '.', ''),
                 $totals['gross_profit_percent'],
@@ -399,6 +388,11 @@ new class extends Component
                 CSV
             </flux:button>
 
+            {{-- Print --}}
+            <flux:button variant="ghost" icon="printer" onclick="window.print()" size="sm">
+                Print
+            </flux:button>
+
             {{-- Add Manual Entry --}}
             @if ($this->canManage)
                 <flux:button variant="ghost" icon="arrow-path" wire:click="syncFromJobs" size="sm">
@@ -410,6 +404,14 @@ new class extends Component
             @endif
         </div>
     </div>
+
+    {{-- Internal Only Warning --}}
+    <flux:callout variant="warning" class="mb-6 print:hidden">
+        <flux:icon name="eye-slash" class="w-5 h-5" />
+        <div>
+            <strong>Internal Only</strong> - This breakdown reveals true costs and profit margins. Never share with customers.
+        </div>
+    </flux:callout>
 
     {{-- Sync Message --}}
     @if ($syncMessage)
@@ -425,34 +427,21 @@ new class extends Component
             <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-400">
                 {{ $year }} Running Totals
             </div>
-            <div class="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
                 <div>
                     <div class="text-xs text-zinc-500 dark:text-zinc-400">Revenue</div>
                     <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['price'], 0) }}</div>
                 </div>
                 <div>
-                    <div class="text-xs text-zinc-500 dark:text-zinc-400">Total Costs</div>
+                    <div class="text-xs text-zinc-500 dark:text-zinc-400">COGS</div>
                     <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['total_cost'], 0) }}</div>
                 </div>
                 <div>
                     <div class="text-xs text-zinc-500 dark:text-zinc-400">Gross Profit</div>
                     <div class="text-lg font-bold {{ $this->totals['gross_profit'] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                         ${{ number_format($this->totals['gross_profit'], 0) }}
+                        <span class="text-sm">({{ $this->totals['gross_profit_percent'] }}%)</span>
                     </div>
-                </div>
-                <div>
-                    <div class="text-xs text-zinc-500 dark:text-zinc-400">GP %</div>
-                    <div class="text-lg font-bold {{ $this->totals['gross_profit_percent'] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
-                        {{ $this->totals['gross_profit_percent'] }}%
-                    </div>
-                </div>
-                <div>
-                    <div class="text-xs text-zinc-500 dark:text-zinc-400">Materials</div>
-                    <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['material_cost'], 0) }}</div>
-                </div>
-                <div>
-                    <div class="text-xs text-zinc-500 dark:text-zinc-400">Commissions</div>
-                    <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['sales_commission'], 0) }}</div>
                 </div>
                 <div>
                     <div class="text-xs text-zinc-500 dark:text-zinc-400">Allocations</div>
@@ -465,31 +454,46 @@ new class extends Component
                         <span class="text-sm">({{ $this->totals['net_profit_percent'] }}%)</span>
                     </div>
                 </div>
+                <div>
+                    <div class="text-xs text-zinc-500 dark:text-zinc-400">Total Hours</div>
+                    <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">{{ number_format($this->totals['total_hours'], 1) }}</div>
+                </div>
             </div>
-            @if ($this->totals['total_hours'] > 0 || $this->totals['total_invoiced'] > 0)
+            @if ($this->totals['cards_with_actuals'] > 0)
                 <div class="mt-3 grid grid-cols-2 gap-4 border-t border-blue-200 pt-3 dark:border-blue-800 sm:grid-cols-4">
-                    @if ($this->totals['total_hours'] > 0)
-                        <div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Total Hours</div>
-                            <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">{{ number_format($this->totals['total_hours'], 1) }}</div>
+                    <div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">Actual COGS</div>
+                        <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['actual_total_cost'], 0) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">COGS Variance</div>
+                        @php $cogsVar = $this->totals['total_cogs'] - $this->totals['actual_total_cost']; @endphp
+                        <div class="text-lg font-bold {{ $cogsVar >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
+                            {{ $cogsVar >= 0 ? '+' : '' }}${{ number_format($cogsVar, 0) }}
                         </div>
-                    @endif
-                    @if ($this->totals['total_invoiced'] > 0)
-                        <div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Invoiced</div>
-                            <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['total_invoiced'], 0) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">Cards w/ Actuals</div>
+                        <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">{{ $this->totals['cards_with_actuals'] }} / {{ $this->totals['count'] }}</div>
+                    </div>
+                </div>
+            @endif
+            @if ($this->totals['total_invoiced'] > 0)
+                <div class="mt-3 grid grid-cols-2 gap-4 border-t border-blue-200 pt-3 dark:border-blue-800 sm:grid-cols-3">
+                    <div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">Invoiced</div>
+                        <div class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['total_invoiced'], 0) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">Collected</div>
+                        <div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${{ number_format($this->totals['total_collected'], 0) }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">Balance Due</div>
+                        <div class="text-lg font-bold {{ $this->totals['balance_due'] > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100' }}">
+                            ${{ number_format($this->totals['balance_due'], 0) }}
                         </div>
-                        <div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Collected</div>
-                            <div class="text-lg font-bold text-emerald-600 dark:text-emerald-400">${{ number_format($this->totals['total_collected'], 0) }}</div>
-                        </div>
-                        <div>
-                            <div class="text-xs text-zinc-500 dark:text-zinc-400">Balance Due</div>
-                            <div class="text-lg font-bold {{ $this->totals['balance_due'] > 0 ? 'text-red-600 dark:text-red-400' : 'text-zinc-900 dark:text-zinc-100' }}">
-                                ${{ number_format($this->totals['balance_due'], 0) }}
-                            </div>
-                        </div>
-                    @endif
+                    </div>
                 </div>
             @endif
         </div>
@@ -509,25 +513,10 @@ new class extends Component
             <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                 <thead class="bg-zinc-50 dark:bg-zinc-800/50">
                     <tr>
+                        <th class="w-10 px-2 py-3"></th>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Client</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Price</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            <span class="hidden lg:inline">Prod Mgmt</span>
-                            <span class="lg:hidden">PM</span>
-                        </th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Subs</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            <span class="hidden lg:inline">WC/Ins</span>
-                            <span class="lg:hidden">WC</span>
-                        </th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            <span class="hidden lg:inline">Materials</span>
-                            <span class="lg:hidden">Mat</span>
-                        </th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            <span class="hidden lg:inline">Commission</span>
-                            <span class="lg:hidden">Comm</span>
-                        </th>
+                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Revenue</th>
+                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">COGS</th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             <span class="hidden lg:inline">Gross Profit</span>
                             <span class="lg:hidden">GP</span>
@@ -549,7 +538,14 @@ new class extends Component
                 </thead>
                 <tbody class="divide-y divide-zinc-200 bg-white dark:divide-zinc-700 dark:bg-zinc-900">
                     @foreach ($this->cards as $card)
-                        <tr wire:key="card-{{ $card->id ?? $card->job_id ?? $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                        <tr wire:key="card-{{ $card->id ?? $card->job_id ?? $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 {{ $expandedCardId === $card->id ? 'bg-blue-50/50 dark:bg-blue-950/10' : '' }}">
+                            <td class="w-10 px-2 py-3 text-center">
+                                @if ($card->id)
+                                    <button wire:click="toggleExpand({{ $card->id }})" class="text-zinc-400 transition-transform hover:text-zinc-600 dark:hover:text-zinc-300 {{ $expandedCardId === $card->id ? 'rotate-90' : '' }}">
+                                        <flux:icon name="chevron-right" variant="mini" class="size-4" />
+                                    </button>
+                                @endif
+                            </td>
                             <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
                                 <div class="flex items-center gap-2">
                                     @if ($card->job_id)
@@ -582,24 +578,7 @@ new class extends Component
                                 ${{ number_format((float) $card->price, 0) }}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-400">
-                                <div>${{ number_format((float) $card->production_mgmt_labor, 0) }}</div>
-                                <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ $card->production_mgmt_percent }}%</div>
-                            </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-400">
-                                <div>${{ number_format((float) $card->subcontractor_cost, 0) }}</div>
-                                <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ $card->subcontractor_percent }}%</div>
-                            </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-400">
-                                <div>${{ number_format((float) $card->wc_insurance_burden, 0) }}</div>
-                                <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ $card->wc_insurance_percent }}%</div>
-                            </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-400">
-                                <div>${{ number_format((float) $card->material_cost, 0) }}</div>
-                                <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ $card->material_percent }}%</div>
-                            </td>
-                            <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-400">
-                                <div>${{ number_format((float) $card->sales_commission, 0) }}</div>
-                                <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ $card->commission_percent }}%</div>
+                                ${{ number_format($card->total_cost, 0) }}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium {{ $card->gross_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                                 ${{ number_format($card->gross_profit, 0) }}
@@ -608,8 +587,7 @@ new class extends Component
                                 {{ $card->gross_profit_percent }}%
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-400">
-                                <div>${{ number_format((float) $card->allocation_total, 0) }}</div>
-                                <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ number_format($card->allocation_percent, 1) }}%</div>
+                                ${{ number_format((float) $card->allocation_total, 0) }}
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm font-medium {{ $card->net_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                                 ${{ number_format($card->net_profit, 0) }}
@@ -630,18 +608,23 @@ new class extends Component
                                 </td>
                             @endif
                         </tr>
+                        {{-- Expandable Detail Row --}}
+                        @if ($expandedCardId === $card->id && $card->id)
+                            <tr wire:key="detail-row-{{ $card->id }}">
+                                <td colspan="{{ $this->canManage ? 10 : 9 }}" class="p-0">
+                                    <livewire:business-plan.job-cost-card-detail :card="$card" :key="'detail-'.$card->id" />
+                                </td>
+                            </tr>
+                        @endif
                     @endforeach
                 </tbody>
                 {{-- Totals Footer --}}
                 <tfoot class="bg-zinc-100 font-semibold dark:bg-zinc-800">
                     <tr>
+                        <td class="w-10 px-2 py-3"></td>
                         <td class="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">TOTALS</td>
                         <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['price'], 0) }}</td>
-                        <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['production_mgmt_labor'], 0) }}</td>
-                        <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['subcontractor_cost'], 0) }}</td>
-                        <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['wc_insurance_burden'], 0) }}</td>
-                        <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['material_cost'], 0) }}</td>
-                        <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['sales_commission'], 0) }}</td>
+                        <td class="px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">${{ number_format($this->totals['total_cost'], 0) }}</td>
                         <td class="px-4 py-3 text-right text-sm font-bold {{ $this->totals['gross_profit'] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                             ${{ number_format($this->totals['gross_profit'], 0) }}
                         </td>
@@ -698,52 +681,40 @@ new class extends Component
                             </td>
                         </tr>
 
-                        {{-- Cost (Debit) lines --}}
-                        @foreach ([
-                            ['label' => 'Prod Mgmt Labor', 'amount' => (float) $card->production_mgmt_labor],
-                            ['label' => 'Subcontractors', 'amount' => (float) $card->subcontractor_cost],
-                            ['label' => 'WC & Insurance', 'amount' => (float) $card->wc_insurance_burden],
-                            ['label' => 'Materials', 'amount' => (float) $card->material_cost],
-                            ['label' => 'Sales Commission', 'amount' => (float) $card->sales_commission],
-                        ] as $costLine)
-                            @if ($costLine['amount'] > 0)
-                                @php $runningBalance -= $costLine['amount']; @endphp
-                                <tr wire:key="ledger-debit-{{ $card->id ?? $loop->parent->index }}-{{ $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                                    <td class="whitespace-nowrap px-4 py-1.5 pl-8 text-sm text-zinc-500 dark:text-zinc-400">
-                                        ↳ {{ $costLine['label'] }}
-                                    </td>
-                                    <td class="px-4 py-1.5"></td>
-                                    <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-red-600 dark:text-red-400">
-                                        (${{ number_format($costLine['amount'], 2) }})
-                                    </td>
-                                    <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-zinc-400">—</td>
-                                    <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm {{ $runningBalance >= 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-600 dark:text-red-400' }}">
-                                        ${{ number_format($runningBalance, 2) }}
-                                    </td>
-                                </tr>
-                            @endif
-                        @endforeach
+                        {{-- COGS (Debit) line --}}
+                        @if ($card->total_cost > 0)
+                            @php $runningBalance -= $card->total_cost; @endphp
+                            <tr wire:key="ledger-debit-cogs-{{ $card->id ?? $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                                <td class="whitespace-nowrap px-4 py-1.5 pl-8 text-sm text-zinc-500 dark:text-zinc-400">
+                                    ↳ Direct Costs (COGS)
+                                </td>
+                                <td class="px-4 py-1.5"></td>
+                                <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-red-600 dark:text-red-400">
+                                    (${{ number_format($card->total_cost, 2) }})
+                                </td>
+                                <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-zinc-400">—</td>
+                                <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm {{ $runningBalance >= 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-600 dark:text-red-400' }}">
+                                    ${{ number_format($runningBalance, 2) }}
+                                </td>
+                            </tr>
+                        @endif
 
-                        {{-- Allocation (Debit) lines --}}
-                        @if ($card->cardAllocations && $card->cardAllocations->count() > 0)
-                            @foreach ($card->cardAllocations as $alloc)
-                                @if ((float) $alloc->amount > 0)
-                                    @php $runningBalance -= (float) $alloc->amount; @endphp
-                                    <tr wire:key="ledger-alloc-{{ $card->id ?? $loop->parent->index }}-{{ $alloc->id ?? $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                                        <td class="whitespace-nowrap px-4 py-1.5 pl-8 text-sm text-indigo-500 dark:text-indigo-400">
-                                            ↳ {{ $alloc->name }}
-                                        </td>
-                                        <td class="px-4 py-1.5"></td>
-                                        <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-red-600 dark:text-red-400">
-                                            (${{ number_format((float) $alloc->amount, 2) }})
-                                        </td>
-                                        <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-zinc-400">—</td>
-                                        <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm {{ $runningBalance >= 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-600 dark:text-red-400' }}">
-                                            ${{ number_format($runningBalance, 2) }}
-                                        </td>
-                                    </tr>
-                                @endif
-                            @endforeach
+                        {{-- Allocations (Debit) line --}}
+                        @if ((float) $card->allocation_total > 0)
+                            @php $runningBalance -= (float) $card->allocation_total; @endphp
+                            <tr wire:key="ledger-debit-alloc-{{ $card->id ?? $loop->index }}" class="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                                <td class="whitespace-nowrap px-4 py-1.5 pl-8 text-sm text-indigo-500 dark:text-indigo-400">
+                                    ↳ Business Allocations
+                                </td>
+                                <td class="px-4 py-1.5"></td>
+                                <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-red-600 dark:text-red-400">
+                                    (${{ number_format((float) $card->allocation_total, 2) }})
+                                </td>
+                                <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm text-zinc-400">—</td>
+                                <td class="whitespace-nowrap px-4 py-1.5 text-right text-sm {{ $runningBalance >= 0 ? 'text-zinc-600 dark:text-zinc-400' : 'text-red-600 dark:text-red-400' }}">
+                                    ${{ number_format($runningBalance, 2) }}
+                                </td>
+                            </tr>
                         @endif
                     @endforeach
                 </tbody>

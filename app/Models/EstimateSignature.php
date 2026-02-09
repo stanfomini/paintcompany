@@ -89,6 +89,9 @@ class EstimateSignature extends Model
                 // Auto-create job from the accepted estimate
                 app(JobService::class)->createFromEstimate($signature->estimate);
 
+                // Advance referral status if this estimate was referred
+                app(\App\Services\ReferralService::class)->onEstimateSigned($signature->estimate);
+
                 // Auto-create projected job cost card and deposit invoice
                 $signature->estimate->load('areas.surfaces');
                 $job = $signature->estimate->job;

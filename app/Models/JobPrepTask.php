@@ -28,6 +28,7 @@ class JobPrepTask extends Model
     protected $fillable = [
         'job_prep_day_id',
         'job_prep_plan_id',
+        'service_category_id',
         'estimate_area_id',
         'estimate_area_surface_id',
         'estimate_area_addon_id',
@@ -102,6 +103,32 @@ class JobPrepTask extends Model
     }
 
     /**
+     * Mark task as in progress.
+     */
+    public function markInProgress(): void
+    {
+        $this->update([
+            'status' => self::STATUS_IN_PROGRESS,
+            'completed_by' => null,
+            'completed_at' => null,
+            'completion_notes' => null,
+        ]);
+    }
+
+    /**
+     * Revert task to pending.
+     */
+    public function revertToPending(): void
+    {
+        $this->update([
+            'status' => self::STATUS_PENDING,
+            'completed_by' => null,
+            'completed_at' => null,
+            'completion_notes' => null,
+        ]);
+    }
+
+    /**
      * Check if this task is linked to an estimate surface or addon.
      */
     public function isFromEstimate(): bool
@@ -115,5 +142,10 @@ class JobPrepTask extends Model
     public function isCustom(): bool
     {
         return $this->task_type === self::TYPE_CUSTOM;
+    }
+
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
     }
 }

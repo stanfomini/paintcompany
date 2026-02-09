@@ -185,6 +185,18 @@ class CompanyAllocationFactory extends Factory
     }
 
     /**
+     * Allocation with value tiers.
+     *
+     * @param  array<int, array{label: string, type: string, value: float, conditions: array}>  $tiers
+     */
+    public function withTiers(array $tiers): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'value_tiers' => $tiers,
+        ]);
+    }
+
+    /**
      * Associate with specific company settings.
      */
     public function forCompanySetting(CompanySetting $setting): static

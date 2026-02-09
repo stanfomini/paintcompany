@@ -2,11 +2,14 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\CompanySetting;
 use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\JobCostCard;
+use App\Models\JournalEntry;
+use App\Models\JournalEntryLine;
 use Illuminate\Support\Collection;
 
 class JobCostCardService
@@ -261,34 +264,303 @@ class JobCostCardService
             'total_collected' => round($totalCollected, 2),
             'balance_due' => max(0, $balanceDue),
         ]);
+
+        // Re-evaluate allocations since payment_methods context may have changed
+        try {
+            app(AllocationEvaluationService::class)->evaluateForCard($card);
+        } catch (\Throwable $e) {
+            report($e);
+        }
     }
 
     /**
-     * Save actual cost tracking data onto a cost card.
+     * Save actual cost tracking data onto a cost card (supports all granular fields).
      */
     public function updateActuals(JobCostCard $card, array $actuals): void
     {
-        $materialCost = isset($actuals['actual_material_cost']) ? (float) $actuals['actual_material_cost'] : null;
-        $laborCost = isset($actuals['actual_labor_cost']) ? (float) $actuals['actual_labor_cost'] : null;
-        $subcontractorCost = isset($actuals['actual_subcontractor_cost']) ? (float) $actuals['actual_subcontractor_cost'] : null;
-        $otherCost = isset($actuals['actual_other_cost']) ? (float) $actuals['actual_other_cost'] : null;
+        $granularFields = [
+            'actual_material_cost', 'actual_labor_cost', 'actual_subcontractor_cost',
+            'actual_other_cost', 'actual_cleanup_cost', 'actual_sundries_cost',
+            'actual_material_tax', 'actual_labor_tax', 'actual_addon_cost',
+            'actual_items_vendor_cost', 'actual_warranty_reserve', 'actual_crew_bonus',
+            'actual_allocation_total',
+        ];
 
-        $totalCost = null;
-        if ($materialCost !== null || $laborCost !== null || $subcontractorCost !== null || $otherCost !== null) {
-            $totalCost = round(
-                ($materialCost ?? 0) + ($laborCost ?? 0) + ($subcontractorCost ?? 0) + ($otherCost ?? 0),
-                2
-            );
+        $data = [];
+        $hasAny = false;
+
+        foreach ($granularFields as $field) {
+            if (array_key_exists($field, $actuals)) {
+                $data[$field] = $actuals[$field] !== null && $actuals[$field] !== '' ? (float) $actuals[$field] : null;
+                if ($data[$field] !== null) {
+                    $hasAny = true;
+                }
+            }
+        }
+
+        if (array_key_exists('actual_notes', $actuals)) {
+            $data['actual_notes'] = $actuals['actual_notes'];
+        }
+
+        $card->update($data);
+
+        // Recompute total from all granular COGS fields
+        $card->refresh();
+        if ($hasAny || $card->has_actuals) {
+            $card->update([
+                'actual_total_cost' => $card->actual_cogs,
+            ]);
+        }
+    }
+
+    /**
+     * Save actual amounts for individual allocations.
+     *
+     * @param  array<int, float|null>  $actuals  allocation_id => actual_amount
+     */
+    public function updateAllocationActuals(JobCostCard $card, array $actuals): void
+    {
+        $totalActualAllocation = 0.0;
+
+        foreach ($card->cardAllocations as $allocation) {
+            if (array_key_exists($allocation->id, $actuals)) {
+                $actualAmount = $actuals[$allocation->id] !== null && $actuals[$allocation->id] !== ''
+                    ? (float) $actuals[$allocation->id] : null;
+                $allocation->update(['actual_amount' => $actualAmount]);
+                $totalActualAllocation += ($actualAmount ?? 0);
+            } else {
+                $totalActualAllocation += (float) ($allocation->actual_amount ?? 0);
+            }
         }
 
         $card->update([
-            'actual_material_cost' => $materialCost,
-            'actual_labor_cost' => $laborCost,
-            'actual_subcontractor_cost' => $subcontractorCost,
-            'actual_other_cost' => $otherCost,
-            'actual_total_cost' => $totalCost,
-            'actual_notes' => $actuals['actual_notes'] ?? null,
+            'actual_allocation_total' => round($totalActualAllocation, 2),
         ]);
+    }
+
+    /**
+     * Create a draft journal entry from the card's actual costs.
+     * Maps each actual line to the corresponding chart of accounts entry.
+     */
+    public function createJournalEntryFromActuals(JobCostCard $card, int $createdBy): JournalEntry
+    {
+        $settings = CompanySetting::getInstance();
+
+        $entryNumber = 'JE-'.now()->year.'-'.str_pad(
+            (JournalEntry::where('company_setting_id', $settings->id)->count() + 1),
+            5, '0', STR_PAD_LEFT
+        );
+
+        $entry = JournalEntry::create([
+            'company_setting_id' => $settings->id,
+            'entry_number' => $entryNumber,
+            'transaction_date' => now(),
+            'recognition_date' => now(),
+            'description' => "Job Cost Card actuals: {$card->client_name}",
+            'reference_type' => 'job_cost_card',
+            'reference_id' => $card->id,
+            'status' => JournalEntry::STATUS_DRAFT,
+            'created_by' => $createdBy,
+        ]);
+
+        $revenueCode = $card->scope_type === 'exterior' ? '4020' : '4010';
+        $lines = [];
+        $totalDebits = 0;
+
+        // Credit: Revenue (full customer price)
+        $lines[] = [
+            'code' => $revenueCode,
+            'debit' => 0,
+            'credit' => (float) $card->price,
+            'desc' => 'Revenue — '.$card->client_name,
+        ];
+
+        // Debit: COGS lines (only when actual > 0)
+        $cogsMapping = [
+            'actual_labor_cost' => ['code' => '5010', 'desc' => 'Painter Labor'],
+            'actual_cleanup_cost' => ['code' => '5070', 'desc' => 'Cleanup & Disposal'],
+            'actual_sundries_cost' => ['code' => '5040', 'desc' => 'Sundries & Supplies'],
+            'actual_material_cost' => ['code' => '5030', 'desc' => 'Paint Materials'],
+            'actual_subcontractor_cost' => ['code' => '5050', 'desc' => 'Subcontractor Costs'],
+        ];
+
+        foreach ($cogsMapping as $field => $mapping) {
+            $amount = (float) ($card->$field ?? 0);
+            if ($amount > 0) {
+                $lines[] = [
+                    'code' => $mapping['code'],
+                    'debit' => $amount,
+                    'credit' => 0,
+                    'desc' => $mapping['desc'],
+                ];
+                $totalDebits += $amount;
+            }
+        }
+
+        // Debit: Sales Tax (material tax + labor tax) → liability account
+        $taxTotal = (float) ($card->actual_material_tax ?? 0) + (float) ($card->actual_labor_tax ?? 0);
+        if ($taxTotal > 0) {
+            $lines[] = [
+                'code' => '2300',
+                'debit' => $taxTotal,
+                'credit' => 0,
+                'desc' => 'Sales Tax Payable',
+            ];
+            $totalDebits += $taxTotal;
+        }
+
+        // Debit: Warranty reserve → liability account
+        $warrantyAmount = (float) ($card->actual_warranty_reserve ?? 0);
+        if ($warrantyAmount > 0) {
+            $lines[] = [
+                'code' => '2600',
+                'debit' => $warrantyAmount,
+                'credit' => 0,
+                'desc' => 'Warranty Reserve',
+            ];
+            $totalDebits += $warrantyAmount;
+        }
+
+        // Debit: Crew bonus → COGS
+        $crewBonusAmount = (float) ($card->actual_crew_bonus ?? 0);
+        if ($crewBonusAmount > 0) {
+            $lines[] = [
+                'code' => '5010',
+                'debit' => $crewBonusAmount,
+                'credit' => 0,
+                'desc' => 'Crew Lead Bonus',
+            ];
+            $totalDebits += $crewBonusAmount;
+        }
+
+        // Debit: Allocation lines (marketing, sales, PM, overhead, etc.)
+        $allocationMapping = [
+            'marketing' => '6300',
+            'sales' => '7010',
+            'sales_commission' => '7010',
+            'sales-commission' => '7010',
+            'production_management' => '7030',
+            'production-management' => '7030',
+            'office_staff' => '6020',
+            'taxes' => '2800',
+            'stripe_processing' => '6620',
+            'software' => '6500',
+            'fixed_office_cost' => '6100',
+            'general_overhead' => '6000',
+        ];
+
+        $card->load('cardAllocations');
+        foreach ($card->cardAllocations as $allocation) {
+            $amount = (float) ($allocation->actual_amount ?? $allocation->amount);
+            if ($amount > 0) {
+                $code = $allocationMapping[$allocation->slug] ?? '6990';
+                $lines[] = [
+                    'code' => $code,
+                    'debit' => $amount,
+                    'credit' => 0,
+                    'desc' => $allocation->name,
+                ];
+                $totalDebits += $amount;
+            }
+        }
+
+        // Profit First: Split remaining profit into tax reserve + profit reserve + retained earnings
+        $remainingProfit = round((float) $card->price - $totalDebits, 2);
+
+        if ($remainingProfit > 0) {
+            $taxReservePercent = (float) ($settings->tax_reserve_percent ?? 30.00);
+            $profitReservePercent = (float) ($settings->profit_reserve_percent ?? 5.00);
+
+            // Income Tax Reserve (liability - set aside for estimated taxes)
+            $taxReserve = round($remainingProfit * ($taxReservePercent / 100), 2);
+            if ($taxReserve > 0) {
+                $lines[] = [
+                    'code' => '2800',
+                    'debit' => $taxReserve,
+                    'credit' => 0,
+                    'desc' => "Income Tax Reserve ({$taxReservePercent}% of net profit)",
+                ];
+                $totalDebits += $taxReserve;
+            }
+
+            // Profit Reserve (equity - Profit First "take your profit first")
+            $profitReserve = round($remainingProfit * ($profitReservePercent / 100), 2);
+            if ($profitReserve > 0) {
+                $lines[] = [
+                    'code' => '3300',
+                    'debit' => $profitReserve,
+                    'credit' => 0,
+                    'desc' => "Profit Reserve ({$profitReservePercent}% of net profit)",
+                ];
+                $totalDebits += $profitReserve;
+            }
+
+            // Retained Earnings (whatever is left after tax + profit reserves)
+            $retainedEarnings = round($remainingProfit - $taxReserve - $profitReserve, 2);
+            if ($retainedEarnings > 0) {
+                $lines[] = [
+                    'code' => '3200',
+                    'debit' => $retainedEarnings,
+                    'credit' => 0,
+                    'desc' => 'Retained Earnings (operating funds)',
+                ];
+            }
+        }
+
+        // Create journal entry lines
+        foreach ($lines as $line) {
+            $account = Account::where('company_setting_id', $settings->id)
+                ->where('code', $line['code'])
+                ->first();
+
+            if ($account) {
+                JournalEntryLine::create([
+                    'journal_entry_id' => $entry->id,
+                    'account_id' => $account->id,
+                    'debit_amount' => round($line['debit'], 2),
+                    'credit_amount' => round($line['credit'], 2),
+                    'description' => $line['desc'],
+                ]);
+            }
+        }
+
+        // Link journal entry to the card
+        $card->update(['journal_entry_id' => $entry->id]);
+
+        return $entry;
+    }
+
+    /**
+     * Calculate the bank distribution for a completed job card.
+     * Maps actuals to 6 Relay bank account buckets (read-only).
+     *
+     * @return array<string, float>
+     */
+    public function calculateBankDistribution(JobCostCard $card): array
+    {
+        $price = (float) $card->price;
+        $actualCogs = $card->actual_cogs;
+        $actualAllocations = (float) ($card->actual_allocation_total ?? 0);
+
+        return [
+            'cogs_account' => round($actualCogs, 2),
+            'tax_account' => round((float) ($card->actual_material_tax ?? 0) + (float) ($card->actual_labor_tax ?? 0), 2),
+            'marketing_account' => round($this->getAllocationActualBySlug($card, 'marketing'), 2),
+            'sales_account' => round($this->getAllocationActualBySlug($card, 'sales-commission') + $this->getAllocationActualBySlug($card, 'sales'), 2),
+            'operations_account' => round($this->getAllocationActualBySlug($card, 'production-management'), 2),
+            'profit_account' => round($price - $actualCogs - $actualAllocations, 2),
+        ];
+    }
+
+    /**
+     * Helper to get actual amount for an allocation by slug.
+     */
+    private function getAllocationActualBySlug(JobCostCard $card, string $slug): float
+    {
+        $card->loadMissing('cardAllocations');
+        $allocation = $card->cardAllocations->firstWhere('slug', $slug);
+
+        return (float) ($allocation?->actual_amount ?? $allocation?->amount ?? 0);
     }
 
     /**
@@ -347,6 +619,10 @@ class JobCostCardService
             'total_invoiced' => 0.0,
             'total_collected' => 0.0,
             'balance_due' => 0.0,
+            // Actual totals
+            'actual_total_cost' => 0.0,
+            'actual_allocation_total' => 0.0,
+            'cards_with_actuals' => 0,
         ];
 
         foreach ($cards as $card) {
@@ -367,10 +643,16 @@ class JobCostCardService
             $totals['total_invoiced'] += (float) $card->total_invoiced;
             $totals['total_collected'] += (float) $card->total_collected;
             $totals['balance_due'] += (float) $card->balance_due;
+            // Actual aggregates
+            if ($card->has_actuals) {
+                $totals['actual_total_cost'] += (float) ($card->actual_total_cost ?? 0);
+                $totals['actual_allocation_total'] += (float) ($card->actual_allocation_total ?? 0);
+                $totals['cards_with_actuals']++;
+            }
         }
 
         // Round all numeric totals
-        foreach (['price', 'production_mgmt_labor', 'subcontractor_cost', 'wc_insurance_burden', 'material_cost', 'sales_commission', 'allocation_total', 'total_cost', 'gross_profit', 'net_profit', 'total_cogs', 'labor_hours', 'total_hours', 'total_invoiced', 'total_collected', 'balance_due'] as $key) {
+        foreach (['price', 'production_mgmt_labor', 'subcontractor_cost', 'wc_insurance_burden', 'material_cost', 'sales_commission', 'allocation_total', 'total_cost', 'gross_profit', 'net_profit', 'total_cogs', 'labor_hours', 'total_hours', 'total_invoiced', 'total_collected', 'balance_due', 'actual_total_cost', 'actual_allocation_total'] as $key) {
             $totals[$key] = round($totals[$key], 2);
         }
 

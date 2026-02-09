@@ -65,6 +65,11 @@
                             {{ __('Invoices') }}
                         </flux:sidebar.item>
                     @endcan
+                    @can('people.view')
+                        <flux:sidebar.item icon="gift" :href="route('referrals.index')" :current="request()->routeIs('referrals.*')" wire:navigate>
+                            {{ __('Referrals') }}
+                        </flux:sidebar.item>
+                    @endcan
                 </flux:sidebar.group>
 
                 @if (auth()->user() && app(\App\Services\InvitationService::class)->canSendInvitations(auth()->user()))

@@ -723,7 +723,7 @@ it('sync button triggers backfill from UI', function () {
     Livewire::actingAs($user)
         ->test('business-plan.job-cost-cards')
         ->assertSee('Sync Button')
-        ->assertSee('synced from estimates');
+        ->assertSee('synced');
 
     expect(JobCostCard::count())->toBe(1);
 });

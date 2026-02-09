@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CrewProfile;
 use App\Models\Customer;
 use App\Models\Invitation;
 use App\Models\User;
@@ -54,7 +55,7 @@ class InvitationService
      *
      * @throws \InvalidArgumentException
      */
-    public function sendInvitation(User $inviter, string $email, string $invitedUserType): Invitation
+    public function sendInvitation(User $inviter, string $email, string $invitedUserType, ?int $serviceCategoryId = null): Invitation
     {
         if (! $this->canInvite($inviter, $invitedUserType)) {
             throw new \InvalidArgumentException(
@@ -88,11 +89,18 @@ class InvitationService
         }
 
         // Create the invitation
-        $invitation = Invitation::create([
+        $invitationData = [
             'email' => $email,
             'invited_user_type' => $invitedUserType,
             'inviter_id' => $inviter->id,
-        ]);
+        ];
+
+        // Attach service category for crew invitations
+        if ($invitedUserType === 'crew' && $serviceCategoryId) {
+            $invitationData['service_category_id'] = $serviceCategoryId;
+        }
+
+        $invitation = Invitation::create($invitationData);
 
         // Send the notification
         $invitation->notify(new InvitationNotification($invitation));
@@ -165,6 +173,11 @@ class InvitationService
             $this->linkCustomerToUser($user);
         }
 
+        // Create crew profile with service category (for crew invitations)
+        if ($invitation->invited_user_type === 'crew') {
+            $this->createCrewProfile($user, $invitation);
+        }
+
         // Mark invitation as accepted
         $invitation->markAsAccepted();
 
@@ -193,6 +206,17 @@ class InvitationService
                 $deal->chatThread->addParticipant($user);
             }
         }
+    }
+
+    /**
+     * Create a crew profile for the user, setting service_category_id from the invitation.
+     */
+    protected function createCrewProfile(User $user, Invitation $invitation): void
+    {
+        CrewProfile::create([
+            'user_id' => $user->id,
+            'service_category_id' => $invitation->service_category_id,
+        ]);
     }
 
     /**

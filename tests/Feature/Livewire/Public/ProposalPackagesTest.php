@@ -546,7 +546,6 @@ it('loads package templates with correct calculated values', function () {
     $betterTemplate = collect($templates)->firstWhere('tier', 'better');
 
     expect($betterTemplate)->not->toBeNull()
-        ->and($betterTemplate['warranty_amount'])->toBe(100.0) // 5% of 2000
         ->and($betterTemplate['painting_total'])->toBe(2000.0)
         ->and($betterTemplate['items'])->toHaveCount(1)
         ->and($betterTemplate['items'][0]['price'])->toBe(300.0);
@@ -565,10 +564,6 @@ it('selects tier when using package templates', function () {
         ->assertSet('selectedTier', 'better') // Default tier
         ->call('selectTier', 'good')
         ->assertSet('selectedTier', 'good')
-        ->assertSet('showWarrantyPicker', true)
-        ->call('selectWarranty', 'good')
-        ->call('confirmSelection')
-        ->assertSet('showWarrantyPicker', false)
         ->assertDispatched('tier-selected');
 });
 
@@ -581,7 +576,7 @@ it('calculates selected template total correctly', function () {
     $template = PackageTemplate::factory()->good()->create([
         'is_active' => true,
         'warranty_months' => 3,
-        'warranty_percent' => 2, // $40 warranty
+        'warranty_percent' => 2,
     ]);
 
     PackageTemplateItem::factory()->create([
@@ -594,12 +589,11 @@ it('calculates selected template total correctly', function () {
     ]);
 
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'good')
-        ->call('confirmSelection');
+        ->call('selectTier', 'good');
 
-    // Total = painting (2000) + warranty (40) + included item (150) = 2190
-    expect($component->get('selectedTemplateTotal'))->toBe(2190.0);
+    // Total = painting (2000) + included item (150) = 2150
+    // (warranty is now an item, not template-level - no warranty item linked to this template)
+    expect($component->get('selectedTemplateTotal'))->toBe(2150.0);
 });
 
 it('toggles optional package items in template system', function () {
@@ -624,9 +618,7 @@ it('toggles optional package items in template system', function () {
     ]);
 
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'better')
-        ->call('selectWarranty', 'better')
-        ->call('confirmSelection');
+        ->call('selectTier', 'better');
 
     // Initially, optional item is NOT selected
     $initialTotal = $component->get('selectedTemplateTotal');
@@ -653,8 +645,6 @@ it('proceeds to signature with template data', function () {
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('selectTier', 'best')
-        ->call('selectWarranty', 'best')
-        ->call('confirmSelection')
         ->call('proceedToSignature')
         ->assertDispatched('proceed-to-signature');
 });
@@ -683,15 +673,13 @@ it('uses final total from template for deposit calculation', function () {
     ]);
 
     $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'better')
-        ->call('selectWarranty', 'better')
-        ->call('confirmSelection');
+        ->call('selectTier', 'better');
 
-    // Total = 4000 + 200 = 4200
-    // Deposit = 4200 * 0.30 = 1260
-    expect($component->get('finalTotal'))->toBe(4200.0)
-        ->and($component->get('depositAmount'))->toBe(1260.0)
-        ->and($component->get('balanceDue'))->toBe(2940.0);
+    // Total = 4000 (no warranty items linked, template warranty_percent is just a legacy field)
+    // Deposit = 4000 * 0.30 = 1200
+    expect($component->get('finalTotal'))->toBe(4000.0)
+        ->and($component->get('depositAmount'))->toBe(1200.0)
+        ->and($component->get('balanceDue'))->toBe(2800.0);
 });
 
 it('cannot select tier when estimate is accepted', function () {
@@ -719,9 +707,7 @@ it('logs activity when tier is selected', function () {
     PackageTemplate::factory()->good()->create(['is_active' => true]);
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
-        ->call('selectTier', 'good')
-        ->call('selectWarranty', 'good')
-        ->call('confirmSelection');
+        ->call('selectTier', 'good');
 
     expect($estimate->activities()->where('activity_type', 'package_tier_selected')->exists())->toBeTrue();
 });

@@ -19,6 +19,7 @@ class JobCostCardAllocation extends Model
         'type',
         'value',
         'amount',
+        'actual_amount',
         'conditions_snapshot',
         'applied_tier',
     ];
@@ -28,8 +29,21 @@ class JobCostCardAllocation extends Model
         return [
             'value' => 'decimal:4',
             'amount' => 'decimal:2',
+            'actual_amount' => 'decimal:2',
             'conditions_snapshot' => 'array',
         ];
+    }
+
+    /**
+     * Variance: projected minus actual (positive = under budget).
+     */
+    public function getVarianceAttribute(): ?float
+    {
+        if ($this->actual_amount === null) {
+            return null;
+        }
+
+        return round((float) $this->amount - (float) $this->actual_amount, 2);
     }
 
     /**

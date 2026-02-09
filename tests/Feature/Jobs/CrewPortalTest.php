@@ -1,8 +1,11 @@
 <?php
 
+use App\Events\JobAcceptedByCrew;
+use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\User;
 use App\Services\JobDispatchService;
+use Illuminate\Support\Facades\Event;
 use Livewire\Livewire;
 
 describe('Crew Dashboard', function () {
@@ -394,5 +397,312 @@ describe('Crew My Jobs', function () {
         Livewire::actingAs($crew, 'crew')
             ->test('crew.my-jobs')
             ->assertSee('No active jobs');
+    });
+});
+
+describe('Crew Painter Breakdown', function () {
+    it('allows crew to view painter breakdown for dispatched job', function () {
+        $crew = User::factory()->crew()->create();
+        $estimate = Estimate::factory()->create();
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-breakdown', ['job' => $job])
+            ->assertStatus(200)
+            ->assertSee('Pay Breakdown');
+    });
+
+    it('denies breakdown access to crew not dispatched to this job', function () {
+        $crew = User::factory()->crew()->create();
+        $estimate = Estimate::factory()->create();
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-breakdown', ['job' => $job])
+            ->assertNotFound();
+    });
+
+    it('returns 404 when job has no estimate', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create(['estimate_id' => null]);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-breakdown', ['job' => $job])
+            ->assertNotFound();
+    });
+
+    it('shows breakdown button on job show when estimate exists', function () {
+        $crew = User::factory()->crew()->create();
+        $estimate = Estimate::factory()->create();
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->assertSee('View Pay Breakdown');
+    });
+});
+
+describe('Crew Job Acceptance Race Condition', function () {
+    it('rejects second crew when first already accepted', function () {
+        $crew1 = User::factory()->crew()->create();
+        $crew2 = User::factory()->crew()->create();
+        $job = Job::factory()->create();
+
+        $service = app(JobDispatchService::class);
+        $service->dispatchToCrews($job, [$crew1->id, $crew2->id]);
+
+        Event::fake();
+
+        // First crew accepts
+        expect($service->acceptJob($job, $crew1))->toBeTrue();
+
+        // Second crew tries to accept - should fail
+        expect($service->acceptJob($job, $crew2))->toBeFalse();
+    });
+
+    it('auto-rejects other dispatched crews on acceptance', function () {
+        $crew1 = User::factory()->crew()->create();
+        $crew2 = User::factory()->crew()->create();
+        $crew3 = User::factory()->crew()->create();
+        $job = Job::factory()->create();
+
+        $service = app(JobDispatchService::class);
+        $service->dispatchToCrews($job, [$crew1->id, $crew2->id, $crew3->id]);
+
+        Event::fake();
+
+        // Crew 1 accepts
+        $service->acceptJob($job, $crew1);
+
+        // Crew 2 and 3 should be auto-rejected
+        $crew2Pivot = $job->crews()->where('crew_user_id', $crew2->id)->first()->pivot;
+        $crew3Pivot = $job->crews()->where('crew_user_id', $crew3->id)->first()->pivot;
+
+        expect($crew2Pivot->status)->toBe('rejected');
+        expect($crew3Pivot->status)->toBe('rejected');
+        expect($crew2Pivot->notes)->toContain('Auto-rejected');
+        expect($crew3Pivot->notes)->toContain('Auto-rejected');
+    });
+
+    it('dispatches JobAcceptedByCrew event on acceptance', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create();
+
+        $service = app(JobDispatchService::class);
+        $service->dispatchToCrews($job, [$crew->id]);
+
+        Event::fake();
+
+        $service->acceptJob($job, $crew);
+
+        Event::assertDispatched(JobAcceptedByCrew::class, function ($event) use ($job, $crew) {
+            return $event->job->id === $job->id
+                && $event->acceptedBy->id === $crew->id;
+        });
+    });
+
+    it('shows error when trying to accept already taken job via UI', function () {
+        $crew1 = User::factory()->crew()->create();
+        $crew2 = User::factory()->crew()->create();
+        $job = Job::factory()->create();
+
+        $service = app(JobDispatchService::class);
+        $service->dispatchToCrews($job, [$crew1->id, $crew2->id]);
+
+        Event::fake();
+
+        // Crew 1 accepts first
+        $service->acceptJob($job, $crew1);
+
+        // Crew 2 tries to accept via the available-jobs UI
+        Livewire::actingAs($crew2, 'crew')
+            ->test('crew.available-jobs')
+            ->call('acceptJob', $job->id)
+            ->assertSee('already been accepted');
+    });
+});
+
+describe('Crew Confirmation Status Display', function () {
+    it('shows confirmed badge when company date confirmed', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create([
+            'stage' => 'scheduling_colors',
+            'company_date_confirmed' => true,
+            'customer_date_confirmed' => true,
+        ]);
+
+        $service = app(JobDispatchService::class);
+        $service->dispatchToCrews($job, [$crew->id]);
+        $service->acceptJob($job, $crew);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->assertSee('Company Confirmed')
+            ->assertSee('Confirmed');
+    });
+
+    it('shows pending badge when confirmations are missing', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create([
+            'stage' => 'scheduling_colors',
+            'company_date_confirmed' => false,
+            'customer_date_confirmed' => false,
+        ]);
+
+        $service = app(JobDispatchService::class);
+        $service->dispatchToCrews($job, [$crew->id]);
+        $service->acceptJob($job, $crew);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->assertSee('Pending')
+            ->assertSee('Waiting for all confirmations');
+    });
+});
+
+describe('Crew Audio Messaging', function () {
+    beforeEach(function () {
+        \Illuminate\Support\Facades\Storage::fake('public');
+    });
+
+    it('renders crew message composer with audio recording state', function () {
+        $crew = User::factory()->crew()->create();
+        $deal = \App\Models\Deal::factory()->create();
+        $thread = \App\Models\ChatThread::factory()->create(['deal_id' => $deal->id]);
+        $thread->addParticipant($crew);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.chat.message-composer', ['thread' => $thread])
+            ->assertSet('isRecording', false)
+            ->assertSet('isProcessingAudio', false);
+    });
+
+    it('crew can send audio message via processRecordedAudio', function () {
+        Event::fake([\App\Events\MessageSent::class]);
+
+        $this->mock(\App\Services\PythonBridgeService::class)
+            ->shouldReceive('isEnabled')
+            ->andReturn(true)
+            ->shouldReceive('transcribeAudioFile')
+            ->andReturn([
+                'success' => true,
+                'text' => 'Hello from the crew',
+                'duration' => 4.2,
+            ]);
+
+        $crew = User::factory()->crew()->create();
+        $deal = \App\Models\Deal::factory()->create();
+        $thread = \App\Models\ChatThread::factory()->create(['deal_id' => $deal->id]);
+        $thread->addParticipant($crew);
+
+        $fakeAudio = base64_encode('fake audio content');
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.chat.message-composer', ['thread' => $thread])
+            ->call('processRecordedAudio', $fakeAudio)
+            ->assertDispatched('message-sent');
+
+        $message = $thread->messages()->where('type', \App\Models\ChatMessage::TYPE_AUDIO)->first();
+        expect($message)->not->toBeNull()
+            ->and($message->metadata['transcription'])->toBe('Hello from the crew')
+            ->and($message->metadata['audio_duration'])->toEqual(4.2)
+            ->and($message->is_internal)->toBeFalse();
+    });
+
+    it('crew audio messages are always non-internal', function () {
+        Event::fake([\App\Events\MessageSent::class]);
+
+        $this->mock(\App\Services\PythonBridgeService::class)
+            ->shouldReceive('isEnabled')
+            ->andReturn(true)
+            ->shouldReceive('transcribeAudioFile')
+            ->andReturn([
+                'success' => true,
+                'text' => 'Test audio',
+                'duration' => 2.0,
+            ]);
+
+        $crew = User::factory()->crew()->create();
+        $deal = \App\Models\Deal::factory()->create();
+        $thread = \App\Models\ChatThread::factory()->create(['deal_id' => $deal->id]);
+        $thread->addParticipant($crew);
+
+        $fakeAudio = base64_encode('fake audio content');
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.chat.message-composer', ['thread' => $thread])
+            ->call('processRecordedAudio', $fakeAudio)
+            ->assertDispatched('message-sent');
+
+        $message = $thread->messages()->where('type', \App\Models\ChatMessage::TYPE_AUDIO)->first();
+        expect($message->is_internal)->toBeFalse();
+    });
+
+    it('handles audio processing errors gracefully', function () {
+        $this->mock(\App\Services\AudioMessageService::class)
+            ->shouldReceive('processBase64Audio')
+            ->andThrow(new \Exception('Processing failed'));
+
+        $crew = User::factory()->crew()->create();
+        $deal = \App\Models\Deal::factory()->create();
+        $thread = \App\Models\ChatThread::factory()->create(['deal_id' => $deal->id]);
+        $thread->addParticipant($crew);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.chat.message-composer', ['thread' => $thread])
+            ->call('processRecordedAudio', base64_encode('fake'))
+            ->assertHasErrors(['audio']);
+    });
+
+    it('non-participant crew cannot send audio messages', function () {
+        $crew = User::factory()->crew()->create();
+        $deal = \App\Models\Deal::factory()->create();
+        $thread = \App\Models\ChatThread::factory()->create(['deal_id' => $deal->id]);
+        // Crew is NOT added as participant
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.chat.message-composer', ['thread' => $thread])
+            ->call('processRecordedAudio', base64_encode('fake audio'))
+            ->assertHasErrors(['audio']);
+
+        // No audio message should have been created
+        $audioMessage = $thread->messages()->where('type', \App\Models\ChatMessage::TYPE_AUDIO)->first();
+        expect($audioMessage)->toBeNull();
+    });
+
+    it('renders audio messages in embedded job chat', function () {
+        $crew = User::factory()->crew()->create();
+        $deal = \App\Models\Deal::factory()->create();
+        $thread = \App\Models\ChatThread::factory()->create(['deal_id' => $deal->id]);
+        $thread->addParticipant($crew);
+        $job = Job::factory()->create(['deal_id' => $deal->id]);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+        app(JobDispatchService::class)->acceptJob($job, $crew);
+
+        // Create an audio message in the thread
+        $thread->messages()->create([
+            'user_id' => $crew->id,
+            'content' => 'Transcribed audio text',
+            'type' => \App\Models\ChatMessage::TYPE_AUDIO,
+            'is_internal' => false,
+            'metadata' => [
+                'audio_url' => 'http://localhost/storage/chat-audio/test.webm',
+                'audio_path' => 'chat-audio/test.webm',
+                'audio_duration' => 5.0,
+                'transcription' => 'Transcribed audio text',
+                'transcription_status' => 'completed',
+            ],
+        ]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->assertSee('Transcribed audio text');
     });
 });

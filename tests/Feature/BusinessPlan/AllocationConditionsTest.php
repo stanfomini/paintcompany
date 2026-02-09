@@ -8,14 +8,17 @@ use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
+use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\JobCostCard;
 use App\Models\JobCostCardAllocation;
 use App\Models\PaintProduct;
+use App\Models\Payment;
 use App\Models\Substrate;
 use App\Models\User;
 use App\Services\AllocationEvaluationService;
 use App\Services\JobCostCardService;
+use Livewire\Livewire;
 
 beforeEach(function () {
     $this->user = User::factory()->internal()->withFullAccess()->create();
@@ -93,11 +96,11 @@ describe('Condition Evaluation on CompanyAllocation', function () {
     it('payment_methods equals condition', function () {
         $allocation = CompanyAllocation::withoutEvents(function () {
             return CompanyAllocation::factory()->withConditions([
-                ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'credit_card'],
+                ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
             ])->create();
         });
 
-        expect($allocation->evaluateConditions(['payment_methods' => ['credit_card', 'check']]))->toBeTrue()
+        expect($allocation->evaluateConditions(['payment_methods' => ['stripe', 'check']]))->toBeTrue()
             ->and($allocation->evaluateConditions(['payment_methods' => ['check']]))->toBeFalse();
     });
 
@@ -990,7 +993,7 @@ describe('Boolean Condition Evaluation', function () {
 
 describe('Default Allocations Seeder', function () {
 
-    it('seeds 14 default conditional allocations', function () {
+    it('seeds 12 default allocations', function () {
         CompanyAllocation::query()->delete();
         CompanySetting::clearInstanceCache();
 
@@ -1001,7 +1004,7 @@ describe('Default Allocations Seeder', function () {
             ->where('is_system', false)
             ->get();
 
-        expect($defaults)->toHaveCount(14);
+        expect($defaults)->toHaveCount(12);
     });
 
     it('default allocations are all inactive', function () {
@@ -1019,19 +1022,20 @@ describe('Default Allocations Seeder', function () {
         expect($activeDefaults)->toBe(0);
     });
 
-    it('default allocations have conditions', function () {
+    it('most default allocations have conditions', function () {
         CompanyAllocation::query()->delete();
         CompanySetting::clearInstanceCache();
 
         $settings = CompanySetting::getInstance();
         $settings->seedDefaultAllocations();
 
+        // Equipment & Supplies uses tiers instead of top-level conditions
         $withoutConditions = CompanyAllocation::where('company_setting_id', $settings->id)
             ->where('is_system', false)
             ->whereNull('conditions')
             ->count();
 
-        expect($withoutConditions)->toBe(0);
+        expect($withoutConditions)->toBe(1);
     });
 
     it('seeder is idempotent', function () {
@@ -1046,38 +1050,53 @@ describe('Default Allocations Seeder', function () {
             ->where('is_system', false)
             ->count();
 
-        expect($defaults)->toBe(14);
+        expect($defaults)->toBe(12);
     });
 
-    it('credit card processing fee has correct conditions', function () {
+    it('payment processing fee has tiers for different methods', function () {
         CompanyAllocation::query()->delete();
         CompanySetting::clearInstanceCache();
 
         $settings = CompanySetting::getInstance();
         $settings->seedDefaultAllocations();
 
-        $ccFee = CompanyAllocation::where('slug', 'credit_card_processing_fee')->first();
+        $ppf = CompanyAllocation::where('slug', 'payment_processing_fee')->first();
 
-        expect($ccFee)->not->toBeNull()
-            ->and($ccFee->type)->toBe(CompanyAllocation::TYPE_PERCENT_OF_REVENUE)
-            ->and((float) $ccFee->value)->toBe(3.00)
-            ->and($ccFee->hasConditions())->toBeTrue()
-            ->and($ccFee->conditions[0]['field'])->toBe('payment_methods');
+        expect($ppf)->not->toBeNull()
+            ->and($ppf->hasTiers())->toBeTrue()
+            ->and($ppf->value_tiers)->toHaveCount(3)
+            ->and($ppf->value_tiers[0]['label'])->toBe('Stripe')
+            ->and((float) $ppf->value_tiers[0]['value'])->toBe(2.99)
+            ->and($ppf->value_tiers[1]['label'])->toBe('Check')
+            ->and($ppf->value_tiers[1]['type'])->toBe('fixed_per_job')
+            ->and($ppf->value_tiers[2]['label'])->toBe('ACH');
     });
 
-    it('credit card allocation applies only when card payment exists', function () {
+    it('payment processing fee resolves correct tier per method', function () {
         CompanyAllocation::query()->delete();
         CompanySetting::clearInstanceCache();
 
         $settings = CompanySetting::getInstance();
         $settings->seedDefaultAllocations();
 
-        $ccFee = CompanyAllocation::where('slug', 'credit_card_processing_fee')->first();
+        $ppf = CompanyAllocation::where('slug', 'payment_processing_fee')->first();
 
-        expect($ccFee->evaluateConditions(['payment_methods' => ['credit_card']]))->toBeTrue()
-            ->and($ccFee->evaluateConditions(['payment_methods' => ['stripe']]))->toBeTrue()
-            ->and($ccFee->evaluateConditions(['payment_methods' => ['check']]))->toBeFalse()
-            ->and($ccFee->evaluateConditions(['payment_methods' => ['cash']]))->toBeFalse();
+        // Stripe tier
+        $tier = $ppf->resolveTier(['payment_methods' => ['stripe']]);
+        expect($tier)->not->toBeNull()
+            ->and($tier['label'])->toBe('Stripe')
+            ->and($tier['value'])->toBe(2.99);
+
+        // Check tier (fixed)
+        $tier = $ppf->resolveTier(['payment_methods' => ['check']]);
+        expect($tier['label'])->toBe('Check')
+            ->and($tier['type'])->toBe('fixed_per_job')
+            ->and($tier['value'])->toBe(50.00);
+
+        // ACH tier (fixed)
+        $tier = $ppf->resolveTier(['payment_methods' => ['ach']]);
+        expect($tier['label'])->toBe('ACH')
+            ->and($tier['value'])->toBe(5.00);
     });
 
     it('agent referral allocation applies only with agent', function () {
@@ -1117,5 +1136,842 @@ describe('Default Allocations Seeder', function () {
 
         expect($winter->evaluateConditions(['season' => 'winter']))->toBeTrue()
             ->and($winter->evaluateConditions(['season' => 'summer']))->toBeFalse();
+    });
+
+    it('seeder removes deprecated slugs', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+
+        // Create old-style allocations
+        CompanyAllocation::withoutEvents(function () use ($settings) {
+            CompanyAllocation::factory()->create([
+                'company_setting_id' => $settings->id,
+                'slug' => 'credit_card_processing_fee',
+                'is_system' => false,
+            ]);
+            CompanyAllocation::factory()->create([
+                'company_setting_id' => $settings->id,
+                'slug' => 'ach_processing_fee',
+                'is_system' => false,
+            ]);
+        });
+
+        $settings->seedDefaultAllocations();
+
+        expect(CompanyAllocation::where('slug', 'credit_card_processing_fee')->exists())->toBeFalse()
+            ->and(CompanyAllocation::where('slug', 'ach_processing_fee')->exists())->toBeFalse()
+            ->and(CompanyAllocation::where('slug', 'payment_processing_fee')->exists())->toBeTrue();
+    });
+
+    it('equipment and supplies has scope-based tiers', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $equip = CompanyAllocation::where('slug', 'equipment_and_supplies')->first();
+
+        expect($equip)->not->toBeNull()
+            ->and($equip->hasTiers())->toBeTrue()
+            ->and($equip->value_tiers)->toHaveCount(2)
+            ->and($equip->value_tiers[0]['label'])->toBe('Exterior')
+            ->and((float) $equip->value_tiers[0]['value'])->toBe(3.50)
+            ->and($equip->value_tiers[1]['label'])->toBe('Interior')
+            ->and((float) $equip->value_tiers[1]['value'])->toBe(1.50);
+    });
+
+    it('lead cost recovery has source-based tiers', function () {
+        CompanyAllocation::query()->delete();
+        CompanySetting::clearInstanceCache();
+
+        $settings = CompanySetting::getInstance();
+        $settings->seedDefaultAllocations();
+
+        $lead = CompanyAllocation::where('slug', 'lead_cost_recovery')->first();
+
+        expect($lead)->not->toBeNull()
+            ->and($lead->hasTiers())->toBeTrue()
+            ->and($lead->value_tiers)->toHaveCount(3);
+
+        $tier = $lead->resolveTier(['lead_source' => 'google_ads']);
+        expect($tier['label'])->toBe('Google Ads')
+            ->and($tier['value'])->toBe(5.00);
+
+        $tier = $lead->resolveTier(['lead_source' => 'thumbtack']);
+        expect($tier['label'])->toBe('Thumbtack')
+            ->and($tier['value'])->toBe(3.00);
+    });
+});
+
+// ---- Value Tiers ----
+
+describe('Value Tiers', function () {
+
+    it('hasTiers returns false for allocation without tiers', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->create([
+                'value_tiers' => null,
+            ]);
+        });
+
+        expect($allocation->hasTiers())->toBeFalse();
+    });
+
+    it('hasTiers returns true for allocation with tiers', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Tier A', 'type' => 'percent_of_revenue', 'value' => 5.0, 'conditions' => [
+                    ['field' => 'season', 'operator' => 'equals', 'value' => 'winter'],
+                ]],
+            ])->create();
+        });
+
+        expect($allocation->hasTiers())->toBeTrue();
+    });
+
+    it('resolveTier returns first matching tier', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+                ['label' => 'Check', 'type' => 'fixed_per_job', 'value' => 50.00, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'check'],
+                ]],
+            ])->create();
+        });
+
+        $tier = $allocation->resolveTier(['payment_methods' => ['stripe']]);
+
+        expect($tier)->not->toBeNull()
+            ->and($tier['label'])->toBe('Stripe')
+            ->and($tier['value'])->toBe(2.99);
+    });
+
+    it('resolveTier returns null when no tier matches', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+            ])->create();
+        });
+
+        $tier = $allocation->resolveTier(['payment_methods' => ['cash']]);
+
+        expect($tier)->toBeNull();
+    });
+
+    it('resolveAndCalculate uses matching tier', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+            ]);
+        });
+
+        $result = $allocation->resolveAndCalculate(
+            ['payment_methods' => ['stripe']],
+            10000.00
+        );
+
+        expect($result['type'])->toBe('percent_of_revenue')
+            ->and($result['value'])->toBe(2.99)
+            ->and($result['amount'])->toBe(299.00)
+            ->and($result['tier_label'])->toBe('Stripe');
+    });
+
+    it('resolveAndCalculate falls back to base when no tier matches', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+            ]);
+        });
+
+        $result = $allocation->resolveAndCalculate(
+            ['payment_methods' => ['cash']],
+            10000.00
+        );
+
+        expect($result['type'])->toBe('percent_of_revenue')
+            ->and($result['value'])->toBe(3.00)
+            ->and($result['amount'])->toBe(300.00)
+            ->and($result['tier_label'])->toBeNull();
+    });
+
+    it('tiered allocation with mixed types calculates correctly', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+                ['label' => 'Check', 'type' => 'fixed_per_job', 'value' => 50.00, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'check'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+            ]);
+        });
+
+        // Stripe → percent
+        $result = $allocation->resolveAndCalculate(
+            ['payment_methods' => ['stripe']],
+            10000.00
+        );
+        expect($result['amount'])->toBe(299.00)
+            ->and($result['type'])->toBe('percent_of_revenue');
+
+        // Check → fixed
+        $result = $allocation->resolveAndCalculate(
+            ['payment_methods' => ['check']],
+            10000.00
+        );
+        expect($result['amount'])->toBe(50.00)
+            ->and($result['type'])->toBe('fixed_per_job');
+    });
+
+    it('tier with multiple conditions requires all to match', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Winter Exterior', 'type' => 'per_labor_hour', 'value' => 5.00, 'conditions' => [
+                    ['field' => 'season', 'operator' => 'equals', 'value' => 'winter'],
+                    ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                'value' => 2.00,
+                'is_active' => true,
+            ]);
+        });
+
+        // Both match
+        $tier = $allocation->resolveTier([
+            'season' => 'winter',
+            'has_scope' => ['exterior'],
+        ]);
+        expect($tier)->not->toBeNull()
+            ->and($tier['label'])->toBe('Winter Exterior');
+
+        // Only one matches
+        $tier = $allocation->resolveTier([
+            'season' => 'summer',
+            'has_scope' => ['exterior'],
+        ]);
+        expect($tier)->toBeNull();
+    });
+
+    it('applied tier label is stored in JCC allocation record', function () {
+        CompanyAllocation::query()->delete();
+
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'scope_type', 'operator' => 'equals', 'value' => 'interior'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+            ]);
+        });
+
+        $card = JobCostCard::factory()->create([
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        $service = app(AllocationEvaluationService::class);
+        $service->evaluateForCard($card);
+
+        $cardAllocation = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+
+        expect($cardAllocation)->not->toBeNull()
+            ->and($cardAllocation->applied_tier)->toBe('Stripe')
+            ->and((float) $cardAllocation->amount)->toBe(299.00);
+    });
+
+    it('backward compatible: allocations without tiers work unchanged', function () {
+        CompanyAllocation::query()->delete();
+
+        CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 5.00,
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+                'value_tiers' => null,
+            ]);
+        });
+
+        $card = JobCostCard::factory()->create([
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        $service = app(AllocationEvaluationService::class);
+        $service->evaluateForCard($card);
+
+        $card->refresh();
+
+        expect((float) $card->allocation_total)->toBe(500.00);
+
+        $cardAllocation = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+        expect($cardAllocation->applied_tier)->toBeNull();
+    });
+
+    it('factory withTiers state works correctly', function () {
+        $tiers = [
+            ['label' => 'Test', 'type' => 'fixed_per_job', 'value' => 100, 'conditions' => []],
+        ];
+
+        $allocation = CompanyAllocation::withoutEvents(function () use ($tiers) {
+            return CompanyAllocation::factory()->withTiers($tiers)->create();
+        });
+
+        expect($allocation->hasTiers())->toBeTrue()
+            ->and($allocation->value_tiers)->toHaveCount(1)
+            ->and($allocation->value_tiers[0]['label'])->toBe('Test');
+    });
+
+    it('tier with no conditions always matches', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Default Tier', 'type' => 'fixed_per_job', 'value' => 100.00, 'conditions' => []],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 5.00,
+                'is_active' => true,
+            ]);
+        });
+
+        $tier = $allocation->resolveTier(['anything' => 'context']);
+
+        expect($tier)->not->toBeNull()
+            ->and($tier['label'])->toBe('Default Tier')
+            ->and($tier['value'])->toBe(100.00);
+    });
+
+    it('resolveAndCalculate with per_labor_hour tier', function () {
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Exterior', 'type' => 'per_labor_hour', 'value' => 3.50, 'conditions' => [
+                    ['field' => 'has_scope', 'operator' => 'equals', 'value' => 'exterior'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PER_LABOR_HOUR,
+                'value' => 1.50,
+                'is_active' => true,
+            ]);
+        });
+
+        $result = $allocation->resolveAndCalculate(
+            ['has_scope' => ['exterior']],
+            10000.00,
+            20.0
+        );
+
+        expect($result['type'])->toBe('per_labor_hour')
+            ->and($result['value'])->toBe(3.50)
+            ->and($result['amount'])->toBe(70.00)
+            ->and($result['tier_label'])->toBe('Exterior');
+
+        // Fallback for interior
+        $result = $allocation->resolveAndCalculate(
+            ['has_scope' => ['interior']],
+            10000.00,
+            20.0
+        );
+
+        expect($result['amount'])->toBe(30.00)
+            ->and($result['tier_label'])->toBeNull();
+    });
+});
+
+// ---- Payment Tier End-to-End Evaluation ----
+
+describe('Payment Tier End-to-End Evaluation', function () {
+
+    it('evaluates stripe tier via service with real payment data', function () {
+        CompanyAllocation::query()->delete();
+
+        // Create allocation with payment method tiers
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+                ['label' => 'Check', 'type' => 'fixed_per_job', 'value' => 50.00, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'check'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+            ]);
+        });
+
+        // Set up job with stripe payment
+        $deal = Deal::factory()->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create(['subtotal' => 10000]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        $invoice = Invoice::factory()->forJob($job)->create();
+        Payment::factory()->forInvoice($invoice)->stripe()->create([
+            'amount' => 10000,
+            'status' => 'completed',
+        ]);
+
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        $service = app(AllocationEvaluationService::class);
+        $service->evaluateForCard($card);
+
+        $card->refresh();
+
+        $cardAllocation = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+
+        expect($cardAllocation)->not->toBeNull()
+            ->and($cardAllocation->applied_tier)->toBe('Stripe')
+            ->and((float) $cardAllocation->amount)->toBe(299.00)
+            ->and($cardAllocation->type)->toBe('percent_of_revenue');
+    });
+
+    it('evaluates check tier via service with real payment data', function () {
+        CompanyAllocation::query()->delete();
+
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+                ['label' => 'Check', 'type' => 'fixed_per_job', 'value' => 50.00, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'check'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+            ]);
+        });
+
+        $deal = Deal::factory()->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create(['subtotal' => 10000]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        $invoice = Invoice::factory()->forJob($job)->create();
+        Payment::factory()->forInvoice($invoice)->check()->create([
+            'amount' => 10000,
+            'status' => 'completed',
+        ]);
+
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        $service = app(AllocationEvaluationService::class);
+        $service->evaluateForCard($card);
+
+        $card->refresh();
+
+        $cardAllocation = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+
+        expect($cardAllocation)->not->toBeNull()
+            ->and($cardAllocation->applied_tier)->toBe('Check')
+            ->and((float) $cardAllocation->amount)->toBe(50.00)
+            ->and($cardAllocation->type)->toBe('fixed_per_job');
+    });
+
+    it('falls back to base when no payment method matches tier', function () {
+        CompanyAllocation::query()->delete();
+
+        $allocation = CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00,
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+            ]);
+        });
+
+        // Card without any job/payment → fallback to base
+        $card = JobCostCard::factory()->create([
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        $service = app(AllocationEvaluationService::class);
+        $service->evaluateForCard($card);
+
+        $card->refresh();
+
+        $cardAllocation = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+
+        expect($cardAllocation)->not->toBeNull()
+            ->and($cardAllocation->applied_tier)->toBeNull()
+            ->and((float) $cardAllocation->amount)->toBe(300.00)
+            ->and($cardAllocation->type)->toBe('percent_of_revenue');
+    });
+});
+
+// ---- Livewire Save → Evaluation Roundtrip ----
+
+describe('Livewire Save to Evaluation Roundtrip', function () {
+
+    it('allocation saved via component evaluates correctly against a job cost card', function () {
+        $this->actingAs($this->user);
+        CompanyAllocation::query()->where('is_system', false)->delete();
+
+        // Save an allocation with a gate condition via the Livewire component
+        Livewire::test('pages::settings.allocations')
+            ->call('openAddModal')
+            ->set('name', 'Exterior Premium')
+            ->set('type', 'percent_of_revenue')
+            ->set('value', '5')
+            ->set('allocation_rules', [
+                [
+                    'field' => 'scope_type',
+                    'operator' => 'equals',
+                    'condition_value' => 'exterior',
+                    'has_override' => false,
+                    'override_type' => 'percent_of_revenue',
+                    'override_value' => '',
+                    'label' => '',
+                ],
+            ])
+            ->call('save');
+
+        $allocation = CompanyAllocation::where('slug', 'exterior_premium')->first();
+        expect($allocation)->not->toBeNull()
+            ->and($allocation->conditions)->toHaveCount(1);
+
+        // Evaluate against an exterior card
+        $estimate = Estimate::factory()->create(['subtotal' => 10000, 'project_type' => 'exterior']);
+        EstimateArea::factory()->forEstimate($estimate)->create(['scope_type' => 'exterior']);
+        $job = Job::factory()->create(['estimate_id' => $estimate->id]);
+
+        $card = JobCostCard::factory()->create([
+            'job_id' => $job->id,
+            'estimate_id' => $estimate->id,
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        // Re-evaluate (the saved event already did this, but card was created after)
+        $service = app(AllocationEvaluationService::class);
+        $service->evaluateForCard($card);
+
+        $card->refresh();
+
+        $cardAllocation = JobCostCardAllocation::where('job_cost_card_id', $card->id)
+            ->where('company_allocation_id', $allocation->id)
+            ->first();
+
+        expect($cardAllocation)->not->toBeNull()
+            ->and((float) $cardAllocation->amount)->toBe(500.00);
+
+        // Evaluate against an interior card — should NOT apply
+        $interiorEstimate = Estimate::factory()->create(['subtotal' => 10000, 'project_type' => 'interior']);
+        $interiorJob = Job::factory()->create(['estimate_id' => $interiorEstimate->id]);
+
+        $interiorCard = JobCostCard::factory()->create([
+            'job_id' => $interiorJob->id,
+            'estimate_id' => $interiorEstimate->id,
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        $service->evaluateForCard($interiorCard);
+
+        $interiorCardAllocation = JobCostCardAllocation::where('job_cost_card_id', $interiorCard->id)
+            ->where('company_allocation_id', $allocation->id)
+            ->first();
+
+        expect($interiorCardAllocation)->toBeNull();
+    });
+});
+
+// ---- Payment Triggers Allocation Re-evaluation ----
+
+describe('Payment Triggers Allocation Re-evaluation', function () {
+
+    it('syncPaymentSummary re-evaluates allocations when payment is recorded', function () {
+        CompanyAllocation::query()->delete();
+
+        // Create allocation with payment method tiers (Stripe=2.99%, Check=$50 fixed)
+        CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withTiers([
+                ['label' => 'Stripe', 'type' => 'percent_of_revenue', 'value' => 2.99, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'stripe'],
+                ]],
+                ['label' => 'Check', 'type' => 'fixed_per_job', 'value' => 50.00, 'conditions' => [
+                    ['field' => 'payment_methods', 'operator' => 'equals', 'value' => 'check'],
+                ]],
+            ])->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 3.00, // base/fallback
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+            ]);
+        });
+
+        // Set up job with card (no payments yet → base allocation)
+        $deal = Deal::factory()->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create(['subtotal' => 10000]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        $card = JobCostCard::factory()->forJob($job)->create([
+            'estimate_id' => $estimate->id,
+            'price' => 10000,
+            'allocation_total' => 0,
+        ]);
+
+        // Initial evaluation → base fallback (no payments = 3.00% = $300)
+        app(AllocationEvaluationService::class)->evaluateForCard($card);
+        $card->refresh();
+
+        $cardAlloc = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+        expect($cardAlloc->applied_tier)->toBeNull()
+            ->and((float) $cardAlloc->amount)->toBe(300.00);
+
+        // Record a check payment
+        $invoice = Invoice::factory()->forJob($job)->create(['total' => 10000]);
+        Payment::factory()->forInvoice($invoice)->check()->create([
+            'amount' => 10000,
+            'status' => 'completed',
+        ]);
+
+        // syncPaymentSummary should now re-evaluate allocations
+        app(JobCostCardService::class)->syncPaymentSummary($job);
+
+        $card->refresh();
+        $cardAlloc = JobCostCardAllocation::where('job_cost_card_id', $card->id)->first();
+
+        expect($cardAlloc->applied_tier)->toBe('Check')
+            ->and((float) $cardAlloc->amount)->toBe(50.00)
+            ->and($cardAlloc->type)->toBe('fixed_per_job');
+    });
+
+    it('syncPaymentSummary updates payment totals and allocations together', function () {
+        CompanyAllocation::query()->delete();
+
+        // Simple unconditional allocation
+        CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->create([
+                'type' => CompanyAllocation::TYPE_PERCENT_OF_REVENUE,
+                'value' => 5.00,
+                'is_active' => true,
+                'is_informational' => false,
+                'conditions' => null,
+            ]);
+        });
+
+        $deal = Deal::factory()->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create(['subtotal' => 8000]);
+        $job = Job::factory()->create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+        ]);
+
+        $card = JobCostCard::factory()->forJob($job)->create([
+            'estimate_id' => $estimate->id,
+            'price' => 8000,
+            'allocation_total' => 0,
+        ]);
+
+        Invoice::factory()->forJob($job)->sent()->create([
+            'subtotal' => 8000,
+            'total' => 8000,
+            'amount_paid' => 5000,
+            'balance_due' => 3000,
+        ]);
+
+        app(JobCostCardService::class)->syncPaymentSummary($job);
+
+        $card->refresh();
+
+        // Payment totals updated
+        expect((float) $card->total_invoiced)->toBe(8000.00)
+            ->and((float) $card->total_collected)->toBe(5000.00)
+            ->and((float) $card->balance_due)->toBe(3000.00);
+
+        // Allocations re-evaluated
+        expect((float) $card->allocation_total)->toBe(400.00); // 5% of 8000
+    });
+});
+
+// ---- Estimate Context Builder ----
+
+describe('Estimate Context Builder', function () {
+
+    it('buildContextFromEstimate returns all expected keys', function () {
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+
+        $service = app(AllocationEvaluationService::class);
+        $context = $service->buildContextFromEstimate($estimate);
+
+        $expectedKeys = [
+            'scope_type', 'has_scope', 'payment_methods', 'job_stage', 'job_price',
+            'total_sqft', 'total_labor_hours', 'area_count', 'crew_size', 'estimator_mode',
+            'lead_source', 'has_agent_referral', 'is_repeat_customer', 'customer_source',
+            'uses_premium_paint', 'max_coats', 'total_material_cost',
+            'has_spray_application', 'substrate_categories', 'has_complex_substrate', 'requires_prime',
+            'has_subcontractor', 'has_nested_areas', 'has_options_selected', 'deposit_percent',
+            'month', 'season',
+        ];
+
+        foreach ($expectedKeys as $key) {
+            expect($context)->toHaveKey($key);
+        }
+    });
+
+    it('buildContextFromEstimate has empty payment_methods', function () {
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+
+        $context = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($estimate);
+
+        expect($context['payment_methods'])->toBe([]);
+    });
+
+    it('buildContextFromEstimate gets scope from estimate areas', function () {
+        $estimate = Estimate::factory()->create([
+            'subtotal' => 5000,
+            'project_type' => 'exterior',
+        ]);
+
+        EstimateArea::factory()->forEstimate($estimate)->create(['scope_type' => 'exterior']);
+
+        $context = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($estimate);
+
+        expect($context['scope_type'])->toBe('exterior')
+            ->and($context['has_scope'])->toContain('exterior');
+    });
+
+    it('buildContextFromEstimate gathers sizing from areas and surfaces', function () {
+        $estimate = Estimate::factory()->create(['subtotal' => 5000]);
+        $area = EstimateArea::factory()->forEstimate($estimate)->create([
+            'length' => 10, 'width' => 10, 'height' => 10,
+        ]);
+        EstimateAreaSurface::factory()->forArea($area)->create([
+            'labor_hours' => 8.5,
+            'material_cost' => 120.00,
+            'is_included' => true,
+            'coats' => 2,
+        ]);
+
+        $context = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($estimate);
+
+        expect($context['total_sqft'])->toBeGreaterThan(0)
+            ->and($context['total_labor_hours'])->toBe(8.5)
+            ->and($context['total_material_cost'])->toBe(120.0)
+            ->and($context['max_coats'])->toBe(2)
+            ->and($context['area_count'])->toBe(1);
+    });
+
+    it('buildContextFromEstimate detects agent referral', function () {
+        $agent = User::factory()->agent()->create();
+        $deal = Deal::factory()->referredByAgent($agent)->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create(['subtotal' => 5000]);
+
+        $context = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($estimate);
+
+        expect($context['has_agent_referral'])->toBeTrue();
+    });
+
+    it('estimate context enables scope-conditional allocation in breakdown', function () {
+        CompanyAllocation::query()->delete();
+
+        // Allocation that only applies to exterior scope
+        CompanyAllocation::withoutEvents(function () {
+            return CompanyAllocation::factory()->withConditions([
+                ['field' => 'scope_type', 'operator' => 'equals', 'value' => 'exterior'],
+            ])->create([
+                'name' => 'Exterior Surcharge',
+                'type' => CompanyAllocation::TYPE_FIXED_PER_JOB,
+                'value' => 200.00,
+                'is_active' => true,
+                'is_informational' => false,
+            ]);
+        });
+
+        // Exterior estimate
+        $exteriorEstimate = Estimate::factory()->create([
+            'subtotal' => 5000,
+            'project_type' => 'exterior',
+        ]);
+        EstimateArea::factory()->forEstimate($exteriorEstimate)->create([
+            'scope_type' => 'exterior',
+        ]);
+
+        $service = new \App\Services\EstimateCostBreakdownService;
+        $context = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($exteriorEstimate);
+        $breakdown = $service->calculateBreakdown($exteriorEstimate, $context);
+
+        // Exterior surcharge should be present in allocations
+        $allocationNames = collect($breakdown['allocations']['items'] ?? [])->pluck('name')->toArray();
+        expect($allocationNames)->toContain('Exterior Surcharge');
+
+        // Interior estimate — surcharge should NOT appear
+        $interiorEstimate = Estimate::factory()->create([
+            'subtotal' => 5000,
+            'project_type' => 'interior',
+        ]);
+
+        $interiorContext = app(AllocationEvaluationService::class)
+            ->buildContextFromEstimate($interiorEstimate);
+        $interiorBreakdown = $service->calculateBreakdown($interiorEstimate, $interiorContext);
+
+        $interiorNames = collect($interiorBreakdown['allocations']['items'] ?? [])->pluck('name')->toArray();
+        expect($interiorNames)->not->toContain('Exterior Surcharge');
     });
 });

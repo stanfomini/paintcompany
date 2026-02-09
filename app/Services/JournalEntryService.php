@@ -21,10 +21,14 @@ class JournalEntryService
      * Create a journal entry for a payment received.
      * DR Cash / CR Accounts Receivable
      */
-    public function createFromPayment(Payment $payment): \App\Models\JournalEntry
+    public function createFromPayment(Payment $payment): ?\App\Models\JournalEntry
     {
         $cashAccount = $this->findAccountByCode('1000');
         $arAccount = $this->findAccountByCode('1100');
+
+        if (! $cashAccount || ! $arAccount) {
+            return null;
+        }
 
         $invoice = $payment->invoice;
         $description = "Payment received for {$invoice->invoice_number} via {$payment->method}";
@@ -64,10 +68,14 @@ class JournalEntryService
      * Create a journal entry for an invoice sent (accrual: recognize revenue).
      * DR Accounts Receivable / CR Revenue
      */
-    public function createFromInvoice(Invoice $invoice): \App\Models\JournalEntry
+    public function createFromInvoice(Invoice $invoice): ?\App\Models\JournalEntry
     {
         $arAccount = $this->findAccountByCode('1100');
         $revenueAccount = $this->findAccountByCode('4000');
+
+        if (! $arAccount || ! $revenueAccount) {
+            return null;
+        }
 
         $sentAt = $invoice->sent_at?->format('Y-m-d') ?? now()->format('Y-m-d');
 
@@ -100,10 +108,14 @@ class JournalEntryService
      * Create a journal entry from an overhead expense entry.
      * DR Expense Account / CR Cash
      */
-    public function createFromOverheadEntry(OverheadEntry $entry): \App\Models\JournalEntry
+    public function createFromOverheadEntry(OverheadEntry $entry): ?\App\Models\JournalEntry
     {
         $cashAccount = $this->findAccountByCode('1000');
         $expenseAccount = $this->mapOverheadToExpenseAccount($entry);
+
+        if (! $cashAccount || ! $expenseAccount) {
+            return null;
+        }
 
         $category = $entry->budgetCategory;
         $entryDate = now()->setYear($entry->year)->setMonth($entry->month)->startOfMonth()->format('Y-m-d');
@@ -137,10 +149,14 @@ class JournalEntryService
      * Create a revenue recognition entry for a payment (cash basis).
      * DR Accounts Receivable / CR Revenue
      */
-    public function createRevenueRecognitionFromPayment(Payment $payment): \App\Models\JournalEntry
+    public function createRevenueRecognitionFromPayment(Payment $payment): ?\App\Models\JournalEntry
     {
         $arAccount = $this->findAccountByCode('1100');
         $revenueAccount = $this->findAccountByCode('4000');
+
+        if (! $arAccount || ! $revenueAccount) {
+            return null;
+        }
 
         $invoice = $payment->invoice;
         $receivedAt = $payment->received_at?->format('Y-m-d') ?? now()->format('Y-m-d');
@@ -183,39 +199,41 @@ class JournalEntryService
     /**
      * Find an account by its code within the current company setting.
      */
-    protected function findAccountByCode(string $code): Account
+    protected function findAccountByCode(string $code): ?Account
     {
         $settings = CompanySetting::getInstance();
 
-        $account = Account::where('company_setting_id', $settings->id)
+        return Account::where('company_setting_id', $settings->id)
             ->where('code', $code)
             ->first();
-
-        if (! $account) {
-            throw new \RuntimeException("Account with code '{$code}' not found. Run the ChartOfAccountsSeeder.");
-        }
-
-        return $account;
     }
 
     /**
      * Map an overhead entry's budget category to the appropriate expense account.
+     * Uses the budget-account mapping when available, falls back to section defaults.
      */
-    protected function mapOverheadToExpenseAccount(OverheadEntry $entry): Account
+    protected function mapOverheadToExpenseAccount(OverheadEntry $entry): ?Account
     {
         $category = $entry->budgetCategory;
 
         if (! $category) {
-            return $this->findAccountByCode('7000');
+            return $this->findAccountByCode('6990');
         }
 
-        // Map budget category section to default expense account codes
-        $sectionMap = [
-            'vehicle_expense' => '6000',
-            'business_expense' => '7000',
+        // Use the budget category's mapped account(s)
+        $account = $category->accounts()->first();
+        if ($account) {
+            return $account;
+        }
+
+        // Fallback to section-level defaults
+        $sectionFallback = [
+            'vehicle_expense' => '6400',
+            'business_expense' => '6000',
+            'variable_expense' => '5000',
         ];
 
-        $code = $sectionMap[$category->section] ?? '7000';
+        $code = $sectionFallback[$category->section] ?? '6990';
 
         return $this->findAccountByCode($code);
     }

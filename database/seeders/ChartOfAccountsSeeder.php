@@ -41,11 +41,13 @@ class ChartOfAccountsSeeder extends Seeder
             ['code' => '2500', 'name' => 'Workers Comp Payable', 'type' => 'liability', 'normal_balance' => 'credit', 'sort_order' => 75],
             ['code' => '2600', 'name' => 'Warranty Reserve', 'type' => 'liability', 'normal_balance' => 'credit', 'sort_order' => 80],
             ['code' => '2700', 'name' => 'Loans Payable', 'type' => 'liability', 'normal_balance' => 'credit', 'sort_order' => 85],
+            ['code' => '2800', 'name' => 'Income Tax Reserve', 'type' => 'liability', 'normal_balance' => 'credit', 'sort_order' => 86],
 
             // === EQUITY (3000s) ===
             ['code' => '3000', 'name' => 'Owner\'s Equity', 'type' => 'equity', 'normal_balance' => 'credit', 'sort_order' => 90],
             ['code' => '3100', 'name' => 'Owner\'s Draw', 'type' => 'equity', 'normal_balance' => 'debit', 'sort_order' => 91],
             ['code' => '3200', 'name' => 'Retained Earnings', 'type' => 'equity', 'normal_balance' => 'credit', 'sort_order' => 95],
+            ['code' => '3300', 'name' => 'Profit Reserve', 'type' => 'equity', 'normal_balance' => 'credit', 'sort_order' => 96],
 
             // === REVENUE (4000s) ===
             ['code' => '4000', 'name' => 'Painting Revenue', 'type' => 'revenue', 'normal_balance' => 'credit', 'sort_order' => 100],
@@ -83,6 +85,7 @@ class ChartOfAccountsSeeder extends Seeder
             ['code' => '6510', 'name' => 'Phone & Internet', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 156, 'parent_code' => '6000'],
             ['code' => '6600', 'name' => 'Professional Fees', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 160, 'parent_code' => '6000'],
             ['code' => '6610', 'name' => 'Accounting & Bookkeeping', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 161, 'parent_code' => '6000'],
+            ['code' => '6620', 'name' => 'Payment Processing Fees', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 162, 'parent_code' => '6000'],
             ['code' => '6700', 'name' => 'Training & Certifications', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 165, 'parent_code' => '6000'],
             ['code' => '6800', 'name' => 'Licenses & Permits', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 170, 'parent_code' => '6000'],
             ['code' => '6900', 'name' => 'Depreciation Expense', 'type' => 'expense', 'normal_balance' => 'debit', 'sort_order' => 175, 'parent_code' => '6000'],

@@ -17,9 +17,15 @@ class EstimateActivity extends Model
         'accepted' => 'Accepted',
         'rejected' => 'Rejected',
         'option_toggled' => 'Option Toggled',
+        'optional_item_toggled' => 'Add-on Toggled',
         'note_added' => 'Note Added',
         'signature_added' => 'Signature Added',
         'photo_added' => 'Photo Added',
+        'amendment_created' => 'Amendment Created',
+        'amendment_acknowledged' => 'Amendment Acknowledged',
+        'package_selected' => 'Package Selected',
+        'package_tier_selected' => 'Package Tier Selected',
+        'packages_modified' => 'Package Modified',
     ];
 
     protected $fillable = [

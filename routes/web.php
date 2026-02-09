@@ -9,13 +9,24 @@ use App\Http\Controllers\PainterBreakdownExportController;
 use App\Http\Controllers\StripeWebhookController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
+// Landing page (public marketing page)
+Route::livewire('/', 'public.landing-page')
+    ->name('home')
+    ->middleware('throttle:60,1');
+
+// Login selector page (moved from /)
+Route::get('/login-selector', function () {
     return view('welcome');
-})->name('home');
+})->name('login-selector');
 
 Route::get('/welcome', function () {
     return view('welcome');
 })->name('welcome');
+
+// Next steps (post-lead-form)
+Route::livewire('/next-steps', 'public.next-steps')
+    ->name('next-steps')
+    ->middleware('throttle:60,1');
 
 Route::view('dashboard', 'dashboard')
     ->middleware(['auth', 'verified', 'auth.internal'])
@@ -164,6 +175,11 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/business-plan', 'business-plan.index')
         ->name('business-plan.index')
         ->middleware('permission:business_plan.view');
+
+    // Referrals admin
+    Route::middleware(['permission:people.view'])->group(function () {
+        Route::livewire('/referrals', 'referrals.index')->name('referrals.index');
+    });
 
     // Invoice routes
     Route::middleware(['permission:invoices.view'])->group(function () {

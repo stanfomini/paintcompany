@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\ChatThread;
+use App\Models\Job;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 
@@ -36,6 +37,33 @@ Broadcast::channel('chat.thread.{threadId}', function (User $user, int $threadId
 Broadcast::channel('chat.user.{userId}', function (User $user, int $userId) {
     return $user->id === $userId;
 }, ['guards' => ['web', 'agent', 'customer', 'crew']]);
+
+/**
+ * Authorize access to a job channel for internal users.
+ */
+Broadcast::channel('job.{jobId}', function (User $user, int $jobId) {
+    return $user->can('jobs.view');
+}, ['guards' => ['web']]);
+
+/**
+ * Authorize access to a customer job channel.
+ * Only the customer who owns the job can listen.
+ */
+Broadcast::channel('customer.job.{jobId}', function (User $user, int $jobId) {
+    return $user->isCustomer() && Job::where('id', $jobId)
+        ->whereHas('deal', fn ($q) => $q->whereHas('customer', fn ($c) => $c->where('user_id', $user->id)))
+        ->exists();
+}, ['guards' => ['customer']]);
+
+/**
+ * Authorize access to a crew job channel.
+ * Only crews dispatched to this job can listen.
+ */
+Broadcast::channel('crew.job.{jobId}', function (User $user, int $jobId) {
+    return Job::where('id', $jobId)
+        ->whereHas('crews', fn ($q) => $q->where('crew_user_id', $user->id))
+        ->exists();
+}, ['guards' => ['crew']]);
 
 /**
  * Authorize access to the internal team channel.

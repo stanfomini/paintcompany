@@ -16,6 +16,7 @@ class EstimateAreaSurface extends Model
         'production_rate_id',
         'name',
         'surface_type',
+        'description',
         'quantity',
         'unit',
         'coats',
@@ -421,8 +422,9 @@ class EstimateAreaSurface extends Model
         $materialCost = (float) $this->material_cost;
 
         // This surface's proportional share of cleanup and sundries
+        // Use effective rate (with payroll burden) to match area-level calculation
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
-        $cleanupCost = $cleanupHours * $settings->getHourlyWageForScope($scopeType);
+        $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scopeType);
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
 
         $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);

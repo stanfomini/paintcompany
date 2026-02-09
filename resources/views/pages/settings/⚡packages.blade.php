@@ -700,7 +700,11 @@ new class extends Component {
                         @foreach ($items as $item)
                             <div class="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-lg px-4 py-3" wire:key="catalog-item-{{ $item['id'] }}">
                                 <div class="flex items-center gap-3 flex-1 min-w-0">
-                                    <flux:icon name="{{ $item['is_included_by_default'] ? 'check-circle' : 'circle' }}" class="h-5 w-5 shrink-0 {{ $item['is_included_by_default'] ? 'text-green-500' : 'text-zinc-400' }}" />
+                                    @if ($item['is_included_by_default'])
+                                        <flux:icon name="check-circle" class="h-5 w-5 shrink-0 text-green-500" />
+                                    @else
+                                        <svg class="h-5 w-5 shrink-0 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><circle cx="12" cy="12" r="9.75" /></svg>
+                                    @endif
                                     <div class="min-w-0">
                                         <div class="flex items-center gap-2 flex-wrap">
                                             <flux:text size="sm" class="font-medium">{{ $item['name'] }}</flux:text>

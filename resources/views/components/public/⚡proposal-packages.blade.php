@@ -32,10 +32,6 @@ new class extends Component {
 
     public ?string $selectedTier = null;
 
-    public bool $showWarrantyPicker = false;
-
-    public ?string $selectedWarrantyTier = null;
-
     /** @var array<int, bool> */
     public array $selectedPackageItems = [];
 
@@ -61,6 +57,7 @@ new class extends Component {
 
     /**
      * Load package templates for the new value-add system.
+     * Warranty items are included in the items list with is_warranty flag.
      */
     public function loadPackageTemplates(): void
     {
@@ -77,28 +74,11 @@ new class extends Component {
                 ? $template->defaultItems
                 : $template->items;
 
-            // Separate warranty items from service items
-            $warrantyItem = $templateItems->first(fn ($item) => $item->is_customer_selectable && $item->pricing_type === 'percent');
-
-            // Calculate warranty from warranty item if available, else fall back to template fields
-            if ($warrantyItem) {
-                $warrantyAmount = $warrantyItem->calculatePrice($paintingTotal);
-                $warrantyDescription = $warrantyItem->name;
-                $warrantyPercent = (float) $warrantyItem->percent;
-            } else {
-                $warrantyAmount = $template->calculateWarrantyCost($paintingTotal);
-                $warrantyDescription = $template->warranty_description;
-                $warrantyPercent = (float) $template->warranty_percent;
-            }
-
-            // Build items array excluding warranty items (warranty shown separately)
-            $serviceItems = $templateItems
-                ->reject(fn ($item) => $item->is_customer_selectable && $item->pricing_type === 'percent')
-                ->values();
-
-            $items = $serviceItems->map(function ($item) use ($paintingTotal) {
+            // Build items array - warranty items included with is_warranty flag
+            $items = $templateItems->map(function ($item) use ($paintingTotal) {
                 $itemPrice = $item->calculatePrice($paintingTotal);
                 $itemKey = 'item_'.$item->id;
+                $isWarranty = $item->pricing_type === 'percent' && $item->is_customer_selectable;
 
                 // Initialize selection state if not set
                 if (! isset($this->selectedPackageItems[$itemKey])) {
@@ -116,6 +96,7 @@ new class extends Component {
                     'is_optional' => $item->is_optional,
                     'is_included_by_default' => $item->is_included_by_default,
                     'is_customer_selectable' => $item->is_customer_selectable,
+                    'is_warranty' => $isWarranty,
                 ];
             })->toArray();
 
@@ -124,11 +105,6 @@ new class extends Component {
                 'name' => $template->name,
                 'tier' => $template->tier,
                 'description' => $template->description,
-                'warranty_months' => $template->warranty_months,
-                'warranty_description' => $warrantyDescription,
-                'warranty_percent' => $warrantyPercent,
-                'warranty_amount' => $warrantyAmount,
-                'warranty_item_id' => $warrantyItem?->id,
                 'is_default' => $template->is_default,
                 'is_popular' => $template->is_popular,
                 'painting_total' => $paintingTotal,
@@ -306,7 +282,6 @@ new class extends Component {
 
     /**
      * Select a package tier (for new template system).
-     * Opens the warranty picker for the customer to choose warranty level.
      */
     public function selectTier(string $tier): void
     {
@@ -315,84 +290,16 @@ new class extends Component {
         }
 
         $this->selectedTier = $tier;
-        $this->showWarrantyPicker = true;
-        $this->selectedWarrantyTier = null;
-    }
-
-    /**
-     * Get available warranty options from all active package templates.
-     *
-     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
-     */
-    #[Computed]
-    public function warrantyOptions(): \Illuminate\Support\Collection
-    {
-        $paintingTotal = $this->getPaintingTotal();
-
-        return PackageTemplate::active()
-            ->ordered()
-            ->get()
-            ->map(fn (PackageTemplate $t) => [
-                'tier' => $t->tier,
-                'name' => $t->warranty_description,
-                'months' => $t->warranty_months,
-                'percent' => (float) $t->warranty_percent,
-                'cost' => $t->calculateWarrantyCost($paintingTotal),
-            ]);
-    }
-
-    /**
-     * Select a warranty level.
-     */
-    public function selectWarranty(string $tier): void
-    {
-        $this->selectedWarrantyTier = $tier;
-    }
-
-    /**
-     * Confirm the tier + warranty selection.
-     */
-    public function confirmSelection(): void
-    {
-        if (! $this->canModify() || ! $this->selectedTier) {
-            return;
-        }
-
-        // Apply the selected warranty tier to the template data
-        if ($this->selectedWarrantyTier) {
-            $warrantyTemplate = PackageTemplate::where('tier', $this->selectedWarrantyTier)->active()->first();
-            if ($warrantyTemplate) {
-                $paintingTotal = $this->getPaintingTotal();
-                $warrantyCost = $warrantyTemplate->calculateWarrantyCost($paintingTotal);
-
-                // Update the selected template's warranty data in the packageTemplates array
-                $this->packageTemplates = collect($this->packageTemplates)->map(function (array $template) use ($warrantyTemplate, $warrantyCost) {
-                    if ($template['tier'] === $this->selectedTier) {
-                        $template['warranty_months'] = $warrantyTemplate->warranty_months;
-                        $template['warranty_description'] = $warrantyTemplate->warranty_description;
-                        $template['warranty_percent'] = (float) $warrantyTemplate->warranty_percent;
-                        $template['warranty_amount'] = $warrantyCost;
-                    }
-
-                    return $template;
-                })->toArray();
-            }
-        }
-
-        $this->showWarrantyPicker = false;
 
         // Log activity
         EstimateActivity::log(
             $this->estimate,
             'package_tier_selected',
-            "Package tier '{$this->selectedTier}' selected with warranty '{$this->selectedWarrantyTier}'",
-            [
-                'tier' => $this->selectedTier,
-                'warranty_tier' => $this->selectedWarrantyTier,
-            ]
+            "Package tier '{$tier}' selected",
+            ['tier' => $tier]
         );
 
-        $this->dispatch('tier-selected', tier: $this->selectedTier);
+        $this->dispatch('tier-selected', tier: $tier);
     }
 
     /**
@@ -421,6 +328,7 @@ new class extends Component {
 
     /**
      * Calculate the total for the selected package template tier.
+     * Includes painting total + all selected items (warranty and service).
      */
     #[Computed]
     public function selectedTemplateTotal(): float
@@ -438,10 +346,7 @@ new class extends Component {
         // Start with painting total
         $total = (float) $selectedTemplate['painting_total'];
 
-        // Add warranty
-        $total += (float) $selectedTemplate['warranty_amount'];
-
-        // Add selected items
+        // Add all selected items (warranty items are included in items array)
         foreach ($selectedTemplate['items'] as $item) {
             $isSelected = $this->selectedPackageItems[$item['key']] ?? $item['is_included_by_default'];
             if ($isSelected) {
@@ -453,10 +358,27 @@ new class extends Component {
     }
 
     /**
-     * Get items total for the selected template.
+     * Get warranty items total for the selected template.
      */
     #[Computed]
-    public function selectedTemplateItemsTotal(): float
+    public function selectedTemplateWarrantyTotal(): float
+    {
+        return $this->getSelectedItemsTotal(warrantyOnly: true);
+    }
+
+    /**
+     * Get service (non-warranty) items total for the selected template.
+     */
+    #[Computed]
+    public function selectedTemplateServicesTotal(): float
+    {
+        return $this->getSelectedItemsTotal(warrantyOnly: false);
+    }
+
+    /**
+     * Helper to sum selected items by type.
+     */
+    protected function getSelectedItemsTotal(bool $warrantyOnly): float
     {
         if (! $this->selectedTier || empty($this->packageTemplates)) {
             return 0.0;
@@ -470,6 +392,10 @@ new class extends Component {
 
         $total = 0.0;
         foreach ($selectedTemplate['items'] as $item) {
+            $isWarranty = $item['is_warranty'] ?? false;
+            if ($isWarranty !== $warrantyOnly) {
+                continue;
+            }
             $isSelected = $this->selectedPackageItems[$item['key']] ?? $item['is_included_by_default'];
             if ($isSelected) {
                 $total += (float) $item['price'];
@@ -563,7 +489,7 @@ new class extends Component {
         $this->dispatch('proceed-to-signature', [
             'packageId' => $this->usePackageTemplates ? null : $this->selectedPackageId,
             'packageTier' => $this->usePackageTemplates ? $this->selectedTier : null,
-            'warrantyTier' => $this->usePackageTemplates ? $this->selectedWarrantyTier : null,
+            'selectedItems' => $this->usePackageTemplates ? $this->selectedPackageItems : [],
             'finalTotal' => $this->finalTotal,
             'depositAmount' => $this->depositAmount,
             'balanceDue' => $this->balanceDue,

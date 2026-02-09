@@ -43,6 +43,9 @@ Route::middleware(['auth:agent', 'auth.agent'])->group(function () {
     Route::livewire('deals', 'agent.deals.index')->name('deals.index');
 
     // Chat routes
+    // Referrals
+    Route::livewire('referrals', 'agent.referrals')->name('referrals');
+
     Route::livewire('chat', 'agent.chat.thread-list')->name('chat.index');
     Route::livewire('chat/{thread}', 'agent.chat.thread-view')->name('chat.show');
 });

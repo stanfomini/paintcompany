@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\BudgetCategory;
+use App\Models\BudgetLineItem;
 use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -23,12 +25,34 @@ class SalesPlanService
                 'year' => $year,
             ],
             [
-                'annual_revenue_goal' => 1500000,
+                'annual_revenue_goal' => $this->getBudgetRevenueGoal($settings, $year),
                 'avg_job_size' => 5000,
                 'lead_conversion_rate' => 65,
                 'estimate_close_rate' => 55,
             ]
         );
+    }
+
+    /**
+     * Get the revenue goal from the budget P&L for a given year.
+     * Falls back to 0 if no budget revenue plan has been set.
+     */
+    public function getBudgetRevenueGoal(CompanySetting $settings, int $year): float
+    {
+        $revenueCategories = BudgetCategory::where('company_setting_id', $settings->id)
+            ->where('section', BudgetCategory::SECTION_REVENUE)
+            ->pluck('id');
+
+        if ($revenueCategories->isEmpty()) {
+            return 0;
+        }
+
+        $total = (float) BudgetLineItem::where('company_setting_id', $settings->id)
+            ->whereIn('budget_category_id', $revenueCategories)
+            ->where('year', $year)
+            ->sum('current_year_plan');
+
+        return $total;
     }
 
     /**
