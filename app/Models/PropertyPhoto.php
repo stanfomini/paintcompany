@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\PhotoUrlService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -192,9 +193,7 @@ class PropertyPhoto extends Model
      */
     public function getUrlAttribute(): string
     {
-        $disk = $this->disk ?? config('filesystems.default');
-
-        return Storage::disk($disk)->url($this->path);
+        return app(PhotoUrlService::class)->getUrl($this, 'original') ?? '';
     }
 
     /**
@@ -203,12 +202,7 @@ class PropertyPhoto extends Model
     public function getDisplayUrlAttribute(): string
     {
         if ($this->annotated_path) {
-            $disk = $this->disk ?? config('filesystems.default');
-
-            $url = Storage::disk($disk)->url($this->annotated_path);
-            if ($url) {
-                return $url;
-            }
+            return app(PhotoUrlService::class)->getUrl($this, 'annotated') ?? $this->url;
         }
 
         return $this->url;
