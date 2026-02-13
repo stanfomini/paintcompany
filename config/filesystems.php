@@ -77,16 +77,20 @@ return [
             // 'use_path_style_endpoint' => true,
         ],
 
-        'photos' => [
-            'driver' => env('PHOTOS_DISK_DRIVER', 'local'),
-            'root' => storage_path('app/public/photos'),
-            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/photos',
+        'photos' => env('PHOTOS_DISK_DRIVER', 'local') === 's3' ? [
+            'driver' => 's3',
             'key' => env('PHOTOS_AWS_ACCESS_KEY_ID'),
             'secret' => env('PHOTOS_AWS_SECRET_ACCESS_KEY'),
             'region' => env('PHOTOS_AWS_DEFAULT_REGION', 'us-east-1'),
             'bucket' => env('PHOTOS_AWS_BUCKET'),
             'endpoint' => env('PHOTOS_AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('PHOTOS_AWS_USE_PATH_STYLE_ENDPOINT', true),
+            'visibility' => 'private',
+            'throw' => true,
+        ] : [
+            'driver' => 'local',
+            'root' => storage_path('app/public/photos'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/photos',
             'visibility' => 'private',
             'throw' => false,
         ],
