@@ -28,15 +28,15 @@ class ReferralRewardEarned extends Notification implements ShouldQueue
     {
         $this->referral->load('customer');
 
-        $customerName = $this->referral->customer?->full_name ?? 'Your referral';
+        $customerName = $this->referral->customer?->full_name ?? __('Your referral');
         $amount = number_format($this->referral->reward_amount, 2);
 
         return (new MailMessage)
-            ->subject('You earned a referral reward!')
-            ->greeting('Congratulations!')
-            ->line("{$customerName}'s deposit was received. You've earned \${$amount}!")
-            ->line('Your reward will be sent to you shortly.')
-            ->line('Thank you for referring us!');
+            ->subject(__('You earned a referral reward!'))
+            ->greeting(__('Congratulations!'))
+            ->line(__(":name's deposit was received. You've earned \$:amount!", ['name' => $customerName, 'amount' => $amount]))
+            ->line(__('Your reward will be sent to you shortly.'))
+            ->line(__('Thank you for referring us!'));
     }
 
     /**

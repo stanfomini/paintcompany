@@ -320,7 +320,7 @@ new class extends Component {
         $allocation = CompanyAllocation::findOrFail($id);
 
         if ($allocation->is_system) {
-            session()->flash('error', 'System allocations cannot be deleted.');
+            session()->flash('error', __('System allocations cannot be deleted.'));
             return;
         }
 
@@ -352,11 +352,9 @@ new class extends Component {
 
             {{-- Info Callout --}}
             <flux:callout variant="info" icon="information-circle">
-                <flux:callout.heading>How Allocations Work</flux:callout.heading>
+                <flux:callout.heading>{{ __('How Allocations Work') }}</flux:callout.heading>
                 <flux:callout.text>
-                    Allocations represent business costs that come out of each job's gross profit.
-                    They can be a percentage of revenue, a fixed amount per job, or a rate per labor hour.
-                    System allocations can be edited but not deleted.
+                    {{ __('Allocations represent business costs that come out of each job\'s gross profit. They can be a percentage of revenue, a fixed amount per job, or a rate per labor hour. System allocations can be edited but not deleted.') }}
                 </flux:callout.text>
             </flux:callout>
 
@@ -368,16 +366,16 @@ new class extends Component {
                             <div class="flex items-center gap-2">
                                 <span class="font-medium">{{ $allocation->name }}</span>
                                 @if ($allocation->is_system)
-                                    <span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded">System</span>
+                                    <span class="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 rounded">{{ __('System') }}</span>
                                 @endif
                                 @if ($allocation->is_informational)
-                                    <span class="px-1.5 py-0.5 text-xs bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400 rounded">Info Only</span>
+                                    <span class="px-1.5 py-0.5 text-xs bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400 rounded">{{ __('Info Only') }}</span>
                                 @endif
                                 @if (!$allocation->is_active)
-                                    <span class="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded">Inactive</span>
+                                    <span class="px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded">{{ __('Inactive') }}</span>
                                 @endif
                                 @if ($allocation->hasTiers())
-                                    <span class="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 rounded">Conditional</span>
+                                    <span class="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 rounded">{{ __('Conditional') }}</span>
                                 @endif
                             </div>
                             <div class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
@@ -385,7 +383,7 @@ new class extends Component {
                                 <span class="text-zinc-400 mx-1">|</span>
                                 {{ $allocation->type_label }}
                                 @if ($allocation->hasTiers())
-                                    <span class="text-zinc-400 mx-1">(fallback)</span>
+                                    <span class="text-zinc-400 mx-1">({{ __('fallback') }})</span>
                                 @endif
                             </div>
                             @if ($allocation->description)
@@ -405,7 +403,7 @@ new class extends Component {
                         <div class="flex items-center gap-2">
                             <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $allocation->id }})" />
                             @if (!$allocation->is_system)
-                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="delete({{ $allocation->id }})" wire:confirm="Are you sure you want to delete this allocation?" />
+                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="delete({{ $allocation->id }})" wire:confirm="{{ __('Are you sure you want to delete this allocation?') }}" />
                             @endif
                             <flux:switch
                                 wire:click="toggleActive({{ $allocation->id }})"
@@ -418,14 +416,14 @@ new class extends Component {
 
                 @if ($this->allocations->isEmpty())
                     <div class="text-center py-8 text-zinc-500">
-                        No allocations configured. Add one to get started.
+                        {{ __('No allocations configured. Add one to get started.') }}
                     </div>
                 @endif
             </div>
 
             {{-- Add Button --}}
             <flux:button variant="primary" icon="plus" wire:click="openAddModal">
-                Add Allocation
+                {{ __('Add Allocation') }}
             </flux:button>
 
             {{-- Summary --}}
@@ -436,18 +434,18 @@ new class extends Component {
                 $totalPerHour = $activeAllocations->where('type', 'per_labor_hour')->sum('value');
             @endphp
             <div class="p-4 bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg">
-                <div class="text-sm font-medium mb-2">Active Allocation Summary</div>
+                <div class="text-sm font-medium mb-2">{{ __('Active Allocation Summary') }}</div>
                 <div class="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                        <div class="text-zinc-500">% of Revenue</div>
+                        <div class="text-zinc-500">{{ __('% of Revenue') }}</div>
                         <div class="font-bold">{{ number_format($totalPercent, 2) }}%</div>
                     </div>
                     <div>
-                        <div class="text-zinc-500">Fixed/Job</div>
+                        <div class="text-zinc-500">{{ __('Fixed/Job') }}</div>
                         <div class="font-bold">${{ number_format($totalFixed, 2) }}</div>
                     </div>
                     <div>
-                        <div class="text-zinc-500">Per Labor Hour</div>
+                        <div class="text-zinc-500">{{ __('Per Labor Hour') }}</div>
                         <div class="font-bold">${{ number_format($totalPerHour, 2) }}/hr</div>
                     </div>
                 </div>
@@ -463,17 +461,17 @@ new class extends Component {
     <flux:modal wire:model="showModal" variant="flyout" class="w-[520px]">
         <form wire:submit="save" class="space-y-6">
             <div>
-                <flux:heading size="lg">{{ $editingId ? 'Edit Allocation' : 'Add Allocation' }}</flux:heading>
+                <flux:heading size="lg">{{ $editingId ? __('Edit Allocation') : __('Add Allocation') }}</flux:heading>
                 <flux:text class="mt-2">
                     @if ($editingId)
                         @php $editing = \App\Models\CompanyAllocation::find($editingId); @endphp
                         @if ($editing?->is_system)
-                            System allocations can only have their value and status edited.
+                            {{ __('System allocations can only have their value and status edited.') }}
                         @else
-                            Update the allocation details below.
+                            {{ __('Update the allocation details below.') }}
                         @endif
                     @else
-                        Configure a new business cost allocation.
+                        {{ __('Configure a new business cost allocation.') }}
                     @endif
                 </flux:text>
             </div>
@@ -482,16 +480,16 @@ new class extends Component {
 
             <flux:input
                 wire:model="name"
-                label="Name"
-                placeholder="e.g., Marketing, Growth Loan"
+                :label="__('Name')"
+                :placeholder="__('e.g., Marketing, Growth Loan')"
                 :disabled="$isSystemEdit"
                 required
             />
 
             <flux:textarea
                 wire:model="description"
-                label="Description (optional)"
-                placeholder="What is this allocation for?"
+                :label="__('Description (optional)')"
+                :placeholder="__('What is this allocation for?')"
                 rows="2"
                 :disabled="$isSystemEdit"
             />
@@ -499,13 +497,13 @@ new class extends Component {
             {{-- Unified Rules Builder --}}
             <div class="space-y-3 border-t border-zinc-200 dark:border-zinc-700 pt-4">
                 <div class="flex items-center justify-between">
-                    <flux:heading size="sm">Rules</flux:heading>
+                    <flux:heading size="sm">{{ __('Rules') }}</flux:heading>
                     @php
                         $gateCount = collect($allocation_rules)->filter(fn ($r) => empty($r['has_override']) && !empty($r['field']))->count();
                     @endphp
                     @if ($gateCount > 1)
                         <div class="flex items-center gap-1.5">
-                            <span class="text-xs text-zinc-500">Match gates:</span>
+                            <span class="text-xs text-zinc-500">{{ __('Match gates:') }}</span>
                             <flux:select wire:model.live="conditions_logic" class="!w-20">
                                 <flux:select.option value="all">AND</flux:select.option>
                                 <flux:select.option value="any">OR</flux:select.option>
@@ -516,8 +514,8 @@ new class extends Component {
 
                 @if (empty($allocation_rules))
                     <div class="rounded-lg border border-dashed border-zinc-300 dark:border-zinc-600 p-4 text-center">
-                        <p class="text-sm text-zinc-500 dark:text-zinc-400">No rules added.</p>
-                        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-1">The base value below will apply to all jobs. Add rules to gate this allocation or override the value conditionally.</p>
+                        <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('No rules added.') }}</p>
+                        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-1">{{ __('The base value below will apply to all jobs. Add rules to gate this allocation or override the value conditionally.') }}</p>
                     </div>
                 @endif
 
@@ -534,9 +532,9 @@ new class extends Component {
                         <div class="flex items-start gap-2">
                             <span class="shrink-0 mt-2 w-14 text-xs font-bold tracking-wide {{ $isOverride ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-500 dark:text-zinc-400' }}">
                                 @if ($isOverride)
-                                    {{ $overrideCount === 1 ? 'IF' : 'ELSE IF' }}
+                                    {{ $overrideCount === 1 ? __('IF') : __('ELSE IF') }}
                                 @else
-                                    REQUIRE
+                                    {{ __('REQUIRE') }}
                                 @endif
                             </span>
 
@@ -546,7 +544,7 @@ new class extends Component {
                                     wire:model.live="allocation_rules.{{ $ri }}.field"
                                     class="w-full rounded-lg border-zinc-300 bg-white text-sm py-1.5 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200"
                                 >
-                                    <option value="">Select condition field...</option>
+                                    <option value="">{{ __('Select condition field...') }}</option>
                                     @foreach ($groups as $groupName => $fields)
                                         <optgroup label="{{ $groupName }}">
                                             @foreach ($fields as $fieldKey => $fConfig)
@@ -567,21 +565,21 @@ new class extends Component {
 
                                         @if (($fieldConfig['input'] ?? 'select') === 'boolean')
                                             <flux:select wire:key="cv-{{ $ri }}-{{ $rule['field'] }}-bool" wire:model="allocation_rules.{{ $ri }}.condition_value" class="flex-1">
-                                                <flux:select.option value="">Select...</flux:select.option>
-                                                <flux:select.option value="1">Yes</flux:select.option>
-                                                <flux:select.option value="0">No</flux:select.option>
+                                                <flux:select.option value="">{{ __('Select...') }}</flux:select.option>
+                                                <flux:select.option value="1">{{ __('Yes') }}</flux:select.option>
+                                                <flux:select.option value="0">{{ __('No') }}</flux:select.option>
                                             </flux:select>
                                         @elseif (($fieldConfig['input'] ?? 'select') === 'number')
-                                            <flux:input wire:key="cv-{{ $ri }}-{{ $rule['field'] }}-num" wire:model="allocation_rules.{{ $ri }}.condition_value" type="number" step="0.01" placeholder="Value" class="flex-1" />
+                                            <flux:input wire:key="cv-{{ $ri }}-{{ $rule['field'] }}-num" wire:model="allocation_rules.{{ $ri }}.condition_value" type="number" step="0.01" :placeholder="__('Value')" class="flex-1" />
                                         @elseif (!empty($fieldConfig['values']))
                                             <flux:select wire:key="cv-{{ $ri }}-{{ $rule['field'] }}-sel" wire:model="allocation_rules.{{ $ri }}.condition_value" class="flex-1">
-                                                <flux:select.option value="">Select...</flux:select.option>
+                                                <flux:select.option value="">{{ __('Select...') }}</flux:select.option>
                                                 @foreach ($fieldConfig['values'] as $val => $valLabel)
                                                     <flux:select.option value="{{ $val }}">{{ $valLabel }}</flux:select.option>
                                                 @endforeach
                                             </flux:select>
                                         @else
-                                            <flux:input wire:key="cv-{{ $ri }}-{{ $rule['field'] }}-txt" wire:model="allocation_rules.{{ $ri }}.condition_value" type="text" placeholder="Value" class="flex-1" />
+                                            <flux:input wire:key="cv-{{ $ri }}-{{ $rule['field'] }}-txt" wire:model="allocation_rules.{{ $ri }}.condition_value" type="text" :placeholder="__('Value')" class="flex-1" />
                                         @endif
                                     </div>
                                 @endif
@@ -594,8 +592,8 @@ new class extends Component {
                         @if ($isOverride)
                             <div class="ml-16 border-l-2 border-purple-300 dark:border-purple-600 pl-3 space-y-2">
                                 <div class="flex items-center gap-2 flex-wrap">
-                                    <button type="button" wire:click="toggleRuleOverride({{ $ri }})" class="text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300" title="Click to remove value override">
-                                        THEN &rarr;
+                                    <button type="button" wire:click="toggleRuleOverride({{ $ri }})" class="text-xs font-bold text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300" title="{{ __('Click to remove value override') }}">
+                                        {{ __('THEN') }} &rarr;
                                     </button>
                                     <flux:select wire:model.live="allocation_rules.{{ $ri }}.override_type" size="sm" class="!w-36">
                                         @foreach ($this->types as $typeValue => $typeLabel)
@@ -615,14 +613,14 @@ new class extends Component {
                                     </flux:input>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <span class="text-xs text-zinc-500 shrink-0">Label:</span>
-                                    <flux:input wire:model="allocation_rules.{{ $ri }}.label" placeholder="e.g., Stripe, Check, Exterior" size="sm" class="flex-1" />
+                                    <span class="text-xs text-zinc-500 shrink-0">{{ __('Label:') }}</span>
+                                    <flux:input wire:model="allocation_rules.{{ $ri }}.label" :placeholder="__('e.g., Stripe, Check, Exterior')" size="sm" class="flex-1" />
                                 </div>
                             </div>
                         @else
                             <div class="ml-16">
                                 <button type="button" wire:click="toggleRuleOverride({{ $ri }})" class="text-xs text-purple-500 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300">
-                                    + Set value override
+                                    {{ __('+ Set value override') }}
                                 </button>
                             </div>
                         @endif
@@ -632,7 +630,7 @@ new class extends Component {
                 {{-- OTHERWISE (base value) --}}
                 <div class="rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800/50 p-3">
                     <div class="flex items-center gap-2">
-                        <span class="text-xs font-bold text-zinc-500 dark:text-zinc-400 shrink-0 w-14">OTHERWISE</span>
+                        <span class="text-xs font-bold text-zinc-500 dark:text-zinc-400 shrink-0 w-14">{{ __('OTHERWISE') }}</span>
                         <span class="text-zinc-400 shrink-0">&rarr;</span>
                         <flux:select wire:model.live="type" size="sm" class="!w-36" :disabled="$isSystemEdit">
                             @foreach ($this->types as $typeValue => $typeLabel)
@@ -653,24 +651,24 @@ new class extends Component {
                     </div>
                     <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-1.5 ml-16">
                         @if (collect($allocation_rules)->where('has_override', true)->isNotEmpty())
-                            Fallback when no override rule matches.
+                            {{ __('Fallback when no override rule matches.') }}
                         @else
-                            Base value applied to all jobs.
+                            {{ __('Base value applied to all jobs.') }}
                         @endif
                     </p>
                 </div>
 
                 <flux:button variant="ghost" size="sm" icon="plus" wire:click="addRule">
-                    Add Rule
+                    {{ __('Add Rule') }}
                 </flux:button>
             </div>
 
-            <flux:switch wire:model="is_active" label="Active" description="Inactive allocations are not deducted from profit" />
+            <flux:switch wire:model="is_active" :label="__('Active')" :description="__('Inactive allocations are not deducted from profit')" />
 
             <div class="flex gap-2">
-                <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">Cancel</flux:button>
+                <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>
                 <flux:button type="submit" variant="primary" class="flex-1">
-                    {{ $editingId ? 'Update' : 'Add' }} Allocation
+                    {{ $editingId ? __('Update Allocation') : __('Add Allocation') }}
                 </flux:button>
             </div>
         </form>

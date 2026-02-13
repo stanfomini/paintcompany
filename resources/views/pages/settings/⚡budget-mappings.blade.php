@@ -10,7 +10,7 @@ use Livewire\Component;
 new class extends Component {
     public function boot(): void
     {
-        if (! auth()->user()?->can('settings.company')) {
+        if (! auth()->user()?->can('settings.budget_mappings')) {
             abort(403);
         }
     }
@@ -51,7 +51,7 @@ new class extends Component {
 
     public function updateMapping(int $categoryId, ?string $accountId): void
     {
-        $this->authorize('settings.company');
+        $this->authorize('settings.budget_mappings');
 
         $settings = CompanySetting::getInstance();
         $category = BudgetCategory::where('company_setting_id', $settings->id)
@@ -70,7 +70,7 @@ new class extends Component {
         }
 
         unset($this->sections);
-        $this->successMessage = "Updated mapping for {$category->name}.";
+        $this->successMessage = __('Updated mapping for :name.', ['name' => __($category->name)]);
     }
 };
 ?>
@@ -85,9 +85,9 @@ new class extends Component {
         @endif
 
         @foreach ([
-            BudgetCategory::SECTION_VEHICLE_EXPENSE => 'Vehicle Expenses',
-            BudgetCategory::SECTION_BUSINESS_EXPENSE => 'Business Expenses',
-            BudgetCategory::SECTION_VARIABLE_EXPENSE => 'Variable Expenses (COGS)',
+            BudgetCategory::SECTION_VEHICLE_EXPENSE => __('Vehicle Expenses'),
+            BudgetCategory::SECTION_BUSINESS_EXPENSE => __('Business Expenses'),
+            BudgetCategory::SECTION_VARIABLE_EXPENSE => __('Variable Expenses (COGS)'),
         ] as $sectionKey => $sectionLabel)
             @if (isset($this->sections[$sectionKey]))
                 <div class="mb-8">
@@ -97,8 +97,8 @@ new class extends Component {
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
                                 <tr>
-                                    <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Budget Category</th>
-                                    <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">GL Account</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Budget Category') }}</th>
+                                    <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('GL Account') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
@@ -115,7 +115,7 @@ new class extends Component {
                                                 wire:change="updateMapping({{ $category['id'] }}, $event.target.value)"
                                                 class="w-80"
                                             >
-                                                <option value="">-- No mapping --</option>
+                                                <option value="">{{ __('-- No mapping --') }}</option>
                                                 @foreach ($this->expenseAccounts as $account)
                                                     <option value="{{ $account->id }}" @selected($account->id == $currentAccountId)>
                                                         {{ $account->code }} - {{ $account->name }}
@@ -133,11 +133,9 @@ new class extends Component {
         @endforeach
 
         <flux:callout variant="outline" icon="information-circle" class="mt-4">
-            <flux:callout.heading>How mappings work</flux:callout.heading>
+            <flux:callout.heading>{{ __('How mappings work') }}</flux:callout.heading>
             <flux:callout.text>
-                Each budget category is linked to a GL account. When you record overhead expenses or sync actuals,
-                the system uses these mappings to route money to the correct account. Categories without a mapping
-                will not sync actuals from journal entries.
+                {{ __('Each budget category is linked to a GL account. When you record overhead expenses or sync actuals, the system uses these mappings to route money to the correct account. Categories without a mapping will not sync actuals from journal entries.') }}
             </flux:callout.text>
         </flux:callout>
     </div>

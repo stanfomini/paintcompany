@@ -8,13 +8,13 @@ use App\Models\EstimateAreaSurface;
 use App\Models\EstimateTemplate;
 use App\Models\NestedAreaTemplate;
 use App\Models\ProductionRate;
-use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public Estimate $estimate;
 
     // UI State
@@ -155,7 +155,7 @@ new class extends Component {
             ->visibleTo(auth()->user())
             ->with(['surfaces.productionRate', 'templateCategory'])
             ->get()
-            ->groupBy(fn ($t) => $t->templateCategory?->name ?? 'Other');
+            ->groupBy(fn ($t) => __($t->templateCategory?->name ?? 'Other'));
     }
 
     /**
@@ -595,8 +595,9 @@ new class extends Component {
     /**
      * Update area dimensions.
      */
-    public function updateAreaDimension(int $areaId, string $field, float $value): void
+    public function updateAreaDimension(int $areaId, string $field, float|string $value): void
     {
+        $value = (float) $value;
         $area = EstimateArea::findOrFail($areaId);
 
         // Update the dimension
@@ -624,6 +625,10 @@ new class extends Component {
     protected function updateSurfaceQuantities(EstimateArea $area): void
     {
         foreach ($area->surfaces as $surface) {
+            if ($surface->is_custom) {
+                continue; // Don't overwrite custom surface quantities
+            }
+
             $newQuantity = match ($surface->surface_type) {
                 AreaTemplateSurface::SURFACE_TYPE_WALLS => (float) $area->wall_sqft,
                 AreaTemplateSurface::SURFACE_TYPE_CEILING => (float) $area->ceiling_sqft,
@@ -882,6 +887,139 @@ new class extends Component {
         }
     }
 
+    // ===== MEASUREMENT & CUSTOM SURFACE MANAGEMENT =====
+
+    /**
+     * Set the measurement type for an area (dimensions, sqft, lnft).
+     */
+    public function setMeasurementType(int $areaId, string $type): void
+    {
+        $area = EstimateArea::findOrFail($areaId);
+        $area->measurement_type = $type;
+        $area->save();
+
+        // Refresh surface quantities after measurement change
+        $this->updateSurfaceQuantities($area);
+
+        // Recalculate
+        $this->recalculateArea($area);
+        $this->areaConfigs[$areaId] = $this->buildAreaConfig($area);
+
+        // Clear computed cache
+        unset($this->areas);
+
+        $this->dispatch('area-updated');
+    }
+
+    /**
+     * Set the wall count for an area (1-4 walls).
+     */
+    public function setWallCount(int $areaId, int $count): void
+    {
+        $area = EstimateArea::findOrFail($areaId);
+        $area->wall_count = max(1, min(4, $count));
+        $area->save();
+
+        $this->updateSurfaceQuantities($area);
+
+        // Recalculate
+        $this->recalculateArea($area);
+        $this->areaConfigs[$areaId] = $this->buildAreaConfig($area);
+
+        // Clear computed cache
+        unset($this->areas);
+
+        $this->dispatch('area-updated');
+    }
+
+    /**
+     * Update the service category for an area.
+     */
+    public function updateAreaServiceCategory(int $areaId, ?string $categoryId): void
+    {
+        $area = EstimateArea::findOrFail($areaId);
+        $area->service_category_id = $categoryId ?: null;
+        $area->save();
+    }
+
+    /**
+     * Toggle a surface between custom and production-rate-based.
+     */
+    public function toggleCustomSurface(int $surfaceId): void
+    {
+        $surface = EstimateAreaSurface::findOrFail($surfaceId);
+        $surface->is_custom = ! $surface->is_custom;
+
+        if ($surface->is_custom) {
+            $surface->production_rate_id = null;
+            $surface->production_rate_value = 0;
+        }
+
+        // Null out calculated fields so saving hook recalculates
+        $surface->total = null;
+        $surface->labor_cost = null;
+        $surface->save();
+
+        // Clear computed cache
+        unset($this->areas);
+
+        $this->dispatch('surface-updated');
+    }
+
+    /**
+     * Update a custom surface field (labor_hours, material_cost, hourly_labor_rate).
+     */
+    public function updateCustomSurface(int $surfaceId, string $field, $value): void
+    {
+        $surface = EstimateAreaSurface::findOrFail($surfaceId);
+
+        if (! $surface->is_custom) {
+            return;
+        }
+
+        $allowedFields = ['labor_hours', 'material_cost', 'hourly_labor_rate'];
+        if (! in_array($field, $allowedFields)) {
+            return;
+        }
+
+        $surface->$field = (float) $value;
+        $surface->total = null;
+        $surface->labor_cost = null;
+        $surface->save();
+
+        // Clear computed cache
+        unset($this->areas);
+
+        $this->dispatch('surface-updated');
+    }
+
+    /**
+     * Update a direct measurement field for an area (sqft/lnft mode).
+     */
+    public function updateDirectMeasurement(int $areaId, string $field, $value): void
+    {
+        $area = EstimateArea::findOrFail($areaId);
+
+        $allowedFields = ['direct_sqft', 'direct_lnft', 'direct_ceiling_sqft', 'height'];
+        if (! in_array($field, $allowedFields)) {
+            return;
+        }
+
+        $area->$field = (float) $value;
+        $area->save();
+
+        $this->updateSurfaceQuantities($area);
+
+        // Recalculate
+        $this->recalculateArea($area);
+        $this->areaConfigs[$areaId] = $this->buildAreaConfig($area);
+
+        // Clear computed cache
+        unset($this->areas);
+
+        $this->dispatch('area-updated');
+    }
+
     /**
      * Refresh from parent component.
      */
@@ -898,20 +1036,20 @@ new class extends Component {
     {{-- Header with Total --}}
     <div class="flex items-center justify-between mb-4">
         <div>
-            <flux:heading size="lg">Estimate Areas</flux:heading>
+            <flux:heading size="lg">{{ __('Estimate Areas') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Click to add rooms from templates or create custom areas
+                {{ __('Click to add rooms from templates or create custom areas') }}
             </flux:text>
         </div>
         <div class="flex items-center gap-3">
             <div class="text-right">
-                <div class="text-xs text-zinc-500 dark:text-zinc-400">Areas Total</div>
+                <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Areas Total') }}</div>
                 <div class="text-xl font-bold text-zinc-900 dark:text-zinc-100">
                     ${{ number_format($this->areasTotal, 2) }}
                 </div>
             </div>
             <flux:button wire:click="openQuickAddDrawer" icon="plus">
-                Add Room
+                {{ __('Add Room') }}
             </flux:button>
         </div>
     </div>
@@ -919,7 +1057,7 @@ new class extends Component {
     {{-- Quick Add Template Buttons --}}
     @if ($this->availableTemplates->isNotEmpty())
         <div class="mb-6">
-            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Quick Add from Templates</div>
+            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">{{ __('Quick Add from Templates') }}</div>
             <div class="flex flex-wrap gap-2">
                 @foreach ($this->availableTemplates->flatten() as $template)
                     <flux:button
@@ -931,7 +1069,7 @@ new class extends Component {
                         class="border border-zinc-200 dark:border-zinc-700"
                     >
                         <flux:icon name="{{ $template->icon ?? 'squares-2x2' }}" class="w-4 h-4" />
-                        {{ $template->name }}
+                        {{ __($template->name) }}
                     </flux:button>
                 @endforeach
             </div>
@@ -955,9 +1093,16 @@ new class extends Component {
                         <div>
                             <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ $area->name }}</div>
                             <div class="text-xs text-zinc-500 dark:text-zinc-400">
-                                {{ number_format($area->length) }}' x {{ number_format($area->width) }}' x {{ number_format($area->height) }}'
+                                @if(($area->measurement_type ?? 'dimensions') === 'dimensions')
+                                    {{ number_format($area->length) }}' x {{ number_format($area->width) }}' x {{ number_format($area->height) }}'
+                                    @if(($area->wall_count ?? 4) < 4) ({{ $area->wall_count }} {{ __('walls') }}) @endif
+                                @elseif($area->measurement_type === 'sqft')
+                                    {{ number_format($area->direct_sqft) }} {{ __('sqft direct') }}
+                                @elseif($area->measurement_type === 'lnft')
+                                    {{ number_format($area->direct_lnft) }} {{ __('lnft direct') }}
+                                @endif
                                 &bull;
-                                {{ number_format($area->wall_sqft) }} sqft walls
+                                {{ number_format($area->wall_sqft) }} {{ __('sqft walls') }}
                             </div>
                         </div>
                     </div>
@@ -969,7 +1114,7 @@ new class extends Component {
                         </div>
                         <flux:button
                             wire:click.stop="deleteArea({{ $area->id }})"
-                            wire:confirm="Are you sure you want to delete this area?"
+                            wire:confirm="{{ __('Are you sure you want to delete this area?') }}"
                             variant="ghost"
                             size="sm"
                             class="text-red-500 hover:text-red-700"
@@ -982,105 +1127,283 @@ new class extends Component {
                 {{-- Area Expanded Content --}}
                 @if ($this->isAreaExpanded($area->id))
                     <div class="p-4 border-t border-zinc-200 dark:border-zinc-700">
-                        {{-- Dimensions --}}
-                        <div class="mb-4">
-                            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Dimensions</div>
-                            <div class="grid grid-cols-3 gap-3">
+                        {{-- Service Category --}}
+                        @php $serviceCategories = \App\Models\ServiceCategory::active()->ordered()->get(); @endphp
+                        @if($serviceCategories->isNotEmpty())
+                            <div class="mb-4">
                                 <flux:field>
-                                    <flux:label class="text-xs">Length (ft)</flux:label>
-                                    <flux:input
-                                        wire:change="updateAreaDimension({{ $area->id }}, 'length', $event.target.value)"
-                                        value="{{ $area->length }}"
-                                        type="number"
-                                        step="0.5"
-                                        min="1"
-                                        size="sm"
-                                    />
-                                </flux:field>
-                                <flux:field>
-                                    <flux:label class="text-xs">Width (ft)</flux:label>
-                                    <flux:input
-                                        wire:change="updateAreaDimension({{ $area->id }}, 'width', $event.target.value)"
-                                        value="{{ $area->width }}"
-                                        type="number"
-                                        step="0.5"
-                                        min="1"
-                                        size="sm"
-                                    />
-                                </flux:field>
-                                <flux:field>
-                                    <flux:label class="text-xs">Height (ft)</flux:label>
-                                    <flux:input
-                                        wire:change="updateAreaDimension({{ $area->id }}, 'height', $event.target.value)"
-                                        value="{{ $area->height }}"
-                                        type="number"
-                                        step="0.5"
-                                        min="1"
-                                        size="sm"
-                                    />
+                                    <flux:label class="text-xs">{{ __('Service Category') }}</flux:label>
+                                    <flux:select wire:change="updateAreaServiceCategory({{ $area->id }}, $event.target.value)" size="sm">
+                                        <option value="">{{ __('No Category') }}</option>
+                                        @foreach($serviceCategories as $category)
+                                            <option value="{{ $category->id }}" @selected($area->service_category_id == $category->id)>{{ __($category->name) }}</option>
+                                        @endforeach
+                                    </flux:select>
                                 </flux:field>
                             </div>
+                        @endif
+
+                        {{-- Measurement Mode & Dimensions --}}
+                        <div class="mb-4">
+                            <div class="flex items-center gap-1 mb-2">
+                                <span class="text-xs text-zinc-500 dark:text-zinc-400 mr-1">{{ __('Mode:') }}</span>
+                                @foreach(['dimensions' => 'L×W×H', 'sqft' => 'Sqft', 'lnft' => 'Lnft'] as $mode => $label)
+                                    <button type="button"
+                                        wire:click="setMeasurementType({{ $area->id }}, '{{ $mode }}')"
+                                        class="px-2 py-0.5 rounded text-xs font-medium transition-colors
+                                            {{ ($area->measurement_type ?? 'dimensions') === $mode
+                                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300'
+                                                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-400' }}">
+                                        {{ $label }}
+                                    </button>
+                                @endforeach
+                            </div>
+
+                            @if(($area->measurement_type ?? 'dimensions') === 'dimensions')
+                                {{-- L x W x H inputs --}}
+                                <div class="grid grid-cols-3 gap-3">
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Length (ft)') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateAreaDimension({{ $area->id }}, 'length', $event.target.value)"
+                                            value="{{ $area->length }}"
+                                            type="number"
+                                            step="0.5"
+                                            min="1"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Width (ft)') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateAreaDimension({{ $area->id }}, 'width', $event.target.value)"
+                                            value="{{ $area->width }}"
+                                            type="number"
+                                            step="0.5"
+                                            min="1"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Height (ft)') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateAreaDimension({{ $area->id }}, 'height', $event.target.value)"
+                                            value="{{ $area->height }}"
+                                            type="number"
+                                            step="0.5"
+                                            min="1"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                </div>
+
+                                {{-- Wall count pills --}}
+                                @if($area->length)
+                                    <div class="flex items-center gap-1 mt-2">
+                                        <span class="text-xs text-zinc-500 dark:text-zinc-400 mr-1">{{ __('Walls:') }}</span>
+                                        @foreach(range(1, 4) as $count)
+                                            <button type="button" wire:click="setWallCount({{ $area->id }}, {{ $count }})"
+                                                class="w-6 h-6 rounded text-xs font-medium {{ ($area->wall_count ?? 4) === $count ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-400' }}">
+                                                {{ $count }}
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            @elseif($area->measurement_type === 'sqft')
+                                {{-- Direct sqft inputs --}}
+                                <div class="grid grid-cols-3 gap-3">
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Wall Sqft') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateDirectMeasurement({{ $area->id }}, 'direct_sqft', $event.target.value)"
+                                            value="{{ $area->direct_sqft }}"
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Ceiling Sqft') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateDirectMeasurement({{ $area->id }}, 'direct_ceiling_sqft', $event.target.value)"
+                                            value="{{ $area->direct_ceiling_sqft }}"
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Height (ft)') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateDirectMeasurement({{ $area->id }}, 'height', $event.target.value)"
+                                            value="{{ $area->height }}"
+                                            type="number"
+                                            step="0.5"
+                                            min="1"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                </div>
+                            @elseif($area->measurement_type === 'lnft')
+                                {{-- Direct lnft inputs --}}
+                                <div class="grid grid-cols-3 gap-3">
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Linear Feet') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateDirectMeasurement({{ $area->id }}, 'direct_lnft', $event.target.value)"
+                                            value="{{ $area->direct_lnft }}"
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Ceiling Sqft') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateDirectMeasurement({{ $area->id }}, 'direct_ceiling_sqft', $event.target.value)"
+                                            value="{{ $area->direct_ceiling_sqft }}"
+                                            type="number"
+                                            step="1"
+                                            min="0"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                    <flux:field>
+                                        <flux:label class="text-xs">{{ __('Height (ft)') }}</flux:label>
+                                        <flux:input
+                                            wire:change="updateDirectMeasurement({{ $area->id }}, 'height', $event.target.value)"
+                                            value="{{ $area->height }}"
+                                            type="number"
+                                            step="0.5"
+                                            min="1"
+                                            size="sm"
+                                        />
+                                    </flux:field>
+                                </div>
+                            @endif
+
                             <div class="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-xs">
                                 <span class="text-blue-700 dark:text-blue-400">
-                                    Wall: {{ number_format($area->wall_sqft, 0) }} sqft |
-                                    Ceiling: {{ number_format($area->ceiling_sqft, 0) }} sqft |
-                                    Perimeter: {{ number_format($area->perimeter_lnft, 0) }} lnft
+                                    {{ __('Wall:') }} {{ number_format($area->wall_sqft, 0) }} {{ __('sqft') }} |
+                                    {{ __('Ceiling:') }} {{ number_format($area->ceiling_sqft, 0) }} {{ __('sqft') }} |
+                                    {{ __('Perimeter:') }} {{ number_format($area->perimeter_lnft, 0) }} {{ __('lnft') }}
                                 </span>
                             </div>
                         </div>
 
                         {{-- Surfaces --}}
                         <div class="mb-4">
-                            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Surfaces</div>
+                            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">{{ __('Surfaces') }}</div>
                             <div class="space-y-2">
                                 @foreach ($area->surfaces as $surface)
                                     <div
                                         wire:key="surface-{{ $surface->id }}"
-                                        class="flex items-center gap-3 p-3 rounded-lg {{ $surface->is_included ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700' }}"
+                                        class="p-3 rounded-lg {{ $surface->is_included ? 'bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800' : 'bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700' }}"
                                     >
-                                        <flux:checkbox
-                                            wire:click="toggleSurface({{ $area->id }}, {{ $surface->id }})"
-                                            :checked="$surface->is_included"
-                                        />
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex items-center gap-2">
-                                                <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $surface->name }}</span>
-                                                <span class="text-xs text-zinc-500">
-                                                    {{ number_format($surface->quantity, 0) }} {{ $surface->unit }}
-                                                </span>
-                                            </div>
-                                            <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                                                @if ($surface->productionRate)
-                                                    {{ $surface->productionRate->name }}
-                                                    ({{ number_format($surface->productionRate->production_rate, 0) }} {{ $surface->productionRate->rate_type_label }})
-                                                @else
-                                                    <span class="text-amber-600">No rate selected</span>
-                                                @endif
-                                            </div>
-                                        </div>
                                         <div class="flex items-center gap-3">
-                                            @php
-                                                $ratesByCategory = $this->getProductionRatesForScope($area->scope_type);
-                                                $surfaceCategory = $surface->productionRate?->surface_category ?? 'walls';
-                                                $availableRates = $ratesByCategory[$surfaceCategory] ?? collect();
-                                            @endphp
-                                            <select
-                                                wire:change="updateSurfaceRate({{ $area->id }}, {{ $surface->id }}, $event.target.value)"
-                                                class="w-48 text-sm rounded-md border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                            >
-                                                <option value="">-- Select Rate --</option>
-                                                @foreach ($availableRates as $rate)
-                                                    <option wire:key="rate-{{ $surface->id }}-{{ $rate->id }}" value="{{ $rate->id }}" {{ $surface->production_rate_id == $rate->id ? 'selected' : '' }}>
-                                                        {{ $rate->name }} ({{ number_format($rate->production_rate, 0) }})
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                            <div class="text-right w-20">
-                                                <span class="font-semibold {{ $surface->is_included ? 'text-green-700 dark:text-green-400' : 'text-zinc-400' }}">
-                                                    ${{ number_format($surface->total, 2) }}
-                                                </span>
+                                            <flux:checkbox
+                                                wire:click="toggleSurface({{ $area->id }}, {{ $surface->id }})"
+                                                :checked="$surface->is_included"
+                                            />
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $surface->name }}</span>
+                                                    <span class="text-xs text-zinc-500">
+                                                        {{ number_format($surface->quantity, 0) }} {{ $surface->unit }}
+                                                    </span>
+                                                    @if($surface->is_custom)
+                                                        <span class="text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">{{ __('Custom') }}</span>
+                                                    @endif
+                                                </div>
+                                                <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                                                    @if($surface->is_custom)
+                                                        <span class="text-amber-600 dark:text-amber-400">{{ __('Manual hours & material entry') }}</span>
+                                                    @elseif ($surface->productionRate)
+                                                        {{ __($surface->productionRate->name) }}
+                                                        ({{ number_format($surface->productionRate->production_rate, 0) }} {{ $surface->productionRate->rate_type_label }})
+                                                    @else
+                                                        <span class="text-amber-600">{{ __('No rate selected') }}</span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center gap-3">
+                                                <button type="button"
+                                                    wire:click="toggleCustomSurface({{ $surface->id }})"
+                                                    class="text-xs px-2 py-1 rounded transition-colors {{ $surface->is_custom ? 'bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-900/50 dark:text-amber-300' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-400' }}"
+                                                    title="{{ $surface->is_custom ? __('Switch to production rate') : __('Switch to custom pricing') }}"
+                                                >
+                                                    {{ $surface->is_custom ? __('Rate') : __('Custom') }}
+                                                </button>
+
+                                                @if(!$surface->is_custom)
+                                                    @php
+                                                        $ratesByCategory = $this->getProductionRatesForScope($area->scope_type);
+                                                        $surfaceCategory = $surface->productionRate?->surface_category ?? 'walls';
+                                                        $availableRates = $ratesByCategory[$surfaceCategory] ?? collect();
+                                                    @endphp
+                                                    <select
+                                                        wire:change="updateSurfaceRate({{ $area->id }}, {{ $surface->id }}, $event.target.value)"
+                                                        class="w-48 text-sm rounded-md border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                                    >
+                                                        <option value="">{{ __('-- Select Rate --') }}</option>
+                                                        @foreach ($availableRates as $rate)
+                                                            <option wire:key="rate-{{ $surface->id }}-{{ $rate->id }}" value="{{ $rate->id }}" {{ $surface->production_rate_id == $rate->id ? 'selected' : '' }}>
+                                                                {{ __($rate->name) }} ({{ number_format($rate->production_rate, 0) }})
+                                                            </option>
+                                                        @endforeach
+                                                    </select>
+                                                @endif
+
+                                                <div class="text-right w-20">
+                                                    <span class="font-semibold {{ $surface->is_included ? 'text-green-700 dark:text-green-400' : 'text-zinc-400' }}">
+                                                        ${{ number_format($surface->total, 2) }}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
+
+                                        @if($surface->is_custom)
+                                            <div class="mt-3 pt-3 border-t border-amber-200 dark:border-amber-800">
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <flux:field>
+                                                        <flux:label class="text-xs">{{ __('Hours') }}</flux:label>
+                                                        <flux:input
+                                                            wire:change="updateCustomSurface({{ $surface->id }}, 'labor_hours', $event.target.value)"
+                                                            type="number"
+                                                            step="0.25"
+                                                            min="0"
+                                                            size="sm"
+                                                            value="{{ $surface->labor_hours }}"
+                                                        />
+                                                    </flux:field>
+                                                    <flux:field>
+                                                        <flux:label class="text-xs">{{ __('Material $') }}</flux:label>
+                                                        <flux:input
+                                                            wire:change="updateCustomSurface({{ $surface->id }}, 'material_cost', $event.target.value)"
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            size="sm"
+                                                            value="{{ $surface->material_cost }}"
+                                                        />
+                                                    </flux:field>
+                                                    <flux:field>
+                                                        <flux:label class="text-xs">{{ __('$/hr') }}</flux:label>
+                                                        <flux:input
+                                                            wire:change="updateCustomSurface({{ $surface->id }}, 'hourly_labor_rate', $event.target.value)"
+                                                            type="number"
+                                                            step="0.01"
+                                                            min="0"
+                                                            size="sm"
+                                                            value="{{ $surface->hourly_labor_rate }}"
+                                                        />
+                                                    </flux:field>
+                                                </div>
+                                            </div>
+                                        @endif
                                     </div>
                                 @endforeach
                             </div>
@@ -1089,14 +1412,14 @@ new class extends Component {
                         {{-- Nested Items in this Area --}}
                         <div>
                             <div class="flex items-center justify-between mb-2">
-                                <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Nested Items</div>
+                                <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400">{{ __('Nested Items') }}</div>
                                 <flux:button
                                     wire:click="openNestedItemModal({{ $area->id }})"
                                     size="xs"
                                     variant="ghost"
                                 >
                                     <flux:icon name="plus" class="w-3 h-3" />
-                                    Add Fixed Price
+                                    {{ __('Add Fixed Price') }}
                                 </flux:button>
                             </div>
                             @if ($area->childAreas->count() > 0)
@@ -1130,7 +1453,7 @@ new class extends Component {
                                 </div>
                             @else
                                 <div class="text-xs text-zinc-400 dark:text-zinc-500 italic">
-                                    No fixed price items. Click "Add Fixed Price" to include items.
+                                    {{ __('No fixed price items. Click "Add Fixed Price" to include items.') }}
                                 </div>
                             @endif
                         </div>
@@ -1140,12 +1463,12 @@ new class extends Component {
         @empty
             <div class="text-center py-12 border-2 border-dashed border-zinc-200 dark:border-zinc-700 rounded-lg">
                 <flux:icon name="squares-2x2" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                <flux:heading size="sm" class="text-zinc-500 dark:text-zinc-400">No areas added yet</flux:heading>
+                <flux:heading size="sm" class="text-zinc-500 dark:text-zinc-400">{{ __('No areas added yet') }}</flux:heading>
                 <flux:text size="sm" class="text-zinc-400 dark:text-zinc-500 mb-4">
-                    Click a template button above or add a custom room
+                    {{ __('Click a template button above or add a custom room') }}
                 </flux:text>
                 <flux:button wire:click="openQuickAddDrawer" icon="plus">
-                    Add First Room
+                    {{ __('Add First Room') }}
                 </flux:button>
             </div>
         @endforelse
@@ -1154,7 +1477,7 @@ new class extends Component {
     {{-- Standalone Nested Items Section --}}
     @if ($this->standaloneNestedAreas->count() > 0)
         <div class="mt-6">
-            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Standalone Items</div>
+            <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">{{ __('Standalone Items') }}</div>
             <div class="space-y-2">
                 @foreach ($this->standaloneNestedAreas as $nested)
                     <div class="flex items-center justify-between p-3 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200 dark:border-purple-800">
@@ -1192,7 +1515,7 @@ new class extends Component {
     <div class="mt-4 flex justify-center">
         <flux:button wire:click="openNestedItemModal" size="sm" variant="ghost">
             <flux:icon name="plus" class="w-4 h-4" />
-            Add Standalone Item (Laundry, Pantry, etc.)
+            {{ __('Add Standalone Item (Laundry, Pantry, etc.)') }}
         </flux:button>
     </div>
 
@@ -1201,39 +1524,39 @@ new class extends Component {
         <flux:modal wire:model="showQuickAddDrawer" class="max-w-md">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Add Custom Room</flux:heading>
+                    <flux:heading size="lg">{{ __('Add Custom Room') }}</flux:heading>
                     <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                        Enter room details or select a template to start from
+                        {{ __('Enter room details or select a template to start from') }}
                     </flux:text>
                 </div>
 
                 <flux:field>
-                    <flux:label>Room Name</flux:label>
-                    <flux:input wire:model="newRoomName" placeholder="e.g., Guest Bedroom" />
+                    <flux:label>{{ __('Room Name') }}</flux:label>
+                    <flux:input wire:model="newRoomName" :placeholder="__('e.g., Guest Bedroom')" />
                     @error('newRoomName') <flux:error>{{ $message }}</flux:error> @enderror
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Scope</flux:label>
+                    <flux:label>{{ __('Scope') }}</flux:label>
                     <flux:select wire:model="newRoomScope">
-                        <option value="interior">Interior</option>
-                        <option value="exterior">Exterior</option>
+                        <option value="interior">{{ __('Interior') }}</option>
+                        <option value="exterior">{{ __('Exterior') }}</option>
                     </flux:select>
                 </flux:field>
 
                 <div class="grid grid-cols-3 gap-3">
                     <flux:field>
-                        <flux:label>Length (ft)</flux:label>
+                        <flux:label>{{ __('Length (ft)') }}</flux:label>
                         <flux:input wire:model="newLength" type="number" step="0.5" min="1" placeholder="12" />
                         @error('newLength') <flux:error>{{ $message }}</flux:error> @enderror
                     </flux:field>
                     <flux:field>
-                        <flux:label>Width (ft)</flux:label>
+                        <flux:label>{{ __('Width (ft)') }}</flux:label>
                         <flux:input wire:model="newWidth" type="number" step="0.5" min="1" placeholder="12" />
                         @error('newWidth') <flux:error>{{ $message }}</flux:error> @enderror
                     </flux:field>
                     <flux:field>
-                        <flux:label>Height (ft)</flux:label>
+                        <flux:label>{{ __('Height (ft)') }}</flux:label>
                         <flux:input wire:model="newHeight" type="number" step="0.5" min="1" placeholder="9" />
                         @error('newHeight') <flux:error>{{ $message }}</flux:error> @enderror
                     </flux:field>
@@ -1242,19 +1565,19 @@ new class extends Component {
                 {{-- Calculated Preview --}}
                 @if ($newLength > 0 && $newWidth > 0 && $newHeight > 0)
                     <div class="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm">
-                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">Calculated</div>
+                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">{{ __('Calculated') }}</div>
                         <div class="grid grid-cols-3 gap-2 text-xs">
                             <div>
-                                <span class="text-zinc-600 dark:text-zinc-400">Walls:</span>
-                                <span class="font-semibold">{{ number_format(2 * ($newLength + $newWidth) * $newHeight, 0) }} sqft</span>
+                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Walls:') }}</span>
+                                <span class="font-semibold">{{ number_format(2 * ($newLength + $newWidth) * $newHeight, 0) }} {{ __('sqft') }}</span>
                             </div>
                             <div>
-                                <span class="text-zinc-600 dark:text-zinc-400">Ceiling:</span>
-                                <span class="font-semibold">{{ number_format($newLength * $newWidth, 0) }} sqft</span>
+                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Ceiling:') }}</span>
+                                <span class="font-semibold">{{ number_format($newLength * $newWidth, 0) }} {{ __('sqft') }}</span>
                             </div>
                             <div>
-                                <span class="text-zinc-600 dark:text-zinc-400">Perimeter:</span>
-                                <span class="font-semibold">{{ number_format(2 * ($newLength + $newWidth), 0) }} lnft</span>
+                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Perimeter:') }}</span>
+                                <span class="font-semibold">{{ number_format(2 * ($newLength + $newWidth), 0) }} {{ __('lnft') }}</span>
                             </div>
                         </div>
                     </div>
@@ -1268,7 +1591,7 @@ new class extends Component {
                                 <div class="w-full border-t border-zinc-200 dark:border-zinc-700"></div>
                             </div>
                             <div class="relative flex justify-center text-sm">
-                                <span class="bg-white dark:bg-zinc-900 px-2 text-zinc-500">or start from template</span>
+                                <span class="bg-white dark:bg-zinc-900 px-2 text-zinc-500">{{ __('or start from template') }}</span>
                             </div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
@@ -1281,7 +1604,7 @@ new class extends Component {
                                     class="justify-start"
                                 >
                                     <flux:icon name="{{ $template->icon ?? 'squares-2x2' }}" class="w-4 h-4" />
-                                    {{ $template->name }}
+                                    {{ __($template->name) }}
                                 </flux:button>
                             @endforeach
                         </div>
@@ -1290,10 +1613,10 @@ new class extends Component {
 
                 <div class="flex gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                     <flux:button wire:click="closeQuickAddDrawer" variant="ghost" class="flex-1">
-                        Cancel
+                        {{ __('Cancel') }}
                     </flux:button>
                     <flux:button wire:click="addCustomRoom" variant="primary" class="flex-1">
-                        Add Room
+                        {{ __('Add Room') }}
                     </flux:button>
                 </div>
             </div>
@@ -1305,26 +1628,26 @@ new class extends Component {
         <flux:modal wire:model="showNestedItemModal" class="max-w-md">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Add Nested Item</flux:heading>
+                    <flux:heading size="lg">{{ __('Add Nested Item') }}</flux:heading>
                     @if ($this->nestedTemplatesByCategory->isNotEmpty())
                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                            Select a fixed-price item like a closet or half bath
+                            {{ __('Select a fixed-price item like a closet or half bath') }}
                         </flux:text>
                     @endif
                 </div>
 
                 <flux:field>
-                    <flux:label>Select Item</flux:label>
+                    <flux:label>{{ __('Select Item') }}</flux:label>
                     <select
                         wire:model="selectedNestedTemplateId"
                         class="w-full rounded-md border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                     >
-                        <option value="">-- Choose an item --</option>
+                        <option value="">{{ __('-- Choose an item --') }}</option>
                         @foreach ($this->nestedTemplatesByCategory as $category => $templates)
                             <optgroup wire:key="optgroup-{{ $category }}" label="{{ ucfirst($category) }}">
                                 @foreach ($templates as $template)
                                     <option wire:key="nested-opt-{{ $template->id }}" value="{{ $template->id }}">
-                                        {{ $template->name }} - ${{ number_format($template->fixed_price, 2) }}
+                                        {{ __($template->name) }} - ${{ number_format($template->fixed_price, 2) }}
                                     </option>
                                 @endforeach
                             </optgroup>
@@ -1348,7 +1671,7 @@ new class extends Component {
                                 </div>
                             @endif
                             <div class="text-xs text-purple-600 dark:text-purple-400">
-                                Includes: {{ $selectedTemplate->included_items }}
+                                {{ __('Includes:') }} {{ $selectedTemplate->included_items }}
                             </div>
                         </div>
                     @endif
@@ -1357,13 +1680,13 @@ new class extends Component {
                 @if (! $targetAreaIdForNested)
                     <div class="p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-sm text-amber-700 dark:text-amber-300">
                         <flux:icon name="information-circle" class="w-4 h-4 inline mr-1" />
-                        This item will be added as a standalone line item, not nested within a room.
+                        {{ __('This item will be added as a standalone line item, not nested within a room.') }}
                     </div>
                 @endif
 
                 <div class="flex gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                     <flux:button wire:click="closeNestedItemModal" variant="ghost" class="flex-1">
-                        Cancel
+                        {{ __('Cancel') }}
                     </flux:button>
                     <flux:button
                         wire:click="addNestedItem"
@@ -1371,7 +1694,7 @@ new class extends Component {
                         class="flex-1"
                         :disabled="!$selectedNestedTemplateId"
                     >
-                        Add Item
+                        {{ __('Add Item') }}
                     </flux:button>
                 </div>
             </div>

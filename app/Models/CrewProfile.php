@@ -35,6 +35,13 @@ class CrewProfile extends Model
         'license_number',
         'license_expiration_date',
         'notes',
+        // Onboarding fields
+        'had_onboarding_call',
+        'onboarding_completed_at',
+        'drivers_license_front',
+        'drivers_license_back',
+        'onboarding_call_confirmed_by',
+        'onboarding_call_confirmed_at',
     ];
 
     protected function casts(): array
@@ -50,6 +57,9 @@ class CrewProfile extends Model
             'workers_comp_expiration_date' => 'date',
             'w9_received_date' => 'date',
             'license_expiration_date' => 'date',
+            'had_onboarding_call' => 'boolean',
+            'onboarding_completed_at' => 'datetime',
+            'onboarding_call_confirmed_at' => 'datetime',
         ];
     }
 
@@ -164,6 +174,85 @@ class CrewProfile extends Model
         }
 
         return round($jobPrice * ($this->bonus_percent / 100), 2);
+    }
+
+    /**
+     * Check if onboarding is complete.
+     */
+    public function isOnboardingComplete(): bool
+    {
+        return $this->onboarding_completed_at !== null;
+    }
+
+    /**
+     * Get the current onboarding step (1-5) based on what's been completed.
+     */
+    public function getCurrentOnboardingStep(): int
+    {
+        $user = $this->user;
+
+        // Step 1: Pitch - always viewable, considered done once you advance
+        // Step 2: Call
+        if (! $this->had_onboarding_call) {
+            return 2;
+        }
+
+        // Step 3: Contracts
+        $signedContracts = $user->crewSignedContracts()->count();
+        if ($signedContracts < 3) {
+            return 3;
+        }
+
+        // Step 4: Documents
+        $hasInsurance = ! empty($this->insurance_photo);
+        $hasWorkersComp = ! empty($this->workers_comp_document);
+        $hasW9 = $user->crewW9Form()->exists();
+        $hasLicense = ! empty($this->drivers_license_front);
+
+        if (! $hasInsurance || ! $hasWorkersComp || ! $hasW9 || ! $hasLicense) {
+            return 4;
+        }
+
+        // Step 5: Complete
+        return 5;
+    }
+
+    /**
+     * Get onboarding progress as a percentage.
+     */
+    public function getOnboardingProgressPercent(): int
+    {
+        if ($this->isOnboardingComplete()) {
+            return 100;
+        }
+
+        $step = $this->getCurrentOnboardingStep();
+
+        return match ($step) {
+            1 => 0,
+            2 => 20,
+            3 => 40,
+            4 => 60,
+            5 => 80,
+            default => 0,
+        };
+    }
+
+    /**
+     * Mark the onboarding call as confirmed by a team member.
+     */
+    public function confirmOnboardingCall(User $confirmedBy): void
+    {
+        $this->update([
+            'had_onboarding_call' => true,
+            'onboarding_call_confirmed_by' => $confirmedBy->id,
+            'onboarding_call_confirmed_at' => now(),
+        ]);
+    }
+
+    public function onboardingCallConfirmedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'onboarding_call_confirmed_by');
     }
 
     public function user(): BelongsTo

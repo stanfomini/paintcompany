@@ -2,14 +2,14 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @auth('crew')
     <meta name="user-id" content="{{ auth('crew')->id() }}">
     <meta name="user-type" content="crew">
     @endauth
 
-    <title>{{ $title ?? 'Crew Portal' }} - {{ config('app.name') }}</title>
+    <title>{{ $title ?? __('Crew Portal') }} - {{ config('app.name') }}</title>
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @fluxAppearance
@@ -42,6 +42,10 @@
         </flux:navlist>
 
         <flux:spacer />
+
+        <div class="flex justify-center px-4 pb-1">
+            <x-language-switcher compact />
+        </div>
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile
@@ -87,8 +91,55 @@
 
     <flux:main>
         @include('partials.flash-messages')
+
+        @auth('crew')
+            @if(auth('crew')->user()->needs_onboarding && !request()->routeIs('crew.onboarding'))
+                @php
+                    $profile = auth('crew')->user()->crewProfile;
+                    $step = $profile ? $profile->getCurrentOnboardingStep() : 1;
+                    $progress = $profile ? $profile->getOnboardingProgressPercent() : 0;
+                @endphp
+                <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-700 dark:bg-amber-900/20">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <flux:icon.clipboard-document-check class="size-5 text-amber-600 dark:text-amber-400" />
+                            <div>
+                                <p class="text-sm font-medium text-amber-800 dark:text-amber-200">
+                                    {{ __('Complete your onboarding to accept jobs') }}
+                                </p>
+                                <p class="text-xs text-amber-600 dark:text-amber-400">
+                                    {{ __('Step :step of 5', ['step' => $step]) }} &mdash; {{ $progress }}% {{ __('complete') }}
+                                </p>
+                            </div>
+                        </div>
+                        <flux:button href="{{ route('crew.onboarding') }}" variant="primary" size="sm">
+                            {{ __('Continue Onboarding') }}
+                        </flux:button>
+                    </div>
+                    <div class="mt-3">
+                        <div class="h-1.5 w-full rounded-full bg-amber-200 dark:bg-amber-800">
+                            <div class="h-1.5 rounded-full bg-amber-500 transition-all" style="width: {{ $progress }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            @endif
+        @endauth
+
         {{ $slot }}
     </flux:main>
+
+    <script>
+        document.addEventListener('livewire:init', () => {
+            Livewire.interceptRequest(({ onError }) => {
+                onError(({ response, preventDefault }) => {
+                    if (response.status === 419 || response.status === 401) {
+                        preventDefault();
+                        window.location.reload();
+                    }
+                });
+            });
+        });
+    </script>
 
     @fluxScripts
 </body>

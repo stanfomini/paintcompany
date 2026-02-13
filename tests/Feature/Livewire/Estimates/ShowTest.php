@@ -221,7 +221,7 @@ describe('Estimate Show component', function () {
             ->assertSee('This is a special note for the customer.');
     });
 
-    it('displays terms when available', function () {
+    it('does not display terms on internal show page', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $estimate = Estimate::factory()->create([
             'terms' => 'Payment due within 30 days.',
@@ -230,7 +230,8 @@ describe('Estimate Show component', function () {
 
         Livewire::actingAs($user)
             ->test('estimates.show', ['estimate' => $estimate])
-            ->assertSee('Payment due within 30 days.');
+            ->assertDontSee('Payment due within 30 days.')
+            ->assertDontSee('Terms & Conditions');
     });
 
     it('displays valid until date', function () {
@@ -323,5 +324,71 @@ describe('Estimate Show component', function () {
         Livewire::actingAs($user)
             ->test('estimates.show', ['estimate' => $estimate])
             ->assertSee('Download PDF');
+    });
+});
+
+describe('Agent Contributions on Estimate Show', function () {
+    it('shows agent contributions section when agent data exists', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create([
+            'created_by' => $user->id,
+            'agent_notes' => 'Property is in great condition, just needs a refresh',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertSee('Agent Contributions')
+            ->assertSee('Property is in great condition, just needs a refresh');
+    });
+
+    it('shows agent checklist items', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+        $estimate = Estimate::factory()->forDeal($deal)->create([
+            'created_by' => $user->id,
+            'agent_checklist' => ['vacant_property', 'timeline_urgent'],
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertSee('Agent Contributions')
+            ->assertSee('Vacant property')
+            ->assertSee('Timeline urgent');
+    });
+
+    it('shows listing URL in property listing link card', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create(['listing_url' => 'https://www.zillow.com/homedetails/123-main-st']);
+        $estimate = Estimate::factory()->forDeal($deal)->create([
+            'created_by' => $user->id,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertSee('Property Listing Link')
+            ->assertSee('https://www.zillow.com/homedetails/123-main-st');
+    });
+
+    it('renders without error when deal has no customer', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create(['customer_id' => null]);
+        $estimate = Estimate::factory()->forDeal($deal)->create([
+            'created_by' => $user->id,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertStatus(200)
+            ->assertSee($estimate->estimate_number);
+    });
+
+    it('hides agent contributions when no agent data exists', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $estimate = Estimate::factory()->create(['created_by' => $user->id]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.show', ['estimate' => $estimate])
+            ->assertDontSee('Agent Contributions');
     });
 });

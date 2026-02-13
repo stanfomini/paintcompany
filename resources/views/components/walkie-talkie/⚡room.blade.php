@@ -95,7 +95,7 @@ new #[Layout('layouts.app')] class extends Component {
                     :class="connected ? 'bg-green-500' : 'bg-red-500'"
                 ></div>
                 <span class="font-medium text-zinc-900 dark:text-zinc-100">
-                    Room: {{ Str::limit($roomId, 8) }}
+                    {{ __('Room') }}: {{ Str::limit($roomId, 8) }}
                 </span>
             </div>
             <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300" x-text="participants.length + ' online'"></span>
@@ -106,7 +106,7 @@ new #[Layout('layouts.app')] class extends Component {
                 type="button"
                 class="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600"
                 @click="copyRoomLink()"
-                title="Copy room link"
+                title="{{ __('Copy room link') }}"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
             </button>
@@ -115,7 +115,7 @@ new #[Layout('layouts.app')] class extends Component {
                 class="p-2 rounded-lg text-sm"
                 :class="transcriptionEnabled ? 'bg-blue-500 text-white' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300'"
                 @click="transcriptionEnabled = !transcriptionEnabled; $wire.toggleTranscription()"
-                title="Toggle transcription"
+                title="{{ __('Toggle transcription') }}"
             >
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
             </button>
@@ -128,7 +128,7 @@ new #[Layout('layouts.app')] class extends Component {
         <div class="w-48 border-r border-zinc-200 dark:border-zinc-700 overflow-y-auto">
             <div class="p-3">
                 <h3 class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-2">
-                    Participants
+                    {{ __('Participants') }}
                 </h3>
                 <div class="space-y-2">
                     <template x-for="participant in participants" :key="participant.user_id">
@@ -163,7 +163,7 @@ new #[Layout('layouts.app')] class extends Component {
                         </div>
                     </template>
                     <div x-show="participants.length === 0" class="text-sm text-zinc-500 text-center py-4">
-                        No participants yet
+                        {{ __('No participants yet') }}
                     </div>
                 </div>
             </div>
@@ -219,8 +219,8 @@ new #[Layout('layouts.app')] class extends Component {
 
                 <div x-show="messages.length === 0 && liveMessages.length === 0" class="text-center py-8 text-zinc-500">
                     <svg class="w-12 h-12 mx-auto mb-2 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"></path></svg>
-                    <p>Hold the talk button to transmit audio</p>
-                    <p class="text-xs mt-1">Transcriptions will appear here when enabled</p>
+                    <p>{{ __('Hold the talk button to transmit audio') }}</p>
+                    <p class="text-xs mt-1">{{ __('Transcriptions will appear here when enabled') }}</p>
                 </div>
             </div>
 
@@ -289,12 +289,12 @@ new #[Layout('layouts.app')] class extends Component {
         @click.self="showSettings = false"
     >
         <div class="bg-white dark:bg-zinc-800 rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
-            <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">Audio Settings</h3>
+            <h3 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">{{ __('Audio Settings') }}</h3>
 
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                        Input Device
+                        {{ __('Input Device') }}
                     </label>
                     <select
                         x-model="selectedInputDevice"
@@ -309,7 +309,7 @@ new #[Layout('layouts.app')] class extends Component {
 
                 <div>
                     <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                        Output Volume
+                        {{ __('Output Volume') }}
                     </label>
                     <input
                         type="range"
@@ -328,7 +328,7 @@ new #[Layout('layouts.app')] class extends Component {
                     @click="showSettings = false"
                     class="px-4 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600"
                 >
-                    Close
+                    {{ __('Close') }}
                 </button>
             </div>
         </div>

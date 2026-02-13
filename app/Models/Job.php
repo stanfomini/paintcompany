@@ -132,12 +132,22 @@ class Job extends Model
         return $this->hasMany(JobActivity::class);
     }
 
+    public function videoCalls(): HasMany
+    {
+        return $this->hasMany(VideoCall::class);
+    }
+
+    public function videoRecordings(): MorphMany
+    {
+        return $this->morphMany(VideoRecording::class, 'recordable');
+    }
+
     /**
      * Get the stage label.
      */
     public function getStageLabelAttribute(): string
     {
-        return self::STAGES[$this->stage] ?? $this->stage;
+        return __(self::STAGES[$this->stage] ?? $this->stage);
     }
 
     /**

@@ -60,6 +60,9 @@ class CompanySetting extends Model
         'default_exterior_sqft_rate',
         // Terms
         'default_terms_and_conditions',
+        'terms_and_conditions',
+        'privacy_policy',
+        'referral_terms',
         // JSON fields
         'paint_catalog',
         'default_paint_products_by_category',
@@ -92,6 +95,23 @@ class CompanySetting extends Model
         // Referral Program
         'referral_reward_amount',
         'referral_program_enabled',
+        // Crew Contracts
+        'crew_colorado_compliance_contract',
+        'crew_contractor_agreement',
+        'crew_background_check_consent',
+        // Spanish Translations (Legal/Contracts)
+        'terms_and_conditions_es',
+        'privacy_policy_es',
+        'referral_terms_es',
+        'crew_colorado_compliance_contract_es',
+        'crew_contractor_agreement_es',
+        'crew_background_check_consent_es',
+        // Crew Pitch Page
+        'crew_pitch_hourly_rate',
+        'crew_pitch_job_sqft',
+        'crew_pitch_job_price',
+        'crew_pitch_paint_cost',
+        'crew_pitch_bonus_percent',
     ];
 
     protected function casts(): array
@@ -157,6 +177,12 @@ class CompanySetting extends Model
             // Referral Program
             'referral_reward_amount' => 'decimal:2',
             'referral_program_enabled' => 'boolean',
+            // Crew Pitch Page
+            'crew_pitch_hourly_rate' => 'decimal:2',
+            'crew_pitch_job_sqft' => 'integer',
+            'crew_pitch_job_price' => 'decimal:2',
+            'crew_pitch_paint_cost' => 'decimal:2',
+            'crew_pitch_bonus_percent' => 'decimal:2',
         ];
     }
 
@@ -169,6 +195,7 @@ class CompanySetting extends Model
     {
         return static::$resolvedInstance ??= static::firstOrCreate([], [
             'company_name' => config('app.name', 'My Company'),
+            'timezone' => 'America/Denver',
             'paint_catalog' => self::getDefaultPaintCatalog(),
             'trim_widths' => self::getDefaultTrimWidths(),
             'warranty_options' => self::getDefaultWarrantyOptions(),
@@ -1389,6 +1416,26 @@ class CompanySetting extends Model
     public function hasPaintDefaultsForScope(string $scope): bool
     {
         return ! empty($this->getPaintDefaultsForScope($scope));
+    }
+
+    /**
+     * Get the localized version of a contract/legal text field.
+     * Falls back to the English (default) version if no translation exists.
+     */
+    public function getLocalizedContract(string $field): ?string
+    {
+        $locale = app()->getLocale();
+
+        if ($locale !== 'en') {
+            $localizedField = "{$field}_{$locale}";
+            $localizedContent = $this->$localizedField;
+
+            if (! empty($localizedContent)) {
+                return $localizedContent;
+            }
+        }
+
+        return $this->$field;
     }
 
     /**

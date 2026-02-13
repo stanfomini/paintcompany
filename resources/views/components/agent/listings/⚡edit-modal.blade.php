@@ -114,7 +114,7 @@ new class extends Component {
         ]);
 
         $this->dispatch('listing-updated');
-        session()->flash('success', 'Listing updated successfully.');
+        session()->flash('success', __('Listing updated successfully.'));
         $this->closeModal();
     }
 }; ?>

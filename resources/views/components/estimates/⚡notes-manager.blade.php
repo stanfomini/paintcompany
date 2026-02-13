@@ -70,8 +70,8 @@ new class extends Component {
         $this->validate([
             'newNoteContent' => ['required', 'string', 'max:5000'],
         ], [
-            'newNoteContent.required' => 'Please enter a note.',
-            'newNoteContent.max' => 'Note cannot exceed 5000 characters.',
+            'newNoteContent.required' => __('Please enter a note.'),
+            'newNoteContent.max' => __('Note cannot exceed 5000 characters.'),
         ]);
 
         // Only internal users can create internal notes
@@ -116,8 +116,8 @@ new class extends Component {
         $this->validate([
             'replyContent' => ['required', 'string', 'max:5000'],
         ], [
-            'replyContent.required' => 'Please enter a reply.',
-            'replyContent.max' => 'Reply cannot exceed 5000 characters.',
+            'replyContent.required' => __('Please enter a reply.'),
+            'replyContent.max' => __('Reply cannot exceed 5000 characters.'),
         ]);
 
         // Verify the parent note exists and belongs to this estimate
@@ -192,7 +192,7 @@ new class extends Component {
 }; ?>
 
 <div>
-    <flux:heading size="sm" class="mb-4">Notes</flux:heading>
+    <flux:heading size="sm" class="mb-4">{{ __('Notes') }}</flux:heading>
 
     {{-- New Note Form --}}
     <form wire:submit="addNote" class="mb-6">
@@ -200,7 +200,7 @@ new class extends Component {
             <flux:textarea
                 wire:model="newNoteContent"
                 rows="3"
-                placeholder="Add a note..."
+                placeholder="{{ __('Add a note...') }}"
             />
             <flux:error name="newNoteContent" />
         </flux:field>
@@ -208,8 +208,8 @@ new class extends Component {
         <div class="mt-3 flex items-center justify-between">
             @if ($this->showInternalToggle)
                 <div class="flex items-center gap-2">
-                    <flux:checkbox wire:model="newNoteIsInternal" label="Internal note" />
-                    <flux:tooltip content="Internal notes are only visible to staff members">
+                    <flux:checkbox wire:model="newNoteIsInternal" :label="__('Internal note')" />
+                    <flux:tooltip :content="__('Internal notes are only visible to staff members')">
                         <flux:icon name="question-mark-circle" class="w-4 h-4 text-zinc-400" />
                     </flux:tooltip>
                 </div>
@@ -218,7 +218,7 @@ new class extends Component {
             @endif
 
             <flux:button type="submit" variant="primary" size="sm">
-                Add Note
+                {{ __('Add Note') }}
             </flux:button>
         </div>
     </form>
@@ -227,7 +227,7 @@ new class extends Component {
     @if ($this->notes->isEmpty())
         <div class="text-center py-8 border border-dashed border-zinc-200 dark:border-zinc-700 rounded-lg">
             <flux:icon name="chat-bubble-left-right" class="w-8 h-8 mx-auto text-zinc-400" />
-            <flux:text class="mt-2 text-zinc-500">No notes yet. Add the first one above.</flux:text>
+            <flux:text class="mt-2 text-zinc-500">{{ __('No notes yet. Add the first one above.') }}</flux:text>
         </div>
     @else
         <div class="space-y-4">
@@ -243,9 +243,9 @@ new class extends Component {
                     {{-- Note Header --}}
                     <div class="flex items-start justify-between">
                         <div class="flex items-center gap-2 flex-wrap">
-                            <flux:text class="font-medium">{{ $note->user?->name ?? 'Unknown User' }}</flux:text>
+                            <flux:text class="font-medium">{{ $note->user?->name ?? __('Unknown User') }}</flux:text>
                             @if ($note->is_internal)
-                                <flux:badge size="sm" color="amber">Internal</flux:badge>
+                                <flux:badge size="sm" color="amber">{{ __('Internal') }}</flux:badge>
                             @endif
                             <flux:text class="text-sm text-zinc-500">
                                 {{ $note->created_at->format('M j, Y g:i A') }}
@@ -268,16 +268,16 @@ new class extends Component {
                                                 wire:click="toggleInternal({{ $note->id }})"
                                                 icon="{{ $note->is_internal ? 'eye' : 'eye-slash' }}"
                                             >
-                                                {{ $note->is_internal ? 'Make Public' : 'Make Internal' }}
+                                                {{ $note->is_internal ? __('Make Public') : __('Make Internal') }}
                                             </flux:menu.item>
                                         @endif
                                         <flux:menu.item
                                             wire:click="deleteNote({{ $note->id }})"
-                                            wire:confirm="Are you sure you want to delete this note? This will also delete all replies."
+                                            wire:confirm="{{ __('Are you sure you want to delete this note? This will also delete all replies.') }}"
                                             icon="trash"
                                             variant="danger"
                                         >
-                                            Delete
+                                            {{ __('Delete') }}
                                         </flux:menu.item>
                                     </flux:menu>
                                 </flux:dropdown>
@@ -304,9 +304,9 @@ new class extends Component {
                                 >
                                     <div class="flex items-start justify-between">
                                         <div class="flex items-center gap-2 flex-wrap">
-                                            <flux:text class="font-medium text-sm">{{ $reply->user?->name ?? 'Unknown User' }}</flux:text>
+                                            <flux:text class="font-medium text-sm">{{ $reply->user?->name ?? __('Unknown User') }}</flux:text>
                                             @if ($reply->is_internal)
-                                                <flux:badge size="sm" color="amber">Internal</flux:badge>
+                                                <flux:badge size="sm" color="amber">{{ __('Internal') }}</flux:badge>
                                             @endif
                                             <flux:text class="text-xs text-zinc-500">
                                                 {{ $reply->created_at->format('M j, Y g:i A') }}
@@ -321,16 +321,16 @@ new class extends Component {
                                                             wire:click="toggleInternal({{ $reply->id }})"
                                                             icon="{{ $reply->is_internal ? 'eye' : 'eye-slash' }}"
                                                         >
-                                                            {{ $reply->is_internal ? 'Make Public' : 'Make Internal' }}
+                                                            {{ $reply->is_internal ? __('Make Public') : __('Make Internal') }}
                                                         </flux:menu.item>
                                                     @endif
                                                     <flux:menu.item
                                                         wire:click="deleteNote({{ $reply->id }})"
-                                                        wire:confirm="Are you sure you want to delete this reply?"
+                                                        wire:confirm="{{ __('Are you sure you want to delete this reply?') }}"
                                                         icon="trash"
                                                         variant="danger"
                                                     >
-                                                        Delete
+                                                        {{ __('Delete') }}
                                                     </flux:menu.item>
                                                 </flux:menu>
                                             </flux:dropdown>
@@ -352,7 +352,7 @@ new class extends Component {
                                     <flux:textarea
                                         wire:model="replyContent"
                                         rows="2"
-                                        placeholder="Write a reply..."
+                                        placeholder="{{ __('Write a reply...') }}"
                                         autofocus
                                     />
                                     <flux:error name="replyContent" />
@@ -361,8 +361,8 @@ new class extends Component {
                                 <div class="flex items-center justify-between">
                                     @if ($this->showInternalToggle)
                                         <div class="flex items-center gap-2">
-                                            <flux:checkbox wire:model="replyIsInternal" label="Internal reply" />
-                                            <flux:tooltip content="Internal replies are only visible to staff members">
+                                            <flux:checkbox wire:model="replyIsInternal" :label="__('Internal reply')" />
+                                            <flux:tooltip :content="__('Internal replies are only visible to staff members')">
                                                 <flux:icon name="question-mark-circle" class="w-4 h-4 text-zinc-400" />
                                             </flux:tooltip>
                                         </div>
@@ -372,10 +372,10 @@ new class extends Component {
 
                                     <div class="flex gap-2">
                                         <flux:button type="button" variant="ghost" size="sm" wire:click="cancelReply">
-                                            Cancel
+                                            {{ __('Cancel') }}
                                         </flux:button>
                                         <flux:button type="submit" variant="primary" size="sm">
-                                            Reply
+                                            {{ __('Reply') }}
                                         </flux:button>
                                     </div>
                                 </div>

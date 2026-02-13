@@ -10,8 +10,8 @@ use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     // Create permissions if they don't exist
-    Permission::firstOrCreate(['name' => 'view roadmap', 'guard_name' => 'web']);
-    Permission::firstOrCreate(['name' => 'edit roadmap', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'roadmap.view', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'roadmap.edit', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'business_plan.view', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'business_plan.manage', 'guard_name' => 'web']);
 
@@ -21,7 +21,7 @@ beforeEach(function () {
 
     // Create estimator role with limited permissions
     $estimatorRole = Role::firstOrCreate(['name' => 'estimator', 'guard_name' => 'web']);
-    $estimatorRole->syncPermissions(['view roadmap']);
+    $estimatorRole->syncPermissions(['roadmap.view']);
 });
 
 it('requires authentication to view roadmap', function () {
@@ -31,7 +31,7 @@ it('requires authentication to view roadmap', function () {
 
 it('requires internal user type to view roadmap', function () {
     $customer = User::factory()->customer()->create();
-    $customer->givePermissionTo('view roadmap');
+    $customer->givePermissionTo('roadmap.view');
 
     // Customer type mismatch results in redirect to customer dashboard
     $this->actingAs($customer)

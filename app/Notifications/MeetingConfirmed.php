@@ -1,0 +1,80 @@
+<?php
+
+namespace App\Notifications;
+
+use App\Models\Activity;
+use App\Models\User;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Notifications\Notification;
+
+class MeetingConfirmed extends Notification implements ShouldQueue
+{
+    use Queueable;
+
+    public function __construct(
+        public Activity $activity,
+        public ?User $confirmedBy = null,
+    ) {}
+
+    /**
+     * @return array<int, string>
+     */
+    public function via(object $notifiable): array
+    {
+        return ['mail'];
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        $typeBadge = $this->activity->meeting_type === 'virtual' ? 'Virtual' : 'In Person';
+
+        $message = (new MailMessage)
+            ->subject(__('Meeting Confirmed: :title', ['title' => $this->activity->title]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->first_name ?? $notifiable->name]))
+            ->line(__('All parties have confirmed the meeting.'))
+            ->line('**'.__('Meeting').':** '.$this->activity->title)
+            ->line('**'.__('Type').':** '.__($typeBadge))
+            ->line('**'.__('Date & Time').':** '.$this->activity->due_at->format('l, F j, Y \a\t g:i A'));
+
+        if ($this->activity->isVirtualMeeting() && $this->activity->videoCall) {
+            $message->line('**'.__('Video Call').':** '.__('A video call link will be available when the meeting starts.'));
+        }
+
+        $message->action(__('View Details'), $this->getUrl($notifiable))
+            ->line(__('You will receive a reminder 1 hour before the meeting.'));
+
+        return $message;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'activity_id' => $this->activity->id,
+            'title' => $this->activity->title,
+            'meeting_type' => $this->activity->meeting_type,
+            'due_at' => $this->activity->due_at?->toIso8601String(),
+        ];
+    }
+
+    private function getUrl(object $notifiable): string
+    {
+        if ($notifiable->isCustomer() && $this->activity->estimate_id) {
+            return route('customer.estimates.show', $this->activity->estimate_id);
+        }
+
+        if ($notifiable->isAgent() && $this->activity->estimate_id) {
+            return route('agent.estimates.show', $this->activity->estimate_id);
+        }
+
+        if ($this->activity->estimate_id) {
+            return route('estimates.show', $this->activity->estimate_id);
+        }
+
+        return url('/');
+    }
+}

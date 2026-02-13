@@ -58,7 +58,7 @@ new class extends Component {
         $chatService = app(ChatService::class);
 
         if (! $this->selectedUserId) {
-            $this->addError('selectedUserId', 'Please select a team member to message.');
+            $this->addError('selectedUserId', __('Please select a team member to message.'));
             return;
         }
 
@@ -66,7 +66,7 @@ new class extends Component {
 
         // Verify permission
         if (! $chatService->canChatWith($user, $targetUser)) {
-            $this->addError('selectedUserId', 'You cannot start a chat with this user.');
+            $this->addError('selectedUserId', __('You cannot start a chat with this user.'));
             return;
         }
 
@@ -89,14 +89,14 @@ new class extends Component {
 
 <div>
     <flux:button wire:click="openModal" icon="plus">
-        New Message
+        {{ __('New Message') }}
     </flux:button>
 
     <flux:modal wire:model="showModal" name="create-thread" class="max-w-lg">
         <div class="space-y-6">
             <div>
-                <flux:heading size="lg">Message the Team</flux:heading>
-                <flux:text class="mt-1 text-zinc-500">Start a direct conversation with a team member.</flux:text>
+                <flux:heading size="lg">{{ __('Message the Team') }}</flux:heading>
+                <flux:text class="mt-1 text-zinc-500">{{ __('Start a direct conversation with a team member.') }}</flux:text>
             </div>
 
             @error('general')
@@ -107,7 +107,7 @@ new class extends Component {
             <div class="space-y-4">
                 <flux:input
                     wire:model.live.debounce.300ms="userSearch"
-                    placeholder="Search team members..."
+                    placeholder="{{ __('Search team members...') }}"
                     icon="magnifying-glass"
                 />
 
@@ -143,9 +143,9 @@ new class extends Component {
                             <div class="p-4 text-center">
                                 <flux:text class="text-zinc-500">
                                     @if ($userSearch)
-                                        No team members found matching "{{ $userSearch }}"
+                                        {{ __('No team members found matching ":search"', ['search' => $userSearch]) }}
                                     @else
-                                        No team members available
+                                        {{ __('No team members available') }}
                                     @endif
                                 </flux:text>
                             </div>
@@ -156,8 +156,8 @@ new class extends Component {
                 @if ($selectedUserId)
                     <flux:input
                         wire:model="subject"
-                        label="Subject (optional)"
-                        placeholder="What's this about?"
+                        label="{{ __('Subject (optional)') }}"
+                        placeholder="{{ __('What\'s this about?') }}"
                     />
                 @endif
 
@@ -168,13 +168,13 @@ new class extends Component {
 
             {{-- Actions --}}
             <div class="flex justify-end gap-3">
-                <flux:button wire:click="closeModal" variant="ghost">Cancel</flux:button>
+                <flux:button wire:click="closeModal" variant="ghost">{{ __('Cancel') }}</flux:button>
                 <flux:button
                     wire:click="createThread"
                     variant="primary"
                     :disabled="!$selectedUserId"
                 >
-                    Start Conversation
+                    {{ __('Start Conversation') }}
                 </flux:button>
             </div>
         </div>

@@ -2,7 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @auth('agent')
     <meta name="user-id" content="{{ auth('agent')->id() }}">
@@ -20,18 +20,16 @@
 
         <flux:brand href="{{ route('agent.dashboard') }}" logo="{{ asset('images/logo.svg') }}" name="{{ config('app.name') }}" class="px-2" />
 
+        <div class="px-3 mb-2">
+            <flux:button href="{{ route('agent.dashboard') }}" variant="primary" icon="plus" class="w-full justify-center"
+                onclick="window.dispatchEvent(new CustomEvent('open-create-modal'))">
+                {{ __('Add Listing') }}
+            </flux:button>
+        </div>
+
         <flux:navlist variant="outline">
             <flux:navlist.item icon="home" href="{{ route('agent.dashboard') }}" :current="request()->routeIs('agent.dashboard')">
                 {{ __('Dashboard') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="building-office" href="{{ route('agent.listings.index') }}" :current="request()->routeIs('agent.listings.*')">
-                {{ __('My Listings') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="users" href="{{ route('agent.customers.index') }}" :current="request()->routeIs('agent.customers.*')">
-                {{ __('My Customers') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="currency-dollar" href="{{ route('agent.deals.index') }}" :current="request()->routeIs('agent.deals.*')">
-                {{ __('My Deals') }}
             </flux:navlist.item>
             <flux:navlist.item icon="chat-bubble-left-right" href="{{ route('agent.chat.index') }}" :current="request()->routeIs('agent.chat.*')">
                 {{ __('Messages') }}
@@ -43,14 +41,9 @@
 
         <flux:spacer />
 
-        <flux:navlist variant="outline">
-            <flux:navlist.item icon="envelope" href="{{ route('agent.invitations') }}" :current="request()->routeIs('agent.invitations')">
-                {{ __('Invite Customers') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="cog-6-tooth" href="#" :current="false">
-                {{ __('Settings') }}
-            </flux:navlist.item>
-        </flux:navlist>
+        <div class="flex justify-center px-4 pb-1">
+            <x-language-switcher compact />
+        </div>
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile
@@ -98,6 +91,19 @@
         @include('partials.flash-messages')
         {{ $slot }}
     </flux:main>
+
+    <script>
+        document.addEventListener('livewire:init', () => {
+            Livewire.interceptRequest(({ onError }) => {
+                onError(({ response, preventDefault }) => {
+                    if (response.status === 419 || response.status === 401) {
+                        preventDefault();
+                        window.location.reload();
+                    }
+                });
+            });
+        });
+    </script>
 
     @fluxScripts
 </body>

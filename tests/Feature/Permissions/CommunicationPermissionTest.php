@@ -16,7 +16,6 @@ describe('Communication Routes - Authentication', function () {
         $this->get(route('chat.index'))->assertRedirect(route('login'));
         $this->get(route('chat.show', $thread))->assertRedirect(route('login'));
         $this->get(route('walkie-talkie.room'))->assertRedirect(route('login'));
-        $this->get(route('video-call.room'))->assertRedirect(route('login'));
     });
 });
 
@@ -46,13 +45,6 @@ describe('Communication Routes - Without Permission', function () {
             ->assertForbidden();
     });
 
-    it('forbids internal user without video_call.access permission from video call', function () {
-        $user = User::factory()->internal()->create();
-
-        $this->actingAs($user)
-            ->get(route('video-call.room'))
-            ->assertForbidden();
-    });
 });
 
 describe('Communication Routes - With Permission', function () {
@@ -84,15 +76,6 @@ describe('Communication Routes - With Permission', function () {
             ->assertSuccessful();
     });
 
-    it('allows internal user with video_call.access permission to access video call', function () {
-        $user = User::factory()->internal()->create();
-        $user->givePermissionTo('video_call.access');
-
-        $this->actingAs($user)
-            ->get(route('video-call.room'))
-            ->assertSuccessful();
-    });
-
     it('allows full access user to access all communication routes', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $thread = ChatThread::factory()->withParticipants([$user])->create();
@@ -100,6 +83,5 @@ describe('Communication Routes - With Permission', function () {
         $this->actingAs($user)->get(route('chat.index'))->assertSuccessful();
         $this->actingAs($user)->get(route('chat.show', $thread))->assertSuccessful();
         $this->actingAs($user)->get(route('walkie-talkie.room'))->assertSuccessful();
-        $this->actingAs($user)->get(route('video-call.room'))->assertSuccessful();
     });
 });

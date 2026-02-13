@@ -150,28 +150,28 @@ new class extends Component
 
         <div class="flex items-center gap-2">
             <flux:button variant="ghost" icon="arrow-left" href="{{ route('invoices.index') }}" size="sm">
-                Back
+                {{ __('Back') }}
             </flux:button>
 
             @if ($this->canSend && $invoice->status === 'draft')
-                <flux:button variant="primary" icon="paper-airplane" wire:click="sendInvoice" wire:confirm="Send this invoice to the customer?" size="sm">
-                    Send
+                <flux:button variant="primary" icon="paper-airplane" wire:click="sendInvoice" :wire:confirm="__('Send this invoice to the customer?')" size="sm">
+                    {{ __('Send') }}
                 </flux:button>
             @endif
 
             @if ($this->canRecordPayment && $invoice->canAcceptPayments())
                 <flux:button variant="primary" icon="banknotes" wire:click="openPaymentModal" size="sm">
-                    Record Payment
+                    {{ __('Record Payment') }}
                 </flux:button>
             @endif
 
             <flux:button variant="ghost" icon="arrow-down-tray" href="{{ route('invoices.pdf', $invoice) }}" size="sm">
-                PDF
+                {{ __('PDF') }}
             </flux:button>
 
             @if ($this->canManage && ! $invoice->isPaid() && ! $invoice->isVoid())
-                <flux:button variant="ghost" icon="x-mark" class="text-red-500" wire:click="voidInvoice" wire:confirm="Void this invoice? This cannot be undone." size="sm">
-                    Void
+                <flux:button variant="ghost" icon="x-mark" class="text-red-500" wire:click="voidInvoice" :wire:confirm="__('Void this invoice? This cannot be undone.')" size="sm">
+                    {{ __('Void') }}
                 </flux:button>
             @endif
         </div>
@@ -184,25 +184,25 @@ new class extends Component
             <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="grid grid-cols-2 gap-6">
                     <div>
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Bill To</h3>
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ __('Bill To') }}</h3>
                         @if ($invoice->customer)
                             <p class="mt-1 font-medium text-zinc-900 dark:text-zinc-100">{{ $invoice->customer->full_name }}</p>
                             <p class="text-sm text-zinc-600 dark:text-zinc-400">{{ $invoice->customer->email }}</p>
                         @endif
                     </div>
                     <div class="text-right">
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Details</h3>
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ __('Details') }}</h3>
                         <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                            Created: {{ $invoice->created_at->format('M j, Y') }}
+                            {{ __('Created') }}: {{ $invoice->created_at->format('M j, Y') }}
                         </p>
                         @if ($invoice->due_date)
                             <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                                Due: {{ $invoice->due_date->format('M j, Y') }}
+                                {{ __('Due') }}: {{ $invoice->due_date->format('M j, Y') }}
                             </p>
                         @endif
                         @if ($invoice->sent_at)
                             <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                                Sent: {{ $invoice->sent_at->format('M j, Y') }}
+                                {{ __('Sent') }}: {{ $invoice->sent_at->format('M j, Y') }}
                             </p>
                         @endif
                     </div>
@@ -217,20 +217,20 @@ new class extends Component
 
             {{-- Payment History --}}
             <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-                <flux:heading size="md" class="mb-4">Payment History</flux:heading>
+                <flux:heading size="md" class="mb-4">{{ __('Payment History') }}</flux:heading>
 
                 @if ($this->payments->isEmpty())
-                    <flux:text class="text-zinc-400">No payments recorded yet.</flux:text>
+                    <flux:text class="text-zinc-400">{{ __('No payments recorded yet.') }}</flux:text>
                 @else
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead>
                                 <tr>
-                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Date</th>
-                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Method</th>
-                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Reference</th>
-                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Status</th>
-                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Amount</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Date") }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Method") }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Reference") }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Status") }}</th>
+                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Amount") }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -266,11 +266,11 @@ new class extends Component
         <div class="space-y-6">
             {{-- Financial Summary --}}
             <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-                <flux:heading size="md" class="mb-4">Summary</flux:heading>
+                <flux:heading size="md" class="mb-4">{{ __('Summary') }}</flux:heading>
 
                 <div class="space-y-3">
                     <div class="flex justify-between">
-                        <span class="text-sm text-zinc-500 dark:text-zinc-400">Subtotal</span>
+                        <span class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Subtotal') }}</span>
                         <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">${{ number_format((float) $invoice->subtotal, 2) }}</span>
                     </div>
 
@@ -284,13 +284,13 @@ new class extends Component
                     <flux:separator />
 
                     <div class="flex justify-between">
-                        <span class="font-medium text-zinc-900 dark:text-zinc-100">Total</span>
+                        <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ __('Total') }}</span>
                         <span class="font-bold text-zinc-900 dark:text-zinc-100">${{ number_format((float) $invoice->total, 2) }}</span>
                     </div>
 
                     @if ((float) $invoice->amount_paid > 0)
                         <div class="flex justify-between">
-                            <span class="text-sm text-emerald-600 dark:text-emerald-400">Paid</span>
+                            <span class="text-sm text-emerald-600 dark:text-emerald-400">{{ __('Paid') }}</span>
                             <span class="text-sm font-medium text-emerald-600 dark:text-emerald-400">-${{ number_format((float) $invoice->amount_paid, 2) }}</span>
                         </div>
                     @endif
@@ -298,7 +298,7 @@ new class extends Component
                     <flux:separator />
 
                     <div class="flex justify-between">
-                        <span class="text-lg font-bold {{ (float) $invoice->balance_due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">Balance Due</span>
+                        <span class="text-lg font-bold {{ (float) $invoice->balance_due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">{{ __('Balance Due') }}</span>
                         <span class="text-lg font-bold {{ (float) $invoice->balance_due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">${{ number_format((float) $invoice->balance_due, 2) }}</span>
                     </div>
                 </div>
@@ -307,7 +307,7 @@ new class extends Component
             {{-- Related Links --}}
             @if ($invoice->estimate || $invoice->job)
                 <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-                    <flux:heading size="md" class="mb-4">Related</flux:heading>
+                    <flux:heading size="md" class="mb-4">{{ __('Related') }}</flux:heading>
                     <div class="space-y-2">
                         @if ($invoice->estimate)
                             <a href="{{ route('estimates.show', $invoice->estimate) }}" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400">
@@ -330,17 +330,17 @@ new class extends Component
     {{-- Record Payment Modal --}}
     <flux:modal wire:model="showPaymentModal" class="max-w-lg">
         <div class="space-y-4">
-            <flux:heading size="lg">Record Payment</flux:heading>
+            <flux:heading size="lg">{{ __('Record Payment') }}</flux:heading>
             <flux:text>Recording payment for {{ $invoice->invoice_number }}</flux:text>
 
             <flux:field>
-                <flux:label>Amount</flux:label>
+                <flux:label>{{ __('Amount') }}</flux:label>
                 <flux:input wire:model="paymentAmount" type="number" step="0.01" min="0.01" max="{{ $invoice->balance_due }}" />
                 <flux:error name="paymentAmount" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Payment Method</flux:label>
+                <flux:label>{{ __('Payment Method') }}</flux:label>
                 <flux:select wire:model="paymentMethod">
                     @foreach (Payment::METHODS as $key => $label)
                         <option value="{{ $key }}">{{ $label }}</option>
@@ -350,24 +350,24 @@ new class extends Component
             </flux:field>
 
             <flux:field>
-                <flux:label>Reference Number (optional)</flux:label>
-                <flux:input wire:model="paymentReference" placeholder="Check #, transaction ID..." />
+                <flux:label>{{ __('Reference Number (optional)') }}</flux:label>
+                <flux:input wire:model="paymentReference" placeholder="{{ __('Check #, transaction ID...') }}" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Date Received</flux:label>
+                <flux:label>{{ __('Date Received') }}</flux:label>
                 <flux:input wire:model="paymentReceivedAt" type="date" />
                 <flux:error name="paymentReceivedAt" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Notes (optional)</flux:label>
-                <flux:textarea wire:model="paymentNotes" rows="2" placeholder="Payment notes..." />
+                <flux:label>{{ __('Notes (optional)') }}</flux:label>
+                <flux:textarea wire:model="paymentNotes" rows="2" placeholder="{{ __('Payment notes...') }}" />
             </flux:field>
 
             <div class="flex justify-end gap-2 pt-2">
-                <flux:button variant="ghost" wire:click="$set('showPaymentModal', false)">Cancel</flux:button>
-                <flux:button variant="primary" wire:click="recordPayment">Record Payment</flux:button>
+                <flux:button variant="ghost" wire:click="$set('showPaymentModal', false)">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="primary" wire:click="recordPayment">{{ __('Record Payment') }}</flux:button>
             </div>
         </div>
     </flux:modal>

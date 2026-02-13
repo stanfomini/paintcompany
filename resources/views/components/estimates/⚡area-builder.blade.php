@@ -6,7 +6,9 @@ use App\Models\EstimateTemplate;
 use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
 use App\Models\ProductionRate;
+use App\Models\ServiceCategory;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -63,6 +65,24 @@ new class extends Component
     /** @var array<string, int|null> Paint product IDs by surface category */
     public array $paintByCategory = [];
 
+    // Measurement mode and direct input alternatives
+    public string $measurementType = 'dimensions';
+
+    public int $wallCount = 4;
+
+    public ?float $directSqft = null;
+
+    public ?float $directLnft = null;
+
+    public ?float $directCeilingSqft = null;
+
+    // Service category
+    public ?int $serviceCategoryId = null;
+
+    public bool $showNewCategoryForm = false;
+
+    public string $newCategoryName = '';
+
     // Quantity sources for surfaces
     public const QUANTITY_SOURCES = [
         'wall_sqft' => 'Wall Square Feet',
@@ -72,6 +92,18 @@ new class extends Component
         'window_count' => 'Window Count',
         'custom' => 'Custom Value',
     ];
+
+    public function getTranslatedQuantitySources(): array
+    {
+        return [
+            'wall_sqft' => __('Wall Square Feet'),
+            'ceiling_sqft' => __('Ceiling Square Feet'),
+            'perimeter_lnft' => __('Perimeter Linear Feet'),
+            'door_count' => __('Door Count'),
+            'window_count' => __('Window Count'),
+            'custom' => __('Custom Value'),
+        ];
+    }
 
     public function mount(): void
     {
@@ -102,7 +134,7 @@ new class extends Component
             return;
         }
 
-        $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity']);
+        $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = $editingIndex;
         $this->sourceTemplateId = $template->id;
@@ -148,7 +180,7 @@ new class extends Component
         ?int $paintProductId = null,
         array $paintByCategory = []
     ): void {
-        $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity']);
+        $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = null;
         $this->sourceTemplateId = null;
@@ -186,7 +218,7 @@ new class extends Component
         ?int $paintProductId = null,
         array $paintByCategory = []
     ): void {
-        $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity']);
+        $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = $editingIndex;
         $this->sourceTemplateId = $areaData['source_template_id'] ?? null;
@@ -206,8 +238,24 @@ new class extends Component
         $this->roomWidth = $areaData['width'] ?? 12.0;
         $this->roomHeight = $areaData['height'] ?? 9.0;
 
-        // Load surfaces
-        $this->surfaces = $areaData['surfaces'] ?? [];
+        // Load new measurement/category fields
+        $this->measurementType = $areaData['measurement_type'] ?? 'dimensions';
+        $this->wallCount = $areaData['wall_count'] ?? 4;
+        $this->directSqft = $areaData['direct_sqft'] ?? null;
+        $this->directLnft = $areaData['direct_lnft'] ?? null;
+        $this->directCeilingSqft = $areaData['direct_ceiling_sqft'] ?? null;
+        $this->serviceCategoryId = $areaData['service_category_id'] ?? null;
+
+        // Load surfaces (ensure is_custom, labor_hours, material_cost, sale_price, crew_price exist on each)
+        $loadedSurfaces = $areaData['surfaces'] ?? [];
+        foreach ($loadedSurfaces as $i => $surfaceData) {
+            $loadedSurfaces[$i]['is_custom'] = $surfaceData['is_custom'] ?? false;
+            $loadedSurfaces[$i]['labor_hours'] = $surfaceData['labor_hours'] ?? null;
+            $loadedSurfaces[$i]['material_cost'] = $surfaceData['material_cost'] ?? null;
+            $loadedSurfaces[$i]['sale_price'] = $surfaceData['sale_price'] ?? null;
+            $loadedSurfaces[$i]['crew_price'] = $surfaceData['crew_price'] ?? null;
+        }
+        $this->surfaces = $loadedSurfaces;
 
         // Load addons
         $this->addons = $areaData['addons'] ?? [];
@@ -244,6 +292,11 @@ new class extends Component
                     'is_required' => $surface->is_required,
                     'is_default_enabled' => $surface->is_default_enabled,
                     'fixed_price' => $surface->fixed_price ? (float) $surface->fixed_price : null,
+                    'is_custom' => false,
+                    'labor_hours' => null,
+                    'material_cost' => null,
+                    'sale_price' => null,
+                    'crew_price' => null,
                 ];
             }
 
@@ -277,6 +330,11 @@ new class extends Component
                 'is_required' => $normalized === 'walls',
                 'is_default_enabled' => true,
                 'fixed_price' => null,
+                'is_custom' => false,
+                'labor_hours' => null,
+                'material_cost' => null,
+                'sale_price' => null,
+                'crew_price' => null,
             ];
         }
     }
@@ -366,6 +424,11 @@ new class extends Component
             'is_required' => true,
             'is_default_enabled' => true,
             'fixed_price' => null,
+            'is_custom' => false,
+            'labor_hours' => null,
+            'material_cost' => null,
+            'sale_price' => null,
+            'crew_price' => null,
         ];
 
         // Add ceiling surface
@@ -381,6 +444,11 @@ new class extends Component
             'is_required' => false,
             'is_default_enabled' => true,
             'fixed_price' => null,
+            'is_custom' => false,
+            'labor_hours' => null,
+            'material_cost' => null,
+            'sale_price' => null,
+            'crew_price' => null,
         ];
 
         // Add baseboards surface
@@ -396,17 +464,33 @@ new class extends Component
             'is_required' => false,
             'is_default_enabled' => true,
             'fixed_price' => null,
+            'is_custom' => false,
+            'labor_hours' => null,
+            'material_cost' => null,
+            'sale_price' => null,
+            'crew_price' => null,
         ];
     }
 
     // ===== COMPUTED DIMENSIONS =====
 
     /**
-     * Calculate wall square footage.
+     * Calculate wall square footage based on measurement type.
      */
     #[Computed]
     public function wallSqft(): float
     {
+        if ($this->measurementType === 'sqft') {
+            return (float) ($this->directSqft ?? 0);
+        }
+
+        if ($this->measurementType === 'lnft') {
+            $height = $this->roomHeight ?? 9;
+
+            return (float) ($this->directLnft ?? 0) * $height;
+        }
+
+        // dimensions mode
         $width = $this->roomWidth ?? 12;
         $height = $this->roomHeight ?? 9;
 
@@ -414,15 +498,26 @@ new class extends Component
             return $width * $height;
         }
 
-        return 2 * ($this->roomLength + $width) * $height;
+        $fullPerimeter = 2 * ($this->roomLength + $width) * $height;
+
+        return $fullPerimeter * ($this->wallCount / 4);
     }
 
     /**
-     * Calculate ceiling/floor square footage.
+     * Calculate ceiling/floor square footage based on measurement type.
      */
     #[Computed]
     public function ceilingSqft(): float
     {
+        if ($this->measurementType === 'sqft') {
+            return (float) ($this->directCeilingSqft ?? 0);
+        }
+
+        if ($this->measurementType === 'lnft') {
+            return 0;
+        }
+
+        // dimensions mode
         if ($this->roomLength === null || $this->roomLength == 0) {
             return 0;
         }
@@ -433,11 +528,27 @@ new class extends Component
     }
 
     /**
-     * Calculate perimeter linear feet.
+     * Calculate perimeter linear feet based on measurement type.
      */
     #[Computed]
     public function perimeterLnft(): float
     {
+        if ($this->measurementType === 'lnft') {
+            return (float) ($this->directLnft ?? 0);
+        }
+
+        if ($this->measurementType === 'sqft') {
+            // Estimate perimeter from sqft: assume square room
+            $sqft = (float) ($this->directSqft ?? 0);
+            if ($sqft <= 0) {
+                return 0;
+            }
+            $side = sqrt($sqft);
+
+            return $side * 4;
+        }
+
+        // dimensions mode
         $width = $this->roomWidth ?? 12;
 
         if ($this->roomLength === null || $this->roomLength == 0) {
@@ -487,6 +598,11 @@ new class extends Component
             'is_required' => false,
             'is_default_enabled' => true,
             'fixed_price' => null,
+            'is_custom' => false,
+            'labor_hours' => null,
+            'material_cost' => null,
+            'sale_price' => null,
+            'crew_price' => null,
         ];
     }
 
@@ -496,7 +612,7 @@ new class extends Component
     public function removeSurface(int $index): void
     {
         if (count($this->surfaces) <= 1) {
-            session()->flash('error', 'At least one surface is required.');
+            session()->flash('error', __('At least one surface is required.'));
 
             return;
         }
@@ -561,7 +677,7 @@ new class extends Component
 
         $this->addons[] = [
             'nested_area_template_id' => $template->id,
-            'name' => $template->name,
+            'name' => __($template->name),
             'quantity' => $quantity,
             'unit_price' => (float) $template->fixed_price,
             'total_price' => (float) $template->fixed_price * $quantity,
@@ -717,6 +833,27 @@ new class extends Component
 
             foreach ($this->surfaces as $index => $surface) {
                 if (! $surface['is_required'] && ! $surface['is_default_enabled']) {
+                    continue;
+                }
+
+                $isCustom = $surface['is_custom'] ?? false;
+
+                if ($isCustom) {
+                    // Custom surface: use labor_hours and material_cost directly
+                    $hours = (float) ($surface['labor_hours'] ?? 0);
+                    $materialCost = (float) ($surface['material_cost'] ?? 0);
+                    $totalLaborHours += $hours;
+                    $totalMaterialCost += $materialCost;
+
+                    $surfaceBreakdowns[] = [
+                        'name' => $surface['name'] ?: 'Surface '.($index + 1),
+                        'quantity' => 0,
+                        'unit' => 'custom',
+                        'hours' => round($hours, 2),
+                        'rate_name' => 'Custom',
+                        'rate_value' => '-',
+                    ];
+
                     continue;
                 }
 
@@ -890,6 +1027,68 @@ new class extends Component
         return $quantity * $costPerUnit * $coatMultiplier;
     }
 
+    // ===== SERVICE CATEGORIES =====
+
+    /**
+     * Get available service categories.
+     *
+     * @return Collection<int, ServiceCategory>
+     */
+    #[Computed]
+    public function serviceCategories(): Collection
+    {
+        return ServiceCategory::query()->active()->ordered()->get();
+    }
+
+    /**
+     * Get effective hourly rate for scope.
+     */
+    #[Computed]
+    public function effectiveRate(): float
+    {
+        return CompanySetting::getInstance()->getEffectiveHourlyRateForScope($this->scopeType);
+    }
+
+    /**
+     * Create a new service category inline.
+     */
+    public function createServiceCategory(): void
+    {
+        $this->validate([
+            'newCategoryName' => ['required', 'string', 'max:255'],
+        ]);
+
+        $category = ServiceCategory::create([
+            'name' => $this->newCategoryName,
+            'slug' => Str::slug($this->newCategoryName),
+            'is_active' => true,
+        ]);
+
+        $this->serviceCategoryId = $category->id;
+        $this->newCategoryName = '';
+        $this->showNewCategoryForm = false;
+
+        unset($this->serviceCategories);
+    }
+
+    /**
+     * Handle service category selection changes.
+     */
+    public function updatedServiceCategoryId(): void
+    {
+        if ($this->serviceCategoryId === 0) {
+            $this->serviceCategoryId = null;
+        }
+    }
+
+    /**
+     * Handle measurement type changes - clear computed dimensions.
+     */
+    public function updatedMeasurementType(): void
+    {
+        unset($this->wallSqft, $this->ceilingSqft, $this->perimeterLnft);
+    }
+
     // ===== LIFECYCLE HOOKS =====
 
     /**
@@ -938,14 +1137,24 @@ new class extends Component
      */
     public function saveArea(): void
     {
-        $this->validate([
+        $rules = [
             'name' => ['required', 'string', 'max:255'],
             'scopeType' => ['required', 'in:interior,exterior'],
-            'roomWidth' => ['required', 'numeric', 'min:1', 'max:200'],
-            'roomHeight' => ['required', 'numeric', 'min:1', 'max:50'],
             'surfaces' => ['required', 'array', 'min:1'],
             'surfaces.*.name' => ['required', 'string', 'max:255'],
-        ]);
+        ];
+
+        if ($this->measurementType === 'dimensions') {
+            $rules['roomWidth'] = ['required', 'numeric', 'min:1', 'max:200'];
+            $rules['roomHeight'] = ['required', 'numeric', 'min:1', 'max:50'];
+        } elseif ($this->measurementType === 'sqft') {
+            $rules['directSqft'] = ['required', 'numeric', 'min:0'];
+        } elseif ($this->measurementType === 'lnft') {
+            $rules['directLnft'] = ['required', 'numeric', 'min:0'];
+            $rules['roomHeight'] = ['required', 'numeric', 'min:1', 'max:50'];
+        }
+
+        $this->validate($rules);
 
         $preview = $this->previewCalculation;
 
@@ -960,6 +1169,12 @@ new class extends Component
             'ceiling_sqft' => $this->ceilingSqft,
             'perimeter_lnft' => $this->perimeterLnft,
             'default_coats' => $this->defaultCoats,
+            'measurement_type' => $this->measurementType,
+            'wall_count' => $this->wallCount,
+            'direct_sqft' => $this->directSqft,
+            'direct_lnft' => $this->directLnft,
+            'direct_ceiling_sqft' => $this->directCeilingSqft,
+            'service_category_id' => $this->serviceCategoryId,
             'surfaces' => $this->surfaces,
             'addons' => $this->addons,
             'labor_hours' => $preview['totals']['labor_hours'] ?? 0,
@@ -986,6 +1201,14 @@ new class extends Component
     {
         $this->isOpen = false;
         $this->editingIndex = null;
+        $this->measurementType = 'dimensions';
+        $this->wallCount = 4;
+        $this->directSqft = null;
+        $this->directLnft = null;
+        $this->directCeilingSqft = null;
+        $this->serviceCategoryId = null;
+        $this->showNewCategoryForm = false;
+        $this->newCategoryName = '';
     }
 }; ?>
 
@@ -996,13 +1219,13 @@ new class extends Component
             <div class="p-4 border-b border-zinc-200 dark:border-zinc-700">
                 <flux:heading size="lg">
                     @if ($editingIndex !== null)
-                        Edit Area: {{ $name ?: 'Untitled' }}
+                        {{ __('Edit Area:') }} {{ $name ?: __('Untitled') }}
                     @else
-                        Add Custom Area
+                        {{ __('Add Custom Area') }}
                     @endif
                 </flux:heading>
                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mt-1">
-                    Define dimensions, surfaces, and add-ons for this area
+                    {{ __('Define dimensions, surfaces, and add-ons for this area') }}
                 </flux:text>
             </div>
 
@@ -1014,18 +1237,18 @@ new class extends Component
                         {{-- Basic Info Section --}}
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                             <div class="p-3 border-b border-zinc-200 dark:border-zinc-700">
-                                <flux:heading size="sm">Basic Information</flux:heading>
+                                <flux:heading size="sm">{{ __('Basic Information') }}</flux:heading>
                             </div>
                             <div class="p-3 space-y-3">
                                 <div class="grid gap-3 sm:grid-cols-2">
                                     <flux:field>
-                                        <flux:label>Area Name</flux:label>
-                                        <flux:input wire:model.live.debounce.300ms="name" placeholder="e.g., Living Room" />
+                                        <flux:label>{{ __('Area Name') }}</flux:label>
+                                        <flux:input wire:model.blur="name" :placeholder="__('e.g., Living Room')" />
                                         <flux:error name="name" />
                                     </flux:field>
 
                                     <flux:field>
-                                        <flux:label>Scope Type</flux:label>
+                                        <flux:label>{{ __('Scope Type') }}</flux:label>
                                         <flux:select wire:model.live="scopeType">
                                             @foreach ($this->scopeOptions as $value => $label)
                                                 <option value="{{ $value }}">{{ $label }}</option>
@@ -1034,6 +1257,29 @@ new class extends Component
                                         <flux:error name="scopeType" />
                                     </flux:field>
                                 </div>
+
+                                {{-- Service Category --}}
+                                <flux:field>
+                                    <flux:label>{{ __('Service Category') }} <span class="text-zinc-400 text-xs font-normal">({{ __('optional') }})</span></flux:label>
+                                    @if ($showNewCategoryForm)
+                                        <div class="flex items-center gap-2">
+                                            <flux:input wire:model.blur="newCategoryName" :placeholder="__('Category name')" size="sm" class="flex-1" />
+                                            <flux:button wire:click="createServiceCategory" size="sm" variant="primary">{{ __('Save') }}</flux:button>
+                                            <flux:button wire:click="$set('showNewCategoryForm', false)" size="sm" variant="ghost">{{ __('Cancel') }}</flux:button>
+                                        </div>
+                                        <flux:error name="newCategoryName" />
+                                    @else
+                                        <div class="flex items-center gap-2">
+                                            <flux:select wire:model.live="serviceCategoryId" size="sm" class="flex-1">
+                                                <option value="">{{ __('-- None --') }}</option>
+                                                @foreach ($this->serviceCategories as $cat)
+                                                    <option value="{{ $cat->id }}">{{ $cat->name }}</option>
+                                                @endforeach
+                                            </flux:select>
+                                            <flux:button wire:click="$set('showNewCategoryForm', true)" size="sm" variant="ghost" icon="plus">{{ __('New') }}</flux:button>
+                                        </div>
+                                    @endif
+                                </flux:field>
                             </div>
                         </div>
 
@@ -1042,75 +1288,135 @@ new class extends Component
                             <div class="p-3 border-b border-zinc-200 dark:border-zinc-700">
                                 <flux:heading size="sm">
                                     @if ($scopeType === 'exterior')
-                                        Surface Dimensions
+                                        {{ __('Surface Dimensions') }}
                                     @else
-                                        Room Dimensions
+                                        {{ __('Room Dimensions') }}
                                     @endif
                                 </flux:heading>
                             </div>
-                            <div class="p-3">
-                                <div class="grid gap-3 sm:grid-cols-3">
-                                    <flux:field>
-                                        <flux:label>
-                                            Length (ft)
-                                            @if ($scopeType === 'exterior')
-                                                <span class="text-zinc-400 text-xs font-normal">(optional)</span>
-                                            @endif
-                                        </flux:label>
-                                        <flux:input
-                                            wire:model.live.debounce.200ms="roomLength"
-                                            type="number"
-                                            step="0.5"
-                                            min="0"
-                                            max="200"
-                                            placeholder="{{ $scopeType === 'exterior' ? 'Single side' : '12' }}"
-                                        />
-                                        <flux:error name="roomLength" />
-                                    </flux:field>
-
-                                    <flux:field>
-                                        <flux:label>Width (ft)</flux:label>
-                                        <flux:input wire:model.live.debounce.200ms="roomWidth" type="number" step="0.5" min="1" max="200" placeholder="12" />
-                                        <flux:error name="roomWidth" />
-                                    </flux:field>
-
-                                    <flux:field>
-                                        <flux:label>Height (ft)</flux:label>
-                                        <flux:input wire:model.live.debounce.200ms="roomHeight" type="number" step="0.5" min="1" max="50" placeholder="9" />
-                                        <flux:error name="roomHeight" />
-                                    </flux:field>
+                            <div class="p-3 space-y-3">
+                                {{-- Measurement Mode Selector --}}
+                                <div>
+                                    <flux:label class="mb-1.5">{{ __('Measurement Mode') }}</flux:label>
+                                    <div class="flex gap-1">
+                                        @foreach (['dimensions' => __('Dimensions'), 'sqft' => __('Sqft'), 'lnft' => __('Linear Ft')] as $mode => $modeLabel)
+                                            <button
+                                                wire:click="$set('measurementType', '{{ $mode }}')"
+                                                type="button"
+                                                class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {{ $measurementType === $mode ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
+                                            >
+                                                {{ $modeLabel }}
+                                            </button>
+                                        @endforeach
+                                    </div>
                                 </div>
 
+                                {{-- Conditional Inputs Based on Mode --}}
+                                {{-- wire:key prevents DOM morphing from confusing inputs when switching modes --}}
+                                @if ($measurementType === 'dimensions')
+                                    <div wire:key="measurement-mode-dimensions" class="space-y-3">
+                                        <div class="grid gap-3 sm:grid-cols-3">
+                                            <flux:field>
+                                                <flux:label>
+                                                    {{ __('Length (ft)') }}
+                                                    @if ($scopeType === 'exterior')
+                                                        <span class="text-zinc-400 text-xs font-normal">({{ __('optional') }})</span>
+                                                    @endif
+                                                </flux:label>
+                                                <flux:input
+                                                    wire:model.blur="roomLength"
+                                                    type="number"
+                                                    step="0.5"
+                                                    min="0"
+                                                    max="200"
+                                                    :placeholder="$scopeType === 'exterior' ? __('Single side') : '12'"
+                                                />
+                                                <flux:error name="roomLength" />
+                                            </flux:field>
+
+                                            <flux:field>
+                                                <flux:label>{{ __('Width (ft)') }}</flux:label>
+                                                <flux:input wire:model.blur="roomWidth" type="number" step="0.5" min="1" max="200" placeholder="12" />
+                                                <flux:error name="roomWidth" />
+                                            </flux:field>
+
+                                            <flux:field>
+                                                <flux:label>{{ __('Height (ft)') }}</flux:label>
+                                                <flux:input wire:model.blur="roomHeight" type="number" step="0.5" min="1" max="50" placeholder="9" />
+                                                <flux:error name="roomHeight" />
+                                            </flux:field>
+                                        </div>
+
+                                        {{-- Wall Count Pills --}}
+                                        @if ($scopeType === 'interior')
+                                            <div>
+                                                <flux:label class="mb-1.5">{{ __('Wall Count') }}</flux:label>
+                                                <div class="flex gap-1">
+                                                    @for ($w = 1; $w <= 4; $w++)
+                                                        <button
+                                                            wire:click="$set('wallCount', {{ $w }})"
+                                                            type="button"
+                                                            class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {{ $wallCount === $w ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
+                                                        >
+                                                            {{ $w }} {{ $w > 1 ? __('walls') : __('wall') }}
+                                                        </button>
+                                                    @endfor
+                                                </div>
+                                                @if ($wallCount < 4)
+                                                    <p class="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                                                        {{ __('Wall sqft scaled to :count/4 of full perimeter', ['count' => $wallCount]) }}
+                                                    </p>
+                                                @endif
+                                            </div>
+                                        @endif
+                                    </div>
+                                @elseif ($measurementType === 'sqft')
+                                    <div wire:key="measurement-mode-sqft" class="grid gap-3 sm:grid-cols-3">
+                                        <flux:field>
+                                            <flux:label>{{ __('Wall Sqft') }}</flux:label>
+                                            <flux:input wire:model.blur="directSqft" type="number" step="1" min="0" placeholder="0" />
+                                        </flux:field>
+                                        <flux:field>
+                                            <flux:label>{{ __('Ceiling Sqft') }}</flux:label>
+                                            <flux:input wire:model.blur="directCeilingSqft" type="number" step="1" min="0" placeholder="0" />
+                                        </flux:field>
+                                        <flux:field>
+                                            <flux:label>{{ __('Height (ft)') }}</flux:label>
+                                            <flux:input wire:model.blur="roomHeight" type="number" step="0.5" min="1" max="50" placeholder="9" />
+                                            <flux:error name="roomHeight" />
+                                        </flux:field>
+                                    </div>
+                                @elseif ($measurementType === 'lnft')
+                                    <div wire:key="measurement-mode-lnft" class="grid gap-3 sm:grid-cols-2">
+                                        <flux:field>
+                                            <flux:label>{{ __('Linear Feet') }}</flux:label>
+                                            <flux:input wire:model.blur="directLnft" type="number" step="1" min="0" placeholder="0" />
+                                        </flux:field>
+                                        <flux:field>
+                                            <flux:label>{{ __('Height (ft)') }}</flux:label>
+                                            <flux:input wire:model.blur="roomHeight" type="number" step="0.5" min="1" max="50" placeholder="9" />
+                                            <flux:error name="roomHeight" />
+                                        </flux:field>
+                                    </div>
+                                @endif
+
                                 {{-- Calculated Values --}}
-                                <div class="mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">Calculated Quantities</div>
-                                    @if ($scopeType === 'exterior' && (!$roomLength || $roomLength == 0))
-                                        <div class="grid grid-cols-2 gap-3 text-xs">
-                                            <div>
-                                                <span class="text-zinc-600 dark:text-zinc-400">Surface Sqft:</span>
-                                                <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->wallSqft, 0) }}</span>
-                                            </div>
-                                            <div>
-                                                <span class="text-zinc-600 dark:text-zinc-400">Linear Feet:</span>
-                                                <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} lnft</span>
-                                            </div>
+                                <div class="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">{{ __('Calculated Quantities') }}</div>
+                                    <div class="grid grid-cols-3 gap-3 text-xs">
+                                        <div>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Wall Sqft:') }}</span>
+                                            <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->wallSqft, 0) }}</span>
                                         </div>
-                                    @else
-                                        <div class="grid grid-cols-3 gap-3 text-xs">
-                                            <div>
-                                                <span class="text-zinc-600 dark:text-zinc-400">Wall Sqft:</span>
-                                                <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->wallSqft, 0) }}</span>
-                                            </div>
-                                            <div>
-                                                <span class="text-zinc-600 dark:text-zinc-400">Ceiling Sqft:</span>
-                                                <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->ceilingSqft, 0) }}</span>
-                                            </div>
-                                            <div>
-                                                <span class="text-zinc-600 dark:text-zinc-400">Perimeter:</span>
-                                                <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} lnft</span>
-                                            </div>
+                                        <div>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Ceiling Sqft:') }}</span>
+                                            <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->ceilingSqft, 0) }}</span>
                                         </div>
-                                    @endif
+                                        <div>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Perimeter:') }}</span>
+                                            <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} {{ __('lnft') }}</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1119,19 +1425,19 @@ new class extends Component
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                             <div class="p-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                                 <div>
-                                    <flux:heading size="sm">Surfaces</flux:heading>
+                                    <flux:heading size="sm">{{ __('Surfaces') }}</flux:heading>
                                     <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                                        Define surfaces with production rate types
+                                        {{ __('Define surfaces with production rate types') }}
                                     </flux:text>
                                 </div>
                                 <flux:button wire:click="addSurface" size="sm" icon="plus">
-                                    Add
+                                    {{ __('Add') }}
                                 </flux:button>
                             </div>
                             <div class="p-3">
                                 @if (count($surfaces) === 0)
                                     <div class="text-center py-6 text-zinc-500 dark:text-zinc-400">
-                                        <p class="text-sm">No surfaces defined. Add at least one surface.</p>
+                                        <p class="text-sm">{{ __('No surfaces defined. Add at least one surface.') }}</p>
                                     </div>
                                 @else
                                     <div class="space-y-3">
@@ -1141,10 +1447,10 @@ new class extends Component
                                                 <div class="p-2 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
                                                     <div class="flex items-center gap-2">
                                                         <span class="font-medium text-sm text-zinc-900 dark:text-zinc-100">
-                                                            {{ $surface['name'] ?: 'Surface '.($index + 1) }}
+                                                            {{ $surface['name'] ?: __('Surface') . ' ' . ($index + 1) }}
                                                         </span>
                                                         @if ($surface['is_required'])
-                                                            <span class="px-1.5 py-0.5 text-xs font-medium rounded bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">Req</span>
+                                                            <span class="px-1.5 py-0.5 text-xs font-medium rounded bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">{{ __('Req') }}</span>
                                                         @endif
                                                         @if ($surface['production_rate_id'])
                                                             @php $selectedRate = \App\Models\ProductionRate::find($surface['production_rate_id']); @endphp
@@ -1168,13 +1474,13 @@ new class extends Component
                                                 <div class="p-3 space-y-3">
                                                     <div class="grid gap-3 sm:grid-cols-2">
                                                         <flux:field>
-                                                            <flux:label class="text-xs">Surface Name</flux:label>
-                                                            <flux:input wire:model.live.debounce.300ms="surfaces.{{ $index }}.name" placeholder="e.g., Walls" size="sm" />
+                                                            <flux:label class="text-xs">{{ __('Surface Name') }}</flux:label>
+                                                            <flux:input wire:model.blur="surfaces.{{ $index }}.name" :placeholder="__('e.g., Walls')" size="sm" />
                                                             @error("surfaces.{$index}.name") <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                                                         </flux:field>
 
                                                         <flux:field>
-                                                            <flux:label class="text-xs">Surface Category</flux:label>
+                                                            <flux:label class="text-xs">{{ __('Surface Category') }}</flux:label>
                                                             <flux:select wire:model.live="surfaces.{{ $index }}.surface_category" size="sm">
                                                                 @foreach ($this->surfaceCategories as $catKey => $catLabel)
                                                                     <option value="{{ $catKey }}">{{ $catLabel }}</option>
@@ -1183,95 +1489,155 @@ new class extends Component
                                                         </flux:field>
                                                     </div>
 
-                                                    <div class="grid gap-3 sm:grid-cols-2">
-                                                        <flux:field>
-                                                            <flux:label class="text-xs">Production Rate Type</flux:label>
-                                                            <flux:select wire:model.live="surfaces.{{ $index }}.production_rate_id" size="sm">
-                                                                <option value="">-- Select Type --</option>
-                                                                @foreach ($this->getProductionRatesForCategory($surface['surface_category']) as $rate)
-                                                                    <option value="{{ $rate->id }}">
-                                                                        {{ $rate->name }} ({{ number_format($rate->production_rate, 0) }} {{ $rate->rate_type_label }})
-                                                                    </option>
-                                                                @endforeach
-                                                            </flux:select>
-                                                            @if ($this->getProductionRatesForCategory($surface['surface_category'])->isEmpty())
-                                                                <p class="text-xs text-amber-600 dark:text-amber-400">No rates for this category.</p>
-                                                            @endif
-                                                        </flux:field>
-
-                                                        <flux:field>
-                                                            <flux:label class="text-xs">Quantity Source</flux:label>
-                                                            <flux:select wire:model.live="surfaces.{{ $index }}.quantity_source" size="sm">
-                                                                @foreach ($this->quantitySources as $srcKey => $srcLabel)
-                                                                    <option value="{{ $srcKey }}">{{ $srcLabel }}</option>
-                                                                @endforeach
-                                                            </flux:select>
-                                                        </flux:field>
+                                                    {{-- Custom Surface Toggle --}}
+                                                    <div class="flex items-center gap-4 pt-1">
+                                                        <label class="flex items-center gap-1.5">
+                                                            <flux:checkbox wire:model.live="surfaces.{{ $index }}.is_custom" />
+                                                            <span class="text-xs text-zinc-700 dark:text-zinc-300">{{ __('Custom pricing') }}</span>
+                                                        </label>
                                                     </div>
 
-                                                    @if (in_array($surface['quantity_source'], ['door_count', 'window_count', 'custom']))
-                                                        <flux:field>
-                                                            <flux:label class="text-xs">
-                                                                @if ($surface['quantity_source'] === 'door_count')
-                                                                    Number of Doors
-                                                                @elseif ($surface['quantity_source'] === 'window_count')
-                                                                    Number of Windows
-                                                                @else
-                                                                    Custom Quantity
-                                                                @endif
-                                                            </flux:label>
-                                                            <flux:input wire:model.live.debounce.200ms="surfaces.{{ $index }}.quantity_override" type="number" step="1" min="0" placeholder="1" size="sm" />
-                                                        </flux:field>
-                                                    @endif
-
-                                                    <div class="grid gap-3 sm:grid-cols-2">
-                                                        <flux:field>
-                                                            <flux:label class="text-xs">Coats</flux:label>
-                                                            <flux:select wire:model.live="surfaces.{{ $index }}.default_coats" size="sm">
-                                                                @for ($i = 1; $i <= 5; $i++)
-                                                                    <option value="{{ $i }}">{{ $i }} coat{{ $i > 1 ? 's' : '' }}</option>
-                                                                @endfor
-                                                            </flux:select>
-                                                        </flux:field>
-
-                                                        <flux:field>
-                                                            <flux:label class="text-xs">Fixed Price (Optional)</flux:label>
-                                                            <div class="flex items-center gap-1">
-                                                                <span class="text-zinc-500 text-sm">$</span>
-                                                                <flux:input wire:model.live.debounce.300ms="surfaces.{{ $index }}.fixed_price" type="number" step="0.01" min="0" placeholder="Auto-calc" size="sm" />
+                                                    @if ($surface['is_custom'] ?? false)
+                                                        {{-- Custom Surface Fields --}}
+                                                        <div class="grid gap-3 sm:grid-cols-3">
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Labor Hours') }}</flux:label>
+                                                                <flux:input wire:model.blur="surfaces.{{ $index }}.labor_hours" type="number" step="0.25" min="0" placeholder="0" size="sm" />
+                                                            </flux:field>
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Material Cost ($)') }}</flux:label>
+                                                                <flux:input wire:model.blur="surfaces.{{ $index }}.material_cost" type="number" step="0.01" min="0" placeholder="0" size="sm" />
+                                                            </flux:field>
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Hourly Rate') }}</flux:label>
+                                                                <div class="text-sm font-medium text-zinc-700 dark:text-zinc-300 py-1">
+                                                                    ${{ number_format($this->effectiveRate, 2) }}/hr
+                                                                </div>
+                                                            </flux:field>
+                                                        </div>
+                                                        <div class="grid gap-3 sm:grid-cols-2 mt-2">
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Sale Price ($)') }}</flux:label>
+                                                                <flux:input wire:model.blur="surfaces.{{ $index }}.sale_price" type="number" step="0.01" min="0" :placeholder="__('Auto (margin)')" size="sm" />
+                                                                <flux:description class="text-[10px]">{{ __('Customer price for this surface. Leave empty to auto-calculate from margin.') }}</flux:description>
+                                                            </flux:field>
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Crew Rate ($/hr)') }}</flux:label>
+                                                                <flux:input wire:model.blur="surfaces.{{ $index }}.crew_price" type="number" step="0.01" min="0" :placeholder="__('Auto (base wage)')" size="sm" />
+                                                                <flux:description class="text-[10px]">{{ __('Hourly rate for crew. Leave empty to use base wage.') }}</flux:description>
+                                                            </flux:field>
+                                                        </div>
+                                                        @if (($surface['sale_price'] ?? null) && ($surface['labor_hours'] ?? 0) > 0)
+                                                            @php
+                                                                $surfLaborCost = (float) ($surface['labor_hours'] ?? 0) * $this->effectiveRate;
+                                                                $surfMaterialCost = (float) ($surface['material_cost'] ?? 0);
+                                                                $surfCogs = $surfLaborCost + $surfMaterialCost;
+                                                                $surfProfit = (float) $surface['sale_price'] - $surfCogs;
+                                                            @endphp
+                                                            <div class="mt-1 p-2 bg-{{ $surfProfit >= 0 ? 'green' : 'red' }}-50 dark:bg-{{ $surfProfit >= 0 ? 'green' : 'red' }}-900/20 rounded text-xs">
+                                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Profit:') }}</span>
+                                                                <span class="font-semibold {{ $surfProfit >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400' }}">
+                                                                    ${{ number_format($surfProfit, 2) }}
+                                                                    @if ((float) $surface['sale_price'] > 0)
+                                                                        ({{ number_format(($surfProfit / (float) $surface['sale_price']) * 100, 1) }}%)
+                                                                    @endif
+                                                                </span>
                                                             </div>
-                                                        </flux:field>
-                                                    </div>
+                                                        @endif
+                                                    @else
+                                                        {{-- Standard Production Rate Fields --}}
+                                                        <div class="grid gap-3 sm:grid-cols-2">
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Production Rate Type') }}</flux:label>
+                                                                <flux:select wire:model.live="surfaces.{{ $index }}.production_rate_id" size="sm">
+                                                                    <option value="">{{ __('-- Select Type --') }}</option>
+                                                                    @foreach ($this->getProductionRatesForCategory($surface['surface_category']) as $rate)
+                                                                        <option value="{{ $rate->id }}">
+                                                                            {{ __($rate->name) }} ({{ number_format($rate->production_rate, 0) }} {{ $rate->rate_type_label }})
+                                                                        </option>
+                                                                    @endforeach
+                                                                </flux:select>
+                                                                @if ($this->getProductionRatesForCategory($surface['surface_category'])->isEmpty())
+                                                                    <p class="text-xs text-amber-600 dark:text-amber-400">{{ __('No rates for this category.') }}</p>
+                                                                @endif
+                                                            </flux:field>
+
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Quantity Source') }}</flux:label>
+                                                                <flux:select wire:model.live="surfaces.{{ $index }}.quantity_source" size="sm">
+                                                                    @foreach ($this->quantitySources as $srcKey => $srcLabel)
+                                                                        <option value="{{ $srcKey }}">{{ $srcLabel }}</option>
+                                                                    @endforeach
+                                                                </flux:select>
+                                                            </flux:field>
+                                                        </div>
+
+                                                        @if (in_array($surface['quantity_source'], ['door_count', 'window_count', 'custom']))
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">
+                                                                    @if ($surface['quantity_source'] === 'door_count')
+                                                                        {{ __('Number of Doors') }}
+                                                                    @elseif ($surface['quantity_source'] === 'window_count')
+                                                                        {{ __('Number of Windows') }}
+                                                                    @else
+                                                                        {{ __('Custom Quantity') }}
+                                                                    @endif
+                                                                </flux:label>
+                                                                <flux:input wire:model.blur="surfaces.{{ $index }}.quantity_override" type="number" step="1" min="0" placeholder="1" size="sm" />
+                                                            </flux:field>
+                                                        @endif
+
+                                                        <div class="grid gap-3 sm:grid-cols-2">
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Coats') }}</flux:label>
+                                                                <flux:select wire:model.live="surfaces.{{ $index }}.default_coats" size="sm">
+                                                                    @for ($i = 1; $i <= 5; $i++)
+                                                                        <option value="{{ $i }}">{{ $i }} {{ $i > 1 ? __('coats') : __('coat') }}</option>
+                                                                    @endfor
+                                                                </flux:select>
+                                                            </flux:field>
+
+                                                            <flux:field>
+                                                                <flux:label class="text-xs">{{ __('Fixed Price (Optional)') }}</flux:label>
+                                                                <div class="flex items-center gap-1">
+                                                                    <span class="text-zinc-500 text-sm">$</span>
+                                                                    <flux:input wire:model.blur="surfaces.{{ $index }}.fixed_price" type="number" step="0.01" min="0" :placeholder="__('Auto-calc')" size="sm" />
+                                                                </div>
+                                                            </flux:field>
+                                                        </div>
+                                                    @endif
 
                                                     <div class="flex items-center gap-4 pt-1">
                                                         <label class="flex items-center gap-1.5">
                                                             <flux:checkbox wire:model.live="surfaces.{{ $index }}.is_required" />
-                                                            <span class="text-xs text-zinc-700 dark:text-zinc-300">Required</span>
+                                                            <span class="text-xs text-zinc-700 dark:text-zinc-300">{{ __('Required') }}</span>
                                                         </label>
                                                         <label class="flex items-center gap-1.5">
                                                             <flux:checkbox wire:model.live="surfaces.{{ $index }}.is_default_enabled" />
-                                                            <span class="text-xs text-zinc-700 dark:text-zinc-300">Enabled</span>
+                                                            <span class="text-xs text-zinc-700 dark:text-zinc-300">{{ __('Enabled') }}</span>
                                                         </label>
                                                     </div>
 
                                                     {{-- Quantity Preview --}}
-                                                    <div class="mt-1 p-1.5 bg-zinc-100 dark:bg-zinc-800 rounded text-xs">
-                                                        <span class="text-zinc-600 dark:text-zinc-400">Quantity:</span>
-                                                        <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">
-                                                            {{ number_format($this->getSurfaceQuantity($surface), 1) }}
-                                                            @switch($surface['quantity_source'])
-                                                                @case('wall_sqft')
-                                                                @case('ceiling_sqft')
-                                                                    sqft
-                                                                    @break
-                                                                @case('perimeter_lnft')
-                                                                    lnft
-                                                                    @break
-                                                                @default
-                                                                    units
-                                                            @endswitch
-                                                        </span>
-                                                    </div>
+                                                    @if (!($surface['is_custom'] ?? false))
+                                                        <div class="mt-1 p-1.5 bg-zinc-100 dark:bg-zinc-800 rounded text-xs">
+                                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Quantity:') }}</span>
+                                                            <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">
+                                                                {{ number_format($this->getSurfaceQuantity($surface), 1) }}
+                                                                @switch($surface['quantity_source'])
+                                                                    @case('wall_sqft')
+                                                                    @case('ceiling_sqft')
+                                                                        {{ __('sqft') }}
+                                                                        @break
+                                                                    @case('perimeter_lnft')
+                                                                        {{ __('lnft') }}
+                                                                        @break
+                                                                    @default
+                                                                        {{ __('units') }}
+                                                                @endswitch
+                                                            </span>
+                                                        </div>
+                                                    @endif
                                                 </div>
                                             </div>
                                         @endforeach
@@ -1284,38 +1650,38 @@ new class extends Component
                         {{-- Fixed Cost Add-ons Section --}}
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                             <div class="p-3 border-b border-zinc-200 dark:border-zinc-700">
-                                <flux:heading size="sm">Fixed Price Items</flux:heading>
+                                <flux:heading size="sm">{{ __('Fixed Price Items') }}</flux:heading>
                                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                                    Add fixed-price items like closets, pantries, and exterior features
+                                    {{ __('Add fixed-price items like closets, pantries, and exterior features') }}
                                 </flux:text>
                             </div>
                             <div class="p-3">
                                 {{-- Add New Addon --}}
                                 <div class="flex items-end gap-2 mb-3">
                                     <flux:field class="flex-1">
-                                        <flux:label class="text-xs">Select Add-on</flux:label>
+                                        <flux:label class="text-xs">{{ __('Select Add-on') }}</flux:label>
                                         <flux:select wire:model="newAddonTemplateId" size="sm">
-                                            <option value="">-- Choose Add-on --</option>
+                                            <option value="">{{ __('-- Choose Add-on --') }}</option>
                                             @foreach ($this->availableNestedTemplates as $template)
                                                 <option value="{{ $template->id }}">
-                                                    {{ $template->name }} (${{ number_format($template->fixed_price, 2) }})
+                                                    {{ __($template->name) }} (${{ number_format($template->fixed_price, 2) }})
                                                 </option>
                                             @endforeach
                                         </flux:select>
                                     </flux:field>
                                     <flux:field class="w-20">
-                                        <flux:label class="text-xs">Qty</flux:label>
+                                        <flux:label class="text-xs">{{ __('Qty') }}</flux:label>
                                         <flux:input wire:model="newAddonQuantity" type="number" min="1" size="sm" />
                                     </flux:field>
                                     <flux:button wire:click="addAddon" size="sm" icon="plus" class="mb-0.5">
-                                        Add
+                                        {{ __('Add') }}
                                     </flux:button>
                                 </div>
 
                                 {{-- Addon List --}}
                                 @if (count($addons) === 0)
                                     <div class="text-center py-4 text-zinc-500 dark:text-zinc-400 border border-dashed border-zinc-200 dark:border-zinc-700 rounded">
-                                        <p class="text-xs">No add-ons added yet.</p>
+                                        <p class="text-xs">{{ __('No add-ons added yet.') }}</p>
                                     </div>
                                 @else
                                     <div class="space-y-2">
@@ -1349,7 +1715,7 @@ new class extends Component
                                         @endforeach
                                         <div class="flex justify-end pt-2 border-t border-zinc-200 dark:border-zinc-700">
                                             <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                                Add-ons Total: ${{ number_format($this->addonsTotalPrice, 2) }}
+                                                {{ __('Add-ons Total:') }} ${{ number_format($this->addonsTotalPrice, 2) }}
                                             </span>
                                         </div>
                                     </div>
@@ -1364,9 +1730,9 @@ new class extends Component
                             {{-- Live Preview Card --}}
                             <div class="border-2 border-blue-200 dark:border-blue-800 rounded-lg bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/30 dark:to-zinc-900">
                                 <div class="p-3 border-b border-blue-200 dark:border-blue-800">
-                                    <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">Live Calculator</flux:heading>
+                                    <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">{{ __('Live Calculator') }}</flux:heading>
                                     <flux:text size="sm" class="text-blue-600 dark:text-blue-400">
-                                        Real-time pricing preview
+                                        {{ __('Real-time pricing preview') }}
                                     </flux:text>
                                 </div>
 
@@ -1377,19 +1743,19 @@ new class extends Component
 
                                         {{-- Dimensions Summary --}}
                                         <div class="space-y-1">
-                                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Dimensions</div>
+                                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Dimensions') }}</div>
                                             <div class="grid grid-cols-3 gap-1 text-xs">
                                                 <div class="text-center p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded">
                                                     <div class="font-bold text-blue-800 dark:text-blue-200">{{ $preview['dimensions']['wall_sqft'] }}</div>
-                                                    <div class="text-blue-600 dark:text-blue-400 text-[10px]">Wall sqft</div>
+                                                    <div class="text-blue-600 dark:text-blue-400 text-[10px]">{{ __('Wall sqft') }}</div>
                                                 </div>
                                                 <div class="text-center p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded">
                                                     <div class="font-bold text-blue-800 dark:text-blue-200">{{ $preview['dimensions']['ceiling_sqft'] }}</div>
-                                                    <div class="text-blue-600 dark:text-blue-400 text-[10px]">Ceiling sqft</div>
+                                                    <div class="text-blue-600 dark:text-blue-400 text-[10px]">{{ __('Ceiling sqft') }}</div>
                                                 </div>
                                                 <div class="text-center p-1.5 bg-blue-100 dark:bg-blue-900/30 rounded">
                                                     <div class="font-bold text-blue-800 dark:text-blue-200">{{ $preview['dimensions']['perimeter_lnft'] }}</div>
-                                                    <div class="text-blue-600 dark:text-blue-400 text-[10px]">Perimeter lnft</div>
+                                                    <div class="text-blue-600 dark:text-blue-400 text-[10px]">{{ __('Perimeter lnft') }}</div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1397,7 +1763,7 @@ new class extends Component
                                         {{-- Surfaces Breakdown --}}
                                         @if (count($preview['surfaces']) > 0)
                                             <div class="space-y-1">
-                                                <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Surfaces</div>
+                                                <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Surfaces') }}</div>
                                                 @foreach ($preview['surfaces'] as $surface)
                                                     <div class="p-1.5 bg-white/50 dark:bg-zinc-800/50 rounded text-xs border border-blue-100 dark:border-blue-800">
                                                         <div class="flex justify-between items-center">
@@ -1418,7 +1784,7 @@ new class extends Component
                                         {{-- Addons Breakdown --}}
                                         @if (count($preview['addons']) > 0)
                                             <div class="space-y-1">
-                                                <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Add-ons</div>
+                                                <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Add-ons') }}</div>
                                                 @foreach ($preview['addons'] as $addon)
                                                     <div class="flex justify-between items-center text-xs py-1 border-b border-blue-100 dark:border-blue-900">
                                                         <span class="text-zinc-700 dark:text-zinc-300">
@@ -1435,18 +1801,18 @@ new class extends Component
 
                                         {{-- Hours Summary --}}
                                         <div class="space-y-1 pt-2 border-t border-blue-200 dark:border-blue-800">
-                                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Hours</div>
+                                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Hours') }}</div>
                                             <div class="grid grid-cols-3 gap-1 text-xs text-center">
                                                 <div>
-                                                    <span class="text-zinc-600 dark:text-zinc-400 text-[10px]">Labor</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400 text-[10px]">{{ __('Labor') }}</span>
                                                     <div class="font-semibold">{{ number_format($preview['totals']['labor_hours'], 1) }}</div>
                                                 </div>
                                                 <div>
-                                                    <span class="text-zinc-600 dark:text-zinc-400 text-[10px]">Cleanup</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400 text-[10px]">{{ __('Cleanup') }}</span>
                                                     <div class="font-semibold">{{ number_format($preview['totals']['cleanup_hours'], 1) }}</div>
                                                 </div>
                                                 <div>
-                                                    <span class="text-zinc-600 dark:text-zinc-400 text-[10px]">Total</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400 text-[10px]">{{ __('Total') }}</span>
                                                     <div class="font-semibold text-blue-600 dark:text-blue-400">{{ number_format($preview['totals']['total_hours'], 1) }}</div>
                                                 </div>
                                             </div>
@@ -1454,39 +1820,39 @@ new class extends Component
 
                                         {{-- COGS Breakdown --}}
                                         <div class="space-y-1 pt-2 border-t border-blue-200 dark:border-blue-800">
-                                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400">COGS Breakdown</div>
+                                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('COGS Breakdown') }}</div>
                                             <div class="space-y-0.5 text-xs">
                                                 <div class="flex justify-between">
-                                                    <span class="text-zinc-600 dark:text-zinc-400">Labor:</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400">{{ __('Labor:') }}</span>
                                                     <span class="font-medium">${{ number_format($preview['totals']['labor_cost'], 2) }}</span>
                                                 </div>
                                                 <div class="flex justify-between">
-                                                    <span class="text-zinc-600 dark:text-zinc-400">Cleanup:</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400">{{ __('Cleanup:') }}</span>
                                                     <span class="font-medium">${{ number_format($preview['totals']['cleanup_cost'], 2) }}</span>
                                                 </div>
                                                 <div class="flex justify-between">
-                                                    <span class="text-zinc-600 dark:text-zinc-400">Sundries:</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400">{{ __('Sundries:') }}</span>
                                                     <span class="font-medium">${{ number_format($preview['totals']['sundries_cost'], 2) }}</span>
                                                 </div>
                                                 <div class="flex justify-between">
-                                                    <span class="text-zinc-600 dark:text-zinc-400">Materials:</span>
+                                                    <span class="text-zinc-600 dark:text-zinc-400">{{ __('Materials:') }}</span>
                                                     <span class="font-medium">${{ number_format($preview['totals']['material_cost'], 2) }}</span>
                                                 </div>
                                                 @if (($preview['totals']['material_tax'] ?? 0) > 0)
                                                     <div class="flex justify-between">
-                                                        <span class="text-zinc-600 dark:text-zinc-400">Material Tax:</span>
+                                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Material Tax:') }}</span>
                                                         <span class="font-medium">${{ number_format($preview['totals']['material_tax'], 2) }}</span>
                                                     </div>
                                                 @endif
                                                 @if (($preview['totals']['labor_tax'] ?? 0) > 0)
                                                     <div class="flex justify-between">
-                                                        <span class="text-zinc-600 dark:text-zinc-400">Labor Tax:</span>
+                                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Labor Tax:') }}</span>
                                                         <span class="font-medium">${{ number_format($preview['totals']['labor_tax'], 2) }}</span>
                                                     </div>
                                                 @endif
                                                 @if ($preview['totals']['addon_cost'] > 0)
                                                     <div class="flex justify-between">
-                                                        <span class="text-zinc-600 dark:text-zinc-400">Add-ons:</span>
+                                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Add-ons:') }}</span>
                                                         <span class="font-medium">${{ number_format($preview['totals']['addon_cost'], 2) }}</span>
                                                     </div>
                                                 @endif
@@ -1499,11 +1865,11 @@ new class extends Component
                                         @endphp
                                         <div class="space-y-1 pt-2 border-t border-blue-200 dark:border-blue-800">
                                             <div class="flex justify-between text-xs">
-                                                <span class="text-zinc-600 dark:text-zinc-400">COGS:</span>
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('COGS:') }}</span>
                                                 <span class="font-medium">${{ number_format($preview['totals']['cogs'] ?? $preview['totals']['subtotal'], 2) }}</span>
                                             </div>
                                             <div class="flex justify-between text-xs">
-                                                <span class="text-zinc-600 dark:text-zinc-400">Margin ({{ $marginPct }}%):</span>
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Margin') }} ({{ $marginPct }}%):</span>
                                                 <span class="font-medium">
                                                     +${{ number_format(($preview['totals']['with_margins'] - ($preview['totals']['cogs'] ?? $preview['totals']['subtotal'])), 2) }}
                                                 </span>
@@ -1513,7 +1879,7 @@ new class extends Component
                                                     OTD = COGS / {{ $marginPct }}%
                                                 </div>
                                                 <div class="flex justify-between items-center">
-                                                    <span class="text-sm font-bold text-green-800 dark:text-green-200">OTD Price:</span>
+                                                    <span class="text-sm font-bold text-green-800 dark:text-green-200">{{ __('OTD Price:') }}</span>
                                                     <span class="text-xl font-bold text-green-600 dark:text-green-400">
                                                         ${{ number_format($preview['totals']['with_margins'], 2) }}
                                                     </span>
@@ -1523,7 +1889,7 @@ new class extends Component
                                     @else
                                         <div class="text-center py-6 text-zinc-500 dark:text-zinc-400">
                                             <flux:icon name="calculator" class="w-6 h-6 mx-auto mb-2 text-zinc-300 dark:text-zinc-600" />
-                                            <p class="text-xs">Add surfaces to see pricing preview</p>
+                                            <p class="text-xs">{{ __('Add surfaces to see pricing preview') }}</p>
                                         </div>
                                     @endif
                                 </div>
@@ -1536,17 +1902,17 @@ new class extends Component
             {{-- Footer --}}
             <div class="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-end gap-3">
                 <flux:button wire:click="closeBuilder" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button wire:click="saveArea" variant="primary" wire:loading.attr="disabled">
                     <span wire:loading.remove wire:target="saveArea">
                         @if ($editingIndex !== null)
-                            Update Area
+                            {{ __('Update Area') }}
                         @else
-                            Add Area
+                            {{ __('Add Area') }}
                         @endif
                     </span>
-                    <span wire:loading wire:target="saveArea">Saving...</span>
+                    <span wire:loading wire:target="saveArea">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </div>

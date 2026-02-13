@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Invoice {{ $invoice->invoice_number }}</title>
+    <title>{{ __('Invoice') }} {{ $invoice->invoice_number }}</title>
     <style>
         * {
             margin: 0;
@@ -200,7 +200,7 @@
                 @endif
             </div>
             <div class="invoice-info">
-                <div class="invoice-title">Invoice</div>
+                <div class="invoice-title">{{ __('Invoice') }}</div>
                 <div class="invoice-number">{{ $invoice->invoice_number }}</div>
                 <div class="status-badge status-{{ $invoice->status }}">
                     {{ \App\Models\Invoice::STATUSES[$invoice->status] ?? ucfirst($invoice->status) }}
@@ -211,7 +211,7 @@
         {{-- Details --}}
         <div class="details">
             <div class="details-section">
-                <h3>Bill To</h3>
+                <h3>{{ __('Bill To') }}</h3>
                 @if ($invoice->customer)
                     <p><strong>{{ $invoice->customer->full_name }}</strong></p>
                     @if ($invoice->customer->email)
@@ -220,14 +220,14 @@
                 @endif
             </div>
             <div class="details-section" style="text-align: right;">
-                <h3>Invoice Details</h3>
-                <p><strong>Type:</strong> {{ \App\Models\Invoice::TYPES[$invoice->type] ?? ucfirst($invoice->type) }}</p>
-                <p><strong>Date:</strong> {{ $invoice->created_at->format('M j, Y') }}</p>
+                <h3>{{ __('Invoice Details') }}</h3>
+                <p><strong>{{ __('Type:') }}</strong> {{ \App\Models\Invoice::TYPES[$invoice->type] ?? ucfirst($invoice->type) }}</p>
+                <p><strong>{{ __('Date:') }}</strong> {{ $invoice->created_at->format('M j, Y') }}</p>
                 @if ($invoice->due_date)
-                    <p><strong>Due Date:</strong> {{ $invoice->due_date->format('M j, Y') }}</p>
+                    <p><strong>{{ __('Due Date:') }}</strong> {{ $invoice->due_date->format('M j, Y') }}</p>
                 @endif
                 @if ($invoice->estimate)
-                    <p><strong>Estimate:</strong> {{ $invoice->estimate->estimate_number }}</p>
+                    <p><strong>{{ __('Estimate:') }}</strong> {{ $invoice->estimate->estimate_number }}</p>
                 @endif
             </div>
         </div>
@@ -236,16 +236,16 @@
         <table>
             <thead>
                 <tr>
-                    <th>Description</th>
-                    <th class="text-right">Amount</th>
+                    <th>{{ __('Description') }}</th>
+                    <th class="text-right">{{ __('Amount') }}</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
                     <td>
-                        {{ \App\Models\Invoice::TYPES[$invoice->type] ?? 'Invoice' }}
+                        {{ \App\Models\Invoice::TYPES[$invoice->type] ?? __('Invoice') }}
                         @if ($invoice->estimate)
-                            - Estimate #{{ $invoice->estimate->estimate_number }}
+                            - {{ __('Estimate') }} #{{ $invoice->estimate->estimate_number }}
                         @endif
                         @if ($invoice->notes)
                             <br><small style="color: #6b7280;">{{ $invoice->notes }}</small>
@@ -259,27 +259,27 @@
         {{-- Totals --}}
         <div class="totals">
             <div class="totals-row">
-                <span>Subtotal</span>
+                <span>{{ __('Subtotal') }}</span>
                 <span>${{ number_format((float) $invoice->subtotal, 2) }}</span>
             </div>
             @if ((float) $invoice->tax_rate > 0)
                 <div class="totals-row">
-                    <span>Tax ({{ $invoice->tax_rate }}%)</span>
+                    <span>{{ __('Tax') }} ({{ $invoice->tax_rate }}%)</span>
                     <span>${{ number_format((float) $invoice->tax_amount, 2) }}</span>
                 </div>
             @endif
             <div class="totals-row total">
-                <span>Total</span>
+                <span>{{ __('Total') }}</span>
                 <span>${{ number_format((float) $invoice->total, 2) }}</span>
             </div>
             @if ((float) $invoice->amount_paid > 0)
                 <div class="totals-row">
-                    <span>Amount Paid</span>
+                    <span>{{ __('Amount Paid') }}</span>
                     <span style="color: #059669;">-${{ number_format((float) $invoice->amount_paid, 2) }}</span>
                 </div>
             @endif
             <div class="totals-row balance-due">
-                <span>Balance Due</span>
+                <span>{{ __('Balance Due') }}</span>
                 <span>${{ number_format((float) $invoice->balance_due, 2) }}</span>
             </div>
         </div>
@@ -287,14 +287,14 @@
         {{-- Payments History --}}
         @if ($invoice->payments->isNotEmpty())
             <div class="payments-section">
-                <h3>Payment History</h3>
+                <h3>{{ __('Payment History') }}</h3>
                 <table>
                     <thead>
                         <tr>
-                            <th>Date</th>
-                            <th>Method</th>
-                            <th>Reference</th>
-                            <th class="text-right">Amount</th>
+                            <th>{{ __('Date') }}</th>
+                            <th>{{ __('Method') }}</th>
+                            <th>{{ __('Reference') }}</th>
+                            <th class="text-right">{{ __('Amount') }}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -314,7 +314,7 @@
         {{-- Terms --}}
         @if ($invoice->terms)
             <div class="notes">
-                <h3>Terms & Conditions</h3>
+                <h3>{{ __('Terms & Conditions') }}</h3>
                 <p>{{ $invoice->terms }}</p>
             </div>
         @endif

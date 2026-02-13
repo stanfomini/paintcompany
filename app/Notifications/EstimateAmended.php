@@ -34,11 +34,11 @@ class EstimateAmended extends Notification implements ShouldQueue
         $changes = $this->amendment->changes ?? [];
 
         $message = (new MailMessage)
-            ->subject("Your Estimate Has Been Updated - {$appName}")
-            ->greeting("Hello {$notifiable->first_name}!")
-            ->line("Your estimate **{$estimate->estimate_number}** has been updated (Amendment #{$this->amendment->amendment_number}).");
+            ->subject(__('Your Estimate Has Been Updated - :appName', ['appName' => $appName]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->first_name]))
+            ->line(__('Your estimate **:number** has been updated (Amendment #:amendment).', ['number' => $estimate->estimate_number, 'amendment' => $this->amendment->amendment_number]));
 
-        $message->line('**What Changed:**');
+        $message->line('**'.__('What Changed').':**');
 
         $displayChanges = array_slice($changes, 0, 5);
         foreach ($displayChanges as $change) {
@@ -51,23 +51,23 @@ class EstimateAmended extends Notification implements ShouldQueue
 
         if (count($changes) > 5) {
             $remaining = count($changes) - 5;
-            $message->line("...and {$remaining} more change(s).");
+            $message->line(__('...and :count more change(s).', ['count' => $remaining]));
         }
 
         // Show total change
         $totalChange = $this->amendment->getTotalChangeFormatted();
         $message->line('');
-        $message->line("**Price Change:** {$totalChange}");
-        $message->line('**New Total:** $'.number_format((float) $this->amendment->new_total, 2));
+        $message->line('**'.__('Price Change').':** '.$totalChange);
+        $message->line('**'.__('New Total').':** $'.number_format((float) $this->amendment->new_total, 2));
 
         $message->line('');
-        $message->line('**You must review and acknowledge these changes before signing.**');
+        $message->line('**'.__('You must review and acknowledge these changes before signing.').'**');
 
         if ($publicUrl) {
-            $message->action('Review Changes', $publicUrl);
+            $message->action(__('Review Changes'), $publicUrl);
         }
 
-        $message->line('If you have any questions about these changes, please contact us.');
+        $message->line(__('If you have any questions about these changes, please contact us.'));
 
         return $message;
     }

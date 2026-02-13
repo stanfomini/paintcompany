@@ -18,7 +18,7 @@ class PropertyFlyerController extends Controller
     {
         // Authorize: Only the agent who owns the listing can download
         if ($property->agent_id !== auth('agent')->id()) {
-            abort(403, 'Unauthorized access to this listing flyer.');
+            abort(403, __('Unauthorized access to this listing flyer.'));
         }
 
         $property->load(['agent.agentProfile']);

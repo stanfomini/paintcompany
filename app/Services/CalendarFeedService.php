@@ -16,15 +16,12 @@ use Spatie\IcalendarGenerator\ValueObjects\RRule;
 
 class CalendarFeedService
 {
-    protected string $timezone = 'America/New_York';
-
     /**
      * Generate an iCal feed for a user's active life commitments.
      */
     public function generateFeed(User $user): string
     {
         $settings = CompanySetting::getInstance();
-        $this->timezone = $settings->timezone ?? 'America/New_York';
 
         $commitments = LifeCommitment::query()
             ->where('company_setting_id', $settings->id)
@@ -49,7 +46,7 @@ class CalendarFeedService
 
     protected function buildEvent(LifeCommitment $commitment): ?Event
     {
-        $startDate = Carbon::parse($commitment->start_date ?? today(), $this->timezone);
+        $startDate = Carbon::parse($commitment->start_date ?? today());
         $event = Event::create($commitment->commitment)
             ->description("Area: {$commitment->area}\nAction Type: ".ucfirst($commitment->action_type))
             ->uniqueIdentifier("life-commitment-{$commitment->id}@apexnegotiations.com");
@@ -70,8 +67,8 @@ class CalendarFeedService
         [$hour, $minute] = $this->parseTime($time);
 
         return $event
-            ->startsAt($this->carbonInTz($startDate)->setTime($hour, $minute))
-            ->endsAt($this->carbonInTz($startDate)->setTime($hour + 1, $minute))
+            ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
             ->rrule(RRule::frequency(RecurrenceFrequency::Daily));
     }
 
@@ -85,13 +82,15 @@ class CalendarFeedService
 
         [$hour, $minute] = $this->parseTime($time);
 
+        $rrule = RRule::frequency(RecurrenceFrequency::Weekly);
+        foreach ($days as $day) {
+            $rrule = $rrule->onWeekDay($day);
+        }
+
         return $event
-            ->startsAt($this->carbonInTz($startDate)->setTime($hour, $minute))
-            ->endsAt($this->carbonInTz($startDate)->setTime($hour + 1, $minute))
-            ->rrule(
-                RRule::frequency(RecurrenceFrequency::Weekly)
-                    ->onWeekDay(...$days)
-            );
+            ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
+            ->rrule($rrule);
     }
 
     protected function buildMonthlyEvent(Event $event, DateTimeInterface $startDate, ?int $dayOfMonth, ?string $time): Event
@@ -100,8 +99,8 @@ class CalendarFeedService
         [$hour, $minute] = $this->parseTime($time);
 
         return $event
-            ->startsAt($this->carbonInTz($startDate)->setTime($hour, $minute))
-            ->endsAt($this->carbonInTz($startDate)->setTime($hour + 1, $minute))
+            ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
             ->rrule(
                 RRule::frequency(RecurrenceFrequency::Monthly)
                     ->onMonthDay($monthDay)
@@ -114,8 +113,8 @@ class CalendarFeedService
         [$hour, $minute] = $this->parseTime($time);
 
         return $event
-            ->startsAt($this->carbonInTz($startDate)->setTime($hour, $minute))
-            ->endsAt($this->carbonInTz($startDate)->setTime($hour + 1, $minute))
+            ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
             ->rrule(
                 RRule::frequency(RecurrenceFrequency::Monthly)
                     ->interval(3)
@@ -134,24 +133,16 @@ class CalendarFeedService
         [$hour, $minute] = $this->parseTime($time);
 
         return $event
-            ->startsAt($this->carbonInTz($startDate)->setTime($hour, $minute))
-            ->endsAt($this->carbonInTz($startDate)->setTime($hour + 1, $minute))
+            ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
             ->rrule(RRule::frequency(RecurrenceFrequency::Yearly));
     }
 
     protected function buildOngoingEvent(Event $event, DateTimeInterface $startDate): Event
     {
         return $event
-            ->startsAt($this->carbonInTz($startDate))
+            ->startsAt(Carbon::parse($startDate))
             ->fullDay();
-    }
-
-    /**
-     * Create a Carbon instance in the company timezone.
-     */
-    protected function carbonInTz(DateTimeInterface $date): Carbon
-    {
-        return Carbon::parse($date)->setTimezone($this->timezone);
     }
 
     /**

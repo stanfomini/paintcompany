@@ -186,3 +186,89 @@ describe('Job Stage: Estimate Accepted', function () {
             ->assertSee('Begin Scheduling', escape: false);
     });
 });
+
+describe('Job Stage Navigation (Clickable Tabs)', function () {
+    it('defaults viewingStage to the current job stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->assertSet('viewingStage', 'in_progress');
+    });
+
+    it('can switch to a completed stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->assertSet('viewingStage', 'in_progress')
+            ->call('viewStage', 'scheduling_colors')
+            ->assertSet('viewingStage', 'scheduling_colors');
+    });
+
+    it('cannot switch to a future stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'scheduling_colors']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->call('viewStage', 'in_progress')
+            ->assertSet('viewingStage', 'scheduling_colors');
+    });
+
+    it('shows a banner when viewing a past stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->call('viewStage', 'scheduling_colors')
+            ->assertSee('Scheduling & Colors', escape: false)
+            ->assertSee('Back to current');
+    });
+
+    it('does not show the banner when viewing the current stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->assertDontSee('Back to current');
+    });
+
+    it('updates viewingStage when advancing stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'estimate_accepted']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->assertSet('viewingStage', 'estimate_accepted')
+            ->call('advanceStage')
+            ->assertSet('viewingStage', 'scheduling_colors');
+    });
+
+    it('ignores invalid stage names', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->call('viewStage', 'nonexistent_stage')
+            ->assertSet('viewingStage', 'in_progress');
+    });
+
+    it('can navigate back to current stage from past stage', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        Livewire::actingAs($user)
+            ->test('jobs.show', ['job' => $job])
+            ->call('viewStage', 'estimate_accepted')
+            ->assertSet('viewingStage', 'estimate_accepted')
+            ->call('viewStage', 'in_progress')
+            ->assertSet('viewingStage', 'in_progress')
+            ->assertDontSee('Back to current');
+    });
+});

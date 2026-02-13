@@ -17,6 +17,7 @@ class Invitation extends Model
         'token',
         'invited_user_type',
         'service_category_id',
+        'deal_id',
         'inviter_id',
         'expires_at',
         'accepted_at',

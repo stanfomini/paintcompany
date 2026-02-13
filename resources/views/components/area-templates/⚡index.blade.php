@@ -111,13 +111,13 @@ new class extends Component {
         $template = EstimateTemplate::find($id);
 
         if (! $template) {
-            session()->flash('error', 'Template not found.');
+            session()->flash('error', __('Template not found.'));
 
             return;
         }
 
         if (! $template->canBeDeletedBy(auth()->user())) {
-            session()->flash('error', 'You do not have permission to delete this template.');
+            session()->flash('error', __('You do not have permission to delete this template.'));
 
             return;
         }
@@ -136,21 +136,21 @@ new class extends Component {
         $template = EstimateTemplate::find($this->deleteId);
 
         if (! $template) {
-            session()->flash('error', 'Template not found.');
+            session()->flash('error', __('Template not found.'));
             $this->closeDeleteModal();
 
             return;
         }
 
         if (! $template->canBeDeletedBy(auth()->user())) {
-            session()->flash('error', 'You do not have permission to delete this template.');
+            session()->flash('error', __('You do not have permission to delete this template.'));
             $this->closeDeleteModal();
 
             return;
         }
 
         $template->delete();
-        session()->flash('success', 'Template deleted successfully.');
+        session()->flash('success', __('Template deleted successfully.'));
 
         $this->closeDeleteModal();
         unset($this->templates);
@@ -168,7 +168,7 @@ new class extends Component {
         $template = EstimateTemplate::find($id);
 
         if (! $template) {
-            session()->flash('error', 'Template not found.');
+            session()->flash('error', __('Template not found.'));
 
             return;
         }
@@ -187,7 +187,7 @@ new class extends Component {
             $newSurface->save();
         }
 
-        session()->flash('success', 'Template cloned successfully.');
+        session()->flash('success', __('Template cloned successfully.'));
         unset($this->templates);
     }
 }; ?>
@@ -195,9 +195,9 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Area Templates</flux:heading>
+            <flux:heading size="xl">{{ __('Area Templates') }}</flux:heading>
             <flux:button href="{{ route('area-templates.create') }}" wire:navigate icon="plus" variant="primary">
-                Create Template
+                {{ __('Create Template') }}
             </flux:button>
         </div>
 
@@ -217,9 +217,9 @@ new class extends Component {
         <div class="border-b border-zinc-200 dark:border-zinc-700 mb-6">
             <nav class="-mb-px flex space-x-8">
                 @foreach ([
-                    'all' => 'All',
-                    'interior' => 'Interior',
-                    'exterior' => 'Exterior',
+                    'all' => __('All'),
+                    'interior' => __('Interior'),
+                    'exterior' => __('Exterior'),
                 ] as $tab => $label)
                     <button
                         wire:click="switchTab('{{ $tab }}')"
@@ -238,16 +238,16 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search templates..."
+                    :placeholder="__('Search templates...')"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="visibilityFilter">
-                    <option value="all">All Templates</option>
-                    <option value="mine">My Templates</option>
-                    <option value="company">Company</option>
-                    <option value="system">System</option>
+                    <option value="all">{{ __('All Templates') }}</option>
+                    <option value="mine">{{ __('My Templates') }}</option>
+                    <option value="company">{{ __('Company') }}</option>
+                    <option value="system">{{ __('System') }}</option>
                 </flux:select>
             </div>
         </div>
@@ -258,22 +258,22 @@ new class extends Component {
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Name
+                                {{ __('Name') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Scope
+                                {{ __('Scope') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Visibility
+                                {{ __('Visibility') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Surfaces
+                                {{ __('Surfaces') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Created By
+                                {{ __('Created By') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         </tr>
                     </thead>
@@ -284,7 +284,7 @@ new class extends Component {
                                     <div class="flex items-center gap-3">
                                         <flux:icon name="square-3-stack-3d" class="w-5 h-5 text-zinc-400" />
                                         <div>
-                                            <flux:text class="font-medium">{{ $template->name }}</flux:text>
+                                            <flux:text class="font-medium">{{ __($template->name) }}</flux:text>
                                             @if ($template->description)
                                                 <flux:text class="text-xs text-zinc-500">{{ Str::limit($template->description, 50) }}</flux:text>
                                             @endif
@@ -301,7 +301,7 @@ new class extends Component {
                                         };
                                     @endphp
                                     <flux:badge size="sm" color="{{ $scopeColor }}">
-                                        {{ $template->scope_type_label ?? 'N/A' }}
+                                        {{ $template->scope_type_label ?? __('N/A') }}
                                     </flux:badge>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
@@ -322,7 +322,7 @@ new class extends Component {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <flux:text class="text-sm">
-                                        {{ $template->createdBy?->name ?? 'System' }}
+                                        {{ $template->createdBy?->name ?? __('System') }}
                                     </flux:text>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right">
@@ -332,7 +332,7 @@ new class extends Component {
                                             variant="ghost"
                                             size="sm"
                                             icon="document-duplicate"
-                                            title="Clone"
+                                            :title="__('Clone')"
                                         />
                                         <flux:dropdown>
                                             <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
@@ -343,14 +343,14 @@ new class extends Component {
                                                         :href="route('area-templates.edit', $template)"
                                                         wire:navigate
                                                     >
-                                                        Edit
+                                                        {{ __('Edit') }}
                                                     </flux:menu.item>
                                                 @endif
                                                 <flux:menu.item
                                                     wire:click="clone({{ $template->id }})"
                                                     icon="document-duplicate"
                                                 >
-                                                    Clone
+                                                    {{ __('Clone') }}
                                                 </flux:menu.item>
                                                 @if ($template->canBeDeletedBy(auth()->user()))
                                                     <flux:menu.item
@@ -358,7 +358,7 @@ new class extends Component {
                                                         icon="trash"
                                                         variant="danger"
                                                     >
-                                                        Delete
+                                                        {{ __('Delete') }}
                                                     </flux:menu.item>
                                                 @endif
                                             </flux:menu>
@@ -377,18 +377,18 @@ new class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="square-3-stack-3d" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No templates found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No templates found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search || $scopeTab !== 'all' || $visibilityFilter !== 'all')
-                        Try adjusting your search or filter criteria.
+                        {{ __('Try adjusting your search or filter criteria.') }}
                     @else
-                        Get started by creating your first area template.
+                        {{ __('Get started by creating your first area template.') }}
                     @endif
                 </flux:text>
                 @if (! $search && $scopeTab === 'all' && $visibilityFilter === 'all')
                     <div class="mt-6">
                         <flux:button href="{{ route('area-templates.create') }}" wire:navigate variant="primary" icon="plus">
-                            Create Template
+                            {{ __('Create Template') }}
                         </flux:button>
                     </div>
                 @endif
@@ -399,19 +399,19 @@ new class extends Component {
     <!-- Delete Confirmation Modal -->
     <flux:modal wire:model="showDeleteModal" class="md:w-96">
         <div class="space-y-6">
-            <flux:heading size="lg">Delete Template</flux:heading>
+            <flux:heading size="lg">{{ __('Delete Template') }}</flux:heading>
 
             <flux:text>
-                Are you sure you want to delete <strong>{{ $deleteName }}</strong>? This action cannot be undone.
+                {!! __('Are you sure you want to delete <strong>:name</strong>? This action cannot be undone.', ['name' => e($deleteName)]) !!}
             </flux:text>
 
             <div class="flex justify-end gap-3">
                 <flux:button wire:click="closeDeleteModal" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button wire:click="delete" variant="danger" wire:loading.attr="disabled">
-                    <span wire:loading.remove wire:target="delete">Delete</span>
-                    <span wire:loading wire:target="delete">Deleting...</span>
+                    <span wire:loading.remove wire:target="delete">{{ __('Delete') }}</span>
+                    <span wire:loading wire:target="delete">{{ __('Deleting...') }}</span>
                 </flux:button>
             </div>
         </div>

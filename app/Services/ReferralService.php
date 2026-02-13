@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\Invoice;
+use App\Models\Property;
 use App\Models\Referral;
 use App\Models\User;
 use App\Notifications\ReferralEstimateSigned;
@@ -53,8 +54,18 @@ class ReferralService
             'created_by' => $createdBy,
         ]);
 
+        // Find auto-created property (from Customer model saved hook) or create if needed
+        $property = null;
+        if (! empty($data['address']) && ! empty($data['city'])) {
+            $property = $customer->properties()
+                ->where('address', $data['address'])
+                ->where('city', $data['city'])
+                ->first();
+        }
+
         $deal = Deal::create([
             'customer_id' => $customer->id,
+            'property_id' => $property?->id,
             'title' => "Painting Estimate - {$customer->full_name}",
             'description' => $data['description'] ?? null,
             'stage' => 'lead',

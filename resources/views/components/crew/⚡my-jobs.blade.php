@@ -38,7 +38,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
 
     {{-- Active Jobs --}}
     <div class="mb-8">
-        <flux:heading size="sm" class="mb-4">Active Jobs</flux:heading>
+        <flux:heading size="sm" class="mb-4">{{ __('Active Jobs') }}</flux:heading>
         @if ($this->activeJobs->count() > 0)
             <div class="space-y-4">
                 @foreach ($this->activeJobs as $job)
@@ -88,7 +88,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-12 text-center">
                 <flux:icon name="clipboard-document-check" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                <flux:text class="text-zinc-500">No active jobs. Accept available jobs to get started.</flux:text>
+                <flux:text class="text-zinc-500">{{ __('No active jobs. Accept available jobs to get started.') }}</flux:text>
             </div>
         @endif
     </div>
@@ -96,7 +96,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
     {{-- Completed Jobs --}}
     @if ($this->completedJobs->count() > 0)
         <div>
-            <flux:heading size="sm" class="mb-4">Completed Jobs</flux:heading>
+            <flux:heading size="sm" class="mb-4">{{ __('Completed Jobs') }}</flux:heading>
             <div class="space-y-3">
                 @foreach ($this->completedJobs as $job)
                     <a href="{{ route('crew.jobs.show', $job) }}" class="block" wire:key="completed-{{ $job->id }}">
@@ -106,7 +106,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
                                     <flux:text class="font-medium">{{ $job->title }}</flux:text>
                                     <flux:text class="text-sm text-zinc-500">{{ $job->job_number }}</flux:text>
                                 </div>
-                                <flux:badge size="sm" color="green">Completed</flux:badge>
+                                <flux:badge size="sm" color="green">{{ __('Completed') }}</flux:badge>
                             </div>
                         </div>
                     </a>

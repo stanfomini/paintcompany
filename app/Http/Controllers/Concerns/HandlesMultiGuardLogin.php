@@ -2,8 +2,11 @@
 
 namespace App\Http\Controllers\Concerns;
 
+use App\Models\User;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 trait HandlesMultiGuardLogin
 {
@@ -64,7 +67,7 @@ trait HandlesMultiGuardLogin
 
         foreach ($guards as $guard) {
             if ($guard !== $currentGuard && Auth::guard($guard)->check()) {
-                Auth::guard($guard)->logout();
+                Auth::guard($guard)->logoutCurrentDevice();
             }
         }
     }
@@ -93,5 +96,40 @@ trait HandlesMultiGuardLogin
             'crew' => 'crew.login',
             default => 'login',
         };
+    }
+
+    /**
+     * Check if valid credentials were used on the wrong portal and redirect to the correct one.
+     *
+     * Returns a redirect if the user exists with valid credentials but is the wrong type.
+     * Returns null if this is not a wrong-portal situation (invalid credentials or correct portal).
+     */
+    protected function redirectIfWrongPortal(Request $request, string $expectedType): ?RedirectResponse
+    {
+        $user = User::where('email', $request->input('email'))->first();
+
+        if (! $user || ! Hash::check($request->input('password'), $user->password)) {
+            return null;
+        }
+
+        if ($user->type === $expectedType) {
+            return null;
+        }
+
+        $correctGuard = match ($user->type) {
+            'internal' => 'web',
+            'agent' => 'agent',
+            'customer' => 'customer',
+            'crew' => 'crew',
+            default => 'web',
+        };
+
+        // Log them in on their correct guard and redirect
+        Auth::guard($correctGuard)->login($user, $request->boolean('remember'));
+        $request->session()->regenerate();
+
+        $dashboard = $this->getDashboardRoute($correctGuard);
+
+        return redirect()->route($dashboard);
     }
 }

@@ -37,23 +37,23 @@ class InvitationNotification extends Notification implements ShouldQueue
         $acceptUrl = $invitationService->generateAcceptUrl($this->invitation);
 
         $typeLabels = [
-            'internal' => 'team member',
-            'agent' => 'agent',
-            'customer' => 'customer',
+            'internal' => __('team member'),
+            'agent' => __('agent'),
+            'customer' => __('customer'),
         ];
 
-        $typeLabel = $typeLabels[$this->invitation->invited_user_type] ?? 'user';
+        $typeLabel = $typeLabels[$this->invitation->invited_user_type] ?? __('user');
         $appName = config('app.name', 'Apex Negotiations');
         $inviterName = $this->invitation->inviter->name;
 
         return (new MailMessage)
-            ->subject("You've been invited to join {$appName}")
-            ->greeting('Hello!')
-            ->line("{$inviterName} has invited you to join {$appName} as a {$typeLabel}.")
-            ->line('Click the button below to create your account and get started.')
-            ->action('Accept Invitation', $acceptUrl)
-            ->line('This invitation will expire in 7 days.')
-            ->line('If you did not expect this invitation, you can safely ignore this email.');
+            ->subject(__("You've been invited to join :appName", ['appName' => $appName]))
+            ->greeting(__('Hello!'))
+            ->line(__(':inviterName has invited you to join :appName as a :typeLabel.', ['inviterName' => $inviterName, 'appName' => $appName, 'typeLabel' => $typeLabel]))
+            ->line(__('Click the button below to create your account and get started.'))
+            ->action(__('Accept Invitation'), $acceptUrl)
+            ->line(__('This invitation will expire in 7 days.'))
+            ->line(__('If you did not expect this invitation, you can safely ignore this email.'));
     }
 
     /**

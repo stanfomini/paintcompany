@@ -72,7 +72,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
             'service_category_id' => $this->serviceCategoryId,
         ]);
 
-        session()->flash('success', 'Settings saved successfully.');
+        session()->flash('success', __('Settings saved successfully.'));
     }
 
     public function toggleSpecialty(string $specialty): void
@@ -86,8 +86,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
 }; ?>
 
 <div class="max-w-2xl mx-auto">
-    <flux:heading size="xl" class="mb-2">Crew Settings</flux:heading>
-    <flux:text class="text-zinc-500 mb-6">Manage your crew profile and preferences.</flux:text>
+    <flux:heading size="xl" class="mb-2">{{ __('Crew Settings') }}</flux:heading>
+    <flux:text class="text-zinc-500 mb-6">{{ __('Manage your crew profile and preferences.') }}</flux:text>
 
     @if (session('success'))
         <flux:callout variant="success" class="mb-6">
@@ -98,50 +98,50 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
     <form wire:submit="save" class="space-y-6">
         {{-- Company/Crew Info --}}
         <div class="p-6 border border-zinc-200 dark:border-zinc-700 rounded-lg space-y-4">
-            <flux:heading size="sm">Crew Information</flux:heading>
+            <flux:heading size="sm">{{ __('Crew Information') }}</flux:heading>
 
             <flux:field>
-                <flux:label>Company / Crew Name</flux:label>
-                <flux:input wire:model="company_name" placeholder="e.g. Smith Painting Crew" />
+                <flux:label>{{ __('Company / Crew Name') }}</flux:label>
+                <flux:input wire:model="company_name" :placeholder="__('e.g. Smith Painting Crew')" />
                 <flux:error name="company_name" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Phone Number</flux:label>
-                <flux:input wire:model="phone" type="tel" placeholder="(555) 123-4567" />
+                <flux:label>{{ __('Phone Number') }}</flux:label>
+                <flux:input wire:model="phone" type="tel" :placeholder="__('(555) 123-4567')" />
                 <flux:error name="phone" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Service Category</flux:label>
-                <flux:select wire:model="serviceCategoryId" placeholder="Select your service...">
+                <flux:label>{{ __('Service Category') }}</flux:label>
+                <flux:select wire:model="serviceCategoryId" :placeholder="__('Select your service...')">
                     @foreach (\App\Models\ServiceCategory::active()->ordered()->get() as $category)
-                        <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                        <flux:select.option value="{{ $category->id }}">{{ __($category->name) }}</flux:select.option>
                     @endforeach
                 </flux:select>
-                <flux:description>What type of work does your crew perform? This determines which jobs you're eligible for.</flux:description>
+                <flux:description>{{ __('What type of work does your crew perform? This determines which jobs you\'re eligible for.') }}</flux:description>
                 <flux:error name="serviceCategoryId" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Crew Size (Number of Painters)</flux:label>
+                <flux:label>{{ __('Crew Size (Number of Painters)') }}</flux:label>
                 <flux:input wire:model="crew_size" type="number" min="1" max="50" />
-                <flux:description>How many painters are on your crew? This determines which jobs you're eligible for.</flux:description>
+                <flux:description>{{ __('How many painters are on your crew? This determines which jobs you\'re eligible for.') }}</flux:description>
                 <flux:error name="crew_size" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Hourly Rate (Optional)</flux:label>
+                <flux:label>{{ __('Hourly Rate (Optional)') }}</flux:label>
                 <flux:input wire:model="hourly_rate" type="number" step="0.01" min="0" max="500" placeholder="25.00" />
-                <flux:description>Your preferred hourly rate per painter.</flux:description>
+                <flux:description>{{ __('Your preferred hourly rate per painter.') }}</flux:description>
                 <flux:error name="hourly_rate" />
             </flux:field>
         </div>
 
         {{-- Specialties --}}
         <div class="p-6 border border-zinc-200 dark:border-zinc-700 rounded-lg space-y-4">
-            <flux:heading size="sm">Specialties</flux:heading>
-            <flux:text class="text-sm text-zinc-500">Select the types of work your crew specializes in.</flux:text>
+            <flux:heading size="sm">{{ __('Specialties') }}</flux:heading>
+            <flux:text class="text-sm text-zinc-500">{{ __('Select the types of work your crew specializes in.') }}</flux:text>
 
             <div class="flex flex-wrap gap-2">
                 @foreach ($availableSpecialties as $specialty)
@@ -150,7 +150,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
                         wire:click="toggleSpecialty('{{ $specialty }}')"
                         class="px-3 py-1.5 text-sm rounded-full border transition-colors {{ in_array($specialty, $specialties) ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-600 hover:border-blue-400' }}"
                     >
-                        {{ $specialty }}
+                        {{ __($specialty) }}
                     </button>
                 @endforeach
             </div>
@@ -158,11 +158,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
 
         {{-- Bio --}}
         <div class="p-6 border border-zinc-200 dark:border-zinc-700 rounded-lg space-y-4">
-            <flux:heading size="sm">About Your Crew</flux:heading>
+            <flux:heading size="sm">{{ __('About Your Crew') }}</flux:heading>
 
             <flux:field>
-                <flux:label>Bio (Optional)</flux:label>
-                <flux:textarea wire:model="bio" rows="4" placeholder="Tell us about your crew's experience, certifications, or what makes you stand out..." />
+                <flux:label>{{ __('Bio (Optional)') }}</flux:label>
+                <flux:textarea wire:model="bio" rows="4" :placeholder="__('Tell us about your crew\'s experience, certifications, or what makes you stand out...')" />
                 <flux:error name="bio" />
             </flux:field>
         </div>
@@ -170,7 +170,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
         {{-- Save Button --}}
         <div class="flex justify-end">
             <flux:button type="submit" variant="primary">
-                Save Settings
+                {{ __('Save Settings') }}
             </flux:button>
         </div>
     </form>

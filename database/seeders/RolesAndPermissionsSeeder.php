@@ -68,6 +68,10 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Communication
             'chat.access',
+            'chat.with_customers',
+            'chat.with_agents',
+            'chat.with_crew',
+            'chat.with_internal',
             'walkie_talkie.access',
             'video_call.access',
 
@@ -76,25 +80,30 @@ class RolesAndPermissionsSeeder extends Seeder
             'settings.packages',
             'settings.allocations',
             'settings.payment_integrations',
+            'settings.service_categories',
+            'settings.budget_mappings',
+            'settings.referral',
+            'settings.contracts',
+            'settings.lead_sources',
 
-            // Roadmap (legacy names - keep for backward compatibility)
-            'view roadmap',
-            'edit roadmap',
-            'manage roadmap',
+            // Roadmap
+            'roadmap.view',
+            'roadmap.edit',
+            'roadmap.manage',
 
-            // KPIs (legacy names)
-            'view kpis',
-            'edit kpi targets',
-            'enter kpi actuals',
-            'manage kpis',
+            // KPIs
+            'kpis.view',
+            'kpis.edit_targets',
+            'kpis.enter_actuals',
+            'kpis.manage',
 
-            // Team management (legacy names)
-            'manage users',
-            'manage invitations',
-            'manage roles',
+            // Team management
+            'team.manage_users',
+            'team.manage_invitations',
+            'team.manage_roles',
 
-            // General admin (legacy)
-            'access admin settings',
+            // General admin
+            'admin.access_settings',
 
             // Business Plan
             'business_plan.view',
@@ -123,6 +132,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'photos.delete',
             'photos.annotate',
             'photos.comment',
+
+            // Referrals
+            'referrals.view',
+            'referrals.manage',
         ];
 
         foreach ($permissions as $permission) {
@@ -157,17 +170,21 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates
             'production_rates.view', 'production_rates.manage',
             // Communication
-            'chat.access', 'walkie_talkie.access', 'video_call.access',
+            'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+            'walkie_talkie.access', 'video_call.access',
             // Settings
             'settings.company', 'settings.packages', 'settings.allocations',
+            'settings.payment_integrations', 'settings.service_categories',
+            'settings.budget_mappings', 'settings.referral', 'settings.contracts',
+            'settings.lead_sources',
             // Roadmap
-            'view roadmap', 'edit roadmap', 'manage roadmap',
+            'roadmap.view', 'roadmap.edit', 'roadmap.manage',
             // KPIs
-            'view kpis', 'edit kpi targets', 'enter kpi actuals', 'manage kpis',
+            'kpis.view', 'kpis.edit_targets', 'kpis.enter_actuals', 'kpis.manage',
             // Team
-            'manage users', 'manage invitations',
+            'team.manage_users', 'team.manage_invitations',
             // Admin
-            'access admin settings',
+            'admin.access_settings',
             // Business Plan
             'business_plan.view', 'business_plan.manage',
             // Invoices
@@ -180,6 +197,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'accounting.view', 'accounting.manage',
             // Photos
             'photos.upload', 'photos.delete', 'photos.annotate', 'photos.comment',
+            // Referrals
+            'referrals.view', 'referrals.manage',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -204,13 +223,14 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates (view only)
             'production_rates.view',
             // Communication
-            'chat.access', 'walkie_talkie.access', 'video_call.access',
+            'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+            'walkie_talkie.access', 'video_call.access',
             // Roadmap
-            'view roadmap', 'edit roadmap',
+            'roadmap.view', 'roadmap.edit',
             // KPIs
-            'view kpis', 'edit kpi targets', 'enter kpi actuals',
+            'kpis.view', 'kpis.edit_targets', 'kpis.enter_actuals',
             // Team
-            'manage invitations',
+            'team.manage_invitations',
             // Business Plan
             'business_plan.view', 'business_plan.manage',
             // Invoices
@@ -223,6 +243,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'accounting.view',
             // Photos
             'photos.upload', 'photos.annotate', 'photos.comment',
+            // Referrals
+            'referrals.view',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -243,17 +265,20 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates (view only)
             'production_rates.view',
             // Communication
-            'chat.access', 'walkie_talkie.access', 'video_call.access',
+            'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_internal',
+            'walkie_talkie.access', 'video_call.access',
             // Roadmap
-            'view roadmap',
+            'roadmap.view',
             // KPIs
-            'view kpis',
+            'kpis.view',
             // Business Plan (view only)
             'business_plan.view',
             // Invoices (view only)
             'invoices.view',
             // Photos
             'photos.upload', 'photos.comment',
+            // Referrals
+            'referrals.view',
         ]);
 
         // Crew Lead - minimal internal access
@@ -264,9 +289,10 @@ class RolesAndPermissionsSeeder extends Seeder
             // Planner (own activities)
             'planner.view',
             // Communication
-            'chat.access', 'walkie_talkie.access', 'video_call.access',
+            'chat.access', 'chat.with_crew', 'chat.with_internal',
+            'walkie_talkie.access', 'video_call.access',
             // Roadmap
-            'view roadmap',
+            'roadmap.view',
             // Photos
             'photos.upload', 'photos.annotate', 'photos.comment',
         ]);

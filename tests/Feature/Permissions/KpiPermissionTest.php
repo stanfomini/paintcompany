@@ -35,7 +35,7 @@ describe('KPI Routes - Legacy Redirects', function () {
 describe('KPI Routes - With Permission', function () {
     it('redirects legacy sales KPI URL for authorized users', function () {
         $user = User::factory()->internal()->create();
-        $user->givePermissionTo('view kpis');
+        $user->givePermissionTo('kpis.view');
 
         $this->actingAs($user)
             ->get(route('kpis.sales'))
@@ -44,7 +44,7 @@ describe('KPI Routes - With Permission', function () {
 
     it('redirects legacy production KPI URL for authorized users', function () {
         $user = User::factory()->internal()->create();
-        $user->givePermissionTo('view kpis');
+        $user->givePermissionTo('kpis.view');
 
         $this->actingAs($user)
             ->get(route('kpis.production'))

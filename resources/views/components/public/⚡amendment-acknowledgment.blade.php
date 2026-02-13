@@ -16,7 +16,7 @@ new class extends Component {
                 @else
                     <flux:icon name="exclamation-triangle" class="w-5 h-5 text-amber-600" />
                 @endif
-                <flux:text class="font-semibold">Amendment #{{ $amendment->amendment_number }}</flux:text>
+                <flux:text class="font-semibold">{{ __('Amendment') }} #{{ $amendment->amendment_number }}</flux:text>
                 <flux:text size="sm" class="text-zinc-500">{{ $amendment->created_at->format('M j, Y g:i A') }}</flux:text>
             </div>
         </div>
@@ -59,8 +59,8 @@ new class extends Component {
 
         {{-- Total Change --}}
         <div class="flex items-center gap-4 py-2 border-t border-zinc-200 dark:border-zinc-700">
-            <flux:text size="sm" class="text-zinc-500">Previous: ${{ number_format($amendment->previous_total, 2) }}</flux:text>
-            <flux:text size="sm" class="text-zinc-500">New: ${{ number_format($amendment->new_total, 2) }}</flux:text>
+            <flux:text size="sm" class="text-zinc-500">{{ __('Previous') }}: ${{ number_format($amendment->previous_total, 2) }}</flux:text>
+            <flux:text size="sm" class="text-zinc-500">{{ __('New') }}: ${{ number_format($amendment->new_total, 2) }}</flux:text>
             <flux:text size="sm" class="font-semibold {{ $amendment->getTotalChangeAmount() >= 0 ? 'text-red-600' : 'text-green-600' }}">
                 ({{ $amendment->getTotalChangeFormatted() }})
             </flux:text>
@@ -71,7 +71,7 @@ new class extends Component {
             <div class="flex items-center gap-2 text-green-700 dark:text-green-400 mt-3">
                 <flux:icon name="check-badge" class="w-5 h-5" />
                 <flux:text size="sm" class="font-medium">
-                    Acknowledged by {{ $amendment->customer_initials }} on {{ $amendment->customer_acknowledged_at->format('M j, Y g:i A') }}
+                    {{ __('Acknowledged by :initials on :date', ['initials' => $amendment->customer_initials, 'date' => $amendment->customer_acknowledged_at->format('M j, Y g:i A')]) }}
                 </flux:text>
             </div>
         @endif

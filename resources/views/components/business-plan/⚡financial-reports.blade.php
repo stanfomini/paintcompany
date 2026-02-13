@@ -38,10 +38,10 @@ new class extends Component
     public function accountingModeLabel(): string
     {
         return match ($this->accountingMode) {
-            'cash' => 'Cash Basis',
-            'accrual' => 'Accrual Basis',
-            'modified_cash' => 'Modified Cash Basis',
-            default => 'Cash Basis',
+            'cash' => __('Cash Basis'),
+            'accrual' => __('Accrual Basis'),
+            'modified_cash' => __('Modified Cash Basis'),
+            default => __('Cash Basis'),
         };
     }
 
@@ -118,9 +118,9 @@ new class extends Component
     {{-- Header --}}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <flux:heading size="lg">Financial Reports</flux:heading>
+            <flux:heading size="lg">{{ __('Financial Reports') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                View financial statements and reports.
+                {{ __('View financial statements and reports.') }}
             </flux:text>
         </div>
         <flux:badge size="lg" color="blue">{{ $this->accountingModeLabel }}</flux:badge>
@@ -129,9 +129,9 @@ new class extends Component
     {{-- Report Type Tabs --}}
     <div class="mb-6 flex gap-1 border-b border-zinc-200 pb-px dark:border-zinc-700">
         @foreach ([
-            'trial-balance' => 'Trial Balance',
-            'profit-loss' => 'Profit & Loss',
-            'balance-sheet' => 'Balance Sheet',
+            'trial-balance' => __('Trial Balance'),
+            'profit-loss' => __('Profit & Loss'),
+            'balance-sheet' => __('Balance Sheet'),
         ] as $key => $label)
             <button
                 wire:key="report-tab-{{ $key }}"
@@ -150,10 +150,10 @@ new class extends Component
     <div class="mb-4 flex items-center gap-3">
         @if ($reportType === 'profit-loss')
             <flux:input wire:model.live="fromDate" type="date" class="w-44" />
-            <flux:text class="text-zinc-400">to</flux:text>
+            <flux:text class="text-zinc-400">{{ __('to') }}</flux:text>
             <flux:input wire:model.live="toDate" type="date" class="w-44" />
         @else
-            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">As of:</flux:text>
+            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('As of:') }}</flux:text>
             <flux:input wire:model.live="asOfDate" type="date" class="w-44" />
         @endif
     </div>
@@ -165,10 +165,10 @@ new class extends Component
             <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                 <thead class="bg-zinc-50 dark:bg-zinc-800">
                     <tr>
-                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Code</th>
-                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Account</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Debit</th>
-                        <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Credit</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Code') }}</th>
+                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Account') }}</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Debit') }}</th>
+                        <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Credit') }}</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
@@ -189,7 +189,7 @@ new class extends Component
                 </tbody>
                 <tfoot class="bg-zinc-100 dark:bg-zinc-800">
                     <tr>
-                        <td colspan="2" class="px-4 py-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">Total</td>
+                        <td colspan="2" class="px-4 py-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('Total') }}</td>
                         <td class="px-4 py-2 text-right text-sm font-bold text-zinc-900 dark:text-zinc-100">
                             ${{ number_format($tb['total_debits'], 2) }}
                         </td>
@@ -203,13 +203,13 @@ new class extends Component
 
         @if ($tb['is_balanced'])
             <flux:callout variant="outline" icon="check-circle" class="mt-4">
-                <flux:callout.heading>Balanced</flux:callout.heading>
-                <flux:callout.text>Total debits equal total credits.</flux:callout.text>
+                <flux:callout.heading>{{ __('Balanced') }}</flux:callout.heading>
+                <flux:callout.text>{{ __('Total debits equal total credits.') }}</flux:callout.text>
             </flux:callout>
         @else
             <flux:callout variant="outline" icon="exclamation-triangle" class="mt-4">
-                <flux:callout.heading>Unbalanced</flux:callout.heading>
-                <flux:callout.text>Warning: Total debits do not equal total credits. Difference: ${{ number_format(abs($tb['total_debits'] - $tb['total_credits']), 2) }}</flux:callout.text>
+                <flux:callout.heading>{{ __('Unbalanced') }}</flux:callout.heading>
+                <flux:callout.text>{{ __('Warning: Total debits do not equal total credits. Difference:') }} ${{ number_format(abs($tb['total_debits'] - $tb['total_credits']), 2) }}</flux:callout.text>
             </flux:callout>
         @endif
     @endif
@@ -221,7 +221,7 @@ new class extends Component
             {{-- Revenue Section --}}
             <div class="rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <div class="border-b border-zinc-200 bg-emerald-50 px-4 py-2 dark:border-zinc-700 dark:bg-emerald-950/30">
-                    <flux:heading size="md" class="text-emerald-700 dark:text-emerald-400">Revenue</flux:heading>
+                    <flux:heading size="md" class="text-emerald-700 dark:text-emerald-400">{{ __('Revenue') }}</flux:heading>
                 </div>
                 <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
                     @forelse ($pl['revenue'] as $item)
@@ -233,11 +233,11 @@ new class extends Component
                         @endif
                     @empty
                         <div class="px-4 py-2">
-                            <flux:text class="text-zinc-400">No revenue recorded for this period.</flux:text>
+                            <flux:text class="text-zinc-400">{{ __('No revenue recorded for this period.') }}</flux:text>
                         </div>
                     @endforelse
                     <div class="flex items-center justify-between bg-emerald-50 px-4 py-2 dark:bg-emerald-950/20">
-                        <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Total Revenue</span>
+                        <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('Total Revenue') }}</span>
                         <span class="text-sm font-bold text-emerald-600 dark:text-emerald-400">${{ number_format($pl['total_revenue'], 2) }}</span>
                     </div>
                 </div>
@@ -246,7 +246,7 @@ new class extends Component
             {{-- Expenses Section --}}
             <div class="rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <div class="border-b border-zinc-200 bg-red-50 px-4 py-2 dark:border-zinc-700 dark:bg-red-950/30">
-                    <flux:heading size="md" class="text-red-700 dark:text-red-400">Expenses</flux:heading>
+                    <flux:heading size="md" class="text-red-700 dark:text-red-400">{{ __('Expenses') }}</flux:heading>
                 </div>
                 <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
                     @forelse ($pl['expenses'] as $item)
@@ -258,11 +258,11 @@ new class extends Component
                         @endif
                     @empty
                         <div class="px-4 py-2">
-                            <flux:text class="text-zinc-400">No expenses recorded for this period.</flux:text>
+                            <flux:text class="text-zinc-400">{{ __('No expenses recorded for this period.') }}</flux:text>
                         </div>
                     @endforelse
                     <div class="flex items-center justify-between bg-red-50 px-4 py-2 dark:bg-red-950/20">
-                        <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Total Expenses</span>
+                        <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('Total Expenses') }}</span>
                         <span class="text-sm font-bold text-red-600 dark:text-red-400">${{ number_format($pl['total_expenses'], 2) }}</span>
                     </div>
                 </div>
@@ -270,7 +270,7 @@ new class extends Component
 
             {{-- Net Income --}}
             <div class="rounded-lg border-2 {{ $pl['net_income'] >= 0 ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30' : 'border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/30' }} p-4 text-center">
-                <flux:text class="text-sm uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Net Income</flux:text>
+                <flux:text class="text-sm uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ __('Net Income') }}</flux:text>
                 <p class="text-3xl font-bold {{ $pl['net_income'] >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                     ${{ number_format($pl['net_income'], 2) }}
                 </p>
@@ -285,7 +285,7 @@ new class extends Component
             {{-- Assets --}}
             <div class="rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <div class="border-b border-zinc-200 bg-blue-50 px-4 py-2 dark:border-zinc-700 dark:bg-blue-950/30">
-                    <flux:heading size="md" class="text-blue-700 dark:text-blue-400">Assets</flux:heading>
+                    <flux:heading size="md" class="text-blue-700 dark:text-blue-400">{{ __('Assets') }}</flux:heading>
                 </div>
                 <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
                     @forelse ($bs['assets'] as $item)
@@ -296,10 +296,10 @@ new class extends Component
                             </div>
                         @endif
                     @empty
-                        <div class="px-4 py-2"><flux:text class="text-zinc-400">No assets.</flux:text></div>
+                        <div class="px-4 py-2"><flux:text class="text-zinc-400">{{ __('No assets.') }}</flux:text></div>
                     @endforelse
                     <div class="flex items-center justify-between bg-blue-50 px-4 py-2 dark:bg-blue-950/20">
-                        <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Total Assets</span>
+                        <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('Total Assets') }}</span>
                         <span class="text-sm font-bold text-blue-600 dark:text-blue-400">${{ number_format($bs['total_assets'], 2) }}</span>
                     </div>
                 </div>
@@ -310,7 +310,7 @@ new class extends Component
                 {{-- Liabilities --}}
                 <div class="rounded-lg border border-zinc-200 dark:border-zinc-700">
                     <div class="border-b border-zinc-200 bg-amber-50 px-4 py-2 dark:border-zinc-700 dark:bg-amber-950/30">
-                        <flux:heading size="md" class="text-amber-700 dark:text-amber-400">Liabilities</flux:heading>
+                        <flux:heading size="md" class="text-amber-700 dark:text-amber-400">{{ __('Liabilities') }}</flux:heading>
                     </div>
                     <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
                         @forelse ($bs['liabilities'] as $item)
@@ -321,10 +321,10 @@ new class extends Component
                                 </div>
                             @endif
                         @empty
-                            <div class="px-4 py-2"><flux:text class="text-zinc-400">No liabilities.</flux:text></div>
+                            <div class="px-4 py-2"><flux:text class="text-zinc-400">{{ __('No liabilities.') }}</flux:text></div>
                         @endforelse
                         <div class="flex items-center justify-between bg-amber-50 px-4 py-2 dark:bg-amber-950/20">
-                            <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Total Liabilities</span>
+                            <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('Total Liabilities') }}</span>
                             <span class="text-sm font-bold text-amber-600 dark:text-amber-400">${{ number_format($bs['total_liabilities'], 2) }}</span>
                         </div>
                     </div>
@@ -333,7 +333,7 @@ new class extends Component
                 {{-- Equity --}}
                 <div class="rounded-lg border border-zinc-200 dark:border-zinc-700">
                     <div class="border-b border-zinc-200 bg-purple-50 px-4 py-2 dark:border-zinc-700 dark:bg-purple-950/30">
-                        <flux:heading size="md" class="text-purple-700 dark:text-purple-400">Equity</flux:heading>
+                        <flux:heading size="md" class="text-purple-700 dark:text-purple-400">{{ __('Equity') }}</flux:heading>
                     </div>
                     <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
                         @forelse ($bs['equity'] as $item)
@@ -344,10 +344,10 @@ new class extends Component
                                 </div>
                             @endif
                         @empty
-                            <div class="px-4 py-2"><flux:text class="text-zinc-400">No equity.</flux:text></div>
+                            <div class="px-4 py-2"><flux:text class="text-zinc-400">{{ __('No equity.') }}</flux:text></div>
                         @endforelse
                         <div class="flex items-center justify-between bg-purple-50 px-4 py-2 dark:bg-purple-950/20">
-                            <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">Total Equity</span>
+                            <span class="text-sm font-bold text-zinc-900 dark:text-zinc-100">{{ __('Total Equity') }}</span>
                             <span class="text-sm font-bold text-purple-600 dark:text-purple-400">${{ number_format($bs['total_equity'], 2) }}</span>
                         </div>
                     </div>
@@ -359,19 +359,19 @@ new class extends Component
         <div class="mt-4 rounded-lg border-2 {{ $bs['is_balanced'] ? 'border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-950/30' : 'border-red-300 bg-red-50 dark:border-red-700 dark:bg-red-950/30' }} p-4 text-center">
             <div class="flex items-center justify-center gap-8">
                 <div>
-                    <flux:text class="text-xs uppercase tracking-wide text-zinc-500">Assets</flux:text>
+                    <flux:text class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Assets') }}</flux:text>
                     <p class="text-lg font-bold text-blue-600 dark:text-blue-400">${{ number_format($bs['total_assets'], 2) }}</p>
                 </div>
                 <flux:text class="text-2xl text-zinc-400">=</flux:text>
                 <div>
-                    <flux:text class="text-xs uppercase tracking-wide text-zinc-500">Liabilities + Equity</flux:text>
+                    <flux:text class="text-xs uppercase tracking-wide text-zinc-500">{{ __('Liabilities + Equity') }}</flux:text>
                     <p class="text-lg font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($bs['total_liabilities'] + $bs['total_equity'], 2) }}</p>
                 </div>
             </div>
             @if ($bs['is_balanced'])
-                <flux:text class="mt-2 text-emerald-600 dark:text-emerald-400">Balanced</flux:text>
+                <flux:text class="mt-2 text-emerald-600 dark:text-emerald-400">{{ __('Balanced') }}</flux:text>
             @else
-                <flux:text class="mt-2 text-red-600 dark:text-red-400">Unbalanced - difference: ${{ number_format(abs($bs['total_assets'] - $bs['total_liabilities'] - $bs['total_equity']), 2) }}</flux:text>
+                <flux:text class="mt-2 text-red-600 dark:text-red-400">{{ __('Unbalanced') }} - {{ __('difference:') }} ${{ number_format(abs($bs['total_assets'] - $bs['total_liabilities'] - $bs['total_equity']), 2) }}</flux:text>
             @endif
         </div>
     @endif
@@ -380,8 +380,8 @@ new class extends Component
     @if (($reportType === 'trial-balance' && $this->trialBalance && $this->trialBalance['accounts']->every(fn ($r) => $r['debit'] == 0 && $r['credit'] == 0))
         || ($reportType === 'profit-loss' && $this->profitAndLoss && $this->profitAndLoss['total_revenue'] == 0 && $this->profitAndLoss['total_expenses'] == 0))
         <flux:callout variant="outline" icon="chart-bar-square" class="mt-4">
-            <flux:callout.heading>No transactions yet</flux:callout.heading>
-            <flux:callout.text>Financial reports will populate as journal entries are posted.</flux:callout.text>
+            <flux:callout.heading>{{ __('No transactions yet') }}</flux:callout.heading>
+            <flux:callout.text>{{ __('Financial reports will populate as journal entries are posted.') }}</flux:callout.text>
         </flux:callout>
     @endif
 </div>

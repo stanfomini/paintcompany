@@ -16,23 +16,13 @@
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                     @can('people.view')
-                        <flux:sidebar.item icon="users" :href="route('people.index')" :current="request()->routeIs('people.*') || request()->routeIs('customers.*') || request()->routeIs('agents.*') || request()->routeIs('crews.*')" wire:navigate>
-                            {{ __('People') }}
-                        </flux:sidebar.item>
-                    @endcan
-                    @can('properties.view')
-                        <flux:sidebar.item icon="home" :href="route('properties.index')" :current="request()->routeIs('properties.*')" wire:navigate>
-                            {{ __('Properties') }}
+                        <flux:sidebar.item icon="magnifying-glass" :href="route('people.index')" :current="request()->routeIs('people.*') || request()->routeIs('customers.*') || request()->routeIs('agents.*') || request()->routeIs('crews.*') || request()->routeIs('properties.*')" wire:navigate>
+                            {{ __('Search') }}
                         </flux:sidebar.item>
                     @endcan
                     @can('deals.view')
                         <flux:sidebar.item icon="briefcase" :href="route('deals.index')" :current="request()->routeIs('deals.*')" wire:navigate>
-                            {{ __('Deals') }}
-                        </flux:sidebar.item>
-                    @endcan
-                    @can('estimates.view')
-                        <flux:sidebar.item icon="document-text" :href="route('estimates.index')" :current="request()->routeIs('estimates.*')" wire:navigate>
-                            {{ __('Estimates') }}
+                            {{ __('Active Leads') }}
                         </flux:sidebar.item>
                     @endcan
                     @can('jobs.view')
@@ -60,12 +50,7 @@
                             {{ __('Business Plan') }}
                         </flux:sidebar.item>
                     @endcan
-                    @can('invoices.view')
-                        <flux:sidebar.item icon="document-currency-dollar" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
-                            {{ __('Invoices') }}
-                        </flux:sidebar.item>
-                    @endcan
-                    @can('people.view')
+                    @can('referrals.view')
                         <flux:sidebar.item icon="gift" :href="route('referrals.index')" :current="request()->routeIs('referrals.*')" wire:navigate>
                             {{ __('Referrals') }}
                         </flux:sidebar.item>
@@ -85,6 +70,9 @@
                         <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
                             {{ __('Company') }}
                         </flux:sidebar.item>
+                        <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio')">
+                            {{ __('Studio') }}
+                        </flux:sidebar.item>
                     </flux:sidebar.group>
                 @endcan
             </flux:sidebar.nav>
@@ -100,6 +88,10 @@
                     {{ __('Documentation') }}
                 </flux:sidebar.item>
             </flux:sidebar.nav>
+
+            <div class="flex justify-center px-4 pb-1">
+                <x-language-switcher compact />
+            </div>
 
             @auth
                 <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
@@ -176,6 +168,19 @@
                 @livewire('notifications.new-lead-alert')
             @endif
         @endauth
+
+        <script>
+            document.addEventListener('livewire:init', () => {
+                Livewire.interceptRequest(({ onError }) => {
+                    onError(({ response, preventDefault }) => {
+                        if (response.status === 419 || response.status === 401) {
+                            preventDefault();
+                            window.location.reload();
+                        }
+                    });
+                });
+            });
+        </script>
 
         @fluxScripts
     </body>

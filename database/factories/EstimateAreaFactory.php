@@ -3,6 +3,9 @@
 namespace Database\Factories;
 
 use App\Models\Estimate;
+use App\Models\EstimateArea;
+use App\Models\NestedAreaTemplate;
+use App\Models\ServiceCategory;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -46,6 +49,8 @@ class EstimateAreaFactory extends Factory
             'wall_sqft' => 2 * ($length + $width) * $height,
             'ceiling_sqft' => $length * $width,
             'floor_sqft' => $length * $width,
+            'measurement_type' => 'dimensions',
+            'wall_count' => 4,
             'notes' => fake()->optional(0.3)->sentence(10),
             'sort_order' => 0,
         ];
@@ -98,6 +103,75 @@ class EstimateAreaFactory extends Factory
             'wall_sqft' => 2 * ($length + $width) * $height,
             'ceiling_sqft' => $length * $width,
             'floor_sqft' => $length * $width,
+        ]);
+    }
+
+    /**
+     * Set measurement type to direct sqft input.
+     */
+    public function directSqft(float $sqft, ?float $ceilingSqft = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'measurement_type' => EstimateArea::MEASUREMENT_SQFT,
+            'direct_sqft' => $sqft,
+            'direct_ceiling_sqft' => $ceilingSqft,
+            'length' => 0,
+            'width' => 0,
+        ]);
+    }
+
+    /**
+     * Set measurement type to direct linear feet input.
+     */
+    public function directLnft(float $lnft, ?float $ceilingSqft = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'measurement_type' => EstimateArea::MEASUREMENT_LNFT,
+            'direct_lnft' => $lnft,
+            'direct_ceiling_sqft' => $ceilingSqft,
+            'length' => 0,
+            'width' => 0,
+        ]);
+    }
+
+    /**
+     * Set wall count for dimensions mode (1-4).
+     */
+    public function wallCount(int $count): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'wall_count' => max(1, min(4, $count)),
+        ]);
+    }
+
+    /**
+     * Associate with a service category.
+     */
+    public function withServiceCategory(?ServiceCategory $category = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'service_category_id' => $category?->id ?? ServiceCategory::factory(),
+        ]);
+    }
+
+    /**
+     * Set as a fixed-price area (closet, half bath, etc.)
+     */
+    public function fixedPrice(float $amount = 150.00, ?NestedAreaTemplate $nestedTemplate = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'name' => $nestedTemplate?->name ?? fake()->randomElement(['Small Closet', 'Half Bath', 'Pantry']),
+            'nested_area_template_id' => $nestedTemplate?->id,
+            'is_fixed_price' => true,
+            'fixed_price_amount' => $amount,
+            'estimated_labor_hours' => $nestedTemplate?->estimated_hours,
+            'estimated_material_cost' => $nestedTemplate?->material_cost,
+            'length' => 0,
+            'width' => 0,
+            'height' => 0,
+            'wall_sqft' => 0,
+            'ceiling_sqft' => 0,
+            'floor_sqft' => 0,
         ]);
     }
 }

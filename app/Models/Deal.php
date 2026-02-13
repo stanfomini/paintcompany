@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\DB;
 
 class Deal extends Model
 {
@@ -30,15 +31,28 @@ class Deal extends Model
     ];
 
     public const STAGES = [
-        'lead' => 'Lead',
+        'lead' => 'New Lead',
+        'not_contacted' => 'Not Contacted',
+        'follow_up' => 'Follow Up',
+        'quote_scheduled' => 'Quote Scheduled',
         'quoted' => 'Quoted',
-        'scheduled' => 'Scheduled',
-        'in_progress' => 'In Progress',
+        'signed' => 'Signed',
         'completed' => 'Completed',
-        'paid' => 'Paid',
-        'signed_accepted' => 'Signed & Accepted',
+        'lost' => 'Lost',
         'cancelled' => 'Cancelled',
     ];
+
+    /** Stages shown on the kanban board (active work). */
+    public const KANBAN_STAGES = ['lead', 'quote_scheduled', 'quoted'];
+
+    /** Stages managed through the planner (follow-ups). */
+    public const PLANNER_STAGES = ['not_contacted', 'follow_up'];
+
+    /** Stages that represent terminal/completed states. */
+    public const TERMINAL_STAGES = ['signed', 'completed', 'lost', 'cancelled'];
+
+    /** Stages that represent past deals (done, lost, or cancelled — NOT signed, which is active work). */
+    public const PAST_DEAL_STAGES = ['completed', 'lost', 'cancelled'];
 
     protected $fillable = [
         'customer_id',
@@ -46,6 +60,7 @@ class Deal extends Model
         'agent_id',
         'assigned_to',
         'created_by',
+        'lead_source_id',
         'title',
         'description',
         'stage',
@@ -56,7 +71,17 @@ class Deal extends Model
         'actual_start_date',
         'actual_end_date',
         'lead_source',
+        'external_id',
+        'follow_up_date',
         'sort_order',
+        'listing_url',
+        'listing_data',
+        'listing_scraped_at',
+        'agent_intent',
+        'listing_value',
+        'listing_bedrooms',
+        'listing_sqft',
+        'roi_scope',
     ];
 
     protected function casts(): array
@@ -68,8 +93,14 @@ class Deal extends Model
             'expected_end_date' => 'date',
             'actual_start_date' => 'date',
             'actual_end_date' => 'date',
+            'follow_up_date' => 'date',
             'sort_order' => 'integer',
             'deleted_at' => 'datetime',
+            'listing_data' => 'array',
+            'listing_scraped_at' => 'datetime',
+            'listing_value' => 'decimal:2',
+            'listing_bedrooms' => 'integer',
+            'listing_sqft' => 'integer',
         ];
     }
 
@@ -78,7 +109,7 @@ class Deal extends Model
      */
     public function getStageLabelAttribute(): string
     {
-        return self::STAGES[$this->stage] ?? $this->stage;
+        return __(self::STAGES[$this->stage] ?? $this->stage);
     }
 
     /**
@@ -122,6 +153,22 @@ class Deal extends Model
     }
 
     /**
+     * Get the lead source for this deal.
+     */
+    public function leadSource(): BelongsTo
+    {
+        return $this->belongsTo(LeadSource::class);
+    }
+
+    /**
+     * Get lead source options from the database.
+     */
+    public static function getLeadSourceOptions(): array
+    {
+        return LeadSource::getOptions();
+    }
+
+    /**
      * Get the notes for this deal.
      */
     public function notes(): HasMany
@@ -151,6 +198,86 @@ class Deal extends Model
     public function job(): HasOne
     {
         return $this->hasOne(Job::class);
+    }
+
+    /**
+     * Get the video calls for this deal (polymorphic).
+     */
+    public function videoCalls(): MorphMany
+    {
+        return $this->morphMany(VideoCall::class, 'callable');
+    }
+
+    /**
+     * Get all ROI calculations for this deal.
+     */
+    public function roiCalculations(): HasMany
+    {
+        return $this->hasMany(RoiCalculation::class);
+    }
+
+    /**
+     * Get the latest ROI calculation for this deal.
+     */
+    public function roiCalculation(): HasOne
+    {
+        return $this->hasOne(RoiCalculation::class)->latestOfMany();
+    }
+
+    /**
+     * Get the collaborators for this deal.
+     */
+    public function collaborators(): HasMany
+    {
+        return $this->hasMany(DealCollaborator::class);
+    }
+
+    /**
+     * Get active (not revoked, not expired) collaborators for this deal.
+     */
+    public function activeCollaborators(): HasMany
+    {
+        return $this->hasMany(DealCollaborator::class)
+            ->whereNull('revoked_at')
+            ->where('expires_at', '>', now());
+    }
+
+    /**
+     * Check if a customer can access this deal (owner OR active collaborator).
+     */
+    public function customerCanAccess(Customer $customer): bool
+    {
+        if ($this->isOwnedBy($customer)) {
+            return true;
+        }
+
+        return $this->activeCollaborators()
+            ->where('customer_id', $customer->id)
+            ->exists();
+    }
+
+    /**
+     * Check if the customer is the owner of this deal.
+     */
+    public function isOwnedBy(Customer $customer): bool
+    {
+        return $this->customer_id === $customer->id;
+    }
+
+    /**
+     * Scope to deals accessible by a customer (owned + active collaborations).
+     */
+    public function scopeAccessibleByCustomer($query, Customer $customer)
+    {
+        return $query->where(function ($q) use ($customer) {
+            $q->where('customer_id', $customer->id)
+                ->orWhereIn('id', DB::table('deal_collaborators')
+                    ->where('customer_id', $customer->id)
+                    ->whereNull('revoked_at')
+                    ->where('expires_at', '>', now())
+                    ->select('deal_id')
+                );
+        });
     }
 
     /**
@@ -199,15 +326,15 @@ class Deal extends Model
      */
     public function scopeActive($query)
     {
-        return $query->whereNotIn('stage', ['cancelled', 'paid']);
+        return $query->whereNotIn('stage', self::TERMINAL_STAGES);
     }
 
     /**
-     * Scope to filter won deals (completed or paid).
+     * Scope to filter won deals (signed).
      */
     public function scopeWon($query)
     {
-        return $query->whereIn('stage', ['completed', 'paid']);
+        return $query->where('stage', 'signed');
     }
 
     /**
@@ -250,15 +377,39 @@ class Deal extends Model
      */
     public function isActive(): bool
     {
-        return ! in_array($this->stage, ['cancelled', 'paid']);
+        return ! in_array($this->stage, self::TERMINAL_STAGES);
     }
 
     /**
-     * Check if deal is won.
+     * Check if deal is won (signed).
      */
     public function isWon(): bool
     {
-        return in_array($this->stage, ['completed', 'paid']);
+        return $this->stage === 'signed';
+    }
+
+    /**
+     * Check if deal is in a terminal state.
+     */
+    public function isTerminal(): bool
+    {
+        return in_array($this->stage, self::TERMINAL_STAGES);
+    }
+
+    /**
+     * Check if deal is completed (work finished).
+     */
+    public function isCompleted(): bool
+    {
+        return $this->stage === 'completed';
+    }
+
+    /**
+     * Check if deal is a past deal (completed, lost, or cancelled — NOT signed).
+     */
+    public function isPastDeal(): bool
+    {
+        return in_array($this->stage, self::PAST_DEAL_STAGES);
     }
 
     /**
@@ -267,5 +418,45 @@ class Deal extends Model
     public function isCancelled(): bool
     {
         return $this->stage === 'cancelled';
+    }
+
+    /**
+     * Check if deal is lost.
+     */
+    public function isLost(): bool
+    {
+        return $this->stage === 'lost';
+    }
+
+    /**
+     * Check if deal is on the kanban board.
+     */
+    public function isOnKanban(): bool
+    {
+        return in_array($this->stage, self::KANBAN_STAGES);
+    }
+
+    /**
+     * Check if deal is a planner-managed follow-up.
+     */
+    public function isOnPlanner(): bool
+    {
+        return in_array($this->stage, self::PLANNER_STAGES);
+    }
+
+    /**
+     * Scope to kanban-visible deals only.
+     */
+    public function scopeKanban($query)
+    {
+        return $query->whereIn('stage', self::KANBAN_STAGES);
+    }
+
+    /**
+     * Scope to planner-managed deals only.
+     */
+    public function scopePlannerOnly($query)
+    {
+        return $query->whereIn('stage', self::PLANNER_STAGES);
     }
 }

@@ -52,10 +52,10 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'optionName.required' => 'Please enter an option name.',
-            'optionFixedPrice.required_if' => 'Please enter a fixed price.',
-            'optionSurfaceId.required_if' => 'Please select a surface.',
-            'optionMultiplier.required_if' => 'Please enter a multiplier.',
+            'optionName.required' => __('Please enter an option name.'),
+            'optionFixedPrice.required_if' => __('Please enter a fixed price.'),
+            'optionSurfaceId.required_if' => __('Please select a surface.'),
+            'optionMultiplier.required_if' => __('Please enter a multiplier.'),
         ];
     }
 
@@ -86,7 +86,7 @@ new class extends Component {
                     'is_selected' => $option->is_selected,
                     'is_recommended' => $option->is_recommended,
                     'service_category_id' => $option->service_category_id,
-                    'category_name' => $option->serviceCategory?->name,
+                    'category_name' => $option->serviceCategory ? __($option->serviceCategory->name) : null,
                 ];
             })
             ->toArray();
@@ -237,9 +237,9 @@ new class extends Component {
 <div>
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg">
         <div class="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-700">
-            <flux:heading size="sm">Options</flux:heading>
+            <flux:heading size="sm">{{ __('Options') }}</flux:heading>
             <flux:button wire:click="openModal" type="button" variant="ghost" size="sm" icon="plus">
-                Add Option
+                {{ __('Add Option') }}
             </flux:button>
         </div>
 
@@ -261,7 +261,7 @@ new class extends Component {
                                 </flux:text>
 
                                 @if ($option['is_recommended'])
-                                    <flux:badge color="green" size="sm">Recommended</flux:badge>
+                                    <flux:badge color="green" size="sm">{{ __('Recommended') }}</flux:badge>
                                 @endif
 
                                 @if ($option['category_name'])
@@ -302,7 +302,7 @@ new class extends Component {
                             />
                             <flux:button
                                 wire:click="delete({{ $option['id'] }})"
-                                wire:confirm="Are you sure you want to delete this option?"
+                                wire:confirm="{{ __('Are you sure you want to delete this option?') }}"
                                 type="button"
                                 variant="ghost"
                                 size="sm"
@@ -314,9 +314,9 @@ new class extends Component {
             @empty
                 <div class="p-8 text-center">
                     <flux:icon name="list-bullet" class="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
-                    <flux:text class="text-zinc-500 dark:text-zinc-400">No options added yet</flux:text>
+                    <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('No options added yet') }}</flux:text>
                     <flux:text size="sm" class="text-zinc-400 dark:text-zinc-500 mt-1">
-                        Options allow customers to add additional services to their estimate.
+                        {{ __('Options allow customers to add additional services to their estimate.') }}
                     </flux:text>
                 </div>
             @endforelse
@@ -328,7 +328,7 @@ new class extends Component {
                     {{ collect($options)->where('is_selected', true)->count() }} of {{ count($options) }} options selected
                 </flux:text>
                 <div class="text-right">
-                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">Selected Options Total</flux:text>
+                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">{{ __('Selected Options Total') }}</flux:text>
                     <flux:text class="text-lg font-bold">${{ number_format($this->optionsTotal, 2) }}</flux:text>
                 </div>
             </div>
@@ -338,36 +338,36 @@ new class extends Component {
     <flux:modal wire:model="showModal" class="max-w-lg">
         <div class="space-y-6">
             <flux:heading size="lg">
-                {{ $editingOptionId ? 'Edit Option' : 'Add Option' }}
+                {{ $editingOptionId ? __('Edit Option') : __('Add Option') }}
             </flux:heading>
 
             <div class="space-y-4">
                 <flux:field>
-                    <flux:label>Name</flux:label>
+                    <flux:label>{{ __('Name') }}</flux:label>
                     <flux:input
                         wire:model="optionName"
-                        placeholder="e.g., Premium Paint Upgrade"
+                        placeholder="{{ __('e.g., Premium Paint Upgrade') }}"
                     />
                     <flux:error name="optionName" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Description</flux:label>
+                    <flux:label>{{ __('Description') }}</flux:label>
                     <flux:textarea
                         wire:model="optionDescription"
                         rows="2"
-                        placeholder="Describe what this option includes..."
+                        placeholder="{{ __('Describe what this option includes...') }}"
                     />
                     <flux:error name="optionDescription" />
                 </flux:field>
 
                 @if ($this->serviceCategories->count() > 1)
                     <flux:field>
-                        <flux:label>Service Category</flux:label>
+                        <flux:label>{{ __('Service Category') }}</flux:label>
                         <flux:select wire:model="optionServiceCategoryId">
-                            <option value="">Painting (default)</option>
+                            <option value="">{{ __('Painting (default)') }}</option>
                             @foreach ($this->serviceCategories as $category)
-                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                <option value="{{ $category->id }}">{{ __($category->name) }}</option>
                             @endforeach
                         </flux:select>
                         <flux:error name="optionServiceCategoryId" />
@@ -375,18 +375,18 @@ new class extends Component {
                 @endif
 
                 <flux:field>
-                    <flux:label>Pricing Type</flux:label>
+                    <flux:label>{{ __('Pricing Type') }}</flux:label>
                     <flux:select wire:model.live="optionPricingType">
-                        <option value="fixed">Fixed Price</option>
-                        <option value="per_sqft">Per Square Foot</option>
-                        <option value="per_surface">Per Surface (Multiplier)</option>
+                        <option value="fixed">{{ __('Fixed Price') }}</option>
+                        <option value="per_sqft">{{ __('Per Square Foot') }}</option>
+                        <option value="per_surface">{{ __('Per Surface (Multiplier)') }}</option>
                     </flux:select>
                     <flux:error name="optionPricingType" />
                 </flux:field>
 
                 @if ($optionPricingType === 'fixed')
                     <flux:field>
-                        <flux:label>Fixed Price ($)</flux:label>
+                        <flux:label>{{ __('Fixed Price ($)') }}</flux:label>
                         <flux:input
                             wire:model="optionFixedPrice"
                             type="number"
@@ -398,9 +398,9 @@ new class extends Component {
                     </flux:field>
                 @else
                     <flux:field>
-                        <flux:label>Surface</flux:label>
+                        <flux:label>{{ __('Surface') }}</flux:label>
                         <flux:select wire:model="optionSurfaceId">
-                            <option value="">Select a surface...</option>
+                            <option value="">{{ __('Select a surface...') }}</option>
                             @foreach ($this->surfaces as $surface)
                                 <option value="{{ $surface['id'] }}">
                                     {{ $surface['name'] }} ({{ number_format($surface['quantity'], 0) }} sqft)
@@ -410,7 +410,7 @@ new class extends Component {
                         <flux:error name="optionSurfaceId" />
                         @if ($this->surfaces->isEmpty())
                             <flux:text size="sm" class="text-amber-600 dark:text-amber-400 mt-1">
-                                No surfaces available. Add areas with surfaces first.
+                                {{ __('No surfaces available. Add areas with surfaces first.') }}
                             </flux:text>
                         @endif
                     </flux:field>
@@ -418,9 +418,9 @@ new class extends Component {
                     <flux:field>
                         <flux:label>
                             @if ($optionPricingType === 'per_sqft')
-                                Price Per Square Foot ($)
+                                {{ __('Price Per Square Foot ($)') }}
                             @else
-                                Multiplier
+                                {{ __('Multiplier') }}
                             @endif
                         </flux:label>
                         <flux:input
@@ -433,9 +433,9 @@ new class extends Component {
                         <flux:error name="optionMultiplier" />
                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mt-1">
                             @if ($optionPricingType === 'per_sqft')
-                                Price = Square footage x Price per sqft
+                                {{ __('Price = Square footage x Price per sqft') }}
                             @else
-                                Price = Surface base price x Multiplier
+                                {{ __('Price = Surface base price x Multiplier') }}
                             @endif
                         </flux:text>
                     </flux:field>
@@ -443,19 +443,19 @@ new class extends Component {
 
                 <div class="flex items-center gap-2">
                     <flux:switch wire:model="optionIsRecommended" />
-                    <flux:label>Mark as Recommended</flux:label>
+                    <flux:label>{{ __('Mark as Recommended') }}</flux:label>
                 </div>
             </div>
 
             <div class="flex justify-end gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                 <flux:button wire:click="closeModal" type="button" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button wire:click="save" type="button" variant="primary" wire:loading.attr="disabled">
                     <span wire:loading.remove wire:target="save">
-                        {{ $editingOptionId ? 'Update Option' : 'Add Option' }}
+                        {{ $editingOptionId ? __('Update Option') : __('Add Option') }}
                     </span>
-                    <span wire:loading wire:target="save">Saving...</span>
+                    <span wire:loading wire:target="save">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </div>

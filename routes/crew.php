@@ -26,21 +26,21 @@ Route::middleware('guest:crew')->group(function () {
 Route::middleware(['auth:crew', 'auth.crew'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
 
+    // Onboarding (accessible without being fully onboarded)
+    Route::livewire('onboarding', 'crew.onboarding')->name('onboarding');
+
+    // Dashboard, settings, chat - accessible during onboarding (soft block)
     Route::livewire('dashboard', 'crew.dashboard')->name('dashboard');
-
-    // Job routes
-    Route::livewire('available-jobs', 'crew.available-jobs')->name('jobs.available');
-    Route::livewire('available-jobs/{job}', 'crew.job-show')->name('jobs.show');
-    Route::livewire('available-jobs/{job}/breakdown', 'crew.job-breakdown')->name('jobs.breakdown');
-    Route::livewire('my-jobs', 'crew.my-jobs')->name('jobs.mine');
-
-    // Referrals
-    Route::livewire('referrals', 'crew.referrals')->name('referrals');
-
-    // Chat routes
+    Route::livewire('settings', 'crew.settings')->name('settings');
     Route::livewire('chat', 'crew.chat.thread-list')->name('chat.index');
     Route::livewire('chat/{thread}', 'crew.chat.thread-view')->name('chat.show');
+    Route::livewire('referrals', 'crew.referrals')->name('referrals');
 
-    // Settings
-    Route::livewire('settings', 'crew.settings')->name('settings');
+    // Routes that require onboarding to be complete
+    Route::middleware('auth.crew.onboarded')->group(function () {
+        Route::livewire('available-jobs', 'crew.available-jobs')->name('jobs.available');
+        Route::livewire('available-jobs/{job}', 'crew.job-show')->name('jobs.show');
+        Route::livewire('available-jobs/{job}/breakdown', 'crew.job-breakdown')->name('jobs.breakdown');
+        Route::livewire('my-jobs', 'crew.my-jobs')->name('jobs.mine');
+    });
 });

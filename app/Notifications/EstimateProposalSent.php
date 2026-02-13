@@ -30,23 +30,23 @@ class EstimateProposalSent extends Notification implements ShouldQueue
         $publicUrl = $this->estimate->getPublicUrl();
 
         $message = (new MailMessage)
-            ->subject("Your Estimate from {$appName}")
-            ->greeting("Hello {$notifiable->first_name}!")
-            ->line("We've prepared an estimate for your project.")
-            ->line("**Estimate:** {$this->estimate->estimate_number}")
+            ->subject(__('Your Estimate from :appName', ['appName' => $appName]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->first_name]))
+            ->line(__("We've prepared an estimate for your project."))
+            ->line('**'.__('Estimate').':** '.$this->estimate->estimate_number)
             ->line("**{$this->estimate->title}**")
-            ->line('**Total:** $'.number_format($this->estimate->total, 2));
+            ->line('**'.__('Total').':** $'.number_format($this->estimate->total, 2));
 
         if ($this->estimate->valid_until) {
-            $message->line("**Valid Until:** {$this->estimate->valid_until->format('M j, Y')}");
+            $message->line('**'.__('Valid Until').':** '.$this->estimate->valid_until->format('M j, Y'));
         }
 
         if ($publicUrl) {
-            $message->action('View Your Estimate', $publicUrl);
+            $message->action(__('View Your Estimate'), $publicUrl);
         }
 
-        $message->line('Click the button above to view the full estimate, select options, and accept the proposal.')
-            ->line('If you have any questions, please don\'t hesitate to reach out.');
+        $message->line(__('Click the button above to view the full estimate, select options, and accept the proposal.'))
+            ->line(__("If you have any questions, please don't hesitate to reach out."));
 
         return $message;
     }

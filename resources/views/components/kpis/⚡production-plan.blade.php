@@ -30,7 +30,7 @@ new class extends Component
     public function boot(): void
     {
         $user = Auth::user();
-        if (! $user || ! $user->can('view kpis')) {
+        if (! $user || ! $user->can('kpis.view')) {
             abort(403);
         }
     }
@@ -108,21 +108,21 @@ new class extends Component
 
     public function syncCurrentWeek(): void
     {
-        abort_unless(auth()->user()->can('enter kpi actuals'), 403);
+        abort_unless(auth()->user()->can('kpis.enter_actuals'), 403);
 
         $week = $this->service->getWeek($this->settings, $this->selectedWeek, $this->year);
         $this->service->syncWeekActuals($week);
         unset($this->currentWeek, $this->weeks, $this->ytdProgress, $this->annualProgress);
-        session()->flash('success', 'Week actuals synced from completed jobs.');
+        session()->flash('success', __('Week actuals synced from completed jobs.'));
     }
 
     public function syncAllWeeks(): void
     {
-        abort_unless(auth()->user()->can('manage kpis'), 403);
+        abort_unless(auth()->user()->can('kpis.manage'), 403);
 
         $this->service->syncYearActuals($this->settings, $this->year);
         unset($this->weeks, $this->ytdProgress, $this->annualProgress);
-        session()->flash('success', 'All weeks synced from completed jobs.');
+        session()->flash('success', __('All weeks synced from completed jobs.'));
     }
 
     public function openWeekModal(int $week): void
@@ -137,7 +137,7 @@ new class extends Component
 
     public function saveWeekPlan(): void
     {
-        abort_unless(auth()->user()->can('edit kpi targets'), 403);
+        abort_unless(auth()->user()->can('kpis.edit_targets'), 403);
 
         $this->validate([
             'revenuePlanned' => 'required|numeric|min:0',
@@ -154,7 +154,7 @@ new class extends Component
 
         $this->showWeekModal = false;
         unset($this->weeks, $this->currentWeek, $this->ytdProgress, $this->annualProgress);
-        session()->flash('success', 'Week plan updated.');
+        session()->flash('success', __('Week plan updated.'));
     }
 
     public function openPlanModal(): void
@@ -168,7 +168,7 @@ new class extends Component
 
     public function populatePlan(): void
     {
-        abort_unless(auth()->user()->can('manage kpis'), 403);
+        abort_unless(auth()->user()->can('kpis.manage'), 403);
 
         $this->validate([
             'weeklyRevenue' => 'required|numeric|min:0',
@@ -186,15 +186,15 @@ new class extends Component
 
         $this->showPlanModal = false;
         unset($this->weeks, $this->ytdProgress, $this->annualProgress);
-        session()->flash('success', 'All weeks populated with production plan.');
+        session()->flash('success', __('All weeks populated with production plan.'));
     }
 }; ?>
 
 <section class="w-full">
     <div class="mb-6 flex items-center justify-between">
         <div>
-            <flux:heading size="lg">Production Plan</flux:heading>
-            <flux:subheading>Weekly production revenue and job completion tracking</flux:subheading>
+            <flux:heading size="lg">{{ __('Production Plan') }}</flux:heading>
+            <flux:subheading>{{ __('Weekly production revenue and job completion tracking') }}</flux:subheading>
         </div>
         <div class="flex items-center gap-3">
             <flux:select wire:model.live="year" class="w-32">
@@ -203,7 +203,7 @@ new class extends Component
                 @endfor
             </flux:select>
             <flux:button icon="arrow-path" wire:click="syncAllWeeks" wire:loading.attr="disabled">
-                Sync All
+                {{ __('Sync All') }}
             </flux:button>
         </div>
     </div>
@@ -217,22 +217,22 @@ new class extends Component
     {{-- Annual Progress Card --}}
     <div class="mb-6 rounded-lg border border-zinc-200 bg-gradient-to-r from-blue-50 to-indigo-50 p-4 dark:border-zinc-700 dark:from-blue-900/20 dark:to-indigo-900/20">
         <div class="mb-3 flex items-center justify-between">
-            <flux:heading size="sm">{{ $this->year }} Annual Production Goal</flux:heading>
+            <flux:heading size="sm">{{ $this->year }} {{ __('Annual Production Goal') }}</flux:heading>
             <flux:button size="sm" icon="calculator" wire:click="openPlanModal">
-                Set Weekly Targets
+                {{ __('Set Weekly Targets') }}
             </flux:button>
         </div>
         <div class="grid grid-cols-2 gap-4 sm:grid-cols-6">
             <div>
-                <flux:text class="text-sm text-zinc-500">Goal</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('Goal') }}</flux:text>
                 <flux:text class="text-lg font-semibold">${{ number_format($this->annualProgress['goal']) }}</flux:text>
             </div>
             <div>
-                <flux:text class="text-sm text-zinc-500">Produced</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('Produced') }}</flux:text>
                 <flux:text class="text-lg font-semibold text-green-600">${{ number_format($this->annualProgress['actual']) }}</flux:text>
             </div>
             <div>
-                <flux:text class="text-sm text-zinc-500">Progress</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('Progress') }}</flux:text>
                 <div class="flex items-center gap-2">
                     <flux:text class="text-lg font-semibold">{{ $this->annualProgress['percent'] }}%</flux:text>
                     <div class="h-2 w-16 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-700">
@@ -241,15 +241,15 @@ new class extends Component
                 </div>
             </div>
             <div>
-                <flux:text class="text-sm text-zinc-500">Remaining</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('Remaining') }}</flux:text>
                 <flux:text class="text-lg font-semibold">${{ number_format($this->annualProgress['remaining']) }}</flux:text>
             </div>
             <div>
-                <flux:text class="text-sm text-zinc-500">Weeks Left</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('Weeks Left') }}</flux:text>
                 <flux:text class="text-lg font-semibold">{{ $this->annualProgress['weeks_remaining'] }}</flux:text>
             </div>
             <div>
-                <flux:text class="text-sm text-zinc-500">Required/Week</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('Required/Week') }}</flux:text>
                 <flux:text class="text-lg font-semibold {{ $this->annualProgress['required_weekly'] > $this->weeklyRevenue ? 'text-amber-600' : 'text-green-600' }}">
                     ${{ number_format($this->annualProgress['required_weekly']) }}
                 </flux:text>
@@ -259,13 +259,13 @@ new class extends Component
 
     {{-- YTD Progress Cards --}}
     <div class="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        @foreach (['revenue' => 'Revenue Produced', 'jobs' => 'Jobs Completed', 'labor_hours' => 'Labor Hours'] as $key => $label)
+        @foreach (['revenue' => __('Revenue Produced'), 'jobs' => __('Jobs Completed'), 'labor_hours' => __('Labor Hours')] as $key => $label)
             @php
                 $data = $this->ytdProgress[$key];
                 $isGood = $data['percent'] >= 100;
             @endphp
             <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
-                <flux:text class="text-sm text-zinc-500">YTD {{ $label }}</flux:text>
+                <flux:text class="text-sm text-zinc-500">{{ __('YTD') }} {{ $label }}</flux:text>
                 <div class="mt-1 flex items-baseline gap-2">
                     <flux:text class="text-2xl font-bold">
                         @if ($key === 'revenue')
@@ -281,7 +281,7 @@ new class extends Component
                     </flux:badge>
                 </div>
                 <flux:text class="text-xs text-zinc-400">
-                    Plan:
+                    {{ __('Plan:') }}
                     @if ($key === 'revenue')
                         ${{ number_format($data['plan']) }}
                     @elseif ($key === 'labor_hours')
@@ -297,27 +297,27 @@ new class extends Component
     {{-- Weekly Table --}}
     <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
         <div class="border-b border-zinc-200 p-4 dark:border-zinc-700">
-            <flux:heading size="sm">Weekly Breakdown</flux:heading>
+            <flux:heading size="sm">{{ __('Weekly Breakdown') }}</flux:heading>
         </div>
         <div class="overflow-x-auto">
             <table class="w-full text-sm">
                 <thead class="bg-zinc-50 dark:bg-zinc-900">
                     <tr>
-                        <th class="px-4 py-2 text-left font-medium">Week</th>
-                        <th class="px-4 py-2 text-center font-medium" colspan="2">Revenue</th>
-                        <th class="px-4 py-2 text-center font-medium" colspan="2">Jobs Completed</th>
-                        <th class="px-4 py-2 text-center font-medium" colspan="2">Labor Hours</th>
-                        <th class="px-4 py-2 text-center font-medium">% of Plan</th>
-                        <th class="px-4 py-2 text-center font-medium">Actions</th>
+                        <th class="px-4 py-2 text-left font-medium">{{ __('Week') }}</th>
+                        <th class="px-4 py-2 text-center font-medium" colspan="2">{{ __('Revenue') }}</th>
+                        <th class="px-4 py-2 text-center font-medium" colspan="2">{{ __('Jobs Completed') }}</th>
+                        <th class="px-4 py-2 text-center font-medium" colspan="2">{{ __('Labor Hours') }}</th>
+                        <th class="px-4 py-2 text-center font-medium">{{ __('% of Plan') }}</th>
+                        <th class="px-4 py-2 text-center font-medium">{{ __('Actions') }}</th>
                     </tr>
                     <tr class="text-xs text-zinc-500">
                         <th></th>
-                        <th class="px-2 py-1">Plan</th>
-                        <th class="px-2 py-1">Actual</th>
-                        <th class="px-2 py-1">Plan</th>
-                        <th class="px-2 py-1">Actual</th>
-                        <th class="px-2 py-1">Plan</th>
-                        <th class="px-2 py-1">Actual</th>
+                        <th class="px-2 py-1">{{ __('Plan') }}</th>
+                        <th class="px-2 py-1">{{ __('Actual') }}</th>
+                        <th class="px-2 py-1">{{ __('Plan') }}</th>
+                        <th class="px-2 py-1">{{ __('Actual') }}</th>
+                        <th class="px-2 py-1">{{ __('Plan') }}</th>
+                        <th class="px-2 py-1">{{ __('Actual') }}</th>
                         <th></th>
                         <th></th>
                     </tr>
@@ -330,7 +330,7 @@ new class extends Component
                         <tr class="border-t border-zinc-100 dark:border-zinc-700 {{ $week->week_number === $this->selectedWeek ? 'bg-blue-50 dark:bg-blue-900/20' : '' }}">
                             <td class="px-4 py-2 font-medium">
                                 <button wire:click="selectWeek({{ $week->week_number }})" class="hover:text-blue-600">
-                                    Week {{ $week->week_number }}
+                                    {{ __('Week') }} {{ $week->week_number }}
                                 </button>
                             </td>
                             <td class="px-2 py-2 text-center text-zinc-500">${{ number_format($week->revenue_plan) }}</td>
@@ -358,7 +358,7 @@ new class extends Component
                     @if ($this->weeks->isEmpty())
                         <tr>
                             <td colspan="9" class="px-4 py-8 text-center text-zinc-500">
-                                No weeks created yet. Click "Set Weekly Targets" to create production targets.
+                                {{ __('No weeks created yet. Click "Set Weekly Targets" to create production targets.') }}
                             </td>
                         </tr>
                     @endif
@@ -370,29 +370,29 @@ new class extends Component
     {{-- Week Plan Modal --}}
     <flux:modal wire:model="showWeekModal" name="week-modal" class="max-w-md">
         <div class="space-y-4">
-            <flux:heading size="lg">Edit Week {{ $editWeekNumber }} Plan</flux:heading>
+            <flux:heading size="lg">{{ __('Edit Week :week Plan', ['week' => $editWeekNumber]) }}</flux:heading>
 
             <flux:input
                 type="number"
-                label="Revenue Planned ($)"
+                :label="__('Revenue Planned ($)')"
                 wire:model="revenuePlanned"
                 step="100"
             />
             <flux:input
                 type="number"
-                label="Jobs Completed Planned"
+                :label="__('Jobs Completed Planned')"
                 wire:model="jobsPlanned"
             />
             <flux:input
                 type="number"
-                label="Labor Hours Planned"
+                :label="__('Labor Hours Planned')"
                 wire:model="hoursPlanned"
                 step="1"
             />
 
             <div class="flex justify-end gap-3">
-                <flux:button variant="ghost" wire:click="$set('showWeekModal', false)">Cancel</flux:button>
-                <flux:button variant="primary" wire:click="saveWeekPlan">Save Plan</flux:button>
+                <flux:button variant="ghost" wire:click="$set('showWeekModal', false)">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="primary" wire:click="saveWeekPlan">{{ __('Save Plan') }}</flux:button>
             </div>
         </div>
     </flux:modal>
@@ -400,39 +400,39 @@ new class extends Component
     {{-- Bulk Plan Modal --}}
     <flux:modal wire:model="showPlanModal" name="plan-modal" class="max-w-md">
         <div class="space-y-4">
-            <flux:heading size="lg">Set {{ $this->year }} Weekly Targets</flux:heading>
+            <flux:heading size="lg">{{ __('Set :year Weekly Targets', ['year' => $this->year]) }}</flux:heading>
             <flux:text class="text-sm text-zinc-500">
-                These values will be applied to all 52 weeks of {{ $this->year }}.
+                {{ __('These values will be applied to all 52 weeks of :year.', ['year' => $this->year]) }}
             </flux:text>
 
             <flux:input
                 type="number"
-                label="Weekly Revenue Target ($)"
+                :label="__('Weekly Revenue Target ($)')"
                 wire:model="weeklyRevenue"
                 step="100"
             />
             <flux:input
                 type="number"
-                label="Weekly Jobs Target"
+                :label="__('Weekly Jobs Target')"
                 wire:model="weeklyJobs"
             />
             <flux:input
                 type="number"
-                label="Weekly Labor Hours Target"
+                :label="__('Weekly Labor Hours Target')"
                 wire:model="weeklyHours"
                 step="1"
             />
 
             <div class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
                 <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
-                    Annual totals: ${{ number_format($weeklyRevenue * 52) }} revenue,
-                    {{ $weeklyJobs * 52 }} jobs, {{ number_format($weeklyHours * 52) }} hours
+                    {{ __('Annual totals:') }} ${{ number_format($weeklyRevenue * 52) }} {{ __('revenue') }},
+                    {{ $weeklyJobs * 52 }} {{ __('jobs') }}, {{ number_format($weeklyHours * 52) }} {{ __('hours') }}
                 </flux:text>
             </div>
 
             <div class="flex justify-end gap-3">
-                <flux:button variant="ghost" wire:click="$set('showPlanModal', false)">Cancel</flux:button>
-                <flux:button variant="primary" wire:click="populatePlan">Populate All Weeks</flux:button>
+                <flux:button variant="ghost" wire:click="$set('showPlanModal', false)">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="primary" wire:click="populatePlan">{{ __('Populate All Weeks') }}</flux:button>
             </div>
         </div>
     </flux:modal>

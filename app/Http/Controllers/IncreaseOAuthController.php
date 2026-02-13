@@ -16,12 +16,12 @@ class IncreaseOAuthController extends Controller
         // Validate state parameter
         if ($request->state !== $settings->increase_oauth_state) {
             return redirect()->route('payment-integrations.edit')
-                ->with('error', 'Invalid OAuth state. Please try again.');
+                ->with('error', __('Invalid OAuth state. Please try again.'));
         }
 
         if ($request->has('error')) {
             return redirect()->route('payment-integrations.edit')
-                ->with('error', 'Increase connection failed: '.$request->error_description);
+                ->with('error', __('Increase connection failed: :error', ['error' => $request->error_description]));
         }
 
         try {
@@ -37,10 +37,10 @@ class IncreaseOAuthController extends Controller
             ]);
 
             return redirect()->route('payment-integrations.edit')
-                ->with('success', 'Successfully connected to Increase!');
+                ->with('success', __('Successfully connected to Increase!'));
         } catch (\Exception $e) {
             return redirect()->route('payment-integrations.edit')
-                ->with('error', 'Failed to connect: '.$e->getMessage());
+                ->with('error', __('Failed to connect: :error', ['error' => $e->getMessage()]));
         }
     }
 }

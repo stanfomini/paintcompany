@@ -22,6 +22,8 @@ new class extends Component {
 
     public Job $job;
 
+    public string $viewingStage = '';
+
     public function mount(Job $job): void
     {
         $this->job = $job->load([
@@ -35,7 +37,29 @@ new class extends Component {
             'serviceRequirements.serviceCategory',
         ]);
 
+        $this->viewingStage = $this->job->stage;
+
         $this->ensureChatParticipant();
+    }
+
+    /**
+     * Switch the visible stage panel without changing the job's actual stage.
+     */
+    public function viewStage(string $stage): void
+    {
+        if (! array_key_exists($stage, Job::STAGES)) {
+            return;
+        }
+
+        // Only allow viewing completed or current stages, not future ones
+        $stageNum = Job::STAGE_ORDER[$stage];
+        $currentNum = $this->job->stage_number;
+
+        if ($stageNum > $currentNum) {
+            return;
+        }
+
+        $this->viewingStage = $stage;
     }
 
     public function getListeners(): array
@@ -120,7 +144,7 @@ new class extends Component {
             $category = $categories[$key] ?? null;
             $result[] = [
                 'category' => $category,
-                'label' => $category ? $category->name . ' Crew' : 'General',
+                'label' => $category ? __($category->name) . ' ' . __('Crew') : __('General'),
                 'icon' => $category->icon ?? 'users',
                 'color' => $category->color ?? 'zinc',
                 'crews' => $crews,
@@ -135,7 +159,7 @@ new class extends Component {
         abort_unless(auth()->user()->can('invoices.create'), 403);
 
         if ($this->invoices->where('type', Invoice::TYPE_DEPOSIT)->isNotEmpty()) {
-            session()->flash('error', 'A deposit invoice already exists for this job.');
+            session()->flash('error', __('A deposit invoice already exists for this job.'));
             return;
         }
 
@@ -143,7 +167,7 @@ new class extends Component {
         $service->createDepositInvoice($this->job->estimate, $this->job);
 
         unset($this->invoices);
-        session()->flash('success', 'Deposit invoice created.');
+        session()->flash('success', __('Deposit invoice created.'));
     }
 
     public function createFinalInvoice(): void
@@ -151,7 +175,7 @@ new class extends Component {
         abort_unless(auth()->user()->can('invoices.create'), 403);
 
         if ($this->invoices->where('type', Invoice::TYPE_FINAL)->isNotEmpty()) {
-            session()->flash('error', 'A final invoice already exists for this job.');
+            session()->flash('error', __('A final invoice already exists for this job.'));
             return;
         }
 
@@ -159,7 +183,7 @@ new class extends Component {
         $service->createFinalInvoice($this->job);
 
         unset($this->invoices);
-        session()->flash('success', 'Final invoice created.');
+        session()->flash('success', __('Final invoice created.'));
     }
 
     public function sendInvoice(int $invoiceId): void
@@ -170,7 +194,7 @@ new class extends Component {
         app(InvoiceService::class)->sendInvoice($invoice);
 
         unset($this->invoices);
-        session()->flash('success', "Invoice {$invoice->invoice_number} sent to customer.");
+        session()->flash('success', __('Invoice :number sent to customer.', ['number' => $invoice->invoice_number]));
     }
 
     public function refreshJob(): void
@@ -254,20 +278,21 @@ new class extends Component {
         $service = app(JobService::class);
 
         if ($this->job->stage === 'scheduling_colors' && ! $this->job->isReadyForDispatch()) {
-            session()->flash('error', 'All confirmations must be completed before advancing.');
+            session()->flash('error', __('All confirmations must be completed before advancing.'));
 
             return;
         }
 
         if ($this->job->stage === 'job_prep' && ! $this->job->isPrepApproved()) {
-            session()->flash('error', 'All three parties must approve the prep plan before advancing.');
+            session()->flash('error', __('All three parties must approve the prep plan before advancing.'));
 
             return;
         }
 
         if ($service->advanceStage($this->job)) {
             $this->refreshJob();
-            session()->flash('success', 'Job advanced to ' . $this->job->stage_label);
+            $this->viewingStage = $this->job->stage;
+            session()->flash('success', __('Job advanced to :stage', ['stage' => $this->job->stage_label]));
         }
     }
 
@@ -290,7 +315,7 @@ new class extends Component {
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-4">
                 <flux:button variant="ghost" :href="route('jobs.index')" icon="arrow-left" wire:navigate>
-                    Back
+                    {{ __('Back') }}
                 </flux:button>
                 <div>
                     <flux:heading size="xl">{{ $job->title }}</flux:heading>
@@ -301,15 +326,18 @@ new class extends Component {
                 </flux:badge>
             </div>
             <div class="flex items-center gap-2">
+                @if (! $job->isCompleted())
+                    <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
+                @endif
                 @can('financials.view_cost_breakdown')
                     <flux:button variant="ghost" :href="route('jobs.cost-card', $job)" icon="calculator" size="sm" wire:navigate>
-                        Cost Card
+                        {{ __('Cost Card') }}
                     </flux:button>
                 @endcan
                 @can('jobs.edit')
                     @if (! $job->isCompleted())
                         <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
-                            Advance Stage
+                            {{ __('Advance Stage') }}
                         </flux:button>
                     @endif
                 @endcan
@@ -330,7 +358,7 @@ new class extends Component {
 
         {{-- Progress Timeline --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-            <flux:heading size="sm" class="mb-4">Progress</flux:heading>
+            <flux:heading size="sm" class="mb-4">{{ __('Progress') }}</flux:heading>
             <div class="flex items-center justify-between">
                 @foreach (App\Models\Job::STAGES as $stageKey => $stageLabel)
                     @php
@@ -339,18 +367,28 @@ new class extends Component {
                         $isActive = $stageKey === $job->stage;
                         $isCompleted = $stageNum < $currentNum;
                         $isFuture = $stageNum > $currentNum;
+                        $isClickable = $isCompleted || $isActive;
+                        $isViewing = $stageKey === $viewingStage;
                     @endphp
-                    <div class="flex-1 flex flex-col items-center relative" wire:key="stage-{{ $stageKey }}">
+                    <div
+                        class="flex-1 flex flex-col items-center relative {{ $isClickable ? 'cursor-pointer group' : '' }}"
+                        wire:key="stage-{{ $stageKey }}"
+                        @if ($isClickable)
+                            wire:click="viewStage('{{ $stageKey }}')"
+                        @endif
+                    >
                         {{-- Connector line --}}
                         @if (! $loop->first)
                             <div class="absolute top-4 -left-1/2 w-full h-0.5 {{ $isCompleted || $isActive ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600' }}"></div>
                         @endif
 
                         {{-- Stage circle --}}
-                        <div class="relative z-10 flex items-center justify-center w-8 h-8 rounded-full border-2
+                        <div class="relative z-10 flex items-center justify-center w-8 h-8 rounded-full border-2 transition-transform
                             {{ $isCompleted ? 'bg-green-500 border-green-500 text-white' : '' }}
                             {{ $isActive ? 'bg-blue-500 border-blue-500 text-white' : '' }}
                             {{ $isFuture ? 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400' : '' }}
+                            {{ $isViewing && ! $isActive ? 'ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-zinc-900' : '' }}
+                            {{ $isClickable ? 'group-hover:scale-110' : '' }}
                         ">
                             @if ($isCompleted)
                                 <flux:icon name="check" class="w-4 h-4" />
@@ -360,7 +398,11 @@ new class extends Component {
                         </div>
 
                         {{-- Label --}}
-                        <flux:text class="mt-2 text-xs text-center {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
+                        <flux:text class="mt-2 text-xs text-center
+                            {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : '' }}
+                            {{ $isViewing && ! $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : '' }}
+                            {{ ! $isActive && ! $isViewing ? 'text-zinc-500' : '' }}
+                        ">
                             {{ $stageLabel }}
                         </flux:text>
                     </div>
@@ -368,13 +410,30 @@ new class extends Component {
             </div>
         </div>
 
+        {{-- Viewing past stage banner --}}
+        @if ($viewingStage !== $job->stage)
+            <div class="flex items-center justify-between p-3 mb-6 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <div class="flex items-center gap-2">
+                    <flux:icon name="eye" class="w-4 h-4 text-blue-500" />
+                    <flux:text class="text-sm text-blue-700 dark:text-blue-300">
+                        {{ __('Viewing:') }} <span class="font-semibold">{{ App\Models\Job::STAGES[$viewingStage] ?? $viewingStage }}</span>
+                        <span class="text-blue-500 dark:text-blue-400 mx-1">&middot;</span>
+                        {{ __('Job is currently at:') }} <span class="font-semibold">{{ $job->stage_label }}</span>
+                    </flux:text>
+                </div>
+                <flux:button wire:click="viewStage('{{ $job->stage }}')" size="sm" variant="ghost">
+                    {{ __('Back to current') }}
+                </flux:button>
+            </div>
+        @endif
+
         {{-- Job Info Cards --}}
         <div class="grid gap-6 md:grid-cols-2 mb-6">
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Job Information</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Job Information') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer') }}</dt>
                         <dd class="mt-1">
                             @if ($job->deal?->customer)
                                 <a href="{{ route('customers.show', $job->deal->customer) }}" class="text-blue-600 hover:underline" wire:navigate>
@@ -387,7 +446,7 @@ new class extends Component {
                     </div>
                     @if ($job->deal?->property)
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Property</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Property') }}</dt>
                             <dd class="mt-1">
                                 <a href="{{ route('properties.show', $job->deal->property) }}" class="text-blue-600 hover:underline" wire:navigate>
                                     {{ $job->deal->property->display_name }}
@@ -397,7 +456,7 @@ new class extends Component {
                     @endif
                     @if ($job->estimate)
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Estimate</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Estimate') }}</dt>
                             <dd class="mt-1">
                                 <a href="{{ route('estimates.show', $job->estimate) }}" class="text-blue-600 hover:underline" wire:navigate>
                                     {{ $job->estimate->estimate_number }}
@@ -407,14 +466,14 @@ new class extends Component {
                     @endif
                     @if ($job->description)
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Description</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Description') }}</dt>
                             <dd class="mt-1">
                                 <flux:text>{{ $job->description }}</flux:text>
                             </dd>
                         </div>
                     @endif
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Required Crew Size</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Required Crew Size') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $job->required_crew_size }} {{ Str::plural('person', $job->required_crew_size) }}</flux:text>
                         </dd>
@@ -423,60 +482,60 @@ new class extends Component {
             </div>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Schedule & Confirmations</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Schedule & Confirmations') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Scheduled Date</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Scheduled Date') }}</dt>
                         <dd class="mt-1">
-                            <flux:text>{{ $job->scheduled_date?->format('M j, Y') ?? 'Not set' }}</flux:text>
+                            <flux:text>{{ $job->scheduled_date?->format('M j, Y') ?? __('Not set') }}</flux:text>
                         </dd>
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Company Date</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Company Date') }}</dt>
                             <dd class="mt-1">
                                 @if ($job->company_date_confirmed)
-                                    <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                                 @else
-                                    <flux:badge size="sm" color="zinc">Pending</flux:badge>
+                                    <flux:badge size="sm" color="zinc">{{ __('Pending') }}</flux:badge>
                                 @endif
                             </dd>
                         </div>
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer Date</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer Date') }}</dt>
                             <dd class="mt-1">
                                 @if ($job->customer_date_confirmed)
-                                    <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                                 @else
-                                    <flux:badge size="sm" color="zinc">Pending</flux:badge>
+                                    <flux:badge size="sm" color="zinc">{{ __('Pending') }}</flux:badge>
                                 @endif
                             </dd>
                         </div>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Allowed Colors</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Allowed Colors') }}</dt>
                         <dd class="mt-1">
-                            <flux:text>{{ $job->allowed_colors ?: 'Not set' }}</flux:text>
+                            <flux:text>{{ $job->allowed_colors ?: __('Not set') }}</flux:text>
                         </dd>
                     </div>
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Company Colors</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Company Colors') }}</dt>
                             <dd class="mt-1">
                                 @if ($job->company_colors_confirmed)
-                                    <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                                 @else
-                                    <flux:badge size="sm" color="zinc">Pending</flux:badge>
+                                    <flux:badge size="sm" color="zinc">{{ __('Pending') }}</flux:badge>
                                 @endif
                             </dd>
                         </div>
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer Colors</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer Colors') }}</dt>
                             <dd class="mt-1">
                                 @if ($job->customer_colors_confirmed)
-                                    <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                                 @else
-                                    <flux:badge size="sm" color="zinc">Pending</flux:badge>
+                                    <flux:badge size="sm" color="zinc">{{ __('Pending') }}</flux:badge>
                                 @endif
                             </dd>
                         </div>
@@ -487,29 +546,31 @@ new class extends Component {
 
         {{-- Stage-specific content --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-            @if ($job->stage === 'estimate_accepted')
-                <flux:heading size="sm" class="mb-4">Stage 1: Estimate Accepted</flux:heading>
+            @if ($viewingStage === 'estimate_accepted')
+                <flux:heading size="sm" class="mb-4">{{ __('Stage 1: Estimate Accepted') }}</flux:heading>
                 <div class="text-center py-8">
                     <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-green-500 mb-4" />
-                    <flux:heading size="lg">Estimate Signed</flux:heading>
+                    <flux:heading size="lg">{{ __('Estimate Signed') }}</flux:heading>
                     <flux:text class="text-zinc-500 mt-2">
-                        The customer has signed and accepted the estimate. Advance to the next stage to begin scheduling and color selection.
+                        {{ __('The customer has signed and accepted the estimate. Advance to the next stage to begin scheduling and color selection.') }}
                     </flux:text>
                     @can('jobs.edit')
-                        <div class="mt-4">
-                            <flux:button wire:click="advanceStage" variant="primary" icon="arrow-right">
-                                Begin Scheduling & Colors
-                            </flux:button>
-                        </div>
+                        @if ($job->stage === 'estimate_accepted')
+                            <div class="mt-4">
+                                <flux:button wire:click="advanceStage" variant="primary" icon="arrow-right">
+                                    {{ __('Begin Scheduling & Colors') }}
+                                </flux:button>
+                            </div>
+                        @endif
                     @endcan
                 </div>
-            @elseif ($job->stage === 'scheduling_colors')
+            @elseif ($viewingStage === 'scheduling_colors')
                 @livewire('jobs.stage-scheduling', ['job' => $job], key('stage-scheduling-' . $job->id))
-            @elseif ($job->stage === 'job_prep')
+            @elseif ($viewingStage === 'job_prep')
                 @livewire('jobs.stage-prep', ['job' => $job], key('stage-prep-' . $job->id))
-            @elseif ($job->stage === 'in_progress')
+            @elseif ($viewingStage === 'in_progress')
                 @livewire('jobs.stage-in-progress', ['job' => $job], key('stage-in-progress-' . $job->id))
-            @elseif ($job->stage === 'completed')
+            @elseif ($viewingStage === 'completed')
                 @livewire('jobs.stage-completed', ['job' => $job], key('stage-completed-' . $job->id))
             @endif
         </div>
@@ -517,7 +578,7 @@ new class extends Component {
         {{-- Colors Section --}}
         @if ($job->colors->count() > 0)
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <flux:heading size="sm" class="mb-4">Selected Colors</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Selected Colors') }}</flux:heading>
                 <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                     @foreach ($job->colors as $color)
                         <div class="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="color-{{ $color->id }}">
@@ -542,7 +603,7 @@ new class extends Component {
         {{-- Service Requirements Summary --}}
         @if ($job->serviceRequirements->isNotEmpty())
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <flux:heading size="sm" class="mb-4">Service Status</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Service Status') }}</flux:heading>
                 <div class="flex flex-wrap gap-3">
                     @foreach ($job->serviceRequirements as $req)
                         @php
@@ -561,7 +622,7 @@ new class extends Component {
                         @endphp
                         <div class="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800" wire:key="req-{{ $req->id }}">
                             <flux:icon name="{{ $reqIcon }}" class="w-4 h-4 text-{{ $reqColor }}-500" />
-                            <flux:text class="text-sm font-medium">{{ $req->serviceCategory?->name ?? 'Unknown' }}:</flux:text>
+                            <flux:text class="text-sm font-medium">{{ __($req->serviceCategory?->name ?? 'Unknown') }}:</flux:text>
                             <flux:badge size="sm" color="{{ $reqColor }}">{{ ucfirst($req->status) }}</flux:badge>
                         </div>
                     @endforeach
@@ -572,7 +633,7 @@ new class extends Component {
         {{-- Crew Section (grouped by service category) --}}
         @if ($job->crews->count() > 0)
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <flux:heading size="sm" class="mb-4">Assigned Crews</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Assigned Crews') }}</flux:heading>
                 <div class="space-y-5">
                     @foreach ($this->crewsByCategory as $group)
                         <div>
@@ -589,7 +650,7 @@ new class extends Component {
                                                 <flux:text class="font-medium text-sm">{{ $crew->name }}</flux:text>
                                                 @if ($crew->crewProfile)
                                                     <flux:text class="text-xs text-zinc-500">
-                                                        Crew of {{ $crew->crewProfile->crew_size }}
+                                                        {{ __('Crew of') }} {{ $crew->crewProfile->crew_size }}
                                                     </flux:text>
                                                 @endif
                                             </div>
@@ -626,17 +687,17 @@ new class extends Component {
         {{-- Invoices Section --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
             <div class="flex items-center justify-between mb-4">
-                <flux:heading size="sm">Invoices</flux:heading>
+                <flux:heading size="sm">{{ __('Invoices') }}</flux:heading>
                 @can('invoices.create')
                     <div class="flex gap-2">
                         @if ($this->invoices->where('type', 'deposit')->isEmpty() && $job->estimate)
                             <flux:button wire:click="createDepositInvoice" size="sm" variant="ghost" icon="plus">
-                                Deposit Invoice
+                                {{ __('Deposit Invoice') }}
                             </flux:button>
                         @endif
                         @if ($job->stage === 'completed' && $this->invoices->where('type', 'final')->isEmpty())
                             <flux:button wire:click="createFinalInvoice" size="sm" variant="ghost" icon="plus">
-                                Final Invoice
+                                {{ __('Final Invoice') }}
                             </flux:button>
                         @endif
                     </div>
@@ -646,7 +707,7 @@ new class extends Component {
             @if ($this->invoices->isEmpty())
                 <div class="text-center py-6">
                     <flux:icon name="document-text" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-2" />
-                    <flux:text class="text-zinc-500">No invoices yet.</flux:text>
+                    <flux:text class="text-zinc-500">{{ __('No invoices yet.') }}</flux:text>
                 </div>
             @else
                 <div class="space-y-3">
@@ -664,9 +725,9 @@ new class extends Component {
                                         } }}">{{ \App\Models\Invoice::TYPES[$invoice->type] ?? $invoice->type }}</flux:badge>
                                     </div>
                                     <flux:text class="text-xs text-zinc-500 mt-0.5">
-                                        Due {{ $invoice->due_date?->format('M j, Y') ?? 'N/A' }}
+                                        {{ __('Due') }} {{ $invoice->due_date?->format('M j, Y') ?? 'N/A' }}
                                         @if ($invoice->sent_at)
-                                            &middot; Sent {{ $invoice->sent_at->format('M j, Y') }}
+                                            &middot; {{ __('Sent') }} {{ $invoice->sent_at->format('M j, Y') }}
                                         @endif
                                     </flux:text>
                                 </div>
@@ -676,7 +737,7 @@ new class extends Component {
                                     <flux:text class="font-semibold text-sm">${{ number_format($invoice->total, 2) }}</flux:text>
                                     @if ((float) $invoice->amount_paid > 0 && ! $invoice->isPaid())
                                         <flux:text class="text-xs text-zinc-500">
-                                            Paid: ${{ number_format($invoice->amount_paid, 2) }}
+                                            {{ __('Paid:') }} ${{ number_format($invoice->amount_paid, 2) }}
                                         </flux:text>
                                     @endif
                                 </div>
@@ -694,7 +755,7 @@ new class extends Component {
                                 @can('invoices.send')
                                     @if ($invoice->status === 'draft')
                                         <flux:button wire:click="sendInvoice({{ $invoice->id }})" size="sm" variant="ghost" icon="paper-airplane">
-                                            Send
+                                            {{ __('Send') }}
                                         </flux:button>
                                     @endif
                                 @endcan
@@ -706,10 +767,18 @@ new class extends Component {
             @endif
         </div>
 
+        {{-- Video Walkarounds --}}
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6 print:hidden">
+            <livewire:estimates.video-walkarounds
+                :recordable="$job"
+                :key="'walkarounds-'.$job->id"
+            />
+        </div>
+
         {{-- Activity History --}}
         @if ($this->jobActivities->isNotEmpty())
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <flux:heading size="sm" class="mb-4">Activity History</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Activity History') }}</flux:heading>
                 <div class="space-y-3">
                     @foreach ($this->jobActivities as $activity)
                         <div class="flex items-start gap-3" wire:key="activity-{{ $activity->id }}">
@@ -744,12 +813,12 @@ new class extends Component {
         {{-- Deal Link --}}
         @if ($job->deal)
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <flux:heading size="sm" class="mb-4">Related Deal</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Related Deal') }}</flux:heading>
                 <a href="{{ route('deals.show', $job->deal) }}" class="text-blue-600 hover:underline" wire:navigate>
                     {{ $job->deal->title }}
                 </a>
                 <flux:text class="text-sm text-zinc-500 mt-1">
-                    Stage: {{ $job->deal->stage_label }}
+                    {{ __('Stage:') }} {{ $job->deal->stage_label }}
                 </flux:text>
             </div>
         @endif
@@ -760,10 +829,10 @@ new class extends Component {
                 <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
                     <div class="flex items-center gap-2">
                         <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
-                        <flux:heading size="sm">Deal Conversation</flux:heading>
+                        <flux:heading size="sm">{{ __('Deal Conversation') }}</flux:heading>
                     </div>
                     <flux:text class="text-xs text-zinc-400 mt-1">
-                        Messages shared with the customer and team about this job.
+                        {{ __('Messages shared with the customer and team about this job.') }}
                     </flux:text>
                 </div>
                 <div class="h-[400px]">
@@ -771,5 +840,6 @@ new class extends Component {
                 </div>
             </div>
         @endif
+
     </div>
 </div>

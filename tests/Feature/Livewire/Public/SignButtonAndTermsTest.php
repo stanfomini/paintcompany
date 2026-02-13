@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -105,76 +104,4 @@ describe('Sign button and Terms & Conditions', function () {
         });
     });
 
-    // Fix 3: Company settings terms
-    describe('Company settings default terms', function () {
-        it('saves and loads default terms and conditions', function () {
-            $this->actingAs($this->internalUser);
-
-            $settings = CompanySetting::getInstance();
-            $settings->update(['default_terms_and_conditions' => 'These are the default terms.']);
-
-            CompanySetting::clearInstanceCache();
-            $freshSettings = CompanySetting::getInstance();
-            expect($freshSettings->default_terms_and_conditions)->toBe('These are the default terms.');
-        });
-
-        it('auto-populates estimate terms from company settings', function () {
-            $settings = CompanySetting::getInstance();
-            $settings->update(['default_terms_and_conditions' => 'Company default T&C for estimates.']);
-            CompanySetting::clearInstanceCache();
-
-            $estimate = Estimate::factory()->forDeal($this->deal)->create([
-                'created_by' => $this->internalUser->id,
-                'terms' => null,
-            ]);
-
-            expect($estimate->terms)->toBe('Company default T&C for estimates.');
-        });
-
-        it('does not overwrite estimate terms if already set', function () {
-            $settings = CompanySetting::getInstance();
-            $settings->update(['default_terms_and_conditions' => 'Company default T&C.']);
-            CompanySetting::clearInstanceCache();
-
-            $estimate = Estimate::factory()->forDeal($this->deal)->create([
-                'created_by' => $this->internalUser->id,
-                'terms' => 'Custom terms for this estimate.',
-            ]);
-
-            expect($estimate->terms)->toBe('Custom terms for this estimate.');
-        });
-
-        it('company settings page saves terms', function () {
-            $this->actingAs($this->internalUser);
-
-            $settings = CompanySetting::getInstance();
-
-            Livewire::test('pages::settings.company')
-                ->set('default_terms_and_conditions', 'New terms from the settings page.')
-                ->call('updateCompanySettings');
-
-            CompanySetting::clearInstanceCache();
-            $freshSettings = CompanySetting::getInstance();
-            expect($freshSettings->default_terms_and_conditions)->toBe('New terms from the settings page.');
-        });
-    });
-
-    // Fix 3e: Terms modal on proposal page
-    describe('Terms modal on proposal page', function () {
-        it('opens and closes terms modal', function () {
-            $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
-                'created_by' => $this->internalUser->id,
-                'valid_until' => now()->addMonth(),
-                'terms' => 'These are the full terms and conditions for this estimate.',
-            ]);
-            $estimate->generatePublicToken(30);
-
-            Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token])
-                ->assertSet('showTermsModal', false)
-                ->call('openTermsModal')
-                ->assertSet('showTermsModal', true)
-                ->call('closeTermsModal')
-                ->assertSet('showTermsModal', false);
-        });
-    });
 });

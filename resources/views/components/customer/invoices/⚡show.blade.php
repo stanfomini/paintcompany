@@ -82,12 +82,12 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
 
         <div class="flex items-center gap-2">
             <flux:button variant="ghost" icon="arrow-left" href="{{ route('customer.invoices.index') }}" size="sm">
-                Back
+                {{ __('Back') }}
             </flux:button>
 
             @if ($this->paymentUrl)
                 <flux:button variant="primary" icon="credit-card" href="{{ $this->paymentUrl }}" size="sm">
-                    Pay Now
+                    {{ __('Pay Now') }}
                 </flux:button>
             @endif
         </div>
@@ -100,21 +100,21 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
             <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
                 <div class="grid grid-cols-2 gap-6">
                     <div>
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">From</h3>
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ __('From') }}</h3>
                         @if ($invoice->companySetting)
                             <p class="mt-1 font-medium text-zinc-900 dark:text-zinc-100">{{ $invoice->companySetting->company_name }}</p>
                         @endif
                     </div>
                     <div class="text-right">
-                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Details</h3>
+                        <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">{{ __('Details') }}</h3>
                         @if ($invoice->sent_at)
                             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-                                Sent: {{ $invoice->sent_at->format('M j, Y') }}
+                                {{ __('Sent') }}: {{ $invoice->sent_at->format('M j, Y') }}
                             </p>
                         @endif
                         @if ($invoice->due_date)
                             <p class="text-sm text-zinc-600 dark:text-zinc-400">
-                                Due: {{ $invoice->due_date->format('M j, Y') }}
+                                {{ __('Due') }}: {{ $invoice->due_date->format('M j, Y') }}
                             </p>
                         @endif
                     </div>
@@ -129,18 +129,18 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
 
             {{-- Payment History --}}
             <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-                <flux:heading size="md" class="mb-4">Payment History</flux:heading>
+                <flux:heading size="md" class="mb-4">{{ __('Payment History') }}</flux:heading>
 
                 @if ($this->payments->isEmpty())
-                    <flux:text class="text-zinc-400">No payments recorded yet.</flux:text>
+                    <flux:text class="text-zinc-400">{{ __('No payments recorded yet.') }}</flux:text>
                 @else
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead>
                                 <tr>
-                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Date</th>
-                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Method</th>
-                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">Amount</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Date") }}</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Method") }}</th>
+                                    <th class="px-3 py-2 text-right text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __("Amount") }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -168,11 +168,11 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
         <div class="space-y-6">
             {{-- Financial Summary --}}
             <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-                <flux:heading size="md" class="mb-4">Summary</flux:heading>
+                <flux:heading size="md" class="mb-4">{{ __('Summary') }}</flux:heading>
 
                 <div class="space-y-3">
                     <div class="flex justify-between">
-                        <span class="text-sm text-zinc-500 dark:text-zinc-400">Subtotal</span>
+                        <span class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Subtotal') }}</span>
                         <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">${{ number_format((float) $invoice->subtotal, 2) }}</span>
                     </div>
 
@@ -186,13 +186,13 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
                     <flux:separator />
 
                     <div class="flex justify-between">
-                        <span class="font-medium text-zinc-900 dark:text-zinc-100">Total</span>
+                        <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ __('Total') }}</span>
                         <span class="font-bold text-zinc-900 dark:text-zinc-100">${{ number_format((float) $invoice->total, 2) }}</span>
                     </div>
 
                     @if ((float) $invoice->amount_paid > 0)
                         <div class="flex justify-between">
-                            <span class="text-sm text-emerald-600 dark:text-emerald-400">Paid</span>
+                            <span class="text-sm text-emerald-600 dark:text-emerald-400">{{ __('Paid') }}</span>
                             <span class="text-sm font-medium text-emerald-600 dark:text-emerald-400">-${{ number_format((float) $invoice->amount_paid, 2) }}</span>
                         </div>
                     @endif
@@ -200,7 +200,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
                     <flux:separator />
 
                     <div class="flex justify-between">
-                        <span class="text-lg font-bold {{ (float) $invoice->balance_due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">Balance Due</span>
+                        <span class="text-lg font-bold {{ (float) $invoice->balance_due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">{{ __('Balance Due') }}</span>
                         <span class="text-lg font-bold {{ (float) $invoice->balance_due > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400' }}">${{ number_format((float) $invoice->balance_due, 2) }}</span>
                     </div>
                 </div>
@@ -209,9 +209,9 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
             {{-- Pay Now CTA --}}
             @if ($this->paymentUrl)
                 <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-6 dark:border-emerald-800 dark:bg-emerald-900/20">
-                    <p class="mb-3 text-sm font-medium text-emerald-800 dark:text-emerald-300">Ready to pay?</p>
+                    <p class="mb-3 text-sm font-medium text-emerald-800 dark:text-emerald-300">{{ __('Ready to pay?') }}</p>
                     <flux:button variant="primary" icon="credit-card" href="{{ $this->paymentUrl }}" class="w-full">
-                        Pay ${{ number_format((float) $invoice->balance_due, 2) }}
+                        {{ __('Pay') }} ${{ number_format((float) $invoice->balance_due, 2) }}
                     </flux:button>
                 </div>
             @endif
@@ -219,7 +219,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Invoice Details'])] cla
             {{-- Terms --}}
             @if ($invoice->terms)
                 <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
-                    <flux:heading size="md" class="mb-4">Terms</flux:heading>
+                    <flux:heading size="md" class="mb-4">{{ __('Terms') }}</flux:heading>
                     <p class="text-sm text-zinc-600 dark:text-zinc-400">{{ $invoice->terms }}</p>
                 </div>
             @endif

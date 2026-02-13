@@ -83,8 +83,8 @@ class EstimateSignature extends Model
                     'type' => ChatMessage::TYPE_SYSTEM,
                 ]);
 
-                // Advance deal to 'signed_accepted' stage and create job
-                $deal->moveTo('signed_accepted');
+                // Advance deal to 'signed' stage and create job
+                $deal->moveTo('signed');
 
                 // Auto-create job from the accepted estimate
                 app(JobService::class)->createFromEstimate($signature->estimate);

@@ -21,6 +21,12 @@ class EstimateArea extends Model
 
     public const APPLICATION_SPRAY = 'spray';
 
+    public const MEASUREMENT_DIMENSIONS = 'dimensions';
+
+    public const MEASUREMENT_SQFT = 'sqft';
+
+    public const MEASUREMENT_LNFT = 'lnft';
+
     protected $fillable = [
         'estimate_id',
         'parent_area_id',
@@ -39,9 +45,22 @@ class EstimateArea extends Model
         'application_method',
         'is_fixed_price',
         'fixed_price_amount',
+        'estimated_labor_hours',
+        'estimated_material_cost',
+        'estimated_labor_cost',
         'notes',
+        'customer_notes',
+        'customer_checklist',
+        'agent_notes',
+        'agent_checklist',
         'sort_order',
         'default_paint_product_id',
+        'measurement_type',
+        'wall_count',
+        'direct_sqft',
+        'direct_lnft',
+        'direct_ceiling_sqft',
+        'service_category_id',
     ];
 
     protected function casts(): array
@@ -57,7 +76,16 @@ class EstimateArea extends Model
             'baseboard_lnft' => 'decimal:2',
             'is_fixed_price' => 'boolean',
             'fixed_price_amount' => 'decimal:2',
+            'estimated_labor_hours' => 'decimal:2',
+            'estimated_material_cost' => 'decimal:2',
+            'estimated_labor_cost' => 'decimal:2',
+            'customer_checklist' => 'array',
+            'agent_checklist' => 'array',
             'sort_order' => 'integer',
+            'wall_count' => 'integer',
+            'direct_sqft' => 'decimal:2',
+            'direct_lnft' => 'decimal:2',
+            'direct_ceiling_sqft' => 'decimal:2',
         ];
     }
 
@@ -67,29 +95,61 @@ class EstimateArea extends Model
     protected static function booted(): void
     {
         static::saving(function (EstimateArea $area) {
-            // Skip auto-calculation for fixed price areas (closets, etc.)
+            // Fixed price areas: populate labor breakdown from template, then skip dimension calc
             if ($area->is_fixed_price) {
+                $area->populateLaborFromTemplate();
+
                 return;
             }
 
-            // Auto-calculate square footage from dimensions
-            if ($area->length && $area->width && $area->height) {
-                // Perimeter in linear feet = 2 * (length + width)
-                $area->perimeter_lnft = 2 * ($area->length + $area->width);
+            // Branch on measurement type BEFORE any dimension calculation
+            $measurementType = $area->measurement_type ?? self::MEASUREMENT_DIMENSIONS;
 
-                // Wall sqft = perimeter * height
-                $area->wall_sqft = $area->perimeter_lnft * $area->height;
-
-                // Ceiling sqft = length * width
-                $area->ceiling_sqft = $area->length * $area->width;
-
-                // Floor sqft = length * width
-                $area->floor_sqft = $area->length * $area->width;
-
-                // Baseboard = perimeter (default, can be overridden)
-                if (! $area->baseboard_lnft) {
+            switch ($measurementType) {
+                case self::MEASUREMENT_SQFT:
+                    $area->wall_sqft = $area->direct_sqft ?? 0;
+                    $area->ceiling_sqft = $area->direct_ceiling_sqft ?? 0;
+                    $area->floor_sqft = $area->direct_ceiling_sqft ?? 0;
+                    if ($area->height > 0 && $area->wall_sqft > 0) {
+                        $area->perimeter_lnft = round($area->wall_sqft / $area->height, 2);
+                    }
                     $area->baseboard_lnft = $area->perimeter_lnft;
-                }
+                    break;
+
+                case self::MEASUREMENT_LNFT:
+                    $area->perimeter_lnft = $area->direct_lnft ?? 0;
+                    $area->baseboard_lnft = $area->perimeter_lnft;
+                    if ($area->height > 0) {
+                        $area->wall_sqft = round($area->perimeter_lnft * $area->height, 2);
+                    }
+                    $area->ceiling_sqft = $area->direct_ceiling_sqft ?? 0;
+                    $area->floor_sqft = $area->direct_ceiling_sqft ?? 0;
+                    break;
+
+                case self::MEASUREMENT_DIMENSIONS:
+                default:
+                    // Existing behavior + wall_count support
+                    $wallCount = max(1, min(4, $area->wall_count ?? 4));
+
+                    if ($area->length && $area->width && $area->height) {
+                        $fullPerimeter = 2 * ($area->length + $area->width);
+                        $ratio = $wallCount / 4;
+                        $area->perimeter_lnft = round($fullPerimeter * $ratio, 2);
+                        $area->wall_sqft = round($area->perimeter_lnft * $area->height, 2);
+                        $area->ceiling_sqft = $area->length * $area->width;
+                        $area->floor_sqft = $area->length * $area->width;
+
+                        if (! $area->baseboard_lnft) {
+                            $area->baseboard_lnft = $area->perimeter_lnft;
+                        }
+                    } elseif ($area->width && $area->height) {
+                        // Single-wall mode (length=null) - existing behavior, unchanged
+                        $area->wall_sqft = $area->width * $area->height;
+                        $area->perimeter_lnft = $area->width;
+                        $area->ceiling_sqft = 0;
+                        $area->floor_sqft = 0;
+                    }
+                    break;
             }
         });
 
@@ -165,6 +225,14 @@ class EstimateArea extends Model
     public function substrate(): BelongsTo
     {
         return $this->belongsTo(Substrate::class);
+    }
+
+    /**
+     * Get the service category for this area.
+     */
+    public function serviceCategory(): BelongsTo
+    {
+        return $this->belongsTo(ServiceCategory::class);
     }
 
     /**
@@ -285,13 +353,27 @@ class EstimateArea extends Model
      */
     public function getFullCOGS(): float
     {
-        // Fixed price areas don't have COGS calculation
-        if ($this->is_fixed_price) {
-            return (float) $this->fixed_price_amount;
-        }
-
         $settings = CompanySetting::getInstance();
         $scope = $this->scope_type ?? 'interior';
+
+        // Fixed price areas: use stored labor breakdown if available, else fall back to fixed_price_amount
+        if ($this->is_fixed_price) {
+            if ($this->estimated_labor_hours !== null && $this->estimated_labor_hours > 0) {
+                $laborCost = (float) ($this->estimated_labor_cost ?? 0);
+                $materialCost = (float) ($this->estimated_material_cost ?? 0);
+                $laborHours = (float) $this->estimated_labor_hours;
+
+                $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
+                $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+                $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
+
+                $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+
+                return $cogsResult['cogs'];
+            }
+
+            return (float) $this->fixed_price_amount;
+        }
 
         // Sum from surfaces
         $laborHours = (float) $this->surfaces()->where('is_included', true)->sum('labor_hours');
@@ -313,9 +395,42 @@ class EstimateArea extends Model
     }
 
     /**
+     * Populate labor tracking fields from the NestedAreaTemplate.
+     * Only sets values that are currently null (won't overwrite explicit values).
+     * Mirrors EstimateAreaAddon::populateLaborFromTemplate().
+     */
+    public function populateLaborFromTemplate(): void
+    {
+        $template = $this->nestedAreaTemplate;
+
+        if (! $template) {
+            return;
+        }
+
+        if ($this->estimated_labor_hours === null && $template->estimated_hours !== null) {
+            $this->estimated_labor_hours = (float) $template->estimated_hours;
+        }
+
+        if ($this->estimated_material_cost === null && $template->material_cost !== null) {
+            $this->estimated_material_cost = (float) $template->material_cost;
+        }
+
+        if ($this->estimated_labor_cost === null && $this->estimated_labor_hours !== null && $this->estimated_labor_hours > 0) {
+            $scope = $this->scope_type ?? 'interior';
+            $settings = CompanySetting::getInstance();
+            $this->estimated_labor_cost = (float) $this->estimated_labor_hours * $settings->getEffectiveHourlyRateForScope($scope);
+        }
+    }
+
+    /**
      * Get the customer-facing price (OTD) for this area.
      * This applies the scope-specific margin from CompanySetting.
      * PBP Formula: COGS / (margin% / 100)
+     *
+     * Supports mixed pricing: if any custom surface has an explicit sale_price,
+     * those surfaces contribute their sale_price directly while non-custom surfaces
+     * get margin applied normally. Overhead (cleanup/sundries) is applied via margin
+     * to the non-custom COGS portion.
      *
      * USE THIS for displaying prices to customers.
      * Margins are ALWAYS pulled fresh from CompanySetting - never hardcoded.
@@ -327,22 +442,65 @@ class EstimateArea extends Model
             return (float) $this->fixed_price_amount;
         }
 
-        $cogs = $this->getFullCOGS();
-
-        if ($cogs <= 0) {
-            return 0.0;
-        }
-
         $settings = CompanySetting::getInstance();
         $scope = $this->scope_type ?? 'interior';
 
-        return $settings->calculateOTDFromCOGS($cogs, $scope);
+        // Check if any custom surfaces have explicit sale_price
+        $surfaces = $this->surfaces()->where('is_included', true)->get();
+        $hasCustomSalePrices = $surfaces->contains(fn ($s) => $s->is_custom && $s->sale_price !== null);
+
+        if (! $hasCustomSalePrices) {
+            // Standard path: all COGS get margin applied uniformly
+            $cogs = $this->getFullCOGS();
+
+            if ($cogs <= 0) {
+                return 0.0;
+            }
+
+            return $settings->calculateOTDFromCOGS($cogs, $scope);
+        }
+
+        // Mixed pricing: custom sale_price surfaces + margin-calculated non-custom surfaces
+        $customSaleTotal = 0.0;
+        $nonCustomLaborHours = 0.0;
+        $nonCustomLaborCost = 0.0;
+        $nonCustomMaterialCost = 0.0;
+        $totalLaborHours = 0.0;
+
+        foreach ($surfaces as $surface) {
+            $totalLaborHours += (float) $surface->labor_hours;
+
+            if ($surface->is_custom && $surface->sale_price !== null) {
+                $customSaleTotal += (float) $surface->sale_price;
+            } else {
+                $nonCustomLaborHours += (float) $surface->labor_hours;
+                $nonCustomLaborCost += (float) $surface->labor_cost;
+                $nonCustomMaterialCost += (float) $surface->material_cost;
+            }
+        }
+
+        // Calculate COGS for non-custom portion (including their share of overhead)
+        $nonCustomPrice = 0.0;
+        if ($nonCustomLaborCost > 0 || $nonCustomMaterialCost > 0) {
+            $cleanupHours = $settings->calculateCleanupHours($nonCustomLaborHours, $scope);
+            $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+            $sundriesCost = $settings->calculateSundriesCost($nonCustomLaborHours, $scope);
+
+            $addonCost = (float) $this->addons()->sum('total_price');
+            $cogsResult = $settings->calculateCOGS($nonCustomLaborCost, $cleanupCost, $sundriesCost, $nonCustomMaterialCost + $addonCost);
+            $nonCustomPrice = $settings->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+        }
+
+        return $customSaleTotal + $nonCustomPrice;
     }
 
     /**
      * Get proportionally-allocated customer prices for each surface.
      * Distributes the area's customer price based on each surface's COGS contribution.
      * Ensures surface prices sum exactly to the area customer price.
+     *
+     * Custom surfaces with explicit sale_price get their sale_price directly.
+     * Non-custom surfaces share the remaining customer price proportionally.
      *
      * @return array<int, float> Map of surface_id => proportional customer price
      */
@@ -351,24 +509,69 @@ class EstimateArea extends Model
         $customerPrice = $this->getCustomerPrice();
         $surfaces = $this->surfaces()->where('is_included', true)->get();
 
-        $totalCogs = (float) $surfaces->sum('total');
-
-        if ($totalCogs <= 0 || $surfaces->isEmpty()) {
+        if ($surfaces->isEmpty()) {
             return [];
         }
 
+        // Check for custom sale_price surfaces
+        $hasCustomSalePrices = $surfaces->contains(fn ($s) => $s->is_custom && $s->sale_price !== null);
+
+        if (! $hasCustomSalePrices) {
+            // Standard proportional allocation
+            $totalCogs = (float) $surfaces->sum('total');
+
+            if ($totalCogs <= 0) {
+                return [];
+            }
+
+            $prices = [];
+            $allocated = 0.0;
+            $lastId = $surfaces->last()->id;
+
+            foreach ($surfaces as $surface) {
+                if ($surface->id === $lastId) {
+                    $prices[$surface->id] = round($customerPrice - $allocated, 2);
+                } else {
+                    $price = round(((float) $surface->total / $totalCogs) * $customerPrice, 2);
+                    $prices[$surface->id] = $price;
+                    $allocated += $price;
+                }
+            }
+
+            return $prices;
+        }
+
+        // Mixed: custom sale_price surfaces get their price, rest share proportionally
         $prices = [];
-        $allocated = 0.0;
-        $lastId = $surfaces->last()->id;
+        $customTotal = 0.0;
+        $nonCustomSurfaces = [];
+        $nonCustomCogs = 0.0;
 
         foreach ($surfaces as $surface) {
-            if ($surface->id === $lastId) {
-                // Last surface gets the remainder to prevent rounding drift
-                $prices[$surface->id] = round($customerPrice - $allocated, 2);
+            if ($surface->is_custom && $surface->sale_price !== null) {
+                $prices[$surface->id] = (float) $surface->sale_price;
+                $customTotal += (float) $surface->sale_price;
             } else {
-                $price = round(((float) $surface->total / $totalCogs) * $customerPrice, 2);
-                $prices[$surface->id] = $price;
-                $allocated += $price;
+                $nonCustomSurfaces[] = $surface;
+                $nonCustomCogs += (float) $surface->total;
+            }
+        }
+
+        // Remaining price for non-custom surfaces
+        $remainingPrice = $customerPrice - $customTotal;
+
+        if (! empty($nonCustomSurfaces) && $nonCustomCogs > 0 && $remainingPrice > 0) {
+            $allocated = 0.0;
+            $lastNonCustom = end($nonCustomSurfaces);
+
+            foreach ($nonCustomSurfaces as $surface) {
+                if ($surface->id === $lastNonCustom->id) {
+                    $prices[$surface->id] = round($remainingPrice - $allocated, 2);
+                } else {
+                    $price = round(((float) $surface->total / $nonCustomCogs) * $remainingPrice, 2);
+                    $prices[$surface->id] = $price;
+                    $allocated += $price;
+                }
             }
         }
 

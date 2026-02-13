@@ -31,6 +31,14 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
         app(ChatService::class)->markThreadAsRead($thread, $user);
     }
 
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:chat.thread.{$this->thread->id},.message.sent" => 'onNewMessage',
+            "echo-private:chat.thread.{$this->thread->id},.message.read" => '$refresh',
+        ];
+    }
+
     #[On('message-sent')]
     public function onMessageSent(): void
     {
@@ -39,6 +47,13 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
         unset($this->hasMore);
 
         // Mark as read
+        app(ChatService::class)->markThreadAsRead($this->thread, auth('agent')->user());
+    }
+
+    public function onNewMessage(): void
+    {
+        unset($this->messages);
+        unset($this->hasMore);
         app(ChatService::class)->markThreadAsRead($this->thread, auth('agent')->user());
     }
 
@@ -132,7 +147,23 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
     }
 }; ?>
 
-<div wire:poll.10s class="flex flex-col h-[calc(100vh-8rem)]">
+<div
+    x-data="{ pollTimer: null }"
+    x-init="
+        if (window.Echo?.connector?.pusher) {
+            window.Echo.connector.pusher.connection.bind('disconnected', () => {
+                this.pollTimer = setInterval(() => $wire.$refresh(), 30000);
+            });
+            window.Echo.connector.pusher.connection.bind('connected', () => {
+                if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+            });
+        } else {
+            this.pollTimer = setInterval(() => $wire.$refresh(), 15000);
+        }
+    "
+    x-on:beforeunmount.window="if (this.pollTimer) clearInterval(this.pollTimer)"
+    class="flex flex-col h-[calc(100vh-8rem)]"
+>
     <div class="max-w-4xl mx-auto w-full flex flex-col h-full">
         {{-- Header --}}
         <div class="border-b border-zinc-200 dark:border-zinc-700 pb-4 mb-4 shrink-0">
@@ -145,10 +176,10 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                         <flux:heading size="lg">{{ $this->displayName }}</flux:heading>
                         <div class="flex items-center gap-2 mt-1">
                             @if ($thread->type === 'deal' && $thread->deal)
-                                <flux:badge size="sm" color="blue">Deal: {{ $thread->deal->title }}</flux:badge>
+                                <flux:badge size="sm" color="blue">{{ __('Deal:') }} {{ $thread->deal->title }}</flux:badge>
                             @endif
                             <flux:text class="text-sm text-zinc-500">
-                                {{ $this->participants->count() }} participant{{ $this->participants->count() !== 1 ? 's' : '' }}
+                                {{ trans_choice('{1} :count participant|[2,*] :count participants', $this->participants->count(), ['count' => $this->participants->count()]) }}
                             </flux:text>
                         </div>
                     </div>
@@ -194,8 +225,8 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                         size="sm"
                         wire:loading.attr="disabled"
                     >
-                        <span wire:loading.remove wire:target="loadMoreMessages">Load older messages</span>
-                        <span wire:loading wire:target="loadMoreMessages">Loading...</span>
+                        <span wire:loading.remove wire:target="loadMoreMessages">{{ __('Load older messages') }}</span>
+                        <span wire:loading wire:target="loadMoreMessages">{{ __('Loading...') }}</span>
                     </flux:button>
                 </div>
             @endif
@@ -212,9 +243,9 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                     {{-- Avatar --}}
                     @if ($message->user_id !== auth('agent')->id())
                         <div class="shrink-0">
-                            <flux:tooltip content="{{ $message->user?->name ?? 'Unknown' }}">
+                            <flux:tooltip content="{{ $message->user?->name ?? __('Unknown') }}">
                                 <flux:avatar
-                                    name="{{ $message->user?->name ?? 'Unknown' }}"
+                                    name="{{ $message->user?->name ?? __('Unknown') }}"
                                     size="sm"
                                 />
                             </flux:tooltip>
@@ -231,12 +262,12 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                         @if ($message->user_id !== auth('agent')->id())
                             <div class="flex items-center gap-2 mb-1">
                                 <flux:text class="text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                                    {{ $message->user?->name ?? 'Unknown' }}
+                                    {{ $message->user?->name ?? __('Unknown') }}
                                 </flux:text>
                                 @if ($message->user?->isInternal())
-                                    <flux:badge size="sm" color="blue">Staff</flux:badge>
+                                    <flux:badge size="sm" color="blue">{{ __('Staff') }}</flux:badge>
                                 @elseif ($message->user?->isCustomer())
-                                    <flux:badge size="sm" color="purple">Customer</flux:badge>
+                                    <flux:badge size="sm" color="purple">{{ __('Customer') }}</flux:badge>
                                 @endif
                             </div>
                         @endif
@@ -252,7 +283,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                         {{-- Message content --}}
                         <div @class([
                             'rounded-lg px-4 py-2',
-                            'bg-blue-600 text-white' => $message->user_id === auth('agent')->id(),
+                            'bg-teal-600 text-white' => $message->user_id === auth('agent')->id(),
                             'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' => $message->user_id !== auth('agent')->id() && !$message->isSystem(),
                             'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 italic' => $message->isSystem(),
                         ])>
@@ -260,6 +291,11 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                 <flux:text class="text-sm">{{ $message->content }}</flux:text>
                             @elseif ($message->isAudio())
                                 {{-- Audio message --}}
+                                @php
+                                    $audioUrl = $message->metadata['audio_url'] ?? '';
+                                    $audioMime = $message->metadata['audio_mime_type'] ?? null;
+                                    $isM4a = $audioMime === 'audio/mp4' || str_ends_with($audioUrl, '.m4a');
+                                @endphp
                                 <div class="space-y-2">
                                     {{-- Audio player with multiple source formats for cross-browser support --}}
                                     <div
@@ -284,51 +320,55 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                             x-on:loadedmetadata="handleLoaded()"
                                             x-show="!audioError"
                                         >
-                                            <source src="{{ $message->metadata['audio_url'] ?? '' }}">
-                                            <source src="{{ $message->metadata['audio_url'] ?? '' }}" type="video/webm">
-                                            <source src="{{ $message->metadata['audio_url'] ?? '' }}" type="audio/webm; codecs=opus">
-                                            <source src="{{ $message->metadata['audio_url'] ?? '' }}" type="audio/webm">
-                                            Your browser does not support audio playback.
+                                            @if ($isM4a)
+                                                <source src="{{ $audioUrl }}" type="audio/mp4">
+                                            @else
+                                                <source src="{{ $audioUrl }}" type="audio/webm; codecs=opus">
+                                                <source src="{{ $audioUrl }}" type="audio/webm">
+                                            @endif
+                                            <source src="{{ $audioUrl }}" type="audio/mp4">
+                                            <source src="{{ $audioUrl }}">
+                                            {{ __('Your browser does not support audio playback.') }}
                                         </audio>
 
                                         {{-- Error state --}}
-                                        <div x-show="audioError" x-cloak class="flex items-center gap-2 text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-200' : 'text-zinc-500' }}">
+                                        <div x-show="audioError" x-cloak class="flex items-center gap-2 text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500' }}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                             </svg>
-                                            <span>Audio unavailable</span>
-                                            <a href="{{ $message->metadata['audio_url'] ?? '' }}" download class="underline hover:no-underline">Download</a>
+                                            <span>{{ __('Audio unavailable') }}</span>
+                                            <a href="{{ $message->metadata['audio_url'] ?? '' }}" download class="underline hover:no-underline">{{ __('Download') }}</a>
                                         </div>
                                     </div>
 
                                     {{-- Duration indicator --}}
                                     @if (!empty($message->metadata['audio_duration']))
-                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}">
+                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500 dark:text-zinc-400' }}">
                                             {{ gmdate('i:s', (int) $message->metadata['audio_duration']) }}
                                         </div>
                                     @endif
 
                                     {{-- Transcription --}}
                                     @if (!empty($message->metadata['transcription']))
-                                        <div class="pt-1 border-t {{ $message->user_id === auth('agent')->id() ? 'border-blue-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
-                                            <flux:text class="text-sm italic {{ $message->user_id === auth('agent')->id() ? 'text-blue-100' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                        <div class="pt-1 border-t {{ $message->user_id === auth('agent')->id() ? 'border-teal-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
+                                            <flux:text class="text-sm italic {{ $message->user_id === auth('agent')->id() ? 'text-teal-100' : 'text-zinc-600 dark:text-zinc-400' }}">
                                                 "{{ $message->metadata['transcription'] }}"
                                             </flux:text>
                                         </div>
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
-                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-200' : 'text-zinc-500' }}">
-                                            <span class="animate-pulse">Transcribing...</span>
+                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500' }}">
+                                            <span class="animate-pulse">{{ __('Transcribing...') }}</span>
                                         </div>
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'failed')
-                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-200' : 'text-zinc-500' }}">
-                                            Transcription unavailable
+                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500' }}">
+                                            {{ __('Transcription unavailable') }}
                                         </div>
                                     @endif
 
                                     {{-- Retention notice --}}
-                                    <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-200/60' : 'text-zinc-400 dark:text-zinc-500' }}">
+                                    <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200/60' : 'text-zinc-400 dark:text-zinc-500' }}">
                                         <flux:icon name="clock" class="inline h-3 w-3 mr-0.5" />
-                                        Audio files are deleted after 30 days
+                                        {{ __('Audio files are deleted after 30 days') }}
                                     </div>
                                 </div>
                             @else
@@ -374,7 +414,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                 {{ $message->created_at->format('M j, g:i A') }}
                             </flux:text>
                             @if ($message->isEdited())
-                                <flux:text class="text-xs text-zinc-400">(edited)</flux:text>
+                                <flux:text class="text-xs text-zinc-400">{{ __('(edited)') }}</flux:text>
                             @endif
 
                             {{-- Actions --}}
@@ -386,16 +426,16 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                             wire:click="setReplyTo({{ $message->id }})"
                                             icon="arrow-uturn-left"
                                         >
-                                            Reply
+                                            {{ __('Reply') }}
                                         </flux:menu.item>
                                         @if ($message->user_id === auth('agent')->id())
                                             <flux:menu.item
                                                 wire:click="deleteMessage({{ $message->id }})"
-                                                wire:confirm="Are you sure you want to delete this message?"
+                                                wire:confirm="{{ __('Are you sure you want to delete this message?') }}"
                                                 icon="trash"
                                                 variant="danger"
                                             >
-                                                Delete
+                                                {{ __('Delete') }}
                                             </flux:menu.item>
                                         @endif
                                     </flux:menu>
@@ -415,9 +455,9 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                 <div class="flex items-center justify-center h-full">
                     <div class="text-center">
                         <flux:icon name="chat-bubble-left-right" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">No messages yet</flux:heading>
+                        <flux:heading size="sm" class="mt-4">{{ __('No messages yet') }}</flux:heading>
                         <flux:text class="mt-2 text-zinc-500">
-                            Start the conversation by sending a message below.
+                            {{ __('Start the conversation by sending a message below.') }}
                         </flux:text>
                     </div>
                 </div>

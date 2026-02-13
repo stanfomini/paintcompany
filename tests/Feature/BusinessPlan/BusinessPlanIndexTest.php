@@ -8,8 +8,8 @@ use Spatie\Permission\Models\Role;
 beforeEach(function () {
     Permission::firstOrCreate(['name' => 'business_plan.view', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'business_plan.manage', 'guard_name' => 'web']);
-    Permission::firstOrCreate(['name' => 'view roadmap', 'guard_name' => 'web']);
-    Permission::firstOrCreate(['name' => 'view kpis', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'roadmap.view', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'kpis.view', 'guard_name' => 'web']);
 
     $ownerRole = Role::firstOrCreate(['name' => 'owner', 'guard_name' => 'web']);
     $ownerRole->syncPermissions(Permission::all());

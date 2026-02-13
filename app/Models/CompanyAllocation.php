@@ -504,10 +504,10 @@ class CompanyAllocation extends Model
     public function getTypeLabelAttribute(): string
     {
         return match ($this->type) {
-            self::TYPE_PERCENT_OF_REVENUE => 'Percent of Revenue',
-            self::TYPE_FIXED_PER_JOB => 'Fixed per Job',
-            self::TYPE_PER_LABOR_HOUR => 'Per Labor Hour',
-            default => 'Unknown',
+            self::TYPE_PERCENT_OF_REVENUE => __('Percent of Revenue'),
+            self::TYPE_FIXED_PER_JOB => __('Fixed per Job'),
+            self::TYPE_PER_LABOR_HOUR => __('Per Labor Hour'),
+            default => __('Unknown'),
         };
     }
 

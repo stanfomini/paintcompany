@@ -165,11 +165,11 @@ class ProductionRate extends Model
     public function getUnitTypeLabelAttribute(): string
     {
         return match ($this->unit_type) {
-            self::UNIT_TYPE_SQFT => 'Square Feet',
-            self::UNIT_TYPE_LNFT => 'Linear Feet',
-            self::UNIT_TYPE_UNIT => 'Unit',
-            self::UNIT_TYPE_HOUR => 'Hour',
-            default => $this->unit_type,
+            self::UNIT_TYPE_SQFT => __('Square Feet'),
+            self::UNIT_TYPE_LNFT => __('Linear Feet'),
+            self::UNIT_TYPE_UNIT => __('Unit'),
+            self::UNIT_TYPE_HOUR => __('Hour'),
+            default => __($this->unit_type),
         };
     }
 
@@ -218,7 +218,7 @@ class ProductionRate extends Model
      */
     public function getRateTypeLabelAttribute(): string
     {
-        return self::RATE_TYPES[$this->rate_type] ?? $this->rate_type;
+        return __(self::RATE_TYPES[$this->rate_type] ?? $this->rate_type);
     }
 
     /**
@@ -226,7 +226,7 @@ class ProductionRate extends Model
      */
     public function getScopeLabelAttribute(): string
     {
-        return self::SCOPES[$this->scope] ?? $this->scope ?? 'Unknown';
+        return __(self::SCOPES[$this->scope] ?? $this->scope ?? 'Unknown');
     }
 
     /**
@@ -238,7 +238,7 @@ class ProductionRate extends Model
             ? self::INTERIOR_CATEGORIES
             : self::EXTERIOR_CATEGORIES;
 
-        return $categories[$this->surface_category] ?? $this->surface_category ?? 'Unknown';
+        return __($categories[$this->surface_category] ?? $this->surface_category ?? 'Unknown');
     }
 
     /**

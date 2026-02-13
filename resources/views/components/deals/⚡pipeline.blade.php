@@ -1,8 +1,10 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
+use App\Services\DealStageService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -23,6 +25,15 @@ new class extends Component {
 
     public string $customerFilter = '';
 
+    // Triage modal state
+    public bool $showTriageModal = false;
+
+    public ?int $triageDealId = null;
+
+    public string $triageAction = '';
+
+    public ?string $triageFollowUpDate = null;
+
     #[On('deal-created')]
     #[On('deal-updated')]
     public function refreshPipeline(): void
@@ -31,7 +42,7 @@ new class extends Component {
     }
 
     /**
-     * Get the stage colors for display.
+     * Get the stage colors for display (kanban stages only).
      *
      * @return array<string, string>
      */
@@ -40,13 +51,8 @@ new class extends Component {
     {
         return [
             'lead' => 'bg-blue-100 dark:bg-blue-900/50 border-blue-300 dark:border-blue-700',
-            'quoted' => 'bg-purple-100 dark:bg-purple-900/50 border-purple-300 dark:border-purple-700',
-            'scheduled' => 'bg-yellow-100 dark:bg-yellow-900/50 border-yellow-300 dark:border-yellow-700',
-            'in_progress' => 'bg-orange-100 dark:bg-orange-900/50 border-orange-300 dark:border-orange-700',
-            'completed' => 'bg-green-100 dark:bg-green-900/50 border-green-300 dark:border-green-700',
-            'paid' => 'bg-emerald-100 dark:bg-emerald-900/50 border-emerald-300 dark:border-emerald-700',
-            'signed_accepted' => 'bg-teal-100 dark:bg-teal-900/50 border-teal-300 dark:border-teal-700',
-            'cancelled' => 'bg-red-100 dark:bg-red-900/50 border-red-300 dark:border-red-700',
+            'quote_scheduled' => 'bg-purple-100 dark:bg-purple-900/50 border-purple-300 dark:border-purple-700',
+            'quoted' => 'bg-yellow-100 dark:bg-yellow-900/50 border-yellow-300 dark:border-yellow-700',
         ];
     }
 
@@ -60,13 +66,8 @@ new class extends Component {
     {
         return [
             'lead' => 'bg-blue-500',
-            'quoted' => 'bg-purple-500',
-            'scheduled' => 'bg-yellow-500',
-            'in_progress' => 'bg-orange-500',
-            'completed' => 'bg-green-500',
-            'paid' => 'bg-emerald-500',
-            'signed_accepted' => 'bg-teal-500',
-            'cancelled' => 'bg-red-500',
+            'quote_scheduled' => 'bg-purple-500',
+            'quoted' => 'bg-yellow-500',
         ];
     }
 
@@ -76,7 +77,7 @@ new class extends Component {
      */
     public function moveToStage(int $dealId, string $newStage, int $newPosition): void
     {
-        if (! array_key_exists($newStage, Deal::STAGES)) {
+        if (! in_array($newStage, Deal::KANBAN_STAGES)) {
             return;
         }
 
@@ -100,7 +101,57 @@ new class extends Component {
     }
 
     /**
-     * Get deals grouped by stage.
+     * Open triage modal for a lead.
+     */
+    public function openTriage(int $dealId, string $action): void
+    {
+        $this->triageDealId = $dealId;
+        $this->triageAction = $action;
+        $this->triageFollowUpDate = now()->addDay()->toDateString();
+
+        if ($action === 'follow_up' || $action === 'quote_scheduled') {
+            $this->triageFollowUpDate = $action === 'quote_scheduled'
+                ? now()->addDay()->setTime(9, 0)->format('Y-m-d\TH:i')
+                : now()->addDay()->toDateString();
+            $this->showTriageModal = true;
+        } else {
+            $this->executeTriage();
+        }
+    }
+
+    /**
+     * Execute the triage action.
+     */
+    public function executeTriage(): void
+    {
+        if (! $this->triageDealId) {
+            return;
+        }
+
+        $deal = Deal::findOrFail($this->triageDealId);
+        $service = app(DealStageService::class);
+
+        match ($this->triageAction) {
+            'not_contacted' => $service->transitionTo($deal, 'not_contacted'),
+            'follow_up' => $service->transitionTo($deal, 'follow_up', $this->triageFollowUpDate),
+            'quote_scheduled' => $service->transitionTo($deal, 'quote_scheduled', $this->triageFollowUpDate),
+            'lost' => $service->transitionTo($deal, 'lost'),
+            default => null,
+        };
+
+        $this->closeTriageModal();
+    }
+
+    public function closeTriageModal(): void
+    {
+        $this->showTriageModal = false;
+        $this->triageDealId = null;
+        $this->triageAction = '';
+        $this->triageFollowUpDate = null;
+    }
+
+    /**
+     * Get deals grouped by kanban stage only.
      *
      * @return array<string, Collection<int, Deal>>
      */
@@ -108,7 +159,8 @@ new class extends Component {
     public function dealsByStage(): array
     {
         $query = Deal::query()
-            ->with(['customer', 'assignedTo'])
+            ->kanban()
+            ->with(['customer', 'agent', 'assignedTo'])
             ->search($this->search)
             ->when($this->assignedToFilter, function ($query) {
                 return $query->where('assigned_to', $this->assignedToFilter);
@@ -122,7 +174,7 @@ new class extends Component {
         $deals = $query->get();
 
         $dealsByStage = [];
-        foreach (array_keys(Deal::STAGES) as $stage) {
+        foreach (Deal::KANBAN_STAGES as $stage) {
             $dealsByStage[$stage] = $deals->where('stage', $stage)->values();
         }
 
@@ -158,18 +210,61 @@ new class extends Component {
             ->get();
     }
 
+    /**
+     * Get kanban stage labels.
+     */
     #[Computed]
     public function stages(): array
     {
-        return Deal::STAGES;
+        return array_intersect_key(Deal::STAGES, array_flip(Deal::KANBAN_STAGES));
+    }
+
+    /**
+     * Get incomplete activities for agent-type users.
+     */
+    #[Computed]
+    public function agentLeads(): Collection
+    {
+        return Activity::query()
+            ->where('subject_type', User::class)
+            ->whereHas('subject', fn ($q) => $q->where('type', 'agent'))
+            ->incomplete()
+            ->with(['subject', 'assignee'])
+            ->latest()
+            ->get();
+    }
+
+    /**
+     * Assign an agent lead activity to the current user.
+     */
+    public function claimAgentLead(int $activityId): void
+    {
+        $activity = Activity::findOrFail($activityId);
+        $activity->update(['assigned_to' => auth()->id()]);
+    }
+
+    /**
+     * Mark an agent lead activity as completed.
+     */
+    public function completeAgentLead(int $activityId): void
+    {
+        $activity = Activity::findOrFail($activityId);
+        $activity->markAsCompleted();
     }
 }; ?>
 
 <div>
     <div class="max-w-full mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Deal Pipeline</flux:heading>
-            @livewire('deals.create-modal')
+            <flux:heading size="xl">{{ __('Active Leads') }}</flux:heading>
+            <div class="flex items-center gap-2">
+                @can('estimates.view')
+                    <flux:button icon="document-text" :href="route('estimates.index')" wire:navigate variant="ghost">
+                        {{ __('Estimates') }}
+                    </flux:button>
+                @endcan
+                @livewire('deals.create-modal')
+            </div>
         </div>
 
         @if (session('success'))
@@ -183,13 +278,13 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search deals..."
+                    :placeholder="__('Search deals...')"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="assignedToFilter">
-                    <option value="">All Team Members</option>
+                    <option value="">{{ __('All Team Members') }}</option>
                     @foreach ($this->internalUsers as $user)
                         <option value="{{ $user->id }}">{{ $user->name }}</option>
                     @endforeach
@@ -197,7 +292,7 @@ new class extends Component {
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="customerFilter">
-                    <option value="">All Customers</option>
+                    <option value="">{{ __('All Customers') }}</option>
                     @foreach ($this->customers as $customer)
                         <option value="{{ $customer->id }}">{{ $customer->full_name }}</option>
                     @endforeach
@@ -205,10 +300,60 @@ new class extends Component {
             </div>
         </div>
 
+        {{-- Agent Leads Section --}}
+        @if ($this->agentLeads->count() > 0)
+            <div class="mb-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <flux:icon name="user-group" class="w-5 h-5 text-indigo-500" />
+                    <flux:heading size="lg">{{ __('Agent Leads') }}</flux:heading>
+                    <flux:badge color="indigo" size="sm">{{ $this->agentLeads->count() }}</flux:badge>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    @foreach ($this->agentLeads as $lead)
+                        <div wire:key="agent-lead-{{ $lead->id }}" class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
+                            <div class="flex items-start justify-between">
+                                <div class="min-w-0 flex-1">
+                                    <p class="font-semibold text-indigo-900 dark:text-indigo-100">{{ $lead->subject?->name ?? __('Unknown Agent') }}</p>
+                                    <p class="text-sm text-indigo-700 dark:text-indigo-300 mt-0.5">{{ $lead->title }}</p>
+                                    @if ($lead->description)
+                                        <p class="text-sm text-indigo-600 dark:text-indigo-400 mt-1 truncate">{{ $lead->description }}</p>
+                                    @endif
+                                    @if ($lead->due_at)
+                                        <p class="text-xs text-indigo-500 mt-2 flex items-center gap-1">
+                                            <flux:icon name="calendar" class="w-3 h-3" />
+                                            {{ __('Meeting:') }} {{ $lead->due_at->format('M j, Y') }}
+                                        </p>
+                                    @endif
+                                </div>
+                                <flux:badge color="{{ $lead->type === 'meeting' ? 'purple' : 'blue' }}" size="sm" class="ml-2 shrink-0">
+                                    {{ ucfirst($lead->type) }}
+                                </flux:badge>
+                            </div>
+                            <div class="mt-3 flex items-center justify-between pt-2 border-t border-indigo-200 dark:border-indigo-700">
+                                @if ($lead->assignee)
+                                    <flux:text class="text-sm text-indigo-500">
+                                        {{ __('Assigned:') }} {{ $lead->assignee->name }}
+                                    </flux:text>
+                                    <flux:button size="sm" variant="ghost" wire:click="completeAgentLead({{ $lead->id }})">
+                                        {{ __('Mark Done') }}
+                                    </flux:button>
+                                @else
+                                    <flux:text class="text-sm text-indigo-400">{{ __('Unassigned') }}</flux:text>
+                                    <flux:button size="sm" variant="primary" wire:click="claimAgentLead({{ $lead->id }})">
+                                        {{ __('Assign to Me') }}
+                                    </flux:button>
+                                @endif
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         <div class="overflow-x-auto pb-4">
             <div class="flex gap-4 min-w-max" id="kanban-board">
                 @foreach ($this->stages as $stageKey => $stageLabel)
-                    <div class="w-72 flex-shrink-0">
+                    <div class="w-80 flex-shrink-0">
                         <div class="rounded-lg border {{ $this->stageColors[$stageKey] }} overflow-hidden">
                             <div class="px-4 py-3 {{ $this->stageHeaderColors[$stageKey] }}">
                                 <div class="flex items-center justify-between">
@@ -244,8 +389,17 @@ new class extends Component {
                                                         <flux:dropdown>
                                                             <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
                                                             <flux:menu>
+                                                                @if ($deal->customer_id)
+                                                                    <flux:menu.item icon="user" href="{{ route('customers.show', ['customer' => $deal->customer_id, 'deal' => $deal->id]) }}" wire:navigate>
+                                                                        {{ __('Customer Hub') }}
+                                                                    </flux:menu.item>
+                                                                @elseif ($deal->agent_id)
+                                                                    <flux:menu.item icon="user" href="{{ route('agents.show', $deal->agent_id) }}" wire:navigate>
+                                                                        {{ __('Agent Profile') }}
+                                                                    </flux:menu.item>
+                                                                @endif
                                                                 <flux:menu.item icon="eye" href="{{ route('deals.show', $deal) }}" wire:navigate>
-                                                                    View
+                                                                    {{ __('Deal Details') }}
                                                                 </flux:menu.item>
                                                             </flux:menu>
                                                         </flux:dropdown>
@@ -253,13 +407,18 @@ new class extends Component {
                                                 </div>
 
                                                 @if ($deal->customer)
-                                                    <div class="flex items-center text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+                                                    <a href="{{ route('customers.show', ['customer' => $deal->customer_id, 'deal' => $deal->id]) }}" wire:navigate class="flex items-center text-xs text-zinc-500 dark:text-zinc-400 mb-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
                                                         <flux:icon name="user" class="h-3 w-3 mr-1" />
                                                         {{ $deal->customer->full_name }}
-                                                    </div>
+                                                    </a>
+                                                @elseif ($deal->agent)
+                                                    <a href="{{ route('agents.show', $deal->agent_id) }}" wire:navigate class="flex items-center text-xs text-zinc-500 dark:text-zinc-400 mb-2 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                                                        <flux:icon name="building-office" class="h-3 w-3 mr-1" />
+                                                        {{ $deal->agent->name }}
+                                                    </a>
                                                 @endif
 
-                                                <div class="flex items-center justify-between">
+                                                <div class="flex items-center justify-between mb-2">
                                                     @if ($deal->estimated_value)
                                                         <flux:badge size="sm" color="green">
                                                             ${{ number_format($deal->estimated_value, 0) }}
@@ -274,12 +433,30 @@ new class extends Component {
                                                         </flux:tooltip>
                                                     @endif
                                                 </div>
+
+                                                {{-- Triage buttons for leads --}}
+                                                @if ($stageKey === 'lead')
+                                                    <div class="kanban-no-drag flex flex-wrap gap-1 pt-1 border-t border-zinc-100 dark:border-zinc-700">
+                                                        <button wire:click="openTriage({{ $deal->id }}, 'not_contacted')" class="text-xs px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">
+                                                            {{ __('No Answer') }}
+                                                        </button>
+                                                        <button wire:click="openTriage({{ $deal->id }}, 'follow_up')" class="text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50 transition-colors">
+                                                            {{ __('Follow Up') }}
+                                                        </button>
+                                                        <button wire:click="openTriage({{ $deal->id }}, 'quote_scheduled')" class="text-xs px-2 py-1 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors">
+                                                            {{ __('Schedule') }}
+                                                        </button>
+                                                        <button wire:click="openTriage({{ $deal->id }}, 'lost')" wire:confirm="{{ __('Mark this deal as lost?') }}" class="text-xs px-2 py-1 rounded bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors">
+                                                            {{ __('Lost') }}
+                                                        </button>
+                                                    </div>
+                                                @endif
                                             </div>
                                         </div>
                                     </div>
                                 @empty
                                     <div class="text-center py-8 text-zinc-400 dark:text-zinc-500 text-sm">
-                                        No deals
+                                        {{ __('No deals') }}
                                     </div>
                                 @endforelse
                             </div>
@@ -289,6 +466,27 @@ new class extends Component {
             </div>
         </div>
     </div>
+
+    {{-- Follow-Up / Quote Schedule Triage Modal --}}
+    <flux:modal wire:model="showTriageModal" class="max-w-sm">
+        <form wire:submit="executeTriage">
+            <flux:heading size="lg" class="mb-4">
+                {{ $triageAction === 'quote_scheduled' ? __('Schedule Quote Appointment') : __('Schedule Follow-Up') }}
+            </flux:heading>
+
+            <flux:field>
+                <flux:label>{{ $triageAction === 'quote_scheduled' ? __('Appointment Date & Time') : __('Follow-up Date') }}</flux:label>
+                <flux:input wire:model="triageFollowUpDate" :type="$triageAction === 'quote_scheduled' ? 'datetime-local' : 'date'" />
+            </flux:field>
+
+            <div class="mt-6 flex justify-end gap-3">
+                <flux:button variant="ghost" wire:click="closeTriageModal" type="button">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary">
+                    {{ $triageAction === 'quote_scheduled' ? __('Schedule Quote') : __('Set Follow-Up') }}
+                </flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </div>
 
 @script

@@ -34,22 +34,22 @@ class TaskAssigned extends Notification implements ShouldQueue
      */
     public function toMail(object $notifiable): MailMessage
     {
-        $assignerName = $this->activity->user?->name ?? 'Someone';
+        $assignerName = $this->activity->user?->name ?? __('Someone');
         $dueText = $this->activity->due_at
-            ? 'Due: '.$this->activity->due_at->format('M j, Y')
-            : 'No due date';
+            ? __('Due').': '.$this->activity->due_at->format('M j, Y')
+            : __('No due date');
 
         return (new MailMessage)
-            ->subject('New Task Assigned: '.$this->activity->title)
-            ->greeting('Hello '.$notifiable->name.'!')
-            ->line("{$assignerName} assigned you a new task:")
+            ->subject(__('New Task Assigned: :title', ['title' => $this->activity->title]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->name]))
+            ->line(__(':assignerName assigned you a new task:', ['assignerName' => $assignerName]))
             ->line("**{$this->activity->title}**")
             ->line($dueText)
             ->when($this->activity->description, function ($mail) {
                 return $mail->line($this->activity->description);
             })
-            ->action('View Task', route('planner.index'))
-            ->line('Thank you for using our application!');
+            ->action(__('View Task'), route('planner.index'))
+            ->line(__('Thank you for using our application!'));
     }
 
     /**

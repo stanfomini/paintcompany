@@ -30,9 +30,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Pay Breakdown'])] class ext
 <div>
     <div class="mb-6 flex items-center gap-3">
         <flux:button :href="route('crew.jobs.show', $job)" variant="ghost" icon="arrow-left" size="sm">
-            Back to Job
+            {{ __('Back to Job') }}
         </flux:button>
-        <flux:heading size="xl">Pay Breakdown</flux:heading>
+        <flux:heading size="xl">{{ __('Pay Breakdown') }}</flux:heading>
     </div>
 
     @livewire('estimates.painter-breakdown', ['estimate' => $this->job->estimate])

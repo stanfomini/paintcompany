@@ -21,6 +21,18 @@ class Activity extends Model
         'other' => 'Other',
     ];
 
+    public const MEETING_TYPES = [
+        'in_person' => 'In Person',
+        'virtual' => 'Virtual',
+    ];
+
+    public const MEETING_STATUSES = [
+        'proposed' => 'Proposed',
+        'confirmed' => 'Confirmed',
+        'declined' => 'Declined',
+        'cancelled' => 'Cancelled',
+    ];
+
     protected $fillable = [
         'user_id',
         'assigned_to',
@@ -32,6 +44,16 @@ class Activity extends Model
         'is_completed',
         'due_at',
         'completed_at',
+        'automation_key',
+        'meeting_type',
+        'meeting_status',
+        'proposed_by',
+        'video_call_id',
+        'estimate_id',
+        'customer_confirmed_at',
+        'agent_confirmed_at',
+        'team_confirmed_at',
+        'reminder_sent_at',
     ];
 
     protected function casts(): array
@@ -40,6 +62,10 @@ class Activity extends Model
             'is_completed' => 'boolean',
             'due_at' => 'datetime',
             'completed_at' => 'datetime',
+            'customer_confirmed_at' => 'datetime',
+            'agent_confirmed_at' => 'datetime',
+            'team_confirmed_at' => 'datetime',
+            'reminder_sent_at' => 'datetime',
         ];
     }
 
@@ -48,7 +74,7 @@ class Activity extends Model
      */
     public function getTypeLabelAttribute(): string
     {
-        return self::TYPES[$this->type] ?? $this->type;
+        return __(self::TYPES[$this->type] ?? $this->type);
     }
 
     /**
@@ -73,6 +99,88 @@ class Activity extends Model
     public function subject(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    /**
+     * Get the user who proposed this meeting.
+     */
+    public function proposedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'proposed_by');
+    }
+
+    /**
+     * Get the video call for this meeting.
+     */
+    public function videoCall(): BelongsTo
+    {
+        return $this->belongsTo(VideoCall::class);
+    }
+
+    /**
+     * Get the estimate linked to this meeting.
+     */
+    public function estimate(): BelongsTo
+    {
+        return $this->belongsTo(Estimate::class);
+    }
+
+    /**
+     * Check if this activity is a meeting.
+     */
+    public function isMeeting(): bool
+    {
+        return $this->type === 'meeting' && $this->meeting_type !== null;
+    }
+
+    /**
+     * Check if this is a virtual meeting.
+     */
+    public function isVirtualMeeting(): bool
+    {
+        return $this->isMeeting() && $this->meeting_type === 'virtual';
+    }
+
+    /**
+     * Check if the meeting is fully confirmed by all required parties.
+     */
+    public function isFullyConfirmed(?Deal $deal = null): bool
+    {
+        if (! $this->isMeeting()) {
+            return false;
+        }
+
+        $deal = $deal ?? ($this->subject instanceof Deal ? $this->subject : null);
+        if (! $deal) {
+            return false;
+        }
+
+        if (! $this->team_confirmed_at) {
+            return false;
+        }
+
+        if ($deal->customer_id && ! $this->customer_confirmed_at) {
+            return false;
+        }
+
+        if ($deal->agent_id && ! $this->agent_confirmed_at) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Check if the meeting needs confirmation from a specific party.
+     */
+    public function needsConfirmationFrom(string $party): bool
+    {
+        return match ($party) {
+            'customer' => $this->meeting_status === 'proposed' && ! $this->customer_confirmed_at,
+            'agent' => $this->meeting_status === 'proposed' && ! $this->agent_confirmed_at,
+            'team' => $this->meeting_status === 'proposed' && ! $this->team_confirmed_at,
+            default => false,
+        };
     }
 
     /**
@@ -188,5 +296,78 @@ class Activity extends Model
     public function scopeDueThisWeek($query)
     {
         return $query->whereBetween('due_at', [now()->startOfWeek(), now()->endOfWeek()]);
+    }
+
+    /**
+     * Scope to filter by automation key.
+     */
+    public function scopeByAutomationKey($query, string $key)
+    {
+        return $query->where('automation_key', $key);
+    }
+
+    /**
+     * Scope to filter by polymorphic subject.
+     */
+    public function scopeForSubject($query, Model $subject)
+    {
+        return $query->where('subject_type', $subject->getMorphClass())
+            ->where('subject_id', $subject->getKey());
+    }
+
+    /**
+     * Scope for upcoming meetings that are confirmed and not completed.
+     */
+    public function scopeUpcomingMeetings($query)
+    {
+        return $query->where('type', 'meeting')
+            ->whereNotNull('meeting_type')
+            ->where('meeting_status', 'confirmed')
+            ->where('is_completed', false)
+            ->whereNotNull('due_at')
+            ->where('due_at', '>=', now())
+            ->orderBy('due_at');
+    }
+
+    /**
+     * Scope for meetings that need a reminder sent.
+     */
+    public function scopeNeedingReminder($query)
+    {
+        return $query->where('type', 'meeting')
+            ->whereNotNull('meeting_type')
+            ->where('meeting_status', 'confirmed')
+            ->where('is_completed', false)
+            ->whereNull('reminder_sent_at')
+            ->whereNotNull('due_at')
+            ->whereBetween('due_at', [now(), now()->addMinutes(65)]);
+    }
+
+    public function getSubjectUrl(): ?string
+    {
+        return match ($this->subject_type) {
+            Deal::class => $this->subject?->customer_id
+                ? route('customers.show', $this->subject->customer_id)
+                : null,
+            Customer::class => route('customers.show', $this->subject_id),
+            Job::class => route('jobs.show', $this->subject_id),
+            User::class => match ($this->subject?->type) {
+                'agent' => route('agents.show', $this->subject_id),
+                'crew' => route('crews.show', $this->subject_id),
+                default => null,
+            },
+            default => null,
+        };
+    }
+
+    public function getSubjectLabel(): ?string
+    {
+        return match ($this->subject_type) {
+            Deal::class => $this->subject?->customer?->full_name ?? $this->subject?->title,
+            Customer::class => $this->subject?->full_name ?? 'Customer',
+            Job::class => $this->subject?->title ?? 'Job',
+            User::class => $this->subject?->name ?? 'User',
+            default => null,
+        };
     }
 }

@@ -83,6 +83,6 @@ class BudgetCategory extends Model
 
     public function getSectionLabelAttribute(): string
     {
-        return self::SECTION_LABELS[$this->section] ?? $this->section;
+        return __(self::SECTION_LABELS[$this->section] ?? $this->section);
     }
 }

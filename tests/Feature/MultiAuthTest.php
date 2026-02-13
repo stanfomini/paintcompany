@@ -56,7 +56,7 @@ describe('Agent authentication', function () {
         $this->assertAuthenticatedAs($user, 'agent');
     });
 
-    it('cannot login with internal user credentials', function () {
+    it('redirects internal user to their dashboard when logging in at agent portal', function () {
         User::factory()->internal()->withFullAccess()->create([
             'email' => 'internal@test.com',
         ]);
@@ -64,9 +64,9 @@ describe('Agent authentication', function () {
         $this->post(route('agent.login'), [
             'email' => 'internal@test.com',
             'password' => 'password',
-        ])->assertSessionHasErrors('email');
+        ])->assertRedirect(route('dashboard'));
 
-        $this->assertGuest('agent');
+        $this->assertAuthenticated('web');
     });
 
     it('cannot login with inactive account', function () {
@@ -127,7 +127,7 @@ describe('Customer authentication', function () {
         $this->assertAuthenticatedAs($user, 'customer');
     });
 
-    it('cannot login with agent credentials', function () {
+    it('redirects agent to their dashboard when logging in at customer portal', function () {
         User::factory()->agent()->create([
             'email' => 'agent@test.com',
         ]);
@@ -135,9 +135,9 @@ describe('Customer authentication', function () {
         $this->post(route('customer.login'), [
             'email' => 'agent@test.com',
             'password' => 'password',
-        ])->assertSessionHasErrors('email');
+        ])->assertRedirect(route('agent.dashboard'));
 
-        $this->assertGuest('customer');
+        $this->assertAuthenticated('agent');
     });
 
     it('cannot login with inactive account', function () {
@@ -150,6 +150,61 @@ describe('Customer authentication', function () {
             'password' => 'password',
         ])->assertSessionHasErrors('email');
 
+        $this->assertGuest('customer');
+    });
+});
+
+describe('Universal login (any user type at /login)', function () {
+    it('redirects customer to customer dashboard when logging in at main login', function () {
+        User::factory()->customer()->create([
+            'email' => 'customer@test.com',
+        ]);
+
+        $this->post(route('login.store'), [
+            'email' => 'customer@test.com',
+            'password' => 'password',
+        ])->assertRedirect(route('customer.dashboard'));
+
+        $this->assertAuthenticated('customer');
+    });
+
+    it('redirects agent to agent dashboard when logging in at main login', function () {
+        User::factory()->agent()->create([
+            'email' => 'agent@test.com',
+        ]);
+
+        $this->post(route('login.store'), [
+            'email' => 'agent@test.com',
+            'password' => 'password',
+        ])->assertRedirect(route('agent.dashboard'));
+
+        $this->assertAuthenticated('agent');
+    });
+
+    it('redirects crew to crew dashboard when logging in at main login', function () {
+        User::factory()->crew()->create([
+            'email' => 'crew@test.com',
+        ]);
+
+        $this->post(route('login.store'), [
+            'email' => 'crew@test.com',
+            'password' => 'password',
+        ])->assertRedirect(route('crew.dashboard'));
+
+        $this->assertAuthenticated('crew');
+    });
+
+    it('still rejects invalid credentials at main login', function () {
+        User::factory()->customer()->create([
+            'email' => 'customer@test.com',
+        ]);
+
+        $this->post(route('login.store'), [
+            'email' => 'customer@test.com',
+            'password' => 'wrong-password',
+        ])->assertSessionHasErrors();
+
+        $this->assertGuest('web');
         $this->assertGuest('customer');
     });
 });
@@ -239,5 +294,92 @@ describe('Logout', function () {
             ->assertRedirect(route('customer.login'));
 
         $this->assertGuest('customer');
+    });
+});
+
+describe('CSRF token mismatch (419) handling', function () {
+    it('redirects back with error flash for web requests', function () {
+        $handler = app(\Illuminate\Contracts\Debug\ExceptionHandler::class);
+
+        $request = \Illuminate\Http\Request::create(route('customer.login'), 'POST', [
+            'email' => 'test@example.com',
+            'password' => 'password',
+        ]);
+        $request->setLaravelSession(app('session.store'));
+
+        $response = $handler->render($request, new \Illuminate\Session\TokenMismatchException);
+
+        expect($response->getStatusCode())->toBe(302)
+            ->and($response->headers->get('Location'))->not->toBeNull()
+            ->and(session('error'))->toBe('Your session has expired. Please try again.');
+    });
+
+    it('excludes password from redirect input', function () {
+        $handler = app(\Illuminate\Contracts\Debug\ExceptionHandler::class);
+
+        $request = \Illuminate\Http\Request::create(route('customer.login'), 'POST', [
+            'email' => 'test@example.com',
+            'password' => 'secret123',
+        ]);
+        $request->setLaravelSession(app('session.store'));
+
+        $response = $handler->render($request, new \Illuminate\Session\TokenMismatchException);
+
+        expect($response->getStatusCode())->toBe(302)
+            ->and(session()->get('_old_input.email'))->toBe('test@example.com')
+            ->and(session()->get('_old_input.password'))->toBeNull();
+    });
+
+    it('returns 419 JSON response for API requests', function () {
+        $handler = app(\Illuminate\Contracts\Debug\ExceptionHandler::class);
+
+        $request = \Illuminate\Http\Request::create(route('customer.login'), 'POST', [
+            'email' => 'test@example.com',
+            'password' => 'password',
+        ]);
+        $request->headers->set('Accept', 'application/json');
+
+        $response = $handler->render($request, new \Illuminate\Session\TokenMismatchException);
+
+        expect($response->getStatusCode())->toBe(419)
+            ->and($response->getData()->message)->toBe('Your session has expired. Please refresh and try again.');
+    });
+});
+
+describe('Cross-guard login does not cycle remember token', function () {
+    it('does not change remember_token when customer logs in via main login', function () {
+        $user = User::factory()->customer()->create([
+            'email' => 'customer@test.com',
+        ]);
+
+        $originalToken = $user->remember_token;
+
+        $this->post(route('login.store'), [
+            'email' => 'customer@test.com',
+            'password' => 'password',
+        ])->assertRedirect(route('customer.dashboard'));
+
+        $user->refresh();
+
+        expect($user->remember_token)->toBe($originalToken);
+        $this->assertAuthenticated('customer');
+    });
+
+    it('does not change remember_token when agent logs in via main login', function () {
+        $user = User::factory()->agent()->create([
+            'email' => 'agent@test.com',
+        ]);
+
+        $originalToken = $user->remember_token;
+
+        $this->post(route('login.store'), [
+            'email' => 'agent@test.com',
+            'password' => 'password',
+        ])->assertRedirect(route('agent.dashboard'));
+
+        $user->refresh();
+
+        expect($user->remember_token)->toBe($originalToken);
+        $this->assertAuthenticated('agent');
     });
 });

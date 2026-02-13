@@ -71,9 +71,6 @@ new class extends Component {
     public string $total_painters = '';
     public string $default_required_crew_size = '';
 
-    // Terms & Conditions
-    public string $default_terms_and_conditions = '';
-
     // Computed values for display
     public string $effective_hourly_rate = '';
     public string $interior_effective_rate = '';
@@ -146,9 +143,6 @@ new class extends Component {
         // Crew & Dispatch Settings
         $this->total_painters = $settings->total_painters !== null ? (string) $settings->total_painters : '4';
         $this->default_required_crew_size = $settings->default_required_crew_size !== null ? (string) $settings->default_required_crew_size : '2';
-
-        // Terms & Conditions
-        $this->default_terms_and_conditions = $settings->default_terms_and_conditions ?? '';
 
         $this->updateCalculatedValues();
     }
@@ -273,8 +267,6 @@ new class extends Component {
             'total_painters' => ['nullable', 'integer', 'min:1', 'max:100'],
             'default_required_crew_size' => ['nullable', 'integer', 'min:1', 'max:20'],
 
-            // Terms & Conditions
-            'default_terms_and_conditions' => ['nullable', 'string', 'max:10000'],
         ]);
 
         $settings = CompanySetting::getInstance();
@@ -338,8 +330,6 @@ new class extends Component {
             'total_painters' => $validated['total_painters'] !== '' ? $validated['total_painters'] : 4,
             'default_required_crew_size' => $validated['default_required_crew_size'] !== '' ? $validated['default_required_crew_size'] : 2,
 
-            // Terms & Conditions
-            'default_terms_and_conditions' => $validated['default_terms_and_conditions'] ?: null,
         ]);
 
         $this->dispatch('company-settings-updated');
@@ -355,7 +345,7 @@ new class extends Component {
         <form wire:submit="updateCompanySettings" class="my-6 w-full space-y-6">
 
             {{-- Company Information Section --}}
-            <flux:heading size="sm">Company Information</flux:heading>
+            <flux:heading size="sm">{{ __('Company Information') }}</flux:heading>
 
             <flux:input wire:model="company_name" :label="__('Company Name')" type="text" required />
 
@@ -367,7 +357,7 @@ new class extends Component {
             <flux:separator />
 
             {{-- Address Section --}}
-            <flux:heading size="sm">Address</flux:heading>
+            <flux:heading size="sm">{{ __('Address') }}</flux:heading>
 
             <flux:input wire:model="address_line_1" :label="__('Address Line 1')" type="text" />
             <flux:input wire:model="address_line_2" :label="__('Address Line 2')" type="text" />
@@ -381,9 +371,9 @@ new class extends Component {
             <flux:separator />
 
             {{-- Timezone Section --}}
-            <flux:heading size="sm">Timezone</flux:heading>
+            <flux:heading size="sm">{{ __('Timezone') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Used for calendar feeds, scheduling, and time displays across the application.
+                {{ __('Used for calendar feeds, scheduling, and time displays across the application.') }}
             </flux:text>
 
             <flux:select wire:model="timezone" :label="__('Company Timezone')">
@@ -396,24 +386,24 @@ new class extends Component {
                     'Pacific/Honolulu' => 'Hawaii Time (HT)',
                     'America/Phoenix' => 'Arizona (no DST)',
                 ] as $tz => $label)
-                    <option value="{{ $tz }}">{{ $label }}</option>
+                    <option value="{{ $tz }}">{{ __($label) }}</option>
                 @endforeach
             </flux:select>
 
             <flux:separator />
 
             {{-- Estimate Defaults Section --}}
-            <flux:heading size="sm">Estimate Defaults</flux:heading>
+            <flux:heading size="sm">{{ __('Estimate Defaults') }}</flux:heading>
 
-            <flux:select wire:model="accounting_mode" :label="__('Accounting Method')" description="Cash = revenue when paid. Accrual = revenue when invoiced. Modified Cash = hybrid approach.">
-                <option value="cash">Cash Basis</option>
-                <option value="accrual">Accrual Basis</option>
-                <option value="modified_cash">Modified Cash</option>
+            <flux:select wire:model="accounting_mode" :label="__('Accounting Method')" :description="__('Cash = revenue when paid. Accrual = revenue when invoiced. Modified Cash = hybrid approach.')">
+                <option value="cash">{{ __('Cash Basis') }}</option>
+                <option value="accrual">{{ __('Accrual Basis') }}</option>
+                <option value="modified_cash">{{ __('Modified Cash') }}</option>
             </flux:select>
 
             <div class="grid gap-4 sm:grid-cols-2">
-                <flux:input wire:model="tax_reserve_percent" :label="__('Income Tax Reserve (%)')" type="number" step="0.01" min="0" max="100" description="Percentage of net profit set aside for estimated income taxes in journal entries." />
-                <flux:input wire:model="profit_reserve_percent" :label="__('Profit Reserve (%)')" type="number" step="0.01" min="0" max="100" description="Profit First: percentage of net profit moved to profit reserve. The remainder goes to retained earnings." />
+                <flux:input wire:model="tax_reserve_percent" :label="__('Income Tax Reserve (%)')" type="number" step="0.01" min="0" max="100" :description="__('Percentage of net profit set aside for estimated income taxes in journal entries.')" />
+                <flux:input wire:model="profit_reserve_percent" :label="__('Profit Reserve (%)')" type="number" step="0.01" min="0" max="100" :description="__('Profit First: percentage of net profit moved to profit reserve. The remainder goes to retained earnings.')" />
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
@@ -429,55 +419,55 @@ new class extends Component {
             <flux:separator />
 
             {{-- Labor Configuration Section --}}
-            <flux:heading size="sm">Labor Configuration</flux:heading>
+            <flux:heading size="sm">{{ __('Labor Configuration') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Configure labor costs per scope. Effective rate = Base Wage × Payroll Burden Multiplier.
+                {{ __('Configure labor costs per scope. Effective rate = Base Wage × Payroll Burden Multiplier.') }}
             </flux:text>
 
-            <flux:input wire:model.live="payroll_burden_multiplier" :label="__('Payroll Burden Multiplier')" type="number" step="0.01" min="1" max="3" description="Covers FICA, workers comp, insurance (e.g., 1.35 = 35% burden)" />
+            <flux:input wire:model.live="payroll_burden_multiplier" :label="__('Payroll Burden Multiplier')" type="number" step="0.01" min="1" max="3" :description="__('Covers FICA, workers comp, insurance (e.g., 1.35 = 35% burden)')" />
 
             <div class="grid gap-4 sm:grid-cols-3">
-                <flux:input wire:model.live="base_hourly_wage" :label="__('Default Wage ($/hr)')" type="number" step="0.01" min="0" max="500" description="Fallback if scope not set" />
+                <flux:input wire:model.live="base_hourly_wage" :label="__('Default Wage ($/hr)')" type="number" step="0.01" min="0" max="500" :description="__('Fallback if scope not set')" />
                 <flux:input wire:model.live="interior_hourly_wage" :label="__('Interior Wage ($/hr)')" type="number" step="0.01" min="0" max="500" />
                 <flux:input wire:model.live="exterior_hourly_wage" :label="__('Exterior Wage ($/hr)')" type="number" step="0.01" min="0" max="500" />
             </div>
 
             <flux:callout variant="info" icon="calculator">
-                <flux:callout.heading>Effective Hourly Rates</flux:callout.heading>
+                <flux:callout.heading>{{ __('Effective Hourly Rates') }}</flux:callout.heading>
                 <flux:callout.text>
-                    Interior: ${{ $interior_effective_rate }}/hr &nbsp;|&nbsp;
-                    Exterior: ${{ $exterior_effective_rate }}/hr &nbsp;|&nbsp;
-                    Default: ${{ $effective_hourly_rate }}/hr
+                    {{ __('Interior') }}: ${{ $interior_effective_rate }}/hr &nbsp;|&nbsp;
+                    {{ __('Exterior') }}: ${{ $exterior_effective_rate }}/hr &nbsp;|&nbsp;
+                    {{ __('Default') }}: ${{ $effective_hourly_rate }}/hr
                 </flux:callout.text>
             </flux:callout>
 
             <flux:separator />
 
             {{-- Margin Configuration Section --}}
-            <flux:heading size="sm">Pricing Margin</flux:heading>
+            <flux:heading size="sm">{{ __('Pricing Margin') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Margin represents the COGS percentage of the sale price. Formula: OTD = COGS / (margin% / 100). Example: 50% means COGS is 50% of the price (2x multiplier).
+                {{ __('Margin represents the COGS percentage of the sale price. Formula: OTD = COGS / (margin% / 100). Example: 50% means COGS is 50% of the price (2x multiplier).') }}
             </flux:text>
 
             <div class="grid gap-4 sm:grid-cols-3">
-                <flux:input wire:model.live="margin_percent" :label="__('Default Margin (%)')" type="number" step="0.01" min="0" max="99.99" description="Fallback if scope not set" />
-                <flux:input wire:model.live="interior_margin_percent" :label="__('Interior Margin (%)')" type="number" step="0.01" min="0" max="99.99" description="50% = 2x COGS" />
-                <flux:input wire:model.live="exterior_margin_percent" :label="__('Exterior Margin (%)')" type="number" step="0.01" min="0" max="99.99" description="41% = ~2.44x COGS" />
+                <flux:input wire:model.live="margin_percent" :label="__('Default Margin (%)')" type="number" step="0.01" min="0" max="99.99" :description="__('Fallback if scope not set')" />
+                <flux:input wire:model.live="interior_margin_percent" :label="__('Interior Margin (%)')" type="number" step="0.01" min="0" max="99.99" :description="__('50% = 2x COGS')" />
+                <flux:input wire:model.live="exterior_margin_percent" :label="__('Exterior Margin (%)')" type="number" step="0.01" min="0" max="99.99" :description="__('41% = ~2.44x COGS')" />
             </div>
 
             <flux:callout variant="success" icon="currency-dollar">
-                <flux:callout.heading>Sample Interior Price: ${{ $sample_price_calculation }}</flux:callout.heading>
-                <flux:callout.text>Example: 100 sqft wall at 50 sqft/hr, 2 coats, $20 materials using interior rates → OTD with {{ $interior_margin_percent ?: '50' }}% margin.</flux:callout.text>
+                <flux:callout.heading>{{ __('Sample Interior Price') }}: ${{ $sample_price_calculation }}</flux:callout.heading>
+                <flux:callout.text>{{ __('Example: 100 sqft wall at 50 sqft/hr, 2 coats, $20 materials using interior rates') }} → OTD {{ __('with') }} {{ $interior_margin_percent ?: '50' }}% {{ __('margin') }}.</flux:callout.text>
             </flux:callout>
 
-            <flux:input wire:model="net_profit_margin_percent" :label="__('Target Net Profit (%)')" type="number" step="0.01" min="0" max="100" description="Your target net profit after all allocations. Used for comparison in cost breakdowns." />
+            <flux:input wire:model="net_profit_margin_percent" :label="__('Target Net Profit (%)')" type="number" step="0.01" min="0" max="100" :description="__('Your target net profit after all allocations. Used for comparison in cost breakdowns.')" />
 
             <flux:separator />
 
             {{-- Simple Estimate Defaults Section --}}
-            <flux:heading size="sm">Simple Estimate ($/sqft)</flux:heading>
+            <flux:heading size="sm">{{ __('Simple Estimate ($/sqft)') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Default rates for quick $/sqft estimates.
+                {{ __('Default rates for quick $/sqft estimates.') }}
             </flux:text>
 
             <div class="grid gap-4 sm:grid-cols-2">
@@ -493,65 +483,50 @@ new class extends Component {
             <flux:separator />
 
             {{-- Production Settings Section --}}
-            <flux:heading size="sm">Production Settings</flux:heading>
+            <flux:heading size="sm">{{ __('Production Settings') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Configure cleanup ratios and sundries costs per scope. Cleanup ratio = painting hours per 1 hour cleanup.
+                {{ __('Configure cleanup ratios and sundries costs per scope. Cleanup ratio = painting hours per 1 hour cleanup.') }}
             </flux:text>
 
             <div class="grid gap-4 sm:grid-cols-3">
-                <flux:input wire:model="cleanup_hours_ratio" :label="__('Default Cleanup Ratio')" type="number" step="0.01" min="0" max="100" description="Fallback if scope not set" />
-                <flux:input wire:model="interior_cleanup_hours_ratio" :label="__('Interior Cleanup Ratio')" type="number" step="0.01" min="0" max="100" description="e.g., 16 = 1hr cleanup per 16hrs paint" />
-                <flux:input wire:model="exterior_cleanup_hours_ratio" :label="__('Exterior Cleanup Ratio')" type="number" step="0.01" min="0" max="100" description="e.g., 20 = 1hr cleanup per 20hrs paint" />
+                <flux:input wire:model="cleanup_hours_ratio" :label="__('Default Cleanup Ratio')" type="number" step="0.01" min="0" max="100" :description="__('Fallback if scope not set')" />
+                <flux:input wire:model="interior_cleanup_hours_ratio" :label="__('Interior Cleanup Ratio')" type="number" step="0.01" min="0" max="100" :description="__('e.g., 16 = 1hr cleanup per 16hrs paint')" />
+                <flux:input wire:model="exterior_cleanup_hours_ratio" :label="__('Exterior Cleanup Ratio')" type="number" step="0.01" min="0" max="100" :description="__('e.g., 20 = 1hr cleanup per 20hrs paint')" />
             </div>
 
             <div class="grid gap-4 sm:grid-cols-3">
-                <flux:input wire:model="sundries_cost_per_prep_hour" :label="__('Default Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" description="Fallback if scope not set" />
+                <flux:input wire:model="sundries_cost_per_prep_hour" :label="__('Default Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" :description="__('Fallback if scope not set')" />
                 <flux:input wire:model="interior_sundries_cost_per_hour" :label="__('Interior Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" />
                 <flux:input wire:model="exterior_sundries_cost_per_hour" :label="__('Exterior Sundries ($/hr)')" type="number" step="0.01" min="0" max="100" />
             </div>
 
             <div class="grid gap-4 sm:grid-cols-2">
-                <flux:input wire:model="spray_paint_coverage_multiplier" :label="__('Spray Coverage Multiplier')" type="number" step="0.01" min="0.1" max="10" description="Production rate multiplier for spray application" />
-                <flux:input wire:model="brush_roll_coverage_multiplier" :label="__('Brush/Roll Coverage Multiplier')" type="number" step="0.01" min="0.1" max="10" description="Production rate multiplier for brush/roll application" />
+                <flux:input wire:model="spray_paint_coverage_multiplier" :label="__('Spray Coverage Multiplier')" type="number" step="0.01" min="0.1" max="10" :description="__('Production rate multiplier for spray application')" />
+                <flux:input wire:model="brush_roll_coverage_multiplier" :label="__('Brush/Roll Coverage Multiplier')" type="number" step="0.01" min="0.1" max="10" :description="__('Production rate multiplier for brush/roll application')" />
             </div>
 
             <flux:separator />
 
             {{-- Crew & Dispatch Settings Section --}}
-            <flux:heading size="sm">Crew & Dispatch Settings</flux:heading>
+            <flux:heading size="sm">{{ __('Crew & Dispatch Settings') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Configure your painting team size for job dispatching. Jobs are dispatched to registered crews whose crew size meets the required minimum.
+                {{ __('Configure your painting team size for job dispatching. Jobs are dispatched to registered crews whose crew size meets the required minimum.') }}
             </flux:text>
 
             <div class="grid gap-4 sm:grid-cols-2">
-                <flux:input wire:model="total_painters" :label="__('Total Painters')" type="number" min="1" max="100" description="Total number of painters in your company" />
-                <flux:input wire:model="default_required_crew_size" :label="__('Default Required Crew Size')" type="number" min="1" max="20" description="Default minimum crew size for new jobs" />
+                <flux:input wire:model="total_painters" :label="__('Total Painters')" type="number" min="1" max="100" :description="__('Total number of painters in your company')" />
+                <flux:input wire:model="default_required_crew_size" :label="__('Default Required Crew Size')" type="number" min="1" max="20" :description="__('Default minimum crew size for new jobs')" />
             </div>
 
             <flux:separator />
 
             {{-- Miscellaneous Fees Section --}}
-            <flux:heading size="sm">Miscellaneous Fees</flux:heading>
+            <flux:heading size="sm">{{ __('Miscellaneous Fees') }}</flux:heading>
 
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:input wire:model="recycle_fee_per_gallon" :label="__('Recycle Fee ($/gallon)')" type="number" step="0.01" min="0" max="100" />
                 <flux:input wire:model="wood_replacement_minimum" :label="__('Wood Replacement Minimum ($)')" type="number" step="0.01" min="0" max="10000" />
             </div>
-
-            <flux:separator />
-
-            {{-- Terms & Conditions Section --}}
-            <flux:heading size="sm">Default Terms & Conditions</flux:heading>
-            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                These terms will be automatically included on new estimates. Customers must accept them before signing.
-            </flux:text>
-
-            <flux:textarea
-                wire:model="default_terms_and_conditions"
-                :label="__('Default Terms & Conditions')"
-                rows="10"
-                placeholder="Enter your company's default terms and conditions for estimates..."
-            />
 
             <flux:separator />
 

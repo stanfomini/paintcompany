@@ -59,7 +59,7 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Customers</flux:heading>
+            <flux:heading size="xl">{{ __('Customers') }}</flux:heading>
             @livewire('customers.create-modal')
         </div>
 
@@ -74,16 +74,16 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search customers..."
+                    placeholder="{{ __('Search customers...') }}"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="statusFilter">
-                    <option value="all">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                    <option value="archived">Archived</option>
+                    <option value="all">{{ __('All Statuses') }}</option>
+                    <option value="active">{{ __('Active') }}</option>
+                    <option value="inactive">{{ __('Inactive') }}</option>
+                    <option value="archived">{{ __('Archived') }}</option>
                 </flux:select>
             </div>
         </div>
@@ -94,19 +94,19 @@ new class extends Component {
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Name
+                                {{ __('Name') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Email
+                                {{ __('Email') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Phone
+                                {{ __('Phone') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Status
+                                {{ __('Status') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         </tr>
                     </thead>
@@ -124,20 +124,20 @@ new class extends Component {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     @if ($customer->trashed())
-                                        <flux:badge size="sm" color="zinc">Archived</flux:badge>
+                                        <flux:badge size="sm" color="zinc">{{ __('Archived') }}</flux:badge>
                                     @elseif ($customer->status === 'active')
-                                        <flux:badge size="sm" color="green">Active</flux:badge>
+                                        <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                                     @else
-                                        <flux:badge size="sm" color="yellow">Inactive</flux:badge>
+                                        <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right">
                                     <flux:dropdown>
                                         <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                         <flux:menu>
-                                            <flux:menu.item icon="eye">View</flux:menu.item>
-                                            <flux:menu.item icon="pencil">Edit</flux:menu.item>
-                                            <flux:menu.item icon="trash" variant="danger">Delete</flux:menu.item>
+                                            <flux:menu.item icon="eye">{{ __('View') }}</flux:menu.item>
+                                            <flux:menu.item icon="pencil">{{ __('Edit') }}</flux:menu.item>
+                                            <flux:menu.item icon="trash" variant="danger">{{ __('Delete') }}</flux:menu.item>
                                         </flux:menu>
                                     </flux:dropdown>
                                 </td>
@@ -153,12 +153,12 @@ new class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="users" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No customers found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No customers found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search || $statusFilter !== 'all')
-                        Try adjusting your search or filter criteria.
+                        {{ __('Try adjusting your search or filter criteria.') }}
                     @else
-                        Get started by adding your first customer.
+                        {{ __('Get started by adding your first customer.') }}
                     @endif
                 </flux:text>
             </div>

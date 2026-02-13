@@ -12,19 +12,19 @@
         <div class="text-center mb-8">
             <flux:heading size="2xl" class="mb-2">{{ config('app.name', 'Apex Negotiations') }}</flux:heading>
             <flux:text class="text-zinc-600 dark:text-zinc-400">
-                Professional Painting CRM
+                {{ __('Professional Painting CRM') }}
             </flux:text>
         </div>
 
         <flux:card class="p-6">
-            <flux:heading size="lg" class="mb-6 text-center">Sign In</flux:heading>
+            <flux:heading size="lg" class="mb-6 text-center">{{ __('Sign In') }}</flux:heading>
 
             <div class="space-y-4">
                 {{-- Internal Team Login --}}
                 <a href="{{ route('login') }}" class="block">
                     <flux:button variant="primary" class="w-full justify-center">
                         <flux:icon name="building-office-2" class="mr-2" />
-                        Team Login
+                        {{ __('Team Login') }}
                     </flux:button>
                 </a>
 
@@ -33,7 +33,7 @@
                         <div class="w-full border-t border-zinc-200 dark:border-zinc-700"></div>
                     </div>
                     <div class="relative flex justify-center text-sm">
-                        <span class="px-2 bg-white dark:bg-zinc-800 text-zinc-500">or</span>
+                        <span class="px-2 bg-white dark:bg-zinc-800 text-zinc-500">{{ __('or') }}</span>
                     </div>
                 </div>
 
@@ -41,7 +41,7 @@
                 <a href="{{ route('agent.login') }}" class="block">
                     <flux:button variant="ghost" class="w-full justify-center border border-zinc-200 dark:border-zinc-700">
                         <flux:icon name="user-group" class="mr-2" />
-                        Agent Portal
+                        {{ __('Agent Portal') }}
                     </flux:button>
                 </a>
 
@@ -49,7 +49,7 @@
                 <a href="{{ route('customer.login') }}" class="block">
                     <flux:button variant="ghost" class="w-full justify-center border border-zinc-200 dark:border-zinc-700">
                         <flux:icon name="home" class="mr-2" />
-                        Customer Portal
+                        {{ __('Customer Portal') }}
                     </flux:button>
                 </a>
 
@@ -57,20 +57,20 @@
                 <a href="{{ route('crew.login') }}" class="block">
                     <flux:button variant="ghost" class="w-full justify-center border border-zinc-200 dark:border-zinc-700">
                         <flux:icon name="paint-brush" class="mr-2" />
-                        Crew Portal
+                        {{ __('Crew Portal') }}
                     </flux:button>
                 </a>
             </div>
 
             <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
                 <flux:text size="sm" class="text-center text-zinc-500">
-                    Need an account? Contact your administrator or agent for an invitation.
+                    {{ __('Need an account? Contact your administrator or agent for an invitation.') }}
                 </flux:text>
             </div>
         </flux:card>
 
         <flux:text size="sm" class="text-center mt-6 text-zinc-500">
-            &copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
+            &copy; {{ date('Y') }} {{ config('app.name') }}. {{ __('All rights reserved.') }}
         </flux:text>
     </div>
 

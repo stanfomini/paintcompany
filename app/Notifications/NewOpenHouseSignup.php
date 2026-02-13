@@ -37,19 +37,19 @@ class NewOpenHouseSignup extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
         $customerName = "{$this->customer->first_name} {$this->customer->last_name}";
-        $phone = $this->customer->phone ?: 'Not provided';
+        $phone = $this->customer->phone ?: __('Not provided');
 
         return (new MailMessage)
-            ->subject('New Open House Sign-up: '.$this->listing->address)
-            ->greeting('Hello '.$notifiable->name.'!')
-            ->line('A new customer has signed up at your open house.')
-            ->line('**Customer Details:**')
-            ->line('Name: '.$customerName)
-            ->line('Email: '.$this->customer->email)
-            ->line('Phone: '.$phone)
-            ->line('**Listing Address:** '.$this->listing->full_address)
-            ->action('View Customer', url('/agent/customers/'.$this->customer->id))
-            ->line('Thank you for using '.config('app.name').'!');
+            ->subject(__('New Open House Sign-up: :address', ['address' => $this->listing->address]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->name]))
+            ->line(__('A new customer has signed up at your open house.'))
+            ->line('**'.__('Customer Details').':**')
+            ->line(__('Name').': '.$customerName)
+            ->line(__('Email').': '.$this->customer->email)
+            ->line(__('Phone').': '.$phone)
+            ->line('**'.__('Listing Address').':** '.$this->listing->full_address)
+            ->action(__('View Customer'), url('/agent/customers/'.$this->customer->id))
+            ->line(__('Thank you for using :appName!', ['appName' => config('app.name')]));
     }
 
     /**

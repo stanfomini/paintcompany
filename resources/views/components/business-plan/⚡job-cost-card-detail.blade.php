@@ -127,7 +127,7 @@ new class extends Component
         }
 
         $this->card->refresh();
-        $this->saveMessage = 'Actuals saved.';
+        $this->saveMessage = __('Actuals saved.');
         $this->journalMessage = '';
 
         $this->dispatch('actuals-saved');
@@ -138,7 +138,7 @@ new class extends Component
         $this->authorize('business_plan.manage');
 
         if ($this->card->journal_entry_id) {
-            $this->journalMessage = 'Journal entry already exists for this card.';
+            $this->journalMessage = __('Journal entry already exists for this card.');
             return;
         }
 
@@ -209,7 +209,7 @@ new class extends Component
         $entry = $service->createJournalEntryFromActuals($this->card, Auth::id());
 
         $this->card->refresh();
-        $this->journalMessage = "Draft journal entry {$entry->entry_number} created.";
+        $this->journalMessage = __('Draft journal entry :number created.', ['number' => $entry->entry_number]);
         $this->saveMessage = '';
     }
 
@@ -228,7 +228,7 @@ new class extends Component
         $this->card->refresh();
 
         $this->createJournalEntry();
-        $this->journalMessage = "Old entry voided. New draft journal entry created.";
+        $this->journalMessage = __('Old entry voided. New draft journal entry created.');
     }
 
     protected function variance(?string $actual, float $projected): ?float
@@ -273,7 +273,7 @@ new class extends Component
             @endif
             @if ($card->job_id)
                 <a href="{{ route('jobs.cost-card', $card->job_id) }}" class="text-xs text-blue-600 hover:underline dark:text-blue-400" wire:navigate>
-                    View Full Cost Card &rarr;
+                    {{ __('View Full Cost Card') }} &rarr;
                 </a>
             @endif
         </div>
@@ -298,14 +298,14 @@ new class extends Component
             <div class="flex items-start gap-3">
                 <svg class="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
                 <div class="flex-1">
-                    <p class="text-sm font-medium text-amber-800 dark:text-amber-300">No actuals were entered</p>
-                    <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">Use projected values as actuals and post to journal?</p>
+                    <p class="text-sm font-medium text-amber-800 dark:text-amber-300">{{ __('No actuals were entered') }}</p>
+                    <p class="mt-1 text-sm text-amber-700 dark:text-amber-400">{{ __('Use projected values as actuals and post to journal?') }}</p>
                     <div class="mt-3 flex items-center gap-2">
                         <flux:button variant="primary" size="sm" wire:click="confirmUseProjected">
-                            Yes, use projected values
+                            {{ __('Yes, use projected values') }}
                         </flux:button>
                         <flux:button variant="ghost" size="sm" wire:click="cancelProjectedConfirm">
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                     </div>
                 </div>
@@ -315,7 +315,7 @@ new class extends Component
 
     @if (! $breakdown)
         <div class="rounded-lg border border-zinc-200 bg-white p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-            No estimate linked &mdash; live breakdown not available for manual cards.
+            {{ __('No estimate linked') }} &mdash; {{ __('live breakdown not available for manual cards.') }}
         </div>
     @else
         @php
@@ -332,7 +332,7 @@ new class extends Component
 
         {{-- Customer Price (Revenue) --}}
         <div class="mb-4 flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 dark:border-emerald-800 dark:bg-emerald-950/20">
-            <span class="text-sm font-semibold text-emerald-700 dark:text-emerald-300">Customer Price (Revenue)</span>
+            <span class="text-sm font-semibold text-emerald-700 dark:text-emerald-300">{{ __('Customer Price (Revenue)') }}</span>
             <span class="text-lg font-bold text-emerald-700 dark:text-emerald-300">${{ number_format($customerPrice, 2) }}</span>
         </div>
 
@@ -343,8 +343,8 @@ new class extends Component
                 class="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
             >
                 <div class="flex items-center gap-3">
-                    <span class="text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">Debit</span>
-                    <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Direct Costs (COGS)</span>
+                    <span class="text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">{{ __('Debit') }}</span>
+                    <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ __('Direct Costs (COGS)') }}</span>
                 </div>
                 <div class="flex items-center gap-3">
                     <span class="text-sm font-bold text-red-600 dark:text-red-400">(${{ number_format($projectedCogsTotal, 2) }})</span>
@@ -357,10 +357,10 @@ new class extends Component
                 <table class="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-700">
                     <thead class="bg-zinc-100 dark:bg-zinc-800">
                         <tr>
-                            <th class="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Cost Line</th>
-                            <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Projected</th>
-                            <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Actual</th>
-                            <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Variance</th>
+                            <th class="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">{{ __('Cost Line') }}</th>
+                            <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{{ __('Projected') }}</th>
+                            <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{{ __('Actual') }}</th>
+                            <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{{ __('Variance') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
@@ -368,9 +368,9 @@ new class extends Component
                         @php $v = $this->variance($actualLaborCost, $bd['cogs']['labor_cost']); @endphp
                         <tr>
                             <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">
-                                Labor
+                                {{ __('Labor') }}
                                 <span class="text-xs text-zinc-400">({{ number_format($bd['totals']['labor_hours'], 1) }} hrs &times; ${{ number_format($effectiveRate, 2) }})</span>
-                                <span class="block text-xs text-zinc-400">Includes payroll burden ({{ number_format($bd['settings_used']['payroll_burden_multiplier'], 2) }}&times;)</span>
+                                <span class="block text-xs text-zinc-400">{{ __('Includes payroll burden') }} ({{ number_format($bd['settings_used']['payroll_burden_multiplier'], 2) }}&times;)</span>
                             </td>
                             <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['labor_cost'], 2) }}</td>
                             <td class="px-4 py-2 text-right">
@@ -391,7 +391,7 @@ new class extends Component
                         @php $v = $this->variance($actualCleanupCost, $bd['cogs']['cleanup_cost']); @endphp
                         <tr>
                             <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">
-                                Cleanup
+                                {{ __('Cleanup') }}
                                 <span class="text-xs text-zinc-400">({{ number_format($bd['totals']['cleanup_hours'], 2) }} hrs &times; ${{ number_format($effectiveRate, 2) }})</span>
                             </td>
                             <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['cleanup_cost'], 2) }}</td>
@@ -412,7 +412,7 @@ new class extends Component
                         {{-- Sundries --}}
                         @php $v = $this->variance($actualSundriesCost, $bd['cogs']['sundries_cost']); @endphp
                         <tr>
-                            <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">Sundries</td>
+                            <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">{{ __('Sundries') }}</td>
                             <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['sundries_cost'], 2) }}</td>
                             <td class="px-4 py-2 text-right">
                                 @if ($this->canManage)
@@ -431,7 +431,7 @@ new class extends Component
                         {{-- Materials --}}
                         @php $v = $this->variance($actualMaterialCost, $bd['cogs']['material_cost']); @endphp
                         <tr>
-                            <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">Materials</td>
+                            <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">{{ __('Materials') }}</td>
                             <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['material_cost'], 2) }}</td>
                             <td class="px-4 py-2 text-right">
                                 @if ($this->canManage)
@@ -452,7 +452,7 @@ new class extends Component
                             @php $v = $this->variance($actualMaterialTax, $bd['cogs']['material_tax']); @endphp
                             <tr>
                                 <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">
-                                    Material Tax
+                                    {{ __('Material Tax') }}
                                     <span class="text-xs text-zinc-400">({{ number_format($bd['settings_used']['material_tax_rate'], 1) }}%)</span>
                                 </td>
                                 <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['material_tax'], 2) }}</td>
@@ -475,7 +475,7 @@ new class extends Component
                         @if ($bd['cogs']['labor_tax'] > 0)
                             @php $v = $this->variance($actualLaborTax, $bd['cogs']['labor_tax']); @endphp
                             <tr>
-                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">Labor Tax</td>
+                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">{{ __('Labor Tax') }}</td>
                                 <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['labor_tax'], 2) }}</td>
                                 <td class="px-4 py-2 text-right">
                                     @if ($this->canManage)
@@ -496,7 +496,7 @@ new class extends Component
                         @if ($bd['cogs']['addon_cost'] > 0)
                             @php $v = $this->variance($actualAddonCost, $bd['cogs']['addon_cost']); @endphp
                             <tr>
-                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">Nested Areas / Addons</td>
+                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">{{ __('Nested Areas / Addons') }}</td>
                                 <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['addon_cost'], 2) }}</td>
                                 <td class="px-4 py-2 text-right">
                                     @if ($this->canManage)
@@ -517,7 +517,7 @@ new class extends Component
                         @if (($bd['cogs']['warranty_price'] ?? 0) > 0)
                             @php $v = $this->variance($actualWarrantyReserve, $bd['cogs']['warranty_price']); @endphp
                             <tr>
-                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">Warranty Reserve</td>
+                                <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">{{ __('Warranty Reserve') }}</td>
                                 <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['warranty_price'], 2) }}</td>
                                 <td class="px-4 py-2 text-right">
                                     @if ($this->canManage)
@@ -539,7 +539,7 @@ new class extends Component
                             @php $v = $this->variance($actualItemsVendorCost, $bd['cogs']['items_vendor_cost']); @endphp
                             <tr>
                                 <td class="px-4 py-2 text-zinc-700 dark:text-zinc-300">
-                                    Line Items (Vendor Cost)
+                                    {{ __('Line Items (Vendor Cost)') }}
                                     <span class="text-xs text-zinc-400">{{ count($bd['items'] ?? []) }} item(s)</span>
                                 </td>
                                 <td class="px-4 py-2 text-right font-mono text-zinc-600 dark:text-zinc-400">${{ number_format($bd['cogs']['items_vendor_cost'], 2) }}</td>
@@ -561,7 +561,7 @@ new class extends Component
                     <tfoot class="border-t-2 border-zinc-300 bg-zinc-50 font-semibold dark:border-zinc-600 dark:bg-zinc-800/50">
                         @php $cogsVariance = $hasActuals ? round($projectedCogsTotal - $actualCogsTotal, 2) : null; @endphp
                         <tr>
-                            <td class="px-4 py-2 text-zinc-900 dark:text-zinc-100">Total COGS</td>
+                            <td class="px-4 py-2 text-zinc-900 dark:text-zinc-100">{{ __('Total COGS') }}</td>
                             <td class="px-4 py-2 text-right font-mono text-zinc-900 dark:text-zinc-100">${{ number_format($projectedCogsTotal, 2) }}</td>
                             <td class="px-4 py-2 text-right text-zinc-900 dark:text-zinc-100">
                                 @if ($hasActuals) ${{ number_format($actualCogsTotal, 2) }} @else &mdash; @endif
@@ -581,12 +581,12 @@ new class extends Component
             $gpPercent = $customerPrice > 0 ? round($projectedGP / $customerPrice * 100, 1) : 0;
         @endphp
         <div class="mb-3 flex items-center justify-between rounded-lg px-4 py-2.5 {{ $projectedGP >= 0 ? 'bg-zinc-100 dark:bg-zinc-800' : 'bg-red-50 dark:bg-red-950/20' }}">
-            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Gross Profit</span>
+            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ __('Gross Profit') }}</span>
             <div class="flex items-center gap-4 text-sm">
                 <span class="font-mono font-bold {{ $projectedGP >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                     ${{ number_format($projectedGP, 2) }}
                 </span>
-                <span class="text-xs text-zinc-500">{{ $gpPercent }}% margin</span>
+                <span class="text-xs text-zinc-500">{{ $gpPercent }}% {{ __('margin') }}</span>
                 @if ($actualGP !== null)
                     <span class="font-mono font-medium {{ $actualGP >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                         (actual: ${{ number_format($actualGP, 2) }})
@@ -607,8 +607,8 @@ new class extends Component
                     class="flex w-full items-center justify-between rounded-lg border border-zinc-200 bg-white px-4 py-3 text-left transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
                 >
                     <div class="flex items-center gap-3">
-                        <span class="text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">Debit</span>
-                        <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Business Allocations</span>
+                        <span class="text-xs font-medium uppercase tracking-wider text-red-600 dark:text-red-400">{{ __('Debit') }}</span>
+                        <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ __('Business Allocations') }}</span>
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="text-sm font-bold text-red-600 dark:text-red-400">(${{ number_format($projectedAllocTotal, 2) }})</span>
@@ -621,10 +621,10 @@ new class extends Component
                     <table class="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-700">
                         <thead class="bg-zinc-100 dark:bg-zinc-800">
                             <tr>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">Allocation</th>
-                                <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Projected</th>
-                                <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Actual</th>
-                                <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">Variance</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-600 dark:text-zinc-400">{{ __('Allocation') }}</th>
+                                <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{{ __('Projected') }}</th>
+                                <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{{ __('Actual') }}</th>
+                                <th class="px-4 py-2 text-right font-medium text-zinc-600 dark:text-zinc-400">{{ __('Variance') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-900">
@@ -676,7 +676,7 @@ new class extends Component
                                 $allocTotalVariance = $hasAllocActuals ? round($projectedAllocTotal - $actualAllocTotal, 2) : null;
                             @endphp
                             <tr>
-                                <td class="px-4 py-2 text-zinc-900 dark:text-zinc-100">Total Allocations</td>
+                                <td class="px-4 py-2 text-zinc-900 dark:text-zinc-100">{{ __('Total Allocations') }}</td>
                                 <td class="px-4 py-2 text-right font-mono text-zinc-900 dark:text-zinc-100">${{ number_format($projectedAllocTotal, 2) }}</td>
                                 <td class="px-4 py-2 text-right text-zinc-900 dark:text-zinc-100">
                                     @if ($hasAllocActuals) ${{ number_format($actualAllocTotal, 2) }} @else &mdash; @endif
@@ -696,7 +696,7 @@ new class extends Component
             @php $crewBonus = $bd['crew_bonus']; @endphp
             <div class="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 dark:border-amber-800 dark:bg-amber-950/20">
                 <div>
-                    <span class="text-sm font-semibold text-amber-700 dark:text-amber-300">Crew Lead Bonus</span>
+                    <span class="text-sm font-semibold text-amber-700 dark:text-amber-300">{{ __('Crew Lead Bonus') }}</span>
                     <span class="text-xs text-amber-600 dark:text-amber-400">({{ $crewBonus['crew_name'] }} &mdash; {{ number_format($crewBonus['bonus_percent'], 1) }}%)</span>
                 </div>
                 <div class="flex items-center gap-3 text-sm">
@@ -718,7 +718,7 @@ new class extends Component
             $netAfterBonusPercent = $customerPrice > 0 ? round($projectedNetAfterBonus / $customerPrice * 100, 1) : 0;
         @endphp
         <div class="mb-2 flex items-center justify-between rounded-lg px-4 py-2.5 {{ $projectedNet >= 0 ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-red-100 dark:bg-red-900/30' }}">
-            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Net Profit</span>
+            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ __('Net Profit') }}</span>
             <div class="flex items-center gap-4 text-sm">
                 <span class="font-mono text-lg font-bold {{ $projectedNet >= 0 ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400' }}">
                     ${{ number_format($projectedNet, 2) }}
@@ -729,12 +729,12 @@ new class extends Component
 
         @if ($bonusAmount > 0)
             <div class="mb-3 flex items-center justify-between rounded-lg border border-zinc-200 px-4 py-2 dark:border-zinc-700">
-                <span class="text-sm text-zinc-600 dark:text-zinc-400">Net Profit After Bonus</span>
+                <span class="text-sm text-zinc-600 dark:text-zinc-400">{{ __('Net Profit After Bonus') }}</span>
                 <div class="flex items-center gap-4 text-sm">
                     <span class="font-mono font-bold {{ $projectedNetAfterBonus >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' }}">
                         ${{ number_format($projectedNetAfterBonus, 2) }}
                     </span>
-                    <span class="text-xs text-zinc-500">{{ $netAfterBonusPercent }}% margin</span>
+                    <span class="text-xs text-zinc-500">{{ $netAfterBonusPercent }}% {{ __('margin') }}</span>
                 </div>
             </div>
         @endif
@@ -743,13 +743,13 @@ new class extends Component
         @if ($this->canManage)
             <div class="mt-4">
                 <flux:field>
-                    <flux:label>Actual Notes</flux:label>
-                    <flux:textarea wire:model.blur="actualNotes" rows="2" placeholder="Notes about actual costs..." />
+                    <flux:label>{{ __('Actual Notes') }}</flux:label>
+                    <flux:textarea wire:model.blur="actualNotes" rows="2" :placeholder="__('Notes about actual costs...')" />
                 </flux:field>
             </div>
         @elseif ($actualNotes)
             <div class="mt-4 text-sm text-zinc-600 dark:text-zinc-400">
-                <strong>Notes:</strong> {{ $actualNotes }}
+                <strong>{{ __('Notes:') }}</strong> {{ $actualNotes }}
             </div>
         @endif
 
@@ -757,20 +757,20 @@ new class extends Component
         @if ($this->canManage)
             <div class="mt-4 flex items-center gap-3">
                 <flux:button variant="primary" size="sm" wire:click="saveActuals" icon="check">
-                    Save Actuals
+                    {{ __('Save Actuals') }}
                 </flux:button>
 
                 @if (! $card->journal_entry_id)
                     <flux:button variant="ghost" size="sm" wire:click="postToJournal" icon="document-text">
-                        Post to Journal
+                        {{ __('Post to Journal') }}
                     </flux:button>
                 @else
                     <flux:badge color="green" size="sm">
-                        Journal Entry: {{ $card->journalEntry?->entry_number ?? 'Linked' }}
+                        {{ __('Journal Entry:') }} {{ $card->journalEntry?->entry_number ?? __('Linked') }}
                     </flux:badge>
                     <flux:button variant="ghost" size="sm" wire:click="recreateJournalEntry" icon="arrow-path"
-                        wire:confirm="This will void the current journal entry and create a new one. Continue?">
-                        Recreate
+                        wire:confirm="{{ __('This will void the current journal entry and create a new one. Continue?') }}">
+                        {{ __('Recreate') }}
                     </flux:button>
                 @endif
             </div>

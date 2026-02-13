@@ -23,6 +23,13 @@ use Illuminate\Support\Facades\Log;
 
 class JobService
 {
+    private PlannerAutomationService $plannerAutomation;
+
+    public function __construct(?PlannerAutomationService $plannerAutomation = null)
+    {
+        $this->plannerAutomation = $plannerAutomation ?? app(PlannerAutomationService::class);
+    }
+
     /**
      * Create a Job from an accepted estimate.
      * Auto-creates painting JobServiceRequirement and additional requirements
@@ -86,6 +93,8 @@ class JobService
             $user->notify(new JobCreated($job));
         }
 
+        $this->plannerAutomation->onJobCreated($job);
+
         return $job;
     }
 
@@ -143,6 +152,8 @@ class JobService
         JobActivity::log($job, 'date_confirmed_company', 'Company confirmed the scheduled date');
 
         JobDateUpdated::dispatch($job, null, $job->scheduled_date?->toDateString(), true);
+
+        $this->plannerAutomation->onCompanyDateConfirmed($job);
     }
 
     /**
@@ -160,6 +171,8 @@ class JobService
         }
 
         JobDateUpdated::dispatch($job, null, $job->scheduled_date?->toDateString(), true);
+
+        $this->plannerAutomation->onCustomerDateConfirmed($job);
     }
 
     /**
@@ -180,6 +193,8 @@ class JobService
         JobActivity::log($job, 'colors_confirmed_company', 'Company confirmed color selections');
 
         JobColorUpdated::dispatch($job, 'confirmed', 'company');
+
+        $this->plannerAutomation->onCompanyColorsConfirmed($job);
     }
 
     /**
@@ -197,6 +212,8 @@ class JobService
         }
 
         JobColorUpdated::dispatch($job, 'confirmed', 'customer');
+
+        $this->plannerAutomation->onCustomerColorsConfirmed($job);
     }
 
     /**
@@ -240,6 +257,8 @@ class JobService
 
         $customerUser = $job->getCustomer()?->user;
         JobDateUpdated::dispatch($job, $customerUser?->id, $date->toDateString(), false);
+
+        $this->plannerAutomation->onCustomerProposedDate($job, $date->format('M j, Y'));
     }
 
     /**
@@ -276,6 +295,8 @@ class JobService
 
         // Update cost card status to completed
         app(JobCostCardService::class)->updateCardOnJobCompletion($job);
+
+        $this->plannerAutomation->onJobCompleted($job);
 
         // Also complete the deal
         $job->deal?->moveTo('completed');

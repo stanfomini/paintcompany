@@ -292,12 +292,6 @@ class EstimateCostBreakdownService
         $targetNetMargin = $defaultSettings['net_profit_margin_percent'];
         $marginDelta = $netMarginPercent - $targetNetMargin;
 
-        // Add warranty price if present
-        $warrantyPrice = (float) ($package->warranty_price ?? 0);
-
-        // Get warranty reserve info
-        $warrantyReserve = $this->getWarrantyReserveInfo($package);
-
         // Get crew bonus info
         $crewBonus = $this->getCrewBonusInfo($estimate, $customerPrice);
 
@@ -306,7 +300,7 @@ class EstimateCostBreakdownService
             'estimate_number' => $estimate->estimate_number,
             'scope' => $estimate->project_type ?? 'interior',
             'package' => $this->getPackageInfo($package),
-            'warranty_reserve' => $warrantyReserve,
+            'warranty_reserve' => null,
             'areas' => $areaBreakdowns,
             'items' => $itemsBreakdown,
             'items_total' => round($itemsTotal, 2),
@@ -330,7 +324,7 @@ class EstimateCostBreakdownService
                 'items_total' => round($totals['items_total'], 2),
                 'items_vendor_cost' => round($totals['items_vendor_cost'], 2),
                 'items_profit' => round($totals['items_total'] - $totals['items_vendor_cost'], 2),
-                'warranty_price' => round($warrantyPrice, 2),
+                'warranty_price' => 0,
                 'total' => round($totalCogs, 2),
             ],
             'pricing' => [
@@ -545,11 +539,19 @@ class EstimateCostBreakdownService
         // Decompose COGS into components for visibility (informational detail)
         $detail = $this->decomposeAreaCosts($area, $settings);
 
+        // Check for custom pricing on surfaces
+        $hasCustomPricing = $area->surfaces()
+            ->where('is_included', true)
+            ->where('is_custom', true)
+            ->whereNotNull('sale_price')
+            ->exists();
+
         return [
             'area_id' => $area->id,
             'name' => $area->name,
             'scope_type' => $scope,
             'is_fixed_price' => $area->is_fixed_price,
+            'has_custom_pricing' => $hasCustomPricing,
             'cogs' => round($cogs, 2),
             'customer_price' => round($customerPrice, 2),
             'margin_percent' => $marginPercent,
@@ -596,15 +598,34 @@ class EstimateCostBreakdownService
                 ];
             }
 
+            // Use stored labor breakdown if available, else fall back to zeros
+            $laborHours = (float) ($area->estimated_labor_hours ?? 0);
+            $laborCost = (float) ($area->estimated_labor_cost ?? 0);
+            $materialCost = (float) ($area->estimated_material_cost ?? 0);
+
+            $cleanupHours = 0;
+            $cleanupCost = 0;
+            $sundriesCost = 0;
+            $materialTax = 0;
+            $laborTax = 0;
+
+            if ($laborHours > 0) {
+                $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
+                $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+                $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
+                $materialTax = $settings->calculateMaterialTax($materialCost);
+                $laborTax = $settings->calculateLaborTax($laborCost, $cleanupCost);
+            }
+
             return [
-                'labor_hours' => 0,
-                'cleanup_hours' => 0,
-                'labor_cost' => 0,
-                'cleanup_cost' => 0,
-                'sundries_cost' => 0,
-                'material_cost' => 0,
-                'material_tax' => 0,
-                'labor_tax' => 0,
+                'labor_hours' => round($laborHours, 2),
+                'cleanup_hours' => round($cleanupHours, 2),
+                'labor_cost' => round($laborCost, 2),
+                'cleanup_cost' => round($cleanupCost, 2),
+                'sundries_cost' => round($sundriesCost, 2),
+                'material_cost' => round($materialCost, 2),
+                'material_tax' => round($materialTax, 2),
+                'labor_tax' => round($laborTax, 2),
                 'addon_cost' => round($addonCost, 2),
                 'addon_labor_hours' => round($addonLaborHours, 2),
                 'addon_labor_cost' => round($addonLaborCost, 2),

@@ -39,24 +39,24 @@ class EstimatePackageUpdated extends Notification implements ShouldQueue
         $publicUrl = $this->estimate->getPublicUrl();
 
         $message = (new MailMessage)
-            ->subject("Your Estimate Has Been Updated - {$appName}")
-            ->greeting("Hello {$notifiable->first_name}!")
-            ->line("Your estimate **{$this->estimate->estimate_number}** has been updated.");
+            ->subject(__('Your Estimate Has Been Updated - :appName', ['appName' => $appName]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->first_name]))
+            ->line(__('Your estimate **:number** has been updated.', ['number' => $this->estimate->estimate_number]));
 
-        $message->line('**What Changed:**');
+        $message->line('**'.__('What Changed').':**');
 
         foreach ($this->changes as $change) {
             $message->line("- {$change}");
         }
 
         $message->line('');
-        $message->line('Please review the updated proposal to see the changes.');
+        $message->line(__('Please review the updated proposal to see the changes.'));
 
         if ($publicUrl) {
-            $message->action('View Updated Estimate', $publicUrl);
+            $message->action(__('View Updated Estimate'), $publicUrl);
         }
 
-        $message->line('If you have any questions about these changes, please contact us.');
+        $message->line(__('If you have any questions about these changes, please contact us.'));
 
         return $message;
     }

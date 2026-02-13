@@ -157,14 +157,14 @@ new class extends Component {
             return $activity->metadata['customer_name'];
         }
 
-        return 'Anonymous';
+        return __('Anonymous');
     }
 }; ?>
 
 <div>
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
         <div class="flex items-center justify-between mb-4">
-            <flux:heading size="sm">Activity</flux:heading>
+            <flux:heading size="sm">{{ __('Activity') }}</flux:heading>
             @if ($this->totalCount > 0)
                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
                     {{ $this->totalCount }} {{ Str::plural('activity', $this->totalCount) }}
@@ -175,7 +175,7 @@ new class extends Component {
         @if ($this->activities->isEmpty())
             <div class="text-center py-8">
                 <flux:icon name="clock" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-                <flux:text class="text-zinc-500 dark:text-zinc-400">No activity recorded yet.</flux:text>
+                <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('No activity recorded yet.') }}</flux:text>
             </div>
         @else
             <div class="relative">
@@ -242,7 +242,7 @@ new class extends Component {
                                     @if ($displayableMetadata->isNotEmpty())
                                         <details class="mt-2">
                                             <summary class="text-xs text-zinc-400 dark:text-zinc-500 cursor-pointer hover:text-zinc-600 dark:hover:text-zinc-300">
-                                                Show details
+                                                {{ __('Show details') }}
                                             </summary>
                                             <div class="mt-2 text-xs bg-zinc-50 dark:bg-zinc-800 rounded p-2 space-y-1">
                                                 @foreach ($displayableMetadata as $key => $value)
@@ -265,14 +265,14 @@ new class extends Component {
             @if ($this->hasMore)
                 <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700 text-center">
                     <flux:button variant="ghost" size="sm" wire:click="loadMore" wire:loading.attr="disabled">
-                        <span wire:loading.remove wire:target="loadMore">Show more</span>
-                        <span wire:loading wire:target="loadMore">Loading...</span>
+                        <span wire:loading.remove wire:target="loadMore">{{ __('Show more') }}</span>
+                        <span wire:loading wire:target="loadMore">{{ __('Loading...') }}</span>
                     </flux:button>
                 </div>
             @elseif ($this->totalCount > 20 && !$this->hasMore)
                 <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700 text-center">
                     <flux:button variant="ghost" size="sm" wire:click="toggleShowAll">
-                        {{ $showAll ? 'Show less' : 'Show all' }}
+                        {{ $showAll ? __('Show less') : __('Show all') }}
                     </flux:button>
                 </div>
             @endif

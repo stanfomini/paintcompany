@@ -9,11 +9,35 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 from api.config import get_settings
-from api.routers import health, images, media, scraping
+from api.routers import health, images, media, scraping, streaming
 
 settings = get_settings()
+
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    """Validate API key on all requests except health checks."""
+
+    async def dispatch(self, request, call_next):
+        # Allow health check and root without auth
+        if request.url.path in ["/", "/health", "/health/detailed"]:
+            return await call_next(request)
+
+        # Skip auth if no key configured (development mode)
+        if not settings.python_api_key:
+            return await call_next(request)
+
+        api_key = request.headers.get("X-API-Key")
+        if api_key != settings.python_api_key:
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Invalid or missing API key"},
+            )
+
+        return await call_next(request)
 
 
 @asynccontextmanager
@@ -37,6 +61,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# API key authentication middleware
+app.add_middleware(APIKeyMiddleware)
+
 # CORS middleware for Laravel communication
 app.add_middleware(
     CORSMiddleware,
@@ -55,6 +82,7 @@ app.include_router(health.router, tags=["Health"])
 app.include_router(images.router, prefix="/images", tags=["Images"])
 app.include_router(scraping.router, prefix="/scrape", tags=["Scraping"])
 app.include_router(media.router, prefix="/media", tags=["Media"])
+app.include_router(streaming.router, prefix="/streaming", tags=["Streaming"])
 
 
 @app.get("/")

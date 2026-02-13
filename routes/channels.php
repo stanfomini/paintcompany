@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\ChatThread;
+use App\Models\Deal;
+use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
@@ -39,11 +41,29 @@ Broadcast::channel('chat.user.{userId}', function (User $user, int $userId) {
 }, ['guards' => ['web', 'agent', 'customer', 'crew']]);
 
 /**
- * Authorize access to a job channel for internal users.
+ * Authorize access to a job channel.
+ * Internal users, assigned crew, and the job's customer can listen.
  */
 Broadcast::channel('job.{jobId}', function (User $user, int $jobId) {
-    return $user->can('jobs.view');
-}, ['guards' => ['web']]);
+    if ($user->isInternal()) {
+        return true;
+    }
+
+    $job = Job::find($jobId);
+    if (! $job) {
+        return false;
+    }
+
+    if ($job->crews()->where('crew_user_id', $user->id)->exists()) {
+        return true;
+    }
+
+    if ($job->deal?->customer?->user_id === $user->id) {
+        return true;
+    }
+
+    return false;
+}, ['guards' => ['web', 'customer', 'crew']]);
 
 /**
  * Authorize access to a customer job channel.
@@ -66,9 +86,128 @@ Broadcast::channel('crew.job.{jobId}', function (User $user, int $jobId) {
 }, ['guards' => ['crew']]);
 
 /**
+ * Authorize access to a crew member's personal channel.
+ * Only the crew member themselves can listen.
+ */
+Broadcast::channel('crew.user.{userId}', function (User $user, int $userId) {
+    return $user->id === $userId;
+}, ['guards' => ['crew']]);
+
+/**
  * Authorize access to the internal team channel.
  * Only internal users can listen to this channel.
  */
 Broadcast::channel('internal-team', function (User $user) {
     return $user->isInternal();
 });
+
+/**
+ * Authorize access to a video call room.
+ * User must be internal, assigned crew, or the customer for the associated job.
+ */
+Broadcast::channel('video-call.{roomId}', function (User $user, string $roomId) {
+    $videoCall = \App\Models\VideoCall::where('room_id', $roomId)->first();
+    if (! $videoCall) {
+        return false;
+    }
+
+    // Internal users can always join
+    if ($user->isInternal()) {
+        return ['id' => $user->id, 'name' => $user->name];
+    }
+
+    // Job-based calls (legacy job_id column)
+    $job = $videoCall->job;
+    if ($job) {
+        if ($job->crews()->where('crew_user_id', $user->id)->exists()) {
+            return ['id' => $user->id, 'name' => $user->name];
+        }
+
+        if ($job->deal?->customer?->user_id === $user->id) {
+            return ['id' => $user->id, 'name' => $user->name];
+        }
+    }
+
+    // Polymorphic calls (Deal-based, etc.)
+    $callable = $videoCall->callable;
+    if ($callable instanceof \App\Models\Deal) {
+        if ($callable->customer?->user_id === $user->id) {
+            return ['id' => $user->id, 'name' => $user->name];
+        }
+
+        if ($callable->agent_id === $user->id) {
+            return ['id' => $user->id, 'name' => $user->name];
+        }
+    }
+
+    return false;
+}, ['guards' => ['web', 'agent', 'customer', 'crew']]);
+
+/**
+ * Authorize access to a streaming studio session.
+ * Only the session owner and internal users can join.
+ */
+Broadcast::channel('studio.{sessionId}', function (User $user, int $sessionId) {
+    $session = \App\Models\StreamSession::find($sessionId);
+    if (! $session) {
+        return false;
+    }
+
+    if ($user->isInternal() || $session->user_id === $user->id) {
+        return ['id' => $user->id, 'name' => $user->name];
+    }
+
+    return false;
+}, ['guards' => ['web', 'agent']]);
+
+/**
+ * Authorize access to a deal channel.
+ * Internal users, agents on the deal, or the deal's customer can listen.
+ */
+Broadcast::channel('deal.{dealId}', function (User $user, int $dealId) {
+    if ($user->isInternal()) {
+        return true;
+    }
+
+    $deal = Deal::find($dealId);
+    if (! $deal) {
+        return false;
+    }
+
+    if ($deal->agent_id === $user->id) {
+        return true;
+    }
+
+    if ($deal->customer?->user_id === $user->id) {
+        return true;
+    }
+
+    return false;
+}, ['guards' => ['web', 'agent', 'customer']]);
+
+/**
+ * Authorize access to an estimate channel.
+ * Internal users, agents on the deal, or the deal's customer can listen.
+ */
+Broadcast::channel('estimate.{estimateId}', function (User $user, int $estimateId) {
+    if ($user->isInternal()) {
+        return true;
+    }
+
+    $estimate = Estimate::with('deal')->find($estimateId);
+    if (! $estimate) {
+        return false;
+    }
+
+    $deal = $estimate->deal;
+
+    if ($deal?->agent_id === $user->id) {
+        return true;
+    }
+
+    if ($deal?->customer?->user_id === $user->id) {
+        return true;
+    }
+
+    return false;
+}, ['guards' => ['web', 'agent', 'customer']]);

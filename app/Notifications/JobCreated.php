@@ -27,11 +27,11 @@ class JobCreated extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject("New Job Created: {$this->job->job_number}")
-            ->greeting("New Job: {$this->job->title}")
-            ->line("A new job ({$this->job->job_number}) has been created from an accepted estimate.")
-            ->line("Customer: {$this->job->getCustomer()?->first_name} {$this->job->getCustomer()?->last_name}")
-            ->action('View Job', url('/jobs/'.$this->job->id));
+            ->subject(__('New Job Created: :number', ['number' => $this->job->job_number]))
+            ->greeting(__('New Job: :title', ['title' => $this->job->title]))
+            ->line(__('A new job (:number) has been created from an accepted estimate.', ['number' => $this->job->job_number]))
+            ->line(__('Customer').': '.$this->job->getCustomer()?->first_name.' '.$this->job->getCustomer()?->last_name)
+            ->action(__('View Job'), url('/jobs/'.$this->job->id));
     }
 
     /**
@@ -43,7 +43,7 @@ class JobCreated extends Notification implements ShouldQueue
             'job_id' => $this->job->id,
             'job_number' => $this->job->job_number,
             'title' => $this->job->title,
-            'message' => "New job created: {$this->job->job_number}",
+            'message' => __('New job created: :number', ['number' => $this->job->job_number]),
         ];
     }
 }

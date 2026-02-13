@@ -26,7 +26,7 @@ describe('Roadmap Routes - Legacy Redirects', function () {
 describe('Roadmap Routes - With Permission', function () {
     it('redirects legacy roadmap URL for authorized users', function () {
         $user = User::factory()->internal()->create();
-        $user->givePermissionTo('view roadmap');
+        $user->givePermissionTo('roadmap.view');
 
         $this->actingAs($user)
             ->get(route('roadmap.index'))

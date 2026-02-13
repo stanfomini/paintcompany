@@ -49,7 +49,7 @@ new class extends Component
         $settings->update(['accounting_mode' => $mode]);
 
         $this->accountingMode = $mode;
-        $this->modeChangeMessage = 'Accounting mode updated to '.$this->accountingModeLabel($mode).'.';
+        $this->modeChangeMessage = __('Accounting mode updated to :mode.', ['mode' => $this->accountingModeLabel($mode)]);
 
         unset($this->dashboardData);
     }
@@ -57,10 +57,10 @@ new class extends Component
     private function accountingModeLabel(string $mode): string
     {
         return match ($mode) {
-            'cash' => 'Cash Basis',
-            'accrual' => 'Accrual Basis',
-            'modified_cash' => 'Modified Cash',
-            default => 'Cash Basis',
+            'cash' => __('Cash Basis'),
+            'accrual' => __('Accrual Basis'),
+            'modified_cash' => __('Modified Cash'),
+            default => __('Cash Basis'),
         };
     }
 
@@ -68,18 +68,18 @@ new class extends Component
     public function tabs(): array
     {
         return [
-            'roadmap' => ['label' => 'Roadmap', 'icon' => 'map'],
-            'life-commitments' => ['label' => 'Life Commitments', 'icon' => 'heart'],
-            'sales-plan' => ['label' => 'Sales Plan', 'icon' => 'currency-dollar'],
-            'production-plan' => ['label' => 'Production Plan', 'icon' => 'wrench-screwdriver'],
-            'job-cost-cards' => ['label' => 'Job Cost Cards', 'icon' => 'calculator'],
-            'budget' => ['label' => 'Budget', 'icon' => 'banknotes'],
-            'overhead-tracking' => ['label' => 'Overhead', 'icon' => 'building-office-2'],
-            'marketing-tracking' => ['label' => 'Marketing', 'icon' => 'megaphone'],
-            'vendors' => ['label' => 'Vendors', 'icon' => 'building-storefront'],
-            'chart-of-accounts' => ['label' => 'Chart of Accounts', 'icon' => 'list-bullet'],
-            'journal-entries' => ['label' => 'Journal', 'icon' => 'book-open'],
-            'financial-reports' => ['label' => 'Reports', 'icon' => 'chart-bar-square'],
+            'roadmap' => ['label' => __('Roadmap'), 'icon' => 'map'],
+            'life-commitments' => ['label' => __('Life Commitments'), 'icon' => 'heart'],
+            'sales-plan' => ['label' => __('Sales Plan'), 'icon' => 'currency-dollar'],
+            'production-plan' => ['label' => __('Production Plan'), 'icon' => 'wrench-screwdriver'],
+            'job-cost-cards' => ['label' => __('Job Cost Cards'), 'icon' => 'calculator'],
+            'budget' => ['label' => __('Budget'), 'icon' => 'banknotes'],
+            'overhead-tracking' => ['label' => __('Overhead'), 'icon' => 'building-office-2'],
+            'marketing-tracking' => ['label' => __('Marketing'), 'icon' => 'megaphone'],
+            'vendors' => ['label' => __('Vendors'), 'icon' => 'building-storefront'],
+            'chart-of-accounts' => ['label' => __('Chart of Accounts'), 'icon' => 'list-bullet'],
+            'journal-entries' => ['label' => __('Journal'), 'icon' => 'book-open'],
+            'financial-reports' => ['label' => __('Reports'), 'icon' => 'chart-bar-square'],
         ];
     }
 
@@ -131,9 +131,9 @@ new class extends Component
     {{-- Header --}}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-            <flux:heading size="xl">Master Business Plan</flux:heading>
+            <flux:heading size="xl">{{ __('Master Business Plan') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                Complete business planning, tracking, and KPIs
+                {{ __('Complete business planning, tracking, and KPIs') }}
             </flux:text>
         </div>
     </div>
@@ -144,16 +144,16 @@ new class extends Component
             <div>
                 <div class="flex items-center gap-2">
                     <flux:icon name="cog-6-tooth" variant="mini" class="size-4 text-zinc-400" />
-                    <flux:text class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Accounting Method</flux:text>
+                    <flux:text class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Accounting Method') }}</flux:text>
                 </div>
             </div>
 
             @if ($this->canManage)
                 <div class="flex gap-1 rounded-lg bg-zinc-100 p-1 dark:bg-zinc-800">
                     @foreach ([
-                        'cash' => ['label' => 'Cash Basis', 'desc' => 'Revenue when paid'],
-                        'accrual' => ['label' => 'Accrual Basis', 'desc' => 'Revenue when earned'],
-                        'modified_cash' => ['label' => 'Modified Cash', 'desc' => 'Hybrid approach'],
+                        'cash' => ['label' => __('Cash Basis'), 'desc' => __('Revenue when paid')],
+                        'accrual' => ['label' => __('Accrual Basis'), 'desc' => __('Revenue when earned')],
+                        'modified_cash' => ['label' => __('Modified Cash'), 'desc' => __('Hybrid approach')],
                     ] as $mode => $info)
                         <button
                             wire:key="mode-{{ $mode }}"
@@ -173,10 +173,10 @@ new class extends Component
             @else
                 <flux:badge size="lg" color="blue">
                     {{ match ($accountingMode) {
-                        'cash' => 'Cash Basis',
-                        'accrual' => 'Accrual Basis',
-                        'modified_cash' => 'Modified Cash',
-                        default => 'Cash Basis',
+                        'cash' => __('Cash Basis'),
+                        'accrual' => __('Accrual Basis'),
+                        'modified_cash' => __('Modified Cash'),
+                        default => __('Cash Basis'),
                     } }}
                 </flux:badge>
             @endif
@@ -193,11 +193,11 @@ new class extends Component
         <div class="mt-2">
             <flux:text class="text-xs text-zinc-400 dark:text-zinc-500">
                 @if ($accountingMode === 'cash')
-                    Revenue is recognized when payment is received. Expenses counted when paid. Best for simple tax filing.
+                    {{ __('Revenue is recognized when payment is received. Expenses counted when paid. Best for simple tax filing.') }}
                 @elseif ($accountingMode === 'accrual')
-                    Revenue is recognized when invoiced. Expenses counted when incurred. Most accurate business picture.
+                    {{ __('Revenue is recognized when invoiced. Expenses counted when incurred. Most accurate business picture.') }}
                 @else
-                    Revenue recognized when invoiced, expenses counted when paid. Best of both worlds for small businesses.
+                    {{ __('Revenue recognized when invoiced, expenses counted when paid. Best of both worlds for small businesses.') }}
                 @endif
             </flux:text>
         </div>
@@ -209,7 +209,7 @@ new class extends Component
         {{-- Revenue vs Plan --}}
         <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <div class="flex items-center justify-between">
-                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Revenue vs Plan</flux:text>
+                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Revenue vs Plan') }}</flux:text>
                 <flux:icon name="currency-dollar" variant="mini" class="size-4 text-green-500" />
             </div>
             <div class="mt-2">
@@ -223,14 +223,14 @@ new class extends Component
                         style="width: {{ $dash['revenue_percent'] }}%"
                     ></div>
                 </div>
-                <flux:text class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{{ $dash['revenue_percent'] }}% of plan</flux:text>
+                <flux:text class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{{ $dash['revenue_percent'] }}% {{ __('of plan') }}</flux:text>
             </div>
         </div>
 
         {{-- Gross Profit % --}}
         <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <div class="flex items-center justify-between">
-                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Gross Profit</flux:text>
+                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Gross Profit') }}</flux:text>
                 <flux:icon name="arrow-trending-up" variant="mini" class="size-4 text-blue-500" />
             </div>
             <div class="mt-2">
@@ -239,39 +239,39 @@ new class extends Component
                 </span>
             </div>
             <flux:text class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                {{ $dash['gp_percent'] >= 40 ? 'Healthy margin' : ($dash['gp_percent'] >= 25 ? 'Below target' : 'Needs attention') }}
+                {{ $dash['gp_percent'] >= 40 ? __('Healthy margin') : ($dash['gp_percent'] >= 25 ? __('Below target') : __('Needs attention')) }}
             </flux:text>
         </div>
 
         {{-- Unpaid Invoices --}}
         <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <div class="flex items-center justify-between">
-                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Unpaid Invoices</flux:text>
+                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Unpaid Invoices') }}</flux:text>
                 <flux:icon name="document-currency-dollar" variant="mini" class="size-4 text-amber-500" />
             </div>
             <div class="mt-2">
                 <span class="text-xl font-bold text-zinc-900 dark:text-zinc-100">{{ $dash['unpaid_count'] }}</span>
             </div>
             <flux:text class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                ${{ number_format($dash['unpaid_total'], 2) }} outstanding
+                ${{ number_format($dash['unpaid_total'], 2) }} {{ __('outstanding') }}
             </flux:text>
         </div>
 
         {{-- Last Budget Sync --}}
         <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-900">
             <div class="flex items-center justify-between">
-                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">Budget Sync</flux:text>
+                <flux:text class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Budget Sync') }}</flux:text>
                 <flux:icon name="arrow-path" variant="mini" class="size-4 text-purple-500" />
             </div>
             <div class="mt-2">
                 @if ($dash['last_sync'])
                     <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ $dash['last_sync'] }}</span>
                 @else
-                    <span class="text-sm text-zinc-400 dark:text-zinc-500">Never synced</span>
+                    <span class="text-sm text-zinc-400 dark:text-zinc-500">{{ __('Never synced') }}</span>
                 @endif
             </div>
             <flux:text class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                Last actuals refresh
+                {{ __('Last actuals refresh') }}
             </flux:text>
         </div>
     </div>

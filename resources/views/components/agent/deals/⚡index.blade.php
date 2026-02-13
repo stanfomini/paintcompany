@@ -45,11 +45,11 @@ new #[Layout('components.layouts.agent', ['title' => 'My Deals'])] class extends
     {
         return match ($stage) {
             'lead' => 'blue',
-            'quoted' => 'purple',
-            'scheduled' => 'yellow',
-            'in_progress' => 'orange',
-            'completed' => 'green',
-            'paid' => 'emerald',
+            'contacted' => 'indigo',
+            'quote_scheduled' => 'purple',
+            'quoted' => 'yellow',
+            'signed' => 'green',
+            'lost' => 'orange',
             'cancelled' => 'red',
             default => 'zinc',
         };
@@ -91,7 +91,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Deals'])] class extends
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">My Deals</flux:heading>
+            <flux:heading size="xl">{{ __('My Deals') }}</flux:heading>
         </div>
 
         <div class="flex flex-col sm:flex-row gap-4 mb-6">
@@ -99,13 +99,13 @@ new #[Layout('components.layouts.agent', ['title' => 'My Deals'])] class extends
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search by deal title or customer name..."
+                    :placeholder="__('Search by deal title or customer name...')"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="stageFilter">
-                    <option value="">All Stages</option>
+                    <option value="">{{ __('All Stages') }}</option>
                     @foreach ($this->stages as $stageKey => $stageLabel)
                         <option value="{{ $stageKey }}">{{ $stageLabel }}</option>
                     @endforeach
@@ -119,22 +119,22 @@ new #[Layout('components.layouts.agent', ['title' => 'My Deals'])] class extends
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Customer
+                                {{ __('Customer') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Deal Title
+                                {{ __('Deal Title') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Stage
+                                {{ __('Stage') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Value / Commission
+                                {{ __('Value / Commission') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Expected Start
+                                {{ __('Expected Start') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Expected End
+                                {{ __('Expected End') }}
                             </th>
                         </tr>
                     </thead>
@@ -163,7 +163,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Deals'])] class extends
                                         <div class="flex flex-col">
                                             <flux:text class="font-medium">${{ number_format($deal->estimated_value, 0) }}</flux:text>
                                             <flux:text class="text-xs text-green-600 dark:text-green-400">
-                                                Commission: ${{ number_format($this->calculateCommission($deal->estimated_value), 0) }}
+                                                {{ __('Commission') }}: ${{ number_format($this->calculateCommission($deal->estimated_value), 0) }}
                                             </flux:text>
                                         </div>
                                     @else
@@ -188,12 +188,12 @@ new #[Layout('components.layouts.agent', ['title' => 'My Deals'])] class extends
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="currency-dollar" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No deals found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No deals found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search || $stageFilter)
-                        Try adjusting your search or filter criteria.
+                        {{ __('Try adjusting your search or filter criteria.') }}
                     @else
-                        Deals from your referred customers will appear here.
+                        {{ __('Deals from your referred customers will appear here.') }}
                     @endif
                 </flux:text>
             </div>

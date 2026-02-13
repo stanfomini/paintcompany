@@ -31,7 +31,7 @@ new class extends Component {
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-4">
                 <flux:button variant="ghost" :href="route('properties.index')" icon="arrow-left" wire:navigate>
-                    Back
+                    {{ __('Back') }}
                 </flux:button>
                 <flux:heading size="xl">{{ $property->display_name }}</flux:heading>
             </div>
@@ -48,34 +48,34 @@ new class extends Component {
 
         <div class="grid gap-6 md:grid-cols-2">
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Property Information</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Property Information') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Address</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Address') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $property->full_address ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Type</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Type') }}</dt>
                         <dd class="mt-1">
                             @if ($property->type === 'residential')
-                                <flux:badge size="sm" color="blue">Residential</flux:badge>
+                                <flux:badge size="sm" color="blue">{{ __('Residential') }}</flux:badge>
                             @elseif ($property->type === 'commercial')
-                                <flux:badge size="sm" color="purple">Commercial</flux:badge>
+                                <flux:badge size="sm" color="purple">{{ __('Commercial') }}</flux:badge>
                             @else
-                                <flux:badge size="sm" color="zinc">Industrial</flux:badge>
+                                <flux:badge size="sm" color="zinc">{{ __('Industrial') }}</flux:badge>
                             @endif
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Square Footage</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Square Footage') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $property->square_footage ? number_format($property->square_footage) . ' sq ft' : '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Year Built</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Year Built') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $property->year_built ?? '-' }}</flux:text>
                         </dd>
@@ -84,10 +84,10 @@ new class extends Component {
             </div>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Customer Information</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Customer Information') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer') }}</dt>
                         <dd class="mt-1">
                             @if ($property->customer)
                                 <flux:button variant="ghost" size="sm" :href="route('customers.show', $property->customer)" wire:navigate>
@@ -99,13 +99,13 @@ new class extends Component {
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer Email</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer Email') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $property->customer?->email ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer Phone</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer Phone') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $property->customer?->phone ?? '-' }}</flux:text>
                         </dd>
@@ -116,7 +116,7 @@ new class extends Component {
 
         @if ($property->notes)
             <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Notes</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Notes') }}</flux:heading>
                 <flux:text>{{ $property->notes }}</flux:text>
             </div>
         @endif
@@ -132,7 +132,7 @@ new class extends Component {
         {{-- Deals Section --}}
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
             <div class="flex items-center justify-between mb-4">
-                <flux:heading size="sm">Deals</flux:heading>
+                <flux:heading size="sm">{{ __('Deals') }}</flux:heading>
                 @if ($property->customer)
                     @livewire('deals.create-modal', ['customerId' => $property->customer_id, 'propertyId' => $property->id])
                 @endif
@@ -144,19 +144,19 @@ new class extends Component {
                         <thead>
                             <tr>
                                 <th scope="col" class="py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Title
+                                    {{ __('Title') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Stage
+                                    {{ __('Stage') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Est. Value
+                                    {{ __('Est. Value') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Created
+                                    {{ __('Created') }}
                                 </th>
                                 <th scope="col" class="py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Actions
+                                    {{ __('Actions') }}
                                 </th>
                             </tr>
                         </thead>
@@ -200,8 +200,8 @@ new class extends Component {
             @else
                 <div class="text-center py-8">
                     <flux:icon name="briefcase" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                    <flux:text class="text-zinc-500 dark:text-zinc-400">No deals yet</flux:text>
-                    <flux:text class="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Create a deal to start tracking work for this property.</flux:text>
+                    <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('No deals yet') }}</flux:text>
+                    <flux:text class="text-sm text-zinc-400 dark:text-zinc-500 mt-1">{{ __('Create a deal to start tracking work for this property.') }}</flux:text>
                 </div>
             @endif
         </div>

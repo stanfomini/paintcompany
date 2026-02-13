@@ -10,7 +10,7 @@ use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     // Create permissions
-    foreach (['view kpis', 'edit kpi targets', 'enter kpi actuals', 'manage kpis'] as $perm) {
+    foreach (['kpis.view', 'kpis.edit_targets', 'kpis.enter_actuals', 'kpis.manage'] as $perm) {
         Permission::firstOrCreate(['name' => $perm, 'guard_name' => 'web']);
     }
 

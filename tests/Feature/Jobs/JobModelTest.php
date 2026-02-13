@@ -154,9 +154,9 @@ it('deal has job relationship', function () {
     expect($deal->job->id)->toBe($job->id);
 });
 
-it('deal has signed_accepted stage', function () {
-    expect(Deal::STAGES)->toHaveKey('signed_accepted')
-        ->and(Deal::STAGES['signed_accepted'])->toBe('Signed & Accepted');
+it('deal has signed stage', function () {
+    expect(Deal::STAGES)->toHaveKey('signed')
+        ->and(Deal::STAGES['signed'])->toBe('Signed');
 });
 
 describe('JobService', function () {
@@ -373,8 +373,8 @@ describe('Auto-creation on signature', function () {
             'drawn'
         );
 
-        // Deal should be signed_accepted
-        expect($deal->fresh()->stage)->toBe('signed_accepted');
+        // Deal should be signed
+        expect($deal->fresh()->stage)->toBe('signed');
 
         // Job should be created
         $job = Job::where('deal_id', $deal->id)->first();

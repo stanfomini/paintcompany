@@ -138,9 +138,9 @@ new class extends Component
     <div class="max-w-5xl mx-auto">
         <div class="flex items-center justify-between mb-6">
             <div>
-                <flux:heading size="xl">Business Roadmap</flux:heading>
+                <flux:heading size="xl">{{ __('Business Roadmap') }}</flux:heading>
                 <flux:text class="text-zinc-500 dark:text-zinc-400 mt-1">
-                    Track your progress through the Master Business Plan
+                    {{ __('Track your progress through the Master Business Plan') }}
                 </flux:text>
             </div>
         </div>
@@ -148,7 +148,7 @@ new class extends Component
         {{-- Overall Progress --}}
         <div class="bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 p-6 mb-6">
             <div class="flex items-center justify-between mb-4">
-                <flux:heading size="lg">Overall Progress</flux:heading>
+                <flux:heading size="lg">{{ __('Overall Progress') }}</flux:heading>
                 <flux:badge size="lg" color="{{ $this->overallProgress >= 100 ? 'green' : ($this->overallProgress > 0 ? 'blue' : 'zinc') }}">
                     {{ $this->overallProgress }}%
                 </flux:badge>
@@ -166,19 +166,19 @@ new class extends Component
                     <flux:text class="text-2xl font-bold text-green-600 dark:text-green-400">
                         {{ $this->stats['done'] }}
                     </flux:text>
-                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">Completed</flux:text>
+                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Completed') }}</flux:text>
                 </div>
                 <div>
                     <flux:text class="text-2xl font-bold text-blue-600 dark:text-blue-400">
                         {{ $this->stats['in_progress'] }}
                     </flux:text>
-                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">In Progress</flux:text>
+                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('In Progress') }}</flux:text>
                 </div>
                 <div>
                     <flux:text class="text-2xl font-bold text-zinc-600 dark:text-zinc-400">
                         {{ $this->stats['not_started'] }}
                     </flux:text>
-                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">Not Started</flux:text>
+                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Not Started') }}</flux:text>
                 </div>
             </div>
         </div>
@@ -236,7 +236,7 @@ new class extends Component
                                 <div wire:key="category-{{ $category->id }}" class="border-b border-zinc-200 dark:border-zinc-600 last:border-b-0">
                                     {{-- Category Header --}}
                                     <div class="px-6 py-3 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between">
-                                        <flux:heading size="sm">{{ $category->name }}</flux:heading>
+                                        <flux:heading size="sm">{{ __($category->name) }}</flux:heading>
                                         <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
                                             {{ $category->completed_count }} / {{ $category->total_count }}
                                         </flux:text>
@@ -254,7 +254,7 @@ new class extends Component
                                                         <button
                                                             wire:click="cycleStatus({{ $item->id }})"
                                                             class="shrink-0 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
-                                                            title="Click to change status"
+                                                            title="{{ __('Click to change status') }}"
                                                         >
                                                             @if ($item->status === 'done')
                                                                 <div class="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
@@ -312,9 +312,9 @@ new class extends Component
                             @if ($phase->categories->isEmpty())
                                 <div class="px-6 py-8 text-center text-zinc-400 dark:text-zinc-500">
                                     @if ($phase->is_active)
-                                        No categories in this phase yet.
+                                        {{ __('No categories in this phase yet.') }}
                                     @else
-                                        Coming Soon
+                                        {{ __('Coming Soon') }}
                                     @endif
                                 </div>
                             @endif

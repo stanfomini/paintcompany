@@ -501,10 +501,9 @@ new class extends Component {
 
             {{-- Info callout --}}
             <flux:callout variant="info" icon="information-circle">
-                <flux:callout.heading>Value-Add Package System</flux:callout.heading>
+                <flux:callout.heading>{{ __('Value-Add Package System') }}</flux:callout.heading>
                 <flux:callout.text>
-                    Packages add value on top of the painting work. Each tier differentiates by the items assigned to it (warranty, services, etc.).
-                    Manage items in the Item Catalog below and assign them to packages as defaults.
+                    {{ __('Packages add value on top of the painting work. Each tier differentiates by the items assigned to it (warranty, services, etc.). Manage items in the Item Catalog below and assign them to packages as defaults.') }}
                 </flux:callout.text>
             </flux:callout>
 
@@ -525,15 +524,15 @@ new class extends Component {
 
             {{-- Action buttons --}}
             <div class="flex items-center justify-between">
-                <flux:heading size="sm">Package Tiers</flux:heading>
+                <flux:heading size="sm">{{ __('Package Tiers') }}</flux:heading>
                 <div class="flex gap-2">
                     @if (count($packages) === 0)
                         <flux:button wire:click="seedDefaultPackages" variant="ghost" size="sm" icon="sparkles">
-                            Seed Defaults
+                            {{ __('Seed Defaults') }}
                         </flux:button>
                     @endif
                     <flux:button wire:click="openEditModal()" variant="primary" size="sm" icon="plus">
-                        Add Package
+                        {{ __('Add Package') }}
                     </flux:button>
                 </div>
             </div>
@@ -542,9 +541,9 @@ new class extends Component {
             @if (count($packages) === 0)
                 <flux:card class="p-8 text-center">
                     <flux:icon name="cube" class="mx-auto h-12 w-12 text-zinc-400" />
-                    <flux:heading size="base" class="mt-4">No packages configured</flux:heading>
+                    <flux:heading size="base" class="mt-4">{{ __('No packages configured') }}</flux:heading>
                     <flux:text class="mt-2 text-zinc-500">
-                        Click "Seed Defaults" to create Good/Better/Best tiers, or add custom packages.
+                        {{ __('Click "Seed Defaults" to create Good/Better/Best tiers, or add custom packages.') }}
                     </flux:text>
                 </flux:card>
             @else
@@ -556,13 +555,13 @@ new class extends Component {
                                     <div class="flex items-center gap-2">
                                         <flux:heading size="base">{{ $package['name'] }}</flux:heading>
                                         @if ($package['is_default'])
-                                            <flux:badge color="blue" size="sm">Default</flux:badge>
+                                            <flux:badge color="blue" size="sm">{{ __('Default') }}</flux:badge>
                                         @endif
                                         @if ($package['is_popular'])
-                                            <flux:badge color="amber" size="sm">Popular</flux:badge>
+                                            <flux:badge color="amber" size="sm">{{ __('Popular') }}</flux:badge>
                                         @endif
                                         @if (!$package['is_active'])
-                                            <flux:badge color="zinc" size="sm">Inactive</flux:badge>
+                                            <flux:badge color="zinc" size="sm">{{ __('Inactive') }}</flux:badge>
                                         @endif
                                     </div>
                                     @if ($package['description'])
@@ -571,7 +570,7 @@ new class extends Component {
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <flux:button wire:click="openEditModal({{ $package['id'] }})" variant="ghost" size="sm" icon="pencil" />
-                                    <flux:button wire:click="deletePackage({{ $package['id'] }})" wire:confirm="Delete this package and all its items?" variant="ghost" size="sm" icon="trash" class="text-red-600 hover:text-red-700" />
+                                    <flux:button wire:click="deletePackage({{ $package['id'] }})" wire:confirm="{{ __('Delete this package and all its items?') }}" variant="ghost" size="sm" icon="trash" class="text-red-600 hover:text-red-700" />
                                 </div>
                             </div>
 
@@ -585,7 +584,7 @@ new class extends Component {
                                     @endforeach
                                 </div>
                             @else
-                                <flux:text size="sm" class="mt-3 text-zinc-400">No default items assigned</flux:text>
+                                <flux:text size="sm" class="mt-3 text-zinc-400">{{ __('No default items assigned') }}</flux:text>
                             @endif
                         </flux:card>
                     @endforeach
@@ -595,9 +594,9 @@ new class extends Component {
             {{-- Sample calculation --}}
             @if (count($packages) > 0)
                 <flux:separator />
-                <flux:heading size="sm">Sample Calculation</flux:heading>
+                <flux:heading size="sm">{{ __('Sample Calculation') }}</flux:heading>
                 <flux:text size="sm" class="text-zinc-500 mb-4">
-                    Example pricing for a $2,920 painting job:
+                    {{ __('Example pricing for a $2,920 painting job:') }}
                 </flux:text>
                 <div class="grid gap-4 sm:grid-cols-3">
                     @foreach ($packages as $package)
@@ -627,20 +626,20 @@ new class extends Component {
                         @endphp
                         <flux:card class="p-4 text-center {{ $package['is_popular'] ? 'ring-2 ring-blue-500' : '' }}" wire:key="calc-{{ $package['id'] }}">
                             @if ($package['is_popular'])
-                                <flux:badge color="blue" size="sm" class="mb-2">Popular</flux:badge>
+                                <flux:badge color="blue" size="sm" class="mb-2">{{ __('Popular') }}</flux:badge>
                             @endif
                             <flux:heading size="base">{{ $package['name'] }}</flux:heading>
                             <flux:heading size="xl" class="mt-2 text-blue-600 dark:text-blue-400">${{ number_format($packageTotal, 0) }}</flux:heading>
                             <div class="mt-3 text-xs text-zinc-500 space-y-1">
-                                <div>Painting: ${{ number_format($paintingTotal, 0) }}</div>
+                                <div>{{ __('Painting') }}: ${{ number_format($paintingTotal, 0) }}</div>
                                 @if ($legacyWarrantyAmount > 0)
-                                    <div>Warranty (legacy): ${{ number_format($legacyWarrantyAmount, 0) }}</div>
+                                    <div>{{ __('Warranty (legacy)') }}: ${{ number_format($legacyWarrantyAmount, 0) }}</div>
                                 @endif
                                 @if ($legacyItemsTotal > 0)
-                                    <div>Add-ons (legacy): ${{ number_format($legacyItemsTotal, 0) }}</div>
+                                    <div>{{ __('Add-ons (legacy)') }}: ${{ number_format($legacyItemsTotal, 0) }}</div>
                                 @endif
                                 @if ($defaultItemsTotal > 0)
-                                    <div>Default Items: ${{ number_format($defaultItemsTotal, 0) }}</div>
+                                    <div>{{ __('Default Items') }}: ${{ number_format($defaultItemsTotal, 0) }}</div>
                                 @endif
                             </div>
                         </flux:card>
@@ -653,8 +652,8 @@ new class extends Component {
 
             <div class="space-y-4">
                 <div>
-                    <flux:heading size="sm">Item Catalog</flux:heading>
-                    <flux:text size="sm" class="text-zinc-500">Manage standalone items that can be assigned to any package</flux:text>
+                    <flux:heading size="sm">{{ __('Item Catalog') }}</flux:heading>
+                    <flux:text size="sm" class="text-zinc-500">{{ __('Manage standalone items that can be assigned to any package') }}</flux:text>
                 </div>
 
                 {{-- Item service category filter tabs --}}
@@ -674,7 +673,7 @@ new class extends Component {
                             variant="{{ $itemFilterCategoryId === null ? 'primary' : 'ghost' }}"
                             size="sm"
                         >
-                            All
+                            {{ __('All') }}
                         </flux:button>
                     </div>
                 @endif
@@ -682,7 +681,7 @@ new class extends Component {
                 {{-- Add Item button --}}
                 <div class="flex justify-end">
                     <flux:button wire:click="openItemModal()" variant="primary" size="sm" icon="plus">
-                        Add Item
+                        {{ __('Add Item') }}
                     </flux:button>
                 </div>
 
@@ -690,9 +689,9 @@ new class extends Component {
                 @if (count($items) === 0)
                     <flux:card class="p-8 text-center">
                         <flux:icon name="rectangle-stack" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="base" class="mt-4">No items in catalog</flux:heading>
+                        <flux:heading size="base" class="mt-4">{{ __('No items in catalog') }}</flux:heading>
                         <flux:text class="mt-2 text-zinc-500">
-                            Add items like warranty, cleaning services, or color consultation to assign to packages.
+                            {{ __('Add items like warranty, cleaning services, or color consultation to assign to packages.') }}
                         </flux:text>
                     </flux:card>
                 @else
@@ -710,17 +709,17 @@ new class extends Component {
                                             <flux:text size="sm" class="font-medium">{{ $item['name'] }}</flux:text>
                                             <flux:badge size="sm" color="zinc">{{ $item['price_display'] }}</flux:badge>
                                             @if ($item['is_customer_selectable'])
-                                                <flux:badge size="sm" color="green">Customer Selectable</flux:badge>
+                                                <flux:badge size="sm" color="green">{{ __('Customer Selectable') }}</flux:badge>
                                             @endif
                                             @if ($item['is_optional'])
-                                                <flux:badge size="sm" color="zinc" class="opacity-60">Optional</flux:badge>
+                                                <flux:badge size="sm" color="zinc" class="opacity-60">{{ __('Optional') }}</flux:badge>
                                             @else
-                                                <flux:badge size="sm" color="amber">Required</flux:badge>
+                                                <flux:badge size="sm" color="amber">{{ __('Required') }}</flux:badge>
                                             @endif
                                         </div>
                                         @if (count($item['default_packages']) > 0)
                                             <div class="flex items-center gap-1 mt-1 flex-wrap">
-                                                <flux:text size="xs" class="text-zinc-400">Defaults to:</flux:text>
+                                                <flux:text size="xs" class="text-zinc-400">{{ __('Defaults to:') }}</flux:text>
                                                 @foreach ($item['default_packages'] as $dp)
                                                     <flux:badge size="sm" color="blue">{{ $dp['name'] }}</flux:badge>
                                                 @endforeach
@@ -730,7 +729,7 @@ new class extends Component {
                                 </div>
                                 <div class="flex items-center gap-1 shrink-0 ml-2">
                                     <flux:button wire:click="openItemModal({{ $item['id'] }})" variant="ghost" size="xs" icon="pencil" />
-                                    <flux:button wire:click="deleteItem({{ $item['id'] }})" wire:confirm="Delete this item?" variant="ghost" size="xs" icon="trash" class="text-red-600 hover:text-red-700" />
+                                    <flux:button wire:click="deleteItem({{ $item['id'] }})" wire:confirm="{{ __('Delete this item?') }}" variant="ghost" size="xs" icon="trash" class="text-red-600 hover:text-red-700" />
                                 </div>
                             </div>
                         @endforeach
@@ -742,33 +741,33 @@ new class extends Component {
         {{-- Edit Package Modal --}}
         <flux:modal wire:model.live="showEditModal" class="max-w-lg">
             <div class="space-y-6">
-                <flux:heading size="lg">{{ $editingPackageId ? 'Edit Package' : 'Add Package' }}</flux:heading>
+                <flux:heading size="lg">{{ $editingPackageId ? __('Edit Package') : __('Add Package') }}</flux:heading>
 
-                <flux:input wire:model="editName" label="Package Name" placeholder="e.g., Good, Better, Best" required />
+                <flux:input wire:model="editName" :label="__('Package Name')" :placeholder="__('e.g., Good, Better, Best')" required />
 
-                <flux:input wire:model="editTier" label="Tier Identifier" placeholder="e.g., good, better, best" description="Unique identifier used internally" required />
+                <flux:input wire:model="editTier" :label="__('Tier Identifier')" :placeholder="__('e.g., good, better, best')" :description="__('Unique identifier used internally')" required />
 
                 @if (count($serviceCategories) > 0)
-                    <flux:select wire:model="editServiceCategoryId" label="Service Category">
-                        <option value="">-- None --</option>
+                    <flux:select wire:model="editServiceCategoryId" :label="__('Service Category')">
+                        <option value="">{{ __('-- None --') }}</option>
                         @foreach ($serviceCategories as $cat)
                             <option value="{{ $cat['id'] }}">{{ $cat['name'] }}</option>
                         @endforeach
                     </flux:select>
                 @endif
 
-                <flux:textarea wire:model="editDescription" label="Description" rows="2" placeholder="Brief description of this package tier" />
+                <flux:textarea wire:model="editDescription" :label="__('Description')" rows="2" :placeholder="__('Brief description of this package tier')" />
 
                 <div class="flex flex-wrap gap-4">
-                    <flux:checkbox wire:model="editIsDefault" label="Default selection" />
-                    <flux:checkbox wire:model="editIsPopular" label="Show 'Popular' badge" />
-                    <flux:checkbox wire:model="editIsActive" label="Active" />
+                    <flux:checkbox wire:model="editIsDefault" :label="__('Default selection')" />
+                    <flux:checkbox wire:model="editIsPopular" :label="__('Show \'Popular\' badge')" />
+                    <flux:checkbox wire:model="editIsActive" :label="__('Active')" />
                 </div>
 
                 <div class="flex justify-end gap-3">
-                    <flux:button wire:click="closeEditModal" variant="ghost">Cancel</flux:button>
+                    <flux:button wire:click="closeEditModal" variant="ghost">{{ __('Cancel') }}</flux:button>
                     <flux:button wire:click="savePackage" variant="primary">
-                        {{ $editingPackageId ? 'Save Changes' : 'Create Package' }}
+                        {{ $editingPackageId ? __('Save Changes') : __('Create Package') }}
                     </flux:button>
                 </div>
             </div>
@@ -777,46 +776,46 @@ new class extends Component {
         {{-- Edit Item Modal --}}
         <flux:modal wire:model.live="showItemModal" class="max-w-lg">
             <div class="space-y-6">
-                <flux:heading size="lg">{{ $editingItemId ? 'Edit Item' : 'Add Item' }}</flux:heading>
+                <flux:heading size="lg">{{ $editingItemId ? __('Edit Item') : __('Add Item') }}</flux:heading>
 
-                <flux:input wire:model="itemName" label="Item Name" placeholder="e.g., Post-Project Cleaning, 1-Year Warranty" required />
+                <flux:input wire:model="itemName" :label="__('Item Name')" :placeholder="__('e.g., Post-Project Cleaning, 1-Year Warranty')" required />
 
-                <flux:textarea wire:model="itemDescription" label="Description" rows="2" placeholder="Brief description of this item" />
+                <flux:textarea wire:model="itemDescription" :label="__('Description')" rows="2" :placeholder="__('Brief description of this item')" />
 
                 @if (count($serviceCategories) > 0)
-                    <flux:select wire:model="itemServiceCategoryId" label="Service Category">
-                        <option value="">-- None --</option>
+                    <flux:select wire:model="itemServiceCategoryId" :label="__('Service Category')">
+                        <option value="">{{ __('-- None --') }}</option>
                         @foreach ($serviceCategories as $cat)
                             <option value="{{ $cat['id'] }}">{{ $cat['name'] }}</option>
                         @endforeach
                     </flux:select>
                 @endif
 
-                <flux:select wire:model.live="itemPricingType" label="Pricing Type">
-                    <option value="fixed">Fixed Price</option>
-                    <option value="percent">Percentage of Job</option>
+                <flux:select wire:model.live="itemPricingType" :label="__('Pricing Type')">
+                    <option value="fixed">{{ __('Fixed Price') }}</option>
+                    <option value="percent">{{ __('Percentage of Job') }}</option>
                 </flux:select>
 
                 @if ($itemPricingType === 'fixed')
                     <div class="grid gap-4 sm:grid-cols-2">
-                        <flux:input wire:model="itemCost" type="number" step="0.01" label="Your Cost ($)" min="0" placeholder="200" />
-                        <flux:input wire:model="itemPrice" type="number" step="0.01" label="Customer Price ($)" min="0" placeholder="400" required />
+                        <flux:input wire:model="itemCost" type="number" step="0.01" :label="__('Your Cost ($)')" min="0" placeholder="200" />
+                        <flux:input wire:model="itemPrice" type="number" step="0.01" :label="__('Customer Price ($)')" min="0" placeholder="400" required />
                     </div>
                 @else
-                    <flux:input wire:model="itemPercent" type="number" step="0.01" label="Percentage of Job (%)" min="0" max="100" placeholder="5" required />
+                    <flux:input wire:model="itemPercent" type="number" step="0.01" :label="__('Percentage of Job (%)')" min="0" max="100" placeholder="5" required />
                 @endif
 
                 <div class="flex flex-wrap gap-4">
-                    <flux:checkbox wire:model="itemIsOptional" label="Customer can toggle on/off" />
-                    <flux:checkbox wire:model="itemIsIncludedByDefault" label="Included by default" />
-                    <flux:checkbox wire:model="itemIsCustomerSelectable" label="Visible to customer on proposal" />
+                    <flux:checkbox wire:model="itemIsOptional" :label="__('Customer can toggle on/off')" />
+                    <flux:checkbox wire:model="itemIsIncludedByDefault" :label="__('Included by default')" />
+                    <flux:checkbox wire:model="itemIsCustomerSelectable" :label="__('Visible to customer on proposal')" />
                 </div>
 
                 {{-- Default to Packages (checkboxes) --}}
                 @if (count($packages) > 0)
                     <div>
-                        <flux:text size="sm" class="font-medium mb-2">Default to Packages</flux:text>
-                        <flux:text size="xs" class="text-zinc-500 mb-3">Select which packages this item should be included in by default</flux:text>
+                        <flux:text size="sm" class="font-medium mb-2">{{ __('Default to Packages') }}</flux:text>
+                        <flux:text size="xs" class="text-zinc-500 mb-3">{{ __('Select which packages this item should be included in by default') }}</flux:text>
                         <div class="space-y-2">
                             @foreach ($packages as $pkg)
                                 <label class="flex items-center gap-2 cursor-pointer" wire:key="pkg-checkbox-{{ $pkg['id'] }}">
@@ -828,7 +827,7 @@ new class extends Component {
                                     />
                                     <flux:text size="sm">{{ $pkg['name'] }}</flux:text>
                                     @if ($pkg['is_default'])
-                                        <flux:badge size="sm" color="blue">Default</flux:badge>
+                                        <flux:badge size="sm" color="blue">{{ __('Default') }}</flux:badge>
                                     @endif
                                 </label>
                             @endforeach
@@ -837,19 +836,19 @@ new class extends Component {
                 @endif
 
                 <div class="flex justify-end gap-3">
-                    <flux:button wire:click="closeItemModal" variant="ghost">Cancel</flux:button>
+                    <flux:button wire:click="closeItemModal" variant="ghost">{{ __('Cancel') }}</flux:button>
                     <flux:button wire:click="saveItem" variant="primary">
-                        {{ $editingItemId ? 'Save Changes' : 'Add Item' }}
+                        {{ $editingItemId ? __('Save Changes') : __('Add Item') }}
                     </flux:button>
                 </div>
             </div>
         </flux:modal>
 
         {{-- Action messages --}}
-        <x-action-message class="me-3" on="package-saved">Package saved.</x-action-message>
-        <x-action-message class="me-3" on="package-deleted">Package deleted.</x-action-message>
-        <x-action-message class="me-3" on="item-saved">Item saved.</x-action-message>
-        <x-action-message class="me-3" on="item-deleted">Item deleted.</x-action-message>
-        <x-action-message class="me-3" on="packages-seeded">Default packages created.</x-action-message>
+        <x-action-message class="me-3" on="package-saved">{{ __('Package saved.') }}</x-action-message>
+        <x-action-message class="me-3" on="package-deleted">{{ __('Package deleted.') }}</x-action-message>
+        <x-action-message class="me-3" on="item-saved">{{ __('Item saved.') }}</x-action-message>
+        <x-action-message class="me-3" on="item-deleted">{{ __('Item deleted.') }}</x-action-message>
+        <x-action-message class="me-3" on="packages-seeded">{{ __('Default packages created.') }}</x-action-message>
     </x-pages::settings.layout>
 </section>

@@ -74,7 +74,7 @@ new class extends Component
         $service->setAllowedColors($this->job, $this->allowedColors);
         $this->job->refresh();
 
-        session()->flash('success', 'Scheduling details saved.');
+        session()->flash('success', __('Scheduling details saved.'));
         $this->dispatch('job-updated');
     }
 
@@ -101,7 +101,7 @@ new class extends Component
         $this->job->refresh();
         unset($this->serviceRequirements);
 
-        session()->flash('success', "{$requirement->serviceCategory->name} requirements saved.");
+        session()->flash('success', __(':name requirements saved.', ['name' => __($requirement->serviceCategory->name)]));
     }
 
     /**
@@ -109,6 +109,19 @@ new class extends Component
      */
     public function openDispatchModal(int $requirementId): void
     {
+        // Auto-save the requirement so eligible crew filter uses current UI values
+        $requirement = $this->job->serviceRequirements()->findOrFail($requirementId);
+        $crewSize = $this->requirementCrewSizes[$requirementId] ?? $requirement->required_crew_size;
+        $date = $this->requirementDates[$requirementId] ?? null;
+
+        $requirement->update([
+            'required_crew_size' => max(1, (int) $crewSize),
+            'scheduled_date' => $date ?: null,
+        ]);
+
+        $this->job->refresh();
+        unset($this->serviceRequirements);
+
         $this->activeDispatchServiceId = $requirementId;
         $this->selectedCrewIds = [];
         unset($this->eligibleCrews);
@@ -121,14 +134,14 @@ new class extends Component
     public function confirmCompanyDate(): void
     {
         if (! $this->job->scheduled_date) {
-            session()->flash('error', 'Set a scheduled date first.');
+            session()->flash('error', __('Set a scheduled date first.'));
 
             return;
         }
 
         app(JobService::class)->confirmCompanyDate($this->job);
         $this->job->refresh();
-        session()->flash('success', 'Company date confirmed.');
+        session()->flash('success', __('Company date confirmed.'));
         $this->dispatch('job-updated');
     }
 
@@ -138,14 +151,14 @@ new class extends Component
     public function confirmCompanyColors(): void
     {
         if ($this->job->colors()->count() === 0) {
-            session()->flash('error', 'Add at least one color first.');
+            session()->flash('error', __('Add at least one color first.'));
 
             return;
         }
 
         app(JobService::class)->confirmCompanyColors($this->job);
         $this->job->refresh();
-        session()->flash('success', 'Company colors confirmed.');
+        session()->flash('success', __('Company colors confirmed.'));
         $this->dispatch('job-updated');
     }
 
@@ -162,7 +175,7 @@ new class extends Component
         ]);
 
         if ($this->job->allowed_colors > 0 && $this->job->colors()->count() >= $this->job->allowed_colors) {
-            session()->flash('error', 'Maximum number of colors reached.');
+            session()->flash('error', __('Maximum number of colors reached.'));
 
             return;
         }
@@ -200,7 +213,7 @@ new class extends Component
     public function dispatchToCrews(): void
     {
         if (empty($this->selectedCrewIds)) {
-            session()->flash('error', 'Select at least one crew.');
+            session()->flash('error', __('Select at least one crew.'));
 
             return;
         }
@@ -223,8 +236,8 @@ new class extends Component
         $this->selectedCrewIds = [];
         unset($this->serviceRequirements);
 
-        $label = $category ? " for {$category->name}" : '';
-        session()->flash('success', "Dispatched to {$dispatched} crew(s){$label}.");
+        $label = $category ? ' ' . __('for :name', ['name' => __($category->name)]) : '';
+        session()->flash('success', __('Dispatched to :count crew(s)', ['count' => $dispatched]) . $label . '.');
         $this->dispatch('crew-dispatched');
     }
 
@@ -241,7 +254,7 @@ new class extends Component
         $this->job->refresh();
         unset($this->serviceRequirements);
 
-        session()->flash('success', "{$crew->name} replaced for {$category->name}.");
+        session()->flash('success', __(':crew replaced for :category.', ['crew' => $crew->name, 'category' => __($category->name)]));
     }
 
     #[Computed]
@@ -339,7 +352,7 @@ new class extends Component
 }; ?>
 
 <div>
-    <flux:heading size="sm" class="mb-4">Stage 2: Scheduling & Colors</flux:heading>
+    <flux:heading size="sm" class="mb-4">{{ __('Stage 2: Scheduling & Colors') }}</flux:heading>
 
     @if (session('success'))
         <flux:callout variant="success" class="mb-4">
@@ -356,22 +369,22 @@ new class extends Component
     <div class="grid gap-6 md:grid-cols-2">
         {{-- Scheduling Section --}}
         <div class="space-y-4">
-            <flux:heading size="xs">Scheduling</flux:heading>
+            <flux:heading size="xs">{{ __('Scheduling') }}</flux:heading>
             <div class="space-y-3">
                 <flux:field>
-                    <flux:label>Scheduled Date</flux:label>
+                    <flux:label>{{ __('Scheduled Date') }}</flux:label>
                     <flux:input type="date" wire:model="scheduledDate" />
                     <flux:error name="scheduledDate" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Allowed Colors</flux:label>
+                    <flux:label>{{ __('Allowed Colors') }}</flux:label>
                     <flux:input type="number" wire:model="allowedColors" min="1" max="20" />
                     <flux:error name="allowedColors" />
                 </flux:field>
 
                 <flux:button wire:click="saveScheduling" variant="primary" size="sm">
-                    Save Scheduling Details
+                    {{ __('Save Scheduling Details') }}
                 </flux:button>
             </div>
 
@@ -379,14 +392,14 @@ new class extends Component
             <div class="pt-4 border-t border-zinc-200 dark:border-zinc-700">
                 <div class="flex items-center justify-between">
                     <div>
-                        <flux:text class="font-medium text-sm">Company Date Confirmation</flux:text>
-                        <flux:text class="text-xs text-zinc-500">Confirm the scheduled date from the company side</flux:text>
+                        <flux:text class="font-medium text-sm">{{ __('Company Date Confirmation') }}</flux:text>
+                        <flux:text class="text-xs text-zinc-500">{{ __('Confirm the scheduled date from the company side') }}</flux:text>
                     </div>
                     @if ($job->company_date_confirmed)
-                        <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                        <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                     @else
                         <flux:button wire:click="confirmCompanyDate" size="sm" variant="filled">
-                            Confirm Date
+                            {{ __('Confirm Date') }}
                         </flux:button>
                     @endif
                 </div>
@@ -395,13 +408,13 @@ new class extends Component
             {{-- Customer Date Status --}}
             <div class="flex items-center justify-between">
                 <div>
-                    <flux:text class="font-medium text-sm">Customer Date Confirmation</flux:text>
-                    <flux:text class="text-xs text-zinc-500">Customer must confirm on their portal</flux:text>
+                    <flux:text class="font-medium text-sm">{{ __('Customer Date Confirmation') }}</flux:text>
+                    <flux:text class="text-xs text-zinc-500">{{ __('Customer must confirm on their portal') }}</flux:text>
                 </div>
                 @if ($job->customer_date_confirmed)
-                    <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                    <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                 @else
-                    <flux:badge size="sm" color="zinc">Waiting</flux:badge>
+                    <flux:badge size="sm" color="zinc">{{ __('Waiting') }}</flux:badge>
                 @endif
             </div>
         </div>
@@ -409,9 +422,9 @@ new class extends Component
         {{-- Colors Section --}}
         <div class="space-y-4">
             <div class="flex items-center justify-between">
-                <flux:heading size="xs">Colors ({{ $job->colors->count() }}/{{ $job->allowed_colors ?: '?' }})</flux:heading>
+                <flux:heading size="xs">{{ __('Colors') }} ({{ $job->colors->count() }}/{{ $job->allowed_colors ?: '?' }})</flux:heading>
                 <flux:button wire:click="$set('showColorModal', true)" size="sm" icon="plus">
-                    Add Color
+                    {{ __('Add Color') }}
                 </flux:button>
             </div>
 
@@ -437,21 +450,21 @@ new class extends Component
                     @endforeach
                 </div>
             @else
-                <flux:text class="text-zinc-500 text-sm">No colors added yet.</flux:text>
+                <flux:text class="text-zinc-500 text-sm">{{ __('No colors added yet.') }}</flux:text>
             @endif
 
             {{-- Company Colors Confirmation --}}
             <div class="pt-4 border-t border-zinc-200 dark:border-zinc-700">
                 <div class="flex items-center justify-between">
                     <div>
-                        <flux:text class="font-medium text-sm">Company Colors Confirmation</flux:text>
-                        <flux:text class="text-xs text-zinc-500">Confirm the color selections</flux:text>
+                        <flux:text class="font-medium text-sm">{{ __('Company Colors Confirmation') }}</flux:text>
+                        <flux:text class="text-xs text-zinc-500">{{ __('Confirm the color selections') }}</flux:text>
                     </div>
                     @if ($job->company_colors_confirmed)
-                        <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                        <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                     @else
                         <flux:button wire:click="confirmCompanyColors" size="sm" variant="filled">
-                            Confirm Colors
+                            {{ __('Confirm Colors') }}
                         </flux:button>
                     @endif
                 </div>
@@ -460,13 +473,13 @@ new class extends Component
             {{-- Customer Colors Status --}}
             <div class="flex items-center justify-between">
                 <div>
-                    <flux:text class="font-medium text-sm">Customer Colors Confirmation</flux:text>
-                    <flux:text class="text-xs text-zinc-500">Customer must confirm on their portal</flux:text>
+                    <flux:text class="font-medium text-sm">{{ __('Customer Colors Confirmation') }}</flux:text>
+                    <flux:text class="text-xs text-zinc-500">{{ __('Customer must confirm on their portal') }}</flux:text>
                 </div>
                 @if ($job->customer_colors_confirmed)
-                    <flux:badge size="sm" color="green">Confirmed</flux:badge>
+                    <flux:badge size="sm" color="green">{{ __('Confirmed') }}</flux:badge>
                 @else
-                    <flux:badge size="sm" color="zinc">Waiting</flux:badge>
+                    <flux:badge size="sm" color="zinc">{{ __('Waiting') }}</flux:badge>
                 @endif
             </div>
         </div>
@@ -474,10 +487,10 @@ new class extends Component
 
     {{-- Service Requirements & Dispatch Section --}}
     <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
-        <flux:heading size="xs" class="mb-4">Crew Dispatch by Service</flux:heading>
+        <flux:heading size="xs" class="mb-4">{{ __('Crew Dispatch by Service') }}</flux:heading>
 
         @if ($this->serviceRequirements->isEmpty())
-            <flux:text class="text-zinc-500 text-sm">No service requirements configured for this job.</flux:text>
+            <flux:text class="text-zinc-500 text-sm">{{ __('No service requirements configured for this job.') }}</flux:text>
         @else
             <div class="space-y-4">
                 @foreach ($this->serviceRequirements as $requirement)
@@ -494,14 +507,14 @@ new class extends Component
                                 @if ($category->icon)
                                     <flux:icon :name="$category->icon" class="w-5 h-5 text-zinc-500" />
                                 @endif
-                                <flux:heading size="xs">{{ $category->name }}</flux:heading>
+                                <flux:heading size="xs">{{ __($category->name) }}</flux:heading>
                                 <flux:badge size="sm" :color="$this->statusColor($requirement->status)">
                                     {{ ucfirst($requirement->status) }}
                                 </flux:badge>
                             </div>
                             @if ($this->dispatchStatus !== 'not_ready')
                                 <flux:button wire:click="openDispatchModal({{ $requirement->id }})" size="sm" icon="paper-airplane">
-                                    {{ $requirement->isDispatched() || $requirement->isAccepted() ? 'Dispatch More' : 'Dispatch' }}
+                                    {{ $requirement->isDispatched() || $requirement->isAccepted() ? __('Dispatch More') : __('Dispatch') }}
                                 </flux:button>
                             @endif
                         </div>
@@ -509,7 +522,7 @@ new class extends Component
                         {{-- Service Settings --}}
                         <div class="grid gap-3 sm:grid-cols-2 mb-3">
                             <flux:field>
-                                <flux:label>Required Crew Size</flux:label>
+                                <flux:label>{{ __('Required Crew Size') }}</flux:label>
                                 <flux:input
                                     type="number"
                                     wire:model="requirementCrewSizes.{{ $requirement->id }}"
@@ -518,7 +531,7 @@ new class extends Component
                                 />
                             </flux:field>
                             <flux:field>
-                                <flux:label>Service Date</flux:label>
+                                <flux:label>{{ __('Service Date') }}</flux:label>
                                 <flux:input
                                     type="date"
                                     wire:model="requirementDates.{{ $requirement->id }}"
@@ -526,7 +539,7 @@ new class extends Component
                             </flux:field>
                         </div>
                         <flux:button wire:click="saveServiceRequirement({{ $requirement->id }})" size="xs" variant="filled">
-                            Save {{ $category->name }} Settings
+                            {{ __('Save') }} {{ __($category->name) }} {{ __('Settings') }}
                         </flux:button>
 
                         {{-- Dispatched/Accepted Crews for this service --}}
@@ -540,27 +553,27 @@ new class extends Component
                                             <div>
                                                 <flux:text class="text-sm font-medium">{{ $crew->name }}</flux:text>
                                                 <flux:text class="text-xs text-zinc-500">
-                                                    Crew of {{ $crew->crewProfile->crew_size ?? '?' }}
+                                                    {{ __('Crew of') }} {{ $crew->crewProfile->crew_size ?? '?' }}
                                                 </flux:text>
                                             </div>
                                         </div>
                                         <div class="flex items-center gap-2">
                                             @if ($crew->pivot->status === 'accepted')
-                                                <flux:badge size="sm" color="green">Accepted</flux:badge>
+                                                <flux:badge size="sm" color="green">{{ __('Accepted') }}</flux:badge>
                                                 <flux:button
                                                     wire:click="replaceCrew({{ $crew->id }}, {{ $category->id }})"
-                                                    wire:confirm="Replace {{ $crew->name }} for {{ $category->name }}? This will reset this service to dispatched status."
+                                                    wire:confirm="{{ __('Replace :name for :category? This will reset this service to dispatched status.', ['name' => $crew->name, 'category' => __($category->name)]) }}"
                                                     size="xs"
                                                     variant="ghost"
                                                 >
-                                                    Replace
+                                                    {{ __('Replace') }}
                                                 </flux:button>
                                             @elseif ($crew->pivot->status === 'dispatched')
-                                                <flux:badge size="sm" color="blue">Dispatched</flux:badge>
+                                                <flux:badge size="sm" color="blue">{{ __('Dispatched') }}</flux:badge>
                                             @elseif ($crew->pivot->status === 'rejected')
-                                                <flux:badge size="sm" color="red">Rejected</flux:badge>
+                                                <flux:badge size="sm" color="red">{{ __('Rejected') }}</flux:badge>
                                             @elseif ($crew->pivot->status === 'replaced')
-                                                <flux:badge size="sm" color="zinc">Replaced</flux:badge>
+                                                <flux:badge size="sm" color="zinc">{{ __('Replaced') }}</flux:badge>
                                             @endif
                                         </div>
                                     </div>
@@ -574,7 +587,7 @@ new class extends Component
 
         @if ($this->dispatchStatus === 'not_ready')
             <flux:text class="text-sm text-zinc-500 mt-3">
-                All 4 confirmations (company date, customer date, company colors, customer colors) must be completed before dispatching.
+                {{ __('All 4 confirmations (company date, customer date, company colors, customer colors) must be completed before dispatching.') }}
             </flux:text>
         @endif
     </div>
@@ -582,32 +595,32 @@ new class extends Component
     {{-- Add Color Modal --}}
     <flux:modal wire:model="showColorModal" class="max-w-md">
         <div class="space-y-4">
-            <flux:heading size="lg">Add Color</flux:heading>
+            <flux:heading size="lg">{{ __('Add Color') }}</flux:heading>
 
             <flux:field>
-                <flux:label>Color Name</flux:label>
-                <flux:input wire:model="newColorName" placeholder="e.g. Simply White" />
+                <flux:label>{{ __('Color Name') }}</flux:label>
+                <flux:input wire:model="newColorName" :placeholder="__('e.g. Simply White')" />
                 <flux:error name="newColorName" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Brand (optional)</flux:label>
-                <flux:input wire:model="newColorBrand" placeholder="e.g. Benjamin Moore" />
+                <flux:label>{{ __('Brand (optional)') }}</flux:label>
+                <flux:input wire:model="newColorBrand" :placeholder="__('e.g. Benjamin Moore')" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Color Code (optional)</flux:label>
-                <flux:input wire:model="newColorCode" placeholder="e.g. OC-17" />
+                <flux:label>{{ __('Color Code (optional)') }}</flux:label>
+                <flux:input wire:model="newColorCode" :placeholder="__('e.g. OC-17')" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Hex Color (optional)</flux:label>
+                <flux:label>{{ __('Hex Color (optional)') }}</flux:label>
                 <flux:input type="color" wire:model="newColorHex" />
             </flux:field>
 
             <div class="flex justify-end gap-2">
-                <flux:button wire:click="$set('showColorModal', false)" variant="ghost">Cancel</flux:button>
-                <flux:button wire:click="addColor" variant="primary">Add Color</flux:button>
+                <flux:button wire:click="$set('showColorModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                <flux:button wire:click="addColor" variant="primary">{{ __('Add Color') }}</flux:button>
             </div>
         </div>
     </flux:modal>
@@ -619,26 +632,26 @@ new class extends Component
                 $activeReq = $activeDispatchServiceId
                     ? $this->serviceRequirements->firstWhere('id', $activeDispatchServiceId)
                     : null;
-                $activeCategoryName = $activeReq?->serviceCategory?->name ?? 'Crews';
+                $activeCategoryName = $activeReq?->serviceCategory ? __($activeReq->serviceCategory->name) : __('Crews');
                 $requiredSize = $activeReq?->required_crew_size ?? $job->required_crew_size;
             @endphp
 
-            <flux:heading size="lg">Dispatch {{ $activeCategoryName }} Crews</flux:heading>
+            <flux:heading size="lg">{{ __('Dispatch') }} {{ $activeCategoryName }} {{ __('Crews') }}</flux:heading>
             <flux:text class="text-zinc-500">
-                Select crews to dispatch for {{ strtolower($activeCategoryName) }}. Only crews with {{ $requiredSize }}+ members in this service category are shown.
+                {{ __('Select crews to dispatch for :category. Only crews with :size+ members in this service category are shown.', ['category' => strtolower($activeCategoryName), 'size' => $requiredSize]) }}
             </flux:text>
 
             {{-- Crew Stats --}}
             <div class="flex gap-4 text-sm">
                 <div class="flex items-center gap-1.5">
                     <flux:icon name="users" class="w-4 h-4 text-zinc-400" />
-                    <span class="text-zinc-500">Company:</span>
-                    <span class="font-medium">{{ $this->companySettings->total_painters ?? 4 }} painters</span>
+                    <span class="text-zinc-500">{{ __('Company:') }}</span>
+                    <span class="font-medium">{{ $this->companySettings->total_painters ?? 4 }} {{ __('painters') }}</span>
                 </div>
                 <div class="flex items-center gap-1.5">
                     <flux:icon name="user-group" class="w-4 h-4 text-zinc-400" />
-                    <span class="text-zinc-500">Registered:</span>
-                    <span class="font-medium">{{ $this->registeredCrewsCount }} crews ({{ $this->totalPaintersFromCrews }} painters)</span>
+                    <span class="text-zinc-500">{{ __('Registered:') }}</span>
+                    <span class="font-medium">{{ $this->registeredCrewsCount }} {{ __('crews') }} ({{ $this->totalPaintersFromCrews }} {{ __('painters') }})</span>
                 </div>
             </div>
 
@@ -666,31 +679,31 @@ new class extends Component
                             <div class="flex-1">
                                 <flux:text class="font-medium text-sm">{{ $crew->name }}</flux:text>
                                 <flux:text class="text-xs text-zinc-500">
-                                    Crew of {{ $crew->crewProfile->crew_size }}
+                                    {{ __('Crew of') }} {{ $crew->crewProfile->crew_size }}
                                     @if ($crew->crewProfile->specialties)
                                         &middot; {{ implode(', ', array_slice($crew->crewProfile->specialties, 0, 2)) }}
                                     @endif
                                 </flux:text>
                             </div>
                             @if ($alreadyDispatched)
-                                <flux:badge size="sm" color="blue">Already dispatched</flux:badge>
+                                <flux:badge size="sm" color="blue">{{ __('Already dispatched') }}</flux:badge>
                             @endif
                         </label>
                     @endforeach
                 </div>
 
                 <div class="flex justify-end gap-2">
-                    <flux:button wire:click="$set('showDispatchModal', false)" variant="ghost">Cancel</flux:button>
+                    <flux:button wire:click="$set('showDispatchModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
                     <flux:button wire:click="dispatchToCrews" variant="primary" icon="paper-airplane">
-                        Dispatch
+                        {{ __('Dispatch') }}
                     </flux:button>
                 </div>
             @else
                 <div class="text-center py-6">
                     <flux:icon name="user-group" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                    <flux:text class="text-zinc-500">No eligible crews found.</flux:text>
+                    <flux:text class="text-zinc-500">{{ __('No eligible crews found.') }}</flux:text>
                     <flux:text class="text-sm text-zinc-400 mt-1">
-                        No registered {{ strtolower($activeCategoryName) }} crews meet the minimum size of {{ $requiredSize }}.
+                        {{ __('No registered :category crews meet the minimum size of :size.', ['category' => strtolower($activeCategoryName), 'size' => $requiredSize]) }}
                     </flux:text>
                 </div>
             @endif

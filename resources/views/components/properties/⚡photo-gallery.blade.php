@@ -66,7 +66,7 @@ new class extends Component {
 
         $this->property->refresh();
         $this->dispatch('photo-uploaded');
-        session()->flash('success', 'Photo uploaded successfully.');
+        session()->flash('success', __('Photo uploaded successfully.'));
         $this->closeUploadModal();
     }
 
@@ -79,7 +79,7 @@ new class extends Component {
 
         $this->property->refresh();
         $this->dispatch('photo-deleted');
-        session()->flash('success', 'Photo deleted successfully.');
+        session()->flash('success', __('Photo deleted successfully.'));
     }
 
     public function updateSortOrder(array $orderedIds): void
@@ -101,7 +101,7 @@ new class extends Component {
             {{ $this->photos->count() }} {{ Str::plural('photo', $this->photos->count()) }}
         </flux:text>
         <flux:button wire:click="openUploadModal" icon="plus" size="sm">
-            Upload Photo
+            {{ __('Upload Photo') }}
         </flux:button>
     </div>
 
@@ -125,7 +125,7 @@ new class extends Component {
                     <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
                         <flux:button
                             wire:click="deletePhoto({{ $propertyPhoto->id }})"
-                            wire:confirm="Are you sure you want to delete this photo?"
+                            :wire:confirm="__('Are you sure you want to delete this photo?')"
                             variant="ghost"
                             size="sm"
                             icon="trash"
@@ -153,20 +153,20 @@ new class extends Component {
     @else
         <div class="text-center py-8">
             <flux:icon name="photo" class="mx-auto h-12 w-12 text-zinc-400" />
-            <flux:heading size="sm" class="mt-4">No photos yet</flux:heading>
+            <flux:heading size="sm" class="mt-4">{{ __('No photos yet') }}</flux:heading>
             <flux:text class="mt-2 text-zinc-500">
-                Upload photos to document this property.
+                {{ __('Upload photos to document this property.') }}
             </flux:text>
         </div>
     @endif
 
     <flux:modal wire:model="showUploadModal" variant="flyout" class="max-w-md">
         <form wire:submit="uploadPhoto">
-            <flux:heading size="lg" class="mb-6">Upload Photo</flux:heading>
+            <flux:heading size="lg" class="mb-6">{{ __('Upload Photo') }}</flux:heading>
 
             <div class="space-y-4">
                 <flux:field>
-                    <flux:label>Photo</flux:label>
+                    <flux:label>{{ __('Photo') }}</flux:label>
                     <input
                         type="file"
                         wire:model="photo"
@@ -197,30 +197,30 @@ new class extends Component {
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Category</flux:label>
+                    <flux:label>{{ __('Category') }}</flux:label>
                     <flux:select wire:model="category">
-                        <option value="general">General</option>
-                        <option value="before">Before</option>
-                        <option value="during">During</option>
-                        <option value="after">After</option>
+                        <option value="general">{{ __('General') }}</option>
+                        <option value="before">{{ __('Before') }}</option>
+                        <option value="during">{{ __('During') }}</option>
+                        <option value="after">{{ __('After') }}</option>
                     </flux:select>
                     <flux:error name="category" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Caption (optional)</flux:label>
-                    <flux:input wire:model="caption" placeholder="Describe this photo..." />
+                    <flux:label>{{ __('Caption (optional)') }}</flux:label>
+                    <flux:input wire:model="caption" :placeholder="__('Describe this photo...')" />
                     <flux:error name="caption" />
                 </flux:field>
             </div>
 
             <div class="mt-6 flex justify-end gap-3">
                 <flux:button variant="ghost" wire:click="closeUploadModal" type="button">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
-                    <span wire:loading.remove wire:target="uploadPhoto">Upload</span>
-                    <span wire:loading wire:target="uploadPhoto">Uploading...</span>
+                    <span wire:loading.remove wire:target="uploadPhoto">{{ __('Upload') }}</span>
+                    <span wire:loading wire:target="uploadPhoto">{{ __('Uploading...') }}</span>
                 </flux:button>
             </div>
         </form>

@@ -189,9 +189,9 @@ new class extends Component
     {{-- Header --}}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <flux:heading size="lg">Budget (P&L)</flux:heading>
+            <flux:heading size="lg">{{ __('Budget (P&L)') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                Annual profit & loss with plan vs actual tracking.
+                {{ __('Annual profit & loss with plan vs actual tracking.') }}
             </flux:text>
         </div>
 
@@ -215,11 +215,11 @@ new class extends Component
                     size="sm"
                     icon="arrow-path"
                 >
-                    <span wire:loading.remove wire:target="syncActuals">Sync Actuals</span>
-                    <span wire:loading wire:target="syncActuals">Syncing...</span>
+                    <span wire:loading.remove wire:target="syncActuals">{{ __('Sync Actuals') }}</span>
+                    <span wire:loading wire:target="syncActuals">{{ __('Syncing...') }}</span>
                 </flux:button>
                 <flux:button wire:click="exportCsv" variant="ghost" size="sm" icon="arrow-down-tray">
-                    Export CSV
+                    {{ __('Export CSV') }}
                 </flux:button>
             @endif
         </div>
@@ -243,12 +243,12 @@ new class extends Component
 
     @if (! $hasCategories)
         <flux:callout variant="outline" icon="banknotes">
-            <flux:callout.heading>No budget categories configured</flux:callout.heading>
+            <flux:callout.heading>{{ __('No budget categories configured') }}</flux:callout.heading>
             <flux:callout.text>
                 @if ($this->canManage)
-                    Load default budget categories to get started with P&L tracking.
+                    {{ __('Load default budget categories to get started with P&L tracking.') }}
                 @else
-                    Budget categories have not been configured yet.
+                    {{ __('Budget categories have not been configured yet.') }}
                 @endif
             </flux:callout.text>
         </flux:callout>
@@ -256,7 +256,7 @@ new class extends Component
         @if ($this->canManage)
             <div class="mt-4">
                 <flux:button wire:click="seedDefaults" variant="primary" size="sm" icon="sparkles">
-                    Load Default Categories
+                    {{ __('Load Default Categories') }}
                 </flux:button>
             </div>
         @endif
@@ -266,22 +266,22 @@ new class extends Component
                 <thead class="bg-zinc-50 dark:bg-zinc-800">
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Category
+                            {{ __('Category') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Prior Year Actual
-                        </th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            %
-                        </th>
-                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            {{ $this->year }} Plan
+                            {{ __('Prior Year Actual') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             %
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            {{ $this->year }} Actual
+                            {{ $this->year }} {{ __('Plan') }}
+                        </th>
+                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                            %
+                        </th>
+                        <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                            {{ $this->year }} {{ __('Actual') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                             %
@@ -315,7 +315,7 @@ new class extends Component
                                         {{ $row['name'] }}
                                         @if ($row['sync_source'] && $row['sync_source'] !== 'manual')
                                             <flux:badge size="sm" variant="pill" color="sky" class="text-[10px]">
-                                                synced
+                                                {{ __('synced') }}
                                             </flux:badge>
                                         @endif
                                     </div>
@@ -349,7 +349,7 @@ new class extends Component
                         {{-- Section Total --}}
                         <tr class="border-t-2 border-zinc-300 bg-zinc-50 font-semibold dark:border-zinc-600 dark:bg-zinc-800/50">
                             <td class="whitespace-nowrap px-4 py-2 text-sm text-zinc-900 dark:text-zinc-100">
-                                Total {{ $section['label'] }}
+                                {{ __('Total') }} {{ $section['label'] }}
                             </td>
                             <td class="whitespace-nowrap px-4 py-2 text-right text-sm text-zinc-900 dark:text-zinc-100">
                                 ${{ number_format($section['totals']['prior_year_actual'], 2) }}
@@ -376,7 +376,7 @@ new class extends Component
                             @php $gp = $budget['computed']['gross_profit']; @endphp
                             <tr class="border-t-2 border-green-300 bg-green-50 font-bold dark:border-green-800 dark:bg-green-900/20">
                                 <td class="whitespace-nowrap px-4 py-3 text-sm text-green-800 dark:text-green-300">
-                                    GROSS PROFIT
+                                    {{ __('GROSS PROFIT') }}
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-3 text-right text-sm {{ $gp['prior_year_actual'] >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-600 dark:text-red-400' }}">
                                     ${{ number_format($gp['prior_year_actual'], 2) }}
@@ -404,7 +404,7 @@ new class extends Component
                     @php $tf = $budget['computed']['total_fixed']; @endphp
                     <tr class="border-t-2 border-zinc-400 bg-zinc-100 font-bold dark:border-zinc-500 dark:bg-zinc-800">
                         <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
-                            TOTAL FIXED EXPENSES
+                            {{ __('TOTAL FIXED EXPENSES') }}
                         </td>
                         <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">
                             ${{ number_format($tf['prior_year_actual'], 2) }}
@@ -430,7 +430,7 @@ new class extends Component
                     @php $np = $budget['computed']['net_profit']; @endphp
                     <tr class="border-t-2 border-blue-300 bg-blue-50 font-bold dark:border-blue-800 dark:bg-blue-900/20">
                         <td class="whitespace-nowrap px-4 py-3 text-sm text-blue-800 dark:text-blue-300">
-                            NET PROFIT
+                            {{ __('NET PROFIT') }}
                         </td>
                         <td class="whitespace-nowrap px-4 py-3 text-right text-sm {{ $np['prior_year_actual'] >= 0 ? 'text-blue-700 dark:text-blue-400' : 'text-red-600 dark:text-red-400' }}">
                             ${{ number_format($np['prior_year_actual'], 2) }}
@@ -461,14 +461,14 @@ new class extends Component
         <flux:modal wire:model="showEditModal" name="edit-budget-item" class="md:w-[32rem]">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Edit Budget Item</flux:heading>
+                    <flux:heading size="lg">{{ __('Edit Budget Item') }}</flux:heading>
                     <flux:text class="mt-2">{{ $editCategoryName }} - {{ $this->year }}</flux:text>
                 </div>
 
                 <div class="grid grid-cols-1 gap-4">
                     <flux:input
                         wire:model="editPriorYearActual"
-                        label="Prior Year Actual ($)"
+                        :label="__('Prior Year Actual ($)')"
                         type="number"
                         step="0.01"
                         min="0"
@@ -476,7 +476,7 @@ new class extends Component
 
                     <flux:input
                         wire:model="editCurrentYearPlan"
-                        label="{{ $this->year }} Plan ($)"
+                        :label="$this->year . ' ' . __('Plan ($)')"
                         type="number"
                         step="0.01"
                         min="0"
@@ -484,7 +484,7 @@ new class extends Component
 
                     <flux:input
                         wire:model="editCurrentYearActual"
-                        label="{{ $this->year }} Actual ($)"
+                        :label="$this->year . ' ' . __('Actual ($)')"
                         type="number"
                         step="0.01"
                         min="0"
@@ -492,15 +492,15 @@ new class extends Component
 
                     <flux:textarea
                         wire:model="editNotes"
-                        label="Notes"
+                        :label="__('Notes')"
                         rows="2"
-                        placeholder="Optional notes..."
+                        :placeholder="__('Optional notes...')"
                     />
                 </div>
 
                 <div class="flex justify-end gap-3">
-                    <flux:button wire:click="$set('showEditModal', false)" variant="ghost">Cancel</flux:button>
-                    <flux:button wire:click="saveEdit" variant="primary">Save Changes</flux:button>
+                    <flux:button wire:click="$set('showEditModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                    <flux:button wire:click="saveEdit" variant="primary">{{ __('Save Changes') }}</flux:button>
                 </div>
             </div>
         </flux:modal>

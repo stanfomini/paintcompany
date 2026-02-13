@@ -199,7 +199,7 @@ class EstimatePackage extends Model
      */
     public function getTierLabelAttribute(): string
     {
-        return self::TIER_LABELS[$this->tier] ?? $this->tier;
+        return __(self::TIER_LABELS[$this->tier] ?? $this->tier);
     }
 
     /**

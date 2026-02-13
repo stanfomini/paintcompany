@@ -16,6 +16,15 @@ new class extends Component {
         'both' => 'Interior & Exterior',
     ];
 
+    public function getTranslatedProjectTypes(): array
+    {
+        return [
+            'interior' => __('Interior'),
+            'exterior' => __('Exterior'),
+            'both' => __('Interior & Exterior'),
+        ];
+    }
+
     public ?Estimate $estimate = null;
 
     public bool $isEditing = false;
@@ -56,11 +65,11 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'title.required' => 'Please enter a title for the estimate.',
-            'totalSqft.required' => 'Please enter the total square footage.',
-            'totalSqft.min' => 'Square footage must be at least 1.',
-            'ratePerSqft.required' => 'Please enter the rate per square foot.',
-            'ratePerSqft.min' => 'Rate must be greater than 0.',
+            'title.required' => __('Please enter a title for the estimate.'),
+            'totalSqft.required' => __('Please enter the total square footage.'),
+            'totalSqft.min' => __('Square footage must be at least 1.'),
+            'ratePerSqft.required' => __('Please enter the rate per square foot.'),
+            'ratePerSqft.min' => __('Rate must be greater than 0.'),
         ];
     }
 
@@ -168,12 +177,12 @@ new class extends Component {
                 $amendmentService = app(EstimateAmendmentService::class);
                 $amendment = $amendmentService->createAmendment($this->estimate, auth()->user());
                 if ($amendment) {
-                    session()->flash('success', "Estimate updated. Amendment #{$amendment->amendment_number} created — customer will be notified.");
+                    session()->flash('success', __("Estimate updated. Amendment #:number created — customer will be notified.", ['number' => $amendment->amendment_number]));
                 } else {
-                    session()->flash('success', 'Estimate updated (no material changes detected).');
+                    session()->flash('success', __('Estimate updated (no material changes detected).'));
                 }
             } else {
-                session()->flash('success', 'Estimate updated successfully.');
+                session()->flash('success', __('Estimate updated successfully.'));
             }
 
             $this->dispatch('estimate-updated');
@@ -189,7 +198,7 @@ new class extends Component {
             }
 
             $this->dispatch('estimate-created');
-            session()->flash('success', 'Estimate created successfully.');
+            session()->flash('success', __('Estimate created successfully.'));
         }
 
         $this->redirect(route('estimates.show', $this->estimate), navigate: true);
@@ -212,18 +221,18 @@ new class extends Component {
             <div class="flex items-center gap-4">
                 @if ($isEditing)
                     <flux:button variant="ghost" :href="route('estimates.show', $estimate)" icon="arrow-left" wire:navigate>
-                        Back
+                        {{ __('Back') }}
                     </flux:button>
                 @else
                     <flux:button variant="ghost" :href="route('deals.show', $deal)" icon="arrow-left" wire:navigate>
-                        Back to Deal
+                        {{ __('Back to Deal') }}
                     </flux:button>
                 @endif
                 <flux:heading size="xl">
                     @if ($isEditing)
-                        Edit Simple Estimate: {{ $estimate->estimate_number }}
+                        {{ __('Edit Simple Estimate:') }} {{ $estimate->estimate_number }}
                     @else
-                        Quick Estimate ($/Sq Ft)
+                        {{ __('Quick Estimate ($/Sq Ft)') }}
                     @endif
                 </flux:heading>
             </div>
@@ -239,18 +248,18 @@ new class extends Component {
             <div class="space-y-6">
                 {{-- Deal Information --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">Deal Information</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Deal Information') }}</flux:heading>
                     <div class="grid gap-4 md:grid-cols-2">
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Deal</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Deal') }}</dt>
                             <dd class="mt-1">
                                 <flux:text class="font-medium">{{ $deal->title }}</flux:text>
                             </dd>
                         </div>
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer') }}</dt>
                             <dd class="mt-1">
-                                <flux:text>{{ $deal->customer->full_name }}</flux:text>
+                                <flux:text>{{ $deal->customer?->full_name ?? '-' }}</flux:text>
                             </dd>
                         </div>
                     </div>
@@ -258,26 +267,26 @@ new class extends Component {
 
                 {{-- Estimate Details --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">Estimate Details</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Estimate Details') }}</flux:heading>
                     <div class="space-y-4">
                         <flux:field>
-                            <flux:label>Title</flux:label>
-                            <flux:input wire:model="title" placeholder="e.g., Interior Painting - Whole House" />
+                            <flux:label>{{ __('Title') }}</flux:label>
+                            <flux:input wire:model="title" :placeholder="__('e.g., Interior Painting - Whole House')" />
                             <flux:error name="title" />
                         </flux:field>
 
                         <flux:field>
-                            <flux:label>Project Type</flux:label>
+                            <flux:label>{{ __('Project Type') }}</flux:label>
                             <div class="flex gap-6 mt-2">
-                                @foreach ($projectTypes as $value => $label)
-                                    <flux:radio wire:model.live="projectType" value="{{ $value }}" label="{{ $label }}" />
+                                @foreach ($this->getTranslatedProjectTypes() as $value => $label)
+                                    <flux:radio wire:model.live="projectType" value="{{ $value }}" :label="$label" />
                                 @endforeach
                             </div>
                             <flux:error name="projectType" />
                         </flux:field>
 
                         <flux:field>
-                            <flux:label>Valid Until</flux:label>
+                            <flux:label>{{ __('Valid Until') }}</flux:label>
                             <flux:input wire:model="validUntil" type="date" />
                             <flux:error name="validUntil" />
                         </flux:field>
@@ -286,16 +295,16 @@ new class extends Component {
 
                 {{-- Square Footage & Rate --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">Pricing</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Pricing') }}</flux:heading>
                     <div class="grid gap-4 md:grid-cols-2">
                         <flux:field>
-                            <flux:label>Total Square Feet</flux:label>
+                            <flux:label>{{ __('Total Square Feet') }}</flux:label>
                             <flux:input wire:model.live="totalSqft" type="number" step="0.01" min="1" placeholder="0.00" />
                             <flux:error name="totalSqft" />
                         </flux:field>
 
                         <flux:field>
-                            <flux:label>Rate per Sq Ft ($)</flux:label>
+                            <flux:label>{{ __('Rate per Sq Ft ($)') }}</flux:label>
                             <div class="relative">
                                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                                     <span class="text-zinc-500 dark:text-zinc-400 sm:text-sm">$</span>
@@ -306,7 +315,7 @@ new class extends Component {
                         </flux:field>
 
                         <flux:field>
-                            <flux:label>Tax Rate (%)</flux:label>
+                            <flux:label>{{ __('Tax Rate (%)') }}</flux:label>
                             <div class="relative">
                                 <flux:input wire:model.live="taxRate" type="number" step="0.01" min="0" max="100" placeholder="0.00" class="pr-8" />
                                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
@@ -317,7 +326,7 @@ new class extends Component {
                         </flux:field>
 
                         <flux:field>
-                            <flux:label>Discount ($)</flux:label>
+                            <flux:label>{{ __('Discount ($)') }}</flux:label>
                             <div class="relative">
                                 <div class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
                                     <span class="text-zinc-500 dark:text-zinc-400 sm:text-sm">$</span>
@@ -328,7 +337,7 @@ new class extends Component {
                         </flux:field>
 
                         <flux:field>
-                            <flux:label>Deposit (%)</flux:label>
+                            <flux:label>{{ __('Deposit (%)') }}</flux:label>
                             <div class="relative">
                                 <flux:input wire:model.live="depositPercent" type="number" step="0.01" min="0" max="100" placeholder="0.00" class="pr-8" />
                                 <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3">
@@ -342,40 +351,40 @@ new class extends Component {
 
                 {{-- Summary Card --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 bg-zinc-50 dark:bg-zinc-800">
-                    <flux:heading size="sm" class="mb-4">Estimate Summary</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Estimate Summary') }}</flux:heading>
                     <dl class="space-y-3">
                         <div class="flex justify-between">
                             <dt class="text-sm text-zinc-500 dark:text-zinc-400">
-                                {{ number_format($totalSqft, 0) }} sq ft x ${{ number_format($ratePerSqft, 2) }}/sq ft
+                                {{ number_format($totalSqft, 0) }} {{ __('sq ft') }} x ${{ number_format($ratePerSqft, 2) }}/{{ __('sq ft') }}
                             </dt>
                             <dd class="font-medium">${{ number_format($this->subtotal, 2) }}</dd>
                         </div>
                         <div class="flex justify-between text-sm text-zinc-500 dark:text-zinc-400">
-                            <dt>Subtotal</dt>
+                            <dt>{{ __('Subtotal') }}</dt>
                             <dd>${{ number_format($this->subtotal, 2) }}</dd>
                         </div>
                         @if ($taxRate > 0)
                             <div class="flex justify-between text-sm">
-                                <dt class="text-zinc-500 dark:text-zinc-400">Tax ({{ number_format($taxRate, 2) }}%)</dt>
+                                <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Tax') }} ({{ number_format($taxRate, 2) }}%)</dt>
                                 <dd>${{ number_format($this->taxAmount, 2) }}</dd>
                             </div>
                         @endif
                         @if ($discountAmount > 0)
                             <div class="flex justify-between text-sm">
-                                <dt class="text-zinc-500 dark:text-zinc-400">Discount</dt>
+                                <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Discount') }}</dt>
                                 <dd class="text-red-600 dark:text-red-400">-${{ number_format($discountAmount, 2) }}</dd>
                             </div>
                         @endif
                         <div class="flex justify-between pt-3 border-t border-zinc-200 dark:border-zinc-700">
-                            <dt class="text-lg font-semibold">Total</dt>
+                            <dt class="text-lg font-semibold">{{ __('Total') }}</dt>
                             <dd class="text-xl font-bold">${{ number_format($this->total, 2) }}</dd>
                         </div>
                         <div class="flex justify-between pt-3 border-t border-zinc-200 dark:border-zinc-700">
-                            <dt class="text-sm text-zinc-500 dark:text-zinc-400">Deposit ({{ number_format($depositPercent, 0) }}%)</dt>
+                            <dt class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Deposit') }} ({{ number_format($depositPercent, 0) }}%)</dt>
                             <dd class="font-medium">${{ number_format($this->depositAmount, 2) }}</dd>
                         </div>
                         <div class="flex justify-between">
-                            <dt class="text-sm text-zinc-500 dark:text-zinc-400">Balance Due</dt>
+                            <dt class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Balance Due') }}</dt>
                             <dd class="font-medium">${{ number_format($this->balanceDue, 2) }}</dd>
                         </div>
                     </dl>
@@ -383,9 +392,9 @@ new class extends Component {
 
                 {{-- Notes --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">Notes</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Notes') }}</flux:heading>
                     <flux:field>
-                        <flux:textarea wire:model="notes" rows="4" placeholder="Additional notes for the customer..." />
+                        <flux:textarea wire:model="notes" rows="4" :placeholder="__('Additional notes for the customer...')" />
                         <flux:error name="notes" />
                     </flux:field>
                 </div>
@@ -394,20 +403,20 @@ new class extends Component {
                 <div class="flex justify-end gap-3">
                     @if ($isEditing)
                         <flux:button variant="ghost" :href="route('estimates.show', $estimate)" wire:navigate>
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                     @else
                         <flux:button variant="ghost" :href="route('deals.show', $deal)" wire:navigate>
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                     @endif
                     <flux:button type="submit" wire:loading.attr="disabled">
-                        <span wire:loading.remove wire:target="saveAsDraft">Save as Draft</span>
-                        <span wire:loading wire:target="saveAsDraft">Saving...</span>
+                        <span wire:loading.remove wire:target="saveAsDraft">{{ __('Save as Draft') }}</span>
+                        <span wire:loading wire:target="saveAsDraft">{{ __('Saving...') }}</span>
                     </flux:button>
                     <flux:button wire:click="saveAndSend" type="button" variant="primary" wire:loading.attr="disabled">
-                        <span wire:loading.remove wire:target="saveAndSend">Save & Send</span>
-                        <span wire:loading wire:target="saveAndSend">Sending...</span>
+                        <span wire:loading.remove wire:target="saveAndSend">{{ __('Save & Send') }}</span>
+                        <span wire:loading wire:target="saveAndSend">{{ __('Sending...') }}</span>
                     </flux:button>
                 </div>
             </div>

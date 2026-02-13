@@ -63,11 +63,11 @@ new #[Layout('components.layouts.customer', ['title' => 'My Jobs'])] class exten
 
 <div>
     <div class="max-w-4xl mx-auto">
-        <flux:heading size="xl" class="mb-6">My Jobs</flux:heading>
+        <flux:heading size="xl" class="mb-6">{{ __('My Jobs') }}</flux:heading>
 
         {{-- Active Jobs --}}
         <div class="mb-8">
-            <flux:heading size="sm" class="mb-4">Active Jobs</flux:heading>
+            <flux:heading size="sm" class="mb-4">{{ __('Active Jobs') }}</flux:heading>
             @if ($this->activeJobs->count() > 0)
                 <div class="space-y-4">
                     @foreach ($this->activeJobs as $job)
@@ -101,7 +101,7 @@ new #[Layout('components.layouts.customer', ['title' => 'My Jobs'])] class exten
 
                                 @if ($job->scheduled_date)
                                     <flux:text class="text-xs text-zinc-400 mt-2">
-                                        Scheduled: {{ $job->scheduled_date->format('M j, Y') }}
+                                        {{ __('Scheduled') }}: {{ $job->scheduled_date->format('M j, Y') }}
                                     </flux:text>
                                 @endif
                             </div>
@@ -111,7 +111,7 @@ new #[Layout('components.layouts.customer', ['title' => 'My Jobs'])] class exten
             @else
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                     <flux:icon name="clipboard-document-check" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                    <flux:text class="text-zinc-500">No active jobs at this time.</flux:text>
+                    <flux:text class="text-zinc-500">{{ __('No active jobs at this time.') }}</flux:text>
                 </div>
             @endif
         </div>
@@ -119,7 +119,7 @@ new #[Layout('components.layouts.customer', ['title' => 'My Jobs'])] class exten
         {{-- Completed Jobs --}}
         @if ($this->completedJobs->count() > 0)
             <div>
-                <flux:heading size="sm" class="mb-4">Completed Jobs</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Completed Jobs') }}</flux:heading>
                 <div class="space-y-3">
                     @foreach ($this->completedJobs as $job)
                         <a href="{{ route('customer.jobs.show', $job) }}" class="block" wire:navigate wire:key="completed-job-{{ $job->id }}">
@@ -129,11 +129,11 @@ new #[Layout('components.layouts.customer', ['title' => 'My Jobs'])] class exten
                                         <flux:text class="font-medium">{{ $job->title }}</flux:text>
                                         <flux:text class="text-sm text-zinc-500">{{ $job->job_number }}</flux:text>
                                     </div>
-                                    <flux:badge size="sm" color="green">Completed</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Completed') }}</flux:badge>
                                 </div>
                                 @if ($job->actual_end_date)
                                     <flux:text class="text-xs text-zinc-400 mt-1">
-                                        Completed: {{ $job->actual_end_date->format('M j, Y') }}
+                                        {{ __('Completed') }}: {{ $job->actual_end_date->format('M j, Y') }}
                                     </flux:text>
                                 @endif
                             </div>

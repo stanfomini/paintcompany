@@ -51,15 +51,44 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
         app(ChatService::class)->markThreadAsRead($thread, $user);
     }
 
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:chat.thread.{$this->thread->id},.message.sent" => 'onNewMessage',
+            "echo-private:chat.thread.{$this->thread->id},.message.read" => '$refresh',
+        ];
+    }
+
     #[On('message-sent')]
     public function onMessageSent(): void
     {
         $user = auth('crew')->user();
         app(ChatService::class)->markThreadAsRead($this->thread, $user);
     }
+
+    public function onNewMessage(): void
+    {
+        unset($this->messages);
+        app(ChatService::class)->markThreadAsRead($this->thread, auth('crew')->user());
+    }
 }; ?>
 
-<div wire:poll.10s>
+<div
+    x-data="{ pollTimer: null }"
+    x-init="
+        if (window.Echo?.connector?.pusher) {
+            window.Echo.connector.pusher.connection.bind('disconnected', () => {
+                this.pollTimer = setInterval(() => $wire.$refresh(), 30000);
+            });
+            window.Echo.connector.pusher.connection.bind('connected', () => {
+                if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+            });
+        } else {
+            this.pollTimer = setInterval(() => $wire.$refresh(), 15000);
+        }
+    "
+    x-on:beforeunmount.window="if (this.pollTimer) clearInterval(this.pollTimer)"
+>
     <div class="max-w-4xl mx-auto">
         <div class="mb-6">
             <flux:button variant="ghost" href="{{ route('crew.chat.index') }}" icon="arrow-left">
@@ -123,15 +152,27 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
                                             <flux:text class="text-xs text-zinc-400 italic">{{ __('(edited)') }}</flux:text>
                                         @endif
                                     </div>
-                                    <div class="rounded-lg p-3 {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                    <div class="rounded-lg p-3 {{ $isOwnMessage ? 'bg-teal-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
                                         @if ($message->isAudio())
+                                            @php
+                                                $audioUrl = $message->metadata['audio_url'] ?? '';
+                                                $audioMime = $message->metadata['audio_mime_type'] ?? null;
+                                                $isM4a = $audioMime === 'audio/mp4' || str_ends_with($audioUrl, '.m4a');
+                                            @endphp
                                             <div class="space-y-2">
                                                 <audio controls class="w-full max-w-[280px]" preload="metadata">
-                                                    <source src="{{ $message->metadata['audio_url'] ?? '' }}">
+                                                    @if ($isM4a)
+                                                        <source src="{{ $audioUrl }}" type="audio/mp4">
+                                                    @else
+                                                        <source src="{{ $audioUrl }}" type="audio/webm; codecs=opus">
+                                                        <source src="{{ $audioUrl }}" type="audio/webm">
+                                                    @endif
+                                                    <source src="{{ $audioUrl }}" type="audio/mp4">
+                                                    <source src="{{ $audioUrl }}">
                                                 </audio>
                                                 @if (!empty($message->metadata['transcription']))
-                                                    <div class="pt-1 border-t {{ $isOwnMessage ? 'border-blue-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
-                                                        <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-blue-100' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                    <div class="pt-1 border-t {{ $isOwnMessage ? 'border-teal-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
+                                                        <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-teal-100' : 'text-zinc-600 dark:text-zinc-400' }}">
                                                             "{{ $message->metadata['transcription'] }}"
                                                         </flux:text>
                                                     </div>

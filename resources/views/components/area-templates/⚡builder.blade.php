@@ -409,7 +409,7 @@ new class extends Component
     public function removeSurface(int $index): void
     {
         if (count($this->surfaces) <= 1) {
-            session()->flash('error', 'At least one surface is required.');
+            session()->flash('error', __('At least one surface is required.'));
 
             return;
         }
@@ -918,10 +918,10 @@ new class extends Component
     protected function messages(): array
     {
         return [
-            'name.required' => 'Template name is required.',
-            'surfaces.required' => 'At least one surface is required.',
-            'surfaces.min' => 'At least one surface is required.',
-            'surfaces.*.name.required' => 'Each surface must have a name.',
+            'name.required' => __('Template name is required.'),
+            'surfaces.required' => __('At least one surface is required.'),
+            'surfaces.min' => __('At least one surface is required.'),
+            'surfaces.*.name.required' => __('Each surface must have a name.'),
         ];
     }
 
@@ -970,16 +970,16 @@ new class extends Component
         if ($this->isEditing) {
             // Check if user can modify
             if (! $this->template->canBeModifiedBy(auth()->user())) {
-                session()->flash('error', 'You do not have permission to modify this template.');
+                session()->flash('error', __('You do not have permission to modify this template.'));
 
                 return;
             }
 
             $service->updateTemplate($this->template, $data);
-            session()->flash('success', 'Template updated successfully.');
+            session()->flash('success', __('Template updated successfully.'));
         } else {
             $service->createTemplate($data, auth()->user());
-            session()->flash('success', 'Template created successfully.');
+            session()->flash('success', __('Template created successfully.'));
         }
 
         $this->redirect(route('area-templates.index'), navigate: true);
@@ -1061,13 +1061,13 @@ new class extends Component
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-4">
                 <flux:button variant="ghost" wire:click="cancel" icon="arrow-left">
-                    Back
+                    {{ __('Back') }}
                 </flux:button>
                 <flux:heading size="xl">
                     @if ($isEditing)
-                        Edit Area Template: {{ $template->name }}
+                        {{ __('Edit Area Template: :name', ['name' => __($template->name)]) }}
                     @else
-                        Create Area Template
+                        {{ __('Create Area Template') }}
                     @endif
                 </flux:heading>
             </div>
@@ -1089,18 +1089,18 @@ new class extends Component
                 {{-- Basic Info Section --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                     <div class="p-4 border-b border-zinc-200 dark:border-zinc-700">
-                        <flux:heading size="sm">Basic Information</flux:heading>
+                        <flux:heading size="sm">{{ __('Basic Information') }}</flux:heading>
                     </div>
                     <div class="p-4 space-y-4">
                         <div class="grid gap-4 sm:grid-cols-2">
                             <flux:field>
-                                <flux:label>Template Name</flux:label>
-                                <flux:input wire:model.live.debounce.300ms="name" placeholder="e.g., Living Room" />
+                                <flux:label>{{ __('Template Name') }}</flux:label>
+                                <flux:input wire:model.live.debounce.300ms="name" :placeholder="__('e.g., Living Room')" />
                                 <flux:error name="name" />
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Icon</flux:label>
+                                <flux:label>{{ __('Icon') }}</flux:label>
                                 <flux:select wire:model="icon">
                                     @foreach ($this->availableIcons as $iconKey => $iconLabel)
                                         <option value="{{ $iconKey }}">{{ $iconLabel }}</option>
@@ -1111,24 +1111,24 @@ new class extends Component
                         </div>
 
                         <flux:field>
-                            <flux:label>Description (Optional)</flux:label>
-                            <flux:textarea wire:model.blur="description" rows="2" placeholder="Brief description of this template..." />
+                            <flux:label>{{ __('Description (Optional)') }}</flux:label>
+                            <flux:textarea wire:model.blur="description" rows="2" :placeholder="__('Brief description of this template...')" />
                             <flux:error name="description" />
                         </flux:field>
 
                         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                             <flux:field>
-                                <flux:label>Category</flux:label>
+                                <flux:label>{{ __('Category') }}</flux:label>
                                 <flux:select wire:model="templateCategoryId">
                                     @foreach ($this->availableCategories as $category)
-                                        <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                        <option value="{{ $category->id }}">{{ __($category->name) }}</option>
                                     @endforeach
                                 </flux:select>
                                 <flux:error name="templateCategoryId" />
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Scope Type</flux:label>
+                                <flux:label>{{ __('Scope Type') }}</flux:label>
                                 <flux:select wire:model.live="scopeType">
                                     @foreach ($this->scopeOptions as $value => $label)
                                         <option value="{{ $value }}">{{ $label }}</option>
@@ -1138,7 +1138,7 @@ new class extends Component
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Visibility</flux:label>
+                                <flux:label>{{ __('Visibility') }}</flux:label>
                                 <flux:select wire:model="visibility">
                                     @foreach ($this->visibilityOptions as $value => $label)
                                         <option value="{{ $value }}">{{ $label }}</option>
@@ -1148,11 +1148,11 @@ new class extends Component
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Status</flux:label>
+                                <flux:label>{{ __('Status') }}</flux:label>
                                 <div class="flex items-center gap-2 pt-2">
                                     <flux:switch wire:model="isActive" />
                                     <span class="text-sm text-zinc-600 dark:text-zinc-400">
-                                        {{ $isActive ? 'Active' : 'Inactive' }}
+                                        {{ $isActive ? __('Active') : __('Inactive') }}
                                     </span>
                                 </div>
                             </flux:field>
@@ -1165,16 +1165,16 @@ new class extends Component
                     <div class="p-4 border-b border-zinc-200 dark:border-zinc-700">
                         <flux:heading size="sm">
                             @if ($scopeType === 'exterior')
-                                Surface Dimensions
+                                {{ __('Surface Dimensions') }}
                             @else
-                                Room Dimensions
+                                {{ __('Room Dimensions') }}
                             @endif
                         </flux:heading>
                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
                             @if ($scopeType === 'exterior')
-                                Enter width and height for the surface being painted (length optional for multi-wall areas)
+                                {{ __('Enter width and height for the surface being painted (length optional for multi-wall areas)') }}
                             @else
-                                Enter room dimensions to calculate wall sqft, ceiling sqft, and perimeter
+                                {{ __('Enter room dimensions to calculate wall sqft, ceiling sqft, and perimeter') }}
                             @endif
                         </flux:text>
                     </div>
@@ -1182,9 +1182,9 @@ new class extends Component
                         <div class="grid gap-4 sm:grid-cols-3">
                             <flux:field>
                                 <flux:label>
-                                    Length (ft)
+                                    {{ __('Length (ft)') }}
                                     @if ($scopeType === 'exterior')
-                                        <span class="text-zinc-400 text-xs font-normal">(optional)</span>
+                                        <span class="text-zinc-400 text-xs font-normal">{{ __('(optional)') }}</span>
                                     @endif
                                 </flux:label>
                                 <flux:input
@@ -1193,19 +1193,19 @@ new class extends Component
                                     step="0.5"
                                     min="0"
                                     max="200"
-                                    placeholder="{{ $scopeType === 'exterior' ? 'Leave empty for single side' : '12' }}"
+                                    placeholder="{{ $scopeType === 'exterior' ? __('Leave empty for single side') : '12' }}"
                                 />
                                 <flux:error name="roomLength" />
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Width (ft)</flux:label>
+                                <flux:label>{{ __('Width (ft)') }}</flux:label>
                                 <flux:input wire:model.live.debounce.200ms="roomWidth" type="number" step="0.5" min="1" max="200" placeholder="12" />
                                 <flux:error name="roomWidth" />
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Height (ft)</flux:label>
+                                <flux:label>{{ __('Height (ft)') }}</flux:label>
                                 <flux:input wire:model.live.debounce.200ms="roomHeight" type="number" step="0.5" min="1" max="50" placeholder="9" />
                                 <flux:error name="roomHeight" />
                             </flux:field>
@@ -1213,37 +1213,37 @@ new class extends Component
 
                         {{-- Calculated Values --}}
                         <div class="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2">Calculated Quantities</div>
+                            <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2">{{ __('Calculated Quantities') }}</div>
                             @if ($scopeType === 'exterior' && (!$roomLength || $roomLength == 0))
                                 {{-- Exterior single side mode --}}
                                 <div class="grid grid-cols-2 gap-4 text-sm">
                                     <div>
-                                        <span class="text-zinc-600 dark:text-zinc-400">Surface Sqft:</span>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Surface Sqft:') }}</span>
                                         <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->wallSqft, 0) }}</span>
-                                        <div class="text-xs text-zinc-500">W x H (single side)</div>
+                                        <div class="text-xs text-zinc-500">{{ __('W x H (single side)') }}</div>
                                     </div>
                                     <div>
-                                        <span class="text-zinc-600 dark:text-zinc-400">Linear Feet:</span>
-                                        <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} lnft</span>
-                                        <div class="text-xs text-zinc-500">Width only</div>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Linear Feet:') }}</span>
+                                        <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} {{ __('lnft') }}</span>
+                                        <div class="text-xs text-zinc-500">{{ __('Width only') }}</div>
                                     </div>
                                 </div>
                             @else
                                 {{-- Interior or exterior with length --}}
                                 <div class="grid grid-cols-3 gap-4 text-sm">
                                     <div>
-                                        <span class="text-zinc-600 dark:text-zinc-400">Wall Sqft:</span>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Wall Sqft:') }}</span>
                                         <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->wallSqft, 0) }}</span>
                                         <div class="text-xs text-zinc-500">2 x (L + W) x H</div>
                                     </div>
                                     <div>
-                                        <span class="text-zinc-600 dark:text-zinc-400">Ceiling Sqft:</span>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Ceiling Sqft:') }}</span>
                                         <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->ceilingSqft, 0) }}</span>
                                         <div class="text-xs text-zinc-500">L x W</div>
                                     </div>
                                     <div>
-                                        <span class="text-zinc-600 dark:text-zinc-400">Perimeter:</span>
-                                        <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} lnft</span>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Perimeter:') }}</span>
+                                        <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">{{ number_format($this->perimeterLnft, 0) }} {{ __('lnft') }}</span>
                                         <div class="text-xs text-zinc-500">2 x (L + W)</div>
                                     </div>
                                 </div>
@@ -1256,19 +1256,19 @@ new class extends Component
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                     <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                         <div>
-                            <flux:heading size="sm">Surfaces</flux:heading>
+                            <flux:heading size="sm">{{ __('Surfaces') }}</flux:heading>
                             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                                Define surfaces and select production rate types from the spreadsheet
+                                {{ __('Define surfaces and select production rate types from the spreadsheet') }}
                             </flux:text>
                         </div>
                         <flux:button wire:click="addSurface" size="sm" icon="plus">
-                            Add Surface
+                            {{ __('Add Surface') }}
                         </flux:button>
                     </div>
                     <div class="p-4">
                         @if (count($surfaces) === 0)
                             <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                                <p>No surfaces defined. Add at least one surface.</p>
+                                <p>{{ __('No surfaces defined. Add at least one surface.') }}</p>
                             </div>
                         @else
                             <div class="space-y-4">
@@ -1299,7 +1299,7 @@ new class extends Component
                                                     {{ $surface['name'] ?: 'Surface '.($index + 1) }}
                                                 </span>
                                                 @if ($surface['is_required'])
-                                                    <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">Required</span>
+                                                    <span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">{{ __('Required') }}</span>
                                                 @endif
                                                 @if ($surface['production_rate_id'])
                                                     @php $selectedRate = \App\Models\ProductionRate::find($surface['production_rate_id']); @endphp
@@ -1323,13 +1323,13 @@ new class extends Component
                                         <div class="p-4 space-y-4">
                                             <div class="grid gap-4 sm:grid-cols-2">
                                                 <flux:field>
-                                                    <flux:label>Surface Name</flux:label>
-                                                    <flux:input wire:model.live.debounce.300ms="surfaces.{{ $index }}.name" placeholder="e.g., Walls" />
+                                                    <flux:label>{{ __('Surface Name') }}</flux:label>
+                                                    <flux:input wire:model.live.debounce.300ms="surfaces.{{ $index }}.name" :placeholder="__('e.g., Walls')" />
                                                     @error("surfaces.{$index}.name") <p class="text-xs text-red-600 dark:text-red-400">{{ $message }}</p> @enderror
                                                 </flux:field>
 
                                                 <flux:field>
-                                                    <flux:label>Surface Category</flux:label>
+                                                    <flux:label>{{ __('Surface Category') }}</flux:label>
                                                     <flux:select wire:model.live="surfaces.{{ $index }}.surface_category">
                                                         @foreach ($this->surfaceCategories as $catKey => $catLabel)
                                                             <option value="{{ $catKey }}">{{ $catLabel }}</option>
@@ -1341,24 +1341,24 @@ new class extends Component
                                             <div class="grid gap-4 sm:grid-cols-2">
                                                 <flux:field>
                                                     <flux:label>
-                                                        Production Rate Type
-                                                        <span class="text-xs text-zinc-500">(from spreadsheet)</span>
+                                                        {{ __('Production Rate Type') }}
+                                                        <span class="text-xs text-zinc-500">{{ __('(from spreadsheet)') }}</span>
                                                     </flux:label>
                                                     <flux:select wire:model.live="surfaces.{{ $index }}.production_rate_id">
-                                                        <option value="">-- Select Type --</option>
+                                                        <option value="">{{ __('-- Select Type --') }}</option>
                                                         @foreach ($this->getProductionRatesForCategory($surface['surface_category']) as $rate)
                                                             <option value="{{ $rate->id }}">
-                                                                {{ $rate->name }} ({{ number_format($rate->production_rate, 0) }} {{ $rate->rate_type_label }})
+                                                                {{ __($rate->name) }} ({{ number_format($rate->production_rate, 0) }} {{ $rate->rate_type_label }})
                                                             </option>
                                                         @endforeach
                                                     </flux:select>
                                                     @if ($this->getProductionRatesForCategory($surface['surface_category'])->isEmpty())
-                                                        <p class="text-xs text-amber-600 dark:text-amber-400">No rates found for this category. Run the SpreadsheetProductionRateSeeder.</p>
+                                                        <p class="text-xs text-amber-600 dark:text-amber-400">{{ __('No rates found for this category. Run the SpreadsheetProductionRateSeeder.') }}</p>
                                                     @endif
                                                 </flux:field>
 
                                                 <flux:field>
-                                                    <flux:label>Quantity Source</flux:label>
+                                                    <flux:label>{{ __('Quantity Source') }}</flux:label>
                                                     <flux:select wire:model.live="surfaces.{{ $index }}.quantity_source">
                                                         @foreach ($this->quantitySources as $srcKey => $srcLabel)
                                                             <option value="{{ $srcKey }}">{{ $srcLabel }}</option>
@@ -1371,11 +1371,11 @@ new class extends Component
                                                 <flux:field>
                                                     <flux:label>
                                                         @if ($surface['quantity_source'] === 'door_count')
-                                                            Number of Doors
+                                                            {{ __('Number of Doors') }}
                                                         @elseif ($surface['quantity_source'] === 'window_count')
-                                                            Number of Windows
+                                                            {{ __('Number of Windows') }}
                                                         @else
-                                                            Custom Quantity
+                                                            {{ __('Custom Quantity') }}
                                                         @endif
                                                     </flux:label>
                                                     <flux:input wire:model.live.debounce.200ms="surfaces.{{ $index }}.quantity_override" type="number" step="1" min="0" placeholder="1" />
@@ -1384,7 +1384,7 @@ new class extends Component
 
                                             <div class="grid gap-4 sm:grid-cols-2">
                                                 <flux:field>
-                                                    <flux:label>Default Coats</flux:label>
+                                                    <flux:label>{{ __('Default Coats') }}</flux:label>
                                                     <flux:select wire:model.live="surfaces.{{ $index }}.default_coats">
                                                         @for ($i = 1; $i <= 5; $i++)
                                                             <option value="{{ $i }}">{{ $i }} coat{{ $i > 1 ? 's' : '' }}</option>
@@ -1393,10 +1393,10 @@ new class extends Component
                                                 </flux:field>
 
                                                 <flux:field>
-                                                    <flux:label>Fixed Price Override (Optional)</flux:label>
+                                                    <flux:label>{{ __('Fixed Price Override (Optional)') }}</flux:label>
                                                     <div class="flex items-center gap-2">
                                                         <span class="text-zinc-500">$</span>
-                                                        <flux:input wire:model.live.debounce.300ms="surfaces.{{ $index }}.fixed_price" type="number" step="0.01" min="0" placeholder="Leave empty to calculate" />
+                                                        <flux:input wire:model.live.debounce.300ms="surfaces.{{ $index }}.fixed_price" type="number" step="0.01" min="0" :placeholder="__('Leave empty to calculate')" />
                                                     </div>
                                                 </flux:field>
                                             </div>
@@ -1404,17 +1404,17 @@ new class extends Component
                                             <div class="flex items-center gap-6 pt-2">
                                                 <label class="flex items-center gap-2">
                                                     <flux:checkbox wire:model.live="surfaces.{{ $index }}.is_required" />
-                                                    <span class="text-sm text-zinc-700 dark:text-zinc-300">Required (cannot be disabled)</span>
+                                                    <span class="text-sm text-zinc-700 dark:text-zinc-300">{{ __('Required (cannot be disabled)') }}</span>
                                                 </label>
                                                 <label class="flex items-center gap-2">
                                                     <flux:checkbox wire:model.live="surfaces.{{ $index }}.is_default_enabled" />
-                                                    <span class="text-sm text-zinc-700 dark:text-zinc-300">Enabled by default</span>
+                                                    <span class="text-sm text-zinc-700 dark:text-zinc-300">{{ __('Enabled by default') }}</span>
                                                 </label>
                                             </div>
 
                                             {{-- Quantity Preview --}}
                                             <div class="mt-2 p-2 bg-zinc-100 dark:bg-zinc-800 rounded text-sm">
-                                                <span class="text-zinc-600 dark:text-zinc-400">Calculated quantity:</span>
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Calculated quantity:') }}</span>
                                                 <span class="font-semibold text-zinc-900 dark:text-zinc-100 ml-1">
                                                     {{ number_format($this->getSurfaceQuantity($surface), 1) }}
                                                     @switch($surface['quantity_source'])
@@ -1443,19 +1443,19 @@ new class extends Component
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                     <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                         <div>
-                            <flux:heading size="sm">Fixed Price Options (Optional)</flux:heading>
+                            <flux:heading size="sm">{{ __('Fixed Price Options (Optional)') }}</flux:heading>
                             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                                Add fixed-price items like closets, pantries, or exterior features
+                                {{ __('Add fixed-price items like closets, pantries, or exterior features') }}
                             </flux:text>
                         </div>
                         <flux:button wire:click="addNestedOption" size="sm" icon="plus">
-                            Add Option
+                            {{ __('Add Option') }}
                         </flux:button>
                     </div>
                     <div class="p-4">
                         @if (count($nestedOptions) === 0)
                             <div class="text-center py-6 text-zinc-500 dark:text-zinc-400">
-                                <p class="text-sm">No nested options. Click "Add Option" to include fixed-price items.</p>
+                                <p class="text-sm">{{ __('No nested options. Click "Add Option" to include fixed-price items.') }}</p>
                             </div>
                         @else
                             <div class="space-y-3">
@@ -1463,9 +1463,9 @@ new class extends Component
                                     <div wire:key="nested-{{ $index }}" class="flex items-start gap-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
                                         <div class="flex-1 grid gap-3 sm:grid-cols-4">
                                             <flux:field class="sm:col-span-2">
-                                                <flux:label class="text-xs">Nested Template</flux:label>
+                                                <flux:label class="text-xs">{{ __('Nested Template') }}</flux:label>
                                                 <flux:select wire:model.live="nestedOptions.{{ $index }}.nested_area_template_id" size="sm">
-                                                    <option value="">-- Select Template --</option>
+                                                    <option value="">{{ __('-- Select Template --') }}</option>
                                                     @foreach ($this->availableNestedTemplates as $nestedTemplate)
                                                         <option value="{{ $nestedTemplate->id }}">
                                                             {{ $nestedTemplate->name }} (${{ number_format($nestedTemplate->fixed_price, 2) }})
@@ -1475,20 +1475,20 @@ new class extends Component
                                             </flux:field>
 
                                             <flux:field>
-                                                <flux:label class="text-xs">Name Override</flux:label>
-                                                <flux:input wire:model.blur="nestedOptions.{{ $index }}.name" placeholder="Optional" size="sm" />
+                                                <flux:label class="text-xs">{{ __('Name Override') }}</flux:label>
+                                                <flux:input wire:model.blur="nestedOptions.{{ $index }}.name" :placeholder="__('Optional')" size="sm" />
                                             </flux:field>
 
                                             <flux:field>
-                                                <flux:label class="text-xs">Max Quantity</flux:label>
-                                                <flux:input wire:model.blur="nestedOptions.{{ $index }}.max_quantity" type="number" min="1" placeholder="Unlimited" size="sm" />
+                                                <flux:label class="text-xs">{{ __('Max Quantity') }}</flux:label>
+                                                <flux:input wire:model.blur="nestedOptions.{{ $index }}.max_quantity" type="number" min="1" :placeholder="__('Unlimited')" size="sm" />
                                             </flux:field>
                                         </div>
 
                                         <div class="flex items-center gap-2 pt-5">
                                             <label class="flex items-center gap-1.5">
                                                 <flux:checkbox wire:model.live="nestedOptions.{{ $index }}.is_default_included" />
-                                                <span class="text-xs text-zinc-600 dark:text-zinc-400">Default</span>
+                                                <span class="text-xs text-zinc-600 dark:text-zinc-400">{{ __('Default') }}</span>
                                             </label>
                                             <flux:button
                                                 wire:click="removeNestedOption({{ $index }})"
@@ -1508,28 +1508,28 @@ new class extends Component
                 {{-- Defaults Section --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                     <div class="p-4 border-b border-zinc-200 dark:border-zinc-700">
-                        <flux:heading size="sm">Default Settings</flux:heading>
+                        <flux:heading size="sm">{{ __('Default Settings') }}</flux:heading>
                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                            Default substrate, paint, and coats for this template
+                            {{ __('Default substrate, paint, and coats for this template') }}
                         </flux:text>
                     </div>
                     <div class="p-4">
                         <div class="grid gap-4 sm:grid-cols-3">
                             <flux:field>
-                                <flux:label>Default Substrate</flux:label>
+                                <flux:label>{{ __('Default Substrate') }}</flux:label>
                                 <flux:select wire:model="defaultSubstrateId">
-                                    <option value="">-- None --</option>
+                                    <option value="">{{ __('-- None --') }}</option>
                                     @foreach ($this->availableSubstrates as $substrate)
-                                        <option value="{{ $substrate->id }}">{{ $substrate->name }}</option>
+                                        <option value="{{ $substrate->id }}">{{ __($substrate->name) }}</option>
                                     @endforeach
                                 </flux:select>
                                 <flux:error name="defaultSubstrateId" />
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Default Paint Product</flux:label>
+                                <flux:label>{{ __('Default Paint Product') }}</flux:label>
                                 <flux:select wire:model="defaultPaintProductId">
-                                    <option value="">-- None --</option>
+                                    <option value="">{{ __('-- None --') }}</option>
                                     @foreach ($this->availablePaintProducts as $product)
                                         <option value="{{ $product->id }}">
                                             {{ $product->brand?->name }} {{ $product->name }}
@@ -1540,7 +1540,7 @@ new class extends Component
                             </flux:field>
 
                             <flux:field>
-                                <flux:label>Default Coats</flux:label>
+                                <flux:label>{{ __('Default Coats') }}</flux:label>
                                 <flux:select wire:model.live="defaultCoats">
                                     @for ($i = 1; $i <= 5; $i++)
                                         <option value="{{ $i }}">{{ $i }} coat{{ $i > 1 ? 's' : '' }}</option>
@@ -1556,24 +1556,24 @@ new class extends Component
                 @if ($isEditing && $template)
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                         <div class="p-4 border-b border-zinc-200 dark:border-zinc-700">
-                            <flux:heading size="sm">Template Information</flux:heading>
+                            <flux:heading size="sm">{{ __('Template Information') }}</flux:heading>
                         </div>
                         <div class="p-4">
                             <dl class="grid gap-4 sm:grid-cols-3 text-sm">
                                 <div>
-                                    <dt class="text-zinc-500 dark:text-zinc-400">Created By</dt>
+                                    <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Created By') }}</dt>
                                     <dd class="font-medium text-zinc-900 dark:text-zinc-100">
-                                        {{ $template->createdBy?->name ?? 'System' }}
+                                        {{ $template->createdBy?->name ?? __('System') }}
                                     </dd>
                                 </div>
                                 <div>
-                                    <dt class="text-zinc-500 dark:text-zinc-400">Created At</dt>
+                                    <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Created At') }}</dt>
                                     <dd class="font-medium text-zinc-900 dark:text-zinc-100">
                                         {{ $template->created_at->format('M j, Y g:i A') }}
                                     </dd>
                                 </div>
                                 <div>
-                                    <dt class="text-zinc-500 dark:text-zinc-400">Last Updated</dt>
+                                    <dt class="text-zinc-500 dark:text-zinc-400">{{ __('Last Updated') }}</dt>
                                     <dd class="font-medium text-zinc-900 dark:text-zinc-100">
                                         {{ $template->updated_at->format('M j, Y g:i A') }}
                                     </dd>
@@ -1590,16 +1590,16 @@ new class extends Component
                     {{-- Live Preview Card --}}
                     <div class="border-2 border-blue-200 dark:border-blue-800 rounded-lg bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/30 dark:to-zinc-900">
                         <div class="p-4 border-b border-blue-200 dark:border-blue-800">
-                            <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">Live Calculator</flux:heading>
+                            <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">{{ __('Live Calculator') }}</flux:heading>
                             <flux:text size="sm" class="text-blue-600 dark:text-blue-400">
-                                Real-time pricing preview
+                                {{ __('Real-time pricing preview') }}
                             </flux:text>
                         </div>
 
                         <div class="p-4 space-y-4">
                             {{-- Preview Controls --}}
                             <flux:field>
-                                <flux:label class="text-xs">Preview Coats</flux:label>
+                                <flux:label class="text-xs">{{ __('Preview Coats') }}</flux:label>
                                 <flux:select wire:model.live="previewCoats" size="sm">
                                     @for ($i = 1; $i <= 4; $i++)
                                         <option value="{{ $i }}">{{ $i }} coat{{ $i > 1 ? 's' : '' }}</option>
@@ -1613,19 +1613,19 @@ new class extends Component
 
                                 {{-- Dimensions Summary --}}
                                 <div class="space-y-2">
-                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Room Dimensions</div>
+                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Room Dimensions') }}</div>
                                     <div class="grid grid-cols-3 gap-2 text-xs">
                                         <div class="text-center p-2 bg-blue-100 dark:bg-blue-900/30 rounded">
                                             <div class="font-bold text-lg text-blue-800 dark:text-blue-200">{{ $preview['dimensions']['wall_sqft'] }}</div>
-                                            <div class="text-blue-600 dark:text-blue-400">Wall sqft</div>
+                                            <div class="text-blue-600 dark:text-blue-400">{{ __('Wall sqft') }}</div>
                                         </div>
                                         <div class="text-center p-2 bg-blue-100 dark:bg-blue-900/30 rounded">
                                             <div class="font-bold text-lg text-blue-800 dark:text-blue-200">{{ $preview['dimensions']['ceiling_sqft'] }}</div>
-                                            <div class="text-blue-600 dark:text-blue-400">Ceiling sqft</div>
+                                            <div class="text-blue-600 dark:text-blue-400">{{ __('Ceiling sqft') }}</div>
                                         </div>
                                         <div class="text-center p-2 bg-blue-100 dark:bg-blue-900/30 rounded">
                                             <div class="font-bold text-lg text-blue-800 dark:text-blue-200">{{ $preview['dimensions']['perimeter_lnft'] }}</div>
-                                            <div class="text-blue-600 dark:text-blue-400">Perimeter lnft</div>
+                                            <div class="text-blue-600 dark:text-blue-400">{{ __('Perimeter lnft') }}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -1633,7 +1633,7 @@ new class extends Component
                                 {{-- Surfaces Breakdown --}}
                                 @if (count($preview['surfaces']) > 0)
                                     <div class="space-y-2">
-                                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Surfaces</div>
+                                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Surfaces') }}</div>
                                         @foreach ($preview['surfaces'] as $surface)
                                             <div class="p-2 bg-white/50 dark:bg-zinc-800/50 rounded text-xs border border-blue-100 dark:border-blue-800">
                                                 <div class="flex justify-between items-center">
@@ -1654,7 +1654,7 @@ new class extends Component
                                 {{-- Nested Breakdown --}}
                                 @if (count($preview['nested']) > 0)
                                     <div class="space-y-2">
-                                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Nested Items</div>
+                                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Nested Items') }}</div>
                                         @foreach ($preview['nested'] as $nested)
                                             <div class="flex justify-between items-center text-xs py-1 border-b border-blue-100 dark:border-blue-900">
                                                 <span class="text-zinc-700 dark:text-zinc-300">{{ $nested['name'] }}</span>
@@ -1666,18 +1666,18 @@ new class extends Component
 
                                 {{-- Hours Summary --}}
                                 <div class="space-y-2 pt-2 border-t border-blue-200 dark:border-blue-800">
-                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Hours</div>
+                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Hours') }}</div>
                                     <div class="grid grid-cols-3 gap-2 text-xs text-center">
                                         <div>
-                                            <span class="text-zinc-600 dark:text-zinc-400">Labor</span>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Labor') }}</span>
                                             <div class="font-semibold">{{ number_format($preview['totals']['labor_hours'], 1) }}</div>
                                         </div>
                                         <div>
-                                            <span class="text-zinc-600 dark:text-zinc-400">Cleanup</span>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Cleanup') }}</span>
                                             <div class="font-semibold">{{ number_format($preview['totals']['cleanup_hours'], 1) }}</div>
                                         </div>
                                         <div>
-                                            <span class="text-zinc-600 dark:text-zinc-400">Total</span>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Total') }}</span>
                                             <div class="font-semibold text-blue-600 dark:text-blue-400">{{ number_format($preview['totals']['total_hours'], 1) }}</div>
                                         </div>
                                     </div>
@@ -1685,27 +1685,27 @@ new class extends Component
 
                                 {{-- Cost Breakdown --}}
                                 <div class="space-y-2 pt-2 border-t border-blue-200 dark:border-blue-800">
-                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400">Cost Breakdown</div>
+                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('Cost Breakdown') }}</div>
                                     <div class="space-y-1 text-xs">
                                         <div class="flex justify-between">
                                             <span class="text-zinc-600 dark:text-zinc-400">Labor ({{ $preview['totals']['labor_hours'] }} hrs x ${{ number_format($preview['totals']['hourly_rate'], 2) }}/hr):</span>
                                             <span class="font-medium">${{ number_format($preview['totals']['labor_cost'], 2) }}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-zinc-600 dark:text-zinc-400">Cleanup:</span>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Cleanup:') }}</span>
                                             <span class="font-medium">${{ number_format($preview['totals']['cleanup_cost'], 2) }}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-zinc-600 dark:text-zinc-400">Sundries:</span>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Sundries:') }}</span>
                                             <span class="font-medium">${{ number_format($preview['totals']['sundries_cost'], 2) }}</span>
                                         </div>
                                         <div class="flex justify-between">
-                                            <span class="text-zinc-600 dark:text-zinc-400">Materials:</span>
+                                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Materials:') }}</span>
                                             <span class="font-medium">${{ number_format($preview['totals']['material_cost'], 2) }}</span>
                                         </div>
                                         @if ($preview['totals']['nested_cost'] > 0)
                                             <div class="flex justify-between">
-                                                <span class="text-zinc-600 dark:text-zinc-400">Nested Items:</span>
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Nested Items:') }}</span>
                                                 <span class="font-medium">${{ number_format($preview['totals']['nested_cost'], 2) }}</span>
                                             </div>
                                         @endif
@@ -1715,11 +1715,11 @@ new class extends Component
                                 {{-- Totals --}}
                                 <div class="space-y-2 pt-2 border-t border-blue-200 dark:border-blue-800">
                                     <div class="flex justify-between text-sm">
-                                        <span class="text-zinc-600 dark:text-zinc-400">Base Total:</span>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ __('Base Total:') }}</span>
                                         <span class="font-medium">${{ number_format($preview['totals']['subtotal'], 2) }}</span>
                                     </div>
                                     <div class="flex justify-between pt-2 border-t border-blue-200 dark:border-blue-800">
-                                        <span class="text-lg font-bold text-blue-800 dark:text-blue-200">With Margins:</span>
+                                        <span class="text-lg font-bold text-blue-800 dark:text-blue-200">{{ __('With Margins:') }}</span>
                                         <span class="text-2xl font-bold text-blue-600 dark:text-blue-400">
                                             ${{ number_format($preview['totals']['with_margins'], 2) }}
                                         </span>
@@ -1728,7 +1728,7 @@ new class extends Component
                             @else
                                 <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
                                     <flux:icon name="calculator" class="w-8 h-8 mx-auto mb-2 text-zinc-300 dark:text-zinc-600" />
-                                    <p class="text-sm">Add surfaces to see pricing preview</p>
+                                    <p class="text-sm">{{ __('Add surfaces to see pricing preview') }}</p>
                                 </div>
                             @endif
                         </div>
@@ -1738,12 +1738,12 @@ new class extends Component
                     <div class="space-y-2">
                         <flux:button wire:click="save" variant="primary" wire:loading.attr="disabled" class="w-full">
                             <span wire:loading.remove wire:target="save">
-                                {{ $isEditing ? 'Update Template' : 'Create Template' }}
+                                {{ $isEditing ? __('Update Template') : __('Create Template') }}
                             </span>
-                            <span wire:loading wire:target="save">Saving...</span>
+                            <span wire:loading wire:target="save">{{ __('Saving...') }}</span>
                         </flux:button>
                         <flux:button wire:click="cancel" variant="ghost" class="w-full">
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                     </div>
                 </div>

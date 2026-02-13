@@ -56,7 +56,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Listing Details'])] class 
 
         $this->property->delete();
 
-        session()->flash('success', 'Listing archived successfully.');
+        session()->flash('success', __('Listing archived successfully.'));
 
         $this->redirect(route('agent.listings.index'), navigate: true);
     }

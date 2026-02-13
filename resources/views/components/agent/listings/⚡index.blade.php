@@ -48,7 +48,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Listings'])] class exte
 
         $listing->delete();
 
-        session()->flash('success', 'Listing archived successfully.');
+        session()->flash('success', __('Listing archived successfully.'));
     }
 
     #[Computed]

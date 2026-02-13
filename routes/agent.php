@@ -22,30 +22,39 @@ Route::middleware('guest:agent')->group(function () {
     Route::post('register', [RegisterController::class, 'register']);
 });
 
-// Authenticated routes
+// Authenticated routes (no onboarding check - accessible during onboarding)
 Route::middleware(['auth:agent', 'auth.agent'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
 
-    Route::livewire('dashboard', 'agent.dashboard')->name('dashboard');
+    // Onboarding route (must be outside onboarding middleware)
+    Route::livewire('onboarding', 'agent.onboarding')->name('onboarding');
 
-    Route::view('invitations', 'agent.invitations')->name('invitations');
+    // Routes that require onboarding to be complete
+    Route::middleware('auth.agent.onboarded')->group(function () {
+        Route::livewire('dashboard', 'agent.dashboard')->name('dashboard');
 
-    // Listing routes
-    Route::livewire('listings', 'agent.listings.index')->name('listings.index');
-    Route::livewire('listings/{property}', 'agent.listings.show')->name('listings.show');
-    Route::get('listings/{property}/flyer', [\App\Http\Controllers\Agent\PropertyFlyerController::class, 'download'])->name('listings.flyer');
+        Route::view('invitations', 'agent.invitations')->name('invitations');
 
-    // Customer routes (read-only)
-    Route::livewire('customers', 'agent.customers.index')->name('customers.index');
-    Route::livewire('customers/{customer}', 'agent.customers.show')->name('customers.show');
+        // Listing routes
+        Route::livewire('listings', 'agent.listings.index')->name('listings.index');
+        Route::livewire('listings/{property}', 'agent.listings.show')->name('listings.show');
+        Route::get('listings/{property}/flyer', [\App\Http\Controllers\Agent\PropertyFlyerController::class, 'download'])->name('listings.flyer');
 
-    // Deal routes (read-only)
-    Route::livewire('deals', 'agent.deals.index')->name('deals.index');
+        // Customer routes (read-only)
+        Route::livewire('customers', 'agent.customers.index')->name('customers.index');
+        Route::livewire('customers/{customer}', 'agent.customers.show')->name('customers.show');
 
-    // Chat routes
-    // Referrals
-    Route::livewire('referrals', 'agent.referrals')->name('referrals');
+        // Deal routes (read-only)
+        Route::livewire('deals', 'agent.deals.index')->name('deals.index');
 
-    Route::livewire('chat', 'agent.chat.thread-list')->name('chat.index');
-    Route::livewire('chat/{thread}', 'agent.chat.thread-view')->name('chat.show');
+        // Estimate routes (collaboration)
+        Route::livewire('estimates/{estimate}', 'agent.estimates.show')->name('estimates.show');
+
+        // Chat routes
+        // Referrals
+        Route::livewire('referrals', 'agent.referrals')->name('referrals');
+
+        Route::livewire('chat', 'agent.chat.thread-list')->name('chat.index');
+        Route::livewire('chat/{thread}', 'agent.chat.thread-view')->name('chat.show');
+    });
 });

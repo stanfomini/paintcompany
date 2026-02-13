@@ -1,13 +1,29 @@
 <?php
 
+use App\Http\Controllers\ActivityCalendarController;
+use App\Http\Controllers\ActivityCalendarFeedController;
 use App\Http\Controllers\Api\VideoDataController;
 use App\Http\Controllers\CalendarFeedController;
+use App\Http\Controllers\CrewDocumentPdfController;
 use App\Http\Controllers\EstimateBreakdownExportController;
 use App\Http\Controllers\EstimatePdfController;
 use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PainterBreakdownExportController;
 use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\VideoCallPlaybackController;
+use App\Http\Controllers\VideoRecordingPlaybackController;
+use App\Http\Controllers\VideoRecordingUploadController;
+use App\Http\Middleware\SetLocale;
 use Illuminate\Support\Facades\Route;
+
+// Language switcher
+Route::get('/locale/{locale}', function (string $locale) {
+    if (in_array($locale, SetLocale::SUPPORTED_LOCALES)) {
+        session()->put('locale', $locale);
+    }
+
+    return redirect()->back();
+})->name('locale.switch');
 
 // Landing page (public marketing page)
 Route::livewire('/', 'public.landing-page')
@@ -26,6 +42,19 @@ Route::get('/welcome', function () {
 // Next steps (post-lead-form)
 Route::livewire('/next-steps', 'public.next-steps')
     ->name('next-steps')
+    ->middleware('throttle:60,1');
+
+// Public legal pages
+Route::livewire('/terms', 'public.terms')
+    ->name('legal.terms')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/privacy', 'public.privacy')
+    ->name('legal.privacy')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/referral-terms', 'public.referral-terms')
+    ->name('legal.referral-terms')
     ->middleware('throttle:60,1');
 
 Route::view('dashboard', 'dashboard')
@@ -47,16 +76,75 @@ Route::livewire('/proposal/{token}', 'public.estimate-proposal')
     ->name('estimates.public')
     ->middleware('throttle:60,1');
 
+// Public calculator showcase page (marketing landing page for agents)
+Route::livewire('/calculator', 'public.calculator')
+    ->name('calculator')
+    ->middleware('throttle:60,1');
+
+// Public ROI viewer for agents to share with customers
+Route::livewire('/roi/{token}', 'public.roi-viewer')
+    ->name('roi.public')
+    ->middleware('throttle:60,1');
+
+// Public video call recording playback (signed URL)
+Route::get('/recording/{videoCall:room_id}', [VideoCallPlaybackController::class, 'show'])
+    ->name('video-call.recording.public')
+    ->middleware('throttle:60,1');
+
 // Public iCal calendar feed (for Google Calendar / Apple Calendar subscription)
 Route::get('/calendar/{token}.ics', CalendarFeedController::class)
     ->name('calendar.feed')
     ->middleware('throttle:60,1');
 
-// Invitation management routes (authenticated)
-Route::middleware(['auth', 'verified'])->group(function () {
+// Public iCal calendar feed for activities (for Google Calendar / Apple Calendar subscription)
+Route::get('/calendar/{token}/activities.ics', ActivityCalendarFeedController::class)
+    ->name('calendar.activities')
+    ->middleware('throttle:60,1');
+
+// Invitation management routes (authenticated, internal only)
+Route::middleware(['auth', 'verified', 'auth.internal', 'permission:team.manage_invitations'])->group(function () {
     Route::view('invitations', 'invitations')
         ->name('invitations');
 });
+
+// Video call test page (uses Reverb for signaling, accessible by all user types)
+Route::livewire('/video-call-test/{room?}', 'video-call.test')
+    ->middleware(['auth:web,customer,crew,agent'])
+    ->name('video-call.test');
+
+// Streaming studio (OBS-style browser broadcasting)
+Route::livewire('/studio/{session?}', 'studio.studio')
+    ->middleware(['auth:web,agent'])
+    ->name('studio');
+
+// Guest participant join (signed URL, 24-hour expiry)
+Route::livewire('/studio/join/{token}', 'studio.guest-view')
+    ->middleware('signed')
+    ->name('studio.join');
+
+// Video call recording API (accessible by all authenticated user types)
+Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-calls/{videoCall}')->group(function () {
+    Route::post('/recording/start', [\App\Http\Controllers\VideoCallRecordingController::class, 'start'])->name('video-call.recording.start');
+    Route::post('/recording/chunk', [\App\Http\Controllers\VideoCallRecordingController::class, 'chunk'])->name('video-call.recording.chunk');
+    Route::post('/recording/stop', [\App\Http\Controllers\VideoCallRecordingController::class, 'stop'])->name('video-call.recording.stop');
+    Route::get('/recording/playback-url', [\App\Http\Controllers\VideoCallRecordingController::class, 'playbackUrl'])->name('video-call.recording.playback');
+});
+
+// Video recording API (standalone walkaround recorder, all authenticated user types)
+Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-recordings')->group(function () {
+    Route::post('/', [VideoRecordingUploadController::class, 'store'])->name('video-recordings.store');
+    Route::post('/start', [VideoRecordingUploadController::class, 'startChunkedUpload'])->name('video-recordings.start');
+    Route::post('/{recording}/chunk', [VideoRecordingUploadController::class, 'uploadChunk'])->name('video-recordings.chunk');
+    Route::post('/{recording}/finalize', [VideoRecordingUploadController::class, 'finalizeUpload'])->name('video-recordings.finalize');
+    Route::get('/{recording}/status', [VideoRecordingUploadController::class, 'status'])->name('video-recordings.status');
+    Route::patch('/{recording}/title', [VideoRecordingUploadController::class, 'updateTitle'])->name('video-recordings.update-title');
+    Route::delete('/{recording}', [VideoRecordingUploadController::class, 'destroy'])->name('video-recordings.destroy');
+});
+
+// Public video recording playback (share token, no auth)
+Route::get('/v/{shareToken}', [VideoRecordingPlaybackController::class, 'show'])
+    ->name('video-recording.public')
+    ->middleware('throttle:60,1');
 
 // Internal user routes - grouped by permission
 Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
@@ -70,6 +158,11 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::livewire('/agents/{user}', 'agents.show')->name('agents.show');
         Route::livewire('/crews', 'crews.index')->name('crews.index');
         Route::livewire('/crews/{user}', 'crews.show')->name('crews.show');
+
+        // Crew document PDFs
+        Route::get('/crews/{user}/documents/w9/pdf', [CrewDocumentPdfController::class, 'w9'])->name('crews.documents.w9');
+        Route::get('/crew-contracts/{contract}/pdf', [CrewDocumentPdfController::class, 'contract'])->name('crews.documents.contract');
+        Route::get('/crews/{user}/documents/compliance-pack', [CrewDocumentPdfController::class, 'compliancePack'])->name('crews.documents.compliance-pack');
     });
 
     // Properties routes
@@ -136,6 +229,11 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
             ->name('jobs.cost-card');
     });
 
+    // Activity calendar JSON API
+    Route::get('/api/activities/calendar', ActivityCalendarController::class)
+        ->middleware('permission:planner.view')
+        ->name('activities.calendar');
+
     // Planner routes
     Route::livewire('/planner', 'planner.my-day')
         ->middleware('permission:planner.view')
@@ -166,18 +264,13 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         ->middleware('permission:walkie_talkie.access')
         ->name('walkie-talkie.room');
 
-    // Video call routes
-    Route::livewire('/video-call/{room?}', 'video-call.room')
-        ->middleware('permission:video_call.access')
-        ->name('video-call.room');
-
     // Master Business Plan (unified page with tabs)
     Route::livewire('/business-plan', 'business-plan.index')
         ->name('business-plan.index')
         ->middleware('permission:business_plan.view');
 
     // Referrals admin
-    Route::middleware(['permission:people.view'])->group(function () {
+    Route::middleware(['permission:referrals.view'])->group(function () {
         Route::livewire('/referrals', 'referrals.index')->name('referrals.index');
     });
 
@@ -217,6 +310,11 @@ Route::get('/increase/oauth/callback', [\App\Http\Controllers\IncreaseOAuthContr
 Route::post('/webhooks/increase', [\App\Http\Controllers\IncreaseWebhookController::class, 'handle'])
     ->name('webhooks.increase')
     ->middleware('throttle:120,1');
+
+// Lead source webhook (public - authenticated by token + optional auth header)
+Route::post('/webhooks/leads/{token}', \App\Http\Controllers\WebhookLeadController::class)
+    ->middleware('throttle:60,1')
+    ->name('webhook.lead');
 
 // Video API endpoint (public for player embeds)
 Route::get('/api/video-data/{type}/{id}', [VideoDataController::class, 'show'])

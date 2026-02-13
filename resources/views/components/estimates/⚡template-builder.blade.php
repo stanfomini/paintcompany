@@ -15,12 +15,13 @@ use App\Models\Substrate;
 use App\Services\EstimateAmendmentService;
 use App\Services\EstimatePackageGeneratorService;
 use App\Services\EstimateTemplateService;
-use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public ?Deal $deal = null;
 
     public ?Estimate $estimate = null;
@@ -114,11 +115,11 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'title.required' => 'Please enter a title for the estimate.',
-            'selectedTemplates.required' => 'Please add at least one area or template.',
-            'selectedTemplates.min' => 'Please add at least one area or template.',
-            'areas.required' => 'Please add at least one area.',
-            'areas.min' => 'Please add at least one area.',
+            'title.required' => __('Please enter a title for the estimate.'),
+            'selectedTemplates.required' => __('Please add at least one area or template.'),
+            'selectedTemplates.min' => __('Please add at least one area or template.'),
+            'areas.required' => __('Please add at least one area.'),
+            'areas.min' => __('Please add at least one area.'),
         ];
     }
 
@@ -219,7 +220,58 @@ new class extends Component {
 
         $this->selectedTemplates = [];
 
-        foreach ($this->estimate->templateUsages()->with(['template.templateCategory', 'template.productionRate', 'resultable.surfaces.productionRate', 'resultable.addons'])->get() as $usage) {
+        // Collect fixed-price areas to group by nested_area_template_id
+        $fixedPriceGroups = [];
+
+        foreach ($this->estimate->templateUsages()->with(['template.templateCategory', 'template.productionRate', 'resultable' => function (MorphTo $morphTo) {
+            $morphTo->morphWith([
+                EstimateArea::class => ['surfaces.productionRate', 'addons', 'nestedAreaTemplate'],
+            ]);
+        }])->get() as $usage) {
+            // Handle fixed-price usages (template_id is null, resultable is a fixed-price EstimateArea)
+            if (! $usage->template_id && $usage->resultable instanceof EstimateArea && $usage->resultable->is_fixed_price) {
+                $area = $usage->resultable;
+                $nestedId = $area->nested_area_template_id;
+
+                if ($nestedId && isset($fixedPriceGroups[$nestedId])) {
+                    // Increment quantity for already-seen nested template
+                    $fixedPriceGroups[$nestedId]['quantity']++;
+                    $fixedPriceGroups[$nestedId]['price'] = $fixedPriceGroups[$nestedId]['unit_price'] * $fixedPriceGroups[$nestedId]['quantity'];
+                    $fixedPriceGroups[$nestedId]['base_total'] = $fixedPriceGroups[$nestedId]['price'];
+                    $fixedPriceGroups[$nestedId]['with_margins'] = $fixedPriceGroups[$nestedId]['price'];
+                } else {
+                    $nestedTemplate = $area->nestedAreaTemplate;
+                    $fixedPriceGroups[$nestedId ?? $area->id] = [
+                        'is_fixed_price' => true,
+                        'nested_template_id' => $nestedId,
+                        'template_id' => null,
+                        'name' => $area->name,
+                        'code' => $nestedTemplate?->code ?? '',
+                        'scope_type' => $area->scope_type ?? 'interior',
+                        'category' => $nestedTemplate?->category ?? 'other',
+                        'quantity' => 1,
+                        'coats' => 1,
+                        'unit_price' => (float) $area->fixed_price_amount,
+                        'price' => (float) $area->fixed_price_amount,
+                        'labor_hours' => (float) ($area->estimated_labor_hours ?? 0),
+                        'labor_cost' => (float) ($area->estimated_labor_cost ?? 0),
+                        'cleanup_hours' => 0,
+                        'cleanup_cost' => 0,
+                        'sundries_cost' => 0,
+                        'material_cost' => (float) ($area->estimated_material_cost ?? 0),
+                        'base_total' => (float) $area->fixed_price_amount,
+                        'with_margins' => (float) $area->fixed_price_amount,
+                        'sizes' => null,
+                        'selected_size' => null,
+                        'surface_ratios' => null,
+                        'surfaces' => null,
+                        'area_data' => null,
+                    ];
+                }
+
+                continue;
+            }
+
             $template = $usage->template;
             if (! $template) {
                 continue;
@@ -229,7 +281,7 @@ new class extends Component {
 
             $templateEntry = [
                 'template_id' => $template->id,
-                'name' => $template->name,
+                'name' => __($template->name),
                 'scope_type' => $template->scope_type ?? 'interior',
                 'quantity' => (float) $usage->quantity,
                 'coats' => $usage->coats,
@@ -289,6 +341,7 @@ new class extends Component {
                         'default_coats' => $surface->coats,
                         'is_required' => false,
                         'is_default_enabled' => $surface->is_included,
+                        'is_custom' => (bool) $surface->is_custom,
                         'fixed_price' => null,
                         'labor_hours' => (float) ($surface->labor_hours ?? 0),
                         'labor_cost' => (float) ($surface->labor_cost ?? 0),
@@ -344,6 +397,7 @@ new class extends Component {
                 $templateEntry['with_margins'] = round($withMargins, 2);
                 $templateEntry['price'] = round($withMargins, 2); // Keep price in sync with margins
 
+                $templateEntry['service_category_id'] = $area->service_category_id;
                 $templateEntry['area_data'] = [
                     'length' => $area->length,
                     'width' => $area->width,
@@ -351,12 +405,22 @@ new class extends Component {
                     'wall_sqft' => $area->wall_sqft,
                     'ceiling_sqft' => $area->ceiling_sqft,
                     'perimeter_lnft' => $area->perimeter_lnft,
+                    'measurement_type' => $area->measurement_type ?? 'dimensions',
+                    'wall_count' => $area->wall_count ?? 4,
+                    'direct_sqft' => $area->direct_sqft,
+                    'direct_lnft' => $area->direct_lnft,
+                    'direct_ceiling_sqft' => $area->direct_ceiling_sqft,
                     'surfaces' => $surfaces,
                     'addons' => $addons,
                 ];
             }
 
             $this->selectedTemplates[] = $templateEntry;
+        }
+
+        // Append grouped fixed-price entries
+        foreach ($fixedPriceGroups as $entry) {
+            $this->selectedTemplates[] = $entry;
         }
     }
 
@@ -1061,7 +1125,7 @@ new class extends Component {
 
         $this->selectedTemplates[] = [
             'template_id' => $template->id,
-            'name' => $template->name,
+            'name' => __($template->name),
             'scope_type' => $template->scope_type ?? 'interior',
             'quantity' => $quantity,
             'coats' => $coats,
@@ -1089,7 +1153,7 @@ new class extends Component {
             // Substrate and paint product (from template defaults, can be overridden per-room)
             'substrate_id' => $breakdown['substrate_id'] ?? $template->substrate_id,
             'paint_product_id' => $breakdown['paint_product_id'] ?? $template->default_paint_product_id,
-            'substrate_name' => $template->substrate?->name,
+            'substrate_name' => $template->substrate ? __($template->substrate->name) : null,
             'paint_product_name' => $template->defaultPaintProduct?->name,
         ];
 
@@ -1168,27 +1232,38 @@ new class extends Component {
             return;
         }
 
+        // Snapshot labor/material from the template for internal cost tracking
+        $laborHours = (float) ($template->estimated_hours ?? 0);
+        $materialCost = (float) ($template->material_cost ?? 0);
+        $laborCost = 0;
+
+        if ($laborHours > 0) {
+            $scope = $template->scope_type ?? 'interior';
+            $settings = CompanySetting::getInstance();
+            $laborCost = $laborHours * $settings->getEffectiveHourlyRateForScope($scope);
+        }
+
         $this->selectedTemplates[] = [
             'is_fixed_price' => true,
             'nested_template_id' => $template->id,
             'template_id' => null, // Required for validation (nullable)
-            'name' => $template->name,
+            'name' => __($template->name),
             'code' => $template->code,
             'scope_type' => $template->scope_type ?? 'interior',
             'category' => $template->category,
             'quantity' => 1, // Default quantity
             'coats' => 1, // Required for validation (fixed price items don't use coats)
-            'unit_price' => (float) $template->fixed_price,
-            'price' => (float) $template->fixed_price, // unit_price × quantity
-            // Fixed price items skip PBP - no labor hours, cleanup, etc.
-            'labor_hours' => 0,
-            'labor_cost' => 0,
+            'unit_price' => $template->getEffectivePrice(),
+            'price' => $template->getEffectivePrice(), // unit_price × quantity
+            // Snapshot labor/material for internal reporting (does NOT affect customer price)
+            'labor_hours' => $laborHours,
+            'labor_cost' => round($laborCost, 2),
             'cleanup_hours' => 0,
             'cleanup_cost' => 0,
             'sundries_cost' => 0,
-            'material_cost' => 0,
-            'base_total' => (float) $template->fixed_price,
-            'with_margins' => (float) $template->fixed_price,
+            'material_cost' => $materialCost,
+            'base_total' => $template->getEffectivePrice(),
+            'with_margins' => $template->getEffectivePrice(),
             // No sizes, surface ratios, etc. for fixed price items
             'sizes' => null,
             'selected_size' => null,
@@ -1403,6 +1478,12 @@ new class extends Component {
                 'length' => $templateData['area_data']['length'],
                 'width' => $templateData['area_data']['width'],
                 'height' => $templateData['area_data']['height'],
+                'measurement_type' => $templateData['area_data']['measurement_type'] ?? 'dimensions',
+                'wall_count' => $templateData['area_data']['wall_count'] ?? 4,
+                'direct_sqft' => $templateData['area_data']['direct_sqft'] ?? null,
+                'direct_lnft' => $templateData['area_data']['direct_lnft'] ?? null,
+                'direct_ceiling_sqft' => $templateData['area_data']['direct_ceiling_sqft'] ?? null,
+                'service_category_id' => $templateData['service_category_id'] ?? null,
                 'surfaces' => $templateData['area_data']['surfaces'] ?? [],
                 'addons' => $templateData['area_data']['addons'] ?? [],
             ];
@@ -1453,6 +1534,7 @@ new class extends Component {
             'material_cost' => $areaData['material_cost'] ?? 0,
             'base_total' => $areaData['base_total'] ?? 0,
             'with_margins' => $areaData['with_margins'] ?? 0,
+            'service_category_id' => $areaData['service_category_id'] ?? null,
             // Store area dimensions for future editing
             'area_data' => [
                 'length' => $areaData['length'],
@@ -1461,6 +1543,11 @@ new class extends Component {
                 'wall_sqft' => $areaData['wall_sqft'],
                 'ceiling_sqft' => $areaData['ceiling_sqft'],
                 'perimeter_lnft' => $areaData['perimeter_lnft'],
+                'measurement_type' => $areaData['measurement_type'] ?? 'dimensions',
+                'wall_count' => $areaData['wall_count'] ?? 4,
+                'direct_sqft' => $areaData['direct_sqft'] ?? null,
+                'direct_lnft' => $areaData['direct_lnft'] ?? null,
+                'direct_ceiling_sqft' => $areaData['direct_ceiling_sqft'] ?? null,
                 'surfaces' => $areaData['surfaces'],
                 'addons' => $areaData['addons'],
             ],
@@ -1484,8 +1571,10 @@ new class extends Component {
     /**
      * Update area dimensions directly from the card.
      */
-    public function updateAreaDimension(int $index, string $field, float $value): void
+    public function updateAreaDimension(int $index, string $field, float|string $value): void
     {
+        $value = (float) $value;
+
         if (! isset($this->selectedTemplates[$index]['area_data'])) {
             return;
         }
@@ -1494,18 +1583,36 @@ new class extends Component {
 
         // Recalculate dimensions
         $areaData = &$this->selectedTemplates[$index]['area_data'];
-        $length = $areaData['length'] ?? null;
-        $width = $areaData['width'];
-        $height = $areaData['height'];
+        $measurementType = $areaData['measurement_type'] ?? 'dimensions';
 
-        if ($length === null || $length == 0) {
-            $areaData['wall_sqft'] = $width * $height;
-            $areaData['ceiling_sqft'] = 0;
-            $areaData['perimeter_lnft'] = $width;
+        if ($measurementType === 'sqft') {
+            // Direct sqft mode - user enters sqft directly
+            $areaData['wall_sqft'] = $areaData['direct_sqft'] ?? 0;
+            $areaData['ceiling_sqft'] = $areaData['direct_ceiling_sqft'] ?? 0;
+            $areaData['perimeter_lnft'] = 0;
+        } elseif ($measurementType === 'lnft') {
+            // Direct lnft mode - user enters linear feet directly
+            $areaData['perimeter_lnft'] = $areaData['direct_lnft'] ?? 0;
+            $areaData['ceiling_sqft'] = $areaData['direct_ceiling_sqft'] ?? 0;
+            $areaData['wall_sqft'] = 0;
         } else {
-            $areaData['wall_sqft'] = 2 * ($length + $width) * $height;
-            $areaData['ceiling_sqft'] = $length * $width;
-            $areaData['perimeter_lnft'] = 2 * ($length + $width);
+            // Standard dimensions mode (L x W x H)
+            $length = $areaData['length'] ?? null;
+            $width = $areaData['width'];
+            $height = $areaData['height'];
+            $wallCount = max(1, min(4, $areaData['wall_count'] ?? 4));
+            $wallRatio = $wallCount / 4;
+
+            if ($length === null || $length == 0) {
+                $areaData['wall_sqft'] = $width * $height * $wallRatio;
+                $areaData['ceiling_sqft'] = 0;
+                $areaData['perimeter_lnft'] = $width * $wallRatio;
+            } else {
+                $fullPerimeter = 2 * ($length + $width);
+                $areaData['perimeter_lnft'] = $fullPerimeter * $wallRatio;
+                $areaData['wall_sqft'] = $fullPerimeter * $height * $wallRatio;
+                $areaData['ceiling_sqft'] = $length * $width;
+            }
         }
 
         // Update quantity to match wall_sqft
@@ -1945,17 +2052,17 @@ new class extends Component {
                 if (! $this->estimate->sent_snapshot) {
                     $this->estimate->sent_snapshot = $amendmentService->captureSnapshot($this->estimate);
                     $this->estimate->save();
-                    session()->flash('success', 'Estimate updated successfully.');
+                    session()->flash('success', __('Estimate updated successfully.'));
                 } else {
                     $amendment = $amendmentService->createAmendment($this->estimate, auth()->user());
                     if ($amendment) {
-                        session()->flash('success', "Estimate updated. Amendment #{$amendment->amendment_number} created — customer will be notified.");
+                        session()->flash('success', __('Estimate updated. Amendment #:number created — customer will be notified.', ['number' => $amendment->amendment_number]));
                     } else {
-                        session()->flash('success', 'Estimate updated (no material changes detected).');
+                        session()->flash('success', __('Estimate updated (no material changes detected).'));
                     }
                 }
             } else {
-                session()->flash('success', 'Estimate updated successfully.');
+                session()->flash('success', __('Estimate updated successfully.'));
             }
 
             $this->dispatch('estimate-updated');
@@ -1982,7 +2089,7 @@ new class extends Component {
             }
 
             $this->dispatch('estimate-created');
-            session()->flash('success', 'Estimate created successfully.');
+            session()->flash('success', __('Estimate created successfully.'));
         }
 
         $this->redirect(route('estimates.show', $this->estimate), navigate: true);
@@ -2009,6 +2116,12 @@ new class extends Component {
                 'wall_sqft' => $areaData['wall_sqft'] ?? 0,
                 'ceiling_sqft' => $areaData['ceiling_sqft'] ?? 0,
                 'perimeter_lnft' => $areaData['perimeter_lnft'] ?? 0,
+                'measurement_type' => $areaData['measurement_type'] ?? 'dimensions',
+                'wall_count' => $areaData['wall_count'] ?? 4,
+                'direct_sqft' => $areaData['direct_sqft'] ?? null,
+                'direct_lnft' => $areaData['direct_lnft'] ?? null,
+                'direct_ceiling_sqft' => $areaData['direct_ceiling_sqft'] ?? null,
+                'service_category_id' => $areaData['service_category_id'] ?? null,
                 'default_paint_product_id' => $areaPaintProductId,
                 'sort_order' => $sortOrder,
             ]);
@@ -2019,67 +2132,81 @@ new class extends Component {
                     continue;
                 }
 
-                $rate = $surfaceData['production_rate_id']
-                    ? ProductionRate::find($surfaceData['production_rate_id'])
-                    : null;
+                $isCustom = (bool) ($surfaceData['is_custom'] ?? false);
 
-                // Calculate quantity based on source
-                $quantity = match ($surfaceData['quantity_source'] ?? 'wall_sqft') {
-                    'wall_sqft' => $areaData['wall_sqft'],
-                    'ceiling_sqft' => $areaData['ceiling_sqft'],
-                    'perimeter_lnft' => $areaData['perimeter_lnft'],
-                    default => $surfaceData['quantity_override'] ?? 1,
-                };
+                if ($isCustom) {
+                    // Custom surface: use user-entered values directly
+                    $laborHours = (float) ($surfaceData['labor_hours'] ?? 0);
+                    $materialCost = (float) ($surfaceData['material_cost'] ?? 0);
+                    $scopeType = $areaData['scope_type'] ?? 'interior';
+                    $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                    $laborCost = $laborHours * $hourlyWage;
+                    $productionRateValue = 0;
+                    $materialCostPerUnit = 0;
+                    $paintGallons = null;
+                    $paintCost = null;
+                    $paintProductId = null;
+                    $coats = $surfaceData['default_coats'] ?? 2;
+                    $applicationMethod = $surfaceData['application_method'] ?? 'brush_roll';
+                    $quantity = (float) ($surfaceData['quantity_override'] ?? 0);
+                } else {
+                    $rate = $surfaceData['production_rate_id']
+                        ? ProductionRate::find($surfaceData['production_rate_id'])
+                        : null;
 
-                // Calculate labor hours and costs
-                $coats = $surfaceData['default_coats'] ?? $areaData['default_coats'] ?? 2;
-                $productionRateValue = $rate?->production_rate ?? 100;
-                $coatMultiplier = $rate ? $rate->getCoatMultiplier($coats) : ($coats === 1 ? 1.0 : ($coats === 2 ? 1.8 : 2.5));
-                $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
+                    // Calculate quantity based on source
+                    $quantity = match ($surfaceData['quantity_source'] ?? 'wall_sqft') {
+                        'wall_sqft' => $areaData['wall_sqft'],
+                        'ceiling_sqft' => $areaData['ceiling_sqft'],
+                        'perimeter_lnft' => $areaData['perimeter_lnft'],
+                        default => $surfaceData['quantity_override'] ?? 1,
+                    };
 
-                $scopeType = $areaData['scope_type'] ?? 'interior';
-                // Use base hourly wage (payroll burden is factored into markup, not COGS)
-                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
-                $laborCost = $laborHours * $hourlyWage;
+                    // Calculate labor hours and costs
+                    $coats = $surfaceData['default_coats'] ?? $areaData['default_coats'] ?? 2;
+                    $productionRateValue = $rate?->production_rate ?? 100;
+                    $coatMultiplier = $rate ? $rate->getCoatMultiplier($coats) : ($coats === 1 ? 1.0 : ($coats === 2 ? 1.8 : 2.5));
+                    $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
 
-                // Get effective paint product ID (cascade: surface → area → estimate)
-                $paintProductId = $surfaceData['paint_product_id']
-                    ?? $areaPaintProductId;
+                    $scopeType = $areaData['scope_type'] ?? 'interior';
+                    $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                    $laborCost = $laborHours * $hourlyWage;
 
-                // Calculate material cost using paint product if available
-                // material_cost_per_unit removed from ProductionRate - material costs come from PaintProduct
-                $materialCostPerUnit = 0.0;
-                $paintGallons = null;
-                $paintCost = null;
-                $materialCost = 0.0;
-                $applicationMethod = $surfaceData['application_method'] ?? $areaData['application_method'] ?? 'brush_roll';
+                    // Get effective paint product ID (cascade: surface → area → estimate)
+                    $paintProductId = $surfaceData['paint_product_id']
+                        ?? $areaPaintProductId;
 
-                if ($paintProductId) {
-                    $paintProduct = PaintProduct::find($paintProductId);
-                    if ($paintProduct) {
-                        // Calculate using paint product's coverage and pricing
-                        $recycleFee = $settings->recycle_fee_per_gallon ?? 0.54;
-                        $costCalc = $paintProduct->calculateCost(
-                            (float) $quantity,
-                            $coats,
-                            $applicationMethod,
-                            (float) $recycleFee
-                        );
-                        $paintGallons = $costCalc['gallons_rounded'];
-                        $paintCost = $costCalc['paint_cost'];
-                        $materialCost = $costCalc['total_cost']; // paint_cost + recycle_fee
+                    // Calculate material cost using paint product if available
+                    $materialCostPerUnit = 0.0;
+                    $paintGallons = null;
+                    $paintCost = null;
+                    $materialCost = 0.0;
+                    $applicationMethod = $surfaceData['application_method'] ?? $areaData['application_method'] ?? 'brush_roll';
 
-                        // Calculate per-unit cost for snapshot
-                        if ($quantity > 0) {
-                            $materialCostPerUnit = $materialCost / ($quantity * $coatMultiplier);
+                    if ($paintProductId) {
+                        $paintProduct = PaintProduct::find($paintProductId);
+                        if ($paintProduct) {
+                            $recycleFee = $settings->recycle_fee_per_gallon ?? 0.54;
+                            $costCalc = $paintProduct->calculateCost(
+                                (float) $quantity,
+                                $coats,
+                                $applicationMethod,
+                                (float) $recycleFee
+                            );
+                            $paintGallons = $costCalc['gallons_rounded'];
+                            $paintCost = $costCalc['paint_cost'];
+                            $materialCost = $costCalc['total_cost'];
+
+                            if ($quantity > 0) {
+                                $materialCostPerUnit = $materialCost / ($quantity * $coatMultiplier);
+                            }
                         }
                     }
                 }
-                // No fallback - material costs must come from PaintProduct selection
 
                 EstimateAreaSurface::create([
                     'area_id' => $area->id,
-                    'production_rate_id' => $surfaceData['production_rate_id'],
+                    'production_rate_id' => $isCustom ? null : ($surfaceData['production_rate_id'] ?? null),
                     'name' => $surfaceData['name'],
                     'surface_type' => $surfaceData['surface_type'] ?? 'other',
                     'quantity' => $quantity,
@@ -2101,6 +2228,9 @@ new class extends Component {
                     'paint_cost' => $paintCost ? round($paintCost, 2) : null,
                     'total' => round($laborCost + $materialCost, 2),
                     'is_included' => true,
+                    'is_custom' => $isCustom,
+                    'sale_price' => $isCustom && ($surfaceData['sale_price'] ?? '') !== '' ? (float) $surfaceData['sale_price'] : null,
+                    'crew_price' => $isCustom && ($surfaceData['crew_price'] ?? '') !== '' ? (float) $surfaceData['crew_price'] : null,
                     'sort_order' => $surfaceSortOrder,
                 ]);
             }
@@ -2127,6 +2257,13 @@ new class extends Component {
         $lastArea = null;
 
         foreach ($this->selectedTemplates as $sortOrder => $templateData) {
+            // If this is a fixed-price template (closet, half bath, etc.), create as fixed-price area
+            if (! empty($templateData['is_fixed_price'])) {
+                $this->createFixedPriceArea($templateData, $sortOrder);
+
+                continue;
+            }
+
             // If this template has area_data (from AreaBuilder), create as detailed area
             if (! empty($templateData['area_data'])) {
                 $this->createAreaFromTemplateData($templateData, $sortOrder);
@@ -2157,6 +2294,42 @@ new class extends Component {
     }
 
     /**
+     * Create fixed-price EstimateArea records from a fixed-price template entry.
+     * Creates one area per unit of quantity (e.g., 2 closets = 2 separate areas).
+     */
+    protected function createFixedPriceArea(array $templateData, int $sortOrder): void
+    {
+        $quantity = max(1, (int) ($templateData['quantity'] ?? 1));
+        $unitPrice = (float) ($templateData['unit_price'] ?? $templateData['price'] ?? 0);
+        $nestedTemplateId = $templateData['nested_template_id'] ?? null;
+        $scopeType = $templateData['scope_type'] ?? 'interior';
+
+        for ($i = 0; $i < $quantity; $i++) {
+            $area = EstimateArea::create([
+                'estimate_id' => $this->estimate->id,
+                'name' => $templateData['name'],
+                'scope_type' => $scopeType,
+                'nested_area_template_id' => $nestedTemplateId,
+                'is_fixed_price' => true,
+                'fixed_price_amount' => $unitPrice,
+                'estimated_labor_hours' => $templateData['labor_hours'] ?? null,
+                'estimated_material_cost' => $templateData['material_cost'] ?? null,
+                'sort_order' => $sortOrder,
+            ]);
+
+            $this->estimate->templateUsages()->create([
+                'template_id' => null,
+                'quantity' => 1,
+                'coats' => 1,
+                'calculated_price' => $unitPrice,
+                'resultable_type' => EstimateArea::class,
+                'resultable_id' => $area->id,
+                'sort_order' => $sortOrder,
+            ]);
+        }
+    }
+
+    /**
      * Create an EstimateArea from template data that includes area_data (from AreaBuilder).
      */
     protected function createAreaFromTemplateData(array $templateData, int $sortOrder): void
@@ -2174,77 +2347,96 @@ new class extends Component {
             'wall_sqft' => $areaData['wall_sqft'] ?? 0,
             'ceiling_sqft' => $areaData['ceiling_sqft'] ?? 0,
             'perimeter_lnft' => $areaData['perimeter_lnft'] ?? 0,
+            'measurement_type' => $areaData['measurement_type'] ?? 'dimensions',
+            'wall_count' => $areaData['wall_count'] ?? 4,
+            'direct_sqft' => $areaData['direct_sqft'] ?? null,
+            'direct_lnft' => $areaData['direct_lnft'] ?? null,
+            'direct_ceiling_sqft' => $areaData['direct_ceiling_sqft'] ?? null,
+            'service_category_id' => $templateData['service_category_id'] ?? null,
             'sort_order' => $sortOrder,
         ]);
 
         // Create surfaces for the area (including disabled ones so they persist on reload)
         foreach ($areaData['surfaces'] ?? [] as $surfaceSortOrder => $surfaceData) {
             $isIncluded = ($surfaceData['is_required'] ?? false) || ($surfaceData['is_default_enabled'] ?? true);
+            $isCustom = (bool) ($surfaceData['is_custom'] ?? false);
 
-            $rate = $surfaceData['production_rate_id']
-                ? ProductionRate::find($surfaceData['production_rate_id'])
-                : null;
+            if ($isCustom) {
+                // Custom surface: use user-entered values directly
+                $laborHours = (float) ($surfaceData['labor_hours'] ?? 0);
+                $materialCost = (float) ($surfaceData['material_cost'] ?? 0);
+                $settings = CompanySetting::getInstance();
+                $scopeType = $templateData['scope_type'] ?? 'interior';
+                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $laborCost = $laborHours * $hourlyWage;
+                $productionRateValue = 0;
+                $materialCostPerUnit = 0;
+                $paintGallons = null;
+                $paintCost = null;
+                $paintProductId = null;
+                $coats = $surfaceData['default_coats'] ?? $templateData['coats'] ?? 2;
+                $applicationMethod = $surfaceData['application_method'] ?? 'brush_roll';
+                $quantity = (float) ($surfaceData['quantity_override'] ?? 0);
+            } else {
+                $rate = $surfaceData['production_rate_id']
+                    ? ProductionRate::find($surfaceData['production_rate_id'])
+                    : null;
 
-            // Calculate quantity based on source
-            $quantity = match ($surfaceData['quantity_source'] ?? 'wall_sqft') {
-                'wall_sqft' => $areaData['wall_sqft'],
-                'ceiling_sqft' => $areaData['ceiling_sqft'],
-                'perimeter_lnft' => $areaData['perimeter_lnft'],
-                default => $surfaceData['quantity_override'] ?? 1,
-            };
+                // Calculate quantity based on source
+                $quantity = match ($surfaceData['quantity_source'] ?? 'wall_sqft') {
+                    'wall_sqft' => $areaData['wall_sqft'],
+                    'ceiling_sqft' => $areaData['ceiling_sqft'],
+                    'perimeter_lnft' => $areaData['perimeter_lnft'],
+                    default => $surfaceData['quantity_override'] ?? 1,
+                };
 
-            // Calculate labor hours and costs for this surface
-            $coats = $surfaceData['default_coats'] ?? $templateData['coats'] ?? 2;
-            $productionRateValue = $rate?->production_rate ?? 100;
-            $coatMultiplier = $rate ? $rate->getCoatMultiplier($coats) : ($coats === 1 ? 1.0 : ($coats === 2 ? 1.8 : 2.5));
-            $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
+                // Calculate labor hours and costs for this surface
+                $coats = $surfaceData['default_coats'] ?? $templateData['coats'] ?? 2;
+                $productionRateValue = $rate?->production_rate ?? 100;
+                $coatMultiplier = $rate ? $rate->getCoatMultiplier($coats) : ($coats === 1 ? 1.0 : ($coats === 2 ? 1.8 : 2.5));
+                $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
 
-            $settings = CompanySetting::getInstance();
-            $scopeType = $templateData['scope_type'] ?? 'interior';
-            // Use base hourly wage (payroll burden is factored into markup, not COGS)
-            $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
-            $laborCost = $laborHours * $hourlyWage;
+                $settings = CompanySetting::getInstance();
+                $scopeType = $templateData['scope_type'] ?? 'interior';
+                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $laborCost = $laborHours * $hourlyWage;
 
-            // Get effective paint product ID (cascade: surface → area → template → estimate)
-            $paintProductId = $surfaceData['paint_product_id']
-                ?? $areaData['default_paint_product_id']
-                ?? $templateData['paint_product_id']
-                ?? $this->defaultPaintProductId;
+                // Get effective paint product ID (cascade: surface → area → template → estimate)
+                $paintProductId = $surfaceData['paint_product_id']
+                    ?? $areaData['default_paint_product_id']
+                    ?? $templateData['paint_product_id']
+                    ?? $this->defaultPaintProductId;
 
-            // Calculate material cost using paint product if available
-            // material_cost_per_unit removed from ProductionRate - material costs come from PaintProduct
-            $materialCostPerUnit = 0.0;
-            $paintGallons = null;
-            $paintCost = null;
-            $materialCost = 0.0;
-            $applicationMethod = $surfaceData['application_method'] ?? $areaData['application_method'] ?? 'brush_roll';
+                $materialCostPerUnit = 0.0;
+                $paintGallons = null;
+                $paintCost = null;
+                $materialCost = 0.0;
+                $applicationMethod = $surfaceData['application_method'] ?? $areaData['application_method'] ?? 'brush_roll';
 
-            if ($paintProductId) {
-                $paintProduct = PaintProduct::find($paintProductId);
-                if ($paintProduct) {
-                    // Calculate using paint product's coverage and pricing
-                    $recycleFee = $settings->recycle_fee_per_gallon ?? 0.54;
-                    $costCalc = $paintProduct->calculateCost(
-                        (float) $quantity,
-                        $coats,
-                        $applicationMethod,
-                        (float) $recycleFee
-                    );
-                    $paintGallons = $costCalc['gallons_rounded'];
-                    $paintCost = $costCalc['paint_cost'];
-                    $materialCost = $costCalc['total_cost']; // paint_cost + recycle_fee
+                if ($paintProductId) {
+                    $paintProduct = PaintProduct::find($paintProductId);
+                    if ($paintProduct) {
+                        $recycleFee = $settings->recycle_fee_per_gallon ?? 0.54;
+                        $costCalc = $paintProduct->calculateCost(
+                            (float) $quantity,
+                            $coats,
+                            $applicationMethod,
+                            (float) $recycleFee
+                        );
+                        $paintGallons = $costCalc['gallons_rounded'];
+                        $paintCost = $costCalc['paint_cost'];
+                        $materialCost = $costCalc['total_cost'];
 
-                    // Calculate per-unit cost for snapshot
-                    if ($quantity > 0) {
-                        $materialCostPerUnit = $materialCost / ($quantity * $coatMultiplier);
+                        if ($quantity > 0) {
+                            $materialCostPerUnit = $materialCost / ($quantity * $coatMultiplier);
+                        }
                     }
                 }
             }
-            // No fallback - material costs must come from PaintProduct selection
 
             EstimateAreaSurface::create([
                 'area_id' => $area->id,
-                'production_rate_id' => $surfaceData['production_rate_id'] ?: null,
+                'production_rate_id' => $isCustom ? null : ($surfaceData['production_rate_id'] ?: null),
                 'name' => $surfaceData['name'],
                 'surface_type' => $surfaceData['surface_type'] ?? 'other',
                 'quantity' => $quantity,
@@ -2266,6 +2458,9 @@ new class extends Component {
                 'paint_cost' => $paintCost ? round($paintCost, 2) : null,
                 'total' => round($laborCost + $materialCost, 2),
                 'is_included' => $isIncluded,
+                'is_custom' => $isCustom,
+                'sale_price' => $isCustom && ($surfaceData['sale_price'] ?? '') !== '' ? (float) $surfaceData['sale_price'] : null,
+                'crew_price' => $isCustom && ($surfaceData['crew_price'] ?? '') !== '' ? (float) $surfaceData['crew_price'] : null,
                 'sort_order' => $surfaceSortOrder,
             ]);
         }
@@ -2354,12 +2549,12 @@ new class extends Component {
                     <flux:button variant="ghost" :href="route('deals.show', $deal)" icon="arrow-left" wire:navigate size="sm" />
                 @endif
                 <div>
-                    <div class="font-semibold text-sm">Estimate Builder</div>
+                    <div class="font-semibold text-sm">{{ __('Estimate Builder') }}</div>
                     <div class="text-xs text-zinc-500">{{ count($areas) > 0 ? count($areas) . ' areas' : count($selectedTemplates) . ' items' }}</div>
                 </div>
             </div>
             <div class="text-right">
-                <div class="text-xs text-zinc-500">Total</div>
+                <div class="text-xs text-zinc-500">{{ __('Total') }}</div>
                 <div class="text-lg font-bold text-blue-600 dark:text-blue-400">${{ number_format($this->total, 2) }}</div>
             </div>
         </div>
@@ -2369,11 +2564,11 @@ new class extends Component {
     <div class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700 p-4 shadow-lg">
         <div class="flex gap-3">
             <flux:button wire:click="saveAsDraft" wire:loading.attr="disabled" class="flex-1" size="sm">
-                <span wire:loading.remove wire:target="saveAsDraft">Draft</span>
+                <span wire:loading.remove wire:target="saveAsDraft">{{ __('Draft') }}</span>
                 <span wire:loading wire:target="saveAsDraft">...</span>
             </flux:button>
             <flux:button wire:click="saveAndSend" variant="primary" wire:loading.attr="disabled" class="flex-1" size="sm">
-                <span wire:loading.remove wire:target="saveAndSend">Save & Send</span>
+                <span wire:loading.remove wire:target="saveAndSend">{{ __('Save & Send') }}</span>
                 <span wire:loading wire:target="saveAndSend">...</span>
             </flux:button>
         </div>
@@ -2386,18 +2581,18 @@ new class extends Component {
             <div class="flex items-center gap-4">
                 @if ($isEditing)
                     <flux:button variant="ghost" :href="route('estimates.show', $estimate)" icon="arrow-left" wire:navigate>
-                        Back
+                        {{ __('Back') }}
                     </flux:button>
                 @else
                     <flux:button variant="ghost" :href="route('deals.show', $deal)" icon="arrow-left" wire:navigate>
-                        Back to Deal
+                        {{ __('Back to Deal') }}
                     </flux:button>
                 @endif
                 <flux:heading size="xl">
                     @if ($isEditing)
-                        Edit Template Estimate: {{ $estimate->estimate_number }}
+                        {{ __('Edit Template Estimate:') }} {{ $estimate->estimate_number }}
                     @else
-                        Template Builder
+                        {{ __('Template Builder') }}
                     @endif
                 </flux:heading>
             </div>
@@ -2416,8 +2611,8 @@ new class extends Component {
                 <div class="border-2 border-blue-200 dark:border-blue-800 rounded-lg p-4 bg-gradient-to-r from-blue-50 to-white dark:from-blue-950/30 dark:to-zinc-900">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
-                            <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">Project Type</flux:heading>
-                            <flux:text size="sm" class="text-blue-600 dark:text-blue-400">Select interior or exterior for this estimate</flux:text>
+                            <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">{{ __('Project Type') }}</flux:heading>
+                            <flux:text size="sm" class="text-blue-600 dark:text-blue-400">{{ __('Select interior or exterior for this estimate') }}</flux:text>
                         </div>
                         <div class="flex gap-2">
                             @foreach ($this->getProjectScopeOptions() as $value => $label)
@@ -2442,22 +2637,22 @@ new class extends Component {
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-white dark:bg-zinc-900">
                     <div class="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm mb-4">
                         <div>
-                            <span class="text-zinc-500 dark:text-zinc-400">Deal:</span>
+                            <span class="text-zinc-500 dark:text-zinc-400">{{ __('Deal') }}:</span>
                             <span class="font-medium ml-1">{{ $deal->title }}</span>
                         </div>
                         <div>
-                            <span class="text-zinc-500 dark:text-zinc-400">Customer:</span>
-                            <span class="font-medium ml-1">{{ $deal->customer->full_name }}</span>
+                            <span class="text-zinc-500 dark:text-zinc-400">{{ __('Customer') }}:</span>
+                            <span class="font-medium ml-1">{{ $deal->customer?->full_name ?? '-' }}</span>
                         </div>
                     </div>
                     <div class="grid gap-4 sm:grid-cols-2">
                         <flux:field>
-                            <flux:label>Estimate Title</flux:label>
-                            <flux:input wire:model="title" placeholder="e.g., Interior Painting - Living Room" />
+                            <flux:label>{{ __('Estimate Title') }}</flux:label>
+                            <flux:input wire:model="title" :placeholder="__('e.g., Interior Painting - Living Room')" />
                             <flux:error name="title" />
                         </flux:field>
                         <flux:field>
-                            <flux:label>Valid Until</flux:label>
+                            <flux:label>{{ __('Valid Until') }}</flux:label>
                             <flux:input wire:model="validUntil" type="date" />
                             <flux:error name="validUntil" />
                         </flux:field>
@@ -2469,12 +2664,12 @@ new class extends Component {
                     <div class="p-4 border-b border-zinc-100 dark:border-zinc-800">
                         <div class="flex items-center justify-between">
                             <div>
-                                <flux:heading size="sm">Paint Selection</flux:heading>
-                                <flux:text size="sm" class="text-zinc-500">Choose paint products for this estimate</flux:text>
+                                <flux:heading size="sm">{{ __('Paint Selection') }}</flux:heading>
+                                <flux:text size="sm" class="text-zinc-500">{{ __('Choose paint products for this estimate') }}</flux:text>
                             </div>
                             @if ($paintMode === 'category' && $this->paintOverrideCount > 0)
                                 <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
-                                    {{ $this->paintOverrideCount }} custom
+                                    {{ $this->paintOverrideCount }} {{ __('custom') }}
                                 </span>
                             @endif
                         </div>
@@ -2491,8 +2686,8 @@ new class extends Component {
                                     class="text-blue-600 focus:ring-blue-500"
                                 />
                                 <div>
-                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">Same paint for all surfaces</div>
-                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">Use one paint product across the entire estimate</div>
+                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ __('Same paint for all surfaces') }}</div>
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Use one paint product across the entire estimate') }}</div>
                                 </div>
                             </label>
                             <label class="flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all {{ $paintMode === 'category' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}">
@@ -2503,8 +2698,8 @@ new class extends Component {
                                     class="text-blue-600 focus:ring-blue-500"
                                 />
                                 <div>
-                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">Different paint per surface type</div>
-                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">Customize paint for walls, ceiling, trim, doors</div>
+                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ __('Different paint per surface type') }}</div>
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Customize paint for walls, ceiling, trim, doors') }}</div>
                                 </div>
                             </label>
                         </div>
@@ -2512,8 +2707,8 @@ new class extends Component {
                         {{-- Single Paint Mode --}}
                         @if ($paintMode === 'single')
                             <div class="space-y-3">
-                                <flux:select wire:model.live="defaultPaintProductId" placeholder="Select paint product...">
-                                    <flux:select.option value="">No default (use production rate material cost)</flux:select.option>
+                                <flux:select wire:model.live="defaultPaintProductId" :placeholder="__('Select paint product...')">
+                                    <flux:select.option value="">{{ __('No default (use production rate material cost)') }}</flux:select.option>
                                     @foreach ($this->availablePaintProducts as $product)
                                         <flux:select.option value="{{ $product->id }}">
                                             {{ $product->brand?->name ?? 'Other' }} - {{ $product->name }} ({{ ucfirst($product->sheen) }}) - ${{ number_format($product->price_per_gallon, 2) }}/gal
@@ -2545,9 +2740,9 @@ new class extends Component {
                                             <div class="flex items-center justify-between mb-2">
                                                 <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $categoryData['label'] }}</span>
                                                 @if ($categoryData['is_override'])
-                                                    <span class="text-xs text-blue-600 dark:text-blue-400">(Custom)</span>
+                                                    <span class="text-xs text-blue-600 dark:text-blue-400">({{ __('Custom') }})</span>
                                                 @elseif ($categoryData['is_company_default'])
-                                                    <span class="text-xs text-green-600 dark:text-green-400">(Default)</span>
+                                                    <span class="text-xs text-green-600 dark:text-green-400">({{ __('Default') }})</span>
                                                 @endif
                                             </div>
                                             <select
@@ -2559,9 +2754,9 @@ new class extends Component {
                                                         $companyDefault = \App\Models\CompanySetting::getInstance()->getDefaultPaintForCategory($categoryKey, $projectScope);
                                                     @endphp
                                                     @if ($companyDefault)
-                                                        Company Default
+                                                        {{ __('Company Default') }}
                                                     @else
-                                                        Not Set
+                                                        {{ __('Not Set') }}
                                                     @endif
                                                 </option>
                                                 @foreach ($this->availablePaintProducts as $product)
@@ -2586,7 +2781,7 @@ new class extends Component {
                                             type="button"
                                             class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
                                         >
-                                            Reset to company defaults
+                                            {{ __('Reset to company defaults') }}
                                         </button>
                                     </div>
                                 @endif
@@ -2599,15 +2794,15 @@ new class extends Component {
                 <div class="border-2 border-green-200 dark:border-green-800 rounded-lg p-4 bg-gradient-to-r from-green-50 to-white dark:from-green-950/30 dark:to-zinc-900">
                     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
-                            <flux:heading size="sm" class="text-green-800 dark:text-green-200">Add Areas</flux:heading>
-                            <flux:text size="sm" class="text-green-600 dark:text-green-400">Add rooms with full dimension and surface control</flux:text>
+                            <flux:heading size="sm" class="text-green-800 dark:text-green-200">{{ __('Add Areas') }}</flux:heading>
+                            <flux:text size="sm" class="text-green-600 dark:text-green-400">{{ __('Add rooms with full dimension and surface control') }}</flux:text>
                         </div>
                         <div class="flex gap-2">
                             <flux:button wire:click="openTemplatePicker" variant="primary" icon="squares-2x2">
-                                + From Template
+                                {{ __('+ From Template') }}
                             </flux:button>
                             <flux:button wire:click="addDetailedArea" icon="plus">
-                                + Custom Area
+                                {{ __('+ Custom Area') }}
                             </flux:button>
                         </div>
                     </div>
@@ -2617,7 +2812,7 @@ new class extends Component {
                 @if (count($areas) > 0)
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                         <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
-                            <flux:heading size="sm">Areas</flux:heading>
+                            <flux:heading size="sm">{{ __('Areas') }}</flux:heading>
                             <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300">
                                 {{ count($areas) }} {{ Str::plural('area', count($areas)) }}
                             </span>
@@ -2634,6 +2829,16 @@ new class extends Component {
                                                     <span class="px-2 py-0.5 text-xs font-medium rounded-full {{ $area['scope_type'] === 'interior' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' }}">
                                                         {{ ucfirst($area['scope_type']) }}
                                                     </span>
+                                                    @if (!empty($area['measurement_type']) && $area['measurement_type'] !== 'dimensions')
+                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                                                            {{ strtoupper($area['measurement_type']) }}
+                                                        </span>
+                                                    @endif
+                                                    @if (!empty($area['service_category_id']))
+                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                                                            {{ __('Service') }}
+                                                        </span>
+                                                    @endif
                                                 </div>
 
                                                 {{-- Quick Dimension Inputs --}}
@@ -2679,10 +2884,10 @@ new class extends Component {
 
                                                 {{-- Surface and Addon Summary --}}
                                                 <div class="mt-2 text-xs text-zinc-500 dark:text-zinc-400">
-                                                    <span>Surfaces: {{ count($area['surfaces'] ?? []) }}</span>
+                                                    <span>{{ __('Surfaces') }}: {{ count($area['surfaces'] ?? []) }}</span>
                                                     @if (count($area['addons'] ?? []) > 0)
                                                         <span class="mx-1">•</span>
-                                                        <span>Add-ons: {{ count($area['addons']) }}</span>
+                                                        <span>{{ __('Add-ons') }}: {{ count($area['addons']) }}</span>
                                                     @endif
                                                     @if (($area['labor_hours'] ?? 0) > 0)
                                                         <span class="mx-1">•</span>
@@ -2699,7 +2904,7 @@ new class extends Component {
                                                     </div>
                                                     @if (($area['base_total'] ?? 0) > 0 && ($area['base_total'] ?? 0) != ($area['price'] ?? 0))
                                                         <div class="text-xs text-zinc-500 dark:text-zinc-400">
-                                                            Base: ${{ number_format($area['base_total'], 2) }}
+                                                            {{ __('Base') }}: ${{ number_format($area['base_total'], 2) }}
                                                         </div>
                                                     @endif
                                                 </div>
@@ -2738,13 +2943,13 @@ new class extends Component {
                                             {{-- Surfaces Breakdown --}}
                                             @if (count($area['surfaces'] ?? []) > 0)
                                                 <div>
-                                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">Surfaces</div>
+                                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">{{ __('Surfaces') }}</div>
                                                     <div class="space-y-1">
                                                         @foreach ($area['surfaces'] as $surface)
                                                             @if ($surface['is_default_enabled'] ?? true)
                                                                 <div class="flex justify-between items-center py-0.5">
                                                                     <span class="text-zinc-700 dark:text-zinc-300">{{ $surface['name'] }}</span>
-                                                                    <span class="text-zinc-500 dark:text-zinc-400">{{ $surface['default_coats'] ?? 2 }} coats</span>
+                                                                    <span class="text-zinc-500 dark:text-zinc-400">{{ $surface['default_coats'] ?? 2 }} {{ __('coats') }}</span>
                                                                 </div>
                                                             @endif
                                                         @endforeach
@@ -2755,7 +2960,7 @@ new class extends Component {
                                             {{-- Addons Breakdown --}}
                                             @if (count($area['addons'] ?? []) > 0)
                                                 <div>
-                                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">Add-ons</div>
+                                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-1">{{ __('Add-ons') }}</div>
                                                     <div class="space-y-1">
                                                         @foreach ($area['addons'] as $addon)
                                                             <div class="flex justify-between items-center py-0.5">
@@ -2774,27 +2979,27 @@ new class extends Component {
 
                                             {{-- COGS Summary --}}
                                             <div class="pt-2 border-t border-blue-200 dark:border-blue-800 space-y-2">
-                                                <div class="text-xs font-medium text-blue-700 dark:text-blue-400">COGS Breakdown</div>
+                                                <div class="text-xs font-medium text-blue-700 dark:text-blue-400">{{ __('COGS Breakdown') }}</div>
                                                 <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                                     <div>
-                                                        <span class="text-zinc-500 dark:text-zinc-400">Labor:</span>
+                                                        <span class="text-zinc-500 dark:text-zinc-400">{{ __('Labor') }}:</span>
                                                         <span class="font-medium ml-1">${{ number_format($area['labor_cost'] ?? 0, 2) }}</span>
                                                     </div>
                                                     <div>
-                                                        <span class="text-zinc-500 dark:text-zinc-400">Cleanup:</span>
+                                                        <span class="text-zinc-500 dark:text-zinc-400">{{ __('Cleanup') }}:</span>
                                                         <span class="font-medium ml-1">${{ number_format($area['cleanup_cost'] ?? 0, 2) }}</span>
                                                     </div>
                                                     <div>
-                                                        <span class="text-zinc-500 dark:text-zinc-400">Sundries:</span>
+                                                        <span class="text-zinc-500 dark:text-zinc-400">{{ __('Sundries') }}:</span>
                                                         <span class="font-medium ml-1">${{ number_format($area['sundries_cost'] ?? 0, 2) }}</span>
                                                     </div>
                                                     <div>
-                                                        <span class="text-zinc-500 dark:text-zinc-400">Materials:</span>
+                                                        <span class="text-zinc-500 dark:text-zinc-400">{{ __('Materials') }}:</span>
                                                         <span class="font-medium ml-1">${{ number_format($area['material_cost'] ?? 0, 2) }}</span>
                                                     </div>
                                                     @if (($area['material_tax'] ?? 0) > 0)
                                                     <div>
-                                                        <span class="text-zinc-500 dark:text-zinc-400">Mat. Tax:</span>
+                                                        <span class="text-zinc-500 dark:text-zinc-400">{{ __('Mat. Tax') }}:</span>
                                                         <span class="font-medium ml-1">${{ number_format($area['material_tax'] ?? 0, 2) }}</span>
                                                     </div>
                                                     @endif
@@ -2818,7 +3023,7 @@ new class extends Component {
                 {{-- Selected Templates --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
                     <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
-                        <flux:heading size="sm">Your Estimate</flux:heading>
+                        <flux:heading size="sm">{{ __('Your Estimate') }}</flux:heading>
                         @if (count($selectedTemplates) > 0)
                             <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
                                 {{ count($selectedTemplates) }} {{ Str::plural('item', count($selectedTemplates)) }}
@@ -2832,8 +3037,8 @@ new class extends Component {
                                 <div class="w-16 h-16 mx-auto mb-3 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
                                     <flux:icon name="inbox" class="w-8 h-8 text-zinc-400 dark:text-zinc-500" />
                                 </div>
-                                <p class="font-medium">No items yet</p>
-                                <p class="text-sm mt-1">Tap templates above to build your estimate</p>
+                                <p class="font-medium">{{ __('No items yet') }}</p>
+                                <p class="text-sm mt-1">{{ __('Tap templates above to build your estimate') }}</p>
                             </div>
                         @else
                             <div class="space-y-3">
@@ -2852,7 +3057,7 @@ new class extends Component {
                                                     <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
                                                         <span class="text-xs font-mono text-emerald-600 dark:text-emerald-400">{{ $templateData['code'] ?? 'FIXED' }}</span>
                                                         <span class="text-zinc-300 dark:text-zinc-600">·</span>
-                                                        <span>${{ number_format($templateData['unit_price'] ?? 0, 2) }} each</span>
+                                                        <span>${{ number_format($templateData['unit_price'] ?? 0, 2) }} {{ __('each') }}</span>
                                                     </div>
                                                 </div>
                                                 <div class="flex items-center gap-3">
@@ -2901,8 +3106,18 @@ new class extends Component {
                                                 <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
                                             </div>
                                             <div class="flex-1 min-w-0">
-                                                <div class="font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                                <div class="flex items-center gap-2 font-medium text-zinc-900 dark:text-zinc-100 truncate">
                                                     {{ $templateData['name'] }}
+                                                    @if (!empty($templateData['area_data']['measurement_type']) && $templateData['area_data']['measurement_type'] !== 'dimensions')
+                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                                                            {{ strtoupper($templateData['area_data']['measurement_type']) }}
+                                                        </span>
+                                                    @endif
+                                                    @if (!empty($templateData['service_category_id']))
+                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                                                            {{ __('Service') }}
+                                                        </span>
+                                                    @endif
                                                 </div>
                                                 <div class="flex flex-wrap items-center gap-x-2 text-sm text-zinc-500 dark:text-zinc-400">
                                                     {{-- Dimension inputs if area_data exists --}}
@@ -2974,7 +3189,7 @@ new class extends Component {
                                                 </div>
                                                 @if (!empty($templateData['base_total']) && $templateData['base_total'] > 0 && $templateData['base_total'] != $templateData['price'])
                                                     <div class="text-xs text-zinc-500 dark:text-zinc-400">
-                                                        Base: ${{ number_format($templateData['base_total'], 2) }}
+                                                        {{ __('Base') }}: ${{ number_format($templateData['base_total'], 2) }}
                                                     </div>
                                                 @endif
                                             </div>
@@ -3016,7 +3231,7 @@ new class extends Component {
                                                         $surfaces = $templateData['surfaces'] ?? $templateData['area_data']['surfaces'] ?? [];
                                                     @endphp
                                                     @if (!empty($surfaces))
-                                                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2">Surfaces Breakdown</div>
+                                                        <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2">{{ __('Surfaces Breakdown') }}</div>
                                                         <div class="space-y-1 mb-3">
                                                             @foreach ($surfaces as $surfaceKey => $surface)
                                                                 <div class="flex justify-between items-center py-1 {{ !$loop->last ? 'border-b border-blue-100 dark:border-blue-900' : '' }}">
@@ -3045,7 +3260,7 @@ new class extends Component {
                                                         </div>
                                                     @endif
 
-                                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2">COGS Breakdown</div>
+                                                    <div class="text-xs font-medium text-blue-700 dark:text-blue-400 mb-2">{{ __('COGS Breakdown') }}</div>
                                                     @php
                                                         $isFixedTemplate = ($templateData['pricing_method'] ?? '') === 'fixed';
                                                         $hasCleanup = ($templateData['cleanup_hours'] ?? 0) > 0;
@@ -3053,15 +3268,15 @@ new class extends Component {
                                                     @endphp
                                                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
                                                         <div>
-                                                            <div class="text-zinc-500 dark:text-zinc-400">Labor</div>
+                                                            <div class="text-zinc-500 dark:text-zinc-400">{{ __('Labor') }}</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
-                                                                {{ number_format($templateData['labor_hours'], 1) }} hrs × ${{ number_format(\App\Models\CompanySetting::getInstance()->getEffectiveHourlyRateForScope($templateData['scope_type'] ?? 'interior'), 2) }}
+                                                                {{ number_format($templateData['labor_hours'], 1) }} {{ __('hrs') }} × ${{ number_format(\App\Models\CompanySetting::getInstance()->getEffectiveHourlyRateForScope($templateData['scope_type'] ?? 'interior'), 2) }}
                                                             </div>
                                                             <div class="text-zinc-600 dark:text-zinc-400">= ${{ number_format($templateData['labor_cost'] ?? 0, 2) }}</div>
                                                         </div>
                                                         @if ($hasCleanup)
                                                         <div>
-                                                            <div class="text-zinc-500 dark:text-zinc-400">Cleanup</div>
+                                                            <div class="text-zinc-500 dark:text-zinc-400">{{ __('Cleanup') }}</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
                                                                 {{ number_format($templateData['cleanup_hours'] ?? 0, 2) }} hrs
                                                             </div>
@@ -3070,7 +3285,7 @@ new class extends Component {
                                                         @endif
                                                         @if ($hasSundries)
                                                         <div>
-                                                            <div class="text-zinc-500 dark:text-zinc-400">Sundries</div>
+                                                            <div class="text-zinc-500 dark:text-zinc-400">{{ __('Sundries') }}</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
                                                                 ${{ number_format($templateData['sundries_cost'] ?? 0, 2) }}
                                                             </div>
@@ -3078,7 +3293,7 @@ new class extends Component {
                                                         @endif
                                                         @if (($templateData['material_cost'] ?? 0) > 0)
                                                         <div>
-                                                            <div class="text-zinc-500 dark:text-zinc-400">Materials</div>
+                                                            <div class="text-zinc-500 dark:text-zinc-400">{{ __('Materials') }}</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
                                                                 ${{ number_format($templateData['material_cost'] ?? 0, 2) }}
                                                             </div>
@@ -3086,7 +3301,7 @@ new class extends Component {
                                                         @endif
                                                         @if (($templateData['material_tax'] ?? 0) > 0)
                                                         <div>
-                                                            <div class="text-zinc-500 dark:text-zinc-400">Material Tax ({{ number_format(\App\Models\CompanySetting::getInstance()->getMaterialTaxRate(), 1) }}%)</div>
+                                                            <div class="text-zinc-500 dark:text-zinc-400">{{ __('Material Tax') }} ({{ number_format(\App\Models\CompanySetting::getInstance()->getMaterialTaxRate(), 1) }}%)</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
                                                                 ${{ number_format($templateData['material_tax'] ?? 0, 2) }}
                                                             </div>
@@ -3094,7 +3309,7 @@ new class extends Component {
                                                         @endif
                                                         @if (($templateData['labor_tax'] ?? 0) > 0)
                                                         <div>
-                                                            <div class="text-zinc-500 dark:text-zinc-400">Labor Tax</div>
+                                                            <div class="text-zinc-500 dark:text-zinc-400">{{ __('Labor Tax') }}</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
                                                                 ${{ number_format($templateData['labor_tax'] ?? 0, 2) }}
                                                             </div>
@@ -3104,7 +3319,7 @@ new class extends Component {
                                                     <div class="mt-3 pt-2 border-t border-blue-200 dark:border-blue-800 space-y-2">
                                                         <div class="flex justify-between items-center">
                                                             <div class="text-zinc-600 dark:text-zinc-400 font-medium">
-                                                                COGS (Cost of Goods Sold)
+                                                                {{ __('COGS (Cost of Goods Sold)') }}
                                                             </div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
                                                                 ${{ number_format($templateData['base_total'] ?? 0, 2) }}
@@ -3130,7 +3345,7 @@ new class extends Component {
                                                         @if ($profit > 0)
                                                             <div class="flex justify-between items-center text-sm">
                                                                 <div class="text-green-600 dark:text-green-400">
-                                                                    Profit ({{ number_format($marginPercent, 0) }}% of sale)
+                                                                    {{ __('Profit') }} ({{ number_format($marginPercent, 0) }}% {{ __('of sale') }})
                                                                 </div>
                                                                 <div class="font-medium text-green-600 dark:text-green-400">
                                                                     ${{ number_format($profit, 2) }}
@@ -3156,11 +3371,11 @@ new class extends Component {
                 {{-- Notes - Collapsible on Mobile --}}
                 <details class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 group">
                     <summary class="p-4 cursor-pointer list-none flex items-center justify-between">
-                        <flux:heading size="sm">Notes (Optional)</flux:heading>
+                        <flux:heading size="sm">{{ __('Notes (Optional)') }}</flux:heading>
                         <flux:icon name="chevron-down" class="w-5 h-5 text-zinc-400 transition-transform group-open:rotate-180" />
                     </summary>
                     <div class="px-4 pb-4">
-                        <flux:textarea wire:model="notes" rows="3" placeholder="Additional notes for the customer..." />
+                        <flux:textarea wire:model="notes" rows="3" :placeholder="__('Additional notes for the customer...')" />
                         <flux:error name="notes" />
                     </div>
                 </details>
@@ -3184,24 +3399,24 @@ new class extends Component {
                 <div class="sticky top-6 space-y-4">
                     {{-- Pricing Options --}}
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-white dark:bg-zinc-900">
-                        <flux:heading size="sm" class="mb-4">Pricing</flux:heading>
+                        <flux:heading size="sm" class="mb-4">{{ __('Pricing') }}</flux:heading>
                         <div class="space-y-3">
                             <flux:field>
-                                <flux:label>Tax Rate</flux:label>
+                                <flux:label>{{ __('Tax Rate') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <flux:input wire:model.live="taxRate" type="number" step="0.01" min="0" max="100" placeholder="0" class="flex-1" />
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">%</span>
                                 </div>
                             </flux:field>
                             <flux:field>
-                                <flux:label>Discount</flux:label>
+                                <flux:label>{{ __('Discount') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">$</span>
                                     <flux:input wire:model.live="discountAmount" type="number" step="0.01" min="0" placeholder="0" class="flex-1" />
                                 </div>
                             </flux:field>
                             <flux:field>
-                                <flux:label>Deposit Required</flux:label>
+                                <flux:label>{{ __('Deposit Required') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <flux:input wire:model.live="depositPercent" type="number" step="1" min="0" max="100" placeholder="30" class="flex-1" />
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">%</span>
@@ -3212,41 +3427,41 @@ new class extends Component {
 
                     {{-- Summary Card --}}
                     <div class="border-2 border-blue-200 dark:border-blue-800 rounded-lg p-4 bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/30 dark:to-zinc-900">
-                        <flux:heading size="sm" class="mb-4">Summary</flux:heading>
+                        <flux:heading size="sm" class="mb-4">{{ __('Summary') }}</flux:heading>
                         <dl class="space-y-2 text-sm">
                             <div class="flex justify-between">
-                                <dt class="text-zinc-600 dark:text-zinc-400">Subtotal ({{ count($areas) > 0 ? count($areas) . ' areas' : count($selectedTemplates) . ' items' }})</dt>
+                                <dt class="text-zinc-600 dark:text-zinc-400">{{ __('Subtotal') }} ({{ count($areas) > 0 ? count($areas) . ' ' . __('areas') : count($selectedTemplates) . ' ' . __('items') }})</dt>
                                 <dd class="font-medium">${{ number_format($this->subtotal, 2) }}</dd>
                             </div>
                             @if ($this->totalLaborHours > 0)
                                 <div class="flex justify-between">
-                                    <dt class="text-zinc-600 dark:text-zinc-400">Total Hours</dt>
+                                    <dt class="text-zinc-600 dark:text-zinc-400">{{ __('Total Hours') }}</dt>
                                     <dd class="font-medium text-blue-600 dark:text-blue-400">{{ number_format($this->totalLaborHours, 1) }} hrs</dd>
                                 </div>
                             @endif
                             @if ($taxRate > 0)
                                 <div class="flex justify-between">
-                                    <dt class="text-zinc-600 dark:text-zinc-400">Tax ({{ number_format($taxRate, 1) }}%)</dt>
+                                    <dt class="text-zinc-600 dark:text-zinc-400">{{ __('Tax') }} ({{ number_format($taxRate, 1) }}%)</dt>
                                     <dd>${{ number_format($this->taxAmount, 2) }}</dd>
                                 </div>
                             @endif
                             @if ($discountAmount > 0)
                                 <div class="flex justify-between">
-                                    <dt class="text-zinc-600 dark:text-zinc-400">Discount</dt>
+                                    <dt class="text-zinc-600 dark:text-zinc-400">{{ __('Discount') }}</dt>
                                     <dd class="text-red-600 dark:text-red-400">-${{ number_format($discountAmount, 2) }}</dd>
                                 </div>
                             @endif
                             <div class="flex justify-between pt-3 border-t border-blue-200 dark:border-blue-800">
-                                <dt class="text-lg font-bold">Total</dt>
+                                <dt class="text-lg font-bold">{{ __('Total') }}</dt>
                                 <dd class="text-2xl font-bold text-blue-600 dark:text-blue-400">${{ number_format($this->total, 2) }}</dd>
                             </div>
                             <div class="pt-3 border-t border-blue-100 dark:border-blue-900 space-y-1">
                                 <div class="flex justify-between text-zinc-600 dark:text-zinc-400">
-                                    <dt>Deposit ({{ number_format($depositPercent, 0) }}%)</dt>
+                                    <dt>{{ __('Deposit') }} ({{ number_format($depositPercent, 0) }}%)</dt>
                                     <dd class="font-medium text-zinc-900 dark:text-zinc-100">${{ number_format($this->depositAmount, 2) }}</dd>
                                 </div>
                                 <div class="flex justify-between text-zinc-600 dark:text-zinc-400">
-                                    <dt>Balance Due</dt>
+                                    <dt>{{ __('Balance Due') }}</dt>
                                     <dd class="font-medium text-zinc-900 dark:text-zinc-100">${{ number_format($this->balanceDue, 2) }}</dd>
                                 </div>
                             </div>
@@ -3256,20 +3471,20 @@ new class extends Component {
                     {{-- Actions --}}
                     <div class="space-y-2">
                         <flux:button wire:click="saveAndSend" variant="primary" wire:loading.attr="disabled" class="w-full">
-                            <span wire:loading.remove wire:target="saveAndSend">Save & Send to Customer</span>
-                            <span wire:loading wire:target="saveAndSend">Sending...</span>
+                            <span wire:loading.remove wire:target="saveAndSend">{{ __('Save & Send to Customer') }}</span>
+                            <span wire:loading wire:target="saveAndSend">{{ __('Sending...') }}</span>
                         </flux:button>
                         <flux:button wire:click="saveAsDraft" wire:loading.attr="disabled" class="w-full">
-                            <span wire:loading.remove wire:target="saveAsDraft">Save as Draft</span>
-                            <span wire:loading wire:target="saveAsDraft">Saving...</span>
+                            <span wire:loading.remove wire:target="saveAsDraft">{{ __('Save as Draft') }}</span>
+                            <span wire:loading wire:target="saveAsDraft">{{ __('Saving...') }}</span>
                         </flux:button>
                         @if ($isEditing)
                             <flux:button variant="ghost" :href="route('estimates.show', $estimate)" wire:navigate class="w-full">
-                                Cancel
+                                {{ __('Cancel') }}
                             </flux:button>
                         @else
                             <flux:button variant="ghost" :href="route('deals.show', $deal)" wire:navigate class="w-full">
-                                Cancel
+                                {{ __('Cancel') }}
                             </flux:button>
                         @endif
                     </div>
@@ -3282,7 +3497,7 @@ new class extends Component {
     <flux:modal wire:model="showTemplatePicker" name="template-picker-modal" class="max-w-3xl" x-data="{ pickerTab: 'areas' }">
         <div class="p-6">
             <flux:heading size="lg" class="mb-4">
-                Add to Estimate
+                {{ __('Add to Estimate') }}
             </flux:heading>
 
             {{-- Tabs for Area Templates vs Fixed Price --}}
@@ -3293,7 +3508,7 @@ new class extends Component {
                     :class="pickerTab === 'areas' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'"
                     class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
                 >
-                    Area Templates
+                    {{ __('Area Templates') }}
                     <span class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800">
                         {{ $this->pickerTemplates->count() }}
                     </span>
@@ -3304,7 +3519,7 @@ new class extends Component {
                     :class="pickerTab === 'fixed' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'"
                     class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
                 >
-                    Fixed Price
+                    {{ __('Fixed Price') }}
                     <span class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800">
                         {{ $this->fixedPriceTemplates->count() }}
                     </span>
@@ -3314,14 +3529,14 @@ new class extends Component {
             {{-- Area Templates Tab --}}
             <div x-show="pickerTab === 'areas'" x-cloak>
                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-4">
-                    Choose an area template with full dimension and surface control.
+                    {{ __('Choose an area template with full dimension and surface control.') }}
                 </flux:text>
 
                 @if ($this->pickerTemplates->isEmpty())
                     <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
                         <flux:icon name="squares-2x2" class="w-12 h-12 mx-auto mb-3 text-zinc-300 dark:text-zinc-600" />
-                        <p class="font-medium">No area templates available</p>
-                        <p class="text-sm mt-1">Create area templates in Area Templates first, or add a custom area.</p>
+                        <p class="font-medium">{{ __('No area templates available') }}</p>
+                        <p class="text-sm mt-1">{{ __('Create area templates in Area Templates first, or add a custom area.') }}</p>
                     </div>
                 @else
                     <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto">
@@ -3338,10 +3553,10 @@ new class extends Component {
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <div class="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">
-                                            {{ $template->name }}
+                                            {{ __($template->name) }}
                                         </div>
                                         <div class="text-xs text-zinc-500 dark:text-zinc-400">
-                                            {{ $template->templateCategory?->name ?? 'Room' }}
+                                            {{ __($template->templateCategory?->name ?? 'Room') }}
                                         </div>
                                     </div>
                                 </div>
@@ -3359,14 +3574,14 @@ new class extends Component {
             {{-- Fixed Price Tab --}}
             <div x-show="pickerTab === 'fixed'" x-cloak>
                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-4">
-                    Add fixed-price items like closets, pantries, and exterior features.
+                    {{ __('Add fixed-price items like closets, pantries, and exterior features.') }}
                 </flux:text>
 
                 @if ($this->fixedPriceTemplates->isEmpty())
                     <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
                         <flux:icon name="currency-dollar" class="w-12 h-12 mx-auto mb-3 text-zinc-300 dark:text-zinc-600" />
-                        <p class="font-medium">No fixed price templates available</p>
-                        <p class="text-sm mt-1">Create fixed price templates in Production Rates first.</p>
+                        <p class="font-medium">{{ __('No fixed price templates available') }}</p>
+                        <p class="text-sm mt-1">{{ __('Create fixed price templates in Production Rates first.') }}</p>
                     </div>
                 @else
                     <div class="max-h-[50vh] overflow-y-auto space-y-4">
@@ -3386,7 +3601,7 @@ new class extends Component {
                                             <div class="flex items-center justify-between gap-2">
                                                 <div class="min-w-0">
                                                     <div class="font-medium text-sm text-zinc-900 dark:text-zinc-100 truncate">
-                                                        {{ $template->name }}
+                                                        {{ __($template->name) }}
                                                     </div>
                                                     <div class="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
                                                         {{ $template->code }}
@@ -3409,7 +3624,7 @@ new class extends Component {
 
             <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                 <flux:button wire:click="closeTemplatePicker" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
             </div>
         </div>

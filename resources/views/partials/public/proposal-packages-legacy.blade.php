@@ -1,8 +1,8 @@
 {{-- LEGACY PACKAGE SYSTEM - Simplified View --}}
 {{-- Package Selection Header --}}
 <div class="text-center">
-    <h2 class="text-2xl font-semibold text-gray-900">Choose Your Package</h2>
-    <p class="mt-2 text-gray-600">Select the package that best fits your needs</p>
+    <h2 class="text-2xl font-semibold text-gray-900">{{ __('Choose Your Package') }}</h2>
+    <p class="mt-2 text-gray-600">{{ __('Select the package that best fits your needs') }}</p>
 </div>
 
 {{-- Package Comparison Cards --}}
@@ -17,7 +17,7 @@
                 @if ($package['is_recommended'])
                     <div class="absolute -top-3 left-1/2 -translate-x-1/2">
                         <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-amber-400 text-amber-900">
-                            Recommended
+                            {{ __('Recommended') }}
                         </span>
                     </div>
                 @endif
@@ -44,47 +44,71 @@
                         <span class="text-3xl font-bold text-gray-900">${{ number_format($package['total'], 2) }}</span>
                     </div>
 
-                    {{-- Package Features --}}
+                    {{-- Package Features / Add-on Services --}}
                     <div class="space-y-2 mb-6">
                         {{-- Painting Work --}}
                         <div class="flex items-center gap-2 text-sm">
-                            <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                             </svg>
-                            <span class="text-gray-700">Complete Painting Work</span>
+                            <span class="text-gray-700">{{ __('Complete Painting Work') }}</span>
                         </div>
 
-                        {{-- Warranty (if any) --}}
-                        @if (($package['warranty_years'] ?? 0) > 0 || ($package['warranty_price'] ?? 0) > 0)
-                            <div class="flex items-center gap-2 text-sm">
-                                <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                </svg>
-                                <span class="text-gray-700">
-                                    @if ($package['warranty_years'] > 0)
-                                        {{ $package['warranty_years'] }}-Year Warranty
-                                    @else
-                                        Warranty Included
-                                    @endif
-                                </span>
-                            </div>
-                        @endif
-
-                        {{-- Service items count --}}
-                        @php
-                            $serviceItems = collect($package['items'] ?? [])->filter(fn($item) => ($item['itemable_type'] ?? '') === 'EstimateItem');
-                        @endphp
-                        @if ($serviceItems->count() > 0)
-                            @foreach ($serviceItems as $item)
-                                @if ($item['customer_approved'] ?? true)
-                                    <div class="flex items-center gap-2 text-sm">
-                                        <svg class="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                                        </svg>
-                                        <span class="text-gray-700">{{ $item['name'] }}</span>
+                        @if (! empty($templateAddons[$package['tier']] ?? []))
+                            {{-- Template add-on items --}}
+                            @foreach ($templateAddons[$package['tier']] as $addon)
+                                <div class="flex items-center justify-between gap-2 text-sm">
+                                    <div class="flex items-center gap-2 min-w-0">
+                                        @if ($addon['is_warranty'])
+                                            {{-- Shield icon for warranty --}}
+                                            <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                            </svg>
+                                        @else
+                                            {{-- Checkmark icon for services --}}
+                                            <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                            </svg>
+                                        @endif
+                                        <span class="text-gray-700">{{ $addon['name'] }}</span>
                                     </div>
-                                @endif
+                                    @if ($addon['price'] > 0)
+                                        <span class="text-xs text-gray-500 shrink-0">+${{ number_format($addon['price'], 2) }}</span>
+                                    @endif
+                                </div>
                             @endforeach
+                        @else
+                            {{-- Fallback: legacy warranty and service items --}}
+                            @if (($package['warranty_years'] ?? 0) > 0 || ($package['warranty_price'] ?? 0) > 0)
+                                <div class="flex items-center gap-2 text-sm">
+                                    <svg class="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"></path>
+                                    </svg>
+                                    <span class="text-gray-700">
+                                        @if ($package['warranty_years'] > 0)
+                                            {{ __(':count-Year Warranty', ['count' => $package['warranty_years']]) }}
+                                        @else
+                                            {{ __('Warranty Included') }}
+                                        @endif
+                                    </span>
+                                </div>
+                            @endif
+
+                            @php
+                                $serviceItems = collect($package['items'] ?? [])->filter(fn($item) => ($item['itemable_type'] ?? '') === 'EstimateItem');
+                            @endphp
+                            @if ($serviceItems->count() > 0)
+                                @foreach ($serviceItems as $item)
+                                    @if ($item['customer_approved'] ?? true)
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <svg class="w-4 h-4 text-green-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                            </svg>
+                                            <span class="text-gray-700">{{ $item['name'] }}</span>
+                                        </div>
+                                    @endif
+                                @endforeach
+                            @endif
                         @endif
                     </div>
 
@@ -105,11 +129,11 @@
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                 </svg>
-                                Selected
+                                {{ __('Selected') }}
                             </span>
                         @else
-                            <span wire:loading.remove wire:target="selectPackage({{ $package['id'] }})">Select Package</span>
-                            <span wire:loading wire:target="selectPackage({{ $package['id'] }})">Selecting...</span>
+                            <span wire:loading.remove wire:target="selectPackage({{ $package['id'] }})">{{ __('Select Package') }}</span>
+                            <span wire:loading wire:target="selectPackage({{ $package['id'] }})">{{ __('Selecting...') }}</span>
                         @endif
                     </button>
                 </div>
@@ -118,7 +142,7 @@
     </div>
 @else
     <div class="text-center py-12 bg-gray-50 rounded-lg">
-        <p class="text-gray-600">No packages available for this estimate.</p>
+        <p class="text-gray-600">{{ __('No packages available for this estimate.') }}</p>
     </div>
 @endif
 
@@ -126,8 +150,8 @@
 @if (count($optionalItems) > 0)
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h3 class="text-lg font-semibold text-gray-900">Optional Add-ons</h3>
-            <p class="text-sm text-gray-600">Enhance your project with these additional options</p>
+            <h3 class="text-lg font-semibold text-gray-900">{{ __('Optional Add-ons') }}</h3>
+            <p class="text-sm text-gray-600">{{ __('Enhance your project with these additional options') }}</p>
         </div>
 
         <div class="divide-y divide-gray-100">
@@ -194,20 +218,20 @@
 
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
         <div class="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h3 class="text-lg font-semibold text-gray-900">Summary</h3>
+            <h3 class="text-lg font-semibold text-gray-900">{{ __('Summary') }}</h3>
         </div>
 
         <div class="px-6 py-4 space-y-3">
             {{-- Package Total --}}
             <div class="flex justify-between items-center text-sm">
-                <span class="text-gray-600">{{ $selectedPackage['name'] ?? 'Selected Package' }}</span>
+                <span class="text-gray-600">{{ $selectedPackage['name'] ?? __('Selected Package') }}</span>
                 <span class="text-gray-900">${{ number_format($selectedPackage['total'] ?? 0, 2) }}</span>
             </div>
 
             {{-- Optional Items --}}
             @if ($this->optionalItemsTotal > 0)
                 <div class="flex justify-between items-center text-sm">
-                    <span class="text-gray-600">Optional Add-ons</span>
+                    <span class="text-gray-600">{{ __('Optional Add-ons') }}</span>
                     <span class="text-gray-900">+${{ number_format($this->optionalItemsTotal, 2) }}</span>
                 </div>
             @endif
@@ -215,7 +239,7 @@
             <div class="border-t border-gray-200 pt-3 mt-3">
                 {{-- Final Total --}}
                 <div class="flex justify-between items-center">
-                    <span class="text-lg font-semibold text-gray-900">Total</span>
+                    <span class="text-lg font-semibold text-gray-900">{{ __('Total') }}</span>
                     <span class="text-2xl font-bold text-blue-600">${{ number_format($this->finalTotal, 2) }}</span>
                 </div>
             </div>
@@ -223,11 +247,11 @@
             {{-- Deposit & Balance --}}
             <div class="bg-gray-50 -mx-6 -mb-4 px-6 py-4 mt-4 border-t border-gray-200">
                 <div class="flex justify-between items-center text-sm mb-2">
-                    <span class="text-gray-600">Deposit Due ({{ number_format($depositPercent, 0) }}%)</span>
+                    <span class="text-gray-600">{{ __('Deposit Due') }} ({{ number_format($depositPercent, 0) }}%)</span>
                     <span class="font-medium text-gray-900">${{ number_format($this->depositAmount, 2) }}</span>
                 </div>
                 <div class="flex justify-between items-center text-sm">
-                    <span class="text-gray-600">Balance Due on Completion</span>
+                    <span class="text-gray-600">{{ __('Balance Due on Completion') }}</span>
                     <span class="font-medium text-gray-900">${{ number_format($this->balanceDue, 2) }}</span>
                 </div>
             </div>
@@ -241,7 +265,7 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
-                <span class="font-medium">Proposal Accepted</span>
+                <span class="font-medium">{{ __('Proposal Accepted') }}</span>
             </div>
         @elseif ($estimate->hasPendingAmendments())
             <button
@@ -251,7 +275,7 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
                 </svg>
-                Sign & Accept Proposal
+                {{ __('Sign & Accept Proposal') }}
             </button>
             <div>
                 <a
@@ -261,7 +285,7 @@
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
                     </svg>
-                    Review and acknowledge changes made to this estimate before signing
+                    {{ __('Review and acknowledge changes made to this estimate before signing') }}
                 </a>
             </div>
         @else
@@ -274,11 +298,11 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
                 </svg>
-                <span wire:loading.remove wire:target="proceedToSignature">Sign & Accept Proposal</span>
-                <span wire:loading wire:target="proceedToSignature">Processing...</span>
+                <span wire:loading.remove wire:target="proceedToSignature">{{ __('Sign & Accept Proposal') }}</span>
+                <span wire:loading wire:target="proceedToSignature">{{ __('Processing...') }}</span>
             </button>
             <p class="mt-3 text-sm text-gray-500">
-                By signing, you agree to the terms and conditions of this proposal.
+                {{ __('By signing, you agree to the terms and conditions of this proposal.') }}
             </p>
         @endif
     </div>
@@ -290,7 +314,7 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                 </svg>
-                <span class="font-medium">Proposal Accepted</span>
+                <span class="font-medium">{{ __('Proposal Accepted') }}</span>
             </div>
         @else
             <button
@@ -300,10 +324,10 @@
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
                 </svg>
-                Sign & Accept Proposal
+                {{ __('Sign & Accept Proposal') }}
             </button>
             <p class="mt-3 text-sm text-gray-500">
-                Please select a package above to continue.
+                {{ __('Please select a package above to continue.') }}
             </p>
         @endif
     </div>

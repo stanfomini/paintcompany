@@ -165,14 +165,14 @@ class AreaTemplateSurface extends Model
     public function getSurfaceTypeLabelAttribute(): string
     {
         return match ($this->surface_type) {
-            self::SURFACE_TYPE_WALLS => 'Walls',
-            self::SURFACE_TYPE_CEILING => 'Ceiling',
-            self::SURFACE_TYPE_TRIM => 'Trim/Baseboards',
-            self::SURFACE_TYPE_DOORS => 'Doors',
-            self::SURFACE_TYPE_WINDOWS => 'Windows',
-            self::SURFACE_TYPE_FLOOR => 'Floor',
-            self::SURFACE_TYPE_OTHER => 'Other',
-            default => ucfirst($this->surface_type ?? ''),
+            self::SURFACE_TYPE_WALLS => __('Walls'),
+            self::SURFACE_TYPE_CEILING => __('Ceiling'),
+            self::SURFACE_TYPE_TRIM => __('Trim/Baseboards'),
+            self::SURFACE_TYPE_DOORS => __('Doors'),
+            self::SURFACE_TYPE_WINDOWS => __('Windows'),
+            self::SURFACE_TYPE_FLOOR => __('Floor'),
+            self::SURFACE_TYPE_OTHER => __('Other'),
+            default => __(ucfirst($this->surface_type ?? '')),
         };
     }
 
@@ -182,12 +182,12 @@ class AreaTemplateSurface extends Model
     public function getCalculationMethodLabelAttribute(): string
     {
         return match ($this->calculation_method) {
-            self::CALC_METHOD_RATIO => 'Ratio of Room',
-            self::CALC_METHOD_PER_100SQFT => 'Per 100 sqft',
-            self::CALC_METHOD_PER_LNFT => 'Linear Feet',
-            self::CALC_METHOD_FIXED_COUNT => 'Fixed Count',
-            self::CALC_METHOD_FIXED_PRICE => 'Fixed Price',
-            default => ucfirst($this->calculation_method ?? ''),
+            self::CALC_METHOD_RATIO => __('Ratio of Room'),
+            self::CALC_METHOD_PER_100SQFT => __('Per 100 sqft'),
+            self::CALC_METHOD_PER_LNFT => __('Linear Feet'),
+            self::CALC_METHOD_FIXED_COUNT => __('Fixed Count'),
+            self::CALC_METHOD_FIXED_PRICE => __('Fixed Price'),
+            default => __(ucfirst($this->calculation_method ?? '')),
         };
     }
 
@@ -197,10 +197,10 @@ class AreaTemplateSurface extends Model
     public function getUnitTypeLabelAttribute(): string
     {
         return match ($this->unit_type) {
-            self::UNIT_TYPE_SQFT => 'sqft',
-            self::UNIT_TYPE_LNFT => 'lnft',
-            self::UNIT_TYPE_UNITS => 'units',
-            default => $this->unit_type ?? '',
+            self::UNIT_TYPE_SQFT => __('sqft'),
+            self::UNIT_TYPE_LNFT => __('lnft'),
+            self::UNIT_TYPE_UNITS => __('units'),
+            default => __($this->unit_type ?? ''),
         };
     }
 }

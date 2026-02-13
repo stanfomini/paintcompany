@@ -59,7 +59,7 @@ class PhotoAnnotation extends Model
      */
     public function getAuthorTypeLabelAttribute(): string
     {
-        return self::AUTHOR_TYPES[$this->author_type] ?? ucfirst($this->author_type);
+        return __(self::AUTHOR_TYPES[$this->author_type] ?? ucfirst($this->author_type));
     }
 
     /**

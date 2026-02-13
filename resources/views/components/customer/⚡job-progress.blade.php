@@ -69,7 +69,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             return [];
         }
 
-        return [
+        $listeners = [
             "echo-private:customer.job.{$this->job->id},stage.changed" => 'onStageChanged',
             "echo-private:customer.job.{$this->job->id},date.updated" => 'onDateUpdated',
             "echo-private:customer.job.{$this->job->id},color.updated" => 'onColorUpdated',
@@ -77,7 +77,15 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             "echo-private:customer.job.{$this->job->id},prep.approval.changed" => 'onPrepApprovalChanged',
             "echo-private:customer.job.{$this->job->id},photo.updated" => 'onPhotoUpdated',
             "echo-private:customer.job.{$this->job->id},job.notification" => 'onJobNotification',
+            "echo-private:customer.job.{$this->job->id},.video.call.started" => 'onVideoCallStarted',
         ];
+
+        $chatThread = $this->job->deal?->chatThread;
+        if ($chatThread) {
+            $listeners["echo-private:chat.thread.{$chatThread->id},.message.sent"] = 'onChatMessageReceived';
+        }
+
+        return $listeners;
     }
 
     public function onStageChanged(): void
@@ -129,6 +137,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         }
     }
 
+    public function onVideoCallStarted(array $data): void
+    {
+        $this->dispatch('video-call-started', roomId: $data['room_id'] ?? '', initiator: $data['initiator_name'] ?? '');
+    }
+
+    public function onChatMessageReceived(): void
+    {
+        $this->job->load('deal.chatThread');
+    }
+
     /**
      * Authorize: customer can only see their own jobs.
      */
@@ -137,7 +155,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         $user = Auth::guard('customer')->user();
         $customer = Customer::where('user_id', $user->id)->first();
 
-        if (! $customer || $job->deal?->customer_id !== $customer->id) {
+        if (! $customer || ! $job->deal?->customerCanAccess($customer)) {
             abort(404);
         }
     }
@@ -183,20 +201,20 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
     public function confirmDate(): void
     {
         if (! $this->job->scheduled_date) {
-            session()->flash('error', 'No date has been set yet.');
+            session()->flash('error', __('No date has been set yet.'));
 
             return;
         }
 
         if ($this->job->customer_date_confirmed) {
-            session()->flash('error', 'Date already confirmed.');
+            session()->flash('error', __('Date already confirmed.'));
 
             return;
         }
 
         app(JobService::class)->confirmCustomerDate($this->job);
         $this->job->refresh();
-        session()->flash('success', 'Date confirmed! Thank you.');
+        session()->flash('success', __('Date confirmed! Thank you.'));
     }
 
     /**
@@ -214,7 +232,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         $this->job->refresh();
         $this->job->load('deal.chatThread');
 
-        session()->flash('success', 'Your preferred date has been proposed. We\'ll review and confirm shortly.');
+        session()->flash('success', __('Your preferred date has been proposed. We\'ll review and confirm shortly.'));
     }
 
     /**
@@ -230,7 +248,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         ]);
 
         if ($this->job->allowed_colors > 0 && $this->job->colors()->count() >= $this->job->allowed_colors) {
-            session()->flash('error', 'Maximum number of colors reached.');
+            session()->flash('error', __('Maximum number of colors reached.'));
 
             return;
         }
@@ -257,20 +275,20 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
     public function confirmColors(): void
     {
         if ($this->job->colors()->count() === 0) {
-            session()->flash('error', 'Add at least one color first.');
+            session()->flash('error', __('Add at least one color first.'));
 
             return;
         }
 
         if ($this->job->customer_colors_confirmed) {
-            session()->flash('error', 'Colors already confirmed.');
+            session()->flash('error', __('Colors already confirmed.'));
 
             return;
         }
 
         app(JobService::class)->confirmCustomerColors($this->job);
         $this->job->refresh();
-        session()->flash('success', 'Colors confirmed! Thank you.');
+        session()->flash('success', __('Colors confirmed! Thank you.'));
     }
 
     #[On('message-sent')]
@@ -484,12 +502,15 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         {{-- Header --}}
         <div class="flex items-center gap-4 mb-4">
             <flux:button variant="ghost" :href="route('customer.jobs.index')" icon="arrow-left" wire:navigate>
-                Back
+                {{ __('Back') }}
             </flux:button>
             <div class="flex-1">
                 <flux:heading size="xl">{{ $job->title }}</flux:heading>
                 <flux:text class="text-zinc-500">{{ $job->job_number }}</flux:text>
             </div>
+            @if (! $job->isCompleted())
+                <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
+            @endif
             @if ($job->estimate)
                 <flux:button
                     :href="route('customer.estimates.show', $job->estimate)"
@@ -498,7 +519,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                     wire:navigate
                     class="shrink-0"
                 >
-                    View Estimate
+                    {{ __('View Estimate') }}
                 </flux:button>
             @endif
         </div>
@@ -517,7 +538,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 <div class="flex items-center gap-2">
                     <flux:icon name="document-text" class="w-4 h-4 text-zinc-400 shrink-0" />
                     <flux:text class="text-zinc-600 dark:text-zinc-300">
-                        Estimate {{ $job->estimate->estimate_number }}
+                        {{ __('Estimate') }} {{ $job->estimate->estimate_number }}
                         @if ($job->estimate->total)
                             &mdash; ${{ number_format($job->estimate->total, 2) }}
                         @endif
@@ -561,7 +582,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
 
         {{-- Progress Timeline --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-            <flux:heading size="sm" class="mb-6">Job Progress</flux:heading>
+            <flux:heading size="sm" class="mb-6">{{ __('Job Progress') }}</flux:heading>
             <div class="flex items-center justify-between">
                 @foreach (App\Models\Job::STAGES as $stageKey => $stageLabel)
                     @php
@@ -601,14 +622,14 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             {{-- Stage 1: Estimate Accepted --}}
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-green-500 mb-4" />
-                <flux:heading size="lg">Your Estimate Has Been Accepted</flux:heading>
+                <flux:heading size="lg">{{ __('Your Estimate Has Been Accepted') }}</flux:heading>
                 <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                    Great news! Your painting project is confirmed. Our team will begin scheduling and color selection soon.
+                    {{ __('Great news! Your painting project is confirmed. Our team will begin scheduling and color selection soon.') }}
                 </flux:text>
                 @if ($job->estimate)
                     <div class="mt-4">
                         <flux:badge size="sm" color="green">
-                            Estimate: {{ $job->estimate->estimate_number }}
+                            {{ __('Estimate') }}: {{ $job->estimate->estimate_number }}
                         </flux:badge>
                     </div>
                 @endif
@@ -619,7 +640,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             <div class="space-y-6">
                 {{-- Date Confirmation --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">Schedule Your Start Date</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Schedule Your Start Date') }}</flux:heading>
 
                     @if ($job->scheduled_date)
                         <div class="flex items-center justify-between">
@@ -627,20 +648,20 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                 <flux:heading size="lg">{{ $job->scheduled_date->format('l, F j, Y') }}</flux:heading>
                                 <flux:text class="text-zinc-500 mt-1">
                                     @if ($job->company_date_confirmed)
-                                        Our team has confirmed this date.
+                                        {{ __('Our team has confirmed this date.') }}
                                     @else
-                                        Our team is reviewing this date.
+                                        {{ __('Our team is reviewing this date.') }}
                                     @endif
                                 </flux:text>
                             </div>
                             <div>
                                 @if ($job->customer_date_confirmed)
                                     <flux:badge size="lg" color="green">
-                                        <flux:icon name="check" class="w-4 h-4 mr-1" /> Date Confirmed
+                                        <flux:icon name="check" class="w-4 h-4 mr-1" /> {{ __('Date Confirmed') }}
                                     </flux:badge>
                                 @else
                                     <flux:button wire:click="confirmDate" variant="primary" icon="check">
-                                        Confirm This Date
+                                        {{ __('Confirm This Date') }}
                                     </flux:button>
                                 @endif
                             </div>
@@ -653,7 +674,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                 @else
                                     <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                 @endif
-                                <flux:text class="text-sm">Company confirmation</flux:text>
+                                <flux:text class="text-sm">{{ __('Company confirmation') }}</flux:text>
                             </div>
                             <div class="flex items-center gap-2">
                                 @if ($job->customer_date_confirmed)
@@ -661,7 +682,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                 @else
                                     <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                 @endif
-                                <flux:text class="text-sm">Your confirmation</flux:text>
+                                <flux:text class="text-sm">{{ __('Your confirmation') }}</flux:text>
                             </div>
                         </div>
 
@@ -669,17 +690,17 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                         @if (! $job->customer_date_confirmed)
                             <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700" x-data="{ showDatePicker: false }">
                                 <flux:button variant="ghost" size="sm" icon="calendar" x-on:click="showDatePicker = !showDatePicker">
-                                    Propose a Different Date
+                                    {{ __('Propose a Different Date') }}
                                 </flux:button>
                                 <div x-show="showDatePicker" x-cloak class="mt-3">
                                     <form wire:submit="proposeDate" class="flex items-end gap-3">
                                         <flux:field class="flex-1">
-                                            <flux:label>Your Preferred Date</flux:label>
+                                            <flux:label>{{ __('Your Preferred Date') }}</flux:label>
                                             <flux:input type="date" wire:model="proposedDate" :min="now()->format('Y-m-d')" />
                                             <flux:error name="proposedDate" />
                                         </flux:field>
                                         <flux:button type="submit" variant="primary" size="sm">
-                                            Propose This Date
+                                            {{ __('Propose This Date') }}
                                         </flux:button>
                                     </form>
                                 </div>
@@ -689,16 +710,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                         {{-- No date set yet - let customer propose one --}}
                         <div class="py-4">
                             <flux:text class="text-zinc-500 mb-4">
-                                No date has been set yet. You can propose a preferred start date below, or wait for our team to schedule one.
+                                {{ __('No date has been set yet. You can propose a preferred start date below, or wait for our team to schedule one.') }}
                             </flux:text>
                             <form wire:submit="proposeDate" class="flex items-end gap-3">
                                 <flux:field class="flex-1">
-                                    <flux:label>Preferred Start Date</flux:label>
+                                    <flux:label>{{ __('Preferred Start Date') }}</flux:label>
                                     <flux:input type="date" wire:model="proposedDate" :min="now()->format('Y-m-d')" />
                                     <flux:error name="proposedDate" />
                                 </flux:field>
                                 <flux:button type="submit" variant="primary" icon="calendar">
-                                    Propose Date
+                                    {{ __('Propose Date') }}
                                 </flux:button>
                             </form>
                         </div>
@@ -709,17 +730,17 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                     <div class="flex items-center justify-between mb-4">
                         <div>
-                            <flux:heading size="sm">Select Your Colors</flux:heading>
+                            <flux:heading size="sm">{{ __('Select Your Colors') }}</flux:heading>
                             @if ($job->allowed_colors > 0)
                                 <flux:text class="text-sm text-zinc-500">
-                                    You can choose up to {{ $job->allowed_colors }} {{ Str::plural('color', $job->allowed_colors) }}.
-                                    {{ $job->colors->count() }} selected.
+                                    {{ __('You can choose up to :count colors.', ['count' => $job->allowed_colors]) }}
+                                    {{ __(':count selected.', ['count' => $job->colors->count()]) }}
                                 </flux:text>
                             @endif
                         </div>
                         @if ($this->canAddColors)
                             <flux:button wire:click="$set('showColorModal', true)" size="sm" icon="plus">
-                                Add Color
+                                {{ __('Add Color') }}
                             </flux:button>
                         @endif
                     </div>
@@ -741,7 +762,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                     </div>
                                     @if ($color->selectedBy)
                                         <flux:text class="text-xs text-zinc-400">
-                                            Selected by {{ $color->selectedBy->name }}
+                                            {{ __('Selected by :name', ['name' => $color->selectedBy->name]) }}
                                         </flux:text>
                                     @endif
                                 </div>
@@ -750,7 +771,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                     @else
                         <div class="text-center py-6">
                             <flux:icon name="swatch" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                            <flux:text class="text-zinc-500">No colors selected yet. Add your preferred paint colors.</flux:text>
+                            <flux:text class="text-zinc-500">{{ __('No colors selected yet. Add your preferred paint colors.') }}</flux:text>
                         </div>
                     @endif
 
@@ -763,7 +784,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                     @else
                                         <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                     @endif
-                                    <flux:text class="text-sm">Company approved</flux:text>
+                                    <flux:text class="text-sm">{{ __('Company approved') }}</flux:text>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     @if ($job->customer_colors_confirmed)
@@ -771,13 +792,13 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                     @else
                                         <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                     @endif
-                                    <flux:text class="text-sm">Your approval</flux:text>
+                                    <flux:text class="text-sm">{{ __('Your approval') }}</flux:text>
                                 </div>
                             </div>
 
                             @if (! $job->customer_colors_confirmed && $job->colors->count() > 0)
                                 <flux:button wire:click="confirmColors" variant="primary" size="sm" icon="check">
-                                    Confirm Colors
+                                    {{ __('Confirm Colors') }}
                                 </flux:button>
                             @endif
                         </div>
@@ -820,27 +841,27 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                         <div class="flex items-center gap-3 mb-4">
                             <flux:icon name="wrench-screwdriver" class="w-6 h-6 text-yellow-500" />
-                            <flux:heading size="sm">Prep Plan</flux:heading>
+                            <flux:heading size="sm">{{ __('Prep Plan') }}</flux:heading>
                         </div>
                         <div class="grid grid-cols-3 gap-4">
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
                                 <flux:text class="text-2xl font-bold">{{ $plan->crew_size }}</flux:text>
-                                <flux:text class="text-xs text-zinc-500">Crew Size</flux:text>
+                                <flux:text class="text-xs text-zinc-500">{{ __('Crew Size') }}</flux:text>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
                                 <flux:text class="text-2xl font-bold">{{ number_format($plan->hours_per_day, 1) }}</flux:text>
-                                <flux:text class="text-xs text-zinc-500">Hours / Day</flux:text>
+                                <flux:text class="text-xs text-zinc-500">{{ __('Hours / Day') }}</flux:text>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
                                 <flux:text class="text-2xl font-bold">{{ $plan->total_days }}</flux:text>
-                                <flux:text class="text-xs text-zinc-500">{{ Str::plural('Day', $plan->total_days) }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500">{{ __('Days') }}</flux:text>
                             </div>
                         </div>
                         @if ($job->scheduled_date)
                             <div class="mt-4 flex items-center gap-2">
                                 <flux:icon name="calendar" class="w-4 h-4 text-zinc-400" />
                                 <flux:text class="text-sm text-zinc-500">
-                                    Scheduled: {{ $job->scheduled_date->format('M j, Y') }}
+                                    {{ __('Scheduled: :date', ['date' => $job->scheduled_date->format('M j, Y')]) }}
                                 </flux:text>
                             </div>
                         @endif
@@ -863,16 +884,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                         @if ($category->icon)
                                             <flux:icon :name="$category->icon" class="w-5 h-5" style="color: {{ $category->color ?? '#6b7280' }}" />
                                         @endif
-                                        <flux:heading size="sm">{{ $category->name }} Tasks</flux:heading>
+                                        <flux:heading size="sm">{{ __(':name Tasks', ['name' => __($category->name)]) }}</flux:heading>
                                         <div class="flex items-center gap-2 ml-2">
                                             <flux:badge size="sm" :color="$teamApproval?->approved ? 'green' : 'zinc'">
-                                                Team {{ $teamApproval?->approved ? '✓' : '...' }}
+                                                {{ __('Team') }} {{ $teamApproval?->approved ? '✓' : '...' }}
                                             </flux:badge>
                                             <flux:badge size="sm" :color="$crewApproval?->approved ? 'green' : 'zinc'">
-                                                Crew {{ $crewApproval?->approved ? '✓' : '...' }}
+                                                {{ __('Crew') }} {{ $crewApproval?->approved ? '✓' : '...' }}
                                             </flux:badge>
                                             <flux:badge size="sm" :color="$isCustomerApproved ? 'green' : 'zinc'">
-                                                You {{ $isCustomerApproved ? '✓' : '...' }}
+                                                {{ __('You') }} {{ $isCustomerApproved ? '✓' : '...' }}
                                             </flux:badge>
                                         </div>
                                     </div>
@@ -947,14 +968,14 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                 @if (! $isCustomerApproved)
                                     <div class="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 flex justify-end">
                                         <flux:button wire:click="approveServiceSection({{ $category->id }})" variant="primary" size="sm" icon="check">
-                                            Approve {{ $category->name }} Section
+                                            {{ __('Approve :name Section', ['name' => __($category->name)]) }}
                                         </flux:button>
                                     </div>
                                 @else
                                     <div class="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-green-50 dark:bg-green-900/20 flex items-center gap-2">
                                         <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
                                         <flux:text class="text-sm text-green-700 dark:text-green-400">
-                                            You approved this section{{ $customerApproval?->approved_at ? ' ' . $customerApproval->approved_at->diffForHumans() : '' }}
+                                            {{ __('You approved this section') }}{{ $customerApproval?->approved_at ? ' ' . $customerApproval->approved_at->diffForHumans() : '' }}
                                         </flux:text>
                                     </div>
                                 @endif
@@ -964,7 +985,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                         {{-- Hidden services message --}}
                         @if ($hasHiddenCategories)
                             <flux:callout variant="info">
-                                Additional service details will appear once confirmed by the team.
+                                {{ __('Additional service details will appear once confirmed by the team.') }}
                             </flux:callout>
                         @endif
                     @else
@@ -1022,7 +1043,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                         </div>
                                     @else
                                         <div class="text-center py-6">
-                                            <flux:text class="text-sm text-zinc-500">No tasks assigned to this day.</flux:text>
+                                            <flux:text class="text-sm text-zinc-500">{{ __('No tasks assigned to this day.') }}</flux:text>
                                         </div>
                                     @endif
                                 </div>
@@ -1031,7 +1052,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
 
                         {{-- Legacy Tri-Party Approval --}}
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                            <flux:heading size="sm" class="mb-4">Plan Approval</flux:heading>
+                            <flux:heading size="sm" class="mb-4">{{ __('Plan Approval') }}</flux:heading>
                             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div class="p-4 rounded-lg border {{ $plan->team_approved ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20' : 'border-zinc-200 dark:border-zinc-700' }}">
                                     <div class="flex items-center gap-2 mb-2">
@@ -1040,13 +1061,13 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                         @else
                                             <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                         @endif
-                                        <flux:text class="font-medium text-sm">Team</flux:text>
+                                        <flux:text class="font-medium text-sm">{{ __('Team') }}</flux:text>
                                     </div>
                                     <flux:text class="text-xs text-zinc-500">
                                         @if ($plan->team_approved)
-                                            Approved {{ $plan->team_approved_at?->diffForHumans() }}
+                                            {{ __('Approved') }} {{ $plan->team_approved_at?->diffForHumans() }}
                                         @else
-                                            Pending approval
+                                            {{ __('Pending approval') }}
                                         @endif
                                     </flux:text>
                                 </div>
@@ -1058,13 +1079,13 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                         @else
                                             <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                         @endif
-                                        <flux:text class="font-medium text-sm">Crew</flux:text>
+                                        <flux:text class="font-medium text-sm">{{ __('Crew') }}</flux:text>
                                     </div>
                                     <flux:text class="text-xs text-zinc-500">
                                         @if ($plan->crew_approved)
-                                            Approved {{ $plan->crew_approved_at?->diffForHumans() }}
+                                            {{ __('Approved') }} {{ $plan->crew_approved_at?->diffForHumans() }}
                                         @else
-                                            Pending approval
+                                            {{ __('Pending approval') }}
                                         @endif
                                     </flux:text>
                                 </div>
@@ -1076,13 +1097,13 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                         @else
                                             <flux:icon name="clock" class="w-5 h-5 text-zinc-400" />
                                         @endif
-                                        <flux:text class="font-medium text-sm">You</flux:text>
+                                        <flux:text class="font-medium text-sm">{{ __('You') }}</flux:text>
                                     </div>
                                     <flux:text class="text-xs text-zinc-500">
                                         @if ($plan->customer_approved)
-                                            Approved {{ $plan->customer_approved_at?->diffForHumans() }}
+                                            {{ __('Approved') }} {{ $plan->customer_approved_at?->diffForHumans() }}
                                         @else
-                                            Awaiting your approval
+                                            {{ __('Awaiting your approval') }}
                                         @endif
                                     </flux:text>
                                 </div>
@@ -1091,7 +1112,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                             @if (! $plan->customer_approved)
                                 <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700 flex justify-end">
                                     <flux:button wire:click="approvePrepPlan" variant="primary" icon="check">
-                                        Approve Plan
+                                        {{ __('Approve Plan') }}
                                     </flux:button>
                                 </div>
                             @endif
@@ -1102,14 +1123,14 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 {{-- No prep plan yet - show placeholder --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                     <flux:icon name="wrench-screwdriver" class="w-16 h-16 mx-auto text-yellow-500 mb-4" />
-                    <flux:heading size="lg">Preparing Your Project</flux:heading>
+                    <flux:heading size="lg">{{ __('Preparing Your Project') }}</flux:heading>
                     <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                        Our team is gathering materials and preparing for your painting project. We'll let you know when we're ready to begin.
+                        {{ __('Our team is gathering materials and preparing for your painting project. We\'ll let you know when we\'re ready to begin.') }}
                     </flux:text>
                     @if ($job->scheduled_date)
                         <div class="mt-4">
                             <flux:badge size="sm" color="blue">
-                                Scheduled: {{ $job->scheduled_date->format('M j, Y') }}
+                                {{ __('Scheduled: :date', ['date' => $job->scheduled_date->format('M j, Y')]) }}
                             </flux:badge>
                         </div>
                     @endif
@@ -1129,10 +1150,10 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                         <div class="flex items-center gap-3 mb-4">
                             <flux:icon name="paint-brush" class="w-6 h-6 text-orange-500" />
                             <div class="flex-1">
-                                <flux:heading size="sm">Painting In Progress</flux:heading>
+                                <flux:heading size="sm">{{ __('Painting In Progress') }}</flux:heading>
                                 @if ($job->actual_start_date)
                                     <flux:text class="text-xs text-zinc-500">
-                                        Started {{ $job->actual_start_date->format('M j, Y') }}
+                                        {{ __('Started :date', ['date' => $job->actual_start_date->format('M j, Y')]) }}
                                     </flux:text>
                                 @endif
                             </div>
@@ -1146,7 +1167,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                 style="width: {{ $progress['percent'] }}%"
                             ></div>
                         </div>
-                        <flux:text class="text-xs text-zinc-500 mt-1">{{ $progress['percent'] }}% complete</flux:text>
+                        <flux:text class="text-xs text-zinc-500 mt-1">{{ __(':percent% complete', ['percent' => $progress['percent']]) }}</flux:text>
                     </div>
 
                     {{-- Day Tabs with Task Status --}}
@@ -1233,14 +1254,14 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 {{-- Fallback: no prep plan --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                     <flux:icon name="paint-brush" class="w-16 h-16 mx-auto text-orange-500 mb-4" />
-                    <flux:heading size="lg">Painting In Progress</flux:heading>
+                    <flux:heading size="lg">{{ __('Painting In Progress') }}</flux:heading>
                     <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                        Your painting project is underway! Our crew is on site working on your project.
+                        {{ __('Your painting project is underway! Our crew is on site working on your project.') }}
                     </flux:text>
                     @if ($job->actual_start_date)
                         <div class="mt-4">
                             <flux:badge size="sm" color="orange">
-                                Started: {{ $job->actual_start_date->format('M j, Y') }}
+                                {{ __('Started: :date', ['date' => $job->actual_start_date->format('M j, Y')]) }}
                             </flux:badge>
                         </div>
                     @endif
@@ -1251,21 +1272,21 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             {{-- Stage 5: Completed --}}
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-green-500 mb-4" />
-                <flux:heading size="lg">Project Completed!</flux:heading>
+                <flux:heading size="lg">{{ __('Project Completed!') }}</flux:heading>
                 <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                    Your painting project is complete. Thank you for choosing us!
+                    {{ __('Your painting project is complete. Thank you for choosing us!') }}
                 </flux:text>
                 @if ($job->actual_end_date)
                     <div class="mt-4">
                         <flux:badge size="sm" color="green">
-                            Completed: {{ $job->actual_end_date->format('M j, Y') }}
+                            {{ __('Completed: :date', ['date' => $job->actual_end_date->format('M j, Y')]) }}
                         </flux:badge>
                     </div>
                 @endif
                 <div class="mt-4 flex items-center justify-center gap-3">
                     @if ($job->estimate)
                         <flux:button :href="route('customer.estimates.show', $job->estimate)" variant="ghost" icon="document-text" wire:navigate>
-                            View Estimate
+                            {{ __('View Estimate') }}
                         </flux:button>
                     @endif
                     @php
@@ -1273,7 +1294,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                     @endphp
                     @if ($finalInvoice)
                         <flux:button :href="route('customer.invoices.show', $finalInvoice)" variant="ghost" icon="banknotes" wire:navigate>
-                            View Final Invoice
+                            {{ __('View Final Invoice') }}
                         </flux:button>
                     @endif
                 </div>
@@ -1283,7 +1304,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         {{-- Color Summary (always visible when colors exist, except on scheduling stage) --}}
         @if ($job->stage !== 'scheduling_colors' && $job->colors->count() > 0)
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mt-6">
-                <flux:heading size="sm" class="mb-4">Selected Colors</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Selected Colors') }}</flux:heading>
                 <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                     @foreach ($job->colors as $color)
                         <div class="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700" wire:key="summary-color-{{ $color->id }}">
@@ -1312,7 +1333,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 >
                     <div class="flex items-center gap-2">
                         <flux:icon name="photo" class="w-5 h-5 text-zinc-500" />
-                        <flux:heading size="sm">Project Photos</flux:heading>
+                        <flux:heading size="sm">{{ __('Project Photos') }}</flux:heading>
                     </div>
                     <flux:icon name="chevron-down" class="w-5 h-5 text-zinc-400 transition-transform" x-bind:class="open && 'rotate-180'" />
                 </button>
@@ -1327,16 +1348,30 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             </div>
         @endif
 
+        {{-- Video Walkarounds --}}
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden print:hidden">
+            <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 flex items-center gap-2">
+                <flux:icon name="video-camera" class="w-5 h-5 text-zinc-500" />
+                <flux:heading size="sm">{{ __('Video Walkarounds') }}</flux:heading>
+            </div>
+            <div class="p-4">
+                <livewire:estimates.video-walkarounds
+                    :recordable="$job"
+                    :key="'walkarounds-'.$job->id"
+                />
+            </div>
+        </div>
+
         {{-- Project Conversation (visible on all stages) --}}
         @if ($this->chatThread)
-            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" wire:poll.10s>
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden">
                 {{-- Chat Header --}}
                 <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
                     <div class="flex items-center gap-2">
                         <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
-                        <flux:heading size="sm">Project Conversation</flux:heading>
+                        <flux:heading size="sm">{{ __('Project Conversation') }}</flux:heading>
                     </div>
-                    <flux:text class="text-xs text-zinc-400 mt-1">Discuss scheduling, colors, or any questions about your project.</flux:text>
+                    <flux:text class="text-xs text-zinc-400 mt-1">{{ __('Discuss scheduling, colors, or any questions about your project.') }}</flux:text>
                 </div>
 
                 {{-- Messages --}}
@@ -1364,7 +1399,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
 
                                     <div class="{{ $isOwnMessage ? 'text-right' : 'text-left' }}">
                                         <div class="flex items-center gap-1 mb-0.5 {{ $isOwnMessage ? 'flex-row-reverse' : '' }}">
-                                            <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? 'Unknown' }}</flux:text>
+                                            <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? __('Unknown') }}</flux:text>
                                             <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
                                         </div>
                                         <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
@@ -1402,7 +1437,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                     @empty
                         <div class="text-center py-6">
                             <flux:icon name="chat-bubble-left" class="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
-                            <flux:text class="text-sm text-zinc-500">No messages yet. Send a message to discuss your project.</flux:text>
+                            <flux:text class="text-sm text-zinc-500">{{ __('No messages yet. Send a message to discuss your project.') }}</flux:text>
                         </div>
                     @endforelse
                 </div>
@@ -1424,7 +1459,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 >
                     <div class="flex items-center gap-2">
                         <flux:icon name="clock" class="w-5 h-5 text-zinc-500" />
-                        <flux:heading size="sm">Activity Timeline</flux:heading>
+                        <flux:heading size="sm">{{ __('Activity Timeline') }}</flux:heading>
                         <flux:badge size="sm">{{ $activityItems->count() }}{{ $hasMoreActivities ? '+' : '' }}</flux:badge>
                     </div>
                     <flux:icon name="chevron-down" class="w-5 h-5 text-zinc-400 transition-transform" x-bind:class="open && 'rotate-180'" />
@@ -1481,7 +1516,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                             @if ($hasMoreActivities)
                                 <div class="flex justify-center py-3" wire:loading.remove wire:target="loadMoreActivities">
                                     <flux:button wire:click="loadMoreActivities" variant="ghost" size="sm">
-                                        Load more
+                                        {{ __('Load more') }}
                                     </flux:button>
                                 </div>
                                 <div class="flex justify-center py-3" wire:loading wire:target="loadMoreActivities">
@@ -1496,37 +1531,40 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                 </div>
             </div>
         @endif
+
+        {{-- Video Call Recordings --}}
+        <livewire:video-call.recording-player :job="$job" :key="'recordings-'.$job->id" />
     </div>
 
     {{-- Add Color Modal --}}
     <flux:modal wire:model="showColorModal" class="max-w-md">
         <div class="space-y-4">
-            <flux:heading size="lg">Choose a Color</flux:heading>
+            <flux:heading size="lg">{{ __('Choose a Color') }}</flux:heading>
 
             <flux:field>
-                <flux:label>Color Name</flux:label>
+                <flux:label>{{ __('Color Name') }}</flux:label>
                 <flux:input wire:model="newColorName" placeholder="e.g. Simply White" />
                 <flux:error name="newColorName" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Brand (optional)</flux:label>
+                <flux:label>{{ __('Brand (optional)') }}</flux:label>
                 <flux:input wire:model="newColorBrand" placeholder="e.g. Benjamin Moore" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Color Code (optional)</flux:label>
+                <flux:label>{{ __('Color Code (optional)') }}</flux:label>
                 <flux:input wire:model="newColorCode" placeholder="e.g. OC-17" />
             </flux:field>
 
             <flux:field>
-                <flux:label>Preview Color (optional)</flux:label>
+                <flux:label>{{ __('Preview Color (optional)') }}</flux:label>
                 <flux:input type="color" wire:model="newColorHex" />
             </flux:field>
 
             <div class="flex justify-end gap-2">
-                <flux:button wire:click="$set('showColorModal', false)" variant="ghost">Cancel</flux:button>
-                <flux:button wire:click="addColor" variant="primary">Add Color</flux:button>
+                <flux:button wire:click="$set('showColorModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                <flux:button wire:click="addColor" variant="primary">{{ __('Add Color') }}</flux:button>
             </div>
         </div>
     </flux:modal>

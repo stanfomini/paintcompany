@@ -93,7 +93,7 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Properties</flux:heading>
+            <flux:heading size="xl">{{ __('Properties') }}</flux:heading>
             @livewire('properties.create-modal')
         </div>
 
@@ -108,21 +108,21 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search by address, city, state, zip..."
+                    :placeholder="__('Search by address, city, state, zip...')"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="typeFilter">
-                    <option value="all">All Types</option>
-                    <option value="residential">Residential</option>
-                    <option value="commercial">Commercial</option>
-                    <option value="industrial">Industrial</option>
+                    <option value="all">{{ __('All Types') }}</option>
+                    <option value="residential">{{ __('Residential') }}</option>
+                    <option value="commercial">{{ __('Commercial') }}</option>
+                    <option value="industrial">{{ __('Industrial') }}</option>
                 </flux:select>
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="customerFilter">
-                    <option value="">All Customers</option>
+                    <option value="">{{ __('All Customers') }}</option>
                     @foreach ($this->customers as $customer)
                         <option value="{{ $customer->id }}">{{ $customer->full_name }}</option>
                     @endforeach
@@ -130,7 +130,7 @@ new class extends Component {
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="sourceFilter">
-                    <option value="all">All Sources</option>
+                    <option value="all">{{ __('All Sources') }}</option>
                     @foreach (\App\Models\Property::SOURCES as $key => $label)
                         <option value="{{ $key }}">{{ $label }}</option>
                     @endforeach
@@ -144,28 +144,28 @@ new class extends Component {
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Address
+                                {{ __('Address') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                City/State/Zip
+                                {{ __('City/State/Zip') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Customer
+                                {{ __('Customer') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Type
+                                {{ __('Type') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Source
+                                {{ __('Source') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Agent
+                                {{ __('Agent') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Photos
+                                {{ __('Photos') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         </tr>
                     </thead>
@@ -186,11 +186,11 @@ new class extends Component {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     @if ($property->type === 'residential')
-                                        <flux:badge size="sm" color="blue">Residential</flux:badge>
+                                        <flux:badge size="sm" color="blue">{{ __('Residential') }}</flux:badge>
                                     @elseif ($property->type === 'commercial')
-                                        <flux:badge size="sm" color="purple">Commercial</flux:badge>
+                                        <flux:badge size="sm" color="purple">{{ __('Commercial') }}</flux:badge>
                                     @elseif ($property->type === 'industrial')
-                                        <flux:badge size="sm" color="orange">Industrial</flux:badge>
+                                        <flux:badge size="sm" color="orange">{{ __('Industrial') }}</flux:badge>
                                     @else
                                         <flux:badge size="sm" color="zinc">{{ ucfirst($property->type) }}</flux:badge>
                                     @endif
@@ -212,9 +212,9 @@ new class extends Component {
                                     <flux:dropdown>
                                         <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                         <flux:menu>
-                                            <flux:menu.item icon="eye" :href="route('properties.show', $property)" wire:navigate>View</flux:menu.item>
-                                            <flux:menu.item icon="pencil">Edit</flux:menu.item>
-                                            <flux:menu.item icon="trash" variant="danger">Delete</flux:menu.item>
+                                            <flux:menu.item icon="eye" :href="route('properties.show', $property)" wire:navigate>{{ __('View') }}</flux:menu.item>
+                                            <flux:menu.item icon="pencil">{{ __('Edit') }}</flux:menu.item>
+                                            <flux:menu.item icon="trash" variant="danger">{{ __('Delete') }}</flux:menu.item>
                                         </flux:menu>
                                     </flux:dropdown>
                                 </td>
@@ -230,12 +230,12 @@ new class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="building-office" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No properties found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No properties found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search || $typeFilter !== 'all' || $customerFilter !== '')
-                        Try adjusting your search or filter criteria.
+                        {{ __('Try adjusting your search or filter criteria.') }}
                     @else
-                        Get started by adding your first property.
+                        {{ __('Get started by adding your first property.') }}
                     @endif
                 </flux:text>
             </div>

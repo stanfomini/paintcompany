@@ -28,14 +28,14 @@ class ReferralLeadCreated extends Notification implements ShouldQueue
     {
         $this->referral->load('customer');
 
-        $customerName = $this->referral->customer?->full_name ?? 'Someone';
+        $customerName = $this->referral->customer?->full_name ?? __('Someone');
 
         return (new MailMessage)
-            ->subject("New Referral: {$customerName} requested an estimate")
-            ->greeting('Great news!')
-            ->line("{$customerName} used your referral link and requested a painting estimate.")
-            ->line('We\'ll keep you updated as their project progresses.')
-            ->line('Thank you for spreading the word!');
+            ->subject(__('New Referral: :name requested an estimate', ['name' => $customerName]))
+            ->greeting(__('Great news!'))
+            ->line(__(':name used your referral link and requested a painting estimate.', ['name' => $customerName]))
+            ->line(__("We'll keep you updated as their project progresses."))
+            ->line(__('Thank you for spreading the word!'));
     }
 
     /**

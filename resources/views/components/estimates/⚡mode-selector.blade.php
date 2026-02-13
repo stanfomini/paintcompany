@@ -35,15 +35,15 @@ new class extends Component {
         return [
             self::MODE_SIMPLE => [
                 'icon' => 'bolt',
-                'name' => 'Quick Estimate',
-                'description' => '$/sqft pricing',
-                'time' => '~30 seconds',
+                'name' => __('Quick Estimate'),
+                'description' => __('$/sqft pricing'),
+                'time' => __('~30 seconds'),
             ],
             self::MODE_TEMPLATE => [
                 'icon' => 'squares-2x2',
-                'name' => 'Template Builder',
-                'description' => 'Pre-made cards',
-                'time' => '~5 minutes',
+                'name' => __('Template Builder'),
+                'description' => __('Pre-made cards'),
+                'time' => __('~5 minutes'),
                 'recommended' => true,
             ],
         ];
@@ -75,7 +75,7 @@ new class extends Component {
 
                     @if (isset($mode['recommended']) && $mode['recommended'])
                         <flux:badge size="sm" color="green">
-                            Recommended
+                            {{ __('Recommended') }}
                         </flux:badge>
                     @endif
                 </div>

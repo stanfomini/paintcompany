@@ -86,7 +86,7 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Estimates</flux:heading>
+            <flux:heading size="xl">{{ __('Estimates') }}</flux:heading>
         </div>
 
         @if (session('success'))
@@ -100,13 +100,13 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search estimates..."
+                    :placeholder="__('Search estimates...')"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="statusFilter">
-                    <option value="all">All Statuses</option>
+                    <option value="all">{{ __('All Statuses') }}</option>
                     @foreach ($this->statuses as $value => $label)
                         <option value="{{ $value }}">{{ $label }}</option>
                     @endforeach
@@ -114,9 +114,9 @@ new class extends Component {
             </div>
             <div class="sm:w-64">
                 <flux:select wire:model.live="dealFilter">
-                    <option value="">All Deals</option>
+                    <option value="">{{ __('All Deals') }}</option>
                     @foreach ($this->deals as $deal)
-                        <option value="{{ $deal->id }}">{{ $deal->title }} - {{ $deal->customer->full_name }}</option>
+                        <option value="{{ $deal->id }}">{{ $deal->title }} - {{ $deal->customer?->full_name ?? __('No customer') }}</option>
                     @endforeach
                 </flux:select>
             </div>
@@ -128,28 +128,28 @@ new class extends Component {
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Estimate #
+                                {{ __('Estimate #') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Title
+                                {{ __('Title') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Customer
+                                {{ __('Customer') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Mode
+                                {{ __('Mode') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Status
+                                {{ __('Status') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Total
+                                {{ __('Total') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Valid Until
+                                {{ __('Valid Until') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         </tr>
                     </thead>
@@ -176,10 +176,10 @@ new class extends Component {
                                             default => 'zinc',
                                         };
                                         $modeLabel = match($estimate->estimator_mode) {
-                                            'simple' => 'Quick',
-                                            'template' => 'Template',
-                                            'detailed' => 'Detailed',
-                                            default => 'Standard',
+                                            'simple' => __('Quick'),
+                                            'template' => __('Template'),
+                                            'detailed' => __('Detailed'),
+                                            default => __('Standard'),
                                         };
                                     @endphp
                                     <flux:badge size="sm" color="{{ $modeColor }}">{{ $modeLabel }}</flux:badge>
@@ -207,7 +207,7 @@ new class extends Component {
                                     <flux:dropdown>
                                         <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                         <flux:menu>
-                                            <flux:menu.item icon="eye" :href="route('estimates.show', $estimate)" wire:navigate>View</flux:menu.item>
+                                            <flux:menu.item icon="eye" :href="route('estimates.show', $estimate)" wire:navigate>{{ __('View') }}</flux:menu.item>
                                             @if ($estimate->isEditable())
                                                 @php
                                                     $editRoute = match($estimate->estimator_mode) {
@@ -216,9 +216,9 @@ new class extends Component {
                                                         default => route('estimates.edit', $estimate),
                                                     };
                                                 @endphp
-                                                <flux:menu.item icon="pencil" :href="$editRoute" wire:navigate>Edit</flux:menu.item>
+                                                <flux:menu.item icon="pencil" :href="$editRoute" wire:navigate>{{ __('Edit') }}</flux:menu.item>
                                             @endif
-                                            <flux:menu.item icon="document-arrow-down" :href="route('estimates.pdf', $estimate)" target="_blank">Download PDF</flux:menu.item>
+                                            <flux:menu.item icon="document-arrow-down" :href="route('estimates.pdf', $estimate)" target="_blank">{{ __('Download PDF') }}</flux:menu.item>
                                         </flux:menu>
                                     </flux:dropdown>
                                 </td>
@@ -234,12 +234,12 @@ new class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="document-text" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No estimates found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No estimates found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search || $statusFilter !== 'all' || $dealFilter)
-                        Try adjusting your search or filter criteria.
+                        {{ __('Try adjusting your search or filter criteria.') }}
                     @else
-                        Estimates will appear here once they are created from deals.
+                        {{ __('Estimates will appear here once they are created from deals.') }}
                     @endif
                 </flux:text>
             </div>

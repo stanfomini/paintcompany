@@ -41,11 +41,11 @@ describe('InvitationService permissions', function () {
         expect($service->canInvite($user, 'internal'))->toBeFalse();
     });
 
-    it('does not allow customers to invite anyone', function () {
+    it('allows customers to invite other customers only', function () {
         $service = app(InvitationService::class);
         $user = User::factory()->customer()->create();
 
-        expect($service->canInvite($user, 'customer'))->toBeFalse();
+        expect($service->canInvite($user, 'customer'))->toBeTrue();
         expect($service->canInvite($user, 'agent'))->toBeFalse();
         expect($service->canInvite($user, 'internal'))->toBeFalse();
     });
@@ -64,11 +64,11 @@ describe('InvitationService permissions', function () {
         expect($service->getInvitableTypes($user))->toBe(['customer']);
     });
 
-    it('returns empty array for customers', function () {
+    it('returns customer array for customers', function () {
         $service = app(InvitationService::class);
         $user = User::factory()->customer()->create();
 
-        expect($service->getInvitableTypes($user))->toBe([]);
+        expect($service->getInvitableTypes($user))->toBe(['customer']);
     });
 });
 

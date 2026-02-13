@@ -152,6 +152,55 @@ describe('AudioMessageService', function () {
         $result = $service->processBase64Audio($fakeAudio, 'audio/ogg');
         expect($result['audio_path'])->toContain('.ogg');
     });
+
+    it('includes audio_mime_type in result', function () {
+        $this->mock(PythonBridgeService::class)
+            ->shouldReceive('isEnabled')
+            ->andReturn(false);
+
+        $service = app(AudioMessageService::class);
+        $fakeAudio = base64_encode('fake audio data');
+
+        $result = $service->processBase64Audio($fakeAudio, 'audio/webm');
+        expect($result)->toHaveKey('audio_mime_type')
+            ->and($result['audio_mime_type'])->toBe('audio/webm');
+
+        $result = $service->processBase64Audio($fakeAudio, 'audio/mp4');
+        expect($result['audio_mime_type'])->toBe('audio/mp4');
+    });
+
+    it('detects MP4 content even when reported as webm', function () {
+        $this->mock(PythonBridgeService::class)
+            ->shouldReceive('isEnabled')
+            ->andReturn(false);
+
+        $service = app(AudioMessageService::class);
+
+        // Create fake MP4 data with ftyp box signature at offset 4
+        $mp4Data = "\x00\x00\x00\x20".'ftypisom'.str_repeat("\x00", 24);
+        $fakeAudio = base64_encode($mp4Data);
+
+        // Even though we say audio/webm, it should detect MP4 and save as .m4a
+        $result = $service->processBase64Audio($fakeAudio, 'audio/webm');
+        expect($result['audio_path'])->toContain('.m4a')
+            ->and($result['audio_mime_type'])->toBe('audio/mp4');
+    });
+
+    it('detects WebM content correctly', function () {
+        $this->mock(PythonBridgeService::class)
+            ->shouldReceive('isEnabled')
+            ->andReturn(false);
+
+        $service = app(AudioMessageService::class);
+
+        // Create fake WebM data with EBML header signature
+        $webmData = "\x1A\x45\xDF\xA3".str_repeat("\x00", 28);
+        $fakeAudio = base64_encode($webmData);
+
+        $result = $service->processBase64Audio($fakeAudio, 'audio/webm');
+        expect($result['audio_path'])->toContain('.webm')
+            ->and($result['audio_mime_type'])->toBe('audio/webm');
+    });
 });
 
 describe('ChatService sendAudioMessage', function () {

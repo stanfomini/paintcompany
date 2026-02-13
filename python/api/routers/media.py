@@ -12,6 +12,14 @@ from loguru import logger
 from pydantic import BaseModel
 
 from ..services.media.audio_stream import AudioStreamManager
+from ..services.media.hls_recorder import (
+    HLSRecorderError,
+    recording_registry,
+)
+from ..services.media.video_processor import (
+    VideoProcessor,
+    VideoProcessorError,
+)
 from ..services.media.transcription import (
     TranscriptionError,
     TranscriptionService,
@@ -20,6 +28,7 @@ from ..services.media.webrtc_signaling import (
     WebRTCSignalingError,
     WebRTCSignalingManager,
 )
+from ..config import get_settings
 
 router = APIRouter()
 
@@ -233,45 +242,145 @@ async def transcribe_uploaded_audio(
                 logger.warning(f"Failed to clean up temporary file: {e}")
 
 
-@router.post("/stream/start", response_model=StreamResponse)
-async def start_stream(config: StreamConfig):
+class StartRecordingRequest(BaseModel):
+    """Request to start an HLS recording session."""
+
+    recording_id: str
+
+
+class StopRecordingRequest(BaseModel):
+    """Request to stop an HLS recording session."""
+
+    recording_id: str
+
+
+@router.post("/record/start")
+async def start_recording(request: StartRecordingRequest):
+    """Start an HLS recording session.
+
+    Creates an FFmpeg process that accepts WebM chunks via stdin
+    and outputs HLS segments (.ts) and a manifest (.m3u8).
     """
-    Start a video streaming session.
+    try:
+        recorder = await recording_registry.start(request.recording_id)
+        return {
+            "status": "recording",
+            "recording_id": request.recording_id,
+            "output_dir": recorder.output_dir,
+        }
+    except HLSRecorderError as e:
+        logger.error(f"Failed to start recording {request.recording_id}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
-    Sets up RTMP ingestion and HLS output for live streaming.
+
+@router.post("/record/chunk")
+async def upload_chunk(
+    recording_id: str = Form(...),
+    chunk: UploadFile = File(...),
+):
+    """Receive a media chunk and pipe to FFmpeg.
+
+    The browser's MediaRecorder produces WebM blobs which are
+    uploaded here and fed into the FFmpeg HLS pipeline.
     """
-    import uuid
+    recorder = recording_registry.get(recording_id)
+    if not recorder:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Recording {recording_id} not found or not active",
+        )
 
-    stream_id = str(uuid.uuid4())[:8]
+    try:
+        data = await chunk.read()
+        bytes_written = await recorder.write_chunk(data)
+        return {
+            "status": "ok",
+            "bytes_received": bytes_written,
+            "total_bytes": recorder.bytes_received,
+        }
+    except HLSRecorderError as e:
+        logger.error(f"Chunk upload error for {recording_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # TODO: Implement RTMP/HLS streaming setup
-    return StreamResponse(
-        success=False,
-        stream_id=stream_id,
-        error="Video streaming not yet implemented. Phase 4 will add RTMP/HLS.",
-    )
+
+@router.post("/record/stop")
+async def stop_recording(request: StopRecordingRequest):
+    """Stop recording and return the HLS manifest path.
+
+    After stopping, the output directory contains:
+    - playlist.m3u8 (HLS manifest)
+    - segment_NNNN.ts (HLS video segments)
+
+    Laravel should copy these files to storage before calling cleanup.
+    """
+    try:
+        manifest_path = await recording_registry.stop(request.recording_id)
+        if not manifest_path:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Recording {request.recording_id} not found",
+            )
+
+        # List all output files for Laravel to fetch
+        output_dir = os.path.dirname(manifest_path)
+        files = []
+        if os.path.exists(output_dir):
+            files = [
+                f for f in os.listdir(output_dir) if f.endswith((".m3u8", ".ts"))
+            ]
+
+        return {
+            "status": "complete",
+            "recording_id": request.recording_id,
+            "manifest_path": manifest_path,
+            "output_dir": output_dir,
+            "files": files,
+        }
+    except HLSRecorderError as e:
+        logger.error(f"Failed to stop recording {request.recording_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/stream/{stream_id}/stop")
-async def stop_stream(stream_id: str):
-    """Stop an active streaming session."""
-    # TODO: Implement stream stopping
+@router.post("/record/{recording_id}/cleanup")
+async def cleanup_recording(recording_id: str):
+    """Clean up temporary recording files after Laravel has stored them."""
+    await recording_registry.cleanup(recording_id)
+    return {"status": "cleaned", "recording_id": recording_id}
+
+
+@router.get("/record/{recording_id}/files")
+async def list_recording_files(recording_id: str):
+    """List the output files for a completed recording."""
+    output_dir = f"/tmp/hls-recordings/{recording_id}"
+    if not os.path.exists(output_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Recording directory not found: {recording_id}",
+        )
+
+    files = [
+        f for f in os.listdir(output_dir) if f.endswith((".m3u8", ".ts"))
+    ]
     return {
-        "success": False,
-        "stream_id": stream_id,
-        "error": "Stream management not yet implemented.",
+        "recording_id": recording_id,
+        "output_dir": output_dir,
+        "files": files,
     }
 
 
-@router.get("/stream/{stream_id}/status")
-async def get_stream_status(stream_id: str):
-    """Get the status of a streaming session."""
-    # TODO: Implement stream status
-    return {
-        "stream_id": stream_id,
-        "status": "not_found",
-        "error": "Stream status not yet implemented.",
-    }
+@router.get("/record/active")
+async def list_active_recordings():
+    """List active recording sessions (admin/debug endpoint)."""
+    return {"active_recordings": recording_registry.active_count}
+
+
+def _validate_ws_token(websocket: WebSocket) -> bool:
+    """Validate WebSocket API key from query parameter."""
+    settings = get_settings()
+    if not settings.python_api_key:
+        return True  # No key configured (development)
+    token = websocket.query_params.get("token")
+    return token == settings.python_api_key
 
 
 @router.websocket("/ws/audio")
@@ -280,6 +389,7 @@ async def websocket_audio_stream(websocket: WebSocket):
     WebSocket endpoint for real-time audio streaming (walkie-talkie).
 
     Query params:
+        token: API key for authentication
         room_id: Room to join
         user_id: User's unique identifier
         user_name: User's display name
@@ -302,6 +412,10 @@ async def websocket_audio_stream(websocket: WebSocket):
         - {"type": "joined", "room_id": "xxx", "participants": [...]}
     """
     from ..services.media.audio_stream import AudioStreamError
+
+    if not _validate_ws_token(websocket):
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
 
     await websocket.accept()
 
@@ -612,6 +726,7 @@ async def websocket_video_stream(websocket: WebSocket):
     Handles offer/answer exchange and ICE candidate relay for video calls.
 
     Query params:
+        token: API key for authentication
         room_id: Room to join
         user_id: User's unique identifier
         user_name: User's display name
@@ -632,6 +747,10 @@ async def websocket_video_stream(websocket: WebSocket):
         - {"type": "joined", "room_id": "xxx", "participants": [...]}
         - {"type": "error", "message": "xxx"}
     """
+    if not _validate_ws_token(websocket):
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
     await websocket.accept()
 
     manager = WebRTCSignalingManager()
@@ -858,6 +977,58 @@ async def websocket_video_stream(websocket: WebSocket):
         if peer_id:
             await manager.leave_room(peer_id)
             logger.info(f"Cleaned up video peer {peer_id} on disconnect")
+
+
+@router.post("/video/process")
+async def process_video(
+    file: UploadFile = File(...),
+    recording_id: str = Form(...),
+):
+    """Process an uploaded video file: transcode to optimized MP4 and extract thumbnail."""
+    temp_dir = f"/tmp/video-process/{recording_id}"
+    os.makedirs(temp_dir, exist_ok=True)
+
+    # Save uploaded file
+    input_path = os.path.join(temp_dir, f"input_{file.filename or 'video.webm'}")
+
+    try:
+        contents = await file.read()
+        if len(contents) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+        with open(input_path, "wb") as f:
+            f.write(contents)
+
+        logger.info(f"Processing video {recording_id}: {len(contents)} bytes")
+
+        # Process the video
+        result = await VideoProcessor.process(input_path, temp_dir)
+
+        return {
+            "success": True,
+            "recording_id": recording_id,
+            "video_path": result["video_path"],
+            "thumbnail_path": result["thumbnail_path"],
+            "duration": result["duration"],
+            "width": result["width"],
+            "height": result["height"],
+            "file_size": result["file_size"],
+        }
+
+    except VideoProcessorError as e:
+        logger.error(f"Video processing failed for {recording_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error processing video {recording_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+
+@router.post("/video/process/{recording_id}/cleanup")
+async def cleanup_video_processing(recording_id: str):
+    """Clean up temporary video processing files."""
+    temp_dir = f"/tmp/video-process/{recording_id}"
+    VideoProcessor.cleanup(temp_dir)
+    return {"status": "cleaned", "recording_id": recording_id}
 
 
 @router.get("/models")

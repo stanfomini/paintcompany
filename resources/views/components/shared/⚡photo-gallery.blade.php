@@ -41,6 +41,16 @@ new class extends Component
 
     public bool $canSetProposal = false;
 
+    private function resolveUser(): ?\App\Models\User
+    {
+        return auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
+    }
+
+    private function resolveUserId(): ?int
+    {
+        return auth()->id() ?? auth('customer')->id() ?? auth('agent')->id() ?? auth('crew')->id();
+    }
+
     public function mount(
         Property $property,
         ?Estimate $estimate = null,
@@ -57,7 +67,7 @@ new class extends Component
 
     private function resolvePermissions(?Estimate $estimate, ?Job $job): void
     {
-        $user = auth()->user();
+        $user = $this->resolveUser();
         $photoService = app(PhotoService::class);
 
         if (! $user) {
@@ -68,8 +78,9 @@ new class extends Component
         $this->canDelete = $user->isInternal() && $user->can('photos.delete');
         $this->canAnnotate = ($user->isInternal() && $user->can('photos.annotate'))
             || $user->type === 'crew'
-            || $user->type === 'customer';
-        $this->canComment = $user->isInternal() || $user->type === 'crew' || $user->type === 'customer';
+            || $user->type === 'customer'
+            || $user->type === 'agent';
+        $this->canComment = $user->isInternal() || $user->type === 'crew' || $user->type === 'customer' || $user->type === 'agent';
         $this->canReorder = $user->isInternal();
         $this->canSetProposal = $user->isInternal() && $estimate !== null;
     }
@@ -77,7 +88,7 @@ new class extends Component
     #[Computed]
     public function photos(): Collection
     {
-        $user = auth()->user();
+        $user = $this->resolveUser();
         $job = $this->jobId ? Job::find($this->jobId) : null;
 
         if ($user) {
@@ -117,7 +128,7 @@ new class extends Component
     #[Computed]
     public function unviewedCount(): int
     {
-        $user = auth()->user();
+        $user = $this->resolveUser();
 
         if (! $user) {
             return 0;
@@ -201,7 +212,7 @@ new class extends Component
         ];
 
         if ($this->jobId) {
-            $channel = match (auth()->user()?->type) {
+            $channel = match ($this->resolveUser()?->type) {
                 'crew' => "echo-private:crew.job.{$this->jobId}",
                 'customer' => "echo-private:customer.job.{$this->jobId}",
                 default => "echo-private:job.{$this->jobId}",
@@ -214,7 +225,7 @@ new class extends Component
 
     public function onPhotoUpdated(array $event): void
     {
-        if (($event['actor_id'] ?? null) == auth()->id()) {
+        if (($event['actor_id'] ?? null) == $this->resolveUserId()) {
             return;
         }
 
@@ -237,7 +248,7 @@ new class extends Component
     {{-- Header --}}
     <div class="flex items-center justify-between mb-4">
         <div class="flex items-center gap-2">
-            <flux:heading size="lg">Photos</flux:heading>
+            <flux:heading size="lg">{{ __('Photos') }}</flux:heading>
             @if ($this->unviewedCount > 0)
                 <span class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 text-xs font-bold text-white bg-blue-500 rounded-full">
                     {{ $this->unviewedCount }}
@@ -246,7 +257,7 @@ new class extends Component
         </div>
         @if ($canUpload)
             <flux:button wire:click="$dispatch('open-upload-modal')" icon="arrow-up-tray" size="sm">
-                Upload Photos
+                {{ __('Upload Photos') }}
             </flux:button>
         @endif
     </div>
@@ -258,7 +269,7 @@ new class extends Component
             variant="{{ $categoryFilter === 'all' ? 'filled' : 'ghost' }}"
             size="sm"
         >
-            All ({{ $this->photos->count() }})
+            {{ __('All') }} ({{ $this->photos->count() }})
         </flux:button>
         @foreach (\App\Models\PropertyPhoto::CATEGORIES as $key => $label)
             @php $count = $this->categoryCounts[$key] ?? 0; @endphp
@@ -278,17 +289,17 @@ new class extends Component
     @if ($this->filteredPhotos->isEmpty())
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
             <flux:icon name="photo" class="w-12 h-12 mx-auto text-zinc-400 mb-3" />
-            <flux:heading size="sm" class="mb-1">No photos yet</flux:heading>
+            <flux:heading size="sm" class="mb-1">{{ __('No photos yet') }}</flux:heading>
             <flux:text class="text-zinc-500 dark:text-zinc-400 mb-4">
                 @if ($categoryFilter === 'all')
-                    Upload photos to document this property.
+                    {{ __('Upload photos to document this property.') }}
                 @else
-                    No {{ strtolower(\App\Models\PropertyPhoto::CATEGORIES[$categoryFilter] ?? $categoryFilter) }} photos found.
+                    {{ __('No :category photos found.', ['category' => strtolower(\App\Models\PropertyPhoto::CATEGORIES[$categoryFilter] ?? $categoryFilter)]) }}
                 @endif
             </flux:text>
             @if ($categoryFilter === 'all' && $canUpload)
                 <flux:button wire:click="$dispatch('open-upload-modal')" icon="arrow-up-tray" size="sm">
-                    Upload Photos
+                    {{ __('Upload Photos') }}
                 </flux:button>
             @endif
         </div>
@@ -317,10 +328,10 @@ new class extends Component
                         } }}">
                             {{ \App\Models\PropertyPhoto::CATEGORIES[$photo->category] ?? $photo->category }}
                         </flux:badge>
-                        @if ($photo->hasUnviewedChanges(auth()->user()))
+                        @if ($photo->hasUnviewedChanges(auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user()))
                             <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-white bg-blue-500 rounded-full shadow-sm">
                                 <svg class="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="5" fill="currentColor" /></svg>
-                                Edited
+                                {{ __('Edited') }}
                             </span>
                         @endif
                     </div>
@@ -355,7 +366,7 @@ new class extends Component
                                 <button
                                     wire:click="openLightbox({{ $photo->id }})"
                                     class="p-1.5 bg-white/90 dark:bg-zinc-800/90 rounded-lg hover:bg-white dark:hover:bg-zinc-700 transition-colors"
-                                    title="View"
+                                    title="{{ __('View') }}"
                                 >
                                     <flux:icon name="eye" class="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
                                 </button>
@@ -363,7 +374,7 @@ new class extends Component
                                     <button
                                         wire:click.stop="toggleProposal({{ $photo->id }})"
                                         class="p-1.5 rounded-lg transition-colors {{ $photo->show_on_proposal ? 'bg-amber-100 dark:bg-amber-900/50 hover:bg-amber-200' : 'bg-white/90 dark:bg-zinc-800/90 hover:bg-white dark:hover:bg-zinc-700' }}"
-                                        title="{{ $photo->show_on_proposal ? 'Remove from proposal' : 'Add to proposal' }}"
+                                        title="{{ $photo->show_on_proposal ? __('Remove from proposal') : __('Add to proposal') }}"
                                     >
                                         <flux:icon name="star" class="w-4 h-4 {{ $photo->show_on_proposal ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-700 dark:text-zinc-300' }}" />
                                     </button>
@@ -372,9 +383,9 @@ new class extends Component
                             @if ($canDelete)
                                 <button
                                     wire:click.stop="deletePhoto({{ $photo->id }})"
-                                    wire:confirm="Are you sure you want to delete this photo?"
+                                    wire:confirm="{{ __('Are you sure you want to delete this photo?') }}"
                                     class="p-1.5 bg-white/90 dark:bg-zinc-800/90 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
-                                    title="Delete"
+                                    title="{{ __('Delete') }}"
                                 >
                                     <flux:icon name="trash" class="w-4 h-4 text-red-600 dark:text-red-400" />
                                 </button>
@@ -401,7 +412,7 @@ new class extends Component
             :property="$property"
             :estimate-id="$estimateId"
             :job-id="$jobId"
-            :allowed-categories="app(PhotoService::class)->getAllowedUploadCategories(auth()->user(), $jobId ? Job::find($jobId) : null)"
+            :allowed-categories="app(PhotoService::class)->getAllowedUploadCategories(auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user(), $jobId ? Job::find($jobId) : null)"
             wire:key="upload-{{ $property->id }}"
         />
     @endif

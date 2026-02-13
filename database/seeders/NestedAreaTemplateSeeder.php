@@ -913,9 +913,15 @@ class NestedAreaTemplateSeeder extends Seeder
         ];
 
         foreach ($templates as $template) {
+            // Auto-enable margin pricing for templates with labor data
+            $useMarginPricing = ($template['estimated_hours'] ?? 0) > 0;
+
             NestedAreaTemplate::updateOrCreate(
                 ['code' => $template['code']],
-                array_merge($template, ['is_active' => true])
+                array_merge($template, [
+                    'is_active' => true,
+                    'use_margin_pricing' => $useMarginPricing,
+                ])
             );
         }
     }

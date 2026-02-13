@@ -3,9 +3,9 @@
     <div class="space-y-6">
         {{-- Modal Header --}}
         <div>
-            <flux:heading size="lg">Sign to Accept Estimate</flux:heading>
+            <flux:heading size="lg">{{ __('Sign to Accept Estimate') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                Please provide your signature to accept this estimate.
+                {{ __('Please provide your signature to accept this estimate.') }}
             </flux:text>
         </div>
 
@@ -13,18 +13,18 @@
             {{-- Signer Information --}}
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:field>
-                    <flux:label>Your Name <span class="text-red-500">*</span></flux:label>
+                    <flux:label>{{ __('Your Name') }} <span class="text-red-500">*</span></flux:label>
                     <flux:input
                         wire:model="signerName"
                         type="text"
-                        placeholder="Full name"
+                        :placeholder="__('Full name')"
                         required
                     />
                     <flux:error name="signerName" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Your Email <span class="text-red-500">*</span></flux:label>
+                    <flux:label>{{ __('Your Email') }} <span class="text-red-500">*</span></flux:label>
                     <flux:input
                         wire:model="signerEmail"
                         type="email"
@@ -37,7 +37,7 @@
 
             {{-- Signature Type Tabs --}}
             <div>
-                <flux:label class="mb-2">Signature <span class="text-red-500">*</span></flux:label>
+                <flux:label class="mb-2">{{ __('Signature') }} <span class="text-red-500">*</span></flux:label>
                 <div class="flex rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden mb-4">
                     <button
                         type="button"
@@ -48,7 +48,7 @@
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                             </svg>
-                            Draw Signature
+                            {{ __('Draw Signature') }}
                         </span>
                     </button>
                     <button
@@ -60,7 +60,7 @@
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
-                            Type Signature
+                            {{ __('Type Signature') }}
                         </span>
                     </button>
                 </div>
@@ -82,7 +82,7 @@
                                 class="absolute inset-0 flex items-center justify-center pointer-events-none"
                             >
                                 <flux:text class="text-zinc-400 dark:text-zinc-500">
-                                    Sign here
+                                    {{ __('Sign here') }}
                                 </flux:text>
                             </div>
                         </div>
@@ -93,7 +93,7 @@
                                 size="sm"
                                 x-on:click="clear()"
                             >
-                                Clear
+                                {{ __('Clear') }}
                             </flux:button>
                         </div>
                         <input type="hidden" wire:model="signatureData" x-ref="signatureInput" />
@@ -106,14 +106,14 @@
                         <flux:input
                             wire:model.live="signatureData"
                             type="text"
-                            placeholder="Type your full name"
+                            :placeholder="__('Type your full name')"
                             class="text-lg"
                         />
 
                         {{-- Signature Preview --}}
                         @if (strlen($signatureData) > 0)
                             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-white dark:bg-zinc-800">
-                                <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400 mb-2">Preview:</flux:text>
+                                <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400 mb-2">{{ __('Preview:') }}</flux:text>
                                 <div
                                     class="text-3xl text-zinc-900 dark:text-white"
                                     style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;"
@@ -128,19 +128,6 @@
                 <flux:error name="signatureData" />
             </div>
 
-            {{-- Terms Preview --}}
-            @if ($estimate->terms)
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-zinc-50 dark:bg-zinc-800/50 max-h-32 overflow-y-auto">
-                    <flux:text size="xs" class="font-medium text-zinc-600 dark:text-zinc-300 mb-2">Terms & Conditions:</flux:text>
-                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap">{{ Str::limit($estimate->terms, 200) }}</flux:text>
-                </div>
-                @if (Str::length($estimate->terms) > 200)
-                    <button type="button" wire:click="openTermsModal" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                        View Full Terms
-                    </button>
-                @endif
-            @endif
-
             {{-- Terms Checkbox --}}
             <flux:field>
                 <div class="flex items-start gap-3">
@@ -149,7 +136,7 @@
                         id="acceptedTerms"
                     />
                     <label for="acceptedTerms" class="text-sm text-zinc-600 dark:text-zinc-400 cursor-pointer">
-                        I have read and agree to the terms and conditions. I understand that by signing this document electronically, I am legally bound to the terms of this estimate.
+                        {!! __('I have read and agree to the <a href="/terms" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">Terms & Conditions</a> and <a href="/privacy" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">Privacy Policy</a>. I understand that by signing this document electronically, I am legally bound to the terms of this estimate.') !!}
                         <span class="text-red-500">*</span>
                     </label>
                 </div>
@@ -163,7 +150,7 @@
                     variant="ghost"
                     wire:click="closeSignatureModal"
                 >
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button
                     type="submit"
@@ -173,14 +160,14 @@
                     :disabled="!$this->canSubmitSignature"
                 >
                     <span wire:loading.remove wire:target="submitSignature">
-                        Sign & Accept Estimate
+                        {{ __('Sign & Accept Estimate') }}
                     </span>
                     <span wire:loading wire:target="submitSignature" class="flex items-center gap-2">
                         <svg class="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Processing...
+                        {{ __('Processing...') }}
                     </span>
                 </flux:button>
             </div>

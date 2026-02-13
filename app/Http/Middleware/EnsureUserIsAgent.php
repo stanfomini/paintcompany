@@ -34,7 +34,7 @@ class EnsureUserIsAgent
             $request->session()->invalidate();
             $request->session()->regenerateToken();
 
-            session()->flash('error', 'Your account has been deactivated. Please contact support.');
+            session()->flash('error', __('Your account has been deactivated. Please contact support.'));
 
             return new \Illuminate\Http\RedirectResponse(route('agent.login'));
         }

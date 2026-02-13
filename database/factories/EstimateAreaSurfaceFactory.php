@@ -58,6 +58,7 @@ class EstimateAreaSurfaceFactory extends Factory
             'material_cost' => $materialTotal,
             'total' => $total,
             'is_included' => true,
+            'is_custom' => false,
             'sort_order' => 0,
         ];
     }
@@ -230,5 +231,40 @@ class EstimateAreaSurfaceFactory extends Factory
     public function benjaminMooreAura(): static
     {
         return $this->withPaint('benjamin_moore', 'aura');
+    }
+
+    /**
+     * Set as a custom surface with manual labor hours and material cost.
+     */
+    public function custom(float $laborHours, float $materialCost, ?float $hourlyRate = null): static
+    {
+        $effectiveRate = $hourlyRate ?? 45.00;
+        $laborCost = $laborHours * $effectiveRate;
+
+        return $this->state(fn (array $attributes) => [
+            'is_custom' => true,
+            'production_rate_id' => null,
+            'production_rate_value' => 0,
+            'labor_hours' => $laborHours,
+            'hourly_labor_rate' => $effectiveRate,
+            'labor_cost' => $laborCost,
+            'material_cost' => $materialCost,
+            'total' => $laborCost + $materialCost,
+        ]);
+    }
+
+    /**
+     * Set custom pricing overrides (sale_price and/or crew_price).
+     * Must be combined with custom() state since these only apply to is_custom surfaces.
+     *
+     * @param  float|null  $salePrice  Customer price override for this surface
+     * @param  float|null  $crewRate  Hourly rate override for crew ($/hr)
+     */
+    public function withCustomPricing(?float $salePrice = null, ?float $crewRate = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'sale_price' => $salePrice,
+            'crew_price' => $crewRate,
+        ]);
     }
 }

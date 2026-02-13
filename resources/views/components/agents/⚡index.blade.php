@@ -34,13 +34,13 @@ new class extends Component {
     public function activate(User $agent): void
     {
         $agent->update(['is_active' => true]);
-        session()->flash('success', 'Agent activated successfully.');
+        session()->flash('success', __('Agent activated successfully.'));
     }
 
     public function deactivate(User $agent): void
     {
         $agent->update(['is_active' => false]);
-        session()->flash('success', 'Agent deactivated successfully.');
+        session()->flash('success', __('Agent deactivated successfully.'));
     }
 
     #[Computed]
@@ -70,7 +70,7 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Agents</flux:heading>
+            <flux:heading size="xl">{{ __('Agents') }}</flux:heading>
         </div>
 
         @if (session('success'))
@@ -84,15 +84,15 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search by name, company, or license..."
+                    placeholder="{{ __('Search by name, company, or license...') }}"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="statusFilter">
-                    <option value="all">All Statuses</option>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
+                    <option value="all">{{ __('All Statuses') }}</option>
+                    <option value="active">{{ __('Active') }}</option>
+                    <option value="inactive">{{ __('Inactive') }}</option>
                 </flux:select>
             </div>
         </div>
@@ -103,25 +103,25 @@ new class extends Component {
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Name
+                                {{ __('Name') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Company
+                                {{ __('Company') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                License #
+                                {{ __('License #') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Listings
+                                {{ __('Listings') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Customers Referred
+                                {{ __('Customers Referred') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Status
+                                {{ __('Status') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         </tr>
                     </thead>
@@ -146,9 +146,9 @@ new class extends Component {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     @if ($agent->is_active)
-                                        <flux:badge size="sm" color="green">Active</flux:badge>
+                                        <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                                     @else
-                                        <flux:badge size="sm" color="yellow">Inactive</flux:badge>
+                                        <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
                                     @endif
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right">
@@ -156,15 +156,15 @@ new class extends Component {
                                         <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                         <flux:menu>
                                             <flux:menu.item icon="eye" :href="route('agents.show', $agent)" wire:navigate>
-                                                View
+                                                {{ __('View') }}
                                             </flux:menu.item>
                                             @if ($agent->is_active)
                                                 <flux:menu.item icon="x-circle" wire:click="deactivate({{ $agent->id }})" variant="danger">
-                                                    Deactivate
+                                                    {{ __('Deactivate') }}
                                                 </flux:menu.item>
                                             @else
                                                 <flux:menu.item icon="check-circle" wire:click="activate({{ $agent->id }})">
-                                                    Activate
+                                                    {{ __('Activate') }}
                                                 </flux:menu.item>
                                             @endif
                                         </flux:menu>
@@ -182,12 +182,12 @@ new class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="user-group" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No agents found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No agents found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search || $statusFilter !== 'all')
-                        Try adjusting your search or filter criteria.
+                        {{ __('Try adjusting your search or filter criteria.') }}
                     @else
-                        There are no agents in the system yet.
+                        {{ __('There are no agents in the system yet.') }}
                     @endif
                 </flux:text>
             </div>

@@ -10,7 +10,7 @@ use Livewire\Component;
 new class extends Component {
     public function boot(): void
     {
-        if (! auth()->user()?->can('settings.company')) {
+        if (! auth()->user()?->can('settings.service_categories')) {
             abort(403);
         }
     }
@@ -164,7 +164,7 @@ new class extends Component {
             + $category->prepTasks()->count();
 
         if ($references > 0) {
-            session()->flash('error', "Cannot delete \"{$category->name}\" because it is referenced by {$references} record(s).");
+            session()->flash('error', __('Cannot delete ":name" because it is referenced by :count record(s).', ['name' => __($category->name), 'count' => $references]));
 
             return;
         }
@@ -191,7 +191,7 @@ new class extends Component {
             + $category->prepTasks()->count();
 
         if ($references > 0) {
-            session()->flash('error', "Cannot delete \"{$category->name}\" because it is referenced by {$references} record(s).");
+            session()->flash('error', __('Cannot delete ":name" because it is referenced by :count record(s).', ['name' => __($category->name), 'count' => $references]));
             $this->showDeleteModal = false;
             $this->deletingId = null;
             $this->deletingName = '';
@@ -288,10 +288,9 @@ new class extends Component {
 
             {{-- Info Callout --}}
             <flux:callout variant="info" icon="information-circle">
-                <flux:callout.heading>Service Categories</flux:callout.heading>
+                <flux:callout.heading>{{ __('Service Categories') }}</flux:callout.heading>
                 <flux:callout.text>
-                    Define the services your company provides (e.g., Painting, Cleaning, Repairs).
-                    Crews and jobs are organized by these categories.
+                    {{ __('Define the services your company provides (e.g., Painting, Cleaning, Repairs). Crews and jobs are organized by these categories.') }}
                 </flux:callout.text>
             </flux:callout>
 
@@ -313,9 +312,9 @@ new class extends Component {
 
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-2">
-                                    <span class="font-medium truncate">{{ $category->name }}</span>
+                                    <span class="font-medium truncate">{{ __($category->name) }}</span>
                                     @if (! $category->is_active)
-                                        <flux:badge size="sm" color="amber">Inactive</flux:badge>
+                                        <flux:badge size="sm" color="amber">{{ __('Inactive') }}</flux:badge>
                                     @endif
                                 </div>
                                 @if ($category->description)
@@ -327,8 +326,8 @@ new class extends Component {
 
                         <div class="flex items-center gap-1 shrink-0">
                             {{-- Reorder --}}
-                            <flux:button size="sm" variant="ghost" icon="chevron-up" wire:click="moveUp({{ $category->id }})" title="Move up" />
-                            <flux:button size="sm" variant="ghost" icon="chevron-down" wire:click="moveDown({{ $category->id }})" title="Move down" />
+                            <flux:button size="sm" variant="ghost" icon="chevron-up" wire:click="moveUp({{ $category->id }})" :title="__('Move up')" />
+                            <flux:button size="sm" variant="ghost" icon="chevron-down" wire:click="moveDown({{ $category->id }})" :title="__('Move down')" />
 
                             {{-- Edit --}}
                             <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $category->id }})" />
@@ -348,14 +347,14 @@ new class extends Component {
 
                 @if ($this->categories->isEmpty())
                     <div class="text-center py-8 text-zinc-500">
-                        No service categories configured. Add one to get started.
+                        {{ __('No service categories configured. Add one to get started.') }}
                     </div>
                 @endif
             </div>
 
             {{-- Add Button --}}
             <flux:button variant="primary" icon="plus" wire:click="openAddModal">
-                Add Category
+                {{ __('Add Category') }}
             </flux:button>
 
             <x-action-message on="service-categories-updated">
@@ -368,44 +367,44 @@ new class extends Component {
     <flux:modal wire:model="showModal" variant="flyout" class="w-[420px]">
         <form wire:submit="save" class="space-y-6">
             <div>
-                <flux:heading size="lg">{{ $editingId ? 'Edit Category' : 'Add Category' }}</flux:heading>
+                <flux:heading size="lg">{{ $editingId ? __('Edit Category') : __('Add Category') }}</flux:heading>
                 <flux:text class="mt-2">
-                    {{ $editingId ? 'Update the service category details below.' : 'Define a new service category for your company.' }}
+                    {{ $editingId ? __('Update the service category details below.') : __('Define a new service category for your company.') }}
                 </flux:text>
             </div>
 
             <flux:input
                 wire:model="name"
-                label="Name"
-                placeholder="e.g., Painting, Cleaning, Repairs"
+                :label="__('Name')"
+                :placeholder="__('e.g., Painting, Cleaning, Repairs')"
                 required
             />
 
             <flux:textarea
                 wire:model="description"
-                label="Description (optional)"
-                placeholder="What does this service include?"
+                :label="__('Description (optional)')"
+                :placeholder="__('What does this service include?')"
                 rows="2"
             />
 
-            <flux:select wire:model="icon" label="Icon">
+            <flux:select wire:model="icon" :label="__('Icon')">
                 @foreach ($this->iconOptions as $iconValue => $iconLabel)
                     <flux:select.option value="{{ $iconValue }}">{{ $iconLabel }}</flux:select.option>
                 @endforeach
             </flux:select>
 
-            <flux:select wire:model="color" label="Color">
+            <flux:select wire:model="color" :label="__('Color')">
                 @foreach ($this->colorOptions as $colorValue => $colorLabel)
                     <flux:select.option value="{{ $colorValue }}">{{ $colorLabel }}</flux:select.option>
                 @endforeach
             </flux:select>
 
-            <flux:switch wire:model="is_active" label="Active" description="Inactive categories are hidden from crew and job forms" />
+            <flux:switch wire:model="is_active" :label="__('Active')" :description="__('Inactive categories are hidden from crew and job forms')" />
 
             <div class="flex gap-2">
-                <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">Cancel</flux:button>
+                <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>
                 <flux:button type="submit" variant="primary" class="flex-1">
-                    {{ $editingId ? 'Update' : 'Add' }} Category
+                    {{ $editingId ? __('Update Category') : __('Add Category') }}
                 </flux:button>
             </div>
         </form>
@@ -415,15 +414,15 @@ new class extends Component {
     <flux:modal wire:model="showDeleteModal" class="max-w-sm">
         <div class="space-y-6">
             <div>
-                <flux:heading size="lg">Delete Category</flux:heading>
+                <flux:heading size="lg">{{ __('Delete Category') }}</flux:heading>
                 <flux:text class="mt-2">
-                    Are you sure you want to delete <strong>{{ $deletingName }}</strong>? This action cannot be undone.
+                    {{ __('Are you sure you want to delete') }} <strong>{{ $deletingName }}</strong>{{ __('? This action cannot be undone.') }}
                 </flux:text>
             </div>
 
             <div class="flex gap-2">
-                <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">Cancel</flux:button>
-                <flux:button variant="danger" wire:click="delete" class="flex-1">Delete</flux:button>
+                <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="danger" wire:click="delete" class="flex-1">{{ __('Delete') }}</flux:button>
             </div>
         </div>
     </flux:modal>

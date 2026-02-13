@@ -28,10 +28,14 @@ class User extends Authenticatable
         'password',
         'type',
         'is_active',
+        'needs_onboarding',
         'calendar_token',
         'referral_code',
         'referral_payment_method',
         'referral_payment_handle',
+        'referral_terms_accepted_at',
+        'referral_terms_ip_address',
+        'referral_terms_initials',
     ];
 
     /**
@@ -57,6 +61,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'needs_onboarding' => 'boolean',
+            'referral_terms_accepted_at' => 'datetime',
         ];
     }
 
@@ -91,6 +97,22 @@ class User extends Authenticatable
     public function crewProfile(): HasOne
     {
         return $this->hasOne(CrewProfile::class);
+    }
+
+    /**
+     * Get the signed contracts for this crew member.
+     */
+    public function crewSignedContracts(): HasMany
+    {
+        return $this->hasMany(CrewSignedContract::class);
+    }
+
+    /**
+     * Get the W9 form for this crew member.
+     */
+    public function crewW9Form(): HasOne
+    {
+        return $this->hasOne(CrewW9Form::class);
     }
 
     /**
@@ -190,7 +212,7 @@ class User extends Authenticatable
      */
     public function canViewRoadmap(): bool
     {
-        return $this->isInternal() && $this->hasPermissionTo('view roadmap');
+        return $this->isInternal() && $this->hasPermissionTo('roadmap.view');
     }
 
     /**
@@ -198,7 +220,7 @@ class User extends Authenticatable
      */
     public function canEditRoadmap(): bool
     {
-        return $this->isInternal() && $this->hasPermissionTo('edit roadmap');
+        return $this->isInternal() && $this->hasPermissionTo('roadmap.edit');
     }
 
     /**
@@ -206,7 +228,7 @@ class User extends Authenticatable
      */
     public function canViewKpis(): bool
     {
-        return $this->isInternal() && $this->hasPermissionTo('view kpis');
+        return $this->isInternal() && $this->hasPermissionTo('kpis.view');
     }
 
     /**
@@ -235,6 +257,14 @@ class User extends Authenticatable
         }
 
         return $this->calendar_token;
+    }
+
+    /**
+     * Check if the user has accepted the referral program terms.
+     */
+    public function hasAcceptedReferralTerms(): bool
+    {
+        return $this->referral_terms_accepted_at !== null;
     }
 
     /**

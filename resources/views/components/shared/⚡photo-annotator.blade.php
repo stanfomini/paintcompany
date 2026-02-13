@@ -23,7 +23,7 @@ new class extends Component
 
     public function mount(PropertyPhoto $photo): void
     {
-        $user = auth()->user();
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
         $this->photo = $photo->load('annotations');
         $this->photoUrl = $photo->url;
 
@@ -40,7 +40,7 @@ new class extends Component
 
     private function canAnnotate(): bool
     {
-        $user = auth()->user();
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
 
         return $user && ($user->can('photos.annotate') || $user->type === 'crew' || $user->type === 'customer');
     }
@@ -51,7 +51,7 @@ new class extends Component
             return;
         }
 
-        $user = auth()->user();
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
         $service = app(AnnotationService::class);
         $annotation = $service->save($this->photo, $canvasJson, $user);
         $service->renderLayer($this->photo, $annotation);
@@ -67,7 +67,7 @@ new class extends Component
             return;
         }
 
-        $user = auth()->user();
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
         $service = app(AnnotationService::class);
         $authorType = PhotoAnnotation::resolveAuthorType($user);
         $service->clearAnnotation($this->photo, $authorType);
@@ -98,24 +98,24 @@ new class extends Component
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
             </svg>
-            <span class="hidden sm:inline">Back</span>
+            <span class="hidden sm:inline">{{ __('Back') }}</span>
         </button>
 
         {{-- Tools (Desktop) --}}
         <div class="hidden sm:flex items-center gap-1 bg-zinc-800 rounded-lg p-1">
-            <button x-on:click="setTool('freehand')" :class="tool === 'freehand' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="Freehand Draw">
+            <button x-on:click="setTool('freehand')" :class="tool === 'freehand' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="{{ __('Freehand Draw') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
             </button>
-            <button x-on:click="setTool('arrow')" :class="tool === 'arrow' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="Arrow">
+            <button x-on:click="setTool('arrow')" :class="tool === 'arrow' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="{{ __('Arrow') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
             </button>
-            <button x-on:click="setTool('rect')" :class="tool === 'rect' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="Rectangle">
+            <button x-on:click="setTool('rect')" :class="tool === 'rect' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="{{ __('Rectangle') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" /></svg>
             </button>
-            <button x-on:click="setTool('circle')" :class="tool === 'circle' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="Circle">
+            <button x-on:click="setTool('circle')" :class="tool === 'circle' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="{{ __('Circle') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9" /></svg>
             </button>
-            <button x-on:click="setTool('text')" :class="tool === 'text' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="Text">
+            <button x-on:click="setTool('text')" :class="tool === 'text' ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="p-1.5 rounded-md transition-colors" title="{{ __('Text') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M8 6v12m0-12h8m-8 12h8" /></svg>
             </button>
             <div class="w-px h-6 bg-zinc-600 mx-1"></div>
@@ -127,10 +127,10 @@ new class extends Component
                 <button x-on:click="strokeWidth = sw" :class="strokeWidth === sw ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'" class="px-1.5 py-0.5 rounded text-xs font-medium transition-colors" x-text="sw + 'px'"></button>
             </template>
             <div class="w-px h-6 bg-zinc-600 mx-1"></div>
-            <button x-on:click="undo()" class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-colors" title="Undo">
+            <button x-on:click="undo()" class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-colors" title="{{ __('Undo') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
             </button>
-            <button x-on:click="redo()" class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-colors" title="Redo">
+            <button x-on:click="redo()" class="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-md transition-colors" title="{{ __('Redo') }}">
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0l-6-6m6 6H9a6 6 0 000 12h3" /></svg>
             </button>
         </div>
@@ -140,16 +140,16 @@ new class extends Component
             {{-- Author Type Badge --}}
             <div class="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium text-white" style="background: {{ $authorColor }}40; border: 1px solid {{ $authorColor }}">
                 <span class="w-2 h-2 rounded-full" style="background: {{ $authorColor }}"></span>
-                Editing as: {{ $authorLabel }}
+                {{ __('Editing as:') }} {{ $authorLabel }}
             </div>
 
             @if ($hasExistingAnnotation)
                 <button
                     wire:click="clearAnnotation"
-                    wire:confirm="Remove your {{ strtolower($authorLabel) }} annotations from this photo?"
+                    wire:confirm="{{ __('Remove your :type annotations from this photo?', ['type' => strtolower($authorLabel)]) }}"
                     class="px-3 py-1.5 bg-red-600/20 text-red-400 hover:bg-red-600/30 rounded-lg text-sm font-medium transition-colors"
                 >
-                    Clear Mine
+                    {{ __('Clear Mine') }}
                 </button>
             @endif
             <button
@@ -159,7 +159,7 @@ new class extends Component
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                 </svg>
-                Save
+                {{ __('Save') }}
             </button>
         </div>
     </div>
@@ -170,7 +170,7 @@ new class extends Component
         <div x-show="loading" class="absolute inset-0 flex items-center justify-center z-10 bg-zinc-950">
             <div class="flex flex-col items-center gap-3 text-zinc-400">
                 <svg class="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                <span class="text-sm">Loading editor...</span>
+                <span class="text-sm">{{ __('Loading editor...') }}</span>
             </div>
         </div>
         {{-- Canvas element: NO x-show to avoid Alpine interfering with Fabric.js DOM --}}

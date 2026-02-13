@@ -41,8 +41,13 @@ class LoginController extends Controller
             return redirect()->intended(route('crew.dashboard'));
         }
 
+        // Check if credentials are valid but for a different user type
+        if ($redirect = $this->redirectIfWrongPortal($request, 'crew')) {
+            return $redirect;
+        }
+
         return back()->withErrors([
-            'email' => 'The provided credentials do not match our records or your account is not active.',
+            'email' => __('The provided credentials do not match our records or your account is not active.'),
         ])->onlyInput('email');
     }
 

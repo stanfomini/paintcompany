@@ -5,7 +5,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -20,8 +19,16 @@ new class extends Component {
 
     public string $assignedCrewFilter = '';
 
-    #[On('job-updated')]
-    #[On('job-created')]
+    public function getListeners(): array
+    {
+        return [
+            'job-updated' => 'refreshBoard',
+            'job-created' => 'refreshBoard',
+            "echo-private:internal-jobs,.job.stage.changed" => 'refreshBoard',
+            "echo-private:internal-jobs,.job.created" => 'refreshBoard',
+        ];
+    }
+
     public function refreshBoard(): void
     {
         // Re-render is triggered automatically
@@ -149,7 +156,12 @@ new class extends Component {
 <div>
     <div class="max-w-full mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Job Progress</flux:heading>
+            <flux:heading size="xl">{{ __('Job Progress') }}</flux:heading>
+            @can('invoices.view')
+                <flux:button :href="route('invoices.index')" variant="ghost" icon="document-currency-dollar" size="sm" wire:navigate>
+                    {{ __('Invoices') }}
+                </flux:button>
+            @endcan
         </div>
 
         <div class="flex flex-col sm:flex-row gap-4 mb-6">
@@ -157,13 +169,13 @@ new class extends Component {
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search jobs..."
+                    :placeholder="__('Search jobs...')"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="assignedCrewFilter">
-                    <option value="">All Crews</option>
+                    <option value="">{{ __('All Crews') }}</option>
                     @foreach ($this->crewUsers as $crew)
                         <option value="{{ $crew->id }}">{{ $crew->name }}</option>
                     @endforeach
@@ -211,7 +223,7 @@ new class extends Component {
                                                             <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
                                                             <flux:menu>
                                                                 <flux:menu.item icon="eye" href="{{ route('jobs.show', $job) }}" wire:navigate>
-                                                                    View
+                                                                    {{ __('View') }}
                                                                 </flux:menu.item>
                                                             </flux:menu>
                                                         </flux:dropdown>
@@ -251,7 +263,7 @@ new class extends Component {
 
                                                 @if ($job->isReadyForDispatch() && $job->stage === 'scheduling_colors')
                                                     <div class="mt-2">
-                                                        <flux:badge size="sm" color="green">Ready for Dispatch</flux:badge>
+                                                        <flux:badge size="sm" color="green">{{ __('Ready for Dispatch') }}</flux:badge>
                                                     </div>
                                                 @endif
                                             </div>
@@ -259,7 +271,7 @@ new class extends Component {
                                     </div>
                                 @empty
                                     <div class="text-center py-8 text-zinc-400 dark:text-zinc-500 text-sm">
-                                        No jobs
+                                        {{ __('No jobs') }}
                                     </div>
                                 @endforelse
                             </div>

@@ -45,7 +45,7 @@ class ProductionRateCategory extends Model
      */
     public function getTypeLabelAttribute(): string
     {
-        return self::TYPES[$this->type] ?? $this->type;
+        return __(self::TYPES[$this->type] ?? $this->type);
     }
 
     /**

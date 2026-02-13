@@ -23,33 +23,39 @@ Route::middleware('guest:customer')->group(function () {
 Route::middleware(['auth:customer', 'auth.customer'])->group(function () {
     Route::post('logout', [LoginController::class, 'logout'])->name('logout');
 
-    // Dashboard
-    Route::livewire('dashboard', 'customer.dashboard')->name('dashboard');
+    // Onboarding (excluded from onboarded middleware)
+    Route::livewire('onboarding', 'customer.onboarding')->name('onboarding');
 
-    // Projects (Deals)
-    Route::livewire('projects', 'customer.projects.index')->name('projects.index');
-    Route::livewire('projects/{deal}', 'customer.projects.show')->name('projects.show');
+    // All other routes require onboarding to be completed
+    Route::middleware('auth.customer.onboarded')->group(function () {
+        // Dashboard
+        Route::livewire('dashboard', 'customer.dashboard')->name('dashboard');
 
-    // Properties
-    Route::livewire('properties', 'customer.properties.index')->name('properties.index');
-    Route::livewire('properties/{property}', 'customer.properties.show')->name('properties.show');
+        // Projects (Deals)
+        Route::livewire('projects', 'customer.projects.index')->name('projects.index');
+        Route::livewire('projects/{deal}', 'customer.projects.show')->name('projects.show');
 
-    // Estimates
-    Route::livewire('estimates', 'customer.estimates.index')->name('estimates.index');
-    Route::livewire('estimates/{estimate}', 'customer.estimates.show')->name('estimates.show');
+        // Properties
+        Route::livewire('properties', 'customer.properties.index')->name('properties.index');
+        Route::livewire('properties/{property}', 'customer.properties.show')->name('properties.show');
 
-    // Jobs
-    Route::livewire('jobs', 'customer.jobs-index')->name('jobs.index');
-    Route::livewire('jobs/{job}', 'customer.job-progress')->name('jobs.show');
+        // Estimates
+        Route::livewire('estimates', 'customer.estimates.index')->name('estimates.index');
+        Route::livewire('estimates/{estimate}', 'customer.estimates.show')->name('estimates.show');
 
-    // Invoices
-    Route::livewire('invoices', 'customer.invoices.index')->name('invoices.index');
-    Route::livewire('invoices/{invoice}', 'customer.invoices.show')->name('invoices.show');
+        // Jobs
+        Route::livewire('jobs', 'customer.jobs-index')->name('jobs.index');
+        Route::livewire('jobs/{job}', 'customer.job-progress')->name('jobs.show');
 
-    // Referrals
-    Route::livewire('referrals', 'customer.referrals')->name('referrals');
+        // Invoices
+        Route::livewire('invoices', 'customer.invoices.index')->name('invoices.index');
+        Route::livewire('invoices/{invoice}', 'customer.invoices.show')->name('invoices.show');
 
-    // Chat / Messages
-    Route::livewire('chat', 'customer.chat.thread-list')->name('chat.index');
-    Route::livewire('chat/{thread}', 'customer.chat.thread-view')->name('chat.show');
+        // Referrals
+        Route::livewire('referrals', 'customer.referrals')->name('referrals');
+
+        // Chat / Messages
+        Route::livewire('chat', 'customer.chat.thread-list')->name('chat.index');
+        Route::livewire('chat/{thread}', 'customer.chat.thread-view')->name('chat.show');
+    });
 });

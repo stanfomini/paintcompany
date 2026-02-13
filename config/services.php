@@ -42,4 +42,8 @@ return [
         'scheme' => 'https',
     ],
 
+    'forge' => [
+        'token' => env('FORGE_API_TOKEN'),
+    ],
+
 ];

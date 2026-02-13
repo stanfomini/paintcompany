@@ -35,6 +35,17 @@ const previewProps: PropertyShowcaseProps = {
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      {/* Promo Video - Main marketing video */}
+      <Composition
+        id="PromoVideo"
+        component={PromoVideo}
+        durationInFrames={TOTAL_FRAMES}
+        fps={FPS}
+        width={1920}
+        height={1080}
+        defaultProps={defaultPromoProps}
+      />
+
       {/* Property Showcase Video */}
       <Composition
         id="PropertyShowcase"
@@ -44,17 +55,6 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={previewProps}
-      />
-
-      {/* Promo Video */}
-      <Composition
-        id="PromoVideo"
-        component={PromoVideo}
-        durationInFrames={TOTAL_FRAMES}
-        fps={FPS}
-        width={1920}
-        height={1080}
-        defaultProps={defaultPromoProps}
       />
 
       {/* Original Hello World (for testing) */}

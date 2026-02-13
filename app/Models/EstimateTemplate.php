@@ -321,11 +321,11 @@ class EstimateTemplate extends Model
     public function getPricingMethodLabelAttribute(): string
     {
         return match ($this->pricing_method) {
-            self::PRICING_PRODUCTION_RATE => 'Production Rate',
-            self::PRICING_FIXED => 'Fixed Price',
-            self::PRICING_PER_SQFT => 'Per Square Foot',
-            self::PRICING_PERCENT => 'Percentage of Total',
-            default => $this->pricing_method,
+            self::PRICING_PRODUCTION_RATE => __('Production Rate'),
+            self::PRICING_FIXED => __('Fixed Price'),
+            self::PRICING_PER_SQFT => __('Per Square Foot'),
+            self::PRICING_PERCENT => __('Percentage of Total'),
+            default => __($this->pricing_method),
         };
     }
 
@@ -339,10 +339,10 @@ class EstimateTemplate extends Model
         }
 
         return match ($this->scope_type) {
-            self::SCOPE_TYPE_INTERIOR => 'Interior',
-            self::SCOPE_TYPE_EXTERIOR => 'Exterior',
-            self::SCOPE_TYPE_BOTH => 'Interior & Exterior',
-            default => $this->scope_type,
+            self::SCOPE_TYPE_INTERIOR => __('Interior'),
+            self::SCOPE_TYPE_EXTERIOR => __('Exterior'),
+            self::SCOPE_TYPE_BOTH => __('Interior & Exterior'),
+            default => __($this->scope_type),
         };
     }
 
@@ -352,10 +352,10 @@ class EstimateTemplate extends Model
     public function getVisibilityLabelAttribute(): string
     {
         return match ($this->visibility) {
-            self::VISIBILITY_PRIVATE => 'Private',
-            self::VISIBILITY_COMPANY => 'Company',
-            self::VISIBILITY_SYSTEM => 'System',
-            default => ucfirst($this->visibility ?? 'Unknown'),
+            self::VISIBILITY_PRIVATE => __('Private'),
+            self::VISIBILITY_COMPANY => __('Company'),
+            self::VISIBILITY_SYSTEM => __('System'),
+            default => __(ucfirst($this->visibility ?? 'Unknown')),
         };
     }
 

@@ -6,7 +6,22 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-new #[Layout('components.layouts.crew')] class extends Component {
+new #[Layout('components.layouts.crew')] class extends Component
+{
+    public function getListeners(): array
+    {
+        $userId = Auth::guard('crew')->id();
+
+        return [
+            "echo-private:crew.user.{$userId},.job.dispatched" => 'handleNewDispatch',
+        ];
+    }
+
+    public function handleNewDispatch(array $data): void
+    {
+        unset($this->availableJobCount);
+    }
+
     #[Computed]
     public function availableJobCount(): int
     {
@@ -60,9 +75,9 @@ new #[Layout('components.layouts.crew')] class extends Component {
     @if ($this->availableJobCount > 0)
         <div class="mt-8">
             <flux:callout variant="info">
-                You have {{ $this->availableJobCount }} {{ Str::plural('job', $this->availableJobCount) }} waiting for your response.
+                {{ __('You have :count :jobs waiting for your response.', ['count' => $this->availableJobCount, 'jobs' => Str::plural('job', $this->availableJobCount)]) }}
                 <flux:button :href="route('crew.jobs.available')" size="sm" variant="primary" class="ml-2">
-                    Review Jobs
+                    {{ __('Review Jobs') }}
                 </flux:button>
             </flux:callout>
         </div>

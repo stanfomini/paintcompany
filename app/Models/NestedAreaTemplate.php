@@ -33,6 +33,7 @@ class NestedAreaTemplate extends Model
         'category',
         'scope_type',
         'fixed_price',
+        'use_margin_pricing',
         'estimated_hours',  // For backend reporting (painter pay breakdown)
         'material_cost',    // For backend reporting (company analytics)
         'include_in_package_pricing',
@@ -54,6 +55,7 @@ class NestedAreaTemplate extends Model
     {
         return [
             'fixed_price' => 'decimal:2',
+            'use_margin_pricing' => 'boolean',
             'estimated_hours' => 'decimal:2',
             'material_cost' => 'decimal:2',
             'include_in_package_pricing' => 'boolean',
@@ -154,11 +156,50 @@ class NestedAreaTemplate extends Model
     }
 
     /**
+     * Calculate the customer price from COGS + margins using PBP formula.
+     */
+    public function getCalculatedPrice(?string $scopeType = null): float
+    {
+        $scope = $scopeType ?? $this->scope_type ?? 'interior';
+        $laborHours = (float) ($this->estimated_hours ?? 0);
+        $materialCost = (float) ($this->material_cost ?? 0);
+
+        if ($laborHours <= 0 && $materialCost <= 0) {
+            return (float) $this->fixed_price;
+        }
+
+        $settings = CompanySetting::getInstance();
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scope);
+
+        $laborCost = $laborHours * $effectiveRate;
+        $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
+        $cleanupCost = $cleanupHours * $effectiveRate;
+        $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
+
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+
+        return $settings->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+    }
+
+    /**
+     * Get the effective price based on pricing mode.
+     * Uses margin-calculated price when enabled, manual fixed_price otherwise.
+     */
+    public function getEffectivePrice(?string $scopeType = null): float
+    {
+        if ($this->use_margin_pricing && ($this->estimated_hours > 0 || $this->material_cost > 0)) {
+            return $this->getCalculatedPrice($scopeType);
+        }
+
+        return (float) $this->fixed_price;
+    }
+
+    /**
      * Get the formatted price.
      */
     public function getFormattedPriceAttribute(): string
     {
-        return '$'.number_format((float) $this->fixed_price, 2);
+        return '$'.number_format($this->getEffectivePrice(), 2);
     }
 
     /**

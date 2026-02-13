@@ -38,7 +38,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">My Customers</flux:heading>
+            <flux:heading size="xl">{{ __('My Customers') }}</flux:heading>
         </div>
 
         <div class="flex flex-col sm:flex-row gap-4 mb-6">
@@ -46,7 +46,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search by name or email..."
+                    placeholder="{{ __('Search by name or email...') }}"
                     icon="magnifying-glass"
                 />
             </div>
@@ -58,22 +58,22 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Name
+                                {{ __('Name') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Email
+                                {{ __('Email') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Phone
+                                {{ __('Phone') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Listing Address
+                                {{ __('Listing Address') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Referred Date
+                                {{ __('Referred Date') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         </tr>
                     </thead>
@@ -97,7 +97,7 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right">
                                     <flux:button variant="ghost" size="sm" icon="eye" :href="route('agent.customers.show', $customer)" wire:navigate>
-                                        View
+                                        {{ __('View') }}
                                     </flux:button>
                                 </td>
                             </tr>
@@ -112,12 +112,12 @@ new #[Layout('components.layouts.agent', ['title' => 'My Customers'])] class ext
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="users" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No customers found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No customers found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search)
-                        Try adjusting your search criteria.
+                        {{ __('Try adjusting your search criteria.') }}
                     @else
-                        Customers referred through your listings will appear here.
+                        {{ __('Customers referred through your listings will appear here.') }}
                     @endif
                 </flux:text>
             </div>

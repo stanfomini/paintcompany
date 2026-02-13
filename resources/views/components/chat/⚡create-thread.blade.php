@@ -117,7 +117,7 @@ new class extends Component {
 
             // Verify permission
             if (! $chatService->canChatWith($user, $targetUser)) {
-                $this->addError('selectedUserId', 'You cannot start a chat with this user.');
+                $this->addError('selectedUserId', __('You cannot start a chat with this user.'));
 
                 return;
             }
@@ -135,7 +135,7 @@ new class extends Component {
             return;
         }
 
-        $this->addError('general', 'Please select a user or deal to start a conversation.');
+        $this->addError('general', __('Please select a user or deal to start a conversation.'));
     }
 
     public function selectUser(int $userId): void
@@ -153,14 +153,14 @@ new class extends Component {
 
 <div>
     <flux:button wire:click="openModal" icon="plus">
-        New Conversation
+        {{ __('New Conversation') }}
     </flux:button>
 
     <flux:modal wire:model="showModal" name="create-thread" class="max-w-lg">
         <div class="space-y-6">
             <div>
-                <flux:heading size="lg">Start a Conversation</flux:heading>
-                <flux:text class="mt-1 text-zinc-500">Choose who you'd like to chat with.</flux:text>
+                <flux:heading size="lg">{{ __('Start a Conversation') }}</flux:heading>
+                <flux:text class="mt-1 text-zinc-500">{{ __('Choose who you\'d like to chat with.') }}</flux:text>
             </div>
 
             @error('general')
@@ -174,14 +174,14 @@ new class extends Component {
                     :variant="$type === 'direct' ? 'primary' : 'ghost'"
                     size="sm"
                 >
-                    Direct Message
+                    {{ __('Direct Message') }}
                 </flux:button>
                 <flux:button
                     wire:click="$set('type', 'deal')"
                     :variant="$type === 'deal' ? 'primary' : 'ghost'"
                     size="sm"
                 >
-                    Deal Chat
+                    {{ __('Deal Chat') }}
                 </flux:button>
             </div>
 
@@ -190,7 +190,7 @@ new class extends Component {
                 <div class="space-y-4">
                     <flux:input
                         wire:model.live.debounce.300ms="userSearch"
-                        placeholder="Search users by name or email..."
+                        placeholder="{{ __('Search users by name or email...') }}"
                         icon="magnifying-glass"
                     />
 
@@ -229,9 +229,9 @@ new class extends Component {
                                 <div class="p-4 text-center">
                                     <flux:text class="text-zinc-500">
                                         @if ($userSearch)
-                                            No users found matching "{{ $userSearch }}"
+                                            {{ __('No users found matching ":search"', ['search' => $userSearch]) }}
                                         @else
-                                            No users available to chat with
+                                            {{ __('No users available to chat with') }}
                                         @endif
                                     </flux:text>
                                 </div>
@@ -242,8 +242,8 @@ new class extends Component {
                     @if ($selectedUserId)
                         <flux:input
                             wire:model="subject"
-                            label="Subject (optional)"
-                            placeholder="What's this about?"
+                            label="{{ __('Subject (optional)') }}"
+                            placeholder="{{ __('What\'s this about?') }}"
                         />
                     @endif
 
@@ -256,7 +256,7 @@ new class extends Component {
                 <div class="space-y-4">
                     <flux:input
                         wire:model.live.debounce.300ms="dealSearch"
-                        placeholder="Search deals..."
+                        placeholder="{{ __('Search deals...') }}"
                         icon="magnifying-glass"
                     />
 
@@ -267,7 +267,7 @@ new class extends Component {
                                 <div>
                                     <flux:text class="font-medium">{{ $selectedDeal->title }}</flux:text>
                                     <flux:text class="text-sm text-zinc-500">
-                                        {{ $selectedDeal->customer?->full_name ?? 'No customer' }}
+                                        {{ $selectedDeal->customer?->full_name ?? __('No customer') }}
                                     </flux:text>
                                 </div>
                                 <flux:button wire:click="$set('selectedDealId', null)" variant="ghost" size="sm" icon="x-mark" />
@@ -284,7 +284,7 @@ new class extends Component {
                                     <div class="min-w-0 flex-1">
                                         <flux:text class="font-medium truncate">{{ $deal->title }}</flux:text>
                                         <flux:text class="text-sm text-zinc-500 truncate">
-                                            {{ $deal->customer?->full_name ?? 'No customer' }}
+                                            {{ $deal->customer?->full_name ?? __('No customer') }}
                                         </flux:text>
                                     </div>
                                     <flux:badge size="sm" color="blue">{{ $deal->stage_label }}</flux:badge>
@@ -293,9 +293,9 @@ new class extends Component {
                                 <div class="p-4 text-center">
                                     <flux:text class="text-zinc-500">
                                         @if ($dealSearch)
-                                            No deals found matching "{{ $dealSearch }}"
+                                            {{ __('No deals found matching ":search"', ['search' => $dealSearch]) }}
                                         @else
-                                            No deals available without a chat thread
+                                            {{ __('No deals available without a chat thread') }}
                                         @endif
                                     </flux:text>
                                 </div>
@@ -307,13 +307,13 @@ new class extends Component {
 
             {{-- Actions --}}
             <div class="flex justify-end gap-3">
-                <flux:button wire:click="closeModal" variant="ghost">Cancel</flux:button>
+                <flux:button wire:click="closeModal" variant="ghost">{{ __('Cancel') }}</flux:button>
                 <flux:button
                     wire:click="createThread"
                     variant="primary"
                     :disabled="($type === 'direct' && !$selectedUserId) || ($type === 'deal' && !$selectedDealId)"
                 >
-                    Start Conversation
+                    {{ __('Start Conversation') }}
                 </flux:button>
             </div>
         </div>

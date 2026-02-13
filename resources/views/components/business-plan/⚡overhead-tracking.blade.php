@@ -240,9 +240,9 @@ new class extends Component
     {{-- Header --}}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <flux:heading size="lg">Overhead Tracking</flux:heading>
+            <flux:heading size="lg">{{ __('Overhead Tracking') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                Track monthly overhead expenses by category.
+                {{ __('Track monthly overhead expenses by category.') }}
             </flux:text>
         </div>
 
@@ -256,7 +256,7 @@ new class extends Component
 
             @if ($this->canManage)
                 <flux:button wire:click="exportCsv" variant="ghost" size="sm" icon="arrow-down-tray">
-                    Export CSV
+                    {{ __('Export CSV') }}
                 </flux:button>
             @endif
         </div>
@@ -265,8 +265,8 @@ new class extends Component
     {{-- Spreadsheet Grid --}}
     @if ($this->categories->isEmpty())
         <flux:callout variant="outline" icon="building-office-2">
-            <flux:callout.heading>No overhead categories</flux:callout.heading>
-            <flux:callout.text>Overhead categories come from your budget setup (Vehicle Expenses and Business Expenses). Set up your budget categories first.</flux:callout.text>
+            <flux:callout.heading>{{ __('No overhead categories') }}</flux:callout.heading>
+            <flux:callout.text>{{ __('Overhead categories come from your budget setup (Vehicle Expenses and Business Expenses). Set up your budget categories first.') }}</flux:callout.text>
         </flux:callout>
     @else
         <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
@@ -274,15 +274,15 @@ new class extends Component
                 <thead class="bg-zinc-50 dark:bg-zinc-800">
                     <tr>
                         <th class="sticky left-0 z-10 bg-zinc-50 px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                            Month
+                            {{ __('Month') }}
                         </th>
                         @foreach ($this->categories as $category)
                             <th wire:key="header-{{ $category->id }}" class="px-3 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400" title="{{ $category->section_label }}">
-                                {{ $category->name }}
+                                {{ __($category->name) }}
                             </th>
                         @endforeach
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Monthly Total
+                            {{ __('Monthly Total') }}
                         </th>
                     </tr>
                 </thead>
@@ -319,7 +319,7 @@ new class extends Component
                 <tfoot class="bg-zinc-100 font-semibold dark:bg-zinc-800">
                     <tr>
                         <td class="sticky left-0 z-10 bg-zinc-100 px-4 py-3 text-sm text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100">
-                            Annual Total
+                            {{ __('Annual Total') }}
                         </td>
                         @foreach ($this->categories as $category)
                             @php $catTotal = $this->getCategoryAnnualTotal($category->id); @endphp
@@ -346,7 +346,7 @@ new class extends Component
             <form wire:submit="saveEdit">
                 <div class="space-y-6">
                     <div>
-                        <flux:heading size="lg">Edit Overhead Amount</flux:heading>
+                        <flux:heading size="lg">{{ __('Edit Overhead Amount') }}</flux:heading>
                         @if ($editingMonth)
                             <flux:text class="mt-2">
                                 {{ $this->monthName($editingMonth) }} {{ $year }}
@@ -361,22 +361,22 @@ new class extends Component
                     </div>
 
                     <flux:field>
-                        <flux:label>Amount ($)</flux:label>
+                        <flux:label>{{ __('Amount ($)') }}</flux:label>
                         <flux:input wire:model="editAmount" type="number" step="0.01" min="0" />
                         <flux:error name="editAmount" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Notes</flux:label>
-                        <flux:textarea wire:model="editNotes" rows="2" placeholder="Optional notes..." />
+                        <flux:label>{{ __('Notes') }}</flux:label>
+                        <flux:textarea wire:model="editNotes" rows="2" :placeholder="__('Optional notes...')" />
                     </flux:field>
 
                     <div class="flex justify-end gap-3">
                         <flux:button variant="ghost" wire:click="$set('showEditModal', false)" type="button">
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                         <flux:button type="submit" variant="primary">
-                            Save
+                            {{ __('Save') }}
                         </flux:button>
                     </div>
                 </div>

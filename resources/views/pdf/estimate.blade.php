@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Estimate {{ $estimate->estimate_number }}</title>
+    <title>{{ __('Estimate') }} {{ $estimate->estimate_number }}</title>
     <style>
         * {
             margin: 0;
@@ -477,14 +477,14 @@
         <table style="width: 100%; margin-bottom: 40px; border-bottom: 2px solid #3b82f6; padding-bottom: 20px;">
             <tr>
                 <td style="vertical-align: top;">
-                    <div class="company-name">Apex Negotiations</div>
-                    <div style="color: #6b7280;">Professional Painting Services</div>
+                    <div class="company-name">{{ __('Apex Negotiations') }}</div>
+                    <div style="color: #6b7280;">{{ __('Professional Painting Services') }}</div>
                 </td>
                 <td style="text-align: right; vertical-align: top;">
                     <div class="estimate-number">{{ $estimate->estimate_number }}</div>
                     <div class="status-badge status-{{ $estimate->status }}">{{ $estimate->status_label }}</div>
                     <div style="margin-top: 10px; color: #6b7280;">
-                        Created: {{ $estimate->created_at->format('M j, Y') }}
+                        {{ __('Created:') }} {{ $estimate->created_at->format('M j, Y') }}
                     </div>
                 </td>
             </tr>
@@ -493,21 +493,21 @@
         <div class="two-column">
             <div class="column">
                 <div class="section">
-                    <div class="section-title">Estimate Details</div>
+                    <div class="section-title">{{ __('Estimate Details') }}</div>
                     <div class="info-grid">
                         <div class="info-row">
-                            <div class="info-label">Title:</div>
+                            <div class="info-label">{{ __('Title:') }}</div>
                             <div class="info-value">{{ $estimate->title }}</div>
                         </div>
                         @if ($estimate->description)
                             <div class="info-row">
-                                <div class="info-label">Description:</div>
+                                <div class="info-label">{{ __('Description:') }}</div>
                                 <div class="info-value">{{ $estimate->description }}</div>
                             </div>
                         @endif
                         @if ($estimate->valid_until)
                             <div class="info-row">
-                                <div class="info-label">Valid Until:</div>
+                                <div class="info-label">{{ __('Valid Until:') }}</div>
                                 <div class="info-value">{{ $estimate->valid_until->format('M j, Y') }}</div>
                             </div>
                         @endif
@@ -517,26 +517,26 @@
 
             <div class="column">
                 <div class="section">
-                    <div class="section-title">Customer Information</div>
+                    <div class="section-title">{{ __('Customer Information') }}</div>
                     <div class="info-grid">
                         <div class="info-row">
-                            <div class="info-label">Customer:</div>
-                            <div class="info-value">{{ $estimate->deal->customer->full_name }}</div>
+                            <div class="info-label">{{ __('Customer:') }}</div>
+                            <div class="info-value">{{ $estimate->deal?->customer?->full_name ?? '-' }}</div>
                         </div>
-                        @if ($estimate->deal->customer->email)
+                        @if ($estimate->deal?->customer?->email)
                             <div class="info-row">
-                                <div class="info-label">Email:</div>
+                                <div class="info-label">{{ __('Email:') }}</div>
                                 <div class="info-value">{{ $estimate->deal->customer->email }}</div>
                             </div>
                         @endif
-                        @if ($estimate->deal->customer->phone)
+                        @if ($estimate->deal?->customer?->phone)
                             <div class="info-row">
-                                <div class="info-label">Phone:</div>
+                                <div class="info-label">{{ __('Phone:') }}</div>
                                 <div class="info-value">{{ $estimate->deal->customer->phone }}</div>
                             </div>
                         @endif
                         <div class="info-row">
-                            <div class="info-label">Deal:</div>
+                            <div class="info-label">{{ __('Deal:') }}</div>
                             <div class="info-value">{{ $estimate->deal->title }}</div>
                         </div>
                     </div>
@@ -545,15 +545,15 @@
         </div>
 
         <div class="section">
-            <div class="section-title">Line Items</div>
+            <div class="section-title">{{ __('Line Items') }}</div>
             <table class="items-table">
                 <thead>
                     <tr>
-                        <th style="width: 45%;">Description</th>
-                        <th class="text-right" style="width: 12%;">Qty</th>
-                        <th style="width: 13%;">Unit</th>
-                        <th class="text-right" style="width: 15%;">Unit Price</th>
-                        <th class="text-right" style="width: 15%;">Total</th>
+                        <th style="width: 45%;">{{ __('Description') }}</th>
+                        <th class="text-right" style="width: 12%;">{{ __('Qty') }}</th>
+                        <th style="width: 13%;">{{ __('Unit') }}</th>
+                        <th class="text-right" style="width: 15%;">{{ __('Unit Price') }}</th>
+                        <th class="text-right" style="width: 15%;">{{ __('Total') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -578,7 +578,7 @@
 
         @if ($estimate->areas->count() > 0)
             <div class="section areas-section">
-                <div class="section-title">Areas & Surfaces</div>
+                <div class="section-title">{{ __('Areas & Surfaces') }}</div>
                 @foreach ($estimate->areas as $area)
                     <div class="area-name">
                         {{ $area->name }}
@@ -592,12 +592,12 @@
                         <table class="surfaces-table">
                             <thead>
                                 <tr>
-                                    <th style="width: 35%;">Surface</th>
-                                    <th class="text-right" style="width: 15%;">Qty</th>
-                                    <th style="width: 10%;">Unit</th>
-                                    <th class="text-right" style="width: 12%;">Coats</th>
-                                    <th class="text-right" style="width: 14%;">Labor</th>
-                                    <th class="text-right" style="width: 14%;">Material</th>
+                                    <th style="width: 35%;">{{ __('Surface') }}</th>
+                                    <th class="text-right" style="width: 15%;">{{ __('Qty') }}</th>
+                                    <th style="width: 10%;">{{ __('Unit') }}</th>
+                                    <th class="text-right" style="width: 12%;">{{ __('Coats') }}</th>
+                                    <th class="text-right" style="width: 14%;">{{ __('Labor') }}</th>
+                                    <th class="text-right" style="width: 14%;">{{ __('Material') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -620,7 +620,7 @@
 
         @if ($estimate->options->count() > 0)
             <div class="section options-section">
-                <div class="section-title">Options</div>
+                <div class="section-title">{{ __('Options') }}</div>
                 @foreach ($estimate->options as $option)
                     <div class="option-item {{ $option->is_selected ? 'selected' : 'not-selected' }}">
                         <div class="option-checkbox">
@@ -630,7 +630,7 @@
                             <div class="option-name">
                                 {{ $option->name }}
                                 @if ($option->is_recommended)
-                                    <span class="recommended-badge">Recommended</span>
+                                    <span class="recommended-badge">{{ __('Recommended') }}</span>
                                 @endif
                             </div>
                             @if ($option->description)
@@ -647,14 +647,14 @@
 
         @if ($estimate->photos->count() > 0)
             <div class="section photos-section">
-                <div class="section-title">Project Photos</div>
+                <div class="section-title">{{ __('Project Photos') }}</div>
                 <div class="photos-grid">
                     @foreach ($estimate->photos->chunk(3) as $photoRow)
                         <div class="photo-row">
                             @foreach ($photoRow as $photo)
                                 <div class="photo-cell">
                                     <div class="photo-wrapper">
-                                        <img src="{{ public_path('storage/' . ltrim($photo->path, '/')) }}" class="photo-image" alt="{{ $photo->caption ?? 'Project photo' }}">
+                                        <img src="{{ public_path('storage/' . ltrim($photo->path, '/')) }}" class="photo-image" alt="{{ $photo->caption ?? __('Project photo') }}">
                                         @if ($photo->caption)
                                             <div class="photo-caption">{{ $photo->caption }}</div>
                                         @endif
@@ -668,44 +668,44 @@
         @endif
 
         <div class="section">
-            <div class="section-title">Pricing Summary</div>
+            <div class="section-title">{{ __('Pricing Summary') }}</div>
             <div class="totals">
                 @if ($estimate->items_subtotal > 0)
                     <div class="totals-row">
-                        <span class="totals-label">Line Items</span>
+                        <span class="totals-label">{{ __('Line Items') }}</span>
                         <span>${{ number_format($estimate->items_subtotal, 2) }}</span>
                     </div>
                 @endif
                 @if ($estimate->areas_subtotal > 0)
                     <div class="totals-row">
-                        <span class="totals-label">Areas & Surfaces</span>
+                        <span class="totals-label">{{ __('Areas & Surfaces') }}</span>
                         <span>${{ number_format($estimate->areas_subtotal, 2) }}</span>
                     </div>
                 @endif
                 @if ($estimate->options_subtotal > 0)
                     <div class="totals-row">
-                        <span class="totals-label">Selected Options</span>
+                        <span class="totals-label">{{ __('Selected Options') }}</span>
                         <span>${{ number_format($estimate->options_subtotal, 2) }}</span>
                     </div>
                 @endif
                 <div class="totals-row">
-                    <span class="totals-label">Subtotal</span>
+                    <span class="totals-label">{{ __('Subtotal') }}</span>
                     <span>${{ number_format($estimate->subtotal, 2) }}</span>
                 </div>
                 @if ($estimate->tax_rate > 0)
                     <div class="totals-row">
-                        <span class="totals-label">Tax ({{ number_format($estimate->tax_rate, 2) }}%)</span>
+                        <span class="totals-label">{{ __('Tax') }} ({{ number_format($estimate->tax_rate, 2) }}%)</span>
                         <span>${{ number_format($estimate->tax_amount, 2) }}</span>
                     </div>
                 @endif
                 @if ($estimate->discount_amount > 0)
                     <div class="totals-row">
-                        <span class="totals-label">Discount</span>
+                        <span class="totals-label">{{ __('Discount') }}</span>
                         <span class="discount">-${{ number_format($estimate->discount_amount, 2) }}</span>
                     </div>
                 @endif
                 <div class="totals-row total">
-                    <span class="totals-label">Total</span>
+                    <span class="totals-label">{{ __('Total') }}</span>
                     <span>${{ number_format($estimate->total, 2) }}</span>
                 </div>
             </div>
@@ -713,7 +713,7 @@
 
         @if ($estimate->createdBy?->internalUser?->hasSignature())
             <div class="section" style="margin-top: 40px;">
-                <div class="section-title">Prepared By</div>
+                <div class="section-title">{{ __('Prepared By') }}</div>
                 <div style="display: table; width: 100%;">
                     <div style="display: table-cell; width: 200px; vertical-align: top;">
                         @if ($estimate->createdBy->internalUser->signature_type === 'drawn')
@@ -739,9 +739,9 @@
         @if ($estimate->signature)
             <div class="signature-section">
                 <div class="signature-header">
-                    <div class="signature-title">Customer Acceptance</div>
+                    <div class="signature-title">{{ __('Customer Acceptance') }}</div>
                     <div class="signature-badge">
-                        <span class="signed-badge">Signed</span>
+                        <span class="signed-badge">{{ __('Signed') }}</span>
                     </div>
                 </div>
                 <div class="signature-content">
@@ -754,19 +754,19 @@
                     </div>
                     <div class="signature-details-cell">
                         <div class="signature-detail">
-                            <span class="signature-detail-label">Signed by:</span>
+                            <span class="signature-detail-label">{{ __('Signed by:') }}</span>
                             <span class="signature-detail-value">{{ $estimate->signature->signer_name }}</span>
                         </div>
                         <div class="signature-detail">
-                            <span class="signature-detail-label">Email:</span>
+                            <span class="signature-detail-label">{{ __('Email:') }}</span>
                             <span class="signature-detail-value">{{ $estimate->signature->signer_email }}</span>
                         </div>
                         <div class="signature-detail">
-                            <span class="signature-detail-label">Date:</span>
+                            <span class="signature-detail-label">{{ __('Date:') }}</span>
                             <span class="signature-detail-value">{{ $estimate->signature->signed_at->format('M j, Y g:i A') }}</span>
                         </div>
                         <div class="signature-detail">
-                            <span class="signature-detail-label">IP Address:</span>
+                            <span class="signature-detail-label">{{ __('IP Address:') }}</span>
                             <span class="signature-detail-value">{{ $estimate->signature->ip_address }}</span>
                         </div>
                     </div>
@@ -779,7 +779,7 @@
                 @if ($estimate->notes)
                     <div class="column">
                         <div class="notes-section">
-                            <div class="notes-title">Notes</div>
+                            <div class="notes-title">{{ __('Notes') }}</div>
                             <div class="notes-content">{{ $estimate->notes }}</div>
                         </div>
                     </div>
@@ -788,7 +788,7 @@
                 @if ($estimate->terms)
                     <div class="column">
                         <div class="notes-section">
-                            <div class="notes-title">Terms & Conditions</div>
+                            <div class="notes-title">{{ __('Terms & Conditions') }}</div>
                             <div class="notes-content">{{ $estimate->terms }}</div>
                         </div>
                     </div>
@@ -797,8 +797,8 @@
         @endif
 
         <div class="footer">
-            <p>Generated on {{ now()->format('M j, Y g:i A') }}</p>
-            <p>This estimate is valid until {{ $estimate->valid_until?->format('M j, Y') ?? 'further notice' }}.</p>
+            <p>{{ __('Generated on') }} {{ now()->format('M j, Y g:i A') }}</p>
+            <p>{{ __('This estimate is valid until') }} {{ $estimate->valid_until?->format('M j, Y') ?? __('further notice') }}.</p>
         </div>
     </div>
 </body>

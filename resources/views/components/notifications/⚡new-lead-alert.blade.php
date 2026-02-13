@@ -85,13 +85,13 @@ new class extends Component {
                         </div>
                         <div class="flex-1 min-w-0">
                             <p class="text-sm font-medium text-green-800 dark:text-green-200">
-                                New Lead Created
+                                {{ __('New Lead Created') }}
                             </p>
                             <p class="text-sm text-green-700 dark:text-green-300 truncate">
                                 {{ $alert['customer_name'] }}
                             </p>
                             <p class="text-xs text-green-600 dark:text-green-400 mt-1">
-                                by {{ $alert['created_by'] }}
+                                {{ __('by') }} {{ $alert['created_by'] }}
                             </p>
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
@@ -100,7 +100,7 @@ new class extends Component {
                                 class="text-xs font-medium text-green-700 dark:text-green-300 hover:text-green-900 dark:hover:text-green-100"
                                 wire:navigate
                             >
-                                View
+                                {{ __('View') }}
                             </a>
                             <button
                                 wire:click="dismissAlert({{ $index }})"
@@ -119,7 +119,7 @@ new class extends Component {
                         wire:click="dismissAll"
                         class="text-xs text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
                     >
-                        Dismiss all
+                        {{ __('Dismiss all') }}
                     </button>
                 </div>
             @endif

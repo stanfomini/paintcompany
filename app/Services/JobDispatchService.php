@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Events\CrewDispatched;
 use App\Events\JobAcceptedByCrew;
+use App\Events\JobDispatchedToCrew;
 use App\Models\Job;
 use App\Models\JobActivity;
 use App\Models\JobServiceRequirement;
@@ -14,6 +15,13 @@ use Illuminate\Support\Facades\DB;
 
 class JobDispatchService
 {
+    private PlannerAutomationService $plannerAutomation;
+
+    public function __construct(?PlannerAutomationService $plannerAutomation = null)
+    {
+        $this->plannerAutomation = $plannerAutomation ?? app(PlannerAutomationService::class);
+    }
+
     /**
      * Get crews eligible for a job, optionally filtered by service category.
      *
@@ -58,7 +66,7 @@ class JobDispatchService
         foreach ($crewUserIds as $crewUserId) {
             $exists = $job->crews()
                 ->where('crew_user_id', $crewUserId)
-                ->when($category, fn ($q) => $q->wherePivot('service_category_id', $category->id))
+                ->when($category, fn ($q) => $q->where('job_crew.service_category_id', $category->id))
                 ->exists();
 
             if (! $exists) {
@@ -93,6 +101,13 @@ class JobDispatchService
             ]);
 
             CrewDispatched::dispatch($job, $dispatched, $category?->id);
+
+            // Notify each crew member on their personal channel
+            foreach ($crewUserIds as $crewUserId) {
+                JobDispatchedToCrew::dispatch($job, $crewUserId, $category?->id);
+            }
+
+            $this->plannerAutomation->onCrewDispatched($job, $dispatched);
         }
 
         return $dispatched;
@@ -191,6 +206,8 @@ class JobDispatchService
 
             JobAcceptedByCrew::dispatch($job, $crew);
 
+            $this->plannerAutomation->onCrewAccepted($job, $crew);
+
             return true;
         });
     }
@@ -233,6 +250,8 @@ class JobDispatchService
             'service_category_id' => $crewServiceCategoryId,
             'notes' => $notes,
         ]);
+
+        $this->plannerAutomation->onCrewRejected($job, $crew);
 
         return true;
     }

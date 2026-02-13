@@ -184,7 +184,7 @@ class PropertyPhoto extends Model
      */
     public function getCategoryLabelAttribute(): string
     {
-        return self::CATEGORIES[$this->category] ?? $this->category;
+        return __(self::CATEGORIES[$this->category] ?? $this->category);
     }
 
     /**

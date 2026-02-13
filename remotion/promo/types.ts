@@ -1,4 +1,4 @@
-// Types for the Apex Negotiations promo video
+// Types for the Painting Made Easy Denver promo video
 
 export interface PromoVideoProps {
   companyName: string;
@@ -10,9 +10,9 @@ export interface PromoVideoProps {
 }
 
 export const defaultPromoProps: PromoVideoProps = {
-  companyName: 'Painting Made Easy Denver',
-  tagline: 'Your Home, Our Craft',
-  phone: '(720) 555-0123',
+  companyName: 'Painting Made Easy',
+  tagline: 'Denver',
+  phone: '',
   website: 'paintingmadeeasydenver.com',
   city: 'Denver',
   state: 'CO',

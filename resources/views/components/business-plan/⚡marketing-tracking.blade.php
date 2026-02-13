@@ -254,8 +254,8 @@ new class extends Component
             ->where('lead_source', '!=', '')
             ->selectRaw('lead_source, COUNT(*) as lead_count')
             ->selectRaw('SUM(CASE WHEN stage NOT IN (\'lead\', \'cancelled\') THEN 1 ELSE 0 END) as estimate_count')
-            ->selectRaw('SUM(CASE WHEN stage IN (\'completed\', \'paid\', \'signed_accepted\') THEN 1 ELSE 0 END) as booked_count')
-            ->selectRaw('COALESCE(SUM(CASE WHEN stage IN (\'completed\', \'paid\', \'signed_accepted\') THEN actual_value ELSE 0 END), 0) as sales_total')
+            ->selectRaw('SUM(CASE WHEN stage IN (\'completed\', \'signed\') THEN 1 ELSE 0 END) as booked_count')
+            ->selectRaw('COALESCE(SUM(CASE WHEN stage IN (\'completed\', \'signed\') THEN actual_value ELSE 0 END), 0) as sales_total')
             ->groupBy('lead_source')
             ->get();
 
@@ -355,9 +355,9 @@ new class extends Component
     {{-- Header --}}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <flux:heading size="lg">Marketing Tracking</flux:heading>
+            <flux:heading size="lg">{{ __('Marketing Tracking') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                Track marketing spend, leads, and ROI by source.
+                {{ __('Track marketing spend, leads, and ROI by source.') }}
             </flux:text>
         </div>
 
@@ -371,15 +371,15 @@ new class extends Component
 
             @if ($this->canManage)
                 <flux:button wire:click="syncFromDeals" variant="ghost" size="sm" icon="arrow-path">
-                    Sync from Deals
+                    {{ __('Sync from Deals') }}
                 </flux:button>
 
                 <flux:button wire:click="exportCsv" variant="ghost" size="sm" icon="arrow-down-tray">
-                    Export CSV
+                    {{ __('Export CSV') }}
                 </flux:button>
 
                 <flux:button wire:click="openAdd" variant="primary" size="sm" icon="plus">
-                    Add Source
+                    {{ __('Add Source') }}
                 </flux:button>
             @endif
         </div>
@@ -388,12 +388,12 @@ new class extends Component
     {{-- Entries Table --}}
     @if ($this->entries->isEmpty())
         <flux:callout variant="outline" icon="megaphone">
-            <flux:callout.heading>No marketing sources for {{ $this->year }}</flux:callout.heading>
+            <flux:callout.heading>{{ __('No marketing sources for :year', ['year' => $this->year]) }}</flux:callout.heading>
             <flux:callout.text>
                 @if ($this->canManage)
-                    Get started by adding marketing sources or loading defaults.
+                    {{ __('Get started by adding marketing sources or loading defaults.') }}
                 @else
-                    No marketing tracking data has been entered for this year yet.
+                    {{ __('No marketing tracking data has been entered for this year yet.') }}
                 @endif
             </flux:callout.text>
         </flux:callout>
@@ -401,7 +401,7 @@ new class extends Component
         @if ($this->canManage)
             <div class="mt-4">
                 <flux:button wire:click="seedDefaults" variant="primary" size="sm" icon="sparkles">
-                    Load Default Sources
+                    {{ __('Load Default Sources') }}
                 </flux:button>
             </div>
         @endif
@@ -411,32 +411,32 @@ new class extends Component
                 <thead class="bg-zinc-50 dark:bg-zinc-800">
                     <tr>
                         <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Source
+                            {{ __('Source') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Expense
+                            {{ __('Expense') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Leads
+                            {{ __('Leads') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Estimates
+                            {{ __('Estimates') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Jobs
+                            {{ __('Jobs') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            Sales
+                            {{ __('Sales') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            CPL
+                            {{ __('CPL') }}
                         </th>
                         <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                            ROI %
+                            {{ __('ROI %') }}
                         </th>
                         @if ($this->canManage)
                             <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                                Actions
+                                {{ __('Actions') }}
                             </th>
                         @endif
                     </tr>
@@ -447,7 +447,7 @@ new class extends Component
                             <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-zinc-900 dark:text-zinc-100">
                                 {{ $entry->source_name }}
                                 @if ($entry->is_manual)
-                                    <flux:badge size="sm" variant="outline" class="ml-1">Manual</flux:badge>
+                                    <flux:badge size="sm" variant="outline" class="ml-1">{{ __('Manual') }}</flux:badge>
                                 @endif
                             </td>
                             <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-600 dark:text-zinc-300">
@@ -485,7 +485,7 @@ new class extends Component
                 <tfoot class="bg-zinc-100 dark:bg-zinc-800 font-semibold">
                     <tr>
                         <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
-                            Totals
+                            {{ __('Totals') }}
                         </td>
                         <td class="whitespace-nowrap px-4 py-3 text-right text-sm text-zinc-900 dark:text-zinc-100">
                             ${{ number_format($this->totals['marketing_expense'], 2) }}
@@ -522,14 +522,14 @@ new class extends Component
         <flux:modal wire:model="showAddModal" name="add-source" class="md:w-96">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Add Marketing Source</flux:heading>
-                    <flux:text class="mt-2">Add a new marketing source to track for {{ $this->year }}.</flux:text>
+                    <flux:heading size="lg">{{ __('Add Marketing Source') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Add a new marketing source to track for :year.', ['year' => $this->year]) }}</flux:text>
                 </div>
 
                 <flux:input
                     wire:model="addSourceName"
-                    label="Source Name"
-                    placeholder="e.g. Google AdWords"
+                    :label="__('Source Name')"
+                    :placeholder="__('e.g. Google AdWords')"
                 />
 
                 @error('addSourceName')
@@ -537,8 +537,8 @@ new class extends Component
                 @enderror
 
                 <div class="flex justify-end gap-3">
-                    <flux:button wire:click="$set('showAddModal', false)" variant="ghost">Cancel</flux:button>
-                    <flux:button wire:click="addSource" variant="primary">Add Source</flux:button>
+                    <flux:button wire:click="$set('showAddModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                    <flux:button wire:click="addSource" variant="primary">{{ __('Add Source') }}</flux:button>
                 </div>
             </div>
         </flux:modal>
@@ -547,19 +547,19 @@ new class extends Component
         <flux:modal wire:model="showEditModal" name="edit-entry" class="md:w-[32rem]">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Edit Marketing Source</flux:heading>
-                    <flux:text class="mt-2">Update tracking data for this marketing source.</flux:text>
+                    <flux:heading size="lg">{{ __('Edit Marketing Source') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Update tracking data for this marketing source.') }}</flux:text>
                 </div>
 
                 <flux:input
                     wire:model="editSourceName"
-                    label="Source Name"
+                    :label="__('Source Name')"
                 />
 
                 <div class="grid grid-cols-2 gap-4">
                     <flux:input
                         wire:model="editMarketingExpense"
-                        label="Marketing Expense ($)"
+                        :label="__('Marketing Expense ($)')"
                         type="number"
                         step="0.01"
                         min="0"
@@ -567,28 +567,28 @@ new class extends Component
 
                     <flux:input
                         wire:model="editLeads"
-                        label="Leads"
+                        :label="__('Leads')"
                         type="number"
                         min="0"
                     />
 
                     <flux:input
                         wire:model="editEstimates"
-                        label="Estimates"
+                        :label="__('Estimates')"
                         type="number"
                         min="0"
                     />
 
                     <flux:input
                         wire:model="editJobsBooked"
-                        label="Jobs Booked"
+                        :label="__('Jobs Booked')"
                         type="number"
                         min="0"
                     />
 
                     <flux:input
                         wire:model="editTotalSales"
-                        label="Total Sales ($)"
+                        :label="__('Total Sales ($)')"
                         type="number"
                         step="0.01"
                         min="0"
@@ -598,14 +598,14 @@ new class extends Component
 
                 <flux:textarea
                     wire:model="editNotes"
-                    label="Notes"
+                    :label="__('Notes')"
                     rows="2"
-                    placeholder="Optional notes..."
+                    :placeholder="__('Optional notes...')"
                 />
 
                 <div class="flex justify-end gap-3">
-                    <flux:button wire:click="$set('showEditModal', false)" variant="ghost">Cancel</flux:button>
-                    <flux:button wire:click="saveEdit" variant="primary">Save Changes</flux:button>
+                    <flux:button wire:click="$set('showEditModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                    <flux:button wire:click="saveEdit" variant="primary">{{ __('Save Changes') }}</flux:button>
                 </div>
             </div>
         </flux:modal>
@@ -614,13 +614,13 @@ new class extends Component
         <flux:modal wire:model="showDeleteConfirm" name="delete-confirm" class="md:w-96">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Delete Source</flux:heading>
-                    <flux:text class="mt-2">Are you sure you want to delete this marketing source? This action cannot be undone.</flux:text>
+                    <flux:heading size="lg">{{ __('Delete Source') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Are you sure you want to delete this marketing source? This action cannot be undone.') }}</flux:text>
                 </div>
 
                 <div class="flex justify-end gap-3">
-                    <flux:button wire:click="$set('showDeleteConfirm', false)" variant="ghost">Cancel</flux:button>
-                    <flux:button wire:click="deleteEntry" variant="danger">Delete</flux:button>
+                    <flux:button wire:click="$set('showDeleteConfirm', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
+                    <flux:button wire:click="deleteEntry" variant="danger">{{ __('Delete') }}</flux:button>
                 </div>
             </div>
         </flux:modal>

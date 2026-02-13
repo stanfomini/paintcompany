@@ -28,19 +28,19 @@ class JobCompleted extends Notification implements ShouldQueue
     {
         if ($notifiable->isCustomer()) {
             return (new MailMessage)
-                ->subject('Your Project is Complete!')
-                ->greeting('Great News!')
-                ->line("Your painting project ({$this->job->job_number}) has been completed.")
-                ->line('Thank you for choosing us! We hope you love the results.')
-                ->action('View Project', url('/jobs/'.$this->job->id));
+                ->subject(__('Your Project is Complete!'))
+                ->greeting(__('Great News!'))
+                ->line(__('Your painting project (:number) has been completed.', ['number' => $this->job->job_number]))
+                ->line(__('Thank you for choosing us! We hope you love the results.'))
+                ->action(__('View Project'), url('/jobs/'.$this->job->id));
         }
 
         return (new MailMessage)
-            ->subject("Job Completed: {$this->job->job_number}")
-            ->greeting("Job Completed: {$this->job->title}")
-            ->line("Job {$this->job->job_number} has been marked as completed.")
-            ->line("Customer: {$this->job->getCustomer()?->first_name} {$this->job->getCustomer()?->last_name}")
-            ->action('View Job', url('/jobs/'.$this->job->id));
+            ->subject(__('Job Completed: :number', ['number' => $this->job->job_number]))
+            ->greeting(__('Job Completed: :title', ['title' => $this->job->title]))
+            ->line(__('Job :number has been marked as completed.', ['number' => $this->job->job_number]))
+            ->line(__('Customer').': '.$this->job->getCustomer()?->first_name.' '.$this->job->getCustomer()?->last_name)
+            ->action(__('View Job'), url('/jobs/'.$this->job->id));
     }
 
     /**
@@ -52,7 +52,7 @@ class JobCompleted extends Notification implements ShouldQueue
             'job_id' => $this->job->id,
             'job_number' => $this->job->job_number,
             'title' => $this->job->title,
-            'message' => "Job completed: {$this->job->job_number}",
+            'message' => __('Job completed: :number', ['number' => $this->job->job_number]),
         ];
     }
 }

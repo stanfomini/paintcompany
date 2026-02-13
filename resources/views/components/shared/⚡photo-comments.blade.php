@@ -23,7 +23,8 @@ new class extends Component {
             return [];
         }
 
-        $channel = match (auth()->user()?->type) {
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
+        $channel = match ($user?->type) {
             'crew' => "echo-private:crew.job.{$jobId}",
             'customer' => "echo-private:customer.job.{$jobId}",
             default => "echo-private:job.{$jobId}",
@@ -36,7 +37,8 @@ new class extends Component {
 
     public function onPhotoUpdated(array $event): void
     {
-        if (($event['actor_id'] ?? null) == auth()->id()) {
+        $userId = auth()->id() ?? auth('customer')->id() ?? auth('agent')->id() ?? auth('crew')->id();
+        if (($event['actor_id'] ?? null) == $userId) {
             return;
         }
 
@@ -61,9 +63,10 @@ new class extends Component {
             'newComment' => ['required', 'string', 'max:1000'],
         ]);
 
+        $userId = auth()->id() ?? auth('customer')->id() ?? auth('agent')->id() ?? auth('crew')->id();
         $comment = PhotoComment::create([
             'property_photo_id' => $this->photo->id,
-            'user_id' => auth()->id(),
+            'user_id' => $userId,
             'body' => $this->newComment,
             'parent_id' => $this->replyingTo,
         ]);
@@ -74,7 +77,7 @@ new class extends Component {
         // Log job activity and broadcast
         if ($this->photo->job_id) {
             $job = Job::find($this->photo->job_id);
-            $user = auth()->user();
+            $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
 
             if ($job && $user) {
                 JobActivity::log(
@@ -107,7 +110,7 @@ new class extends Component {
 <div class="w-96 bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-700 flex flex-col h-full">
     {{-- Header --}}
     <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
-        <flux:heading size="sm">Comments</flux:heading>
+        <flux:heading size="sm">{{ __('Comments') }}</flux:heading>
         <button wire:click="$parent.toggleComments" class="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors">
             <flux:icon name="x-mark" class="w-4 h-4 text-zinc-500" />
         </button>
@@ -126,7 +129,7 @@ new class extends Component {
                     <div class="flex-1 min-w-0">
                         <div class="flex items-baseline gap-2">
                             <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                {{ $comment->user?->name ?? 'Unknown' }}
+                                {{ $comment->user?->name ?? __('Unknown') }}
                             </span>
                             <span class="text-xs text-zinc-500 dark:text-zinc-400">
                                 {{ $comment->created_at->diffForHumans() }}
@@ -140,7 +143,7 @@ new class extends Component {
                                 wire:click="startReply({{ $comment->id }})"
                                 class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1"
                             >
-                                Reply
+                                {{ __('Reply') }}
                             </button>
                         @endauth
                     </div>
@@ -157,7 +160,7 @@ new class extends Component {
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-baseline gap-2">
                                         <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                                            {{ $reply->user?->name ?? 'Unknown' }}
+                                            {{ $reply->user?->name ?? __('Unknown') }}
                                         </span>
                                         <span class="text-xs text-zinc-500 dark:text-zinc-400">
                                             {{ $reply->created_at->diffForHumans() }}
@@ -175,7 +178,7 @@ new class extends Component {
         @empty
             <div class="text-center py-8">
                 <flux:icon name="chat-bubble-left" class="w-8 h-8 mx-auto text-zinc-400 mb-2" />
-                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">No comments yet</flux:text>
+                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('No comments yet') }}</flux:text>
             </div>
         @endforelse
     </div>
@@ -189,7 +192,7 @@ new class extends Component {
                 @endphp
                 <div class="flex items-center justify-between mb-2 px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded text-xs">
                     <span class="text-zinc-600 dark:text-zinc-400">
-                        Replying to {{ $replyTarget?->user?->name ?? 'comment' }}
+                        {{ __('Replying to') }} {{ $replyTarget?->user?->name ?? __('comment') }}
                     </span>
                     <button wire:click="cancelReply" class="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
                         <flux:icon name="x-mark" class="w-3 h-3" />
@@ -200,7 +203,7 @@ new class extends Component {
             <form wire:submit="addComment" class="flex gap-2">
                 <flux:input
                     wire:model="newComment"
-                    placeholder="Add a comment..."
+                    :placeholder="__('Add a comment...')"
                     size="sm"
                     class="flex-1"
                 />

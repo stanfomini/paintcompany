@@ -19,7 +19,7 @@ new class extends Component {
         $invitationService = app(InvitationService::class);
 
         if ($invitation && $invitationService->cancelInvitation($invitation, Auth::user())) {
-            session()->flash('success', 'Invitation cancelled.');
+            session()->flash('success', __('Invitation cancelled.'));
             $this->dispatch('invitation-cancelled');
         }
     }
@@ -30,7 +30,7 @@ new class extends Component {
 
         if ($invitation && $invitation->isPending()) {
             $invitation->notify(new \App\Notifications\InvitationNotification($invitation));
-            session()->flash('success', "Invitation resent to {$invitation->email}");
+            session()->flash('success', __('Invitation resent to :email', ['email' => $invitation->email]));
         }
     }
 }; ?>
@@ -44,7 +44,7 @@ new class extends Component {
 
     @if ($this->invitations->count() > 0)
         <div class="space-y-3">
-            <flux:heading size="sm">Pending Invitations</flux:heading>
+            <flux:heading size="sm">{{ __('Pending Invitations') }}</flux:heading>
 
             <div class="divide-y divide-zinc-200 dark:divide-zinc-700 border border-zinc-200 dark:border-zinc-700 rounded-lg">
                 @foreach ($this->invitations as $invitation)
@@ -53,10 +53,10 @@ new class extends Component {
                             <flux:text class="font-medium truncate">{{ $invitation->email }}</flux:text>
                             <div class="flex items-center gap-2 mt-1">
                                 <flux:badge size="sm" variant="outline">
-                                    {{ ucfirst($invitation->invited_user_type === 'internal' ? 'Team Member' : $invitation->invited_user_type) }}
+                                    {{ $invitation->invited_user_type === 'internal' ? __('Team Member') : __(ucfirst($invitation->invited_user_type)) }}
                                 </flux:badge>
                                 <flux:text size="sm" class="text-zinc-500">
-                                    Expires {{ $invitation->expires_at->diffForHumans() }}
+                                    {{ __('Expires') }} {{ $invitation->expires_at->diffForHumans() }}
                                 </flux:text>
                             </div>
                         </div>
@@ -72,7 +72,7 @@ new class extends Component {
                             <flux:button
                                 wire:click="cancelInvitation({{ $invitation->id }})"
                                 wire:loading.attr="disabled"
-                                wire:confirm="Are you sure you want to cancel this invitation?"
+                                wire:confirm="{{ __('Are you sure you want to cancel this invitation?') }}"
                                 variant="ghost"
                                 size="sm"
                                 class="text-red-500 hover:text-red-700"
@@ -86,7 +86,7 @@ new class extends Component {
         </div>
     @else
         <flux:text class="text-zinc-500 text-center py-4">
-            No pending invitations.
+            {{ __('No pending invitations.') }}
         </flux:text>
     @endif
 </div>

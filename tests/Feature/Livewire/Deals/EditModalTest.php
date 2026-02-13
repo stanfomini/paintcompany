@@ -113,7 +113,7 @@ describe('EditModal component', function () {
             ->test('deals.edit-modal', ['dealId' => $deal->id])
             ->set('title', 'Updated Title')
             ->set('description', 'Updated description')
-            ->set('stage', 'scheduled')
+            ->set('stage', 'quote_scheduled')
             ->set('estimatedValue', '25000.00')
             ->set('assignedTo', $assignee->id)
             ->call('save')
@@ -125,18 +125,18 @@ describe('EditModal component', function () {
 
         expect($deal->title)->toBe('Updated Title');
         expect($deal->description)->toBe('Updated description');
-        expect($deal->stage)->toBe('scheduled');
+        expect($deal->stage)->toBe('quote_scheduled');
         expect((float) $deal->estimated_value)->toBe(25000.00);
         expect($deal->assigned_to)->toBe($assignee->id);
     });
 
-    it('updates actual values for completed deals', function () {
+    it('updates actual values for signed deals', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
-        $deal = Deal::factory()->inProgress()->create();
+        $deal = Deal::factory()->quoted()->create();
 
         Livewire::actingAs($user)
             ->test('deals.edit-modal', ['dealId' => $deal->id])
-            ->set('stage', 'completed')
+            ->set('stage', 'signed')
             ->set('actualValue', '18500.00')
             ->set('actualStartDate', '2025-05-01')
             ->set('actualEndDate', '2025-05-15')
@@ -145,7 +145,7 @@ describe('EditModal component', function () {
 
         $deal->refresh();
 
-        expect($deal->stage)->toBe('completed');
+        expect($deal->stage)->toBe('signed');
         expect((float) $deal->actual_value)->toBe(18500.00);
         expect($deal->actual_start_date->format('Y-m-d'))->toBe('2025-05-01');
         expect($deal->actual_end_date->format('Y-m-d'))->toBe('2025-05-15');

@@ -3,6 +3,8 @@
 namespace Database\Factories;
 
 use App\Models\Deal;
+use App\Models\Estimate;
+use App\Models\Job;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -77,13 +79,39 @@ class ActivityFactory extends Factory
     }
 
     /**
-     * Set as a meeting.
+     * Set as a meeting (legacy - basic meeting without scheduling fields).
      */
     public function meeting(): static
     {
         return $this->state(fn (array $attributes) => [
             'type' => 'meeting',
             'title' => fake()->randomElement(['Site visit', 'Project kickoff', 'Final walkthrough', 'Color consultation']),
+        ]);
+    }
+
+    /**
+     * Set as a scheduled meeting with full meeting fields.
+     */
+    public function scheduledMeeting(string $meetingType = 'in_person'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => 'meeting',
+            'title' => fake()->randomElement(['Estimate walk-through', 'Site visit', 'Color consultation', 'Project kickoff']),
+            'meeting_type' => $meetingType,
+            'meeting_status' => 'proposed',
+            'due_at' => fake()->dateTimeBetween('+1 day', '+2 weeks'),
+        ]);
+    }
+
+    /**
+     * Set as a confirmed scheduled meeting.
+     */
+    public function confirmedMeeting(string $meetingType = 'in_person'): static
+    {
+        return $this->scheduledMeeting($meetingType)->state(fn (array $attributes) => [
+            'meeting_status' => 'confirmed',
+            'team_confirmed_at' => now(),
+            'customer_confirmed_at' => now(),
         ]);
     }
 
@@ -138,6 +166,58 @@ class ActivityFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'user_id' => $user->id,
+        ]);
+    }
+
+    /**
+     * Associate with a specific job.
+     */
+    public function forJob(Job $job): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'subject_type' => Job::class,
+            'subject_id' => $job->id,
+        ]);
+    }
+
+    /**
+     * Associate with a specific user as subject (for agent/crew tasks).
+     */
+    public function forUser(User $user): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'subject_type' => User::class,
+            'subject_id' => $user->id,
+        ]);
+    }
+
+    /**
+     * Set an automation key.
+     */
+    public function automated(string $key): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'automation_key' => $key,
+        ]);
+    }
+
+    /**
+     * Set the proposed_by user.
+     */
+    public function proposedBy(User $user): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'proposed_by' => $user->id,
+        ]);
+    }
+
+    /**
+     * Link to an estimate.
+     */
+    public function forEstimate(Estimate $estimate): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'estimate_id' => $estimate->id,
         ]);
     }
 }

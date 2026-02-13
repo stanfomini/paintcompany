@@ -35,20 +35,20 @@ class EstimateRejected extends Notification implements ShouldQueue
         $adminUrl = route('estimates.show', $this->estimate);
 
         $message = (new MailMessage)
-            ->subject("Estimate Rejected: {$this->estimate->estimate_number}")
-            ->greeting('Estimate Update')
-            ->line("**{$customerName}** has rejected estimate **{$this->estimate->estimate_number}**.")
+            ->subject(__('Estimate Rejected: :number', ['number' => $this->estimate->estimate_number]))
+            ->greeting(__('Estimate Update'))
+            ->line(__('**:customerName** has rejected estimate **:number**.', ['customerName' => $customerName, 'number' => $this->estimate->estimate_number]))
             ->line("**{$this->estimate->title}**")
-            ->line('**Total:** $'.number_format($this->estimate->total, 2));
+            ->line('**'.__('Total').':** $'.number_format($this->estimate->total, 2));
 
         if ($this->reason) {
             $message->line('---')
-                ->line('**Reason provided:**')
+                ->line('**'.__('Reason provided').':**')
                 ->line($this->reason);
         }
 
-        $message->action('View Estimate', $adminUrl)
-            ->line('Consider following up with the customer to understand their concerns.');
+        $message->action(__('View Estimate'), $adminUrl)
+            ->line(__('Consider following up with the customer to understand their concerns.'));
 
         return $message;
     }

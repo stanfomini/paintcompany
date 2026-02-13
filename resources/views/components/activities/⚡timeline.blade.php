@@ -84,7 +84,7 @@ new class extends Component {
         $this->resetForm();
 
         $this->dispatch('activity-created');
-        session()->flash('timeline-success', 'Activity created successfully.');
+        session()->flash('timeline-success', __('Activity created successfully.'));
     }
 
     public function cancelForm(): void
@@ -117,17 +117,17 @@ new class extends Component {
     <div class="mb-6">
         @if ($showForm)
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 bg-white dark:bg-zinc-900">
-                <flux:heading size="sm" class="mb-4">Add Activity</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Add Activity') }}</flux:heading>
                 <form wire:submit="createActivity">
                     <div class="space-y-4">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <flux:field>
-                                <flux:label>Title</flux:label>
-                                <flux:input wire:model="title" placeholder="Activity title..." />
+                                <flux:label>{{ __('Title') }}</flux:label>
+                                <flux:input wire:model="title" placeholder="{{ __('Activity title...') }}" />
                                 <flux:error name="title" />
                             </flux:field>
                             <flux:field>
-                                <flux:label>Type</flux:label>
+                                <flux:label>{{ __('Type') }}</flux:label>
                                 <flux:select wire:model="type">
                                     @foreach ($types as $value => $label)
                                         <option value="{{ $value }}">{{ $label }}</option>
@@ -138,37 +138,37 @@ new class extends Component {
                         </div>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <flux:field>
-                                <flux:label>Due Date (optional)</flux:label>
+                                <flux:label>{{ __('Due Date (optional)') }}</flux:label>
                                 <flux:input wire:model="dueAt" type="date" />
                                 <flux:error name="dueAt" />
                             </flux:field>
                         </div>
                         <flux:field>
-                            <flux:label>Description (optional)</flux:label>
-                            <flux:textarea wire:model="description" rows="2" placeholder="Add details..." />
+                            <flux:label>{{ __('Description (optional)') }}</flux:label>
+                            <flux:textarea wire:model="description" rows="2" placeholder="{{ __('Add details...') }}" />
                             <flux:error name="description" />
                         </flux:field>
                     </div>
                     <div class="mt-4 flex justify-end gap-2">
                         <flux:button variant="ghost" wire:click="cancelForm" type="button">
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                         <flux:button type="submit" variant="primary" size="sm">
-                            Add Activity
+                            {{ __('Add Activity') }}
                         </flux:button>
                     </div>
                 </form>
             </div>
         @else
             <flux:button variant="primary" size="sm" wire:click="$set('showForm', true)" icon="plus">
-                Add Activity
+                {{ __('Add Activity') }}
             </flux:button>
         @endif
     </div>
 
     <!-- Activity Timeline -->
     @if ($this->activities->isEmpty())
-        <flux:text class="text-zinc-500">No activities yet.</flux:text>
+        <flux:text class="text-zinc-500">{{ __('No activities yet.') }}</flux:text>
     @else
         <div class="space-y-4">
             @foreach ($this->activities as $activity)
@@ -222,9 +222,9 @@ new class extends Component {
                                     {{ $activity->type_label }}
                                 </flux:badge>
                                 @if ($activity->is_completed)
-                                    <flux:badge size="sm" color="green">Completed</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Completed') }}</flux:badge>
                                 @elseif ($activity->isOverdue())
-                                    <flux:badge size="sm" color="red">Overdue</flux:badge>
+                                    <flux:badge size="sm" color="red">{{ __('Overdue') }}</flux:badge>
                                 @endif
                             </div>
 
@@ -241,7 +241,7 @@ new class extends Component {
                                 <span>{{ $activity->created_at->format('M j, Y g:i A') }}</span>
                                 @if ($activity->due_at)
                                     <span class="{{ $activity->isOverdue() ? 'text-red-500 font-medium' : '' }}">
-                                        Due: {{ $activity->due_at->format('M j, Y') }}
+                                        {{ __('Due') }}: {{ $activity->due_at->format('M j, Y') }}
                                     </span>
                                 @endif
                             </div>

@@ -905,7 +905,8 @@ describe('Package-Specific Breakdown', function () {
 
         expect($breakdown['package']['warranty_years'])->toBe(5);
         expect($breakdown['package']['warranty_price'])->toBe(150.00);
-        expect($breakdown['cogs']['warranty_price'])->toBe(150.00);
+        // Warranty is now an add-on service, not a default COGS item
+        expect($breakdown['cogs']['warranty_price'])->toBe(0);
     });
 });
 
@@ -1343,7 +1344,50 @@ describe('Dynamic Allocations', function () {
 });
 
 describe('Warranty Reserve Integration', function () {
-    it('includes warranty reserve info in package breakdown', function () {
+    it('warranty reserve is always null since warranty is now an add-on service', function () {
+        $service = new EstimateCostBreakdownService;
+
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+
+        $package = EstimatePackage::factory()->create([
+            'estimate_id' => $estimate->id,
+            'tier' => 'premium',
+            'is_recommended' => true,
+            'total' => 3000.00,
+            'warranty_price' => 150.00,
+            'warranty_years' => 5,
+        ]);
+
+        $breakdown = $service->calculateBreakdown($estimate);
+
+        // Warranty is now an add-on service, not a default COGS item
+        expect($breakdown['warranty_reserve'])->toBeNull();
+        expect($breakdown['cogs']['warranty_price'])->toBe(0);
+
+        // Package still stores warranty info for reference
+        expect($breakdown['package']['warranty_years'])->toBe(5);
+        expect($breakdown['package']['warranty_price'])->toBe(150.00);
+    });
+
+    it('returns null warranty reserve for legacy estimates', function () {
+        $service = new EstimateCostBreakdownService;
+
+        // Legacy estimate without packages
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+
+        EstimateArea::factory()->forEstimate($estimate)->create([
+            'scope_type' => 'interior',
+            'is_fixed_price' => true,
+            'fixed_price_amount' => 500.00,
+        ]);
+
+        $breakdown = $service->calculateBreakdown($estimate);
+
+        expect($breakdown['package'])->toBeNull();
+        expect($breakdown['warranty_reserve'])->toBeNull();
+    });
+
+    it('warranty reserve helper method still works for direct queries', function () {
         $service = new EstimateCostBreakdownService;
 
         $estimate = Estimate::factory()->create(['project_type' => 'interior']);
@@ -1366,135 +1410,14 @@ describe('Warranty Reserve Integration', function () {
             'amount_claimed' => 25.00,
         ]);
 
-        $breakdown = $service->calculateBreakdown($estimate);
-
-        expect($breakdown['warranty_reserve'])->not->toBeNull();
-        expect($breakdown['warranty_reserve']['status'])->toBe('active');
-        expect($breakdown['warranty_reserve']['warranty_years'])->toBe(5);
-        expect($breakdown['warranty_reserve']['amount_reserved'])->toBe(150.00);
-        expect($breakdown['warranty_reserve']['amount_claimed'])->toBe(25.00);
-        expect($breakdown['warranty_reserve']['remaining_balance'])->toBe(125.00);
-        expect($breakdown['warranty_reserve']['claim_percentage'])->toBeGreaterThan(0);
-    });
-
-    it('returns not_created status when package has warranty but no reserve', function () {
-        $service = new EstimateCostBreakdownService;
-
-        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
-
-        $package = EstimatePackage::factory()->create([
-            'estimate_id' => $estimate->id,
-            'tier' => 'premium',
-            'is_recommended' => true,
-            'total' => 3000.00,
-            'warranty_price' => 150.00,
-            'warranty_years' => 3,
-        ]);
-
-        $breakdown = $service->calculateBreakdown($estimate);
-
-        expect($breakdown['warranty_reserve'])->not->toBeNull();
-        expect($breakdown['warranty_reserve']['status'])->toBe('not_created');
-        expect($breakdown['warranty_reserve']['warranty_years'])->toBe(3);
-        expect($breakdown['warranty_reserve']['expected_reserve'])->toBe(150.00);
-    });
-
-    it('returns null warranty reserve when package has no warranty', function () {
-        $service = new EstimateCostBreakdownService;
-
-        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
-
-        $package = EstimatePackage::factory()->create([
-            'estimate_id' => $estimate->id,
-            'tier' => 'basic',
-            'is_recommended' => true,
-            'total' => 1500.00,
-            'warranty_price' => 0,
-            'warranty_years' => 0,
-        ]);
-
-        $breakdown = $service->calculateBreakdown($estimate);
-
-        expect($breakdown['warranty_reserve'])->toBeNull();
-    });
-
-    it('returns null warranty reserve for legacy estimates', function () {
-        $service = new EstimateCostBreakdownService;
-
-        // Legacy estimate without packages
-        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
-
-        EstimateArea::factory()->forEstimate($estimate)->create([
-            'scope_type' => 'interior',
-            'is_fixed_price' => true,
-            'fixed_price_amount' => 500.00,
-        ]);
-
-        $breakdown = $service->calculateBreakdown($estimate);
-
-        expect($breakdown['package'])->toBeNull();
-        expect($breakdown['warranty_reserve'])->toBeNull();
-    });
-
-    it('shows warranty claims in reserve info', function () {
-        $service = new EstimateCostBreakdownService;
-
-        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
-
-        $package = EstimatePackage::factory()->create([
-            'estimate_id' => $estimate->id,
-            'tier' => 'premium',
-            'is_recommended' => true,
-            'total' => 3000.00,
-            'warranty_price' => 200.00,
-            'warranty_years' => 5,
-        ]);
-
-        // Create warranty reserve with some claims
-        $reserve = \App\Models\WarrantyReserve::factory()->active()->create([
-            'estimate_id' => $estimate->id,
-            'estimate_package_id' => $package->id,
-            'warranty_years' => 5,
-            'amount_reserved' => 200.00,
-            'amount_claimed' => 80.00,
-        ]);
-
-        $breakdown = $service->calculateBreakdown($estimate);
-
-        expect($breakdown['warranty_reserve']['remaining_balance'])->toBe(120.00);
-        expect($breakdown['warranty_reserve']['claim_percentage'])->toBe(40.0);
-        expect($breakdown['warranty_reserve']['has_available_balance'])->toBeTrue();
-    });
-
-    it('shows fully claimed warranty status', function () {
-        $service = new EstimateCostBreakdownService;
-
-        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
-
-        $package = EstimatePackage::factory()->create([
-            'estimate_id' => $estimate->id,
-            'tier' => 'premium',
-            'is_recommended' => true,
-            'total' => 3000.00,
-            'warranty_price' => 150.00,
-            'warranty_years' => 3,
-        ]);
-
-        // Create fully claimed warranty
-        $reserve = \App\Models\WarrantyReserve::factory()->create([
-            'estimate_id' => $estimate->id,
-            'estimate_package_id' => $package->id,
-            'warranty_years' => 3,
-            'amount_reserved' => 150.00,
-            'amount_claimed' => 150.00,
-            'status' => \App\Models\WarrantyReserve::STATUS_FULLY_CLAIMED,
-        ]);
-
-        $breakdown = $service->calculateBreakdown($estimate);
-
-        expect($breakdown['warranty_reserve']['status'])->toBe('fully_claimed');
-        expect($breakdown['warranty_reserve']['remaining_balance'])->toBe(0.0);
-        expect($breakdown['warranty_reserve']['has_available_balance'])->toBeFalse();
+        // The helper method still works when called directly
+        $reserveInfo = $service->getWarrantyReserveInfo($package);
+        expect($reserveInfo)->not->toBeNull();
+        expect($reserveInfo['status'])->toBe('active');
+        expect($reserveInfo['warranty_years'])->toBe(5);
+        expect($reserveInfo['amount_reserved'])->toBe(150.00);
+        expect($reserveInfo['amount_claimed'])->toBe(25.00);
+        expect($reserveInfo['remaining_balance'])->toBe(125.00);
     });
 
     it('defaults selectedPackageId to active package on mount', function () {
@@ -1628,5 +1551,59 @@ describe('Warranty Reserve Integration', function () {
             ->assertSet('selectedPackageId', $myPackage->id)
             ->call('selectPackage', $foreignPackage->id)
             ->assertSet('selectedPackageId', $myPackage->id); // Should not change
+    });
+});
+
+describe('Fixed-price area labor decomposition', function () {
+    it('decomposes fixed-price area into labor and material when breakdown data exists', function () {
+        $nestedTemplate = NestedAreaTemplate::factory()->smallCloset()->create();
+        // smallCloset: estimated_hours=1.5, material_cost=12.00
+
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+        $area = EstimateArea::factory()
+            ->forEstimate($estimate)
+            ->fixedPrice(95.00, $nestedTemplate)
+            ->create(['scope_type' => 'interior']);
+
+        $service = new EstimateCostBreakdownService;
+        $breakdown = $service->calculateBreakdown($estimate);
+
+        $areaDetail = $breakdown['areas'][0]['detail'] ?? null;
+        expect($areaDetail)->not->toBeNull();
+
+        // Should have non-zero labor hours from the template
+        expect($areaDetail['labor_hours'])->toBe(1.5);
+        expect($areaDetail['labor_cost'])->toBeGreaterThan(0);
+        expect($areaDetail['material_cost'])->toBe(12.0);
+        expect($areaDetail['cleanup_hours'])->toBeGreaterThan(0);
+        expect($areaDetail['cleanup_cost'])->toBeGreaterThan(0);
+        expect($areaDetail['sundries_cost'])->toBeGreaterThan(0);
+
+        // fixed_price should still be reported
+        expect($areaDetail['fixed_price'])->toBe(95.00);
+    });
+
+    it('returns zeros for fixed-price area without breakdown data (backwards compat)', function () {
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+        $area = EstimateArea::factory()
+            ->forEstimate($estimate)
+            ->create([
+                'scope_type' => 'interior',
+                'is_fixed_price' => true,
+                'fixed_price_amount' => 200.00,
+                // No estimated_labor_hours, estimated_material_cost, estimated_labor_cost
+            ]);
+
+        $service = new EstimateCostBreakdownService;
+        $breakdown = $service->calculateBreakdown($estimate);
+
+        $areaDetail = $breakdown['areas'][0]['detail'] ?? null;
+        expect($areaDetail)->not->toBeNull();
+
+        expect($areaDetail['labor_hours'])->toBe(0.0);
+        expect($areaDetail['labor_cost'])->toBe(0.0);
+        expect($areaDetail['material_cost'])->toBe(0.0);
+        expect($areaDetail['cleanup_hours'])->toBe(0.0);
+        expect($areaDetail['fixed_price'])->toBe(200.00);
     });
 });

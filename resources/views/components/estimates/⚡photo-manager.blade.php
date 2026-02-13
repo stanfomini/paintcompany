@@ -54,10 +54,10 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'uploadedPhotos.required' => 'Please select at least one photo to upload.',
-            'uploadedPhotos.*.image' => 'Each file must be an image.',
-            'uploadedPhotos.*.max' => 'Each image must be less than 5MB.',
-            'uploadedPhotos.*.mimes' => 'Only JPG, PNG, GIF, and WebP images are allowed.',
+            'uploadedPhotos.required' => __('Please select at least one photo to upload.'),
+            'uploadedPhotos.*.image' => __('Each file must be an image.'),
+            'uploadedPhotos.*.max' => __('Each image must be less than 5MB.'),
+            'uploadedPhotos.*.mimes' => __('Only JPG, PNG, GIF, and WebP images are allowed.'),
         ];
     }
 
@@ -256,9 +256,9 @@ new class extends Component {
 <div>
     {{-- Header --}}
     <div class="flex items-center justify-between mb-4">
-        <flux:heading size="lg">Photos</flux:heading>
+        <flux:heading size="lg">{{ __('Photos') }}</flux:heading>
         <flux:button wire:click="openUploadModal" icon="arrow-up-tray" size="sm">
-            Upload Photos
+            {{ __('Upload Photos') }}
         </flux:button>
     </div>
 
@@ -289,17 +289,17 @@ new class extends Component {
     @if ($this->filteredPhotos->isEmpty())
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
             <flux:icon name="photo" class="w-12 h-12 mx-auto text-zinc-400 mb-3" />
-            <flux:heading size="sm" class="mb-1">No photos yet</flux:heading>
+            <flux:heading size="sm" class="mb-1">{{ __('No photos yet') }}</flux:heading>
             <flux:text class="text-zinc-500 dark:text-zinc-400 mb-4">
                 @if ($filterCategory === 'all')
-                    Upload photos to document this estimate.
+                    {{ __('Upload photos to document this estimate.') }}
                 @else
-                    No {{ strtolower($categories[$filterCategory] ?? $filterCategory) }} photos found.
+                    {{ __('No :category photos found.', ['category' => strtolower($categories[$filterCategory] ?? $filterCategory)]) }}
                 @endif
             </flux:text>
             @if ($filterCategory === 'all')
                 <flux:button wire:click="openUploadModal" icon="arrow-up-tray" size="sm">
-                    Upload Photos
+                    {{ __('Upload Photos') }}
                 </flux:button>
             @endif
         </div>
@@ -328,7 +328,7 @@ new class extends Component {
                             />
                             <flux:button
                                 wire:click="deletePhoto({{ $photo->id }})"
-                                wire:confirm="Are you sure you want to delete this photo?"
+                                wire:confirm="{{ __('Are you sure you want to delete this photo?') }}"
                                 variant="danger"
                                 size="xs"
                                 icon="trash"
@@ -338,7 +338,7 @@ new class extends Component {
                         {{-- Show on Proposal indicator --}}
                         @if ($photo->show_on_proposal)
                             <div class="absolute top-2 left-2">
-                                <flux:tooltip content="Visible on proposal">
+                                <flux:tooltip :content="__('Visible on proposal')">
                                     <flux:badge color="green" size="sm">
                                         <flux:icon name="eye" class="w-3 h-3" />
                                     </flux:badge>
@@ -380,7 +380,7 @@ new class extends Component {
     {{-- Upload Modal --}}
     <flux:modal wire:model="showUploadModal" class="max-w-2xl">
         <div class="space-y-6">
-            <flux:heading size="lg">Upload Photos</flux:heading>
+            <flux:heading size="lg">{{ __('Upload Photos') }}</flux:heading>
 
             {{-- Drag and Drop Area --}}
             <div
@@ -400,9 +400,9 @@ new class extends Component {
             >
                 <flux:icon name="cloud-arrow-up" class="w-12 h-12 mx-auto text-zinc-400 mb-3" />
                 <flux:text class="mb-2">
-                    Drag and drop images here, or
+                    {{ __('Drag and drop images here, or') }}
                     <label class="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer">
-                        browse
+                        {{ __('browse') }}
                         <input
                             type="file"
                             wire:model="uploadedPhotos"
@@ -413,14 +413,14 @@ new class extends Component {
                     </label>
                 </flux:text>
                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                    JPG, PNG, GIF, WebP up to 5MB each
+                    {{ __('JPG, PNG, GIF, WebP up to 5MB each') }}
                 </flux:text>
 
                 {{-- Loading indicator --}}
                 <div wire:loading wire:target="uploadedPhotos" class="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-zinc-900/80 rounded-lg">
                     <div class="flex items-center gap-2">
                         <flux:icon name="arrow-path" class="w-5 h-5 animate-spin" />
-                        <flux:text>Uploading...</flux:text>
+                        <flux:text>{{ __('Uploading...') }}</flux:text>
                     </div>
                 </div>
             </div>
@@ -435,7 +435,7 @@ new class extends Component {
             {{-- Preview uploaded photos --}}
             @if (count($uploadedPhotos) > 0)
                 <div>
-                    <flux:text class="font-medium mb-2">Selected Photos ({{ count($uploadedPhotos) }})</flux:text>
+                    <flux:text class="font-medium mb-2">{{ __('Selected Photos') }} ({{ count($uploadedPhotos) }})</flux:text>
                     <div class="grid grid-cols-4 gap-2">
                         @foreach ($uploadedPhotos as $index => $photo)
                             <div wire:key="preview-{{ $index }}" class="relative aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
@@ -462,7 +462,7 @@ new class extends Component {
             {{-- Upload Options --}}
             <div class="grid gap-4 sm:grid-cols-2">
                 <flux:field>
-                    <flux:label>Default Category</flux:label>
+                    <flux:label>{{ __('Default Category') }}</flux:label>
                     <flux:select wire:model="defaultCategory">
                         @foreach ($this->categories as $key => $label)
                             <option value="{{ $key }}">{{ $label }}</option>
@@ -471,14 +471,14 @@ new class extends Component {
                 </flux:field>
 
                 <flux:field>
-                    <flux:checkbox wire:model="defaultShowOnProposal" label="Show on Proposal" />
+                    <flux:checkbox wire:model="defaultShowOnProposal" :label="__('Show on Proposal')" />
                 </flux:field>
             </div>
 
             {{-- Actions --}}
             <div class="flex justify-end gap-3">
                 <flux:button wire:click="closeUploadModal" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button
                     wire:click="uploadPhotos"
@@ -489,7 +489,7 @@ new class extends Component {
                     <span wire:loading.remove wire:target="uploadPhotos">
                         Upload {{ count($uploadedPhotos) }} Photo{{ count($uploadedPhotos) !== 1 ? 's' : '' }}
                     </span>
-                    <span wire:loading wire:target="uploadPhotos">Uploading...</span>
+                    <span wire:loading wire:target="uploadPhotos">{{ __('Uploading...') }}</span>
                 </flux:button>
             </div>
         </div>
@@ -498,7 +498,7 @@ new class extends Component {
     {{-- Edit Modal --}}
     <flux:modal wire:model="showEditModal" class="max-w-lg">
         <div class="space-y-6">
-            <flux:heading size="lg">Edit Photo</flux:heading>
+            <flux:heading size="lg">{{ __('Edit Photo') }}</flux:heading>
 
             {{-- Image Preview --}}
             @if ($editingPhotoId)
@@ -519,13 +519,13 @@ new class extends Component {
             {{-- Form Fields --}}
             <div class="space-y-4">
                 <flux:field>
-                    <flux:label>Caption</flux:label>
-                    <flux:input wire:model="photoCaption" placeholder="Enter a caption for this photo..." />
+                    <flux:label>{{ __('Caption') }}</flux:label>
+                    <flux:input wire:model="photoCaption" placeholder="{{ __('Enter a caption for this photo...') }}" />
                     <flux:error name="photoCaption" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Category</flux:label>
+                    <flux:label>{{ __('Category') }}</flux:label>
                     <flux:select wire:model="photoCategory">
                         @foreach ($this->categories as $key => $label)
                             <option value="{{ $key }}">{{ $label }}</option>
@@ -535,9 +535,9 @@ new class extends Component {
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Associated Area</flux:label>
+                    <flux:label>{{ __('Associated Area') }}</flux:label>
                     <flux:select wire:model="photoAreaId">
-                        <option value="">None</option>
+                        <option value="">{{ __('None') }}</option>
                         @foreach ($this->areas as $area)
                             <option value="{{ $area->id }}">{{ $area->name }}</option>
                         @endforeach
@@ -546,18 +546,18 @@ new class extends Component {
                 </flux:field>
 
                 <flux:field>
-                    <flux:checkbox wire:model="photoShowOnProposal" label="Show on Proposal" />
+                    <flux:checkbox wire:model="photoShowOnProposal" :label="__('Show on Proposal')" />
                 </flux:field>
             </div>
 
             {{-- Actions --}}
             <div class="flex justify-end gap-3">
                 <flux:button wire:click="closeEditModal" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button wire:click="savePhoto" variant="primary" wire:loading.attr="disabled">
-                    <span wire:loading.remove wire:target="savePhoto">Save Changes</span>
-                    <span wire:loading wire:target="savePhoto">Saving...</span>
+                    <span wire:loading.remove wire:target="savePhoto">{{ __('Save Changes') }}</span>
+                    <span wire:loading wire:target="savePhoto">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </div>

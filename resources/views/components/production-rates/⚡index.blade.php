@@ -603,10 +603,10 @@ new class extends Component {
 
         if ($this->editingSubstrate) {
             $this->editingSubstrate->update($data);
-            session()->flash('success', 'Substrate updated successfully.');
+            session()->flash('success', __('Substrate updated successfully.'));
         } else {
             Substrate::create($data);
-            session()->flash('success', 'Substrate created successfully.');
+            session()->flash('success', __('Substrate created successfully.'));
         }
 
         $this->closeSubstrateModal();
@@ -618,13 +618,13 @@ new class extends Component {
         $substrate = Substrate::findOrFail($id);
 
         if ($substrate->estimateAreas()->count() > 0) {
-            session()->flash('error', 'Cannot delete substrate - it is used by estimate areas.');
+            session()->flash('error', __('Cannot delete substrate - it is used by estimate areas.'));
 
             return;
         }
 
         $substrate->delete();
-        session()->flash('success', 'Substrate deleted successfully.');
+        session()->flash('success', __('Substrate deleted successfully.'));
         unset($this->substrates);
     }
 
@@ -731,10 +731,10 @@ new class extends Component {
 
         if ($this->editingBrand) {
             $this->editingBrand->update($data);
-            session()->flash('success', 'Brand updated successfully.');
+            session()->flash('success', __('Brand updated successfully.'));
         } else {
             PaintBrand::create($data);
-            session()->flash('success', 'Brand created successfully.');
+            session()->flash('success', __('Brand created successfully.'));
         }
 
         $this->closeBrandModal();
@@ -746,13 +746,13 @@ new class extends Component {
         $brand = PaintBrand::findOrFail($id);
 
         if ($brand->products()->count() > 0) {
-            session()->flash('error', 'Cannot delete brand - it has products.');
+            session()->flash('error', __('Cannot delete brand - it has products.'));
 
             return;
         }
 
         $brand->delete();
-        session()->flash('success', 'Brand deleted successfully.');
+        session()->flash('success', __('Brand deleted successfully.'));
         unset($this->paintBrands);
     }
 
@@ -860,10 +860,10 @@ new class extends Component {
 
         if ($this->editingProduct) {
             $this->editingProduct->update($data);
-            session()->flash('success', 'Product updated successfully.');
+            session()->flash('success', __('Product updated successfully.'));
         } else {
             PaintProduct::create($data);
-            session()->flash('success', 'Product created successfully.');
+            session()->flash('success', __('Product created successfully.'));
         }
 
         $this->closeProductModal();
@@ -875,13 +875,13 @@ new class extends Component {
         $product = PaintProduct::findOrFail($id);
 
         if ($product->areaSelections()->count() > 0) {
-            session()->flash('error', 'Cannot delete product - it is used in estimates.');
+            session()->flash('error', __('Cannot delete product - it is used in estimates.'));
 
             return;
         }
 
         $product->delete();
-        session()->flash('success', 'Product deleted successfully.');
+        session()->flash('success', __('Product deleted successfully.'));
         unset($this->paintProducts);
     }
 
@@ -1079,10 +1079,10 @@ new class extends Component {
 
         if ($this->editingTemplate) {
             $this->editingTemplate->update($data);
-            session()->flash('success', 'Template updated successfully.');
+            session()->flash('success', __('Template updated successfully.'));
         } else {
             NestedAreaTemplate::create($data);
-            session()->flash('success', 'Template created successfully.');
+            session()->flash('success', __('Template created successfully.'));
         }
 
         $this->closeTemplateModal();
@@ -1094,13 +1094,13 @@ new class extends Component {
         $template = NestedAreaTemplate::findOrFail($id);
 
         if ($template->estimateAreas()->count() > 0) {
-            session()->flash('error', 'Cannot delete template - it is used in estimates.');
+            session()->flash('error', __('Cannot delete template - it is used in estimates.'));
 
             return;
         }
 
         $template->delete();
-        session()->flash('success', 'Template deleted successfully.');
+        session()->flash('success', __('Template deleted successfully.'));
         unset($this->nestedTemplates);
     }
 
@@ -1120,7 +1120,7 @@ new class extends Component {
         $newTemplate->code = $template->code.'-COPY';
         $newTemplate->save();
 
-        session()->flash('success', 'Template duplicated successfully.');
+        session()->flash('success', __('Template duplicated successfully.'));
         unset($this->nestedTemplates);
     }
 }; ?>
@@ -1128,27 +1128,27 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Pricing Configuration</flux:heading>
+            <flux:heading size="xl">{{ __('Pricing Configuration') }}</flux:heading>
             @if (in_array($activeTab, ['interior', 'exterior', 'specialty']))
                 <flux:button wire:click="openCategoryModal" icon="plus">
-                    Add Category
+                    {{ __('Add Category') }}
                 </flux:button>
             @elseif ($activeTab === 'substrates')
                 <flux:button wire:click="openSubstrateModal" icon="plus" variant="primary">
-                    Add Substrate
+                    {{ __('Add Substrate') }}
                 </flux:button>
             @elseif ($activeTab === 'paints')
                 <div class="flex gap-2">
                     <flux:button wire:click="openBrandModal" icon="building-storefront" variant="ghost">
-                        Add Brand
+                        {{ __('Add Brand') }}
                     </flux:button>
                     <flux:button wire:click="openProductModal" icon="plus" variant="primary">
-                        Add Product
+                        {{ __('Add Product') }}
                     </flux:button>
                 </div>
             @elseif ($activeTab === 'templates')
                 <flux:button wire:click="openTemplateModal" icon="plus" variant="primary">
-                    Add Template
+                    {{ __('Add Template') }}
                 </flux:button>
             @endif
         </div>
@@ -1165,12 +1165,12 @@ new class extends Component {
         <div class="border-b border-zinc-200 dark:border-zinc-700 mb-6">
             <nav class="-mb-px flex space-x-8 overflow-x-auto">
                 @foreach ([
-                    'interior' => 'Interior Rates',
-                    'exterior' => 'Exterior Rates',
-                    'specialty' => 'Specialty',
-                    'substrates' => 'Substrates',
-                    'paints' => 'Paint Catalog',
-                    'templates' => 'Fixed Price',
+                    'interior' => __('Interior Rates'),
+                    'exterior' => __('Exterior Rates'),
+                    'specialty' => __('Specialty'),
+                    'substrates' => __('Substrates'),
+                    'paints' => __('Paint Catalog'),
+                    'templates' => __('Fixed Price'),
                 ] as $tab => $label)
                     <button
                         wire:click="switchTab('{{ $tab }}')"
@@ -1186,7 +1186,7 @@ new class extends Component {
                     wire:navigate
                     class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm transition-colors border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:text-zinc-400 dark:hover:text-zinc-300"
                 >
-                    Area Templates
+                    {{ __('Area Templates') }}
                 </a>
             </nav>
         </div>
@@ -1197,16 +1197,16 @@ new class extends Component {
             <!-- Empty State -->
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="calculator" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No production rates found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No production rates found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
-                    Get started by seeding default rates or adding a category.
+                    {{ __('Get started by seeding default rates or adding a category.') }}
                 </flux:text>
                 <div class="mt-6 flex justify-center gap-3">
                     <flux:button wire:click="seedDefaults" variant="primary" icon="sparkles">
-                        Seed Default Rates
+                        {{ __('Seed Default Rates') }}
                     </flux:button>
                     <flux:button wire:click="openCategoryModal" icon="plus">
-                        Add Category
+                        {{ __('Add Category') }}
                     </flux:button>
                 </div>
             </div>
@@ -1218,23 +1218,23 @@ new class extends Component {
                         <!-- Category Header -->
                         <div class="bg-zinc-50 dark:bg-zinc-800 px-6 py-4 flex items-center justify-between">
                             <div>
-                                <flux:heading size="sm">{{ $category->name }}</flux:heading>
+                                <flux:heading size="sm">{{ __($category->name) }}</flux:heading>
                                 @if ($category->description)
                                     <flux:text class="text-sm text-zinc-500 mt-1">{{ $category->description }}</flux:text>
                                 @endif
                             </div>
                             <div class="flex items-center gap-2">
                                 <flux:button wire:click="openRateModal(null, {{ $category->id }})" size="sm" icon="plus">
-                                    Add Rate
+                                    {{ __('Add Rate') }}
                                 </flux:button>
                                 <flux:dropdown>
                                     <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                     <flux:menu>
                                         <flux:menu.item wire:click="openCategoryModal({{ $category->id }})" icon="pencil">
-                                            Edit Category
+                                            {{ __('Edit Category') }}
                                         </flux:menu.item>
                                         <flux:menu.item wire:click="confirmDelete('category', {{ $category->id }})" icon="trash" variant="danger">
-                                            Delete Category
+                                            {{ __('Delete Category') }}
                                         </flux:menu.item>
                                     </flux:menu>
                                 </flux:dropdown>
@@ -1248,19 +1248,19 @@ new class extends Component {
                                     <thead class="bg-white dark:bg-zinc-900">
                                         <tr>
                                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                                Name
+                                                {{ __('Name') }}
                                             </th>
                                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                                Unit Type
+                                                {{ __('Unit Type') }}
                                             </th>
                                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                                Production Rate
+                                                {{ __('Production Rate') }}
                                             </th>
                                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                                Default Coats
+                                                {{ __('Default Coats') }}
                                             </th>
                                             <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                                Actions
+                                                {{ __('Actions') }}
                                             </th>
                                         </tr>
                                     </thead>
@@ -1268,7 +1268,7 @@ new class extends Component {
                                         @foreach ($category->rates as $rate)
                                             <tr wire:key="rate-{{ $rate->id }}">
                                                 <td class="px-6 py-4 whitespace-nowrap">
-                                                    <flux:text class="font-medium">{{ $rate->name }}</flux:text>
+                                                    <flux:text class="font-medium">{{ __($rate->name) }}</flux:text>
                                                     @if ($rate->description)
                                                         <flux:text class="text-xs text-zinc-500">{{ Str::limit($rate->description, 50) }}</flux:text>
                                                     @endif
@@ -1285,16 +1285,16 @@ new class extends Component {
                                                 <td class="px-6 py-4 whitespace-nowrap text-right">
                                                     <div class="flex items-center justify-end gap-2">
                                                         <flux:button wire:click="openCalculator({{ $rate->id }})" variant="ghost" size="sm" icon="calculator">
-                                                            Test
+                                                            {{ __('Test') }}
                                                         </flux:button>
                                                         <flux:dropdown>
                                                             <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                                             <flux:menu>
                                                                 <flux:menu.item wire:click="openRateModal({{ $rate->id }})" icon="pencil">
-                                                                    Edit
+                                                                    {{ __('Edit') }}
                                                                 </flux:menu.item>
                                                                 <flux:menu.item wire:click="confirmDelete('rate', {{ $rate->id }})" icon="trash" variant="danger">
-                                                                    Delete
+                                                                    {{ __('Delete') }}
                                                                 </flux:menu.item>
                                                             </flux:menu>
                                                         </flux:dropdown>
@@ -1307,9 +1307,9 @@ new class extends Component {
                             </div>
                         @else
                             <div class="p-6 text-center">
-                                <flux:text class="text-zinc-500">No rates in this category yet.</flux:text>
+                                <flux:text class="text-zinc-500">{{ __('No rates in this category yet.') }}</flux:text>
                                 <flux:button wire:click="openRateModal(null, {{ $category->id }})" size="sm" class="mt-2" icon="plus">
-                                    Add Rate
+                                    {{ __('Add Rate') }}
                                 </flux:button>
                             </div>
                         @endif
@@ -1339,31 +1339,31 @@ new class extends Component {
     <flux:modal wire:model="showCategoryModal" class="md:w-96">
         <div class="space-y-6">
             <flux:heading size="lg">
-                {{ $editingCategoryId ? 'Edit Category' : 'Add Category' }}
+                {{ $editingCategoryId ? __('Edit Category') : __('Add Category') }}
             </flux:heading>
 
             <form wire:submit="saveCategory" class="space-y-4">
                 <flux:field>
-                    <flux:label>Name</flux:label>
-                    <flux:input wire:model="categoryName" placeholder="Category name" />
+                    <flux:label>{{ __('Name') }}</flux:label>
+                    <flux:input wire:model="categoryName" :placeholder="__('Category name')" />
                     @error('categoryName') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Description</flux:label>
-                    <flux:textarea wire:model="categoryDescription" placeholder="Optional description" rows="3" />
+                    <flux:label>{{ __('Description') }}</flux:label>
+                    <flux:textarea wire:model="categoryDescription" :placeholder="__('Optional description')" rows="3" />
                     @error('categoryDescription') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                 </flux:field>
 
                 <div class="flex justify-end gap-3 pt-4">
                     <flux:button type="button" wire:click="$set('showCategoryModal', false)" variant="ghost">
-                        Cancel
+                        {{ __('Cancel') }}
                     </flux:button>
                     <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
                         <span wire:loading.remove wire:target="saveCategory">
-                            {{ $editingCategoryId ? 'Update' : 'Create' }}
+                            {{ $editingCategoryId ? __('Update') : __('Create') }}
                         </span>
-                        <span wire:loading wire:target="saveCategory">Saving...</span>
+                        <span wire:loading wire:target="saveCategory">{{ __('Saving...') }}</span>
                     </flux:button>
                 </div>
             </form>
@@ -1374,36 +1374,36 @@ new class extends Component {
     <flux:modal wire:model="showRateModal" class="md:w-[32rem]">
         <div class="space-y-6">
             <flux:heading size="lg">
-                {{ $editingRateId ? 'Edit Rate' : 'Add Rate' }}
+                {{ $editingRateId ? __('Edit Rate') : __('Add Rate') }}
             </flux:heading>
 
             <form wire:submit="saveRate" class="space-y-4">
                 <flux:field>
-                    <flux:label>Name</flux:label>
-                    <flux:input wire:model="rateName" placeholder="Rate name" />
+                    <flux:label>{{ __('Name') }}</flux:label>
+                    <flux:input wire:model="rateName" :placeholder="__('Rate name')" />
                     @error('rateName') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Description</flux:label>
-                    <flux:textarea wire:model="rateDescription" placeholder="Optional description" rows="2" />
+                    <flux:label>{{ __('Description') }}</flux:label>
+                    <flux:textarea wire:model="rateDescription" :placeholder="__('Optional description')" rows="2" />
                     @error('rateDescription') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                 </flux:field>
 
                 <div class="grid grid-cols-2 gap-4">
                     <flux:field>
-                        <flux:label>Unit Type</flux:label>
+                        <flux:label>{{ __('Unit Type') }}</flux:label>
                         <flux:select wire:model="rateUnitType">
-                            <option value="sqft">Square Feet</option>
-                            <option value="lnft">Linear Feet</option>
-                            <option value="unit">Unit</option>
-                            <option value="hour">Hour</option>
+                            <option value="sqft">{{ __('Square Feet') }}</option>
+                            <option value="lnft">{{ __('Linear Feet') }}</option>
+                            <option value="unit">{{ __('Unit') }}</option>
+                            <option value="hour">{{ __('Hour') }}</option>
                         </flux:select>
                         @error('rateUnitType') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Production Rate (units/hr)</flux:label>
+                        <flux:label>{{ __('Production Rate (units/hr)') }}</flux:label>
                         <flux:input wire:model="rateProductionRate" type="number" step="0.01" min="0.01" placeholder="300" />
                         @error('rateProductionRate') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                     </flux:field>
@@ -1411,7 +1411,7 @@ new class extends Component {
 
                 <div class="grid grid-cols-2 gap-4">
                     <flux:field>
-                        <flux:label>Default Coats</flux:label>
+                        <flux:label>{{ __('Default Coats') }}</flux:label>
                         <flux:select wire:model="rateDefaultCoats">
                             @for ($i = 1; $i <= 5; $i++)
                                 <option value="{{ $i }}">{{ $i }}</option>
@@ -1421,11 +1421,11 @@ new class extends Component {
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Category</flux:label>
+                        <flux:label>{{ __('Category') }}</flux:label>
                         <flux:select wire:model="rateCategoryId">
-                            <option value="">Select category...</option>
+                            <option value="">{{ __('Select category...') }}</option>
                             @foreach ($this->categories as $category)
-                                <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                <option value="{{ $category->id }}">{{ __($category->name) }}</option>
                             @endforeach
                         </flux:select>
                         @error('rateCategoryId') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
@@ -1433,19 +1433,18 @@ new class extends Component {
                 </div>
 
                 <flux:callout variant="info" icon="information-circle" class="text-xs">
-                    Labor rates come from Company Settings (scope-specific).
-                    Material costs come from Paint Products.
+                    {{ __('Labor rates come from Company Settings (scope-specific). Material costs come from Paint Products.') }}
                 </flux:callout>
 
                 <div class="flex justify-end gap-3 pt-4">
                     <flux:button type="button" wire:click="$set('showRateModal', false)" variant="ghost">
-                        Cancel
+                        {{ __('Cancel') }}
                     </flux:button>
                     <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
                         <span wire:loading.remove wire:target="saveRate">
-                            {{ $editingRateId ? 'Update' : 'Create' }}
+                            {{ $editingRateId ? __('Update') : __('Create') }}
                         </span>
-                        <span wire:loading wire:target="saveRate">Saving...</span>
+                        <span wire:loading wire:target="saveRate">{{ __('Saving...') }}</span>
                     </flux:button>
                 </div>
             </form>
@@ -1455,23 +1454,23 @@ new class extends Component {
     <!-- Delete Confirmation Modal -->
     <flux:modal wire:model="showDeleteModal" class="md:w-96">
         <div class="space-y-6">
-            <flux:heading size="lg">Confirm Delete</flux:heading>
+            <flux:heading size="lg">{{ __('Confirm Delete') }}</flux:heading>
 
             <flux:text>
                 @if ($deleteType === 'category')
-                    Are you sure you want to delete this category? All rates within this category will also be deleted.
+                    {{ __('Are you sure you want to delete this category? All rates within this category will also be deleted.') }}
                 @else
-                    Are you sure you want to delete this rate? This action cannot be undone.
+                    {{ __('Are you sure you want to delete this rate? This action cannot be undone.') }}
                 @endif
             </flux:text>
 
             <div class="flex justify-end gap-3">
                 <flux:button wire:click="$set('showDeleteModal', false)" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button wire:click="delete" variant="danger" wire:loading.attr="disabled">
-                    <span wire:loading.remove wire:target="delete">Delete</span>
-                    <span wire:loading wire:target="delete">Deleting...</span>
+                    <span wire:loading.remove wire:target="delete">{{ __('Delete') }}</span>
+                    <span wire:loading wire:target="delete">{{ __('Deleting...') }}</span>
                 </flux:button>
             </div>
         </div>
@@ -1480,7 +1479,7 @@ new class extends Component {
     <!-- Calculator Modal -->
     <flux:modal wire:model="showCalculatorModal" class="md:w-[32rem]">
         <div class="space-y-6">
-            <flux:heading size="lg">PBP Calculator</flux:heading>
+            <flux:heading size="lg">{{ __('PBP Calculator') }}</flux:heading>
 
             @if ($calculatorResult && $calculatorResult['rate'])
                 <div class="bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4">
@@ -1491,12 +1490,12 @@ new class extends Component {
 
             <div class="grid grid-cols-3 gap-4">
                 <flux:field>
-                    <flux:label>Quantity</flux:label>
+                    <flux:label>{{ __('Quantity') }}</flux:label>
                     <flux:input wire:model.live.debounce.300ms="calculatorSqft" type="number" step="1" min="1" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Coats</flux:label>
+                    <flux:label>{{ __('Coats') }}</flux:label>
                     <flux:select wire:model.live="calculatorCoats">
                         @for ($i = 1; $i <= 5; $i++)
                             <option value="{{ $i }}">{{ $i }}</option>
@@ -1505,10 +1504,10 @@ new class extends Component {
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Scope</flux:label>
+                    <flux:label>{{ __('Scope') }}</flux:label>
                     <flux:select wire:model.live="calculatorScopeType">
-                        <option value="interior">Interior</option>
-                        <option value="exterior">Exterior</option>
+                        <option value="interior">{{ __('Interior') }}</option>
+                        <option value="exterior">{{ __('Exterior') }}</option>
                     </flux:select>
                 </flux:field>
             </div>
@@ -1517,47 +1516,47 @@ new class extends Component {
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg divide-y divide-zinc-200 dark:divide-zinc-700">
                     {{-- Labor Section --}}
                     <div class="flex justify-between items-center px-4 py-2">
-                        <flux:text class="text-zinc-500 text-sm">Labor Hours</flux:text>
-                        <flux:text class="font-medium">{{ number_format($calculatorResult['labor_hours'], 2) }} hrs</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Labor Hours') }}</flux:text>
+                        <flux:text class="font-medium">{{ number_format($calculatorResult['labor_hours'], 2) }} {{ __('hrs') }}</flux:text>
                     </div>
                     <div class="flex justify-between items-center px-4 py-2">
-                        <flux:text class="text-zinc-500 text-sm">Effective Rate ({{ ucfirst($calculatorResult['scope_type']) }})</flux:text>
-                        <flux:text class="font-medium">${{ number_format($calculatorResult['effective_hourly_rate'], 2) }}/hr</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Effective Rate') }} ({{ ucfirst($calculatorResult['scope_type']) }})</flux:text>
+                        <flux:text class="font-medium">${{ number_format($calculatorResult['effective_hourly_rate'], 2) }}/{{ __('hr') }}</flux:text>
                     </div>
                     <div class="flex justify-between items-center px-4 py-2">
-                        <flux:text class="text-zinc-500 text-sm">Labor Cost</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Labor Cost') }}</flux:text>
                         <flux:text class="font-medium">${{ number_format($calculatorResult['labor_cost'], 2) }}</flux:text>
                     </div>
 
                     {{-- Cleanup & Sundries --}}
                     <div class="flex justify-between items-center px-4 py-2 bg-zinc-50/50 dark:bg-zinc-800/50">
-                        <flux:text class="text-zinc-500 text-sm">Cleanup Hours</flux:text>
-                        <flux:text class="font-medium">{{ number_format($calculatorResult['cleanup_hours'], 2) }} hrs</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Cleanup Hours') }}</flux:text>
+                        <flux:text class="font-medium">{{ number_format($calculatorResult['cleanup_hours'], 2) }} {{ __('hrs') }}</flux:text>
                     </div>
                     <div class="flex justify-between items-center px-4 py-2 bg-zinc-50/50 dark:bg-zinc-800/50">
-                        <flux:text class="text-zinc-500 text-sm">Cleanup Cost</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Cleanup Cost') }}</flux:text>
                         <flux:text class="font-medium">${{ number_format($calculatorResult['cleanup_cost'], 2) }}</flux:text>
                     </div>
                     <div class="flex justify-between items-center px-4 py-2 bg-zinc-50/50 dark:bg-zinc-800/50">
-                        <flux:text class="text-zinc-500 text-sm">Sundries Cost</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Sundries Cost') }}</flux:text>
                         <flux:text class="font-medium">${{ number_format($calculatorResult['sundries_cost'], 2) }}</flux:text>
                     </div>
 
                     {{-- Coat Multiplier --}}
                     <div class="flex justify-between items-center px-4 py-2">
-                        <flux:text class="text-zinc-500 text-sm">Coat Multiplier</flux:text>
+                        <flux:text class="text-zinc-500 text-sm">{{ __('Coat Multiplier') }}</flux:text>
                         <flux:text class="font-medium">{{ $calculatorResult['coat_multiplier'] }}x</flux:text>
                     </div>
 
                     {{-- Totals --}}
                     <div class="flex justify-between items-center px-4 py-2">
-                        <flux:text class="text-zinc-600 dark:text-zinc-400 text-sm font-medium">Base Total</flux:text>
+                        <flux:text class="text-zinc-600 dark:text-zinc-400 text-sm font-medium">{{ __('Base Total') }}</flux:text>
                         <flux:text class="font-medium">${{ number_format($calculatorResult['base_total'], 2) }}</flux:text>
                     </div>
                     <div class="flex justify-between items-center px-4 py-3 bg-zinc-100 dark:bg-zinc-800">
                         <div>
-                            <flux:text class="font-semibold">With Margins</flux:text>
-                            <flux:text class="text-xs text-zinc-500">Profit + OH + {{ ucfirst($calculatorResult['scope_type']) }} Markup</flux:text>
+                            <flux:text class="font-semibold">{{ __('With Margins') }}</flux:text>
+                            <flux:text class="text-xs text-zinc-500">{{ __('Profit + OH + :scope Markup', ['scope' => ucfirst($calculatorResult['scope_type'])]) }}</flux:text>
                         </div>
                         <flux:text class="font-bold text-lg text-emerald-600 dark:text-emerald-400">${{ number_format($calculatorResult['with_margins'], 2) }}</flux:text>
                     </div>
@@ -1566,7 +1565,7 @@ new class extends Component {
 
             <div class="flex justify-end">
                 <flux:button wire:click="closeCalculator" variant="ghost">
-                    Close
+                    {{ __('Close') }}
                 </flux:button>
             </div>
         </div>

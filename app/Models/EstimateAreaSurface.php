@@ -33,8 +33,11 @@ class EstimateAreaSurface extends Model
         'material_cost',
         'total',
         'is_included',
+        'is_custom',
         'sort_order',
         'paint_product_id',
+        'sale_price',
+        'crew_price',
     ];
 
     protected function casts(): array
@@ -51,8 +54,11 @@ class EstimateAreaSurface extends Model
             'paint_gallons' => 'decimal:2',
             'paint_cost' => 'decimal:2',
             'is_included' => 'boolean',
+            'is_custom' => 'boolean',
             'coats' => 'integer',
             'sort_order' => 'integer',
+            'sale_price' => 'decimal:2',
+            'crew_price' => 'decimal:2',
         ];
     }
 
@@ -62,6 +68,23 @@ class EstimateAreaSurface extends Model
     protected static function booted(): void
     {
         static::saving(function (EstimateAreaSurface $surface) {
+            // Custom surfaces: manual labor hours and material costs, skip production rate calc
+            if ($surface->is_custom) {
+                $scopeType = $surface->area?->scope_type ?? 'interior';
+                $settings = CompanySetting::getInstance();
+
+                // Use custom rate if set, otherwise company effective rate
+                $hourlyRate = ($surface->hourly_labor_rate && $surface->hourly_labor_rate > 0)
+                    ? (float) $surface->hourly_labor_rate
+                    : $settings->getEffectiveHourlyRateForScope($scopeType);
+
+                $surface->hourly_labor_rate = $hourlyRate;
+                $surface->labor_cost = (float) ($surface->labor_hours ?? 0) * $hourlyRate;
+                $surface->total = (float) $surface->labor_cost + (float) ($surface->material_cost ?? 0);
+
+                return;
+            }
+
             // Skip auto-calculation if values are already set (e.g., from TemplateBuilder)
             // This prevents overwriting paint product calculations
             // But always recalculate if paint_product_id just changed (material cost needs updating)
@@ -356,9 +379,9 @@ class EstimateAreaSurface extends Model
     public function getApplicationMethodLabelAttribute(): string
     {
         return match ($this->application_method) {
-            'spray' => 'Spray',
-            'brush_roll' => 'Brush/Roll',
-            default => ucfirst($this->application_method ?? 'brush_roll'),
+            'spray' => __('Spray'),
+            'brush_roll' => __('Brush/Roll'),
+            default => __(ucfirst($this->application_method ?? 'brush_roll')),
         };
     }
 
@@ -371,7 +394,7 @@ class EstimateAreaSurface extends Model
             return null;
         }
 
-        return ucwords(str_replace('_', ' ', $this->paint_brand));
+        return __(ucwords(str_replace('_', ' ', $this->paint_brand)));
     }
 
     /**
@@ -383,7 +406,58 @@ class EstimateAreaSurface extends Model
             return null;
         }
 
-        return ucwords(str_replace('_', ' ', $this->paint_type));
+        return __(ucwords(str_replace('_', ' ', $this->paint_type)));
+    }
+
+    // =========================================================================
+    // CUSTOM PRICING METHODS
+    // =========================================================================
+
+    /**
+     * Check if this surface has explicit custom pricing overrides.
+     * True when is_custom AND has sale_price or crew_price set.
+     */
+    public function hasCustomPricing(): bool
+    {
+        return $this->is_custom && ($this->sale_price !== null || $this->crew_price !== null);
+    }
+
+    /**
+     * Get the effective sale price for this surface.
+     * Returns explicit sale_price if set, otherwise the proportional customer price via margin.
+     */
+    public function getEffectiveSalePrice(): float
+    {
+        if ($this->is_custom && $this->sale_price !== null) {
+            return (float) $this->sale_price;
+        }
+
+        return $this->getCustomerPrice();
+    }
+
+    /**
+     * Get the effective crew hourly rate for this surface.
+     * Returns explicit crew_price ($/hr) if set, otherwise base wage from CompanySetting.
+     */
+    public function getEffectiveCrewRate(): float
+    {
+        if ($this->is_custom && $this->crew_price !== null) {
+            return (float) $this->crew_price;
+        }
+
+        $scopeType = $this->area?->scope_type ?? 'interior';
+        $settings = CompanySetting::getInstance();
+
+        return $settings->getHourlyWageForScope($scopeType);
+    }
+
+    /**
+     * Get crew payment for this surface (what crew earns).
+     * crew_price (hourly rate) * labor_hours.
+     */
+    public function getCrewPayment(): float
+    {
+        return $this->getEffectiveCrewRate() * (float) $this->labor_hours;
     }
 
     // =========================================================================

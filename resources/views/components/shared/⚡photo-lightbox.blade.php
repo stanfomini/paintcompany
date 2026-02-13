@@ -40,7 +40,8 @@ new class extends Component
             return [];
         }
 
-        $channel = match (auth()->user()?->type) {
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
+        $channel = match ($user?->type) {
             'crew' => "echo-private:crew.job.{$jobId}",
             'customer' => "echo-private:customer.job.{$jobId}",
             default => "echo-private:job.{$jobId}",
@@ -53,7 +54,8 @@ new class extends Component
 
     public function onPhotoUpdated(array $event): void
     {
-        if (($event['actor_id'] ?? null) == auth()->id()) {
+        $userId = auth()->id() ?? auth('customer')->id() ?? auth('agent')->id() ?? auth('crew')->id();
+        if (($event['actor_id'] ?? null) == $userId) {
             return;
         }
 
@@ -67,7 +69,7 @@ new class extends Component
 
     private function markCurrentPhotoViewed(): void
     {
-        $user = auth()->user();
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
 
         if ($user) {
             PhotoView::markViewed($this->photo, $user);
@@ -95,14 +97,14 @@ new class extends Component
 
         // Show "All" if there are any annotations (client-side composite rendering)
         if ($annotations->isNotEmpty()) {
-            $layers['all'] = 'All';
+            $layers['all'] = __('All');
         }
 
         foreach ($annotations as $annotation) {
             $layers[$annotation->author_type] = $annotation->author_type_label;
         }
 
-        $layers['original'] = 'Original';
+        $layers['original'] = __('Original');
 
         return $layers;
     }
@@ -227,7 +229,7 @@ new class extends Component
             <button
                 wire:click="close"
                 class="p-2 hover:bg-white/10 rounded-lg transition-colors shrink-0"
-                title="Close (Esc)"
+                title="{{ __('Close (Esc)') }}"
             >
                 <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -271,7 +273,7 @@ new class extends Component
                         <button
                             wire:click="setAnnotationFilter('{{ $key }}')"
                             class="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors {{ $annotationFilter === $key ? 'bg-white/20 text-white' : 'text-zinc-400 hover:text-white hover:bg-white/10' }}"
-                            title="Show {{ $label }}"
+                            title="{{ __('Show :label', ['label' => $label]) }}"
                         >
                             @if ($layerColor)
                                 <span class="w-2 h-2 rounded-full shrink-0" style="background: {{ $layerColor }}"></span>
@@ -330,7 +332,7 @@ new class extends Component
                 <button
                     wire:click="$dispatch('open-annotator', { photoId: {{ $photo->id }} })"
                     class="p-2 text-zinc-300 hover:bg-white/10 rounded-lg transition-colors"
-                    title="Annotate"
+                    title="{{ __('Annotate') }}"
                 >
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" />
@@ -343,7 +345,7 @@ new class extends Component
                 <button
                     wire:click="toggleComments"
                     class="p-2 rounded-lg transition-colors relative {{ $showComments ? 'bg-blue-600 text-white' : 'text-zinc-300 hover:bg-white/10' }}"
-                    title="Comments"
+                    title="{{ __('Comments') }}"
                 >
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
@@ -359,7 +361,7 @@ new class extends Component
                 href="{{ $photo->url }}"
                 download="{{ $photo->original_filename ?? $photo->filename }}"
                 class="p-2 text-zinc-300 hover:bg-white/10 rounded-lg transition-colors"
-                title="Download"
+                title="{{ __('Download') }}"
             >
                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
@@ -370,9 +372,9 @@ new class extends Component
             @if ($canDelete)
                 <button
                     wire:click="deletePhoto"
-                    wire:confirm="Are you sure you want to delete this photo?"
+                    wire:confirm="{{ __('Are you sure you want to delete this photo?') }}"
                     class="p-2 text-red-400 hover:bg-red-600/20 rounded-lg transition-colors"
-                    title="Delete"
+                    title="{{ __('Delete') }}"
                 >
                     <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
@@ -389,7 +391,7 @@ new class extends Component
             <button
                 wire:click="previousPhoto"
                 class="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 p-2 sm:p-3 bg-black/50 hover:bg-black/70 rounded-full transition-colors z-10"
-                title="Previous"
+                title="{{ __('Previous') }}"
             >
                 <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -435,7 +437,7 @@ new class extends Component
             <button
                 wire:click="nextPhoto"
                 class="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 p-2 sm:p-3 bg-black/50 hover:bg-black/70 rounded-full transition-colors z-10"
-                title="Next"
+                title="{{ __('Next') }}"
             >
                 <svg class="w-5 h-5 sm:w-6 sm:h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />

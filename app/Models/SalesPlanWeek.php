@@ -108,7 +108,7 @@ class SalesPlanWeek extends Model
         $end = $this->week_end;
 
         return sprintf(
-            'Week %d - %s - %s',
+            __('Week %d - %s - %s'),
             $this->week_number,
             $start->format('M j'),
             $end->format('M j')

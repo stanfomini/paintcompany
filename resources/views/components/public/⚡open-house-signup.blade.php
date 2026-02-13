@@ -60,10 +60,10 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'zip' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:5000'],
         ], [
-            'firstName.required' => 'Please enter your first name.',
-            'lastName.required' => 'Please enter your last name.',
-            'email.required' => 'Please enter your email address.',
-            'email.email' => 'Please enter a valid email address.',
+            'firstName.required' => __('Please enter your first name.'),
+            'lastName.required' => __('Please enter your last name.'),
+            'email.required' => __('Please enter your email address.'),
+            'email.email' => __('Please enter a valid email address.'),
         ]);
 
         $customer = Customer::create([
@@ -95,7 +95,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
         <div class="text-center mb-8">
             <flux:heading size="2xl" class="mb-2">{{ config('app.name', 'Apex Negotiations') }}</flux:heading>
             <flux:text class="text-zinc-600 dark:text-zinc-400">
-                Open House Sign-Up
+                {{ __('Open House Sign-Up') }}
             </flux:text>
         </div>
 
@@ -103,18 +103,18 @@ new #[Layout('components.layouts.guest')] class extends Component {
             @if ($submitted)
                 <div class="text-center py-8">
                     <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-green-500 mb-4" />
-                    <flux:heading size="xl" class="mb-3">Thank You!</flux:heading>
+                    <flux:heading size="xl" class="mb-3">{{ __('Thank You!') }}</flux:heading>
                     <flux:text class="text-zinc-600 dark:text-zinc-400 mb-4">
-                        We appreciate you visiting our open house at:
+                        {{ __('We appreciate you visiting our open house at:') }}
                     </flux:text>
                     <flux:text class="font-medium text-zinc-800 dark:text-zinc-200">
                         {{ $property->full_address }}
                     </flux:text>
                     <flux:text class="text-zinc-500 dark:text-zinc-400 mt-6 text-sm">
                         @if ($property->agent)
-                            {{ $property->agent->name }} will be in touch soon.
+                            {{ __(':name will be in touch soon.', ['name' => $property->agent->name]) }}
                         @else
-                            Our team will be in touch soon.
+                            {{ __('Our team will be in touch soon.') }}
                         @endif
                     </flux:text>
                 </div>
@@ -123,12 +123,12 @@ new #[Layout('components.layouts.guest')] class extends Component {
                     <flux:heading size="lg" class="mb-2">{{ $property->full_address }}</flux:heading>
                     @if ($property->agent)
                         <flux:text class="text-zinc-600 dark:text-zinc-400">
-                            Agent: {{ $property->agent->name }}
+                            {{ __('Agent') }}: {{ $property->agent->name }}
                         </flux:text>
                     @endif
                     @if ($property->listing_price)
                         <flux:text class="text-zinc-600 dark:text-zinc-400 mt-1">
-                            Listed at: ${{ number_format($property->listing_price, 0) }}
+                            {{ __('Listed at') }}: ${{ number_format($property->listing_price, 0) }}
                         </flux:text>
                     @endif
                 </div>
@@ -147,8 +147,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                             <flux:input
                                 wire:model="firstName"
                                 type="text"
-                                label="First Name"
-                                placeholder="Your first name"
+                                label="{{ __('First Name') }}"
+                                placeholder="{{ __('Your first name') }}"
                                 required
                                 autofocus
                             />
@@ -161,8 +161,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                             <flux:input
                                 wire:model="lastName"
                                 type="text"
-                                label="Last Name"
-                                placeholder="Your last name"
+                                label="{{ __('Last Name') }}"
+                                placeholder="{{ __('Your last name') }}"
                                 required
                             />
                             @error('lastName')
@@ -175,7 +175,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
                         <flux:input
                             wire:model="email"
                             type="email"
-                            label="Email"
+                            label="{{ __('Email') }}"
                             placeholder="your.email@example.com"
                             required
                         />
@@ -188,7 +188,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
                         <flux:input
                             wire:model="phone"
                             type="tel"
-                            label="Phone (optional)"
+                            label="{{ __('Phone (optional)') }}"
                             placeholder="(555) 123-4567"
                         />
                         @error('phone')
@@ -199,15 +199,15 @@ new #[Layout('components.layouts.guest')] class extends Component {
                     <flux:separator class="my-4" />
 
                     <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-2">
-                        Your current address (optional)
+                        {{ __('Your current address (optional)') }}
                     </flux:text>
 
                     <flux:field>
                         <flux:input
                             wire:model="address"
                             type="text"
-                            label="Address"
-                            placeholder="123 Main Street"
+                            :label="__('Address')"
+                            :placeholder="__('123 Main Street')"
                         />
                         @error('address')
                             <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
@@ -219,8 +219,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                             <flux:input
                                 wire:model="city"
                                 type="text"
-                                label="City"
-                                placeholder="City"
+                                :label="__('City')"
+                                :placeholder="__('City')"
                             />
                             @error('city')
                                 <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
@@ -231,8 +231,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                             <flux:input
                                 wire:model="state"
                                 type="text"
-                                label="State"
-                                placeholder="State"
+                                :label="__('State')"
+                                :placeholder="__('State')"
                             />
                             @error('state')
                                 <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
@@ -243,8 +243,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                             <flux:input
                                 wire:model="zip"
                                 type="text"
-                                label="Zip"
-                                placeholder="Zip"
+                                :label="__('Zip')"
+                                :placeholder="__('Zip')"
                             />
                             @error('zip')
                                 <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
@@ -255,8 +255,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                     <flux:field>
                         <flux:textarea
                             wire:model="notes"
-                            label="Notes / Comments (optional)"
-                            placeholder="Any questions or comments about the property?"
+                            :label="__('Notes / Comments (optional)')"
+                            :placeholder="__('Any questions or comments about the property?')"
                             rows="3"
                         />
                         @error('notes')
@@ -265,15 +265,15 @@ new #[Layout('components.layouts.guest')] class extends Component {
                     </flux:field>
 
                     <flux:button type="submit" variant="primary" class="w-full justify-center mt-6">
-                        <span wire:loading.remove wire:target="submit">Sign Up</span>
-                        <span wire:loading wire:target="submit">Submitting...</span>
+                        <span wire:loading.remove wire:target="submit">{{ __('Sign Up') }}</span>
+                        <span wire:loading wire:target="submit">{{ __('Submitting...') }}</span>
                     </flux:button>
                 </form>
             @endif
         </flux:card>
 
         <flux:text size="sm" class="text-center mt-6 text-zinc-500">
-            &copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
+            &copy; {{ date('Y') }} {{ config('app.name') }}. {{ __('All rights reserved.') }}
         </flux:text>
     </div>
 </div>

@@ -112,9 +112,9 @@ class PackageTemplateItem extends Model
     public function getPricingTypeLabelAttribute(): string
     {
         return match ($this->pricing_type) {
-            self::PRICING_FIXED => 'Fixed Price',
-            self::PRICING_PERCENT => 'Percentage',
-            default => $this->pricing_type,
+            self::PRICING_FIXED => __('Fixed Price'),
+            self::PRICING_PERCENT => __('Percentage'),
+            default => __($this->pricing_type),
         };
     }
 

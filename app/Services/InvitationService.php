@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\CrewProfile;
 use App\Models\Customer;
+use App\Models\Deal;
+use App\Models\DealCollaborator;
 use App\Models\Invitation;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
@@ -20,7 +22,7 @@ class InvitationService
     private const INVITATION_PERMISSIONS = [
         'internal' => ['internal', 'agent', 'customer', 'crew'],
         'agent' => ['customer'],
-        'customer' => [],
+        'customer' => ['customer'],
         'crew' => [],
     ];
 
@@ -55,7 +57,7 @@ class InvitationService
      *
      * @throws \InvalidArgumentException
      */
-    public function sendInvitation(User $inviter, string $email, string $invitedUserType, ?int $serviceCategoryId = null): Invitation
+    public function sendInvitation(User $inviter, string $email, string $invitedUserType, ?int $serviceCategoryId = null, ?int $dealId = null): Invitation
     {
         if (! $this->canInvite($inviter, $invitedUserType)) {
             throw new \InvalidArgumentException(
@@ -77,14 +79,16 @@ class InvitationService
             return $existingInvitation;
         }
 
-        // Check if user already exists with this email and type
-        $existingUser = User::where('email', $email)
-            ->where('type', $invitedUserType)
-            ->first();
+        // Check if user already exists with this email (unique constraint on email)
+        $existingUser = User::where('email', $email)->first();
 
         if ($existingUser) {
+            $existingType = $existingUser->type;
+
             throw new \InvalidArgumentException(
-                "A user with this email already exists as a {$invitedUserType}."
+                $existingType === $invitedUserType
+                    ? "A user with this email already exists as a {$invitedUserType}."
+                    : "A user with this email already exists as a {$existingType}. Each email can only have one account."
             );
         }
 
@@ -98,6 +102,11 @@ class InvitationService
         // Attach service category for crew invitations
         if ($invitedUserType === 'crew' && $serviceCategoryId) {
             $invitationData['service_category_id'] = $serviceCategoryId;
+        }
+
+        // Attach deal for agent-sourced customer invitations
+        if ($dealId) {
+            $invitationData['deal_id'] = $dealId;
         }
 
         $invitation = Invitation::create($invitationData);
@@ -159,6 +168,15 @@ class InvitationService
             throw new \InvalidArgumentException('This invitation has already been accepted.');
         }
 
+        // Check if user already exists with this email
+        $existingUser = User::where('email', $invitation->email)->first();
+
+        if ($existingUser) {
+            throw new \InvalidArgumentException(
+                'A user with this email already exists. Please log in with your existing account instead.'
+            );
+        }
+
         // Create the user
         $user = User::create([
             'name' => $userData['name'],
@@ -166,11 +184,30 @@ class InvitationService
             'password' => bcrypt($userData['password']),
             'type' => $invitation->invited_user_type,
             'is_active' => true,
+            'needs_onboarding' => in_array($invitation->invited_user_type, ['customer', 'agent'], true),
         ]);
 
-        // Link existing Customer record to this user (for customer invitations)
+        // Link or create Customer record for this user (for customer invitations)
         if ($invitation->invited_user_type === 'customer') {
-            $this->linkCustomerToUser($user);
+            $customer = $this->linkCustomerToUser($user, $invitation);
+
+            // Handle collaborator invitation (deal_id set)
+            if ($invitation->deal_id && $customer) {
+                $user->update(['needs_onboarding' => false]);
+
+                DealCollaborator::create([
+                    'deal_id' => $invitation->deal_id,
+                    'customer_id' => $customer->id,
+                    'invited_by' => $invitation->inviter_id,
+                    'expires_at' => now()->addDays(30),
+                ]);
+
+                $deal = Deal::find($invitation->deal_id);
+                if ($deal) {
+                    $thread = $deal->getOrCreateChatThread();
+                    $thread->addParticipant($user);
+                }
+            }
         }
 
         // Create crew profile with service category (for crew invitations)
@@ -185,20 +222,36 @@ class InvitationService
     }
 
     /**
-     * Link an existing Customer record to the newly created User and add
-     * the user as a participant in any existing deal chat threads.
+     * Link an existing Customer record to the newly created User, or create
+     * one if none exists. Also adds the user as a participant in any existing
+     * deal chat threads.
      */
-    protected function linkCustomerToUser(User $user): void
+    protected function linkCustomerToUser(User $user, Invitation $invitation): ?Customer
     {
         $customer = Customer::where('email', $user->email)
             ->whereNull('user_id')
             ->first();
 
         if (! $customer) {
-            return;
+            // No pre-existing Customer record — create one from invitation data
+            $nameParts = explode(' ', $user->name, 2);
+
+            return Customer::create([
+                'user_id' => $user->id,
+                'created_by' => $invitation->inviter_id,
+                'first_name' => $nameParts[0],
+                'last_name' => $nameParts[1] ?? '',
+                'email' => $user->email,
+                'status' => 'active',
+                'source' => 'invite_link',
+            ]);
         }
 
-        $customer->update(['user_id' => $user->id]);
+        if (empty($customer->source)) {
+            $customer->update(['user_id' => $user->id, 'source' => 'invite_link']);
+        } else {
+            $customer->update(['user_id' => $user->id]);
+        }
 
         // Add user as participant in any existing deal chat threads
         foreach ($customer->deals()->with('chatThread')->get() as $deal) {
@@ -206,6 +259,8 @@ class InvitationService
                 $deal->chatThread->addParticipant($user);
             }
         }
+
+        return $customer;
     }
 
     /**
@@ -213,10 +268,10 @@ class InvitationService
      */
     protected function createCrewProfile(User $user, Invitation $invitation): void
     {
-        CrewProfile::create([
-            'user_id' => $user->id,
-            'service_category_id' => $invitation->service_category_id,
-        ]);
+        CrewProfile::updateOrCreate(
+            ['user_id' => $user->id],
+            ['service_category_id' => $invitation->service_category_id],
+        );
     }
 
     /**

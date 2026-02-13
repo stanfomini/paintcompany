@@ -18,20 +18,26 @@
                 @can('settings.allocations')
                     <flux:navlist.item :href="route('allocations.edit')" wire:navigate>{{ __('Allocations') }}</flux:navlist.item>
                 @endcan
-                @can('manage roles')
+                @can('team.manage_roles')
                     <flux:navlist.item :href="route('roles.edit')" wire:navigate>{{ __('Roles & Access') }}</flux:navlist.item>
                 @endcan
                 @can('settings.payment_integrations')
                     <flux:navlist.item :href="route('payment-integrations.edit')" wire:navigate>{{ __('Payment Integrations') }}</flux:navlist.item>
                 @endcan
-                @can('settings.company')
+                @can('settings.service_categories')
                     <flux:navlist.item :href="route('service-categories.edit')" wire:navigate>{{ __('Service Categories') }}</flux:navlist.item>
                 @endcan
-                @can('settings.company')
+                @can('settings.budget_mappings')
                     <flux:navlist.item :href="route('budget-mappings.edit')" wire:navigate>{{ __('Budget Mappings') }}</flux:navlist.item>
                 @endcan
-                @can('settings.company')
+                @can('settings.referral')
                     <flux:navlist.item :href="route('referral.edit')" wire:navigate>{{ __('Referral') }}</flux:navlist.item>
+                @endcan
+                @can('settings.contracts')
+                    <flux:navlist.item :href="route('contracts.edit')" wire:navigate>{{ __('Contracts') }}</flux:navlist.item>
+                @endcan
+                @can('settings.lead_sources')
+                    <flux:navlist.item :href="route('lead-sources.edit')" wire:navigate>{{ __('Lead Sources') }}</flux:navlist.item>
                 @endcan
             @endif
         </flux:navlist>

@@ -82,7 +82,7 @@ new class extends Component {
     /**
      * Process recorded audio and send as a message.
      */
-    public function processRecordedAudio(string $audioBase64): void
+    public function processRecordedAudio(string $audioBase64, string $mimeType = 'audio/webm'): void
     {
         $this->isProcessingAudio = true;
 
@@ -97,7 +97,7 @@ new class extends Component {
             }
 
             $audioService = app(AudioMessageService::class);
-            $audioData = $audioService->processBase64Audio($audioBase64, 'audio/webm');
+            $audioData = $audioService->processBase64Audio($audioBase64, $mimeType);
 
             $this->sendAudioMessage($audioData);
         } catch (\Exception $e) {
@@ -555,10 +555,11 @@ new class extends Component {
 
             try {
                 const base64 = await this.blobToBase64(this.previewBlob);
-                console.log('[AudioRecorder] Sending audio, base64 length:', base64.length);
+                const mimeType = this.currentMimeType || 'audio/webm';
+                console.log('[AudioRecorder] Sending audio, base64 length:', base64.length, 'mimeType:', mimeType);
 
                 this.discardPreview();
-                $wire.processRecordedAudio(base64);
+                $wire.processRecordedAudio(base64, mimeType);
             } catch (err) {
                 console.error('[AudioRecorder] Error sending recording:', err);
                 this.errorMessage = 'Failed to send recording: ' + err.message;
@@ -664,7 +665,7 @@ new class extends Component {
                         <img
                             src="{{ $attachment->temporaryUrl() }}"
                             class="h-16 w-16 object-cover rounded"
-                            alt="Attachment preview"
+                            alt="{{ __('Attachment preview') }}"
                         />
                     @else
                         <div class="flex items-center gap-2 px-2">
@@ -700,7 +701,7 @@ new class extends Component {
             x-on:click="retryPermission()"
             class="text-red-600 hover:text-red-800 text-sm font-medium whitespace-nowrap"
         >
-            Try again
+            {{ __('Try again') }}
         </button>
         <button
             type="button"
@@ -722,7 +723,7 @@ new class extends Component {
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <flux:text class="text-amber-700 dark:text-amber-300">
-            Requesting microphone access... Please allow in your browser.
+            {{ __('Requesting microphone access... Please allow in your browser.') }}
         </flux:text>
     </div>
 
@@ -735,7 +736,7 @@ new class extends Component {
         <div class="flex items-center gap-3 mb-3">
             <flux:icon name="microphone" class="h-5 w-5 text-zinc-500" />
             <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Voice message preview
+                {{ __('Voice message preview') }}
             </span>
             <span class="text-xs text-zinc-500 dark:text-zinc-400">
                 (<span x-text="formatTime(previewDuration)"></span>)
@@ -758,7 +759,7 @@ new class extends Component {
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             <div class="flex-1">
-                <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Audio appears to be silent</p>
+                <p class="text-sm font-medium text-amber-800 dark:text-amber-200">{{ __('Audio appears to be silent') }}</p>
                 <p class="text-xs text-amber-700 dark:text-amber-300 mt-1">
                     The recording may not have captured audio from your microphone.
                     <template x-if="audioDevices.length > 1">
@@ -773,7 +774,7 @@ new class extends Component {
 
         <div class="flex items-center gap-2 mb-3 text-xs text-amber-600 dark:text-amber-400">
             <flux:icon name="exclamation-triangle" class="h-4 w-4 shrink-0" />
-            <span>Audio files are automatically deleted after 30 days. Only the transcription will be kept.</span>
+            <span>{{ __('Audio files are automatically deleted after 30 days. Only the transcription will be kept.') }}</span>
         </div>
         <div class="flex gap-2 justify-end">
             <flux:button
@@ -782,7 +783,7 @@ new class extends Component {
                 x-on:click="discardRecording()"
             >
                 <flux:icon name="trash" class="h-4 w-4 mr-1" />
-                Discard
+                {{ __('Discard') }}
             </flux:button>
             <flux:button
                 type="button"
@@ -790,7 +791,7 @@ new class extends Component {
                 x-on:click="sendRecording()"
             >
                 <flux:icon name="paper-airplane" class="h-4 w-4 mr-1" />
-                Send
+                {{ __('Send') }}
             </flux:button>
         </div>
     </div>
@@ -806,7 +807,7 @@ new class extends Component {
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
         <flux:text class="text-blue-700 dark:text-blue-300">
-            Processing audio message...
+            {{ __('Processing audio message...') }}
         </flux:text>
     </div>
 
@@ -847,7 +848,7 @@ new class extends Component {
                             <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
                         </span>
                         <span class="text-red-700 dark:text-red-300 font-medium">
-                            Recording <span x-text="formatTime(recordingTime)"></span>
+                            {{ __('Recording') }} <span x-text="formatTime(recordingTime)"></span>
                         </span>
 
                         {{-- Audio level meter --}}
@@ -871,7 +872,7 @@ new class extends Component {
                             x-on:click.stop="cancelRecording()"
                             class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-200 text-sm font-medium shrink-0"
                         >
-                            Cancel
+                            {{ __('Cancel') }}
                         </button>
                     </div>
 
@@ -884,7 +885,7 @@ new class extends Component {
                         <svg class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
-                        <span>No audio detected. Try selecting a different microphone below.</span>
+                        <span>{{ __('No audio detected. Try selecting a different microphone below.') }}</span>
                     </div>
                 </div>
 
@@ -913,7 +914,7 @@ new class extends Component {
                             type="button"
                             x-on:click="showDeviceSelector = !showDeviceSelector"
                             class="p-1.5 rounded-full text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors"
-                            title="Select microphone"
+                            title="{{ __('Select microphone') }}"
                         >
                             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -929,7 +930,7 @@ new class extends Component {
                             class="absolute bottom-full right-0 mb-2 w-64 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-lg z-50"
                         >
                             <div class="p-2 border-b border-zinc-200 dark:border-zinc-700">
-                                <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">Select Microphone</span>
+                                <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400">{{ __('Select Microphone') }}</span>
                             </div>
                             <div class="max-h-48 overflow-y-auto p-1">
                                 <template x-for="device in audioDevices" :key="device.deviceId">
@@ -1001,7 +1002,7 @@ new class extends Component {
 
         {{-- File upload progress --}}
         <div wire:loading wire:target="attachments" class="text-sm text-zinc-500">
-            Uploading files...
+            {{ __('Uploading files...') }}
         </div>
 
         {{-- Attachment errors --}}

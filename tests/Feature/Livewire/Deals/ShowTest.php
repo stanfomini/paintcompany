@@ -32,11 +32,11 @@ describe('Show component', function () {
 
     it('displays deal stage with badge', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
-        $deal = Deal::factory()->create(['stage' => 'in_progress']);
+        $deal = Deal::factory()->create(['stage' => 'quoted']);
 
         Livewire::actingAs($user)
             ->test('deals.show', ['deal' => $deal])
-            ->assertSee('In Progress');
+            ->assertSee('Quoted');
     });
 
     it('displays customer with link', function () {
@@ -79,7 +79,7 @@ describe('Show component', function () {
 
     it('displays financial details', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
-        $deal = Deal::factory()->completed()->create([
+        $deal = Deal::factory()->signed()->create([
             'estimated_value' => 20000.00,
             'actual_value' => 18500.00,
         ]);
@@ -183,12 +183,13 @@ describe('Show component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
 
         $testCases = [
-            'lead' => 'zinc',
-            'quoted' => 'blue',
-            'scheduled' => 'purple',
-            'in_progress' => 'yellow',
-            'completed' => 'green',
-            'paid' => 'emerald',
+            'lead' => 'blue',
+            'not_contacted' => 'zinc',
+            'follow_up' => 'amber',
+            'quote_scheduled' => 'purple',
+            'quoted' => 'yellow',
+            'signed' => 'green',
+            'lost' => 'orange',
             'cancelled' => 'red',
         ];
 

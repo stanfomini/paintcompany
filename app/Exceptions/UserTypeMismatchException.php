@@ -3,11 +3,12 @@
 namespace App\Exceptions;
 
 use Exception;
+use Illuminate\Contracts\Debug\ShouldntReport;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
-class UserTypeMismatchException extends Exception
+class UserTypeMismatchException extends Exception implements ShouldntReport
 {
     public function __construct(
         public string $expectedType,
@@ -51,26 +52,29 @@ class UserTypeMismatchException extends Exception
     public function getUserMessage(): string
     {
         if ($this->actualType === null) {
-            return 'Please log in to access this area.';
+            return __('Please log in to access this area.');
         }
 
         $expectedAreaName = match ($this->expectedType) {
-            'agent' => 'agent portal',
-            'customer' => 'customer portal',
-            'crew' => 'crew portal',
-            'internal' => 'admin area',
-            default => 'this area',
+            'agent' => __('agent portal'),
+            'customer' => __('customer portal'),
+            'crew' => __('crew portal'),
+            'internal' => __('admin area'),
+            default => __('this area'),
         };
 
         $actualTypeName = match ($this->actualType) {
-            'internal' => 'internal team member',
-            'agent' => 'agent',
-            'customer' => 'customer',
-            'crew' => 'crew member',
+            'internal' => __('internal team member'),
+            'agent' => __('agent'),
+            'customer' => __('customer'),
+            'crew' => __('crew member'),
             default => $this->actualType,
         };
 
-        return "The {$expectedAreaName} is not accessible with your account. You are logged in as a {$actualTypeName}.";
+        return __('The :area is not accessible with your account. You are logged in as a :type.', [
+            'area' => $expectedAreaName,
+            'type' => $actualTypeName,
+        ]);
     }
 
     /**
@@ -93,7 +97,7 @@ class UserTypeMismatchException extends Exception
             // Check if user is on the wrong guard (e.g. customer authenticated on web guard).
             // If so, log them out to prevent redirect loops and send to correct login.
             if ($this->intendedGuard && $this->intendedGuard !== $correctGuard) {
-                Auth::guard($this->intendedGuard)->logout();
+                Auth::guard($this->intendedGuard)->logoutCurrentDevice();
                 session()->flash('warning', $this->getUserMessage());
 
                 $loginRoute = match ($this->actualType) {

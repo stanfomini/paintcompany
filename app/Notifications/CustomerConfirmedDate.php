@@ -26,11 +26,13 @@ class CustomerConfirmedDate extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        $customerName = $this->job->getCustomer()?->first_name.' '.$this->job->getCustomer()?->last_name;
+
         return (new MailMessage)
-            ->subject("Date Confirmed: {$this->job->job_number}")
-            ->greeting("Date Confirmed: {$this->job->title}")
-            ->line("{$this->job->getCustomer()?->first_name} {$this->job->getCustomer()?->last_name} has confirmed the scheduled date for job {$this->job->job_number}.")
-            ->action('View Job', url('/jobs/'.$this->job->id));
+            ->subject(__('Date Confirmed: :number', ['number' => $this->job->job_number]))
+            ->greeting(__('Date Confirmed: :title', ['title' => $this->job->title]))
+            ->line(__(':customerName has confirmed the scheduled date for job :number.', ['customerName' => $customerName, 'number' => $this->job->job_number]))
+            ->action(__('View Job'), url('/jobs/'.$this->job->id));
     }
 
     /**
@@ -42,7 +44,7 @@ class CustomerConfirmedDate extends Notification implements ShouldQueue
             'job_id' => $this->job->id,
             'job_number' => $this->job->job_number,
             'title' => $this->job->title,
-            'message' => "Customer confirmed date for {$this->job->job_number}",
+            'message' => __('Customer confirmed date for :number', ['number' => $this->job->job_number]),
         ];
     }
 }

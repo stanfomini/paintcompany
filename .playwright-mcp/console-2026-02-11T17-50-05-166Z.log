@@ -1,0 +1,12 @@
+[   10782ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://apexnegotiations.com/images/logo.svg:0
+[   10869ms] TypeError: ((intermediate value) || (intermediate value))(...) is not a function
+    at set checked (https://apexnegotiations.com/flux/flux.js?id=a81ab97b:128:2900)
+    at bindInputValue (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:2207:22)
+    at bind (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:2181:9)
+    at https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:3646:23
+    at mutateDom (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:1024:18)
+    at el._x_forceModelUpdate (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:3646:7)
+    at https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:3653:10
+    at reactiveEffect (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:2647:18)
+    at Object.effect2 [as effect] (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:2622:7)
+    at effect (https://apexnegotiations.com/livewire-bf198635/livewire.js?id=a9012fca:902:35)

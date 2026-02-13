@@ -26,11 +26,13 @@ class CustomerConfirmedColors extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        $customerName = $this->job->getCustomer()?->first_name.' '.$this->job->getCustomer()?->last_name;
+
         return (new MailMessage)
-            ->subject("Colors Confirmed: {$this->job->job_number}")
-            ->greeting("Colors Confirmed: {$this->job->title}")
-            ->line("{$this->job->getCustomer()?->first_name} {$this->job->getCustomer()?->last_name} has confirmed the color selections for job {$this->job->job_number}.")
-            ->action('View Job', url('/jobs/'.$this->job->id));
+            ->subject(__('Colors Confirmed: :number', ['number' => $this->job->job_number]))
+            ->greeting(__('Colors Confirmed: :title', ['title' => $this->job->title]))
+            ->line(__(':customerName has confirmed the color selections for job :number.', ['customerName' => $customerName, 'number' => $this->job->job_number]))
+            ->action(__('View Job'), url('/jobs/'.$this->job->id));
     }
 
     /**
@@ -42,7 +44,7 @@ class CustomerConfirmedColors extends Notification implements ShouldQueue
             'job_id' => $this->job->id,
             'job_number' => $this->job->job_number,
             'title' => $this->job->title,
-            'message' => "Customer confirmed colors for {$this->job->job_number}",
+            'message' => __('Customer confirmed colors for :number', ['number' => $this->job->job_number]),
         ];
     }
 }

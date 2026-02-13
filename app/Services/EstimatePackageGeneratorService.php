@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Estimate;
+use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateItem;
 use App\Models\EstimatePackage;
@@ -173,6 +174,25 @@ class EstimatePackageGeneratorService
 
         $sortOrder = 0;
         foreach ($areas as $area) {
+            if ($area->is_fixed_price) {
+                // Fixed-price areas are added as whole-area items (no surfaces)
+                EstimatePackageItem::withoutEvents(function () use ($package, $area, &$sortOrder) {
+                    EstimatePackageItem::create([
+                        'package_id' => $package->id,
+                        'itemable_type' => EstimateArea::class,
+                        'itemable_id' => $area->id,
+                        'quantity' => 1,
+                        'price_override' => null,
+                        'is_included' => true,
+                        'customer_approved' => true,
+                        'customer_approved_at' => now(),
+                        'sort_order' => $sortOrder++,
+                    ]);
+                });
+
+                continue;
+            }
+
             foreach ($area->surfaces()->orderBy('sort_order')->get() as $surface) {
                 // Disable auto-calculation during creation to avoid issues
                 EstimatePackageItem::withoutEvents(function () use ($package, $surface, &$sortOrder) {

@@ -73,6 +73,9 @@ class AudioMessageService
             throw new \InvalidArgumentException('Invalid base64 audio data');
         }
 
+        // Detect actual format from file signature if mime type looks wrong
+        $mimeType = $this->detectMimeType($audioData, $mimeType);
+
         // Determine file extension from mime type
         $extension = $this->getExtensionFromMimeType($mimeType);
 
@@ -88,6 +91,7 @@ class AudioMessageService
         return [
             'audio_url' => Storage::disk('public')->url($path),
             'audio_path' => $path,
+            'audio_mime_type' => $mimeType,
             'audio_duration' => $transcription['duration'] ?? null,
             'transcription' => $transcription['text'] ?? null,
             'transcription_status' => ($transcription['success'] ?? false) ? 'completed' : 'failed',
@@ -159,6 +163,32 @@ class AudioMessageService
     public function deleteAudio(string $path): bool
     {
         return Storage::disk('public')->delete($path);
+    }
+
+    /**
+     * Detect actual MIME type from file signature bytes.
+     *
+     * Safari records audio as MP4 but JS may report it as audio/webm.
+     * This checks the file magic bytes to determine the real format.
+     */
+    private function detectMimeType(string $data, string $reportedMimeType): string
+    {
+        // Check for MP4/M4A signature (ftyp box at offset 4)
+        if (strlen($data) >= 8 && substr($data, 4, 4) === 'ftyp') {
+            return 'audio/mp4';
+        }
+
+        // Check for WebM signature (EBML header: 0x1A45DFA3)
+        if (strlen($data) >= 4 && substr($data, 0, 4) === "\x1A\x45\xDF\xA3") {
+            return 'audio/webm';
+        }
+
+        // Check for OGG signature
+        if (strlen($data) >= 4 && substr($data, 0, 4) === 'OggS') {
+            return 'audio/ogg';
+        }
+
+        return $reportedMimeType;
     }
 
     /**

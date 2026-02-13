@@ -67,7 +67,7 @@ new class extends Component {
 
         $this->listing->refresh();
         $this->dispatch('photo-uploaded');
-        session()->flash('success', 'Photo uploaded successfully.');
+        session()->flash('success', __('Photo uploaded successfully.'));
         $this->closeUploadModal();
     }
 
@@ -80,7 +80,7 @@ new class extends Component {
 
         $this->listing->refresh();
         $this->dispatch('photo-deleted');
-        session()->flash('success', 'Photo deleted successfully.');
+        session()->flash('success', __('Photo deleted successfully.'));
     }
 
     public function updateSortOrder(array $orderedIds): void

@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\Deal;
+use App\Services\DealStageService;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -14,15 +17,24 @@ new class extends Component {
 
     public Deal $deal;
 
+    // Triage state
+    public bool $showFollowUpModal = false;
+
+    public ?string $followUpDate = null;
+
     public function mount(Deal $deal): void
     {
         $this->deal = $deal->load([
             'customer',
+            'agent',
             'property',
             'assignedTo',
             'createdBy',
             'notes.user',
             'estimates',
+            'job',
+            'activities.user',
+            'activities.assignee',
         ]);
     }
 
@@ -37,6 +49,9 @@ new class extends Component {
             'createdBy',
             'notes.user',
             'estimates',
+            'job',
+            'activities.user',
+            'activities.assignee',
         ]);
     }
 
@@ -51,16 +66,49 @@ new class extends Component {
     public function getStageColorProperty(): string
     {
         return match ($this->deal->stage) {
-            'lead' => 'zinc',
-            'quoted' => 'blue',
-            'scheduled' => 'purple',
-            'in_progress' => 'yellow',
-            'completed' => 'green',
-            'paid' => 'emerald',
-            'signed_accepted' => 'teal',
+            'lead' => 'blue',
+            'not_contacted' => 'zinc',
+            'follow_up' => 'amber',
+            'quote_scheduled' => 'purple',
+            'quoted' => 'yellow',
+            'signed' => 'green',
+            'lost' => 'orange',
             'cancelled' => 'red',
             default => 'zinc',
         };
+    }
+
+    #[Computed]
+    public function dealActivities()
+    {
+        return $this->deal->activities->sortByDesc('created_at');
+    }
+
+    /**
+     * Triage actions (same as kanban).
+     */
+    public function triageTo(string $action): void
+    {
+        abort_unless(auth()->user()->can('deals.edit'), 403);
+
+        if ($action === 'follow_up') {
+            $this->followUpDate = now()->addDay()->toDateString();
+            $this->showFollowUpModal = true;
+            return;
+        }
+
+        app(DealStageService::class)->transitionTo($this->deal, $action);
+        $this->refreshDeal();
+    }
+
+    public function confirmFollowUp(): void
+    {
+        abort_unless(auth()->user()->can('deals.edit'), 403);
+
+        app(DealStageService::class)->transitionTo($this->deal, 'follow_up', $this->followUpDate);
+        $this->showFollowUpModal = false;
+        $this->followUpDate = null;
+        $this->refreshDeal();
     }
 }; ?>
 
@@ -69,7 +117,7 @@ new class extends Component {
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-4">
                 <flux:button variant="ghost" :href="route('deals.index')" icon="arrow-left" wire:navigate>
-                    Back
+                    {{ __('Back') }}
                 </flux:button>
                 <flux:heading size="xl">{{ $deal->title }}</flux:heading>
                 <flux:badge size="sm" color="{{ $this->stageColor }}">{{ $deal->stage_label }}</flux:badge>
@@ -79,27 +127,97 @@ new class extends Component {
             @endcan
         </div>
 
+        {{-- Customer Hub Banner --}}
+        @if ($deal->customer)
+            <a href="{{ route('customers.show', ['customer' => $deal->customer_id, 'deal' => $deal->id]) }}" wire:navigate class="flex items-center justify-between p-3 mb-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                <div class="flex items-center gap-2">
+                    <flux:icon name="user" class="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                    <flux:text class="font-medium text-blue-700 dark:text-blue-300">{{ __('Open Customer Hub for') }} {{ $deal->customer->full_name }}</flux:text>
+                </div>
+                <flux:icon name="arrow-right" class="w-4 h-4 text-blue-500" />
+            </a>
+        @endif
+
+        {{-- Lead Triage Actions --}}
+        @can('deals.edit')
+            @if ($deal->stage === 'lead')
+                <div class="flex flex-wrap gap-2 mb-4 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-700">
+                    <flux:text size="sm" class="text-zinc-500 mr-2 self-center">{{ __('Triage:') }}</flux:text>
+                    <flux:button size="sm" wire:click="triageTo('not_contacted')">
+                        {{ __('No Answer') }}
+                    </flux:button>
+                    <flux:button size="sm" variant="ghost" wire:click="triageTo('follow_up')">
+                        {{ __('Follow Up') }}
+                    </flux:button>
+                    <flux:button size="sm" variant="ghost" wire:click="triageTo('quote_scheduled')">
+                        {{ __('Schedule Quote') }}
+                    </flux:button>
+                    <flux:button size="sm" variant="ghost" wire:click="triageTo('lost')" wire:confirm="{{ __('Mark this deal as lost?') }}">
+                        {{ __('Mark Lost') }}
+                    </flux:button>
+                </div>
+            @endif
+        @endcan
+
         @if (session('success'))
             <flux:callout variant="success" class="mb-4">
                 {{ session('success') }}
             </flux:callout>
         @endif
 
+        {{-- Linked Job --}}
+        @if ($deal->job)
+            <div class="mb-4 p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="wrench-screwdriver" class="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                        <flux:text class="font-medium text-emerald-700 dark:text-emerald-300">
+                            {{ __('Job:') }} {{ $deal->job->job_number ?? '' }}
+                        </flux:text>
+                        @php
+                            $jobStageColors = [
+                                'estimate_accepted' => 'blue',
+                                'scheduling_colors' => 'purple',
+                                'job_prep' => 'amber',
+                                'in_progress' => 'emerald',
+                                'completed' => 'green',
+                            ];
+                        @endphp
+                        <flux:badge size="sm" :color="$jobStageColors[$deal->job->stage] ?? 'zinc'">
+                            {{ str_replace('_', ' ', ucwords($deal->job->stage, '_')) }}
+                        </flux:badge>
+                    </div>
+                    <flux:button :href="route('jobs.show', $deal->job)" size="sm" variant="ghost" icon="arrow-top-right-on-square" wire:navigate>
+                        {{ __('View Job') }}
+                    </flux:button>
+                </div>
+            </div>
+        @endif
+
         <div class="grid gap-6 md:grid-cols-2">
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Deal Information</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Deal Information') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Customer</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Customer') }}</dt>
                         <dd class="mt-1">
-                            <a href="{{ route('customers.show', $deal->customer) }}" class="text-blue-600 hover:underline" wire:navigate>
-                                {{ $deal->customer->full_name }}
-                            </a>
+                            @if ($deal->customer)
+                                <a href="{{ route('customers.show', $deal->customer) }}" class="text-blue-600 hover:underline" wire:navigate>
+                                    {{ $deal->customer->full_name }}
+                                </a>
+                            @elseif ($deal->agent)
+                                <span class="text-zinc-500">{{ __('Agent lead:') }} </span>
+                                <a href="{{ route('agents.show', $deal->agent_id) }}" class="text-blue-600 hover:underline" wire:navigate>
+                                    {{ $deal->agent->name }}
+                                </a>
+                            @else
+                                <flux:text class="text-zinc-400">{{ __('No customer assigned') }}</flux:text>
+                            @endif
                         </dd>
                     </div>
                     @if ($deal->property)
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Property</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Property') }}</dt>
                             <dd class="mt-1">
                                 <a href="{{ route('properties.show', $deal->property) }}" class="text-blue-600 hover:underline" wire:navigate>
                                     {{ $deal->property->display_name }}
@@ -107,9 +225,19 @@ new class extends Component {
                             </dd>
                         </div>
                     @endif
+                    @if ($deal->listing_url)
+                        <div>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Listing Link') }}</dt>
+                            <dd class="mt-1">
+                                <a href="{{ $deal->listing_url }}" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 underline hover:no-underline break-all">
+                                    {{ $deal->listing_url }}
+                                </a>
+                            </dd>
+                        </div>
+                    @endif
                     @if ($deal->description)
                         <div>
-                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Description</dt>
+                            <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Description') }}</dt>
                             <dd class="mt-1">
                                 <flux:text>{{ $deal->description }}</flux:text>
                             </dd>
@@ -119,16 +247,16 @@ new class extends Component {
             </div>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Financial Details</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Financial Details') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Estimated Value</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Estimated Value') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->estimated_value ? '$' . number_format($deal->estimated_value, 2) : '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Actual Value</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Actual Value') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->actual_value ? '$' . number_format($deal->actual_value, 2) : '-' }}</flux:text>
                         </dd>
@@ -137,28 +265,28 @@ new class extends Component {
             </div>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Timeline</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Timeline') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Expected Start</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Expected Start') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->expected_start_date?->format('M j, Y') ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Expected End</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Expected End') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->expected_end_date?->format('M j, Y') ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Actual Start</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Actual Start') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->actual_start_date?->format('M j, Y') ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Actual End</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Actual End') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->actual_end_date?->format('M j, Y') ?? '-' }}</flux:text>
                         </dd>
@@ -167,22 +295,22 @@ new class extends Component {
             </div>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Assignment & Tracking</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Assignment & Tracking') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Assigned To</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Assigned To') }}</dt>
                         <dd class="mt-1">
-                            <flux:text>{{ $deal->assignedTo?->name ?? 'Unassigned' }}</flux:text>
+                            <flux:text>{{ $deal->assignedTo?->name ?? __('Unassigned') }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Created By</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Created By') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->createdBy?->name ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Created</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Created') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $deal->created_at->format('M j, Y g:i A') }}</flux:text>
                         </dd>
@@ -191,19 +319,64 @@ new class extends Component {
             </div>
         </div>
 
-        {{-- Activity Timeline Placeholder --}}
+        {{-- Activity Timeline --}}
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-            <flux:heading size="sm" class="mb-4">Activity Timeline</flux:heading>
-            <flux:text class="text-zinc-500">Activity timeline coming soon...</flux:text>
+            <flux:heading size="sm" class="mb-4">{{ __('Activity Timeline') }}</flux:heading>
+            @if ($this->dealActivities->count() > 0)
+                <div class="space-y-3">
+                    @foreach ($this->dealActivities as $activity)
+                        <div wire:key="deal-act-{{ $activity->id }}" class="flex gap-3 {{ $activity->is_completed ? 'opacity-60' : '' }}">
+                            <div class="shrink-0 mt-0.5">
+                                @php
+                                    $typeIcons = [
+                                        'task' => 'check-circle',
+                                        'note' => 'document-text',
+                                        'call' => 'phone',
+                                        'email' => 'envelope',
+                                        'meeting' => 'calendar',
+                                        'other' => 'ellipsis-horizontal',
+                                    ];
+                                @endphp
+                                <div class="w-5 h-5 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center">
+                                    <flux:icon :name="$typeIcons[$activity->type] ?? 'chat-bubble-left'" class="w-3 h-3 text-zinc-500" />
+                                </div>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <flux:text class="{{ $activity->is_completed ? 'line-through' : '' }} text-sm">
+                                    {{ $activity->title }}
+                                </flux:text>
+                                <div class="flex items-center gap-2 mt-0.5">
+                                    <flux:badge size="sm" color="zinc">{{ $activity->type_label }}</flux:badge>
+                                    @if ($activity->due_at)
+                                        <flux:text size="xs" class="{{ $activity->isOverdue() ? 'text-red-500' : 'text-zinc-500' }}">
+                                            {{ __('Due') }} {{ $activity->due_at->diffForHumans() }}
+                                        </flux:text>
+                                    @endif
+                                    @if ($activity->assignee)
+                                        <flux:text size="xs" class="text-zinc-400">
+                                            {{ $activity->assignee->name }}
+                                        </flux:text>
+                                    @endif
+                                    <flux:text size="xs" class="text-zinc-400">
+                                        {{ $activity->created_at->diffForHumans() }}
+                                    </flux:text>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <flux:text class="text-zinc-500">{{ __('No activities recorded for this deal yet.') }}</flux:text>
+            @endif
         </div>
 
         {{-- Estimates Section --}}
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
             <div class="flex items-center justify-between mb-4">
-                <flux:heading size="sm">Estimates</flux:heading>
+                <flux:heading size="sm">{{ __('Estimates') }}</flux:heading>
                 @can('estimates.create')
                     <flux:button :href="route('estimates.create', $deal)" icon="plus" size="sm" wire:navigate>
-                        Create Estimate
+                        {{ __('Create Estimate') }}
                     </flux:button>
                 @endcan
             </div>
@@ -214,25 +387,25 @@ new class extends Component {
                         <thead>
                             <tr>
                                 <th scope="col" class="py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Number
+                                    {{ __('Number') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Title
+                                    {{ __('Title') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Mode
+                                    {{ __('Mode') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Status
+                                    {{ __('Status') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Total
+                                    {{ __('Total') }}
                                 </th>
                                 <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Created
+                                    {{ __('Created') }}
                                 </th>
                                 <th scope="col" class="py-3 text-right text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                    Actions
+                                    {{ __('Actions') }}
                                 </th>
                             </tr>
                         </thead>
@@ -256,10 +429,10 @@ new class extends Component {
                                                 default => 'zinc',
                                             };
                                             $modeLabel = match($estimate->estimator_mode) {
-                                                'simple' => 'Quick',
-                                                'template' => 'Template',
-                                                'detailed' => 'Detailed',
-                                                default => 'Standard',
+                                                'simple' => __('Quick'),
+                                                'template' => __('Template'),
+                                                'detailed' => __('Detailed'),
+                                                default => __('Standard'),
                                             };
                                         @endphp
                                         <flux:badge size="sm" color="{{ $modeColor }}">{{ $modeLabel }}</flux:badge>
@@ -307,16 +480,33 @@ new class extends Component {
             @else
                 <div class="text-center py-8">
                     <flux:icon name="document-text" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                    <flux:text class="text-zinc-500 dark:text-zinc-400">No estimates yet</flux:text>
-                    <flux:text class="text-sm text-zinc-400 dark:text-zinc-500 mt-1">Create an estimate to get started with pricing this project.</flux:text>
+                    <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('No estimates yet') }}</flux:text>
+                    <flux:text class="text-sm text-zinc-400 dark:text-zinc-500 mt-1">{{ __('Create an estimate to get started with pricing this project.') }}</flux:text>
                 </div>
             @endif
         </div>
 
         {{-- Notes Section --}}
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-            <flux:heading size="sm" class="mb-4">Notes</flux:heading>
+            <flux:heading size="sm" class="mb-4">{{ __('Notes') }}</flux:heading>
             @livewire('deals.note-form', ['dealId' => $deal->id])
         </div>
     </div>
+
+    {{-- Follow-Up Date Modal --}}
+    <flux:modal wire:model="showFollowUpModal" class="max-w-sm">
+        <form wire:submit="confirmFollowUp">
+            <flux:heading size="lg" class="mb-4">{{ __('Schedule Follow-Up') }}</flux:heading>
+
+            <flux:field>
+                <flux:label>{{ __('Follow-up Date') }}</flux:label>
+                <flux:input wire:model="followUpDate" type="date" />
+            </flux:field>
+
+            <div class="mt-6 flex justify-end gap-3">
+                <flux:button variant="ghost" wire:click="$set('showFollowUpModal', false)" type="button">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary">{{ __('Set Follow-Up') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
 </div>

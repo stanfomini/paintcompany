@@ -1,7 +1,11 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\Deal;
+use App\Models\Property;
 use App\Models\User;
+use App\Services\ChatService;
+use Illuminate\Support\Facades\Event;
 use Livewire\Livewire;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -223,7 +227,10 @@ describe('Customer search functionality', function () {
 describe('Customer show page quick actions', function () {
     it('can add property from customer show page', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
-        $customer = Customer::factory()->create();
+        $customer = Customer::factory()->create([
+            'address' => null,
+            'city' => null,
+        ]);
 
         Livewire::actingAs($user)
             ->test('customers.show', ['customer' => $customer])
@@ -363,5 +370,303 @@ describe('Customer status filter', function () {
             ->set('statusFilter', 'all')
             ->assertSee('ActiveUser')
             ->assertSee('InactiveUser');
+    });
+});
+
+describe('Auto-property from customer address', function () {
+    it('auto-creates property when customer is created with address', function () {
+        $customer = Customer::factory()->create([
+            'address' => '123 Main St',
+            'city' => 'Denver',
+            'state' => 'CO',
+            'zip' => '80202',
+        ]);
+
+        $property = Property::where('customer_id', $customer->id)->first();
+        expect($property)->not->toBeNull();
+        expect($property->address)->toBe('123 Main St');
+        expect($property->city)->toBe('Denver');
+        expect($property->state)->toBe('CO');
+        expect($property->zip)->toBe('80202');
+        expect($property->type)->toBe('residential');
+    });
+
+    it('auto-creates property when customer address is updated', function () {
+        $customer = Customer::factory()->create([
+            'address' => null,
+            'city' => null,
+        ]);
+
+        expect(Property::where('customer_id', $customer->id)->count())->toBe(0);
+
+        $customer->update([
+            'address' => '456 Oak Ave',
+            'city' => 'Boulder',
+            'state' => 'CO',
+            'zip' => '80302',
+        ]);
+
+        $property = Property::where('customer_id', $customer->id)->first();
+        expect($property)->not->toBeNull();
+        expect($property->address)->toBe('456 Oak Ave');
+        expect($property->city)->toBe('Boulder');
+    });
+
+    it('does not create duplicate property for same address', function () {
+        $customer = Customer::factory()->create([
+            'address' => '123 Main St',
+            'city' => 'Denver',
+            'state' => 'CO',
+            'zip' => '80202',
+        ]);
+
+        // Save again to trigger the hook
+        $customer->update(['first_name' => 'Updated']);
+
+        expect(Property::where('customer_id', $customer->id)->count())->toBe(1);
+    });
+
+    it('creates new property when address changes', function () {
+        $customer = Customer::factory()->create([
+            'address' => '123 Main St',
+            'city' => 'Denver',
+            'state' => 'CO',
+            'zip' => '80202',
+        ]);
+
+        expect(Property::where('customer_id', $customer->id)->count())->toBe(1);
+
+        $customer->update([
+            'address' => '789 Pine St',
+            'city' => 'Boulder',
+        ]);
+
+        expect(Property::where('customer_id', $customer->id)->count())->toBe(2);
+    });
+
+    it('does not auto-create property when address is missing', function () {
+        $customer = Customer::factory()->create([
+            'address' => null,
+            'city' => null,
+        ]);
+
+        expect(Property::where('customer_id', $customer->id)->count())->toBe(0);
+    });
+
+    it('does not auto-create property when city is missing', function () {
+        $customer = Customer::factory()->create([
+            'address' => '123 Main St',
+            'city' => null,
+        ]);
+
+        expect(Property::where('customer_id', $customer->id)->count())->toBe(0);
+    });
+});
+
+describe('Customer show page chat threads', function () {
+    it('shows customer chat threads on show page', function () {
+        Event::fake([\App\Events\MessageSent::class, \App\Events\NewThreadNotification::class, \App\Events\NewLeadCreated::class]);
+
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+        $deal = Deal::factory()->forCustomer($customer)->lead()->create([
+            'assigned_to' => $user->id,
+            'created_by' => $user->id,
+        ]);
+
+        $chatService = app(ChatService::class);
+        $thread = $chatService->getOrCreateDealThread($deal, $user);
+        $chatService->sendMessage($thread, $user, 'Hello regarding your estimate');
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->assertSee('Messages')
+            ->assertSee('Hello regarding your estimate');
+    });
+
+    it('shows unread badge count for threads with unread messages', function () {
+        Event::fake([\App\Events\MessageSent::class, \App\Events\NewThreadNotification::class, \App\Events\NewLeadCreated::class]);
+
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+        $deal = Deal::factory()->forCustomer($customer)->lead()->create([
+            'assigned_to' => $user->id,
+            'created_by' => $user->id,
+        ]);
+
+        $chatService = app(ChatService::class);
+        $thread = $chatService->getOrCreateDealThread($deal, $user);
+
+        // Add other user as participant and have them send messages
+        $thread->addParticipant($otherUser);
+        $chatService->sendMessage($thread, $otherUser, 'First unread message');
+        $chatService->sendMessage($thread, $otherUser, 'Second unread message');
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->assertSee('Messages')
+            ->assertSee('unread');
+    });
+
+    it('includes chat messages in unified activity feed', function () {
+        Event::fake([\App\Events\MessageSent::class, \App\Events\NewThreadNotification::class, \App\Events\NewLeadCreated::class]);
+
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+        $deal = Deal::factory()->forCustomer($customer)->lead()->create([
+            'assigned_to' => $user->id,
+            'created_by' => $user->id,
+        ]);
+
+        $chatService = app(ChatService::class);
+        $thread = $chatService->getOrCreateDealThread($deal, $user);
+        $chatService->sendMessage($thread, $user, 'Discussing the kitchen repaint project');
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->assertSee('Discussing the kitchen repaint');
+    });
+
+    it('shows deal thread for customer deal', function () {
+        Event::fake([\App\Events\MessageSent::class, \App\Events\NewThreadNotification::class, \App\Events\NewLeadCreated::class]);
+
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+        $deal = Deal::factory()->forCustomer($customer)->lead()->create([
+            'title' => 'Kitchen Repaint Deal',
+            'assigned_to' => $user->id,
+            'created_by' => $user->id,
+        ]);
+
+        $chatService = app(ChatService::class);
+        $thread = $chatService->getOrCreateDealThread($deal, $user);
+        $chatService->sendMessage($thread, $user, 'Starting the quote process');
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->assertSee('Messages')
+            ->assertSee('Kitchen Repaint Deal');
+    });
+});
+
+describe('Customer assignment', function () {
+    it('can assign a customer to an internal user on creation', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee = User::factory()->internal()->create();
+
+        Livewire::actingAs($user)
+            ->test('customers.create-modal')
+            ->set('firstName', 'John')
+            ->set('lastName', 'Doe')
+            ->set('email', 'john.assignment@example.com')
+            ->set('assignedTo', $assignee->id)
+            ->set('sendInvite', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('customers', [
+            'email' => 'john.assignment@example.com',
+            'assigned_to' => $assignee->id,
+        ]);
+    });
+
+    it('defaults assigned_to to current user when not specified on creation', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+
+        Livewire::actingAs($user)
+            ->test('customers.create-modal')
+            ->set('firstName', 'John')
+            ->set('lastName', 'Doe')
+            ->set('email', 'john.default@example.com')
+            ->set('sendInvite', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('customers', [
+            'email' => 'john.default@example.com',
+            'assigned_to' => $user->id,
+        ]);
+    });
+
+    it('can update customer assignment from show page', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee = User::factory()->internal()->create();
+        $customer = Customer::factory()->createdBy($user)->create();
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->call('updateAssignment', $assignee->id);
+
+        $customer->refresh();
+        expect($customer->assigned_to)->toBe($assignee->id);
+    });
+
+    it('can unassign a customer from show page', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee = User::factory()->internal()->create();
+        $customer = Customer::factory()->createdBy($user)->assignedTo($assignee)->create();
+
+        expect($customer->assigned_to)->toBe($assignee->id);
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->call('updateAssignment', null);
+
+        $customer->refresh();
+        expect($customer->assigned_to)->toBeNull();
+    });
+
+    it('displays assigned user name on customer show page', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee = User::factory()->internal()->create(['name' => 'Mike Johnson']);
+        $customer = Customer::factory()->createdBy($user)->assignedTo($assignee)->create();
+
+        // Need a deal so the banner shows
+        Deal::factory()->forCustomer($customer)->lead()->create([
+            'assigned_to' => $user->id,
+            'created_by' => $user->id,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->assertSee('Mike Johnson');
+    });
+
+    it('flows customer assignment to new deals', function () {
+        Event::fake([\App\Events\NewLeadCreated::class]);
+
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $assignee = User::factory()->internal()->create();
+        $customer = Customer::factory()->createdBy($user)->assignedTo($assignee)->create();
+
+        Livewire::actingAs($user)
+            ->test('customers.create-modal')
+            ->set('firstName', 'Flow')
+            ->set('lastName', 'Test')
+            ->set('email', 'flow.test@example.com')
+            ->set('assignedTo', $assignee->id)
+            ->set('sendInvite', false)
+            ->set('createDeal', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $createdCustomer = Customer::where('email', 'flow.test@example.com')->first();
+        $deal = $createdCustomer->deals()->first();
+
+        expect($deal)->not->toBeNull();
+        expect($deal->assigned_to)->toBe($assignee->id);
+    });
+
+    it('prevents non-authorized users from updating assignment', function () {
+        // Create user without people.edit permission
+        $user = User::factory()->internal()->create();
+        $user->givePermissionTo('people.view');
+        $customer = Customer::factory()->create();
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->call('updateAssignment', $user->id)
+            ->assertForbidden();
     });
 });

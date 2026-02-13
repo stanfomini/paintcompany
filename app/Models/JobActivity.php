@@ -67,7 +67,7 @@ class JobActivity extends Model
      */
     public function getActivityTypeLabelAttribute(): string
     {
-        return self::ACTIVITY_TYPES[$this->activity_type] ?? $this->activity_type;
+        return __(self::ACTIVITY_TYPES[$this->activity_type] ?? $this->activity_type);
     }
 
     /**

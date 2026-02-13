@@ -23,7 +23,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:settings.allocations')
         ->name('allocations.edit');
     Route::livewire('settings/roles', 'pages::settings.roles')
-        ->middleware('permission:manage roles')
+        ->middleware('permission:team.manage_roles')
         ->name('roles.edit');
 
     Route::livewire('settings/two-factor', 'pages::settings.two-factor')
@@ -42,14 +42,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('payment-integrations.edit');
 
     Route::livewire('settings/service-categories', 'pages::settings.service-categories')
-        ->middleware('permission:settings.company')
+        ->middleware('permission:settings.service_categories')
         ->name('service-categories.edit');
 
     Route::livewire('settings/budget-mappings', 'pages::settings.budget-mappings')
-        ->middleware('permission:settings.company')
+        ->middleware('permission:settings.budget_mappings')
         ->name('budget-mappings.edit');
 
     Route::livewire('settings/referral', 'pages::settings.referral')
-        ->middleware('permission:settings.company')
+        ->middleware('permission:settings.referral')
         ->name('referral.edit');
+
+    Route::livewire('settings/contracts', 'pages::settings.contracts')
+        ->middleware('permission:settings.contracts')
+        ->name('contracts.edit');
+
+    Route::livewire('settings/lead-sources', 'pages::settings.lead-sources')
+        ->middleware('permission:settings.lead_sources')
+        ->name('lead-sources.edit');
 });

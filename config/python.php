@@ -13,6 +13,8 @@ return [
 
     'enabled' => env('PYTHON_ENABLED', false),
 
+    'api_key' => env('PYTHON_API_KEY', ''),
+
     'service_url' => env('PYTHON_SERVICE_URL', 'http://127.0.0.1:8000'),
 
     'timeout' => env('PYTHON_SERVICE_TIMEOUT', 60),

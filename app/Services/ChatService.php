@@ -35,20 +35,33 @@ class ChatService
      */
     public function canChatWith(User $user, User $target): bool
     {
+        // Step 1: Check base type matrix (maximum allowed connections)
         $allowedTypes = self::CHAT_PERMISSIONS[$user->type] ?? [];
 
         if (! in_array($target->type, $allowedTypes, true)) {
             return false;
         }
 
-        // Additional checks for agents - can only chat with their referred customers
-        if ($user->isAgent() && $target->isCustomer()) {
-            return $this->agentCanChatWithCustomer($user, $target);
+        // Step 2: For internal users with roles, check granular chat.with_* permissions
+        if ($user->isInternal() && $user->roles->isNotEmpty()) {
+            // Map user type to permission name (types are singular, permissions use plural)
+            $typeToPermission = [
+                'customer' => 'chat.with_customers',
+                'agent' => 'chat.with_agents',
+                'crew' => 'chat.with_crew',
+                'internal' => 'chat.with_internal',
+            ];
+
+            $permissionKey = $typeToPermission[$target->type] ?? null;
+
+            if ($permissionKey && ! $user->can($permissionKey)) {
+                return false;
+            }
         }
 
-        // Customers can only chat with internal users through deal threads
-        if ($user->isCustomer() && $target->isInternal()) {
-            return true;
+        // Step 3: Additional checks for agents - can only chat with their referred customers
+        if ($user->isAgent() && $target->isCustomer()) {
+            return $this->agentCanChatWithCustomer($user, $target);
         }
 
         return true;

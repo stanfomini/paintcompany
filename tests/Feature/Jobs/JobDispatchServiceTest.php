@@ -1,8 +1,10 @@
 <?php
 
+use App\Events\JobDispatchedToCrew;
 use App\Models\Job;
 use App\Models\User;
 use App\Services\JobDispatchService;
+use Illuminate\Support\Facades\Event;
 
 describe('JobDispatchService', function () {
     it('gets eligible crews filtered by crew size', function () {
@@ -115,6 +117,25 @@ describe('JobDispatchService', function () {
         expect($available->pluck('title')->toArray())->toContain('Dispatched Job');
         expect($available->pluck('title')->toArray())->not->toContain('Accepted Job');
         expect($available->pluck('title')->toArray())->not->toContain('Not My Job');
+    });
+
+    it('broadcasts JobDispatchedToCrew to each crew member', function () {
+        Event::fake([JobDispatchedToCrew::class]);
+
+        $service = new JobDispatchService;
+        $crew1 = User::factory()->crew()->create();
+        $crew2 = User::factory()->crew()->create();
+        $job = Job::factory()->create();
+
+        $service->dispatchToCrews($job, [$crew1->id, $crew2->id]);
+
+        Event::assertDispatched(JobDispatchedToCrew::class, function ($event) use ($job, $crew1) {
+            return $event->job->id === $job->id && $event->crewUserId === $crew1->id;
+        });
+
+        Event::assertDispatched(JobDispatchedToCrew::class, function ($event) use ($job, $crew2) {
+            return $event->job->id === $job->id && $event->crewUserId === $crew2->id;
+        });
     });
 
     it('gets accepted jobs for crew', function () {

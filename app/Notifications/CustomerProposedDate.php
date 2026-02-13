@@ -27,12 +27,14 @@ class CustomerProposedDate extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
+        $customerName = $this->job->getCustomer()?->first_name.' '.$this->job->getCustomer()?->last_name;
+
         return (new MailMessage)
-            ->subject("Date Proposed: {$this->job->job_number}")
-            ->greeting("Date Proposed: {$this->job->title}")
-            ->line("{$this->job->getCustomer()?->first_name} {$this->job->getCustomer()?->last_name} has proposed a new start date for job {$this->job->job_number}.")
-            ->line("Proposed date: {$this->proposedDate}")
-            ->action('View Job', url('/jobs/'.$this->job->id));
+            ->subject(__('Date Proposed: :number', ['number' => $this->job->job_number]))
+            ->greeting(__('Date Proposed: :title', ['title' => $this->job->title]))
+            ->line(__(':customerName has proposed a new start date for job :number.', ['customerName' => $customerName, 'number' => $this->job->job_number]))
+            ->line(__('Proposed date').': '.$this->proposedDate)
+            ->action(__('View Job'), url('/jobs/'.$this->job->id));
     }
 
     /**
@@ -45,7 +47,7 @@ class CustomerProposedDate extends Notification implements ShouldQueue
             'job_number' => $this->job->job_number,
             'title' => $this->job->title,
             'proposed_date' => $this->proposedDate,
-            'message' => "Customer proposed date: {$this->proposedDate}",
+            'message' => __('Customer proposed date: :date', ['date' => $this->proposedDate]),
         ];
     }
 }

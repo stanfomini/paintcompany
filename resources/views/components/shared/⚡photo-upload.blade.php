@@ -57,10 +57,10 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'photos.required' => 'Please select at least one photo to upload.',
-            'photos.*.image' => 'Each file must be an image.',
-            'photos.*.max' => 'Each image must be less than 15MB.',
-            'photos.*.mimes' => 'Only JPG, PNG, and WebP images are allowed.',
+            'photos.required' => __('Please select at least one photo to upload.'),
+            'photos.*.image' => __('Each file must be an image.'),
+            'photos.*.max' => __('Each image must be less than 15MB.'),
+            'photos.*.mimes' => __('Only JPG, PNG, and WebP images are allowed.'),
         ];
     }
 
@@ -90,7 +90,7 @@ new class extends Component {
     {
         $this->validate();
 
-        $user = auth()->user();
+        $user = auth()->user() ?? auth('customer')->user() ?? auth('agent')->user() ?? auth('crew')->user();
         $photoService = app(PhotoService::class);
 
         $meta = [
@@ -113,7 +113,7 @@ new class extends Component {
 <div>
     <flux:modal wire:model="showModal" class="max-w-2xl" position="right">
         <div class="space-y-6">
-            <flux:heading size="lg">Upload Photos</flux:heading>
+            <flux:heading size="lg">{{ __('Upload Photos') }}</flux:heading>
 
             {{-- Drag and Drop Zone --}}
             <div
@@ -133,13 +133,13 @@ new class extends Component {
             >
                 <flux:icon name="cloud-arrow-up" class="w-12 h-12 mx-auto text-zinc-400 mb-3" />
                 <flux:text class="mb-3">
-                    Drop photos here
+                    {{ __('Drop photos here') }}
                 </flux:text>
 
                 <div class="flex items-center justify-center gap-3">
                     <label class="inline-flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 cursor-pointer transition-colors">
                         <flux:icon name="camera" class="w-4 h-4" />
-                        Take Photo
+                        {{ __('Take Photo') }}
                         <input
                             type="file"
                             wire:model="photos"
@@ -150,7 +150,7 @@ new class extends Component {
                     </label>
                     <label class="inline-flex items-center gap-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-700 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 cursor-pointer transition-colors">
                         <flux:icon name="folder-open" class="w-4 h-4" />
-                        Choose Files
+                        {{ __('Choose Files') }}
                         <input
                             type="file"
                             wire:model="photos"
@@ -162,14 +162,14 @@ new class extends Component {
                 </div>
 
                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mt-3">
-                    JPG, PNG, WebP up to 15MB each
+                    {{ __('JPG, PNG, WebP up to 15MB each') }}
                 </flux:text>
 
                 {{-- Loading Indicator --}}
                 <div wire:loading wire:target="photos" class="absolute inset-0 flex items-center justify-center bg-white/80 dark:bg-zinc-900/80 rounded-lg">
                     <div class="flex items-center gap-2">
                         <flux:icon name="arrow-path" class="w-5 h-5 animate-spin" />
-                        <flux:text>Processing...</flux:text>
+                        <flux:text>{{ __('Processing...') }}</flux:text>
                     </div>
                 </div>
             </div>
@@ -184,14 +184,14 @@ new class extends Component {
             {{-- Preview Grid --}}
             @if (count($photos) > 0)
                 <div>
-                    <flux:text class="font-medium mb-2">Selected ({{ count($photos) }})</flux:text>
+                    <flux:text class="font-medium mb-2">{{ __('Selected') }} ({{ count($photos) }})</flux:text>
                     <div class="grid grid-cols-4 gap-2">
                         @foreach ($photos as $index => $photo)
                             <div wire:key="preview-{{ $index }}" class="relative aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                                 @if ($photo && method_exists($photo, 'temporaryUrl'))
                                     <img
                                         src="{{ $photo->temporaryUrl() }}"
-                                        alt="Preview"
+                                        alt="{{ __('Preview') }}"
                                         class="w-full h-full object-cover"
                                     />
                                 @endif
@@ -211,7 +211,7 @@ new class extends Component {
             {{-- Upload Options --}}
             <div class="space-y-4">
                 <flux:field>
-                    <flux:label>Category</flux:label>
+                    <flux:label>{{ __('Category') }}</flux:label>
                     <flux:select wire:model="category">
                         @foreach ($allowedCategories as $cat)
                             <option value="{{ $cat }}">{{ \App\Models\PropertyPhoto::CATEGORIES[$cat] ?? ucfirst($cat) }}</option>
@@ -220,13 +220,13 @@ new class extends Component {
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Caption</flux:label>
-                    <flux:input wire:model="caption" placeholder="Optional caption for these photos..." />
+                    <flux:label>{{ __('Caption') }}</flux:label>
+                    <flux:input wire:model="caption" :placeholder="__('Optional caption for these photos...')" />
                 </flux:field>
 
                 @if ($estimateId)
                     <flux:field>
-                        <flux:checkbox wire:model="showOnProposal" label="Show on Proposal" />
+                        <flux:checkbox wire:model="showOnProposal" :label="__('Show on Proposal')" />
                     </flux:field>
                 @endif
             </div>
@@ -234,7 +234,7 @@ new class extends Component {
             {{-- Actions --}}
             <div class="flex justify-end gap-3">
                 <flux:button wire:click="closeModal" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button
                     wire:click="uploadPhotos"
@@ -243,9 +243,9 @@ new class extends Component {
                     :disabled="count($photos) === 0"
                 >
                     <span wire:loading.remove wire:target="uploadPhotos">
-                        Upload {{ count($photos) }} Photo{{ count($photos) !== 1 ? 's' : '' }}
+                        {{ trans_choice('{1} Upload :count Photo|[2,*] Upload :count Photos', count($photos), ['count' => count($photos)]) }}
                     </span>
-                    <span wire:loading wire:target="uploadPhotos">Uploading...</span>
+                    <span wire:loading wire:target="uploadPhotos">{{ __('Uploading...') }}</span>
                 </flux:button>
             </div>
         </div>

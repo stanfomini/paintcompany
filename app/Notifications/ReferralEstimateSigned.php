@@ -28,14 +28,14 @@ class ReferralEstimateSigned extends Notification implements ShouldQueue
     {
         $this->referral->load('customer');
 
-        $customerName = $this->referral->customer?->full_name ?? 'Your referral';
+        $customerName = $this->referral->customer?->full_name ?? __('Your referral');
 
         return (new MailMessage)
-            ->subject("Referral Update: {$customerName}'s estimate was accepted")
-            ->greeting('Great news!')
-            ->line("The estimate for {$customerName} has been signed.")
-            ->line('Once the deposit is received, you\'ll earn your referral reward.')
-            ->line('Thank you for your referral!');
+            ->subject(__("Referral Update: :name's estimate was accepted", ['name' => $customerName]))
+            ->greeting(__('Great news!'))
+            ->line(__('The estimate for :name has been signed.', ['name' => $customerName]))
+            ->line(__("Once the deposit is received, you'll earn your referral reward."))
+            ->line(__('Thank you for your referral!'));
     }
 
     /**

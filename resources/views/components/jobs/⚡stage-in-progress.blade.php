@@ -67,15 +67,15 @@ new class extends Component {
 }; ?>
 
 <div>
-    <flux:heading size="sm" class="mb-4">Stage 4: In Progress</flux:heading>
+    <flux:heading size="sm" class="mb-4">{{ __('Stage 4: In Progress') }}</flux:heading>
 
     {{-- Overall Progress Bar --}}
     @if ($this->plan && $this->progress['total'] > 0)
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
             <div class="flex items-center justify-between mb-2">
-                <flux:heading size="sm">Task Progress</flux:heading>
+                <flux:heading size="sm">{{ __('Task Progress') }}</flux:heading>
                 <flux:text class="text-sm text-zinc-500">
-                    {{ $this->progress['completed'] }} / {{ $this->progress['total'] }} tasks complete
+                    {{ $this->progress['completed'] }} / {{ $this->progress['total'] }} {{ __('tasks complete') }}
                 </flux:text>
             </div>
             <div class="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-3">
@@ -84,7 +84,7 @@ new class extends Component {
                     style="width: {{ $this->progress['percent'] }}%"
                 ></div>
             </div>
-            <flux:text class="text-xs text-zinc-400 mt-1">{{ $this->progress['percent'] }}% complete</flux:text>
+            <flux:text class="text-xs text-zinc-400 mt-1">{{ $this->progress['percent'] }}% {{ __('complete') }}</flux:text>
         </div>
 
         {{-- Day Tabs with Task Checklists --}}
@@ -105,7 +105,7 @@ new class extends Component {
                                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                                 : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300' }}"
                     >
-                        Day {{ $day->day_number }}
+                        {{ __('Day') }} {{ $day->day_number }}
                         @if ($dayTotal > 0)
                             <flux:badge size="sm" :color="$dayCompleted === $dayTotal ? 'green' : 'zinc'">
                                 {{ $dayCompleted }}/{{ $dayTotal }}
@@ -125,7 +125,7 @@ new class extends Component {
                         @if ($day->tasks->isEmpty())
                             <div class="text-center py-8">
                                 <flux:icon name="clipboard" class="w-12 h-12 mx-auto text-zinc-300 mb-2" />
-                                <flux:text class="text-zinc-400">No tasks assigned to this day.</flux:text>
+                                <flux:text class="text-zinc-400">{{ __('No tasks assigned to this day.') }}</flux:text>
                             </div>
                         @else
                             <div class="space-y-2">
@@ -157,7 +157,7 @@ new class extends Component {
                                                     @else
                                                         border-2 border-zinc-300 dark:border-zinc-600 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20
                                                     @endif"
-                                                title="{{ $isCompleted ? 'Reset to pending' : ($isInProgress ? 'Mark completed' : 'Start task') }}"
+                                                title="{{ $isCompleted ? __('Reset to pending') : ($isInProgress ? __('Mark completed') : __('Start task')) }}"
                                             >
                                                 @if ($isCompleted)
                                                     <flux:icon name="check" class="w-3 h-3 text-white" />
@@ -177,11 +177,11 @@ new class extends Component {
                                             @endif
                                             @if ($isCompleted && $task->completedByUser)
                                                 <flux:text class="text-xs text-green-500">
-                                                    Completed by {{ $task->completedByUser->name }} {{ $task->completed_at?->diffForHumans() }}
+                                                    {{ __('Completed by') }} {{ $task->completedByUser->name }} {{ $task->completed_at?->diffForHumans() }}
                                                 </flux:text>
                                             @elseif ($isInProgress)
                                                 <flux:text class="text-xs text-amber-500">
-                                                    In progress
+                                                    {{ __('In progress') }}
                                                 </flux:text>
                                             @endif
                                         </div>
@@ -208,27 +208,27 @@ new class extends Component {
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
         <div class="text-center">
             <flux:icon name="paint-brush" class="w-12 h-12 mx-auto text-orange-500 mb-3" />
-            <flux:heading size="lg">Job In Progress</flux:heading>
+            <flux:heading size="lg">{{ __('Job In Progress') }}</flux:heading>
             <flux:text class="text-zinc-500 mt-1 max-w-md mx-auto">
-                The painting crew is on site. Track daily progress and mark tasks as they are completed.
+                {{ __('The painting crew is on site. Track daily progress and mark tasks as they are completed.') }}
             </flux:text>
 
             <div class="mt-4 flex items-center justify-center gap-4">
                 @if ($job->actual_start_date)
                     <flux:badge size="sm" color="green">
-                        Started: {{ $job->actual_start_date->format('M j, Y') }}
+                        {{ __('Started:') }} {{ $job->actual_start_date->format('M j, Y') }}
                     </flux:badge>
                 @else
                     <flux:button wire:click="markStarted" size="sm" variant="primary">
-                        Mark as Started
+                        {{ __('Mark as Started') }}
                     </flux:button>
                 @endif
             </div>
 
             <div class="mt-6">
                 <flux:button wire:click="completeJob" variant="primary" icon="check-circle"
-                    wire:confirm="Are you sure you want to mark this job as completed?">
-                    Mark Job Complete
+                    wire:confirm="{{ __('Are you sure you want to mark this job as completed?') }}">
+                    {{ __('Mark Job Complete') }}
                 </flux:button>
             </div>
         </div>

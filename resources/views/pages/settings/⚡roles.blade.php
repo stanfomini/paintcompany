@@ -34,7 +34,7 @@ new class extends Component
     {
         $user = Auth::user();
 
-        if (! $user || ! $user->can('manage roles')) {
+        if (! $user || ! $user->can('team.manage_roles')) {
             abort(403);
         }
     }
@@ -64,14 +64,28 @@ new class extends Component
             'Estimates' => ['estimates.view', 'estimates.create', 'estimates.edit', 'estimates.delete', 'estimates.send'],
             'Financials' => ['financials.view_cost_breakdown', 'financials.view_painter_breakdown', 'financials.manage_pricing'],
             'Jobs' => ['jobs.view', 'jobs.edit'],
+            'Invoices' => ['invoices.view', 'invoices.create', 'invoices.send', 'invoices.manage'],
+            'Payments' => ['payments.view', 'payments.record'],
             'Planner' => ['planner.view', 'planner.view_all', 'planner.manage'],
-            'Agent Listings' => ['agent_listings.view', 'agent_listings.manage'],
             'Production Rates' => ['production_rates.view', 'production_rates.manage'],
-            'Communication' => ['chat.access', 'walkie_talkie.access', 'video_call.access'],
-            'Settings' => ['settings.company', 'settings.packages', 'settings.allocations'],
-            'Roadmap' => ['view roadmap', 'edit roadmap', 'manage roadmap'],
-            'KPIs' => ['view kpis', 'edit kpi targets', 'enter kpi actuals', 'manage kpis'],
-            'Administration' => ['manage users', 'manage invitations', 'manage roles'],
+            'Agent Listings' => ['agent_listings.view', 'agent_listings.manage'],
+            'Communication' => [
+                'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+                'walkie_talkie.access', 'video_call.access',
+            ],
+            'Referrals' => ['referrals.view', 'referrals.manage'],
+            'Business Plan' => ['business_plan.view', 'business_plan.manage'],
+            'Roadmap' => ['roadmap.view', 'roadmap.edit', 'roadmap.manage'],
+            'KPIs' => ['kpis.view', 'kpis.edit_targets', 'kpis.enter_actuals', 'kpis.manage'],
+            'Vendors' => ['vendors.view', 'vendors.manage'],
+            'Accounting' => ['accounting.view', 'accounting.manage'],
+            'Photos' => ['photos.upload', 'photos.delete', 'photos.annotate', 'photos.comment'],
+            'Settings' => [
+                'settings.company', 'settings.packages', 'settings.allocations',
+                'settings.payment_integrations', 'settings.service_categories',
+                'settings.budget_mappings', 'settings.referral', 'settings.contracts',
+            ],
+            'Administration' => ['team.manage_users', 'team.manage_invitations', 'team.manage_roles', 'admin.access_settings'],
         ];
     }
 
@@ -160,11 +174,11 @@ new class extends Component
     public function roleDescriptions(): array
     {
         return [
-            'owner' => 'Full access to all features',
-            'admin' => 'Full access except role management',
-            'manager' => 'Manage team, estimates, deals, roadmap',
-            'estimator' => 'Create and manage estimates',
-            'crew_lead' => 'View jobs and planner',
+            'owner' => __('Full access to all features'),
+            'admin' => __('Full access except role management'),
+            'manager' => __('Manage team, estimates, deals, roadmap'),
+            'estimator' => __('Create and manage estimates'),
+            'crew_lead' => __('View jobs and planner'),
         ];
     }
 
@@ -259,7 +273,7 @@ new class extends Component
         }
 
         if ($userId === Auth::id()) {
-            session()->flash('error', 'You cannot modify your own role.');
+            session()->flash('error', __('You cannot modify your own role.'));
 
             return;
         }
@@ -287,7 +301,7 @@ new class extends Component
 
         $role = Role::where('name', $this->selectedRole)->where('guard_name', 'web')->first();
         if (! $role && $this->selectedRole !== '') {
-            session()->flash('error', 'Invalid role selected.');
+            session()->flash('error', __('Invalid role selected.'));
 
             return;
         }
@@ -302,13 +316,13 @@ new class extends Component
         $this->selectedRole = '';
         unset($this->internalUsers);
 
-        session()->flash('success', "Role updated for {$user->name}.");
+        session()->flash('success', __('Role updated for :name.', ['name' => $user->name]));
     }
 
     public function removeRole(int $userId): void
     {
         if ($userId === Auth::id()) {
-            session()->flash('error', 'You cannot remove your own role.');
+            session()->flash('error', __('You cannot remove your own role.'));
 
             return;
         }
@@ -321,7 +335,7 @@ new class extends Component
         $user->syncRoles([]);
         unset($this->internalUsers);
 
-        session()->flash('success', "Role removed from {$user->name}.");
+        session()->flash('success', __('Role removed from :name.', ['name' => $user->name]));
     }
 
     // --- Custom Roles ---
@@ -346,13 +360,13 @@ new class extends Component
         $this->validate([
             'newRoleName' => ['required', 'string', 'max:50', 'regex:/^[a-zA-Z0-9_ ]+$/'],
         ], [
-            'newRoleName.regex' => 'Role name may only contain letters, numbers, spaces, and underscores.',
+            'newRoleName.regex' => __('Role name may only contain letters, numbers, spaces, and underscores.'),
         ]);
 
         $slug = strtolower(str_replace(' ', '_', trim($this->newRoleName)));
 
         if (Role::where('name', $slug)->where('guard_name', 'web')->exists()) {
-            $this->addError('newRoleName', 'A role with this name already exists.');
+            $this->addError('newRoleName', __('A role with this name already exists.'));
 
             return;
         }
@@ -371,7 +385,7 @@ new class extends Component
         unset($this->rolePermissionMap);
 
         $this->closeCreateRole();
-        session()->flash('success', 'Role "' . ucfirst(str_replace('_', ' ', $slug)) . '" created.');
+        session()->flash('success', __('Role ":name" created.', ['name' => ucfirst(str_replace('_', ' ', $slug))]));
     }
 
     public function confirmDeleteRole(int $roleId): void
@@ -396,7 +410,7 @@ new class extends Component
         }
 
         if (in_array($role->name, $this->defaultRoleNames())) {
-            session()->flash('error', 'Default roles cannot be deleted.');
+            session()->flash('error', __('Default roles cannot be deleted.'));
             $this->deletingRoleId = null;
 
             return;
@@ -414,9 +428,9 @@ new class extends Component
 
         $this->deletingRoleId = null;
 
-        $msg = 'Role "' . ucfirst(str_replace('_', ' ', $roleName)) . '" deleted.';
+        $msg = __('Role ":name" deleted.', ['name' => ucfirst(str_replace('_', ' ', $roleName))]);
         if ($affectedCount > 0) {
-            $msg .= " {$affectedCount} user(s) were affected.";
+            $msg .= ' ' . __(':count user(s) were affected.', ['count' => $affectedCount]);
         }
         session()->flash('success', $msg);
     }
@@ -426,11 +440,6 @@ new class extends Component
      */
     public function formatPermission(string $name): string
     {
-        // Legacy format: "view roadmap" → "View Roadmap"
-        if (str_contains($name, ' ')) {
-            return ucwords($name);
-        }
-
         // Dot format: "estimates.view" → "View"
         $parts = explode('.', $name);
         $action = end($parts);
@@ -466,14 +475,14 @@ new class extends Component
                     :variant="$activeTab === 'members' ? 'primary' : 'ghost'"
                     wire:click="$set('activeTab', 'members')"
                 >
-                    Team Members
+                    {{ __('Team Members') }}
                 </flux:button>
                 <flux:button
                     size="sm"
                     :variant="$activeTab === 'matrix' ? 'primary' : 'ghost'"
                     wire:click="$set('activeTab', 'matrix')"
                 >
-                    Permission Matrix
+                    {{ __('Permission Matrix') }}
                 </flux:button>
             </div>
 
@@ -482,7 +491,7 @@ new class extends Component
 
                 {{-- Role Legend --}}
                 <div class="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
-                    <flux:heading size="sm" class="mb-3">Available Roles</flux:heading>
+                    <flux:heading size="sm" class="mb-3">{{ __('Available Roles') }}</flux:heading>
                     <div class="space-y-2">
                         @foreach ($this->roles as $role)
                             <div class="flex items-start gap-3">
@@ -490,7 +499,7 @@ new class extends Component
                                     {{ ucfirst(str_replace('_', ' ', $role->name)) }}
                                 </flux:badge>
                                 <flux:text class="text-sm text-zinc-600 dark:text-zinc-400">
-                                    {{ $this->roleDescriptions[$role->name] ?? 'Custom role' }}
+                                    {{ $this->roleDescriptions[$role->name] ?? __('Custom role') }}
                                 </flux:text>
                             </div>
                         @endforeach
@@ -500,7 +509,7 @@ new class extends Component
                 <flux:separator />
 
                 {{-- Team Members --}}
-                <flux:heading size="sm">Team Members</flux:heading>
+                <flux:heading size="sm">{{ __('Team Members') }}</flux:heading>
 
                 <div class="space-y-3">
                     @forelse ($this->internalUsers as $user)
@@ -514,7 +523,7 @@ new class extends Component
                                     <div class="flex items-center gap-2">
                                         <flux:text class="font-medium">{{ $user->name }}</flux:text>
                                         @if ($user->id === Auth::id())
-                                            <flux:badge size="sm" color="blue">You</flux:badge>
+                                            <flux:badge size="sm" color="blue">{{ __('You') }}</flux:badge>
                                         @endif
                                     </div>
                                     <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
@@ -526,7 +535,7 @@ new class extends Component
                             <div class="flex items-center gap-3">
                                 @if ($this->editingUserId === $user->id)
                                     <flux:select wire:model="selectedRole" class="w-40">
-                                        <option value="">No Role</option>
+                                        <option value="">{{ __('No Role') }}</option>
                                         @foreach ($this->roles as $role)
                                             <option value="{{ $role->name }}">
                                                 {{ ucfirst(str_replace('_', ' ', $role->name)) }}
@@ -534,10 +543,10 @@ new class extends Component
                                         @endforeach
                                     </flux:select>
                                     <flux:button size="sm" variant="primary" wire:click="saveRole">
-                                        Save
+                                        {{ __('Save') }}
                                     </flux:button>
                                     <flux:button size="sm" variant="ghost" wire:click="cancelEditing">
-                                        Cancel
+                                        {{ __('Cancel') }}
                                     </flux:button>
                                 @else
                                     @if ($user->roles->isNotEmpty())
@@ -548,7 +557,7 @@ new class extends Component
                                         @endforeach
                                     @else
                                         <flux:text class="text-sm text-zinc-400 dark:text-zinc-500 italic">
-                                            No role assigned
+                                            {{ __('No role assigned') }}
                                         </flux:text>
                                     @endif
 
@@ -557,16 +566,16 @@ new class extends Component
                                             <flux:button size="sm" variant="ghost" icon="ellipsis-vertical" />
                                             <flux:menu>
                                                 <flux:menu.item icon="pencil" wire:click="startEditing({{ $user->id }})">
-                                                    Change Role
+                                                    {{ __('Change Role') }}
                                                 </flux:menu.item>
                                                 @if ($user->roles->isNotEmpty())
                                                     <flux:menu.item
                                                         icon="trash"
                                                         wire:click="removeRole({{ $user->id }})"
-                                                        wire:confirm="Are you sure you want to remove the role from {{ $user->name }}?"
+                                                        :wire:confirm="__('Are you sure you want to remove the role from :name?', ['name' => $user->name])"
                                                         variant="danger"
                                                     >
-                                                        Remove Role
+                                                        {{ __('Remove Role') }}
                                                     </flux:menu.item>
                                                 @endif
                                             </flux:menu>
@@ -577,7 +586,7 @@ new class extends Component
                         </div>
                     @empty
                         <div class="text-center py-8 text-zinc-400 dark:text-zinc-500">
-                            No internal users found. Use the Invitations feature to add team members.
+                            {{ __('No internal users found. Use the Invitations feature to add team members.') }}
                         </div>
                     @endforelse
                 </div>
@@ -587,13 +596,13 @@ new class extends Component
                 {{-- Invite --}}
                 <div class="flex items-center justify-between">
                     <div>
-                        <flux:heading size="sm">Add Team Members</flux:heading>
+                        <flux:heading size="sm">{{ __('Add Team Members') }}</flux:heading>
                         <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                            Send invitations to add new internal team members.
+                            {{ __('Send invitations to add new internal team members.') }}
                         </flux:text>
                     </div>
                     <flux:button href="{{ route('invitations') }}" wire:navigate variant="primary" icon="envelope">
-                        Manage Invitations
+                        {{ __('Manage Invitations') }}
                     </flux:button>
                 </div>
 
@@ -602,18 +611,18 @@ new class extends Component
 
                 <div class="flex items-center justify-between gap-4">
                     <flux:text class="text-sm text-zinc-500 shrink-0">
-                        Toggle permissions for each role. Owner always has full access.
+                        {{ __('Toggle permissions for each role. Owner always has full access.') }}
                     </flux:text>
                     <div class="flex items-center gap-3">
                         <flux:input
                             wire:model.live.debounce.300ms="permissionSearch"
-                            placeholder="Search permissions..."
+                            :placeholder="__('Search permissions...')"
                             icon="magnifying-glass"
                             size="sm"
                             class="w-64"
                         />
                         <flux:button size="sm" icon="plus" wire:click="openCreateRole">
-                            Create Role
+                            {{ __('Create Role') }}
                         </flux:button>
                     </div>
                 </div>
@@ -623,7 +632,7 @@ new class extends Component
                         <thead class="bg-zinc-50 dark:bg-zinc-800">
                             <tr>
                                 <th class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider sticky left-0 bg-zinc-50 dark:bg-zinc-800 z-10 min-w-[200px]">
-                                    Permission
+                                    {{ __('Permission') }}
                                 </th>
                                 @foreach ($this->roles as $role)
                                     <th class="px-3 py-3 text-center text-xs font-medium uppercase tracking-wider min-w-[100px]">
@@ -635,9 +644,9 @@ new class extends Component
                                                 <button
                                                     wire:click="confirmDeleteRole({{ $role->id }})"
                                                     class="text-red-400 hover:text-red-600 text-xs"
-                                                    title="Delete role"
+                                                    :title="__('Delete role')"
                                                 >
-                                                    delete
+                                                    {{ __('delete') }}
                                                 </button>
                                             @endif
                                         </div>
@@ -658,7 +667,7 @@ new class extends Component
                                         <td class="px-3 py-2 text-center">
                                             @if ($role->name === 'owner')
                                                 <div class="flex justify-center">
-                                                    <span class="text-xs text-zinc-400">All</span>
+                                                    <span class="text-xs text-zinc-400">{{ __('All') }}</span>
                                                 </div>
                                             @else
                                                 @php
@@ -670,7 +679,7 @@ new class extends Component
                                                     <button
                                                         wire:click="toggleGroupPermissions('{{ $role->name }}', '{{ $groupName }}')"
                                                         class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer {{ $allGranted ? 'bg-green-500 border-green-500 text-white' : ($someGranted ? 'bg-green-200 border-green-400 dark:bg-green-800 dark:border-green-600' : 'border-zinc-300 dark:border-zinc-600 hover:border-green-400') }}"
-                                                        title="{{ $allGranted ? 'Deselect all' : 'Select all' }} {{ $groupName }} permissions"
+                                                        title="{{ $allGranted ? __('Deselect all') : __('Select all') }} {{ $groupName }} {{ __('permissions') }}"
                                                     >
                                                         @if ($allGranted)
                                                             <flux:icon name="check" class="w-3 h-3" />
@@ -693,7 +702,7 @@ new class extends Component
                                             <td class="px-3 py-2 text-center">
                                                 @if ($role->name === 'owner')
                                                     <div class="flex justify-center">
-                                                        <div class="w-5 h-5 rounded bg-green-500 flex items-center justify-center" title="Owner always has full access">
+                                                        <div class="w-5 h-5 rounded bg-green-500 flex items-center justify-center" :title="__('Owner always has full access')">
                                                             <flux:icon name="check" class="w-3 h-3 text-white" />
                                                         </div>
                                                     </div>
@@ -717,7 +726,7 @@ new class extends Component
                                 <tr>
                                     <td colspan="{{ count($this->roles) + 1 }}" class="px-4 py-8 text-center">
                                         <flux:text class="text-sm text-zinc-400 dark:text-zinc-500">
-                                            No permissions match "{{ $permissionSearch }}".
+                                            {{ __('No permissions match ":search".', ['search' => $permissionSearch]) }}
                                         </flux:text>
                                     </td>
                                 </tr>
@@ -734,19 +743,19 @@ new class extends Component
                     @endphp
                     <flux:modal wire:model.self="deletingRoleId" class="max-w-sm">
                         <div class="space-y-4">
-                            <flux:heading size="lg">Delete Role</flux:heading>
+                            <flux:heading size="lg">{{ __('Delete Role') }}</flux:heading>
                             <flux:text>
-                                Are you sure you want to delete the
-                                <strong>{{ ucfirst(str_replace('_', ' ', $roleToDelete?->name ?? '')) }}</strong> role?
+                                {{ __('Are you sure you want to delete the') }}
+                                <strong>{{ ucfirst(str_replace('_', ' ', $roleToDelete?->name ?? '')) }}</strong> {{ __('role?') }}
                             </flux:text>
                             @if ($affectedUsers > 0)
                                 <flux:callout variant="warning">
-                                    {{ $affectedUsers }} user(s) currently have this role and will lose it.
+                                    {{ __(':count user(s) currently have this role and will lose it.', ['count' => $affectedUsers]) }}
                                 </flux:callout>
                             @endif
                             <div class="flex justify-end gap-3">
-                                <flux:button variant="ghost" wire:click="cancelDeleteRole">Cancel</flux:button>
-                                <flux:button variant="danger" wire:click="deleteRole">Delete Role</flux:button>
+                                <flux:button variant="ghost" wire:click="cancelDeleteRole">{{ __('Cancel') }}</flux:button>
+                                <flux:button variant="danger" wire:click="deleteRole">{{ __('Delete Role') }}</flux:button>
                             </div>
                         </div>
                     </flux:modal>
@@ -758,22 +767,22 @@ new class extends Component
     {{-- Create Role Modal --}}
     <flux:modal wire:model="showCreateRole" class="max-w-sm">
         <form wire:submit="createRole">
-            <flux:heading size="lg" class="mb-4">Create Custom Role</flux:heading>
+            <flux:heading size="lg" class="mb-4">{{ __('Create Custom Role') }}</flux:heading>
 
             <div class="space-y-4">
                 <flux:field>
-                    <flux:label>Role Name</flux:label>
-                    <flux:input wire:model="newRoleName" placeholder="e.g. Sales Rep" />
+                    <flux:label>{{ __('Role Name') }}</flux:label>
+                    <flux:input wire:model="newRoleName" :placeholder="__('e.g. Sales Rep')" />
                     <flux:error name="newRoleName" />
                     <flux:text class="text-xs text-zinc-400 mt-1">
-                        Letters, numbers, spaces, and underscores only.
+                        {{ __('Letters, numbers, spaces, and underscores only.') }}
                     </flux:text>
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Clone Permissions From</flux:label>
+                    <flux:label>{{ __('Clone Permissions From') }}</flux:label>
                     <flux:select wire:model="cloneFromRole">
-                        <option value="">None (empty)</option>
+                        <option value="">{{ __('None (empty)') }}</option>
                         @foreach ($this->roles as $role)
                             <option value="{{ $role->name }}">
                                 {{ ucfirst(str_replace('_', ' ', $role->name)) }}
@@ -781,14 +790,14 @@ new class extends Component
                         @endforeach
                     </flux:select>
                     <flux:text class="text-xs text-zinc-400 mt-1">
-                        Optionally copy all permissions from an existing role.
+                        {{ __('Optionally copy all permissions from an existing role.') }}
                     </flux:text>
                 </flux:field>
             </div>
 
             <div class="mt-6 flex justify-end gap-3">
-                <flux:button variant="ghost" wire:click="closeCreateRole" type="button">Cancel</flux:button>
-                <flux:button type="submit" variant="primary">Create Role</flux:button>
+                <flux:button variant="ghost" wire:click="closeCreateRole" type="button">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary">{{ __('Create Role') }}</flux:button>
             </div>
         </form>
     </flux:modal>

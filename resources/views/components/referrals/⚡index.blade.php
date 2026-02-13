@@ -18,7 +18,7 @@ new class extends Component {
 
     public function boot(): void
     {
-        if (! auth()->user()?->can('people.view')) {
+        if (! auth()->user()?->can('referrals.view')) {
             abort(403);
         }
     }
@@ -84,8 +84,8 @@ new class extends Component {
     <div class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
             <div class="mb-8 flex items-center justify-between">
                 <div>
-                    <flux:heading size="xl">Referrals</flux:heading>
-                    <flux:subheading>Track and manage referral program activity.</flux:subheading>
+                    <flux:heading size="xl">{{ __('Referrals') }}</flux:heading>
+                    <flux:subheading>{{ __('Track and manage referral program activity.') }}</flux:subheading>
                 </div>
             </div>
 
@@ -96,7 +96,7 @@ new class extends Component {
                     :variant="$statusFilter === '' ? 'primary' : 'ghost'"
                     wire:click="$set('statusFilter', '')"
                 >
-                    All ({{ $this->statusCounts['all'] }})
+                    {{ __('All') }} ({{ $this->statusCounts['all'] }})
                 </flux:button>
                 @foreach (Referral::STATUSES as $key => $label)
                     <flux:button
@@ -111,7 +111,7 @@ new class extends Component {
 
             {{-- Search --}}
             <div class="mb-6">
-                <flux:input wire:model.live.debounce="search" placeholder="Search by customer or referrer name..." icon="magnifying-glass" />
+                <flux:input wire:model.live.debounce="search" :placeholder="__('Search by customer or referrer name...')" icon="magnifying-glass" />
             </div>
 
             {{-- Table --}}
@@ -119,13 +119,13 @@ new class extends Component {
                 <table class="w-full text-left text-sm">
                     <thead class="border-b border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
                         <tr>
-                            <th class="px-4 py-3 font-medium">Referrer</th>
-                            <th class="px-4 py-3 font-medium">Customer</th>
-                            <th class="px-4 py-3 font-medium">Deal</th>
-                            <th class="px-4 py-3 font-medium">Status</th>
-                            <th class="px-4 py-3 font-medium">Reward</th>
-                            <th class="px-4 py-3 font-medium">Date</th>
-                            <th class="px-4 py-3 font-medium">Actions</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Referrer') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Customer') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Deal') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Status') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Reward') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Date') }}</th>
+                            <th class="px-4 py-3 font-medium">{{ __('Actions') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-100 dark:divide-zinc-700">
@@ -163,7 +163,7 @@ new class extends Component {
                                 <td class="px-4 py-3">
                                     ${{ number_format($referral->reward_amount, 0) }}
                                     @if ($referral->reward_sent_at)
-                                        <div class="text-xs text-emerald-600 dark:text-emerald-400">Sent {{ $referral->reward_sent_at->format('M j') }}</div>
+                                        <div class="text-xs text-emerald-600 dark:text-emerald-400">{{ __('Sent') }} {{ $referral->reward_sent_at->format('M j') }}</div>
                                     @endif
                                 </td>
                                 <td class="px-4 py-3 text-zinc-500 dark:text-zinc-400">
@@ -172,11 +172,11 @@ new class extends Component {
                                 <td class="px-4 py-3">
                                     @if ($referral->status === 'deposit_paid')
                                         <flux:button size="sm" variant="primary" wire:click="openMarkReward({{ $referral->id }})">
-                                            Mark Sent
+                                            {{ __('Mark Sent') }}
                                         </flux:button>
                                     @elseif ($referral->reward_notes)
                                         <flux:tooltip content="{{ $referral->reward_notes }}">
-                                            <flux:badge size="sm" color="zinc">Notes</flux:badge>
+                                            <flux:badge size="sm" color="zinc">{{ __('Notes') }}</flux:badge>
                                         </flux:tooltip>
                                     @endif
                                 </td>
@@ -184,7 +184,7 @@ new class extends Component {
                         @empty
                             <tr>
                                 <td colspan="7" class="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
-                                    No referrals found.
+                                    {{ __('No referrals found.') }}
                                 </td>
                             </tr>
                         @endforelse

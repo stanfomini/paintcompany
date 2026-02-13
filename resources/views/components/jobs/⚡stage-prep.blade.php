@@ -273,15 +273,15 @@ new class extends Component {
 }; ?>
 
 <div>
-    <flux:heading size="sm" class="mb-4">Stage 3: Job Prep</flux:heading>
+    <flux:heading size="sm" class="mb-4">{{ __('Stage 3: Job Prep') }}</flux:heading>
 
     {{-- Per-Service Crew & Schedule Settings --}}
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
         <div class="flex items-center justify-between mb-4">
-            <flux:heading size="sm">Crew & Schedule</flux:heading>
+            <flux:heading size="sm">{{ __('Crew & Schedule') }}</flux:heading>
             @if ($this->plan && $this->plan->days->count() > 1)
                 <flux:button wire:click="autoDistribute" size="xs" variant="ghost" icon="arrows-right-left">
-                    Auto-Distribute
+                    {{ __('Auto-Distribute') }}
                 </flux:button>
             @endif
         </div>
@@ -289,8 +289,8 @@ new class extends Component {
         @if (count($serviceConfigs) === 0)
             <div class="text-center py-6">
                 <flux:icon name="cog-6-tooth" class="w-10 h-10 mx-auto text-zinc-300 mb-2" />
-                <flux:text class="text-zinc-400">No service categories configured yet.</flux:text>
-                <flux:text class="text-xs text-zinc-400 mt-1">Add service categories in Settings first.</flux:text>
+                <flux:text class="text-zinc-400">{{ __('No service categories configured yet.') }}</flux:text>
+                <flux:text class="text-xs text-zinc-400 mt-1">{{ __('Add service categories in Settings first.') }}</flux:text>
             </div>
         @else
             <div class="space-y-4">
@@ -301,7 +301,7 @@ new class extends Component {
                                 @if ($category->icon)
                                     <flux:icon :name="$category->icon" class="w-5 h-5" style="color: {{ $category->color ?? '#6b7280' }}" />
                                 @endif
-                                <flux:text class="font-medium">{{ $category->name }}</flux:text>
+                                <flux:text class="font-medium">{{ __($category->name) }}</flux:text>
                             </div>
 
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -309,7 +309,7 @@ new class extends Component {
                                 <div>
                                     <flux:input
                                         type="number"
-                                        label="Crew Size"
+                                        :label="__('Crew Size')"
                                         min="1"
                                         max="99"
                                         wire:model.lazy="serviceConfigs.{{ $category->id }}.crew_size"
@@ -320,19 +320,19 @@ new class extends Component {
                                 {{-- Hours Per Day --}}
                                 <div>
                                     <flux:select
-                                        label="Hours / Day"
+                                        :label="__('Hours / Day')"
                                         wire:model.live="serviceConfigs.{{ $category->id }}.hours_per_day"
                                         wire:change="updateServiceConfig({{ $category->id }}, 'hours_per_day', $event.target.value)"
                                     >
-                                        <option value="6">6 hours</option>
-                                        <option value="8">8 hours</option>
-                                        <option value="10">10 hours</option>
+                                        <option value="6">{{ __('6 hours') }}</option>
+                                        <option value="8">{{ __('8 hours') }}</option>
+                                        <option value="10">{{ __('10 hours') }}</option>
                                     </flux:select>
                                 </div>
 
                                 {{-- Summary for this service --}}
                                 <div>
-                                    <flux:text class="text-sm font-medium text-zinc-500 mb-2">Summary</flux:text>
+                                    <flux:text class="text-sm font-medium text-zinc-500 mb-2">{{ __('Summary') }}</flux:text>
                                     <div class="p-3 bg-zinc-50 dark:bg-zinc-800 rounded-lg">
                                         @php
                                             $config = $serviceConfigs[$category->id];
@@ -343,7 +343,7 @@ new class extends Component {
                                         </flux:text>
                                         @if ($setting)
                                             <flux:text class="text-xs text-zinc-500">
-                                                {{ $setting->total_days ?? 1 }} {{ Str::plural('day', $setting->total_days ?? 1) }} | {{ number_format($setting->total_labor_hours + $setting->total_cleanup_hours, 1) }} total hours
+                                                {{ $setting->total_days ?? 1 }} {{ Str::plural('day', $setting->total_days ?? 1) }} | {{ number_format($setting->total_labor_hours + $setting->total_cleanup_hours, 1) }} {{ __('total hours') }}
                                             </flux:text>
                                         @endif
                                     </div>
@@ -357,7 +357,7 @@ new class extends Component {
             @if (! $this->plan)
                 <div class="mt-4">
                     <flux:button wire:click="createPlan" variant="primary" icon="clipboard-document-list">
-                        Generate Plan
+                        {{ __('Generate Plan') }}
                     </flux:button>
                 </div>
             @endif
@@ -372,7 +372,7 @@ new class extends Component {
                 class="px-3 py-1.5 text-sm font-medium rounded-full transition-colors
                     {{ $serviceFilter === null ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'text-zinc-500 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800' }}"
             >
-                All
+                {{ __('All') }}
             </button>
             @foreach ($this->serviceCategories as $category)
                 <button
@@ -384,7 +384,7 @@ new class extends Component {
                     @if ($category->icon)
                         <flux:icon :name="$category->icon" class="w-4 h-4" />
                     @endif
-                    {{ $category->name }}
+                    {{ __($category->name) }}
                 </button>
             @endforeach
         </div>
@@ -408,7 +408,7 @@ new class extends Component {
                                 ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                                 : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300' }}"
                     >
-                        Day {{ $day->day_number }}
+                        {{ __('Day') }} {{ $day->day_number }}
                         @if ($dayTotal > 0)
                             <flux:badge size="sm" :color="$dayCompleted === $dayTotal ? 'green' : 'zinc'">
                                 {{ number_format($dayHours, 1) }}h
@@ -433,9 +433,9 @@ new class extends Component {
                             <div class="text-center py-8">
                                 <flux:icon name="clipboard" class="w-12 h-12 mx-auto text-zinc-300 mb-2" />
                                 <flux:text class="text-zinc-400">
-                                    {{ $serviceFilter !== null ? 'No tasks for this service on this day.' : 'No tasks assigned to this day yet.' }}
+                                    {{ $serviceFilter !== null ? __('No tasks for this service on this day.') : __('No tasks assigned to this day yet.') }}
                                 </flux:text>
-                                <flux:text class="text-xs text-zinc-400">Use the day dropdown on tasks to assign them here, or add custom tasks.</flux:text>
+                                <flux:text class="text-xs text-zinc-400">{{ __('Use the day dropdown on tasks to assign them here, or add custom tasks.') }}</flux:text>
                             </div>
                         @else
                             <div class="space-y-2">
@@ -474,7 +474,7 @@ new class extends Component {
                                         <div class="flex items-center gap-2 shrink-0">
                                             @if ($task->serviceCategory)
                                                 <flux:badge size="sm" :color="$task->serviceCategory->color ? 'zinc' : 'zinc'">
-                                                    {{ $task->serviceCategory->name }}
+                                                    {{ __($task->serviceCategory->name) }}
                                                 </flux:badge>
                                             @endif
                                             @if ($task->quantity && $task->unit)
@@ -501,7 +501,7 @@ new class extends Component {
                                                             value="{{ $targetDay->id }}"
                                                             {{ $task->job_prep_day_id === $targetDay->id ? 'selected' : '' }}
                                                         >
-                                                            Day {{ $targetDay->day_number }}
+                                                            {{ __('Day') }} {{ $targetDay->day_number }}
                                                         </option>
                                                     @endforeach
                                                 </select>
@@ -512,7 +512,7 @@ new class extends Component {
                                         @if ($task->isCustom())
                                             <button
                                                 wire:click="removeTask({{ $task->id }})"
-                                                wire:confirm="Remove this custom task?"
+                                                wire:confirm="{{ __('Remove this custom task?') }}"
                                                 class="text-red-400 hover:text-red-600 shrink-0"
                                             >
                                                 <flux:icon name="trash" class="w-4 h-4" />
@@ -529,36 +529,36 @@ new class extends Component {
                                 <div class="p-4 border border-zinc-200 dark:border-zinc-700 rounded-lg space-y-3">
                                     <flux:input
                                         wire:model="customTaskTitle"
-                                        label="Task Title"
-                                        placeholder="e.g. Move furniture, Tape trim"
+                                        :label="__('Task Title')"
+                                        :placeholder="__('e.g. Move furniture, Tape trim')"
                                     />
                                     <flux:textarea
                                         wire:model="customTaskDescription"
-                                        label="Description (optional)"
+                                        :label="__('Description (optional)')"
                                         rows="2"
                                     />
                                     <flux:select
                                         wire:model="customTaskServiceCategoryId"
-                                        label="Service Category"
+                                        :label="__('Service Category')"
                                     >
-                                        <option value="">-- None --</option>
+                                        <option value="">{{ __('-- None --') }}</option>
                                         @foreach ($this->serviceCategories as $cat)
                                             <option value="{{ $cat->id }}">{{ $cat->name }}</option>
                                         @endforeach
                                     </flux:select>
-                                    <flux:text class="text-xs text-zinc-400">All labor included in estimate</flux:text>
+                                    <flux:text class="text-xs text-zinc-400">{{ __('All labor included in estimate') }}</flux:text>
                                     <div class="flex items-center gap-2">
                                         <flux:button wire:click="addCustomTask" size="sm" variant="primary">
-                                            Add Task
+                                            {{ __('Add Task') }}
                                         </flux:button>
                                         <flux:button wire:click="$set('showCustomTaskForm', false)" size="sm" variant="ghost">
-                                            Cancel
+                                            {{ __('Cancel') }}
                                         </flux:button>
                                     </div>
                                 </div>
                             @else
                                 <flux:button wire:click="$set('showCustomTaskForm', true)" size="sm" variant="ghost" icon="plus">
-                                    Add Custom Task
+                                    {{ __('Add Custom Task') }}
                                 </flux:button>
                             @endif
                         </div>
@@ -569,17 +569,17 @@ new class extends Component {
 
         {{-- Approval Matrix --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-            <flux:heading size="sm" class="mb-4">Plan Approval</flux:heading>
+            <flux:heading size="sm" class="mb-4">{{ __('Plan Approval') }}</flux:heading>
             <flux:text class="text-sm text-zinc-500 mb-4">
-                All parties must approve each service section before the job can start.
+                {{ __('All parties must approve each service section before the job can start.') }}
             </flux:text>
 
             @php
                 $approvalCategories = $this->serviceSettings->pluck('serviceCategory')->filter()->unique('id');
                 $parties = [
-                    JobPrepApproval::PARTY_TEAM => 'Team',
-                    JobPrepApproval::PARTY_CREW => 'Crew',
-                    JobPrepApproval::PARTY_CUSTOMER => 'Customer',
+                    JobPrepApproval::PARTY_TEAM => __('Team'),
+                    JobPrepApproval::PARTY_CREW => __('Crew'),
+                    JobPrepApproval::PARTY_CUSTOMER => __('Customer'),
                 ];
                 $allApprovals = $this->approvals;
             @endphp
@@ -587,14 +587,14 @@ new class extends Component {
             @if ($approvalCategories->isEmpty())
                 {{-- Legacy fallback for plans without service settings --}}
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                    @foreach (['team' => 'Team', 'crew' => 'Crew', 'customer' => 'Customer'] as $party => $label)
+                    @foreach (['team' => __('Team'), 'crew' => __('Crew'), 'customer' => __('Customer')] as $party => $label)
                         <div class="p-4 border border-zinc-200 dark:border-zinc-700 rounded-lg">
                             <div class="flex items-center justify-between mb-2">
                                 <flux:text class="text-sm font-medium">{{ $label }}</flux:text>
                                 @if ($this->plan->{$party . '_approved'})
-                                    <flux:badge size="sm" color="green">Approved</flux:badge>
+                                    <flux:badge size="sm" color="green">{{ __('Approved') }}</flux:badge>
                                 @else
-                                    <flux:badge size="sm" color="zinc">Pending</flux:badge>
+                                    <flux:badge size="sm" color="zinc">{{ __('Pending') }}</flux:badge>
                                 @endif
                             </div>
                             @if ($this->plan->{$party . '_approved'})
@@ -611,7 +611,7 @@ new class extends Component {
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                                <th class="text-left py-2 px-3 font-medium text-zinc-500">Service</th>
+                                <th class="text-left py-2 px-3 font-medium text-zinc-500">{{ __('Service') }}</th>
                                 @foreach ($parties as $partyKey => $partyLabel)
                                     <th class="text-center py-2 px-3 font-medium text-zinc-500">{{ $partyLabel }}</th>
                                 @endforeach
@@ -625,7 +625,7 @@ new class extends Component {
                                             @if ($category->icon)
                                                 <flux:icon :name="$category->icon" class="w-4 h-4" style="color: {{ $category->color ?? '#6b7280' }}" />
                                             @endif
-                                            <span class="font-medium">{{ $category->name }}</span>
+                                            <span class="font-medium">{{ __($category->name) }}</span>
                                         </div>
                                     </td>
                                     @foreach ($parties as $partyKey => $partyLabel)
@@ -645,7 +645,7 @@ new class extends Component {
                                         <td class="py-3 px-3 text-center">
                                             @if ($isApproved)
                                                 <div>
-                                                    <flux:badge size="sm" color="green">Approved</flux:badge>
+                                                    <flux:badge size="sm" color="green">{{ __('Approved') }}</flux:badge>
                                                     <div class="text-xs text-zinc-400 mt-1">
                                                         {{ $approval->approver?->name ?? '' }}
                                                     </div>
@@ -656,10 +656,10 @@ new class extends Component {
                                                     size="xs"
                                                     variant="primary"
                                                 >
-                                                    Approve
+                                                    {{ __('Approve') }}
                                                 </flux:button>
                                             @else
-                                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                                                <flux:badge size="sm" color="yellow">{{ __('Pending') }}</flux:badge>
                                             @endif
                                         </td>
                                     @endforeach
@@ -675,12 +675,12 @@ new class extends Component {
                 <div class="text-center mt-6">
                     <flux:button
                         wire:click="startJob"
-                        wire:confirm="Start this job? This will advance the stage to In Progress."
+                        wire:confirm="{{ __('Start this job? This will advance the stage to In Progress.') }}"
                         variant="primary"
                         icon="play"
                         size="base"
                     >
-                        Start Job
+                        {{ __('Start Job') }}
                     </flux:button>
                 </div>
             @endif

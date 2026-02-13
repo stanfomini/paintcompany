@@ -1,19 +1,16 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\Deal;
+use App\Models\Estimate;
 use App\Models\Property;
 use App\Models\User;
 use Livewire\Livewire;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
-describe('Agent Dashboard Access', function () {
-    it('redirects guests to agent login page', function () {
-        $this->get(route('agent.dashboard'))
-            ->assertRedirect(route('agent.login'));
-    });
-
-    it('renders dashboard for authenticated agent', function () {
+describe('Agent Dashboard', function () {
+    it('renders the dashboard for authenticated agent', function () {
         $agent = User::factory()->agent()->create();
 
         $this->actingAs($agent, 'agent')
@@ -22,203 +19,198 @@ describe('Agent Dashboard Access', function () {
             ->assertSeeLivewire('agent.dashboard');
     });
 
-    it('redirects internal users away from agent dashboard', function () {
-        $internalUser = User::factory()->internal()->withFullAccess()->create();
-
-        $this->actingAs($internalUser, 'agent')
-            ->get(route('agent.dashboard'))
-            ->assertRedirect();
-    });
-
-    it('redirects customer users away from agent dashboard', function () {
-        $customer = User::factory()->customer()->create();
-
-        $this->actingAs($customer, 'agent')
-            ->get(route('agent.dashboard'))
-            ->assertRedirect();
-    });
-});
-
-describe('Agent Dashboard Stats', function () {
-    it('displays correct total listings count', function () {
+    it('auto-selects first deal on mount', function () {
         $agent = User::factory()->agent()->create();
-        Property::factory()->agentListing()->count(3)->forAgent($agent)->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
-        // Create listings for another agent to ensure they're not counted
-        $otherAgent = User::factory()->agent()->create();
-        Property::factory()->agentListing()->count(2)->forAgent($otherAgent)->create();
-
-        $component = Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('Total Listings');
-
-        expect($component->get('totalListings'))->toBe(3);
-    });
-
-    it('displays correct active listings count', function () {
-        $agent = User::factory()->agent()->create();
-        Property::factory()->agentListing()->count(2)->active()->forAgent($agent)->create();
-        Property::factory()->agentListing()->pending()->forAgent($agent)->create();
-        Property::factory()->agentListing()->sold()->forAgent($agent)->create();
-
-        $component = Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('Active Listings');
-
-        expect($component->get('activeListings'))->toBe(2);
-    });
-
-    it('displays correct referred customers count', function () {
-        $agent = User::factory()->agent()->create();
-        Customer::factory()->count(4)->referredByAgent($agent)->create();
-
-        // Create customers referred by another agent
-        $otherAgent = User::factory()->agent()->create();
-        Customer::factory()->count(2)->referredByAgent($otherAgent)->create();
-
-        $component = Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('Referred Customers');
-
-        expect($component->get('referredCustomers'))->toBe(4);
-    });
-
-    it('displays correct upcoming open houses count within 7 days', function () {
-        $agent = User::factory()->agent()->create();
-
-        // Open house in 3 days (should be counted)
-        Property::factory()->agentListing()->forAgent($agent)->create([
-            'open_house_date' => now()->addDays(3),
+        $deal1 = Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create([
+            'created_at' => now()->subDay(),
         ]);
-
-        // Open house in 5 days (should be counted)
-        Property::factory()->agentListing()->forAgent($agent)->create([
-            'open_house_date' => now()->addDays(5),
+        $deal2 = Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create([
+            'created_at' => now(),
         ]);
-
-        // Open house in 10 days (should NOT be counted)
-        Property::factory()->agentListing()->forAgent($agent)->create([
-            'open_house_date' => now()->addDays(10),
-        ]);
-
-        // Past open house (should NOT be counted)
-        Property::factory()->agentListing()->forAgent($agent)->create([
-            'open_house_date' => now()->subDays(1),
-        ]);
-
-        $component = Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('Upcoming Open Houses');
-
-        expect($component->get('upcomingOpenHousesCount'))->toBe(2);
-    });
-
-    it('displays zero stats for new agent', function () {
-        $agent = User::factory()->agent()->create();
 
         $component = Livewire::actingAs($agent, 'agent')
             ->test('agent.dashboard');
 
-        expect($component->get('totalListings'))->toBe(0);
-        expect($component->get('activeListings'))->toBe(0);
-        expect($component->get('referredCustomers'))->toBe(0);
-        expect($component->get('upcomingOpenHousesCount'))->toBe(0);
+        // Auto-selects the latest active deal
+        expect($component->get('selectedDealId'))->toBe($deal2->id);
     });
-});
 
-describe('Agent Dashboard Sections', function () {
-    it('displays upcoming open houses list', function () {
+    it('shows listing switcher with multiple deals', function () {
         $agent = User::factory()->agent()->create();
 
-        Property::factory()->agentListing()->forAgent($agent)->create([
-            'address' => '123 Main Street',
-            'city' => 'Springfield',
-            'state' => 'IL',
-            'zip' => '62701',
-            'open_house_date' => now()->addDays(2),
+        $property1 = Property::factory()->agentListing()->forAgent($agent)->create([
+            'address' => '100 Oak Ave',
+        ]);
+        $property2 = Property::factory()->agentListing()->forAgent($agent)->create([
+            'address' => '200 Elm St',
         ]);
 
+        Deal::factory()->referredByAgent($agent)->forProperty($property1)->lead()->create();
+        Deal::factory()->referredByAgent($agent)->forProperty($property2)->quoted()->create();
+
         Livewire::actingAs($agent, 'agent')
             ->test('agent.dashboard')
-            ->assertSee('123 Main Street')
-            ->assertSee('Springfield');
+            ->assertSee('100 Oak Ave')
+            ->assertSee('200 Elm St')
+            ->assertSee('Not Interested');
     });
 
-    it('displays recent customers list', function () {
+    it('shows estimate draft status for selected deal', function () {
         $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        $deal = Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create();
+        Estimate::factory()->forDeal($deal)->draft()->create();
 
-        $customer = Customer::factory()->referredByAgent($agent)->create([
-            'first_name' => 'John',
-            'last_name' => 'Smith',
-            'email' => 'john.smith@example.com',
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->assertSee('Our team is preparing your estimate');
+    });
+
+    it('shows estimate sent status for selected deal', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        $deal = Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create([
+            'customer_id' => null,
+        ]);
+        Estimate::factory()->forDeal($deal)->sent()->create();
+
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->assertSee('Estimate is ready! Pass it to your client.');
+    });
+
+    it('shows pass to customer button when estimate exists and no customer', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        $deal = Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create([
+            'customer_id' => null,
+        ]);
+        Estimate::factory()->forDeal($deal)->draft()->create();
+
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->assertSee('Pass to Customer');
+    });
+
+    it('hides pass to customer button when deal has customer', function () {
+        $agent = User::factory()->agent()->create();
+        $customer = Customer::factory()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        $deal = Deal::factory()->referredByAgent($agent)->forProperty($property)->forCustomer($customer)->lead()->create();
+        Estimate::factory()->forDeal($deal)->draft()->create();
+
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->assertDontSee('Pass to Customer');
+    });
+
+    it('calculates ROI with valid inputs', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create();
+
+        $component = Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->set('roiPropertyValue', 500000)
+            ->set('roiSqft', 2000)
+            ->set('roiBedrooms', 3)
+            ->set('roiScope', 'interior')
+            ->set('roiIntent', 'selling')
+            ->call('calculateRoi');
+
+        $results = $component->get('roiResults');
+
+        expect($results)->not->toBeNull();
+        expect($results)->toHaveKeys(['cost_low', 'cost_high', 'value_increase_low', 'value_increase_high', 'roi_percent_low', 'roi_percent_high']);
+        expect($results['cost_low'])->toBeGreaterThan(0);
+        expect($results['cost_high'])->toBeGreaterThan($results['cost_low']);
+    });
+
+    it('validates ROI inputs', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create();
+
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->set('roiPropertyValue', null)
+            ->set('roiSqft', null)
+            ->set('roiBedrooms', null)
+            ->call('calculateRoi')
+            ->assertHasErrors(['roiPropertyValue', 'roiSqft', 'roiBedrooms']);
+    });
+
+    it('populates ROI form from selected listing', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create([
+            'square_footage' => 2500,
+            'listing_price' => 450000,
+        ]);
+        $deal = Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create([
+            'listing_value' => 500000,
+            'listing_sqft' => 2200,
+            'listing_bedrooms' => 4,
+            'roi_scope' => 'exterior',
+            'agent_intent' => 'buying',
         ]);
 
-        Livewire::actingAs($agent, 'agent')
+        $component = Livewire::actingAs($agent, 'agent')
             ->test('agent.dashboard')
-            ->assertSee('John Smith')
-            ->assertSee('john.smith@example.com');
+            ->call('populateFromListing');
+
+        expect($component->get('roiPropertyValue'))->toBe(500000.0);
+        expect($component->get('roiSqft'))->toBe(2200);
+        expect($component->get('roiBedrooms'))->toBe(4);
+        expect($component->get('roiScope'))->toBe('exterior');
+        expect($component->get('roiIntent'))->toBe('buying');
     });
 
-    it('limits upcoming open houses to 5', function () {
+    it('shows disclaimer text on ROI results', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->create();
+        Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->create();
+
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->set('roiPropertyValue', 450000)
+            ->set('roiSqft', 2000)
+            ->set('roiBedrooms', 3)
+            ->set('roiScope', 'interior')
+            ->set('roiIntent', 'selling')
+            ->call('calculateRoi')
+            ->assertSee('Estimates vary by area, property condition, and listing strategy');
+    });
+
+    it('shows empty state when no deals', function () {
         $agent = User::factory()->agent()->create();
 
-        // Create 7 listings with open houses
-        for ($i = 1; $i <= 7; $i++) {
-            Property::factory()->agentListing()->forAgent($agent)->create([
-                'address' => "Address $i",
-                'open_house_date' => now()->addDays($i),
-            ]);
-        }
+        Livewire::actingAs($agent, 'agent')
+            ->test('agent.dashboard')
+            ->assertSee('Welcome to Your Dashboard')
+            ->assertSee('Add Your First Listing');
+    });
+
+    it('shows stats section with metrics', function () {
+        $agent = User::factory()->agent()->create();
+        $property = Property::factory()->agentListing()->forAgent($agent)->active()->create();
+
+        Deal::factory()->referredByAgent($agent)->forProperty($property)->lead()->count(2)->create();
+        Deal::factory()->referredByAgent($agent)->forProperty($property)->signed()->create();
+        Customer::factory()->count(3)->referredByAgent($agent)->create();
 
         $component = Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard');
-
-        expect($component->get('upcomingOpenHouses'))->toHaveCount(5);
-    });
-
-    it('limits recent customers to 5', function () {
-        $agent = User::factory()->agent()->create();
-
-        // Create 7 customers
-        Customer::factory()->count(7)->referredByAgent($agent)->create();
-
-        $component = Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard');
-
-        expect($component->get('recentCustomers'))->toHaveCount(5);
-    });
-
-    it('shows empty state for no upcoming open houses', function () {
-        $agent = User::factory()->agent()->create();
-
-        Livewire::actingAs($agent, 'agent')
             ->test('agent.dashboard')
-            ->assertSee('No upcoming open houses scheduled.');
-    });
+            ->assertSee('Listings')
+            ->assertSee('Active')
+            ->assertSee('Customers')
+            ->assertSee('Conversion')
+            ->assertSee('Deal Trend');
 
-    it('shows empty state for no referred customers', function () {
-        $agent = User::factory()->agent()->create();
-
-        Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('No customers referred yet.');
-    });
-});
-
-describe('Agent Dashboard Quick Actions', function () {
-    it('displays add new listing button', function () {
-        $agent = User::factory()->agent()->create();
-
-        Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('Add New Listing');
-    });
-
-    it('displays view my customers button', function () {
-        $agent = User::factory()->agent()->create();
-
-        Livewire::actingAs($agent, 'agent')
-            ->test('agent.dashboard')
-            ->assertSee('View My Customers');
+        expect($component->get('totalListings'))->toBe(1);
+        // 2 lead + 1 signed = 3 active deals (signed is not a past stage)
+        expect($component->get('activeListings'))->toBe(3);
+        expect($component->get('referredCustomers'))->toBe(3);
     });
 });

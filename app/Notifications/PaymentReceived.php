@@ -30,14 +30,14 @@ class PaymentReceived extends Notification implements ShouldQueue
         $invoice = $this->payment->invoice;
 
         return (new MailMessage)
-            ->subject("Payment Received - Invoice {$invoice->invoice_number}")
-            ->greeting("Hello {$notifiable->first_name}!")
-            ->line("We've received your payment. Thank you!")
-            ->line("**Invoice:** {$invoice->invoice_number}")
-            ->line('**Payment Amount:** $'.number_format((float) $this->payment->amount, 2))
-            ->line('**Payment Method:** '.ucfirst($this->payment->method))
-            ->line('**Remaining Balance:** $'.number_format((float) $invoice->balance_due, 2))
-            ->line("Thank you for your business with {$appName}!");
+            ->subject(__('Payment Received - Invoice :number', ['number' => $invoice->invoice_number]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->first_name]))
+            ->line(__("We've received your payment. Thank you!"))
+            ->line('**'.__('Invoice').':** '.$invoice->invoice_number)
+            ->line('**'.__('Payment Amount').':** $'.number_format((float) $this->payment->amount, 2))
+            ->line('**'.__('Payment Method').':** '.ucfirst($this->payment->method))
+            ->line('**'.__('Remaining Balance').':** $'.number_format((float) $invoice->balance_due, 2))
+            ->line(__('Thank you for your business with :appName!', ['appName' => $appName]));
     }
 
     /**

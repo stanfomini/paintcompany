@@ -54,6 +54,33 @@ class DealFactory extends Factory
     }
 
     /**
+     * Set the deal as not contacted.
+     */
+    public function notContacted(): static
+    {
+        return $this->stage('not_contacted');
+    }
+
+    /**
+     * Set the deal as follow up.
+     */
+    public function followUp(?string $date = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'stage' => 'follow_up',
+            'follow_up_date' => $date ?? now()->addDay()->toDateString(),
+        ]);
+    }
+
+    /**
+     * Set the deal as quote scheduled.
+     */
+    public function quoteScheduled(): static
+    {
+        return $this->stage('quote_scheduled');
+    }
+
+    /**
      * Set the deal as quoted.
      */
     public function quoted(): static
@@ -62,21 +89,13 @@ class DealFactory extends Factory
     }
 
     /**
-     * Set the deal as scheduled.
+     * Set the deal as signed.
      */
-    public function scheduled(): static
-    {
-        return $this->stage('scheduled');
-    }
-
-    /**
-     * Set the deal as in progress.
-     */
-    public function inProgress(): static
+    public function signed(): static
     {
         return $this->state(fn (array $attributes) => [
-            'stage' => 'in_progress',
-            'actual_start_date' => now(),
+            'stage' => 'signed',
+            'actual_value' => $attributes['estimated_value'] ?? fake()->randomFloat(2, 1000, 50000),
         ]);
     }
 
@@ -87,23 +106,16 @@ class DealFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'stage' => 'completed',
-            'actual_start_date' => fake()->dateTimeBetween('-2 weeks', '-1 week'),
-            'actual_end_date' => fake()->dateTimeBetween('-1 week', 'now'),
             'actual_value' => $attributes['estimated_value'] ?? fake()->randomFloat(2, 1000, 50000),
         ]);
     }
 
     /**
-     * Set the deal as paid.
+     * Set the deal as lost.
      */
-    public function paid(): static
+    public function lost(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'stage' => 'paid',
-            'actual_start_date' => fake()->dateTimeBetween('-3 weeks', '-2 weeks'),
-            'actual_end_date' => fake()->dateTimeBetween('-2 weeks', '-1 week'),
-            'actual_value' => $attributes['estimated_value'] ?? fake()->randomFloat(2, 1000, 50000),
-        ]);
+        return $this->stage('lost');
     }
 
     /**
@@ -152,6 +164,21 @@ class DealFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'agent_id' => $agent->id,
+        ]);
+    }
+
+    /**
+     * Set agent ROI fields for property value calculator.
+     */
+    public function withAgentRoi(string $intent = 'selling', string $scope = 'interior'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'agent_id' => User::factory()->agent(),
+            'agent_intent' => $intent,
+            'listing_value' => fake()->randomFloat(2, 200000, 800000),
+            'listing_bedrooms' => fake()->numberBetween(2, 5),
+            'listing_sqft' => fake()->numberBetween(1000, 4000),
+            'roi_scope' => $scope,
         ]);
     }
 

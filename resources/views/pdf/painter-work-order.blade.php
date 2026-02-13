@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Work Order - {{ $estimate->estimate_number }}</title>
+    <title>{{ __('Work Order') }} - {{ $estimate->estimate_number }}</title>
     <style>
         * {
             margin: 0;
@@ -324,13 +324,13 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="header-title">PAINTER'S WORK ORDER</div>
-            <div class="header-subtitle">{{ $projectInfo['estimate_number'] }} | {{ $projectInfo['project_type'] }} Painting | Generated: {{ now()->format('M j, Y g:i A') }}</div>
+            <div class="header-title">{{ __("PAINTER'S WORK ORDER") }}</div>
+            <div class="header-subtitle">{{ $projectInfo['estimate_number'] }} | {{ $projectInfo['project_type'] }} {{ __('Painting') }} | {{ __('Generated:') }} {{ now()->format('M j, Y g:i A') }}</div>
         </div>
 
         <div class="info-grid">
             <div class="info-cell">
-                <div class="info-label">Customer</div>
+                <div class="info-label">{{ __('Customer') }}</div>
                 <div class="info-value">{{ $customerInfo['name'] }}</div>
                 <div class="info-detail">{{ $customerInfo['address'] }}</div>
                 @if ($customerInfo['property_type'])
@@ -338,8 +338,8 @@
                 @endif
             </div>
             <div class="info-cell">
-                <div class="info-label">Project</div>
-                <div class="info-value">{{ $projectInfo['project_type'] }} Painting</div>
+                <div class="info-label">{{ __('Project') }}</div>
+                <div class="info-value">{{ $projectInfo['project_type'] }} {{ __('Painting') }}</div>
                 @if ($projectInfo['title'])
                     <div class="info-detail">{{ $projectInfo['title'] }}</div>
                 @endif
@@ -347,7 +347,7 @@
         </div>
 
         <div class="section">
-            <div class="section-title">AREAS TO PAINT</div>
+            <div class="section-title">{{ __('AREAS TO PAINT') }}</div>
 
             @foreach ($areaBreakdowns as $area)
                 <div class="area-card">
@@ -367,16 +367,16 @@
                     <div class="area-content">
                         @if ($area['substrate'])
                             <div class="warning-box">
-                                <strong>Surface Condition:</strong> {{ $area['substrate'] }}
+                                <strong>{{ __('Surface Condition:') }}</strong> {{ $area['substrate'] }}
                                 @if ($area['substrate_prep'] && $area['substrate_prep'] !== 'None')
-                                    | Prep: {{ $area['substrate_prep'] }}
+                                    | {{ __('Prep:') }} {{ $area['substrate_prep'] }}
                                 @endif
                             </div>
                         @endif
 
                         @if ($area['notes'])
                             <div class="note-box">
-                                <strong>Note:</strong> {{ $area['notes'] }}
+                                <strong>{{ __('Note:') }}</strong> {{ $area['notes'] }}
                             </div>
                         @endif
 
@@ -385,14 +385,14 @@
                                 <div class="surface-checkbox"><div class="checkbox"></div></div>
                                 <div class="surface-details">
                                     <div class="surface-name">{{ $surface['name'] }} - {{ number_format($surface['quantity']) }} {{ $surface['unit'] }}</div>
-                                    <div class="surface-specs">{{ $surface['coats'] }} {{ $surface['coats'] === 1 ? 'coat' : 'coats' }} &bull; {{ $surface['application_method'] }}</div>
+                                    <div class="surface-specs">{{ $surface['coats'] }} {{ $surface['coats'] === 1 ? __('coat') : __('coats') }} &bull; {{ $surface['application_method'] }}</div>
                                     @if ($surface['paint_product'])
                                         <div class="surface-paint">{{ $surface['paint_product']['full_name'] }}@if ($surface['paint_product']['sheen']) - {{ $surface['paint_product']['sheen'] }}@endif</div>
                                     @elseif ($surface['paint_brand'] && $surface['paint_type'])
                                         <div class="surface-paint">{{ $surface['paint_brand'] }} {{ $surface['paint_type'] }}</div>
                                     @endif
                                     @if (count($surface['prep_notes']) > 0)
-                                        <div class="surface-prep">Prep: {{ implode(', ', $surface['prep_notes']) }}</div>
+                                        <div class="surface-prep">{{ __('Prep:') }} {{ implode(', ', $surface['prep_notes']) }}</div>
                                     @endif
                                 </div>
                                 <div class="surface-hours">{{ number_format($surface['labor_hours'], 1) }} hrs</div>
@@ -401,7 +401,7 @@
 
                         @if (count($area['addons']) > 0)
                             <div class="addons-section">
-                                <div class="addons-title">Included Addons</div>
+                                <div class="addons-title">{{ __('Included Addons') }}</div>
                                 @foreach ($area['addons'] as $addon)
                                     <div class="surface-item">
                                         <div class="surface-checkbox"><div class="checkbox"></div></div>
@@ -423,19 +423,19 @@
         <div class="totals-box">
             <div class="totals-grid">
                 <div class="totals-cell">
-                    <div class="totals-label">Labor Hours</div>
+                    <div class="totals-label">{{ __('Labor Hours') }}</div>
                     <div class="totals-value">{{ number_format($jobTotals['labor_hours'], 1) }}</div>
                 </div>
                 <div class="totals-cell">
-                    <div class="totals-label">Cleanup Hours</div>
+                    <div class="totals-label">{{ __('Cleanup Hours') }}</div>
                     <div class="totals-value">{{ number_format($jobTotals['cleanup_hours'], 1) }}</div>
                 </div>
                 <div class="totals-cell">
-                    <div class="totals-label">Total Hours</div>
+                    <div class="totals-label">{{ __('Total Hours') }}</div>
                     <div class="totals-value totals-highlight">{{ number_format($jobTotals['total_hours'], 1) }}</div>
                 </div>
                 <div class="totals-cell">
-                    <div class="totals-label">Areas</div>
+                    <div class="totals-label">{{ __('Areas') }}</div>
                     <div class="totals-value">{{ $jobTotals['area_count'] }}</div>
                 </div>
             </div>
@@ -443,12 +443,12 @@
 
         @if (count($materialsNeeded) > 0)
             <div class="materials-list">
-                <div class="materials-title">MATERIALS NEEDED</div>
+                <div class="materials-title">{{ __('MATERIALS NEEDED') }}</div>
                 @foreach ($materialsNeeded as $material)
                     <div class="material-item">
                         <div class="material-checkbox"><div class="checkbox"></div></div>
                         <div class="material-name">{{ $material['brand'] }} {{ $material['name'] }}@if ($material['sheen']) - {{ $material['sheen'] }}@endif</div>
-                        <div class="material-qty">{{ ceil($material['gallons']) }} {{ ceil($material['gallons']) === 1 ? 'gallon' : 'gallons' }}</div>
+                        <div class="material-qty">{{ ceil($material['gallons']) }} {{ ceil($material['gallons']) === 1 ? __('gallon') : __('gallons') }}</div>
                     </div>
                 @endforeach
             </div>
@@ -456,13 +456,13 @@
 
         @if ($projectInfo['notes'])
             <div class="special-instructions">
-                <div class="special-title">SPECIAL INSTRUCTIONS</div>
+                <div class="special-title">{{ __('SPECIAL INSTRUCTIONS') }}</div>
                 <div class="special-text">{{ $projectInfo['notes'] }}</div>
             </div>
         @endif
 
         <div class="footer">
-            Work Order: {{ $projectInfo['estimate_number'] }} | Generated by {{ config('app.name') }} | {{ now()->format('M j, Y g:i A') }}
+            {{ __('Work Order:') }} {{ $projectInfo['estimate_number'] }} | {{ __('Generated by') }} {{ config('app.name') }} | {{ now()->format('M j, Y g:i A') }}
         </div>
     </div>
 </body>

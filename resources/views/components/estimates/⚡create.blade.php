@@ -36,17 +36,17 @@ new class extends Component {
     {{-- Breadcrumbs --}}
     <div class="mb-6">
         <flux:breadcrumbs>
-            <flux:breadcrumbs.item href="{{ route('deals.index') }}">Deals</flux:breadcrumbs.item>
+            <flux:breadcrumbs.item href="{{ route('deals.index') }}">{{ __('Deals') }}</flux:breadcrumbs.item>
             <flux:breadcrumbs.item href="{{ route('deals.show', $deal) }}">{{ $deal->title }}</flux:breadcrumbs.item>
-            <flux:breadcrumbs.item>Create Estimate</flux:breadcrumbs.item>
+            <flux:breadcrumbs.item>{{ __('Create Estimate') }}</flux:breadcrumbs.item>
         </flux:breadcrumbs>
     </div>
 
     {{-- Header --}}
     <div class="mb-8">
-        <flux:heading size="xl">Create New Estimate</flux:heading>
+        <flux:heading size="xl">{{ __('Create New Estimate') }}</flux:heading>
         <flux:text class="mt-2 text-zinc-600 dark:text-zinc-400">
-            Choose an estimating method for {{ $deal->customer?->full_name ?? 'this deal' }}
+            {{ __('Choose an estimating method for :name', ['name' => $deal->customer?->full_name ?? __('this deal')]) }}
         </flux:text>
     </div>
 
@@ -65,7 +65,7 @@ new class extends Component {
                             &bull; {{ $deal->customer->email }}
                         @endif
                     @else
-                        No customer assigned
+                        {{ __('No customer assigned') }}
                     @endif
                 </p>
                 @if ($deal->property)
@@ -83,12 +83,12 @@ new class extends Component {
 
     {{-- Mode Selector --}}
     <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
-        <h3 class="mb-4 font-semibold text-zinc-900 dark:text-white">Select Estimating Method</h3>
+        <h3 class="mb-4 font-semibold text-zinc-900 dark:text-white">{{ __('Select Estimating Method') }}</h3>
 
         <livewire:estimates.mode-selector :show-descriptions="true" />
 
         <p class="mt-4 text-sm text-zinc-500 dark:text-zinc-400">
-            Click a method above to continue. You can switch methods later if needed.
+            {{ __('Click a method above to continue. You can switch methods later if needed.') }}
         </p>
     </div>
 
@@ -100,7 +100,7 @@ new class extends Component {
             wire:navigate
         >
             <flux:icon name="arrow-left" class="mr-2 h-4 w-4" />
-            Back to Deal
+            {{ __('Back to Deal') }}
         </flux:button>
     </div>
 </div>

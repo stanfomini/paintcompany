@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -75,6 +76,10 @@ class Estimate extends Model
         'actual_painters',
         'profit_snapshot',
         'sent_snapshot',
+        'customer_notes',
+        'customer_checklist',
+        'agent_notes',
+        'agent_checklist',
     ];
 
     protected function casts(): array
@@ -104,6 +109,8 @@ class Estimate extends Model
             'actual_painters' => 'array',
             'profit_snapshot' => 'array',
             'sent_snapshot' => 'array',
+            'customer_checklist' => 'array',
+            'agent_checklist' => 'array',
         ];
     }
 
@@ -175,8 +182,10 @@ class Estimate extends Model
     {
         $prefix = 'EST-';
         $year = date('Y');
-        $lastEstimate = static::whereYear('created_at', $year)
-            ->orderByDesc('id')
+        $fullPrefix = $prefix.$year.'-';
+
+        $lastEstimate = static::where('estimate_number', 'like', $fullPrefix.'%')
+            ->orderByDesc('estimate_number')
             ->first();
 
         if ($lastEstimate) {
@@ -186,7 +195,7 @@ class Estimate extends Model
             $newNumber = 1;
         }
 
-        return $prefix.$year.'-'.str_pad($newNumber, 5, '0', STR_PAD_LEFT);
+        return $fullPrefix.str_pad($newNumber, 5, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -194,7 +203,7 @@ class Estimate extends Model
      */
     public function getStatusLabelAttribute(): string
     {
-        return self::STATUSES[$this->status] ?? $this->status;
+        return __(self::STATUSES[$this->status] ?? $this->status);
     }
 
     /**
@@ -324,6 +333,22 @@ class Estimate extends Model
     public function optionalItems(): HasMany
     {
         return $this->hasMany(EstimateOptionalItem::class);
+    }
+
+    /**
+     * Get the video recordings for this estimate.
+     */
+    public function videoRecordings(): MorphMany
+    {
+        return $this->morphMany(VideoRecording::class, 'recordable');
+    }
+
+    /**
+     * Get the invoices for this estimate.
+     */
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(Invoice::class);
     }
 
     /**
@@ -563,9 +588,18 @@ class Estimate extends Model
 
         $saved = $this->save();
 
-        // Advance referral status if this estimate was referred
         if ($saved) {
+            // Advance referral status if this estimate was referred
             app(\App\Services\ReferralService::class)->onEstimateSent($this);
+
+            // Create planner follow-up task
+            app(\App\Services\PlannerAutomationService::class)->onEstimateSent($this);
+
+            // Notify the referring agent if one exists
+            $this->notifyReferringAgent();
+
+            // Broadcast status change
+            \App\Events\EstimateStatusChanged::dispatch($this, 'draft', 'sent');
         }
 
         return $saved;
@@ -613,10 +647,19 @@ class Estimate extends Model
             throw new InvalidArgumentException('Estimate requires a signature before it can be accepted.');
         }
 
+        $oldStatus = $this->getOriginal('status') ?? 'sent';
         $this->status = 'accepted';
         $this->accepted_at = now();
 
-        return $this->save();
+        $saved = $this->save();
+
+        if ($saved) {
+            app(\App\Services\PlannerAutomationService::class)->onEstimateSigned($this);
+
+            \App\Events\EstimateStatusChanged::dispatch($this, $oldStatus, 'accepted');
+        }
+
+        return $saved;
     }
 
     /**
@@ -624,10 +667,37 @@ class Estimate extends Model
      */
     public function markAsRejected(): bool
     {
+        $oldStatus = $this->getOriginal('status') ?? 'sent';
         $this->status = 'rejected';
         $this->rejected_at = now();
 
-        return $this->save();
+        $saved = $this->save();
+
+        if ($saved) {
+            app(\App\Services\PlannerAutomationService::class)->onEstimateRejected($this);
+
+            \App\Events\EstimateStatusChanged::dispatch($this, $oldStatus, 'rejected');
+        }
+
+        return $saved;
+    }
+
+    /**
+     * Notify the referring agent that the estimate is ready.
+     */
+    protected function notifyReferringAgent(): void
+    {
+        $deal = $this->relationLoaded('deal') ? $this->deal : $this->load('deal')->deal;
+
+        if (! $deal || ! $deal->agent_id) {
+            return;
+        }
+
+        $agent = User::find($deal->agent_id);
+
+        if ($agent) {
+            $agent->notify(new \App\Notifications\EstimateReadyForAgent($this, $deal));
+        }
     }
 
     /**

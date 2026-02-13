@@ -14,7 +14,7 @@
                 required
                 autofocus
                 autocomplete="name"
-                placeholder="John Doe"
+                :placeholder="__('John Doe')"
             />
 
             <!-- Email Address -->
@@ -25,7 +25,7 @@
                 type="email"
                 required
                 autocomplete="email"
-                placeholder="crew@example.com"
+                :placeholder="__('crew@example.com')"
             />
 
             <!-- Company Name -->
@@ -35,7 +35,7 @@
                 :value="old('company_name')"
                 type="text"
                 autocomplete="organization"
-                placeholder="Smith Painting Co."
+                :placeholder="__('Smith Painting Co.')"
             />
 
             <!-- Phone -->
@@ -45,7 +45,7 @@
                 :value="old('phone')"
                 type="tel"
                 autocomplete="tel"
-                placeholder="(555) 123-4567"
+                :placeholder="__('(555) 123-4567')"
             />
 
             <!-- Crew Size -->
@@ -56,7 +56,7 @@
                 type="number"
                 min="1"
                 max="50"
-                placeholder="1"
+                :placeholder="__('1')"
             />
 
             <!-- Password -->

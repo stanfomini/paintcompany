@@ -106,9 +106,9 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
     <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-3">
-                <flux:heading size="xl">Messages</flux:heading>
+                <flux:heading size="xl">{{ __('Messages') }}</flux:heading>
                 @if ($this->totalUnreadCount > 0)
-                    <flux:badge color="red" size="sm">{{ $this->totalUnreadCount }} unread</flux:badge>
+                    <flux:badge color="red" size="sm">{{ $this->totalUnreadCount }} {{ __('unread') }}</flux:badge>
                 @endif
             </div>
             <livewire:agent.chat.create-thread />
@@ -119,14 +119,14 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
                 <flux:input
                     wire:model.live.debounce.300ms="search"
                     type="search"
-                    placeholder="Search conversations..."
+                    placeholder="{{ __('Search conversations...') }}"
                     icon="magnifying-glass"
                 />
             </div>
             <div class="sm:w-40">
                 <flux:select wire:model.live="filter">
-                    <option value="all">All</option>
-                    <option value="unread">Unread</option>
+                    <option value="all">{{ __('All') }}</option>
+                    <option value="unread">{{ __('Unread') }}</option>
                 </flux:select>
             </div>
         </div>
@@ -134,14 +134,14 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
         @if ($this->threads->isEmpty())
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="chat-bubble-left-right" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No conversations found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No conversations found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($search)
-                        Try adjusting your search criteria.
+                        {{ __('Try adjusting your search criteria.') }}
                     @elseif ($filter === 'unread')
-                        You have no unread messages.
+                        {{ __('You have no unread messages.') }}
                     @else
-                        Your conversations will appear here.
+                        {{ __('Your conversations will appear here.') }}
                     @endif
                 </flux:text>
             </div>
@@ -188,9 +188,11 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
                                                 {{ $thread->display_name }}
                                             </flux:text>
                                             @if ($thread->type === 'deal' && $thread->deal)
-                                                <flux:badge size="sm" color="blue">Deal</flux:badge>
+                                                <flux:badge size="sm" color="blue">{{ __('Deal') }}</flux:badge>
+                                            @elseif ($thread->type === 'direct')
+                                                <flux:badge size="sm" color="zinc">{{ __('Direct') }}</flux:badge>
                                             @elseif ($thread->type === 'support')
-                                                <flux:badge size="sm" color="purple">Support</flux:badge>
+                                                <flux:badge size="sm" color="purple">{{ __('Support') }}</flux:badge>
                                             @endif
                                         </div>
 
@@ -198,7 +200,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
                                             <div class="mt-1 flex items-center gap-2">
                                                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 truncate {{ $thread->unread_count > 0 ? 'font-medium' : '' }}">
                                                     @if ($thread->latestMessage->user_id === auth('agent')->id())
-                                                        <span class="text-zinc-400 dark:text-zinc-500">You:</span>
+                                                        <span class="text-zinc-400 dark:text-zinc-500">{{ __('You') }}:</span>
                                                     @else
                                                         <span class="text-zinc-400 dark:text-zinc-500">{{ $thread->latestMessage->user?->name }}:</span>
                                                     @endif
@@ -233,7 +235,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
                                         wire:click="archiveThread({{ $thread->id }})"
                                         icon="archive-box"
                                     >
-                                        Archive
+                                        {{ __('Archive') }}
                                     </flux:menu.item>
                                 </flux:menu>
                             </flux:dropdown>

@@ -739,7 +739,7 @@ describe('EstimateProposal acceptance actions', function () {
         expect($message->user_id)->toBeNull();
     });
 
-    it('advances deal to signed_accepted stage on acceptance', function () {
+    it('advances deal to signed stage on acceptance', function () {
         expect($this->deal->fresh()->stage)->toBe('quoted');
 
         EstimateSignature::createFromRequest(
@@ -750,7 +750,7 @@ describe('EstimateProposal acceptance actions', function () {
             'typed'
         );
 
-        expect($this->deal->fresh()->stage)->toBe('signed_accepted');
+        expect($this->deal->fresh()->stage)->toBe('signed');
     });
 
     it('does not create duplicate chat thread if one already exists', function () {

@@ -11,23 +11,53 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\Notifiable;
 
+/**
+ * @property-read LeadSource|null $leadSource
+ */
 class Customer extends Model
 {
     use HasFactory, Notifiable, SoftDeletes;
 
+    protected static function booted(): void
+    {
+        static::saved(function (Customer $customer) {
+            if ($customer->address && $customer->city) {
+                $exists = $customer->properties()
+                    ->where('address', $customer->address)
+                    ->where('city', $customer->city)
+                    ->exists();
+
+                if (! $exists) {
+                    Property::create([
+                        'customer_id' => $customer->id,
+                        'address' => $customer->address,
+                        'city' => $customer->city,
+                        'state' => $customer->state ?? '',
+                        'zip' => $customer->zip ?? '',
+                        'type' => 'residential',
+                    ]);
+                }
+            }
+        });
+    }
+
     public const SOURCES = [
+        'online' => 'Website',
         'referral' => 'Referral',
-        'online' => 'Online',
         'agent' => 'Agent',
-        'walk_in' => 'Walk-in',
+        'walk_in' => 'Walk-In',
+        'door_knock' => 'Door Knock',
+        'google_ads' => 'Google Ads',
         'other' => 'Other',
     ];
 
     protected $fillable = [
         'user_id',
         'created_by',
+        'assigned_to',
         'referred_by',
         'property_id',
+        'lead_source_id',
         'first_name',
         'last_name',
         'email',
@@ -88,6 +118,14 @@ class Customer extends Model
     }
 
     /**
+     * Get the internal user assigned to manage this customer.
+     */
+    public function assignedTo(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
      * Get the agent who referred this customer.
      */
     public function referredBy(): BelongsTo
@@ -104,6 +142,22 @@ class Customer extends Model
     }
 
     /**
+     * Get the lead source for this customer.
+     */
+    public function leadSource(): BelongsTo
+    {
+        return $this->belongsTo(LeadSource::class);
+    }
+
+    /**
+     * Get lead source options from the database.
+     */
+    public static function getSourceOptions(): array
+    {
+        return LeadSource::getOptions();
+    }
+
+    /**
      * Get the properties associated with this customer.
      */
     public function properties(): HasMany
@@ -117,6 +171,24 @@ class Customer extends Model
     public function deals(): HasMany
     {
         return $this->hasMany(Deal::class);
+    }
+
+    /**
+     * Get collaborations where this customer is a collaborator.
+     */
+    public function collaborations(): HasMany
+    {
+        return $this->hasMany(DealCollaborator::class);
+    }
+
+    /**
+     * Get active collaborations for this customer.
+     */
+    public function activeCollaborations(): HasMany
+    {
+        return $this->hasMany(DealCollaborator::class)
+            ->whereNull('revoked_at')
+            ->where('expires_at', '>', now());
     }
 
     /**

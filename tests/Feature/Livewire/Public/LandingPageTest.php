@@ -3,6 +3,7 @@
 use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\Invitation;
 use App\Models\Referral;
 use App\Models\User;
 use Illuminate\Support\Facades\Notification;
@@ -125,5 +126,135 @@ describe('Landing page', function () {
             ->assertRedirect(route('next-steps'));
 
         expect(Customer::where('email', 'bot@spam.com')->exists())->toBeFalse();
+    });
+
+    it('auto-sends invitation email on form submission', function () {
+        Notification::fake();
+
+        Livewire::test('public.landing-page')
+            ->set('first_name', 'Portal')
+            ->set('last_name', 'User')
+            ->set('email', 'portal@example.com')
+            ->set('estimate_preference', 'virtual')
+            ->call('submitLeadForm')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('next-steps'));
+
+        $invitation = Invitation::where('email', 'portal@example.com')
+            ->where('invited_user_type', 'customer')
+            ->first();
+
+        expect($invitation)->not->toBeNull();
+        expect($invitation->accepted_at)->toBeNull();
+    });
+
+    it('does not fail form if user already exists (auto-invite catches exception)', function () {
+        Notification::fake();
+
+        // Pre-create a User with the same email
+        User::factory()->create([
+            'email' => 'existing@example.com',
+            'type' => 'customer',
+        ]);
+
+        Livewire::test('public.landing-page')
+            ->set('first_name', 'Existing')
+            ->set('last_name', 'User')
+            ->set('email', 'existing@example.com')
+            ->set('estimate_preference', 'virtual')
+            ->call('submitLeadForm')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('next-steps'));
+
+        // Customer record still created, no invitation since user exists
+        expect(Customer::where('email', 'existing@example.com')->exists())->toBeTrue();
+        expect(Invitation::where('email', 'existing@example.com')->exists())->toBeFalse();
+    });
+
+    it('does not create invitation when honeypot is filled', function () {
+        Livewire::test('public.landing-page')
+            ->set('first_name', 'Bot')
+            ->set('last_name', 'Spam')
+            ->set('email', 'bot2@spam.com')
+            ->set('honeypot', 'I am a bot')
+            ->call('submitLeadForm')
+            ->assertRedirect(route('next-steps'));
+
+        expect(Invitation::where('email', 'bot2@spam.com')->exists())->toBeFalse();
+    });
+});
+
+describe('Agent ROI section', function () {
+    beforeEach(function () {
+        $this->withoutVite();
+
+        CompanySetting::clearInstanceCache();
+        CompanySetting::getInstance();
+        CompanySetting::clearInstanceCache();
+
+        User::factory()->internal()->withFullAccess()->create();
+    });
+
+    it('shows the Property Value Calculator section', function () {
+        Livewire::test('public.landing-page')
+            ->assertSee('Free Property Value Calculator')
+            ->assertSee('Add Your Listing')
+            ->assertSee('See ROI Impact')
+            ->assertSee('Share with Clients');
+    });
+
+    it('shows agent ROI CTA text', function () {
+        Livewire::test('public.landing-page')
+            ->assertSee('Try the Property Value Calculator')
+            ->assertSee('Try the Calculator')
+            ->assertSee('Free for all agents. See the calculator in action.');
+    });
+
+    it('shows selling and buying value differentiation', function () {
+        Livewire::test('public.landing-page')
+            ->assertSee('Selling a Home')
+            ->assertSee('Buying a Home')
+            ->assertSee('Increase listing price by thousands')
+            ->assertSee('Budget accurately for move-in ready updates');
+    });
+});
+
+describe('Next steps page', function () {
+    beforeEach(function () {
+        $this->withoutVite();
+    });
+
+    it('renders the next-steps page', function () {
+        $this->get(route('next-steps'))
+            ->assertOk()
+            ->assertSeeLivewire('public.next-steps');
+    });
+
+    it('shows default portal text when no flash data', function () {
+        $this->get(route('next-steps'))
+            ->assertOk()
+            ->assertSee('Check your email for a portal invitation');
+    });
+
+    it('shows setup button when invitation_accept_url is flashed', function () {
+        $this->withSession(['invitation_accept_url' => 'https://example.com/accept/test-token'])
+            ->get(route('next-steps'))
+            ->assertOk()
+            ->assertSee('Set up your customer portal')
+            ->assertSee('Set Up My Account')
+            ->assertSee('We also sent this link to your email')
+            ->assertDontSee('Check your email for a portal invitation');
+    });
+
+    it('does not show setup button on page refresh (flash expires)', function () {
+        // First request with flash data
+        $this->withSession(['_flash' => ['old' => ['invitation_accept_url']], 'invitation_accept_url' => 'https://example.com/accept/test-token'])
+            ->get(route('next-steps'));
+
+        // Second request - flash data should be gone
+        $this->get(route('next-steps'))
+            ->assertOk()
+            ->assertSee('Check your email for a portal invitation')
+            ->assertDontSee('Set Up My Account');
     });
 });

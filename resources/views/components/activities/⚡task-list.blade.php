@@ -96,7 +96,7 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">Tasks</flux:heading>
+            <flux:heading size="xl">{{ __('Tasks') }}</flux:heading>
         </div>
 
         @if (session('success'))
@@ -109,7 +109,7 @@ new class extends Component {
         <div class="flex flex-col sm:flex-row gap-4 mb-6">
             <div class="sm:w-48">
                 <flux:select wire:model.live="typeFilter">
-                    <option value="all">All Types</option>
+                    <option value="all">{{ __('All Types') }}</option>
                     @foreach ($this->types as $value => $label)
                         <option value="{{ $value }}">{{ $label }}</option>
                     @endforeach
@@ -117,18 +117,18 @@ new class extends Component {
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="statusFilter">
-                    <option value="all">All Statuses</option>
-                    <option value="incomplete">Incomplete</option>
-                    <option value="completed">Completed</option>
-                    <option value="overdue">Overdue</option>
+                    <option value="all">{{ __('All Statuses') }}</option>
+                    <option value="incomplete">{{ __('Incomplete') }}</option>
+                    <option value="completed">{{ __('Completed') }}</option>
+                    <option value="overdue">{{ __('Overdue') }}</option>
                 </flux:select>
             </div>
             <div class="sm:w-48">
                 <flux:select wire:model.live="dueDateFilter">
-                    <option value="all">All Dates</option>
-                    <option value="today">Due Today</option>
-                    <option value="this_week">Due This Week</option>
-                    <option value="overdue">Overdue</option>
+                    <option value="all">{{ __('All Dates') }}</option>
+                    <option value="today">{{ __('Due Today') }}</option>
+                    <option value="this_week">{{ __('Due This Week') }}</option>
+                    <option value="overdue">{{ __('Overdue') }}</option>
                 </flux:select>
             </div>
         </div>
@@ -139,19 +139,19 @@ new class extends Component {
                     <thead class="bg-zinc-50 dark:bg-zinc-800">
                         <tr>
                             <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider w-12">
-                                Done
+                                {{ __('Done') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Title
+                                {{ __('Title') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Type
+                                {{ __('Type') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Subject
+                                {{ __('Subject') }}
                             </th>
                             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                Due Date
+                                {{ __('Due Date') }}
                             </th>
                         </tr>
                     </thead>
@@ -209,7 +209,7 @@ new class extends Component {
                                             </flux:badge>
                                         @elseif ($activity->due_at->isToday())
                                             <flux:badge size="sm" color="yellow">
-                                                Today
+                                                {{ __('Today') }}
                                             </flux:badge>
                                         @else
                                             <flux:text>{{ $activity->due_at->format('M j, Y') }}</flux:text>
@@ -230,12 +230,12 @@ new class extends Component {
         @else
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                 <flux:icon name="check-circle" class="mx-auto h-12 w-12 text-zinc-400" />
-                <flux:heading size="sm" class="mt-4">No activities found</flux:heading>
+                <flux:heading size="sm" class="mt-4">{{ __('No activities found') }}</flux:heading>
                 <flux:text class="mt-2 text-zinc-500">
                     @if ($typeFilter !== 'all' || $statusFilter !== 'all' || $dueDateFilter !== 'all')
-                        Try adjusting your filter criteria.
+                        {{ __('Try adjusting your filter criteria.') }}
                     @else
-                        Get started by adding your first activity.
+                        {{ __('Get started by adding your first activity.') }}
                     @endif
                 </flux:text>
             </div>

@@ -1,5 +1,9 @@
 # Apex Negotiations - Painting Company CRM
 
+## CRITICAL: Forbidden Commands
+
+**NEVER run `php artisan migrate:fresh` or `php artisan migrate:refresh`.** These commands destroy ALL data in the production database. This is a hard rule with no exceptions unless the user explicitly asks for it. Always use `php artisan migrate` (without fresh/refresh) to run pending migrations only.
+
 ## Project Plans
 
 **IMPORTANT**: Before starting work, read the plan files in `.claude/plans/`:

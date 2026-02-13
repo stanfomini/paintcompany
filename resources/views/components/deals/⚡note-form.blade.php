@@ -45,7 +45,7 @@ new class extends Component {
             ]);
 
             $this->dispatch('note-updated');
-            session()->flash('note-success', 'Note updated successfully.');
+            session()->flash('note-success', __('Note updated successfully.'));
         } else {
             DealNote::create([
                 'deal_id' => $this->dealId,
@@ -55,7 +55,7 @@ new class extends Component {
             ]);
 
             $this->dispatch('note-created');
-            session()->flash('note-success', 'Note added successfully.');
+            session()->flash('note-success', __('Note added successfully.'));
         }
 
         $this->resetForm();
@@ -86,7 +86,7 @@ new class extends Component {
         if ($note) {
             $note->delete();
             $this->dispatch('note-deleted');
-            session()->flash('note-success', 'Note deleted successfully.');
+            session()->flash('note-success', __('Note deleted successfully.'));
         }
     }
 
@@ -109,29 +109,29 @@ new class extends Component {
             <flux:textarea
                 wire:model="content"
                 rows="3"
-                placeholder="Add a note..."
+                placeholder="{{ __('Add a note...') }}"
             />
             <flux:error name="content" />
         </flux:field>
 
         <div class="mt-3 flex items-center justify-between">
-            <flux:checkbox wire:model="isInternal" label="Internal note (staff-only)" />
+            <flux:checkbox wire:model="isInternal" :label="__('Internal note (staff-only)')" />
 
             <div class="flex gap-2">
                 @if ($editingNoteId)
                     <flux:button variant="ghost" wire:click="cancelEdit" type="button">
-                        Cancel
+                        {{ __('Cancel') }}
                     </flux:button>
                 @endif
                 <flux:button type="submit" variant="primary" size="sm">
-                    {{ $editingNoteId ? 'Update Note' : 'Add Note' }}
+                    {{ $editingNoteId ? __('Update Note') : __('Add Note') }}
                 </flux:button>
             </div>
         </div>
     </form>
 
     @if ($this->notes->isEmpty())
-        <flux:text class="text-zinc-500">No notes yet.</flux:text>
+        <flux:text class="text-zinc-500">{{ __('No notes yet.') }}</flux:text>
     @else
         <div class="space-y-4">
             @foreach ($this->notes as $note)
@@ -140,9 +140,9 @@ new class extends Component {
                         <div class="flex items-center gap-2">
                             <flux:text class="font-medium">{{ $note->user->name }}</flux:text>
                             @if ($note->is_internal)
-                                <flux:badge size="sm" color="yellow">Internal</flux:badge>
+                                <flux:badge size="sm" color="yellow">{{ __('Internal') }}</flux:badge>
                             @else
-                                <flux:badge size="sm" color="green">Public</flux:badge>
+                                <flux:badge size="sm" color="green">{{ __('Public') }}</flux:badge>
                             @endif
                         </div>
                         <div class="flex items-center gap-2">
@@ -154,15 +154,15 @@ new class extends Component {
                                     <flux:button variant="ghost" size="sm" icon="ellipsis-vertical" />
                                     <flux:menu>
                                         <flux:menu.item wire:click="editNote({{ $note->id }})" icon="pencil">
-                                            Edit
+                                            {{ __('Edit') }}
                                         </flux:menu.item>
                                         <flux:menu.item
                                             wire:click="deleteNote({{ $note->id }})"
-                                            wire:confirm="Are you sure you want to delete this note?"
+                                            :wire:confirm="__('Are you sure you want to delete this note?')"
                                             icon="trash"
                                             variant="danger"
                                         >
-                                            Delete
+                                            {{ __('Delete') }}
                                         </flux:menu.item>
                                     </flux:menu>
                                 </flux:dropdown>

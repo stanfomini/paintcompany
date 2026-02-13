@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8000
 
+    # API Key Authentication
+    python_api_key: str = ""  # Required in production
+
     # Laravel Integration
     laravel_url: str = "http://127.0.0.1"
     laravel_api_key: str = ""

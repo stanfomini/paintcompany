@@ -2,6 +2,7 @@
 
 use App\Models\Estimate;
 use App\Models\EstimateActivity;
+use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateItem;
 use App\Models\EstimatePackage;
@@ -56,10 +57,10 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'packageName.required' => 'Please enter a package name.',
-            'packageTier.required' => 'Please select a tier.',
-            'packageDiscountPercent.min' => 'Discount cannot be negative.',
-            'packageDiscountPercent.max' => 'Discount cannot exceed 100%.',
+            'packageName.required' => __('Please enter a package name.'),
+            'packageTier.required' => __('Please select a tier.'),
+            'packageDiscountPercent.min' => __('Discount cannot be negative.'),
+            'packageDiscountPercent.max' => __('Discount cannot exceed 100%.'),
         ];
     }
 
@@ -159,8 +160,37 @@ new class extends Component {
                     $areasMap[$areaId]['surfaces'][] = $surfaceData;
                 }
 
+                // Add fixed-price areas (linked as EstimateArea items, not surfaces)
+                $fixedPriceItems = $package->items->filter(
+                    fn ($item) => $item->itemable_type === EstimateArea::class
+                );
+
+                foreach ($fixedPriceItems as $item) {
+                    $area = $item->itemable;
+                    if (! $area) {
+                        continue;
+                    }
+
+                    $areaId = $area->id;
+                    $areasMap[$areaId] = [
+                        'id' => $areaId,
+                        'name' => $area->name,
+                        'area_model' => $area,
+                        'surfaces' => [],
+                        'is_fixed_price' => true,
+                        'item_id' => $item->id,
+                        'is_included' => $item->is_included,
+                        'included_total' => $item->is_included ? $area->getCustomerPrice() : 0,
+                    ];
+                }
+
                 // Calculate included_total per area based on package-specific surface inclusions
                 foreach ($areasMap as $areaId => &$areaData) {
+                    // Skip fixed-price areas - they already have included_total set
+                    if (! empty($areaData['is_fixed_price'])) {
+                        continue;
+                    }
+
                     $includedSurfaceIds = collect($areaData['surfaces'])
                         ->where('is_included', true)
                         ->pluck('surface_id')
@@ -170,9 +200,10 @@ new class extends Component {
                 }
                 unset($areaData);
 
-                // Get service items (non-surface items)
+                // Get service items (non-surface, non-area items)
                 $serviceItems = $package->items->filter(
                     fn ($item) => $item->itemable_type !== EstimateAreaSurface::class
+                        && $item->itemable_type !== EstimateArea::class
                 )->map(function (EstimatePackageItem $item) {
                     return [
                         'id' => $item->id,
@@ -326,7 +357,7 @@ new class extends Component {
     public function regeneratePackages(): void
     {
         if (! PackageTemplate::active()->exists()) {
-            session()->flash('error', 'No package templates configured. Please set up Good/Better/Best in Company Settings.');
+            session()->flash('error', __('No package templates configured. Please set up Good/Better/Best in Company Settings.'));
 
             return;
         }
@@ -511,7 +542,7 @@ new class extends Component {
                 'calculated_price' => $item->calculatePrice($paintingTotal),
                 'cost' => (float) $item->cost,
                 'is_customer_selectable' => $item->is_customer_selectable,
-                'service_category' => $item->serviceCategory?->name,
+                'service_category' => $item->serviceCategory ? __($item->serviceCategory->name) : null,
             ])
             ->values()
             ->toArray();
@@ -648,23 +679,23 @@ new class extends Component {
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg">
         <div class="flex items-center justify-between p-4 border-b border-zinc-200 dark:border-zinc-700">
             <div>
-                <flux:heading size="sm">Pricing Packages (Good/Better/Best)</flux:heading>
+                <flux:heading size="sm">{{ __('Pricing Packages (Good/Better/Best)') }}</flux:heading>
                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mt-1">
-                    Toggle items to differentiate packages. Changes will notify the customer if the estimate has been sent.
+                    {{ __('Toggle items to differentiate packages. Changes will notify the customer if the estimate has been sent.') }}
                 </flux:text>
             </div>
             @if ($this->hasPackageTemplates())
                 <flux:button
                     wire:click="regeneratePackages"
                     wire:loading.attr="disabled"
-                    wire:confirm="This will regenerate all packages from the current templates. Any customizations will be lost. Continue?"
+                    wire:confirm="{{ __('This will regenerate all packages from the current templates. Any customizations will be lost. Continue?') }}"
                     type="button"
                     variant="ghost"
                     size="sm"
                     icon="arrow-path"
                 >
-                    <span wire:loading.remove wire:target="regeneratePackages">Regenerate from Templates</span>
-                    <span wire:loading wire:target="regeneratePackages">Regenerating...</span>
+                    <span wire:loading.remove wire:target="regeneratePackages">{{ __('Regenerate from Templates') }}</span>
+                    <span wire:loading wire:target="regeneratePackages">{{ __('Regenerating...') }}</span>
                 </flux:button>
             @endif
         </div>
@@ -696,7 +727,7 @@ new class extends Component {
                             </div>
 
                             @if ($package['is_recommended'])
-                                <flux:badge color="green" size="sm" class="mb-2">Recommended</flux:badge>
+                                <flux:badge color="green" size="sm" class="mb-2">{{ __('Recommended') }}</flux:badge>
                             @else
                                 <flux:button
                                     wire:click="markAsRecommended({{ $package['id'] }})"
@@ -705,7 +736,7 @@ new class extends Component {
                                     size="xs"
                                     class="text-zinc-500 hover:text-green-600"
                                 >
-                                    Set as Recommended
+                                    {{ __('Set as Recommended') }}
                                 </flux:button>
                             @endif
 
@@ -720,63 +751,80 @@ new class extends Component {
                         <div class="divide-y divide-zinc-100 dark:divide-zinc-800 max-h-80 overflow-y-auto">
                             @forelse ($package['areas'] as $area)
                                 <div wire:key="package-{{ $package['id'] }}-area-{{ $area['id'] }}">
-                                    {{-- Area Header (clickable to expand) --}}
-                                    <button
-                                        wire:click="toggleAreaExpansion({{ $package['id'] }}, {{ $area['id'] }})"
-                                        type="button"
-                                        class="w-full px-4 py-2 flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                                    >
-                                        <flux:icon
-                                            name="{{ $this->isAreaExpanded($package['id'], $area['id']) ? 'chevron-down' : 'chevron-right' }}"
-                                            class="w-4 h-4 text-zinc-400 shrink-0"
-                                        />
-                                        <div class="flex-1 min-w-0 text-left">
-                                            <flux:text size="sm" class="font-medium truncate">{{ $area['name'] }}</flux:text>
-                                            <flux:text size="xs" class="text-zinc-400">
-                                                {{ count($area['surfaces']) }} surfaces
+                                    @if (!empty($area['is_fixed_price']))
+                                        {{-- Fixed-price area: no expand, toggle inclusion --}}
+                                        <div class="w-full px-4 py-2 flex items-center gap-3 {{ !($area['is_included'] ?? true) ? 'opacity-50' : '' }}">
+                                            <flux:checkbox
+                                                wire:click="toggleItemInclusion({{ $package['id'] }}, {{ $area['item_id'] }})"
+                                                :checked="$area['is_included'] ?? true"
+                                            />
+                                            <div class="flex-1 min-w-0 text-left">
+                                                <flux:text size="sm" class="font-medium truncate">{{ $area['name'] }}</flux:text>
+                                                <flux:text size="xs" class="text-zinc-400">{{ __('Fixed Price') }}</flux:text>
+                                            </div>
+                                            <flux:text size="sm" class="font-medium {{ ($area['is_included'] ?? true) ? 'text-green-600 dark:text-green-400' : 'line-through' }}">
+                                                ${{ number_format($area['included_total'], 2) }}
                                             </flux:text>
                                         </div>
-                                        <flux:text size="sm" class="font-medium text-green-600 dark:text-green-400">
-                                            ${{ number_format($area['included_total'], 2) }}
-                                        </flux:text>
-                                    </button>
+                                    @else
+                                        {{-- Standard area with expandable surfaces --}}
+                                        <button
+                                            wire:click="toggleAreaExpansion({{ $package['id'] }}, {{ $area['id'] }})"
+                                            type="button"
+                                            class="w-full px-4 py-2 flex items-center gap-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                                        >
+                                            <flux:icon
+                                                name="{{ $this->isAreaExpanded($package['id'], $area['id']) ? 'chevron-down' : 'chevron-right' }}"
+                                                class="w-4 h-4 text-zinc-400 shrink-0"
+                                            />
+                                            <div class="flex-1 min-w-0 text-left">
+                                                <flux:text size="sm" class="font-medium truncate">{{ $area['name'] }}</flux:text>
+                                                <flux:text size="xs" class="text-zinc-400">
+                                                    {{ count($area['surfaces']) }} {{ __('surfaces') }}
+                                                </flux:text>
+                                            </div>
+                                            <flux:text size="sm" class="font-medium text-green-600 dark:text-green-400">
+                                                ${{ number_format($area['included_total'], 2) }}
+                                            </flux:text>
+                                        </button>
 
-                                    {{-- Expanded Surfaces --}}
-                                    @if ($this->isAreaExpanded($package['id'], $area['id']))
-                                        <div class="bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
-                                            @foreach ($area['surfaces'] as $surface)
-                                                <div
-                                                    wire:key="package-{{ $package['id'] }}-surface-{{ $surface['id'] }}"
-                                                    class="px-6 py-2 flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 {{ !$surface['is_included'] ? 'opacity-50' : '' }}"
-                                                >
-                                                    <flux:checkbox
-                                                        wire:click="toggleItemInclusion({{ $package['id'] }}, {{ $surface['id'] }})"
-                                                        :checked="$surface['is_included']"
-                                                    />
-                                                    <div class="flex-1 min-w-0">
-                                                        <flux:text size="sm">{{ $surface['name'] }}</flux:text>
-                                                        <flux:text size="xs" class="text-zinc-400">
-                                                            {{ number_format($surface['quantity'], 0) }} {{ $surface['unit'] }}
-                                                            &bull; {{ number_format($surface['labor_hours'], 1) }} hrs
+                                        {{-- Expanded Surfaces --}}
+                                        @if ($this->isAreaExpanded($package['id'], $area['id']))
+                                            <div class="bg-zinc-50 dark:bg-zinc-900 border-t border-zinc-100 dark:border-zinc-800">
+                                                @foreach ($area['surfaces'] as $surface)
+                                                    <div
+                                                        wire:key="package-{{ $package['id'] }}-surface-{{ $surface['id'] }}"
+                                                        class="px-6 py-2 flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 last:border-b-0 {{ !$surface['is_included'] ? 'opacity-50' : '' }}"
+                                                    >
+                                                        <flux:checkbox
+                                                            wire:click="toggleItemInclusion({{ $package['id'] }}, {{ $surface['id'] }})"
+                                                            :checked="$surface['is_included']"
+                                                        />
+                                                        <div class="flex-1 min-w-0">
+                                                            <flux:text size="sm">{{ $surface['name'] }}</flux:text>
+                                                            <flux:text size="xs" class="text-zinc-400">
+                                                                {{ number_format($surface['quantity'], 0) }} {{ $surface['unit'] }}
+                                                                &bull; {{ number_format($surface['labor_hours'], 1) }} hrs
+                                                            </flux:text>
+                                                        </div>
+                                                        <flux:text size="sm" class="font-medium {{ $surface['is_included'] ? '' : 'line-through' }}">
+                                                            ${{ number_format($surface['effective_price'], 2) }}
                                                         </flux:text>
                                                     </div>
-                                                    <flux:text size="sm" class="font-medium {{ $surface['is_included'] ? '' : 'line-through' }}">
-                                                        ${{ number_format($surface['effective_price'], 2) }}
-                                                    </flux:text>
-                                                </div>
-                                            @endforeach
-                                        </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
                                     @endif
                                 </div>
                             @empty
                                 <div class="p-4 text-center">
-                                    <flux:text size="sm" class="text-zinc-400">No painting areas</flux:text>
+                                    <flux:text size="sm" class="text-zinc-400">{{ __('No painting areas') }}</flux:text>
                                 </div>
                             @endforelse
 
                             {{-- Service Items --}}
                             <div class="px-4 py-2 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-between">
-                                <flux:text size="xs" class="font-medium text-zinc-500 uppercase tracking-wide">Add-on Services</flux:text>
+                                <flux:text size="xs" class="font-medium text-zinc-500 uppercase tracking-wide">{{ __('Add-on Services') }}</flux:text>
                                 <flux:button
                                     wire:click="openAddonModal({{ $package['id'] }})"
                                     type="button"
@@ -784,7 +832,7 @@ new class extends Component {
                                     size="xs"
                                     icon="plus"
                                 >
-                                    Add Service
+                                    {{ __('Add Service') }}
                                 </flux:button>
                             </div>
                             @if (count($package['services']) > 0)
@@ -805,7 +853,7 @@ new class extends Component {
                                         </flux:text>
                                         <flux:button
                                             wire:click="removeServiceItem({{ $package['id'] }}, {{ $service['id'] }})"
-                                            wire:confirm="Remove this service from the package?"
+                                            wire:confirm="{{ __('Remove this service from the package?') }}"
                                             type="button"
                                             variant="ghost"
                                             size="xs"
@@ -816,7 +864,7 @@ new class extends Component {
                                 @endforeach
                             @else
                                 <div class="px-4 py-3 text-center">
-                                    <flux:text size="sm" class="text-zinc-400">No add-on services</flux:text>
+                                    <flux:text size="sm" class="text-zinc-400">{{ __('No add-on services') }}</flux:text>
                                 </div>
                             @endif
                         </div>
@@ -824,13 +872,13 @@ new class extends Component {
                         {{-- Package Totals --}}
                         <div class="p-4 bg-zinc-50 dark:bg-zinc-800 border-t border-zinc-200 dark:border-zinc-700 rounded-b-lg space-y-2">
                             <div class="flex justify-between text-sm">
-                                <flux:text class="text-zinc-500">Subtotal</flux:text>
+                                <flux:text class="text-zinc-500">{{ __('Subtotal') }}</flux:text>
                                 <flux:text>${{ number_format($package['subtotal'], 2) }}</flux:text>
                             </div>
 
                             @if (($package['warranty_price'] ?? 0) > 0)
                                 <div class="flex justify-between text-sm">
-                                    <flux:text class="text-zinc-500">Warranty</flux:text>
+                                    <flux:text class="text-zinc-500">{{ __('Warranty') }}</flux:text>
                                     <flux:text>${{ number_format($package['warranty_price'], 2) }}</flux:text>
                                 </div>
                             @endif
@@ -838,7 +886,7 @@ new class extends Component {
                             @if ($package['discount_percent'] > 0 || $package['discount_amount'] > 0)
                                 <div class="flex justify-between text-sm">
                                     <flux:text class="text-zinc-500">
-                                        Discount
+                                        {{ __('Discount') }}
                                         @if ($package['discount_percent'] > 0)
                                             ({{ number_format($package['discount_percent'], 1) }}%)
                                         @endif
@@ -851,25 +899,25 @@ new class extends Component {
 
                             @if ($package['tax_rate'] > 0)
                                 <div class="flex justify-between text-sm">
-                                    <flux:text class="text-zinc-500">Tax ({{ number_format($package['tax_rate'], 2) }}%)</flux:text>
+                                    <flux:text class="text-zinc-500">{{ __('Tax') }} ({{ number_format($package['tax_rate'], 2) }}%)</flux:text>
                                     <flux:text>${{ number_format($package['tax_amount'], 2) }}</flux:text>
                                 </div>
                             @endif
 
                             <div class="flex justify-between font-semibold pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                                <flux:text>Total</flux:text>
+                                <flux:text>{{ __('Total') }}</flux:text>
                                 <flux:text class="text-lg">${{ number_format($package['total'], 2) }}</flux:text>
                             </div>
 
                             <div class="pt-2 border-t border-zinc-200 dark:border-zinc-700 space-y-1">
                                 <div class="flex justify-between text-sm">
-                                    <flux:text class="text-zinc-500">Deposit Required</flux:text>
+                                    <flux:text class="text-zinc-500">{{ __('Deposit Required') }}</flux:text>
                                     <flux:text class="text-green-600 dark:text-green-400 font-medium">
                                         ${{ number_format($package['deposit_amount'], 2) }}
                                     </flux:text>
                                 </div>
                                 <div class="flex justify-between text-sm">
-                                    <flux:text class="text-zinc-500">Balance Due</flux:text>
+                                    <flux:text class="text-zinc-500">{{ __('Balance Due') }}</flux:text>
                                     <flux:text>${{ number_format($package['balance_due'], 2) }}</flux:text>
                                 </div>
                             </div>
@@ -880,13 +928,13 @@ new class extends Component {
         @else
             <div class="p-8 text-center">
                 <flux:icon name="cube" class="w-12 h-12 mx-auto text-zinc-400 dark:text-zinc-500 mb-3" />
-                <flux:text class="text-zinc-500 dark:text-zinc-400">No package templates configured</flux:text>
+                <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('No package templates configured') }}</flux:text>
                 <flux:text size="sm" class="text-zinc-400 dark:text-zinc-500 mt-1">
-                    Please set up Good/Better/Best packages in Company Settings to enable package options.
+                    {{ __('Please set up Good/Better/Best packages in Company Settings to enable package options.') }}
                 </flux:text>
                 <div class="mt-4">
                     <flux:button href="{{ route('company.edit') }}" variant="primary" size="sm">
-                        Configure Package Templates
+                        {{ __('Configure Package Templates') }}
                     </flux:button>
                 </div>
             </div>
@@ -897,40 +945,40 @@ new class extends Component {
     {{-- Edit Package Modal (editing only, no creation) --}}
     <flux:modal wire:model="showPackageModal" class="max-w-lg">
         <div class="space-y-6">
-            <flux:heading size="lg">Edit Package</flux:heading>
+            <flux:heading size="lg">{{ __('Edit Package') }}</flux:heading>
 
             <div class="space-y-4">
                 <flux:field>
-                    <flux:label>Package Name</flux:label>
+                    <flux:label>{{ __('Package Name') }}</flux:label>
                     <flux:input
                         wire:model="packageName"
-                        placeholder="e.g., Premium Package"
+                        :placeholder="__('e.g., Premium Package')"
                     />
                     <flux:error name="packageName" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Tier</flux:label>
+                    <flux:label>{{ __('Tier') }}</flux:label>
                     <flux:select wire:model="packageTier">
-                        <option value="basic">Good (Basic)</option>
-                        <option value="standard">Better (Standard)</option>
-                        <option value="premium">Best (Premium)</option>
+                        <option value="basic">{{ __('Good (Basic)') }}</option>
+                        <option value="standard">{{ __('Better (Standard)') }}</option>
+                        <option value="premium">{{ __('Best (Premium)') }}</option>
                     </flux:select>
                     <flux:error name="packageTier" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Description</flux:label>
+                    <flux:label>{{ __('Description') }}</flux:label>
                     <flux:textarea
                         wire:model="packageDescription"
                         rows="3"
-                        placeholder="Describe what this package includes..."
+                        :placeholder="__('Describe what this package includes...')"
                     />
                     <flux:error name="packageDescription" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Discount Percent (%)</flux:label>
+                    <flux:label>{{ __('Discount Percent (%)') }}</flux:label>
                     <flux:input
                         wire:model="packageDiscountPercent"
                         type="number"
@@ -941,14 +989,14 @@ new class extends Component {
                     />
                     <flux:error name="packageDiscountPercent" />
                     <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mt-1">
-                        Enter a percentage to discount the package total.
+                        {{ __('Enter a percentage to discount the package total.') }}
                     </flux:text>
                 </flux:field>
             </div>
 
             <div class="flex justify-end gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                 <flux:button wire:click="closePackageModal" type="button" variant="ghost">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button
                     wire:click="savePackage"
@@ -956,8 +1004,8 @@ new class extends Component {
                     variant="primary"
                     wire:loading.attr="disabled"
                 >
-                    <span wire:loading.remove wire:target="savePackage">Update Package</span>
-                    <span wire:loading wire:target="savePackage">Saving...</span>
+                    <span wire:loading.remove wire:target="savePackage">{{ __('Update Package') }}</span>
+                    <span wire:loading wire:target="savePackage">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </div>
@@ -966,8 +1014,8 @@ new class extends Component {
     {{-- Add-on Service Selector Modal --}}
     <flux:modal wire:model="showAddonModal" class="max-w-md">
         <div class="space-y-4">
-            <flux:heading size="lg">Add Service</flux:heading>
-            <flux:text size="sm" class="text-zinc-500">Select a service to add to this package.</flux:text>
+            <flux:heading size="lg">{{ __('Add Service') }}</flux:heading>
+            <flux:text size="sm" class="text-zinc-500">{{ __('Select a service to add to this package.') }}</flux:text>
 
             @if (count($availableAddons) > 0)
                 <div class="space-y-2 max-h-80 overflow-y-auto">
@@ -993,12 +1041,12 @@ new class extends Component {
             @else
                 <div class="py-6 text-center">
                     <flux:icon name="check-circle" class="w-10 h-10 mx-auto text-zinc-400 mb-2" />
-                    <flux:text size="sm" class="text-zinc-500">All available services have been added to this package.</flux:text>
+                    <flux:text size="sm" class="text-zinc-500">{{ __('All available services have been added to this package.') }}</flux:text>
                 </div>
             @endif
 
             <div class="flex justify-end pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                <flux:button wire:click="closeAddonModal" type="button" variant="ghost">Close</flux:button>
+                <flux:button wire:click="closeAddonModal" type="button" variant="ghost">{{ __('Close') }}</flux:button>
             </div>
         </div>
     </flux:modal>

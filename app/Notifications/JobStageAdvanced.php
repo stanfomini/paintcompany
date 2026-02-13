@@ -32,10 +32,10 @@ class JobStageAdvanced extends Notification implements ShouldQueue
         $toLabel = Job::STAGES[$this->toStage] ?? $this->toStage;
 
         return (new MailMessage)
-            ->subject("Job Updated: {$this->job->job_number}")
-            ->greeting("Job Updated: {$this->job->title}")
-            ->line("Job {$this->job->job_number} has advanced from {$fromLabel} to {$toLabel}.")
-            ->action('View Job', url('/jobs/'.$this->job->id));
+            ->subject(__('Job Updated: :number', ['number' => $this->job->job_number]))
+            ->greeting(__('Job Updated: :title', ['title' => $this->job->title]))
+            ->line(__('Job :number has advanced from :from to :to.', ['number' => $this->job->job_number, 'from' => $fromLabel, 'to' => $toLabel]))
+            ->action(__('View Job'), url('/jobs/'.$this->job->id));
     }
 
     /**
@@ -52,7 +52,7 @@ class JobStageAdvanced extends Notification implements ShouldQueue
             'title' => $this->job->title,
             'from_stage' => $this->fromStage,
             'to_stage' => $this->toStage,
-            'message' => "Job {$this->job->job_number} advanced from {$fromLabel} to {$toLabel}",
+            'message' => __('Job :number advanced from :from to :to', ['number' => $this->job->job_number, 'from' => $fromLabel, 'to' => $toLabel]),
         ];
     }
 }

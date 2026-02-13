@@ -351,7 +351,7 @@ new class extends Component {
 <div>
     <div class="max-w-7xl mx-auto">
         <div class="flex items-center justify-between mb-6">
-            <flux:heading size="xl">People</flux:heading>
+            <flux:heading size="xl">{{ __('People') }}</flux:heading>
         </div>
 
         <!-- Global Search -->
@@ -359,7 +359,7 @@ new class extends Component {
             <flux:input
                 wire:model.live.debounce.300ms="globalSearch"
                 type="search"
-                placeholder="Search all people..."
+                placeholder="{{ __('Search all people...') }}"
                 icon="magnifying-glass"
             />
         </div>
@@ -394,8 +394,8 @@ new class extends Component {
                 @if (collect($this->globalSearchResults)->every(fn ($r) => $r->isEmpty()))
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="magnifying-glass" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">No results found</flux:heading>
-                        <flux:text class="mt-2 text-zinc-500">Try a different search term.</flux:text>
+                        <flux:heading size="sm" class="mt-4">{{ __('No results found') }}</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">{{ __('Try a different search term.') }}</flux:text>
                     </div>
                 @endif
             </div>
@@ -407,31 +407,31 @@ new class extends Component {
                         wire:click="setTab('activity')"
                         class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'activity' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                     >
-                        Activity
+                        {{ __('Activity') }}
                     </button>
                     <button
                         wire:click="setTab('customers')"
                         class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'customers' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                     >
-                        Customers
+                        {{ __('Customers') }}
                     </button>
                     <button
                         wire:click="setTab('agents')"
                         class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'agents' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                     >
-                        Agents
+                        {{ __('Agents') }}
                     </button>
                     <button
                         wire:click="setTab('crews')"
                         class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'crews' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                     >
-                        Crews
+                        {{ __('Crews') }}
                     </button>
                     <button
                         wire:click="setTab('properties')"
                         class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'properties' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                     >
-                        Properties
+                        {{ __('Properties') }}
                     </button>
                 </nav>
             </div>
@@ -444,19 +444,19 @@ new class extends Component {
                         wire:click="$set('timeFilter', 'today')"
                         class="px-3 py-1 rounded-full text-sm {{ $timeFilter === 'today' ? 'bg-zinc-800 text-white dark:bg-white dark:text-zinc-800' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' }}"
                     >
-                        Today
+                        {{ __('Today') }}
                     </button>
                     <button
                         wire:click="$set('timeFilter', 'week')"
                         class="px-3 py-1 rounded-full text-sm {{ $timeFilter === 'week' ? 'bg-zinc-800 text-white dark:bg-white dark:text-zinc-800' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' }}"
                     >
-                        This Week
+                        {{ __('This Week') }}
                     </button>
                     <button
                         wire:click="$set('timeFilter', 'all')"
                         class="px-3 py-1 rounded-full text-sm {{ $timeFilter === 'all' ? 'bg-zinc-800 text-white dark:bg-white dark:text-zinc-800' : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-300' }}"
                     >
-                        All Time
+                        {{ __('All Time') }}
                     </button>
                 </div>
 
@@ -499,8 +499,8 @@ new class extends Component {
                 @else
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="check-circle" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">All caught up!</flux:heading>
-                        <flux:text class="mt-2 text-zinc-500">No pending tasks or unread messages.</flux:text>
+                        <flux:heading size="sm" class="mt-4">{{ __('All caught up!') }}</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">{{ __('No pending tasks or unread messages.') }}</flux:text>
                     </div>
                 @endif
             @endif
@@ -511,16 +511,16 @@ new class extends Component {
                         <flux:input
                             wire:model.live.debounce.300ms="customerSearch"
                             type="search"
-                            placeholder="Search customers..."
+                            placeholder="{{ __('Search customers...') }}"
                             icon="magnifying-glass"
                         />
                     </div>
                     <div class="sm:w-48">
                         <flux:select wire:model.live="customerStatusFilter">
-                            <option value="all">All Statuses</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                            <option value="archived">Archived</option>
+                            <option value="all">{{ __('All Statuses') }}</option>
+                            <option value="active">{{ __('Active') }}</option>
+                            <option value="inactive">{{ __('Inactive') }}</option>
+                            <option value="archived">{{ __('Archived') }}</option>
                         </flux:select>
                     </div>
                 </div>
@@ -530,11 +530,11 @@ new class extends Component {
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Email</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Phone</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Name") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Email") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Phone") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Status") }}</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Actions") }}</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -551,11 +551,11 @@ new class extends Component {
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @if ($customer->trashed())
-                                                <flux:badge size="sm" color="zinc">Archived</flux:badge>
+                                                <flux:badge size="sm" color="zinc">{{ __('Archived') }}</flux:badge>
                                             @elseif ($customer->status === 'active')
-                                                <flux:badge size="sm" color="green">Active</flux:badge>
+                                                <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                                             @else
-                                                <flux:badge size="sm" color="yellow">Inactive</flux:badge>
+                                                <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
                                             @endif
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
@@ -572,8 +572,8 @@ new class extends Component {
                 @else
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="users" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">No customers found</flux:heading>
-                        <flux:text class="mt-2 text-zinc-500">Try adjusting your search or filter.</flux:text>
+                        <flux:heading size="sm" class="mt-4">{{ __('No customers found') }}</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">{{ __('Try adjusting your search or filter.') }}</flux:text>
                     </div>
                 @endif
             @endif
@@ -584,15 +584,15 @@ new class extends Component {
                         <flux:input
                             wire:model.live.debounce.300ms="agentSearch"
                             type="search"
-                            placeholder="Search agents..."
+                            placeholder="{{ __('Search agents...') }}"
                             icon="magnifying-glass"
                         />
                     </div>
                     <div class="sm:w-48">
                         <flux:select wire:model.live="agentStatusFilter">
-                            <option value="all">All Statuses</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
+                            <option value="all">{{ __('All Statuses') }}</option>
+                            <option value="active">{{ __('Active') }}</option>
+                            <option value="inactive">{{ __('Inactive') }}</option>
                         </flux:select>
                     </div>
                 </div>
@@ -602,11 +602,11 @@ new class extends Component {
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Company</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Email</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Name") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Company") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Email") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Status") }}</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Actions") }}</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -623,9 +623,9 @@ new class extends Component {
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @if ($agent->is_active)
-                                                <flux:badge size="sm" color="green">Active</flux:badge>
+                                                <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                                             @else
-                                                <flux:badge size="sm" color="yellow">Inactive</flux:badge>
+                                                <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
                                             @endif
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
@@ -642,8 +642,8 @@ new class extends Component {
                 @else
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="user-group" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">No agents found</flux:heading>
-                        <flux:text class="mt-2 text-zinc-500">Try adjusting your search or filter.</flux:text>
+                        <flux:heading size="sm" class="mt-4">{{ __('No agents found') }}</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">{{ __('Try adjusting your search or filter.') }}</flux:text>
                     </div>
                 @endif
             @endif
@@ -654,15 +654,15 @@ new class extends Component {
                         <flux:input
                             wire:model.live.debounce.300ms="crewSearch"
                             type="search"
-                            placeholder="Search crews..."
+                            placeholder="{{ __('Search crews...') }}"
                             icon="magnifying-glass"
                         />
                     </div>
                     <div class="sm:w-48">
                         <flux:select wire:model.live="crewStatusFilter">
-                            <option value="all">All Statuses</option>
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
+                            <option value="all">{{ __('All Statuses') }}</option>
+                            <option value="active">{{ __('Active') }}</option>
+                            <option value="inactive">{{ __('Inactive') }}</option>
                         </flux:select>
                     </div>
                 </div>
@@ -672,12 +672,12 @@ new class extends Component {
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Company</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Crew Size</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Compliance</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Name") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Company") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Crew Size") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Compliance") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Status") }}</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Actions") }}</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -698,18 +698,18 @@ new class extends Component {
                                                 $status = $crew->crewProfile?->getComplianceStatus() ?? 'compliant';
                                             @endphp
                                             @if ($status === 'expired')
-                                                <flux:badge size="sm" color="red">Expired</flux:badge>
+                                                <flux:badge size="sm" color="red">{{ __('Expired') }}</flux:badge>
                                             @elseif ($status === 'warning')
-                                                <flux:badge size="sm" color="yellow">Expiring</flux:badge>
+                                                <flux:badge size="sm" color="yellow">{{ __('Expiring') }}</flux:badge>
                                             @else
-                                                <flux:badge size="sm" color="green">OK</flux:badge>
+                                                <flux:badge size="sm" color="green">{{ __('OK') }}</flux:badge>
                                             @endif
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap">
                                             @if ($crew->is_active)
-                                                <flux:badge size="sm" color="green">Active</flux:badge>
+                                                <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                                             @else
-                                                <flux:badge size="sm" color="yellow">Inactive</flux:badge>
+                                                <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
                                             @endif
                                         </td>
                                         <td class="px-6 py-4 whitespace-nowrap text-right">
@@ -726,8 +726,8 @@ new class extends Component {
                 @else
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="user-group" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">No crews found</flux:heading>
-                        <flux:text class="mt-2 text-zinc-500">Try adjusting your search or filter.</flux:text>
+                        <flux:heading size="sm" class="mt-4">{{ __('No crews found') }}</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">{{ __('Try adjusting your search or filter.') }}</flux:text>
                     </div>
                 @endif
             @endif
@@ -738,25 +738,25 @@ new class extends Component {
                         <flux:input
                             wire:model.live.debounce.300ms="propertySearch"
                             type="search"
-                            placeholder="Search properties by address, city, customer..."
+                            placeholder="{{ __('Search properties by address, city, customer...') }}"
                             icon="magnifying-glass"
                         />
                     </div>
                     <div class="sm:w-40">
                         <flux:select wire:model.live="propertyTypeFilter">
-                            <option value="all">All Types</option>
-                            <option value="residential">Residential</option>
-                            <option value="commercial">Commercial</option>
-                            <option value="industrial">Industrial</option>
+                            <option value="all">{{ __('All Types') }}</option>
+                            <option value="residential">{{ __('Residential') }}</option>
+                            <option value="commercial">{{ __('Commercial') }}</option>
+                            <option value="industrial">{{ __('Industrial') }}</option>
                         </flux:select>
                     </div>
                     <div class="sm:w-40">
                         <flux:select wire:model.live="propertySourceFilter">
-                            <option value="all">All Sources</option>
-                            <option value="direct">Direct</option>
-                            <option value="agent_referral">Agent Referral</option>
-                            <option value="open_house">Open House</option>
-                            <option value="manual">Manual</option>
+                            <option value="all">{{ __('All Sources') }}</option>
+                            <option value="direct">{{ __('Direct') }}</option>
+                            <option value="agent_referral">{{ __('Agent Referral') }}</option>
+                            <option value="open_house">{{ __('Open House') }}</option>
+                            <option value="manual">{{ __('Manual') }}</option>
                         </flux:select>
                     </div>
                 </div>
@@ -766,13 +766,13 @@ new class extends Component {
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
                                 <tr>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Address</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Address") }}</th>
                                     <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">City/State</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Customer</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Type</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Source</th>
-                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Agent</th>
-                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Actions</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Customer") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Type") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Source") }}</th>
+                                    <th class="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Agent") }}</th>
+                                    <th class="px-6 py-3 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">{{ __("Actions") }}</th>
                                 </tr>
                             </thead>
                             <tbody class="bg-white dark:bg-zinc-900 divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -814,8 +814,8 @@ new class extends Component {
                 @else
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
                         <flux:icon name="home" class="mx-auto h-12 w-12 text-zinc-400" />
-                        <flux:heading size="sm" class="mt-4">No properties found</flux:heading>
-                        <flux:text class="mt-2 text-zinc-500">Try adjusting your search or filter.</flux:text>
+                        <flux:heading size="sm" class="mt-4">{{ __('No properties found') }}</flux:heading>
+                        <flux:text class="mt-2 text-zinc-500">{{ __('Try adjusting your search or filter.') }}</flux:text>
                     </div>
                 @endif
             @endif

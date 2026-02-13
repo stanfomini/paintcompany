@@ -293,9 +293,16 @@ class PythonBridgeService
         }
 
         try {
-            $response = Http::baseUrl($this->baseUrl)
+            $request = Http::baseUrl($this->baseUrl)
                 ->timeout(120)
-                ->retry($this->retryAttempts, $this->retryDelay)
+                ->retry($this->retryAttempts, $this->retryDelay);
+
+            $apiKey = config('python.api_key');
+            if ($apiKey) {
+                $request->withHeaders(['X-API-Key' => $apiKey]);
+            }
+
+            $response = $request
                 ->attach('file', file_get_contents($filePath), basename($filePath))
                 ->post('/media/transcribe/upload', [
                     'model' => $model,
@@ -320,27 +327,82 @@ class PythonBridgeService
     }
 
     /**
-     * Start a video streaming session.
+     * Process a video file (transcode to MP4, extract thumbnail, probe metadata).
      */
-    public function startStream(array $config = []): array
+    public function processVideo(string $filePath, string $recordingId): \Illuminate\Http\Client\Response
     {
-        return $this->post('/media/stream/start', $config);
+        $this->ensureEnabled();
+
+        return $this->postMultipart('/media/video/process', [
+            [
+                'name' => 'file',
+                'contents' => fopen($filePath, 'r'),
+                'filename' => basename($filePath),
+            ],
+            [
+                'name' => 'recording_id',
+                'contents' => $recordingId,
+            ],
+        ], 300);
     }
 
     /**
-     * Stop a video streaming session.
+     * Clean up temporary video processing files on the Python service.
+     */
+    public function cleanupVideoProcessing(string $recordingId): void
+    {
+        try {
+            $this->postRaw("/media/video/process/{$recordingId}/cleanup", [], 10);
+        } catch (\Exception $e) {
+            Log::warning('Failed to cleanup video processing files', [
+                'recording_id' => $recordingId,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Start an RTMP streaming session.
+     *
+     * @param  array<int, array{rtmp_url: string, stream_key: string}>  $destinations
+     */
+    public function startStream(string $streamId, array $destinations, string $codecHint = 'h264'): array
+    {
+        return $this->post('/streaming/start', [
+            'stream_id' => $streamId,
+            'destinations' => $destinations,
+            'codec_hint' => $codecHint,
+        ]);
+    }
+
+    /**
+     * Stop an RTMP streaming session.
      */
     public function stopStream(string $streamId): array
     {
-        return $this->post("/media/stream/{$streamId}/stop", []);
+        return $this->post('/streaming/stop', [
+            'stream_id' => $streamId,
+        ]);
     }
 
     /**
-     * Get stream status.
+     * Get RTMP stream status.
      */
     public function getStreamStatus(string $streamId): array
     {
-        return $this->get("/media/stream/{$streamId}/status");
+        return $this->get("/streaming/{$streamId}/status");
+    }
+
+    /**
+     * Get the WebSocket URL for streaming media chunks.
+     */
+    public function getStreamWebSocketUrl(string $streamId): string
+    {
+        $baseUrl = rtrim($this->baseUrl, '/');
+        $wsUrl = str_replace(['http://', 'https://'], ['ws://', 'wss://'], $baseUrl);
+        $token = config('python.api_key', '');
+
+        return "{$wsUrl}/streaming/ws/{$streamId}?token={$token}";
     }
 
     /**
@@ -377,15 +439,63 @@ class PythonBridgeService
     }
 
     /**
+     * Make a POST request and return the raw HTTP response (for controller use).
+     */
+    public function postRaw(string $endpoint, array $data = [], ?int $timeout = null): \Illuminate\Http\Client\Response
+    {
+        $this->ensureEnabled();
+
+        return $this->client($timeout)->post($endpoint, $data);
+    }
+
+    /**
+     * Make a multipart POST request and return the raw HTTP response.
+     *
+     * @param  array<int, array{name: string, contents: mixed, filename?: string}>  $multipart
+     */
+    public function postMultipart(string $endpoint, array $multipart, ?int $timeout = null): \Illuminate\Http\Client\Response
+    {
+        $this->ensureEnabled();
+
+        $request = Http::baseUrl($this->baseUrl)
+            ->timeout($timeout ?? $this->timeout)
+            ->acceptJson()
+            ->asMultipart();
+
+        $apiKey = config('python.api_key');
+        if ($apiKey) {
+            $request->withHeaders(['X-API-Key' => $apiKey]);
+        }
+
+        // Attach each part
+        foreach ($multipart as $part) {
+            $request->attach(
+                $part['name'],
+                $part['contents'],
+                $part['filename'] ?? null,
+            );
+        }
+
+        return $request->post($endpoint);
+    }
+
+    /**
      * Create an HTTP client configured for the Python service.
      */
     protected function client(?int $timeout = null): PendingRequest
     {
-        return Http::baseUrl($this->baseUrl)
+        $request = Http::baseUrl($this->baseUrl)
             ->timeout($timeout ?? $this->timeout)
             ->retry($this->retryAttempts, $this->retryDelay)
             ->acceptJson()
             ->asJson();
+
+        $apiKey = config('python.api_key');
+        if ($apiKey) {
+            $request->withHeaders(['X-API-Key' => $apiKey]);
+        }
+
+        return $request;
     }
 
     /**

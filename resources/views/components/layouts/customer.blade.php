@@ -2,7 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
 <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     @auth('customer')
     <meta name="user-id" content="{{ auth('customer')->id() }}">
@@ -24,17 +24,8 @@
             <flux:navlist.item icon="home" href="{{ route('customer.dashboard') }}" :current="request()->routeIs('customer.dashboard')">
                 {{ __('Dashboard') }}
             </flux:navlist.item>
-            <flux:navlist.item icon="briefcase" href="{{ route('customer.projects.index') }}" :current="request()->routeIs('customer.projects.*')">
-                {{ __('My Projects') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="home" href="{{ route('customer.properties.index') }}" :current="request()->routeIs('customer.properties.*')">
-                {{ __('My Properties') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="document-text" href="{{ route('customer.estimates.index') }}" :current="request()->routeIs('customer.estimates.*')">
-                {{ __('Estimates') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="clipboard-document-check" href="{{ route('customer.jobs.index') }}" :current="request()->routeIs('customer.jobs.*')">
-                {{ __('My Jobs') }}
+            <flux:navlist.item icon="chat-bubble-left-right" href="{{ route('customer.chat.index') }}" :current="request()->routeIs('customer.chat.*')">
+                {{ __('Messages') }}
             </flux:navlist.item>
             <flux:navlist.item icon="credit-card" href="{{ route('customer.invoices.index') }}" :current="request()->routeIs('customer.invoices.*')">
                 {{ __('Invoices') }}
@@ -46,14 +37,9 @@
 
         <flux:spacer />
 
-        <flux:navlist variant="outline">
-            <flux:navlist.item icon="chat-bubble-left-right" href="{{ route('customer.chat.index') }}" :current="request()->routeIs('customer.chat.*')">
-                {{ __('Messages') }}
-            </flux:navlist.item>
-            <flux:navlist.item icon="question-mark-circle" href="#" :current="false">
-                {{ __('Support') }}
-            </flux:navlist.item>
-        </flux:navlist>
+        <div class="flex justify-center px-4 pb-1">
+            <x-language-switcher compact />
+        </div>
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile
@@ -101,6 +87,19 @@
         @include('partials.flash-messages')
         {{ $slot }}
     </flux:main>
+
+    <script>
+        document.addEventListener('livewire:init', () => {
+            Livewire.interceptRequest(({ onError }) => {
+                onError(({ response, preventDefault }) => {
+                    if (response.status === 419 || response.status === 401) {
+                        preventDefault();
+                        window.location.reload();
+                    }
+                });
+            });
+        });
+    </script>
 
     @fluxScripts
 </body>

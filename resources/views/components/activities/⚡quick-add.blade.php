@@ -76,7 +76,7 @@ new class extends Component {
         $this->resetForm();
 
         $this->dispatch('activity-created');
-        session()->flash('quick-add-success', 'Activity created successfully.');
+        session()->flash('quick-add-success', __('Activity created successfully.'));
     }
 
     protected function resetForm(): void
@@ -98,12 +98,12 @@ new class extends Component {
         <div class="space-y-4">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <flux:field>
-                    <flux:label>Title</flux:label>
-                    <flux:input wire:model="title" placeholder="Activity title..." />
+                    <flux:label>{{ __('Title') }}</flux:label>
+                    <flux:input wire:model="title" placeholder="{{ __('Activity title...') }}" />
                     <flux:error name="title" />
                 </flux:field>
                 <flux:field>
-                    <flux:label>Type</flux:label>
+                    <flux:label>{{ __('Type') }}</flux:label>
                     <flux:select wire:model="type">
                         @foreach ($types as $value => $label)
                             <option value="{{ $value }}">{{ $label }}</option>
@@ -114,20 +114,20 @@ new class extends Component {
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <flux:field>
-                    <flux:label>Due Date (optional)</flux:label>
+                    <flux:label>{{ __('Due Date (optional)') }}</flux:label>
                     <flux:input wire:model="dueAt" type="date" />
                     <flux:error name="dueAt" />
                 </flux:field>
             </div>
             <flux:field>
-                <flux:label>Description (optional)</flux:label>
-                <flux:textarea wire:model="description" rows="2" placeholder="Add details..." />
+                <flux:label>{{ __('Description (optional)') }}</flux:label>
+                <flux:textarea wire:model="description" rows="2" placeholder="{{ __('Add details...') }}" />
                 <flux:error name="description" />
             </flux:field>
         </div>
         <div class="mt-4 flex justify-end">
             <flux:button type="submit" variant="primary" size="sm">
-                Add Activity
+                {{ __('Add Activity') }}
             </flux:button>
         </div>
     </form>

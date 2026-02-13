@@ -11,6 +11,19 @@ new class extends Component {
     {
         return User::where('type', 'agent')->where('is_active', true)->orderBy('name')->get();
     }
+
+    #[Computed]
+    public function internalUsers()
+    {
+        return User::where('type', 'internal')->where('is_active', true)->orderBy('name')->get();
+    }
+
+    #[Computed]
+    public function customerSources(): array
+    {
+        return \App\Models\LeadSource::getOptions();
+    }
+
     public ?int $customerId = null;
 
     public string $firstName = '';
@@ -32,6 +45,12 @@ new class extends Component {
     public string $notes = '';
 
     public ?int $referredBy = null;
+
+    public string $source = '';
+
+    public string $estimatePreference = '';
+
+    public ?int $assignedTo = null;
 
     public bool $showModal = false;
 
@@ -57,6 +76,9 @@ new class extends Component {
         $this->zip = $customer->zip ?? '';
         $this->notes = $customer->notes ?? '';
         $this->referredBy = $customer->referred_by;
+        $this->source = $customer->source ?? '';
+        $this->estimatePreference = $customer->estimate_preference ?? '';
+        $this->assignedTo = $customer->assigned_to;
     }
 
     public function openModal(?int $customerId = null): void
@@ -82,6 +104,9 @@ new class extends Component {
             'zip',
             'notes',
             'referredBy',
+            'source',
+            'estimatePreference',
+            'assignedTo',
         ]);
         $this->resetValidation();
     }
@@ -100,6 +125,9 @@ new class extends Component {
             'zip' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'referredBy' => ['nullable', 'exists:users,id'],
+            'source' => ['nullable', 'string', 'in:'.implode(',', array_keys(\App\Models\LeadSource::getOptions()))],
+            'estimatePreference' => ['nullable', 'string', 'in:virtual,in_person'],
+            'assignedTo' => ['nullable', 'exists:users,id'],
         ]);
 
         $customer = Customer::findOrFail($this->customerId);
@@ -115,87 +143,118 @@ new class extends Component {
             'zip' => $this->zip ?: null,
             'notes' => $this->notes ?: null,
             'referred_by' => $this->referredBy,
+            'assigned_to' => $this->assignedTo,
+            'source' => $this->source ?: null,
+            'estimate_preference' => $this->estimatePreference ?: null,
         ]);
 
         $this->dispatch('customer-updated');
-        session()->flash('success', 'Customer updated successfully.');
+        session()->flash('success', __('Customer updated successfully.'));
         $this->closeModal();
     }
 }; ?>
 
 <div>
     <flux:button wire:click="openModal({{ $customerId ?? 'null' }})" icon="pencil" variant="ghost">
-        Edit
+        {{ __('Edit') }}
     </flux:button>
 
     <flux:modal wire:model="showModal" variant="flyout" class="max-w-lg">
         <form wire:submit="save">
-            <flux:heading size="lg" class="mb-6">Edit Customer</flux:heading>
+            <flux:heading size="lg" class="mb-6">{{ __('Edit Customer') }}</flux:heading>
 
             <div class="space-y-4">
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:field>
-                        <flux:label>First Name</flux:label>
+                        <flux:label>{{ __('First Name') }}</flux:label>
                         <flux:input wire:model="firstName" placeholder="John" />
                         <flux:error name="firstName" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Last Name</flux:label>
+                        <flux:label>{{ __('Last Name') }}</flux:label>
                         <flux:input wire:model="lastName" placeholder="Doe" />
                         <flux:error name="lastName" />
                     </flux:field>
                 </div>
 
                 <flux:field>
-                    <flux:label>Email</flux:label>
+                    <flux:label>{{ __('Email') }}</flux:label>
                     <flux:input wire:model="email" type="email" placeholder="john@example.com" />
                     <flux:error name="email" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Phone</flux:label>
+                    <flux:label>{{ __('Phone') }}</flux:label>
                     <flux:input wire:model="phone" placeholder="(555) 123-4567" />
                     <flux:error name="phone" />
                 </flux:field>
 
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>{{ __('Source') }}</flux:label>
+                        <flux:select wire:model="source">
+                            <option value="">{{ __('Select source...') }}</option>
+                            @foreach ($this->customerSources as $value => $label)
+                                <option value="{{ $value }}">{{ $label }}</option>
+                            @endforeach
+                        </flux:select>
+                        <flux:error name="source" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>{{ __('Estimate Preference') }}</flux:label>
+                        <div class="flex gap-4 pt-2">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" wire:model="estimatePreference" value="virtual" class="text-blue-600" />
+                                <span class="text-sm">{{ __('Virtual') }}</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" wire:model="estimatePreference" value="in_person" class="text-blue-600" />
+                                <span class="text-sm">{{ __('In-Person') }}</span>
+                            </label>
+                        </div>
+                        <flux:error name="estimatePreference" />
+                    </flux:field>
+                </div>
+
                 <flux:field>
-                    <flux:label>Address</flux:label>
+                    <flux:label>{{ __('Address') }}</flux:label>
                     <flux:input wire:model="address" placeholder="123 Main St" />
                     <flux:error name="address" />
                 </flux:field>
 
                 <div class="grid gap-4 sm:grid-cols-3">
                     <flux:field>
-                        <flux:label>City</flux:label>
-                        <flux:input wire:model="city" placeholder="Los Angeles" />
+                        <flux:label>{{ __('City') }}</flux:label>
+                        <flux:input wire:model="city" placeholder="Denver" />
                         <flux:error name="city" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>State</flux:label>
-                        <flux:input wire:model="state" placeholder="CA" />
+                        <flux:label>{{ __('State') }}</flux:label>
+                        <flux:input wire:model="state" placeholder="CO" />
                         <flux:error name="state" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>ZIP</flux:label>
-                        <flux:input wire:model="zip" placeholder="90001" />
+                        <flux:label>{{ __('ZIP') }}</flux:label>
+                        <flux:input wire:model="zip" placeholder="80202" />
                         <flux:error name="zip" />
                     </flux:field>
                 </div>
 
                 <flux:field>
-                    <flux:label>Notes</flux:label>
-                    <flux:textarea wire:model="notes" rows="3" placeholder="Any additional notes..." />
+                    <flux:label>{{ __('Notes') }}</flux:label>
+                    <flux:textarea wire:model="notes" rows="3" :placeholder="__('Any additional notes...')" />
                     <flux:error name="notes" />
                 </flux:field>
 
                 @if ($this->agents->count() > 0)
                     <flux:field>
-                        <flux:label>Referring Agent</flux:label>
+                        <flux:label>{{ __('Referring Agent') }}</flux:label>
                         <flux:select wire:model="referredBy">
-                            <option value="">No referring agent</option>
+                            <option value="">{{ __('No referring agent') }}</option>
                             @foreach ($this->agents as $agent)
                                 <option value="{{ $agent->id }}">{{ $agent->name }}</option>
                             @endforeach
@@ -207,10 +266,10 @@ new class extends Component {
 
             <div class="mt-6 flex justify-end gap-3">
                 <flux:button variant="ghost" wire:click="closeModal" type="button">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button type="submit" variant="primary">
-                    Save Changes
+                    {{ __('Save Changes') }}
                 </flux:button>
             </div>
         </form>

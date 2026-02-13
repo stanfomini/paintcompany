@@ -20,7 +20,7 @@ beforeEach(function () {
     Permission::firstOrCreate(['name' => 'accounting.manage', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'vendors.view', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'vendors.manage', 'guard_name' => 'web']);
-    Permission::firstOrCreate(['name' => 'view roadmap', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'roadmap.view', 'guard_name' => 'web']);
     $ownerRole = Role::firstOrCreate(['name' => 'owner', 'guard_name' => 'web']);
     $ownerRole->syncPermissions(Permission::all());
 });

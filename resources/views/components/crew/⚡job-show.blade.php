@@ -64,6 +64,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             "echo-private:crew.job.{$this->job->id},.prep.approval.changed" => 'handlePrepApprovalChanged',
             "echo-private:crew.job.{$this->job->id},.photo.updated" => 'handlePhotoUpdated',
             "echo-private:crew.job.{$this->job->id},.job.notification" => 'handleJobNotification',
+            "echo-private:crew.job.{$this->job->id},.date.updated" => 'handleDateUpdated',
+            "echo-private:crew.job.{$this->job->id},.color.updated" => 'handleColorUpdated',
+            "echo-private:crew.job.{$this->job->id},.crew.dispatched" => 'handleCrewDispatched',
         ];
     }
 
@@ -73,7 +76,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
         if (($data['accepted_by_id'] ?? null) !== $currentUser->id) {
             $this->jobTakenByAnother = true;
-            $this->takenByName = $data['accepted_by_name'] ?? 'Another crew';
+            $this->takenByName = $data['accepted_by_name'] ?? __('Another crew');
         }
     }
 
@@ -101,8 +104,23 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
     public function handleJobNotification(array $data): void
     {
-        $message = $data['message'] ?? 'Job update received.';
+        $message = $data['message'] ?? __('Job update received.');
         session()->flash('info', $message);
+    }
+
+    public function handleDateUpdated(): void
+    {
+        $this->job->refresh();
+    }
+
+    public function handleColorUpdated(): void
+    {
+        $this->job->load('colors.selectedBy');
+    }
+
+    public function handleCrewDispatched(): void
+    {
+        $this->job->refresh();
     }
 
     public function mount(Job $job): void
@@ -226,7 +244,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         $this->job->estimate->actual_painters = $this->painters;
         $this->job->estimate->save();
 
-        session()->flash('success', 'Actuals saved successfully.');
+        session()->flash('success', __('Actuals saved successfully.'));
     }
 
     public function saveSnapshot(): void
@@ -245,7 +263,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         ]);
         $this->job->estimate->save();
 
-        session()->flash('success', 'Profit snapshot saved successfully.');
+        session()->flash('success', __('Profit snapshot saved successfully.'));
     }
 
     public function acceptJob(): void
@@ -264,15 +282,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     $thread->messages()->create([
                         'user_id' => null,
                         'type' => 'system',
-                        'content' => $user->name.' (Crew) has joined the conversation.',
+                        'content' => __(':name (Crew) has joined the conversation.', ['name' => $user->name]),
                     ]);
                 }
             }
 
             $this->job->refresh();
-            session()->flash('success', 'Job accepted! You now have full access to job details.');
+            session()->flash('success', __('Job accepted! You now have full access to job details.'));
         } else {
-            session()->flash('error', 'This job has already been accepted by another crew.');
+            session()->flash('error', __('This job has already been accepted by another crew.'));
         }
     }
 
@@ -282,10 +300,10 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
         if (app(JobDispatchService::class)->rejectJob($this->job, $user)) {
             $this->job->refresh();
-            session()->flash('success', 'Job declined.');
+            session()->flash('success', __('Job declined.'));
             $this->redirect(route('crew.jobs.available'));
         } else {
-            session()->flash('error', 'Unable to decline this job.');
+            session()->flash('error', __('Unable to decline this job.'));
         }
     }
 
@@ -322,7 +340,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     #[Computed]
     public function crewServiceCategoryName(): ?string
     {
-        return Auth::guard('crew')->user()->crewProfile?->serviceCategory?->name;
+        $name = Auth::guard('crew')->user()->crewProfile?->serviceCategory?->name;
+
+        return $name ? __($name) : null;
     }
 
     public function proposeChanges(): void
@@ -345,7 +365,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         }
 
         if (empty($changes)) {
-            session()->flash('info', 'No changes to propose.');
+            session()->flash('info', __('No changes to propose.'));
             return;
         }
 
@@ -360,7 +380,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         unset($this->prepPlan, $this->prepProgress, $this->serviceSetting);
         $this->job->refresh();
 
-        session()->flash('success', 'Changes proposed. Team approval has been reset.');
+        session()->flash('success', __('Changes proposed. Team approval has been reset.'));
     }
 
     public function approvePrepPlan(): void
@@ -489,7 +509,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     if (! isset($materials[$key])) {
                         $materials[$key] = [
                             'product' => $paintProduct,
-                            'brand' => $paintProduct->brand?->name ?? 'Unknown',
+                            'brand' => $paintProduct->brand?->name ?? __('Unknown'),
                             'name' => $paintProduct->name,
                             'sheen' => ucfirst($paintProduct->sheen ?? ''),
                             'gallons' => 0,
@@ -538,7 +558,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     if (! isset($materials[$key])) {
                         $materials[$key] = [
                             'product' => $paintProduct,
-                            'brand' => $paintProduct->brand?->name ?? 'Unknown',
+                            'brand' => $paintProduct->brand?->name ?? __('Unknown'),
                             'name' => $paintProduct->name,
                             'sheen' => ucfirst($paintProduct->sheen ?? ''),
                             'price_per_gallon' => (float) $paintProduct->price_per_gallon,
@@ -864,16 +884,16 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 $prepNotes = [];
                 if ($substrate) {
                     if ($substrate->requires_wash) {
-                        $prepNotes[] = 'Pressure wash';
+                        $prepNotes[] = __('Pressure wash');
                     }
                     if ($substrate->requires_scrape) {
-                        $prepNotes[] = 'Scrape';
+                        $prepNotes[] = __('Scrape');
                     }
                     if ($substrate->requires_sand) {
-                        $prepNotes[] = 'Sand';
+                        $prepNotes[] = __('Sand');
                     }
                     if ($substrate->requires_prime) {
-                        $prepNotes[] = 'Prime';
+                        $prepNotes[] = __('Prime');
                     }
                 }
 
@@ -902,7 +922,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             foreach ($area->addons as $addon) {
                 $template = $addon->nestedAreaTemplate;
                 $addons[] = [
-                    'name' => $template?->name ?? $addon->name ?? 'Addon',
+                    'name' => $template?->name ?? $addon->name ?? __('Addon'),
                     'labor_hours' => (float) ($addon->labor_hours ?? 0),
                 ];
             }
@@ -917,7 +937,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 'cleanup_hours' => $cleanupHours,
                 'total_hours' => $totalLaborHours + $cleanupHours,
                 'notes' => $area->notes,
-                'substrate' => $area->substrate?->name,
+                'substrate' => $area->substrate ? __($area->substrate->name) : null,
             ];
         }
 
@@ -933,18 +953,18 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         if ($this->hasAccepted) {
             // Full details after accepting
             return [
-                'name' => $customer?->user?->name ?? 'Customer',
-                'location' => $property ? $this->formatFullAddress($property) : 'No address on file',
+                'name' => $customer?->user?->name ?? __('Customer'),
+                'location' => $property ? $this->formatFullAddress($property) : __('No address on file'),
             ];
         }
 
         // Limited info before accepting - no last name, only city/zip
-        $firstName = $customer?->user?->name ? explode(' ', $customer->user->name)[0] : 'Customer';
+        $firstName = $customer?->user?->name ? explode(' ', $customer->user->name)[0] : __('Customer');
 
-        $location = 'Location not available';
+        $location = __('Location not available');
         if ($property) {
             $parts = array_filter([$property->city, $property->zip]);
-            $location = implode(', ', $parts) ?: 'Location not available';
+            $location = implode(', ', $parts) ?: __('Location not available');
         }
 
         return [
@@ -970,7 +990,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             $parts[] = implode(', ', $cityState).' '.$property->zip;
         }
 
-        return implode(', ', $parts) ?: 'No address';
+        return implode(', ', $parts) ?: __('No address');
     }
 
     #[Computed]
@@ -1002,11 +1022,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     public function referenceTabs(): array
     {
         return [
-            ['key' => 'work-order', 'label' => 'Work Order', 'icon' => 'clipboard-document-list'],
-            ['key' => 'financials', 'label' => 'Financials', 'icon' => 'calculator'],
-            ['key' => 'colors', 'label' => 'Colors', 'icon' => 'paint-brush'],
-            ['key' => 'materials', 'label' => 'Materials', 'icon' => 'shopping-cart'],
-            ['key' => 'photos', 'label' => 'Photos', 'icon' => 'photo'],
+            ['key' => 'work-order', 'label' => __('Work Order'), 'icon' => 'clipboard-document-list'],
+            ['key' => 'financials', 'label' => __('Financials'), 'icon' => 'calculator'],
+            ['key' => 'colors', 'label' => __('Colors'), 'icon' => 'paint-brush'],
+            ['key' => 'materials', 'label' => __('Materials'), 'icon' => 'shopping-cart'],
+            ['key' => 'photos', 'label' => __('Photos'), 'icon' => 'photo'],
         ];
     }
 }; ?>
@@ -1017,7 +1037,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
             <div class="flex items-center gap-3 sm:gap-4">
                 <flux:button variant="ghost" :href="$this->hasAccepted ? route('crew.jobs.mine') : route('crew.jobs.available')" icon="arrow-left" class="shrink-0">
-                    <span class="hidden sm:inline">Back</span>
+                    <span class="hidden sm:inline">{{ __('Back') }}</span>
                 </flux:button>
                 <div class="min-w-0">
                     <flux:heading size="xl" class="truncate">{{ $job->title }}</flux:heading>
@@ -1025,6 +1045,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 </div>
             </div>
             <div class="flex items-center gap-2 sm:gap-3">
+                @if ($this->hasAccepted)
+                    <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
+                @endif
                 @php
                     $stageColor = match ($job->stage) {
                         'estimate_accepted' => 'blue',
@@ -1043,30 +1066,30 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @if ($this->crewStatus === 'dispatched')
             @if ($jobTakenByAnother)
                 <flux:callout variant="danger" icon="exclamation-triangle" class="mb-6">
-                    <flux:callout.heading>Job No Longer Available</flux:callout.heading>
-                    <flux:callout.text>This job has been accepted by {{ $takenByName }}. It is no longer available for acceptance.</flux:callout.text>
+                    <flux:callout.heading>{{ __('Job No Longer Available') }}</flux:callout.heading>
+                    <flux:callout.text>{{ __('This job has been accepted by :name. It is no longer available for acceptance.', ['name' => $takenByName]) }}</flux:callout.text>
                 </flux:callout>
             @else
                 <div class="border-2 border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-900/30 rounded-lg p-4 sm:p-6 mb-6">
                     <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                         <div>
-                            <flux:heading size="sm" class="mb-2">Review & Accept This Job</flux:heading>
+                            <flux:heading size="sm" class="mb-2">{{ __('Review & Accept This Job') }}</flux:heading>
                             <flux:text class="text-zinc-600 dark:text-zinc-300 text-sm sm:text-base">
-                                Review the job details below. Once accepted, you'll have access to the full work order, address, and group chat.
+                                {{ __("Review the job details below. Once accepted, you'll have access to the full work order, address, and group chat.") }}
                             </flux:text>
                         </div>
                         <div class="flex gap-2 sm:gap-3 shrink-0">
                             @if ($job->estimate)
                                 <flux:button :href="route('crew.jobs.breakdown', $job)" variant="ghost" icon="document-text" class="flex-1 sm:flex-none">
-                                    View Pay Breakdown
+                                    {{ __('View Pay Breakdown') }}
                                 </flux:button>
                             @endif
                             <flux:button wire:click="rejectJob" variant="ghost" class="flex-1 sm:flex-none"
-                                wire:confirm="Are you sure you want to decline this job?">
-                                Decline
+                                wire:confirm="{{ __('Are you sure you want to decline this job?') }}">
+                                {{ __('Decline') }}
                             </flux:button>
                             <flux:button wire:click="acceptJob" variant="primary" icon="check" class="flex-1 sm:flex-none">
-                                Accept Job
+                                {{ __('Accept Job') }}
                             </flux:button>
                         </div>
                     </div>
@@ -1089,7 +1112,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
         {{-- 4. Progress Timeline --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
-            <flux:heading size="sm" class="mb-4">Progress</flux:heading>
+            <flux:heading size="sm" class="mb-4">{{ __('Progress') }}</flux:heading>
             <div class="flex items-center justify-between">
                 @foreach (App\Models\Job::STAGES as $stageKey => $stageLabel)
                     @php
@@ -1128,43 +1151,43 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                 <div>
-                    <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Job Details</h3>
+                    <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">{{ __('Job Details') }}</h3>
                     <dl class="space-y-2 sm:space-y-3">
                         <div class="flex justify-between gap-2">
-                            <dt class="text-zinc-500">Customer</dt>
+                            <dt class="text-zinc-500">{{ __('Customer') }}</dt>
                             <dd class="font-medium text-right">{{ $this->customerDisplay['name'] }}</dd>
                         </div>
                         <div class="flex justify-between gap-2">
-                            <dt class="text-zinc-500">Location</dt>
+                            <dt class="text-zinc-500">{{ __('Location') }}</dt>
                             <dd class="font-medium text-right text-sm sm:text-base">{{ $this->customerDisplay['location'] }}</dd>
                         </div>
                         @if ($job->scheduled_date)
                             <div class="flex justify-between gap-2">
-                                <dt class="text-zinc-500">Start Date</dt>
+                                <dt class="text-zinc-500">{{ __('Start Date') }}</dt>
                                 <dd class="font-medium text-blue-600 dark:text-blue-400 text-right">
                                     {{ $job->scheduled_date->format('M j, Y') }}
                                 </dd>
                             </div>
                         @endif
                         <div class="flex justify-between gap-2">
-                            <dt class="text-zinc-500">Crew Size</dt>
+                            <dt class="text-zinc-500">{{ __('Crew Size') }}</dt>
                             <dd class="font-medium text-right">{{ $job->required_crew_size }} {{ Str::plural('painter', $job->required_crew_size) }}</dd>
                         </div>
                     </dl>
                 </div>
                 <div>
-                    <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">Time Estimate</h3>
+                    <h3 class="text-sm font-semibold text-zinc-500 uppercase tracking-wider mb-3">{{ __('Time Estimate') }}</h3>
                     <dl class="space-y-2 sm:space-y-3">
                         <div class="flex justify-between gap-2">
-                            <dt class="text-zinc-500">Total Hours</dt>
-                            <dd class="font-bold text-lg">{{ number_format($this->crewSchedule['total_hours'], 1) }} hrs</dd>
+                            <dt class="text-zinc-500">{{ __('Total Hours') }}</dt>
+                            <dd class="font-bold text-lg">{{ number_format($this->crewSchedule['total_hours'], 1) }} {{ __('hrs') }}</dd>
                         </div>
                         <div class="flex justify-between gap-2">
-                            <dt class="text-zinc-500">With {{ $this->crewSchedule['crew_size'] }} Painters</dt>
-                            <dd class="font-medium">~{{ $this->crewSchedule['hours_per_person'] }} hrs each</dd>
+                            <dt class="text-zinc-500">{{ __('With :count Painters', ['count' => $this->crewSchedule['crew_size']]) }}</dt>
+                            <dd class="font-medium">~{{ $this->crewSchedule['hours_per_person'] }} {{ __('hrs each') }}</dd>
                         </div>
                         <div class="flex justify-between gap-2">
-                            <dt class="text-zinc-500">Estimated Duration</dt>
+                            <dt class="text-zinc-500">{{ __('Estimated Duration') }}</dt>
                             <dd class="font-bold text-green-600 dark:text-green-400">
                                 {{ $this->crewSchedule['estimated_days'] }} {{ Str::plural('day', ceil($this->crewSchedule['estimated_days'])) }}
                             </dd>
@@ -1181,25 +1204,25 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     <div>
                         <h3 class="text-lg font-bold text-amber-800 dark:text-amber-300">
                             <flux:icon name="gift" class="w-5 h-5 inline mr-1" />
-                            Crew Lead Bonus
+                            {{ __('Crew Lead Bonus') }}
                         </h3>
-                        <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">{{ number_format($this->crewBonusInfo['bonus_percent'], 1) }}% performance bonus available on this job</p>
+                        <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-1">{{ __(':percent% performance bonus available on this job', ['percent' => number_format($this->crewBonusInfo['bonus_percent'], 1)]) }}</p>
                     </div>
                     <div class="text-right">
                         <span class="text-2xl font-bold text-green-600 dark:text-green-400">${{ number_format($this->crewBonusInfo['bonus_amount'], 2) }}</span>
                     </div>
                 </div>
                 <div class="p-3 rounded-lg bg-white/60 dark:bg-zinc-800/60 border border-amber-100 dark:border-amber-900">
-                    <div class="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-2">How to Earn This Bonus:</div>
+                    <div class="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-2">{{ __('How to Earn This Bonus:') }}</div>
                     <ul class="text-xs text-zinc-600 dark:text-zinc-400 space-y-1.5 list-disc list-inside">
-                        <li>Actively use and engage with the job software throughout the project</li>
-                        <li>Be active in the Job Chat - communicate with the team and customer</li>
-                        <li>Upload, view, and manage team and customer photos and communications</li>
-                        <li>Participate in Job Prep to help build a plan the team can follow</li>
-                        <li>Follow the plan as outlined during prep</li>
-                        <li>Do not promote personal business on the job site</li>
-                        <li>Dress appropriately and maintain a professional appearance</li>
-                        <li>Ensure all touchups are completed before job closeout</li>
+                        <li>{{ __('Actively use and engage with the job software throughout the project') }}</li>
+                        <li>{{ __('Be active in the Job Chat - communicate with the team and customer') }}</li>
+                        <li>{{ __('Upload, view, and manage team and customer photos and communications') }}</li>
+                        <li>{{ __('Participate in Job Prep to help build a plan the team can follow') }}</li>
+                        <li>{{ __('Follow the plan as outlined during prep') }}</li>
+                        <li>{{ __('Do not promote personal business on the job site') }}</li>
+                        <li>{{ __('Dress appropriately and maintain a professional appearance') }}</li>
+                        <li>{{ __('Ensure all touchups are completed before job closeout') }}</li>
                     </ul>
                 </div>
             </div>
@@ -1209,7 +1232,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             <flux:callout variant="info" class="mb-6">
                 <flux:icon name="lock-closed" class="w-5 h-5" />
                 <div class="text-sm sm:text-base">
-                    <strong>Limited Preview</strong> - Accept this job to view the full work order, complete address, financials, and access the group chat.
+                    {!! __('<strong>Limited Preview</strong> - Accept this job to view the full work order, complete address, financials, and access the group chat.') !!}
                 </div>
             </flux:callout>
         @endif
@@ -1220,13 +1243,13 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @if ($job->stage === 'estimate_accepted')
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 sm:p-8 text-center mb-6">
                 <flux:icon name="check-circle" class="w-12 h-12 mx-auto text-green-500 mb-3" />
-                <flux:heading size="lg">Job Confirmed</flux:heading>
+                <flux:heading size="lg">{{ __('Job Confirmed') }}</flux:heading>
                 <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                    This painting project has been confirmed. The team will begin scheduling and color selection soon.
+                    {{ __('This painting project has been confirmed. The team will begin scheduling and color selection soon.') }}
                 </flux:text>
                 @if ($job->estimate)
                     <div class="mt-3">
-                        <flux:badge size="sm" color="green">Estimate: {{ $job->estimate->estimate_number }}</flux:badge>
+                        <flux:badge size="sm" color="green">{{ __('Estimate:') }} {{ $job->estimate->estimate_number }}</flux:badge>
                     </div>
                 @endif
             </div>
@@ -1234,20 +1257,20 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         {{-- STAGE: scheduling_colors --}}
         @elseif ($job->stage === 'scheduling_colors')
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
-                <flux:heading size="sm" class="mb-4">Scheduling & Colors</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Scheduling & Colors') }}</flux:heading>
 
                 <div class="space-y-4">
                     {{-- Scheduled Date --}}
                     <div class="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                         <div class="flex items-center gap-2">
                             <flux:icon name="calendar" class="w-5 h-5 text-zinc-500" />
-                            <span class="font-medium text-zinc-700 dark:text-zinc-300">Scheduled Date</span>
+                            <span class="font-medium text-zinc-700 dark:text-zinc-300">{{ __('Scheduled Date') }}</span>
                         </div>
                         <div class="text-right">
                             @if ($job->scheduled_date)
                                 <span class="font-bold text-blue-600 dark:text-blue-400">{{ $job->scheduled_date->format('M j, Y') }}</span>
                             @else
-                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                                <flux:badge size="sm" color="yellow">{{ __('Pending') }}</flux:badge>
                             @endif
                         </div>
                     </div>
@@ -1255,19 +1278,19 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     {{-- Confirmation Status --}}
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div class="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
-                            <span class="text-sm text-zinc-600 dark:text-zinc-400">Company Confirmed</span>
+                            <span class="text-sm text-zinc-600 dark:text-zinc-400">{{ __('Company Confirmed') }}</span>
                             @if ($job->company_date_confirmed)
-                                <flux:badge size="sm" color="green" icon="check">Confirmed</flux:badge>
+                                <flux:badge size="sm" color="green" icon="check">{{ __('Confirmed') }}</flux:badge>
                             @else
-                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                                <flux:badge size="sm" color="yellow">{{ __('Pending') }}</flux:badge>
                             @endif
                         </div>
                         <div class="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
-                            <span class="text-sm text-zinc-600 dark:text-zinc-400">Customer Confirmed</span>
+                            <span class="text-sm text-zinc-600 dark:text-zinc-400">{{ __('Customer Confirmed') }}</span>
                             @if ($job->customer_date_confirmed)
-                                <flux:badge size="sm" color="green" icon="check">Confirmed</flux:badge>
+                                <flux:badge size="sm" color="green" icon="check">{{ __('Confirmed') }}</flux:badge>
                             @else
-                                <flux:badge size="sm" color="yellow">Pending</flux:badge>
+                                <flux:badge size="sm" color="yellow">{{ __('Pending') }}</flux:badge>
                             @endif
                         </div>
                     </div>
@@ -1275,7 +1298,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     {{-- Selected Colors --}}
                     @if ($job->colors->count() > 0)
                         <div>
-                            <h4 class="text-sm font-semibold text-zinc-500 mb-2">Selected Colors</h4>
+                            <h4 class="text-sm font-semibold text-zinc-500 mb-2">{{ __('Selected Colors') }}</h4>
                             <div class="grid gap-2 grid-cols-1 sm:grid-cols-2">
                                 @foreach ($job->colors as $color)
                                     <div class="flex items-center gap-3 p-2 border border-zinc-200 dark:border-zinc-700 rounded-lg">
@@ -1300,7 +1323,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
                     @if (! $job->company_date_confirmed || ! $job->customer_date_confirmed)
                         <flux:callout variant="info">
-                            <flux:text class="text-sm">Waiting for all confirmations before moving to job prep.</flux:text>
+                            <flux:text class="text-sm">{{ __('Waiting for all confirmations before moving to job prep.') }}</flux:text>
                         </flux:callout>
                     @endif
                 </div>
@@ -1319,19 +1342,19 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
                     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                         <div class="flex items-center gap-2">
-                            <flux:heading size="lg">Prep Plan</flux:heading>
+                            <flux:heading size="lg">{{ __('Prep Plan') }}</flux:heading>
                             @if ($this->crewServiceCategoryName)
                                 <flux:badge size="sm" color="purple">{{ $this->crewServiceCategoryName }}</flux:badge>
                             @endif
                         </div>
                         <div class="flex items-center gap-2">
                             @if ($plan->crew_approved)
-                                <flux:badge color="green">Crew Approved</flux:badge>
+                                <flux:badge color="green">{{ __('Crew Approved') }}</flux:badge>
                             @else
-                                <flux:badge color="yellow">Pending Crew Approval</flux:badge>
+                                <flux:badge color="yellow">{{ __('Pending Crew Approval') }}</flux:badge>
                             @endif
                             @if ($plan->team_approved)
-                                <flux:badge color="green">Team Approved</flux:badge>
+                                <flux:badge color="green">{{ __('Team Approved') }}</flux:badge>
                             @endif
                         </div>
                     </div>
@@ -1341,38 +1364,38 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $svcSetting->crew_size }}</div>
-                                <div class="text-xs text-zinc-500">Crew Size</div>
+                                <div class="text-xs text-zinc-500">{{ __('Crew Size') }}</div>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $svcSetting->hours_per_day }}h</div>
-                                <div class="text-xs text-zinc-500">Hours/Day</div>
+                                <div class="text-xs text-zinc-500">{{ __('Hours/Day') }}</div>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $svcSetting->total_days }}</div>
-                                <div class="text-xs text-zinc-500">Total {{ Str::plural('Day', $svcSetting->total_days) }}</div>
+                                <div class="text-xs text-zinc-500">{{ __('Total Days') }}</div>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ number_format(($svcSetting->total_labor_hours ?? 0) + ($svcSetting->total_cleanup_hours ?? 0), 1) }}</div>
-                                <div class="text-xs text-zinc-500">Total Hours</div>
+                                <div class="text-xs text-zinc-500">{{ __('Total Hours') }}</div>
                             </div>
                         </div>
                     @else
                         <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $plan->crew_size }}</div>
-                                <div class="text-xs text-zinc-500">Crew Size</div>
+                                <div class="text-xs text-zinc-500">{{ __('Crew Size') }}</div>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $plan->hours_per_day }}h</div>
-                                <div class="text-xs text-zinc-500">Hours/Day</div>
+                                <div class="text-xs text-zinc-500">{{ __('Hours/Day') }}</div>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ $plan->total_days }}</div>
-                                <div class="text-xs text-zinc-500">Total {{ Str::plural('Day', $plan->total_days) }}</div>
+                                <div class="text-xs text-zinc-500">{{ __('Total Days') }}</div>
                             </div>
                             <div class="text-center p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
                                 <div class="text-xl font-bold text-zinc-900 dark:text-white">{{ number_format($plan->total_labor_hours + $plan->total_cleanup_hours, 1) }}</div>
-                                <div class="text-xs text-zinc-500">Total Hours</div>
+                                <div class="text-xs text-zinc-500">{{ __('Total Hours') }}</div>
                             </div>
                         </div>
                     @endif
@@ -1382,12 +1405,12 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                         <div class="mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                             @if ($showProposeForm)
                                 <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                                    <h4 class="font-semibold text-blue-800 dark:text-blue-200 mb-3">Propose Changes</h4>
+                                    <h4 class="font-semibold text-blue-800 dark:text-blue-200 mb-3">{{ __('Propose Changes') }}</h4>
                                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                                         <div>
                                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                                                Crew Size
-                                                <span class="text-zinc-400">(current: {{ $svcSetting->crew_size }})</span>
+                                                {{ __('Crew Size') }}
+                                                <span class="text-zinc-400">({{ __('current: :value', ['value' => $svcSetting->crew_size]) }})</span>
                                             </label>
                                             <input
                                                 type="number"
@@ -1399,8 +1422,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                         </div>
                                         <div>
                                             <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
-                                                Hours/Day
-                                                <span class="text-zinc-400">(current: {{ $svcSetting->hours_per_day }})</span>
+                                                {{ __('Hours/Day') }}
+                                                <span class="text-zinc-400">({{ __('current: :value', ['value' => $svcSetting->hours_per_day]) }})</span>
                                             </label>
                                             <input
                                                 type="number"
@@ -1417,13 +1440,13 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                             variant="primary"
                                             size="sm"
                                             wire:click="proposeChanges"
-                                            wire:confirm="This will reset team approval for your service. Continue?"
+                                            wire:confirm="{{ __('This will reset team approval for your service. Continue?') }}"
                                             icon="paper-airplane"
                                         >
-                                            Submit Proposal
+                                            {{ __('Submit Proposal') }}
                                         </flux:button>
                                         <flux:button variant="ghost" size="sm" wire:click="$set('showProposeForm', false)">
-                                            Cancel
+                                            {{ __('Cancel') }}
                                         </flux:button>
                                     </div>
                                 </div>
@@ -1434,7 +1457,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                     wire:click="$set('showProposeForm', true)"
                                     icon="pencil-square"
                                 >
-                                    Propose Changes
+                                    {{ __('Propose Changes') }}
                                 </flux:button>
                             @endif
                         </div>
@@ -1445,7 +1468,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 @if ($progress['total'] > 0)
                     <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
                         <div class="flex items-center justify-between mb-2">
-                            <flux:text class="font-semibold text-zinc-700 dark:text-zinc-300">Overall Progress</flux:text>
+                            <flux:text class="font-semibold text-zinc-700 dark:text-zinc-300">{{ __('Overall Progress') }}</flux:text>
                             <flux:text class="text-sm text-zinc-500">{{ $progress['completed'] }}/{{ $progress['total'] }} tasks ({{ number_format($progress['percent'], 0) }}%)</flux:text>
                         </div>
                         <div class="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-3">
@@ -1492,7 +1515,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
                             <div class="flex items-center justify-between mb-2">
                                 <flux:text class="text-sm text-zinc-500">
-                                    {{ $dayTasks->count() }} {{ Str::plural('task', $dayTasks->count()) }} &middot; {{ number_format($dayHours, 1) }} hrs estimated
+                                    {{ $dayTasks->count() }} {{ Str::plural(__('task'), $dayTasks->count()) }} &middot; {{ number_format($dayHours, 1) }} {{ __('hrs estimated') }}
                                 </flux:text>
                             </div>
 
@@ -1530,7 +1553,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                                 @else
                                                     border-2 border-zinc-300 dark:border-zinc-600 hover:border-amber-500 hover:bg-amber-50 dark:hover:bg-amber-900/20
                                                 @endif"
-                                            title="{{ $isCompleted ? 'Reset to pending' : ($isInProgress ? 'Mark completed' : 'Start task') }}"
+                                            title="{{ $isCompleted ? __('Reset to pending') : ($isInProgress ? __('Mark completed') : __('Start task')) }}"
                                         >
                                             @if ($isCompleted)
                                                 <flux:icon name="check" class="w-3 h-3 sm:w-4 sm:h-4 text-white" />
@@ -1567,11 +1590,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                         @endif
                                         @if ($isCompleted && $task->completedByUser)
                                             <flux:text class="text-xs text-green-600 dark:text-green-400 mt-1">
-                                                Completed by {{ $task->completedByUser->name }} {{ $task->completed_at?->diffForHumans() }}
+                                                {{ __('Completed by :name :time', ['name' => $task->completedByUser->name, 'time' => $task->completed_at?->diffForHumans()]) }}
                                             </flux:text>
                                         @elseif ($isInProgress)
                                             <flux:text class="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                                                In progress
+                                                {{ __('In progress') }}
                                             </flux:text>
                                         @endif
                                     </div>
@@ -1584,7 +1607,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 </div>
                             @empty
                                 <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                                    No tasks assigned to this day.
+                                    {{ __('No tasks assigned to this day.') }}
                                 </div>
                             @endforelse
 
@@ -1594,27 +1617,27 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                     <div class="bg-zinc-50 dark:bg-zinc-700/50 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
                                         <div class="space-y-3">
                                             <div>
-                                                <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">Task Title</label>
+                                                <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">{{ __('Task Title') }}</label>
                                                 <input
                                                     type="text"
                                                     wire:model="crewCustomTaskTitle"
-                                                    placeholder="e.g. Move furniture, Cover floors"
+                                                    placeholder="{{ __('e.g. Move furniture, Cover floors') }}"
                                                     class="w-full text-sm border border-zinc-300 dark:border-zinc-600 rounded-lg px-3 py-2 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                                 />
                                             </div>
                                             <div class="flex gap-2">
                                                 <flux:button variant="primary" size="sm" wire:click="addCrewCustomTask" icon="plus">
-                                                    Add Task
+                                                    {{ __('Add Task') }}
                                                 </flux:button>
                                                 <flux:button variant="ghost" size="sm" wire:click="$set('showCrewTaskForm', false)">
-                                                    Cancel
+                                                    {{ __('Cancel') }}
                                                 </flux:button>
                                             </div>
                                         </div>
                                     </div>
                                 @else
                                     <flux:button variant="ghost" size="sm" wire:click="$set('showCrewTaskForm', true)" icon="plus" class="w-full justify-center border-dashed border border-zinc-300 dark:border-zinc-600">
-                                        Add Custom Task
+                                        {{ __('Add Custom Task') }}
                                     </flux:button>
                                 @endif
                             @endif
@@ -1627,19 +1650,19 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     <div class="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 sm:p-6">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div>
-                                <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">Ready to approve?</flux:heading>
+                                <flux:heading size="sm" class="text-blue-800 dark:text-blue-200">{{ __('Ready to approve?') }}</flux:heading>
                                 <flux:text class="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                                    Review all tasks across each day, then approve the plan so work can begin.
+                                    {{ __('Review all tasks across each day, then approve the plan so work can begin.') }}
                                 </flux:text>
                             </div>
                             <flux:button
                                 variant="primary"
                                 wire:click="approvePrepPlan"
-                                wire:confirm="Are you sure you want to approve this prep plan?"
+                                wire:confirm="{{ __('Are you sure you want to approve this prep plan?') }}"
                                 icon="check"
                                 class="shrink-0"
                             >
-                                Approve Prep Plan
+                                {{ __('Approve Prep Plan') }}
                             </flux:button>
                         </div>
                     </div>
@@ -1648,10 +1671,10 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                         <div class="flex items-center gap-3">
                             <flux:icon name="check-circle" class="w-6 h-6 text-green-600 dark:text-green-400 shrink-0" />
                             <div>
-                                <flux:text class="font-semibold text-green-800 dark:text-green-200">Crew Approved</flux:text>
+                                <flux:text class="font-semibold text-green-800 dark:text-green-200">{{ __('Crew Approved') }}</flux:text>
                                 @if ($plan->crew_approved_at)
                                     <flux:text class="text-sm text-green-700 dark:text-green-300">
-                                        Approved {{ $plan->crew_approved_at->diffForHumans() }}
+                                        {{ __('Approved :time', ['time' => $plan->crew_approved_at->diffForHumans()]) }}
                                     </flux:text>
                                 @endif
                             </div>
@@ -1661,8 +1684,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             @else
                 <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
                     <flux:icon name="clipboard-document-check" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-                    <flux:heading>No Prep Plan Yet</flux:heading>
-                    <flux:text class="text-zinc-500 mt-2">A prep plan will appear here once created by the team.</flux:text>
+                    <flux:heading>{{ __('No Prep Plan Yet') }}</flux:heading>
+                    <flux:text class="text-zinc-500 mt-2">{{ __('A prep plan will appear here once created by the team.') }}</flux:text>
                 </div>
             @endif
 
@@ -1670,13 +1693,13 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @elseif ($job->stage === 'completed')
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 sm:p-8 text-center mb-6">
                 <flux:icon name="trophy" class="w-12 h-12 mx-auto text-green-500 mb-3" />
-                <flux:heading size="lg">Job Completed</flux:heading>
+                <flux:heading size="lg">{{ __('Job Completed') }}</flux:heading>
                 <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                    This job has been completed. Great work!
+                    {{ __('This job has been completed. Great work!') }}
                 </flux:text>
                 @if ($job->completed_at)
                     <flux:text class="text-sm text-zinc-400 mt-2">
-                        Completed {{ $job->completed_at->format('M j, Y') }}
+                        {{ __('Completed :date', ['date' => $job->completed_at->format('M j, Y')]) }}
                     </flux:text>
                 @endif
             </div>
@@ -1684,7 +1707,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
         @if ($job->description)
             <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-6">
-                <h3 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-1">Notes</h3>
+                <h3 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-1">{{ __('Notes') }}</h3>
                 <p class="text-yellow-700 dark:text-yellow-300 text-sm sm:text-base">{{ $job->description }}</p>
             </div>
         @endif
@@ -1714,10 +1737,10 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             @if ($activeTab === 'work-order')
             {{-- Expand/Collapse Controls --}}
             <div class="flex items-center justify-between mb-4">
-                <flux:heading size="lg">Areas to Paint</flux:heading>
+                <flux:heading size="lg">{{ __('Areas to Paint') }}</flux:heading>
                 <div class="flex gap-2">
-                    <flux:button variant="ghost" size="sm" wire:click="expandAll">Expand All</flux:button>
-                    <flux:button variant="ghost" size="sm" wire:click="collapseAll">Collapse All</flux:button>
+                    <flux:button variant="ghost" size="sm" wire:click="expandAll">{{ __('Expand All') }}</flux:button>
+                    <flux:button variant="ghost" size="sm" wire:click="collapseAll">{{ __('Collapse All') }}</flux:button>
                 </div>
             </div>
 
@@ -1750,7 +1773,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                     {{ number_format($area['total_hours'], 1) }} hrs
                                 </div>
                                 <div class="text-xs text-zinc-500 hidden sm:block">
-                                    Labor: {{ number_format($area['labor_hours'], 1) }} + Cleanup: {{ number_format($area['cleanup_hours'], 1) }}
+                                    {{ __('Labor:') }} {{ number_format($area['labor_hours'], 1) }} + {{ __('Cleanup:') }} {{ number_format($area['cleanup_hours'], 1) }}
                                 </div>
                             </div>
                         </div>
@@ -1761,7 +1784,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 @if ($area['substrate'])
                                     <div class="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
                                         <p class="font-semibold text-amber-800 dark:text-amber-200 text-sm sm:text-base">
-                                            Surface Condition: {{ $area['substrate'] }}
+                                            {{ __('Surface Condition:') }} {{ $area['substrate'] }}
                                         </p>
                                     </div>
                                 @endif
@@ -1769,7 +1792,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 @if ($area['notes'])
                                     <div class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
                                         <p class="text-sm text-blue-800 dark:text-blue-200">
-                                            <span class="font-semibold">Note:</span> {{ $area['notes'] }}
+                                            <span class="font-semibold">{{ __('Note:') }}</span> {{ $area['notes'] }}
                                         </p>
                                     </div>
                                 @endif
@@ -1789,7 +1812,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                                     </span>
                                                 </div>
                                                 <div class="mt-1 text-xs sm:text-sm text-zinc-600 dark:text-zinc-400">
-                                                    <span class="font-medium">{{ $surface['coats'] }} {{ $surface['coats'] === 1 ? 'coat' : 'coats' }}</span>
+                                                    <span class="font-medium">{{ $surface['coats'] }} {{ $surface['coats'] === 1 ? __('coat') : __('coats') }}</span>
                                                     <span class="mx-1 sm:mx-2">&bull;</span>
                                                     <span>{{ $surface['application_method'] }}</span>
                                                 </div>
@@ -1806,7 +1829,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                                 @endif
                                                 @if (count($surface['prep_notes']) > 0)
                                                     <div class="mt-2 text-xs sm:text-sm text-amber-700 dark:text-amber-300">
-                                                        <span class="font-medium">Prep:</span> {{ implode(', ', $surface['prep_notes']) }}
+                                                        <span class="font-medium">{{ __('Prep:') }}</span> {{ implode(', ', $surface['prep_notes']) }}
                                                     </div>
                                                 @endif
                                             </div>
@@ -1821,7 +1844,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                     {{-- Addons (Nested Areas) --}}
                                     @if (count($area['addons']) > 0)
                                         <div class="mt-4 pt-3 border-t border-dashed border-zinc-200 dark:border-zinc-700">
-                                            <p class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 mb-2">Included Addons</p>
+                                            <p class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 mb-2">{{ __('Included Addons') }}</p>
                                             @foreach ($area['addons'] as $addon)
                                                 <div class="flex items-center gap-3 sm:gap-4 p-2">
                                                     <div class="w-5 h-5 sm:w-6 sm:h-6 border-2 border-zinc-300 dark:border-zinc-600 rounded shrink-0"></div>
@@ -1844,22 +1867,22 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
             {{-- Job Totals --}}
             <div class="mt-6 bg-zinc-900 dark:bg-zinc-950 text-white rounded-lg p-4 sm:p-6">
-                <h3 class="text-lg font-bold mb-4">Job Totals</h3>
+                <h3 class="text-lg font-bold mb-4">{{ __('Job Totals') }}</h3>
                 <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
                     <div>
-                        <div class="text-xs sm:text-sm text-zinc-400">Labor Hours</div>
+                        <div class="text-xs sm:text-sm text-zinc-400">{{ __('Labor Hours') }}</div>
                         <div class="text-xl sm:text-2xl font-bold">{{ number_format($this->jobTotals['labor_hours'], 1) }}</div>
                     </div>
                     <div>
-                        <div class="text-xs sm:text-sm text-zinc-400">Cleanup Hours</div>
+                        <div class="text-xs sm:text-sm text-zinc-400">{{ __('Cleanup Hours') }}</div>
                         <div class="text-xl sm:text-2xl font-bold">{{ number_format($this->jobTotals['cleanup_hours'], 1) }}</div>
                     </div>
                     <div>
-                        <div class="text-xs sm:text-sm text-zinc-400">Total Hours</div>
+                        <div class="text-xs sm:text-sm text-zinc-400">{{ __('Total Hours') }}</div>
                         <div class="text-xl sm:text-2xl font-bold text-green-400">{{ number_format($this->jobTotals['total_hours'], 1) }}</div>
                     </div>
                     <div>
-                        <div class="text-xs sm:text-sm text-zinc-400">Areas</div>
+                        <div class="text-xs sm:text-sm text-zinc-400">{{ __('Areas') }}</div>
                         <div class="text-xl sm:text-2xl font-bold">{{ $this->jobTotals['area_count'] }}</div>
                     </div>
                 </div>
@@ -1872,7 +1895,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             <flux:callout variant="warning" class="mb-6">
                 <flux:icon name="lock-closed" class="w-5 h-5" />
                 <div class="text-sm sm:text-base">
-                    <strong>For Crew Lead Only</strong> - This data shows true costs and crew pay. Do not share with employees.
+                    {!! __('<strong>For Crew Lead Only</strong> - This data shows true costs and crew pay. Do not share with employees.') !!}
                 </div>
             </flux:callout>
 
@@ -1880,7 +1903,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
                 <h3 class="text-lg font-bold text-zinc-900 dark:text-white mb-4">
                     <flux:icon name="paint-brush" class="w-5 h-5 inline mr-1" />
-                    Materials & Paint Profit
+                    {{ __('Materials & Paint Profit') }}
                 </h3>
 
                 @if (count($this->materialsProfit['items']) > 0)
@@ -1896,15 +1919,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 </div>
                                 <div class="grid grid-cols-2 gap-2 text-sm">
                                     <div>
-                                        <span class="text-zinc-500">Qty:</span>
-                                        <span class="font-medium">{{ (int) $material['gallons'] }} gal</span>
+                                        <span class="text-zinc-500">{{ __('Qty:') }}</span>
+                                        <span class="font-medium">{{ (int) $material['gallons'] }} {{ __('gal') }}</span>
                                     </div>
                                     <div>
-                                        <span class="text-zinc-500">Charged:</span>
+                                        <span class="text-zinc-500">{{ __('Charged:') }}</span>
                                         <span class="font-medium">${{ number_format($material['catalog_total'], 2) }}</span>
                                     </div>
                                     <div>
-                                        <span class="text-zinc-500">Your Cost/gal:</span>
+                                        <span class="text-zinc-500">{{ __('Your Cost/gal:') }}</span>
                                         @if ($material['product_id'])
                                             <input
                                                 type="number"
@@ -1919,7 +1942,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                         @endif
                                     </div>
                                     <div>
-                                        <span class="text-zinc-500">Profit:</span>
+                                        <span class="text-zinc-500">{{ __('Profit:') }}</span>
                                         <span class="font-medium {{ $material['profit'] !== null ? ($material['profit'] >= 0 ? 'text-green-600' : 'text-red-600') : 'text-zinc-400' }}">
                                             @if ($material['profit'] !== null)
                                                 {{ $material['profit'] >= 0 ? '+' : '' }}${{ number_format($material['profit'], 2) }}
@@ -1938,13 +1961,13 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Paint Product</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Qty</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Charged/gal</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Your Cost/gal</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Charged</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Your Cost</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Profit</th>
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Paint Product') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Qty') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Charged/gal') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Your Cost/gal') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Charged') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Your Cost') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Profit') }}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1994,7 +2017,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 @endforeach
                                 {{-- Recycle Fee row --}}
                                 <tr class="border-b border-zinc-100 dark:border-zinc-700/50">
-                                    <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">Recycle Fee</td>
+                                    <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">{{ __('Recycle Fee') }}</td>
                                     <td class="py-2 px-3 text-right text-zinc-700 dark:text-zinc-300">{{ ceil($this->materialsWithCosts['total_gallons']) }} gal</td>
                                     <td class="py-2 px-3 text-right text-zinc-700 dark:text-zinc-300">${{ number_format($this->materialsWithCosts['recycle_fee_rate'], 2) }}</td>
                                     <td class="py-2 px-3 text-right text-zinc-400">-</td>
@@ -2005,7 +2028,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 {{-- Sundries row --}}
                                 <tr class="border-b border-zinc-200 dark:border-zinc-700">
                                     <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">
-                                        Sundries
+                                        {{ __('Sundries') }}
                                         <span class="text-xs text-zinc-500">({{ number_format($this->sundriesBreakdown['labor_hours'], 1) }} hrs × ${{ number_format($this->sundriesBreakdown['cost_per_hour'], 2) }}/hr)</span>
                                     </td>
                                     <td class="py-2 px-3 text-right text-zinc-400">-</td>
@@ -2018,7 +2041,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                             </tbody>
                             <tfoot>
                                 <tr class="bg-zinc-50 dark:bg-zinc-700/50">
-                                    <td colspan="4" class="py-3 px-3 font-bold text-zinc-900 dark:text-white">Total Materials & Sundries</td>
+                                    <td colspan="4" class="py-3 px-3 font-bold text-zinc-900 dark:text-white">{{ __('Total Materials & Sundries') }}</td>
                                     <td class="py-3 px-3 text-right font-bold text-zinc-900 dark:text-white">${{ number_format($this->materialsWithCosts['total_materials_cost'] + $this->sundriesBreakdown['total_cost'], 2) }}</td>
                                     <td class="py-3 px-3 text-right font-bold text-zinc-900 dark:text-white">
                                         @if ($this->materialsProfit['has_actuals'])
@@ -2042,12 +2065,12 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     {{-- Mobile Summary Card --}}
                     <div class="sm:hidden bg-zinc-50 dark:bg-zinc-700/50 rounded-lg p-3 mt-4">
                         <div class="flex justify-between mb-2">
-                            <span class="text-zinc-600 dark:text-zinc-400">Total Materials</span>
+                            <span class="text-zinc-600 dark:text-zinc-400">{{ __('Total Materials') }}</span>
                             <span class="font-bold text-zinc-900 dark:text-white">${{ number_format($this->materialsWithCosts['total_materials_cost'] + $this->sundriesBreakdown['total_cost'], 2) }}</span>
                         </div>
                         @if ($this->materialsProfit['total_profit'] !== null)
                             <div class="flex justify-between">
-                                <span class="text-zinc-600 dark:text-zinc-400">Paint Profit</span>
+                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Paint Profit') }}</span>
                                 <span class="font-bold {{ $this->materialsProfit['total_profit'] >= 0 ? 'text-green-600' : 'text-red-600' }}">
                                     {{ $this->materialsProfit['total_profit'] >= 0 ? '+' : '' }}${{ number_format($this->materialsProfit['total_profit'], 2) }}
                                 </span>
@@ -2056,7 +2079,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     </div>
                 @else
                     <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                        No paint products assigned to this job.
+                        {{ __('No paint products assigned to this job.') }}
                     </div>
                 @endif
             </div>
@@ -2066,10 +2089,10 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 <div class="flex items-center justify-between mb-4">
                     <h3 class="text-lg font-bold text-zinc-900 dark:text-white">
                         <flux:icon name="user-group" class="w-5 h-5 inline mr-1" />
-                        Individual Painters
+                        {{ __('Individual Painters') }}
                     </h3>
                     <flux:button variant="primary" size="sm" wire:click="addPainter" icon="plus">
-                        Add
+                        {{ __('Add') }}
                     </flux:button>
                 </div>
 
@@ -2082,14 +2105,14 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                     <input
                                         type="text"
                                         wire:model.live.debounce.500ms="painters.{{ $painter['index'] }}.name"
-                                        placeholder="Painter name"
+                                        :placeholder="__('Painter name')"
                                         class="flex-1 text-sm font-medium border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white mr-2"
                                     />
                                     <flux:button variant="ghost" size="sm" wire:click="removePainter({{ $painter['index'] }})" icon="x-mark" class="text-red-500 shrink-0" />
                                 </div>
                                 <div class="grid grid-cols-3 gap-2 text-sm">
                                     <div>
-                                        <label class="text-xs text-zinc-500">Rate/hr</label>
+                                        <label class="text-xs text-zinc-500">{{ __('Rate/hr') }}</label>
                                         <div class="flex items-center gap-1">
                                             <span class="text-zinc-400">$</span>
                                             <input
@@ -2102,7 +2125,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                         </div>
                                     </div>
                                     <div>
-                                        <label class="text-xs text-zinc-500">Hours</label>
+                                        <label class="text-xs text-zinc-500">{{ __('Hours') }}</label>
                                         <input
                                             type="number"
                                             step="0.5"
@@ -2113,7 +2136,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                         />
                                     </div>
                                     <div>
-                                        <label class="text-xs text-zinc-500">Pay</label>
+                                        <label class="text-xs text-zinc-500">{{ __('Pay') }}</label>
                                         <div class="font-bold text-zinc-900 dark:text-white py-1">
                                             ${{ number_format($painter['base_pay'], 2) }}
                                         </div>
@@ -2125,15 +2148,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                         {{-- Mobile Totals --}}
                         <div class="bg-zinc-50 dark:bg-zinc-700/50 rounded-lg p-3 space-y-2">
                             <div class="flex justify-between">
-                                <span class="text-zinc-600 dark:text-zinc-400">Crew Wages</span>
+                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Crew Wages') }}</span>
                                 <span class="font-bold text-zinc-900 dark:text-white">${{ number_format($this->paintersBreakdown['total_base_pay'], 2) }}</span>
                             </div>
                             <div class="flex justify-between text-amber-700 dark:text-amber-300">
-                                <span>+ Payroll Burden ({{ round(($this->burdenMultiplier - 1) * 100) }}%)</span>
+                                <span>{{ __('+ Payroll Burden') }} ({{ round(($this->burdenMultiplier - 1) * 100) }}%)</span>
                                 <span class="font-bold">${{ number_format($this->paintersBreakdown['total_burden_cost'], 2) }}</span>
                             </div>
                             <div class="flex justify-between pt-2 border-t border-zinc-200 dark:border-zinc-600">
-                                <span class="font-bold text-zinc-900 dark:text-white">Total Labor Cost</span>
+                                <span class="font-bold text-zinc-900 dark:text-white">{{ __('Total Labor Cost') }}</span>
                                 <span class="font-bold text-zinc-900 dark:text-white">${{ number_format($this->paintersBreakdown['total_labor_cost'], 2) }}</span>
                             </div>
                         </div>
@@ -2144,10 +2167,10 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                         <table class="w-full text-sm">
                             <thead>
                                 <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Name</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Rate/hr</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Hours</th>
-                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Pay</th>
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Name') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Rate/hr') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Hours') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Pay') }}</th>
                                     <th class="py-2 px-3 w-10"></th>
                                 </tr>
                             </thead>
@@ -2158,7 +2181,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                             <input
                                                 type="text"
                                                 wire:model.live.debounce.500ms="painters.{{ $painter['index'] }}.name"
-                                                placeholder="Painter name"
+                                                :placeholder="__('Painter name')"
                                                 class="w-full text-sm border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                                             />
                                         </td>
@@ -2195,7 +2218,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                             </tbody>
                             <tfoot>
                                 <tr class="bg-zinc-50 dark:bg-zinc-700/50 border-b border-zinc-200 dark:border-zinc-600">
-                                    <td class="py-3 px-3 font-bold text-zinc-900 dark:text-white">Crew Wages</td>
+                                    <td class="py-3 px-3 font-bold text-zinc-900 dark:text-white">{{ __('Crew Wages') }}</td>
                                     <td class="py-3 px-3"></td>
                                     <td class="py-3 px-3 text-right font-bold text-zinc-900 dark:text-white">{{ number_format($this->paintersBreakdown['total_hours'], 1) }} hrs</td>
                                     <td class="py-3 px-3 text-right font-bold text-zinc-900 dark:text-white">${{ number_format($this->paintersBreakdown['total_base_pay'], 2) }}</td>
@@ -2203,14 +2226,14 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 </tr>
                                 <tr class="bg-amber-50 dark:bg-amber-900/20 border-b border-zinc-200 dark:border-zinc-600">
                                     <td colspan="3" class="py-3 px-3 text-amber-800 dark:text-amber-300">
-                                        <strong>+ Payroll Burden ({{ round(($this->burdenMultiplier - 1) * 100) }}%)</strong>
-                                        <span class="text-xs ml-1">insurance, workers comp, payroll taxes</span>
+                                        <strong>{{ __('+ Payroll Burden') }} ({{ round(($this->burdenMultiplier - 1) * 100) }}%)</strong>
+                                        <span class="text-xs ml-1">{{ __('insurance, workers comp, payroll taxes') }}</span>
                                     </td>
                                     <td class="py-3 px-3 text-right font-bold text-amber-800 dark:text-amber-300">${{ number_format($this->paintersBreakdown['total_burden_cost'], 2) }}</td>
                                     <td class="py-3 px-3"></td>
                                 </tr>
                                 <tr class="bg-zinc-100 dark:bg-zinc-600/50">
-                                    <td colspan="3" class="py-3 px-3 font-bold text-zinc-900 dark:text-white text-base">Total Labor Cost</td>
+                                    <td colspan="3" class="py-3 px-3 font-bold text-zinc-900 dark:text-white text-base">{{ __('Total Labor Cost') }}</td>
                                     <td class="py-3 px-3 text-right font-bold text-zinc-900 dark:text-white text-base">${{ number_format($this->paintersBreakdown['total_labor_cost'], 2) }}</td>
                                     <td class="py-3 px-3"></td>
                                 </tr>
@@ -2219,7 +2242,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     </div>
                 @else
                     <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                        <p>No painters added yet. Add your crew to track actual labor costs.</p>
+                        <p>{{ __('No painters added yet. Add your crew to track actual labor costs.') }}</p>
                     </div>
                 @endif
             </div>
@@ -2228,42 +2251,42 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
                 <h3 class="text-lg font-bold text-zinc-900 dark:text-white mb-4">
                     <flux:icon name="banknotes" class="w-5 h-5 inline mr-1" />
-                    Pay Calculator
+                    {{ __('Pay Calculator') }}
                 </h3>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                     {{-- Left Column: Rates --}}
                     <div class="space-y-3">
-                        <h4 class="font-semibold text-zinc-700 dark:text-zinc-300 text-sm uppercase tracking-wider">Pay Rates ({{ ucfirst($this->painterPayBreakdown['scope']) }})</h4>
+                        <h4 class="font-semibold text-zinc-700 dark:text-zinc-300 text-sm uppercase tracking-wider">{{ __('Pay Rates') }} ({{ ucfirst($this->painterPayBreakdown['scope']) }})</h4>
 
                         <div class="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-700">
-                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">Base Hourly Wage</span>
+                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">{{ __('Base Hourly Wage') }}</span>
                             <span class="font-semibold text-zinc-900 dark:text-white">${{ number_format($this->painterPayBreakdown['base_hourly_wage'], 2) }}/hr</span>
                         </div>
                         <div class="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-700">
-                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">Payroll Burden</span>
+                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">{{ __('Payroll Burden') }}</span>
                             <span class="font-semibold text-zinc-900 dark:text-white">+{{ $this->painterPayBreakdown['payroll_burden_percent'] }}%</span>
                         </div>
                         <div class="flex justify-between items-center py-2 bg-blue-50 dark:bg-blue-900/20 px-3 -mx-3 rounded">
-                            <span class="font-semibold text-blue-800 dark:text-blue-200 text-sm">Effective Rate (Loaded)</span>
+                            <span class="font-semibold text-blue-800 dark:text-blue-200 text-sm">{{ __('Effective Rate (Loaded)') }}</span>
                             <span class="font-bold text-blue-800 dark:text-blue-200">${{ number_format($this->painterPayBreakdown['effective_hourly_rate'], 2) }}/hr</span>
                         </div>
                     </div>
 
                     {{-- Right Column: Hours & Pay --}}
                     <div class="space-y-3">
-                        <h4 class="font-semibold text-zinc-700 dark:text-zinc-300 text-sm uppercase tracking-wider">Hours & Costs</h4>
+                        <h4 class="font-semibold text-zinc-700 dark:text-zinc-300 text-sm uppercase tracking-wider">{{ __('Hours & Costs') }}</h4>
 
                         <div class="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-700">
-                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">Labor Hours</span>
+                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">{{ __('Labor Hours') }}</span>
                             <span class="font-semibold text-zinc-900 dark:text-white">{{ number_format($this->painterPayBreakdown['labor_hours'], 1) }} hrs</span>
                         </div>
                         <div class="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-700">
-                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">Cleanup Hours</span>
+                            <span class="text-zinc-600 dark:text-zinc-400 text-sm">{{ __('Cleanup Hours') }}</span>
                             <span class="font-semibold text-zinc-900 dark:text-white">{{ number_format($this->painterPayBreakdown['cleanup_hours'], 1) }} hrs</span>
                         </div>
                         <div class="flex justify-between items-center py-2 border-b border-zinc-100 dark:border-zinc-700">
-                            <span class="font-semibold text-zinc-700 dark:text-zinc-300 text-sm">Total Hours</span>
+                            <span class="font-semibold text-zinc-700 dark:text-zinc-300 text-sm">{{ __('Total Hours') }}</span>
                             <span class="font-bold text-zinc-900 dark:text-white">{{ number_format($this->painterPayBreakdown['total_hours'], 1) }} hrs</span>
                         </div>
                     </div>
@@ -2273,7 +2296,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 sm:p-4">
-                            <div class="text-sm text-green-700 dark:text-green-300">Painter Earns (Base)</div>
+                            <div class="text-sm text-green-700 dark:text-green-300">{{ __('Painter Earns (Base)') }}</div>
                             <div class="text-xl sm:text-2xl font-bold text-green-800 dark:text-green-200">
                                 ${{ number_format($this->painterPayBreakdown['painter_earns_base'], 2) }}
                             </div>
@@ -2282,7 +2305,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                             </div>
                         </div>
                         <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 sm:p-4">
-                            <div class="text-sm text-amber-700 dark:text-amber-300">Company Pays (Loaded)</div>
+                            <div class="text-sm text-amber-700 dark:text-amber-300">{{ __('Company Pays (Loaded)') }}</div>
                             <div class="text-xl sm:text-2xl font-bold text-amber-800 dark:text-amber-200">
                                 ${{ number_format($this->painterPayBreakdown['company_pays_loaded'], 2) }}
                             </div>
@@ -2299,10 +2322,10 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                     <h3 class="text-lg font-bold text-zinc-900 dark:text-white">
                         <flux:icon name="user-group" class="w-5 h-5 inline mr-1" />
-                        Crew Size Calculator
+                        {{ __('Crew Size Calculator') }}
                     </h3>
                     <div class="flex items-center gap-2">
-                        <span class="text-sm text-zinc-500 dark:text-zinc-400">Hours/Day:</span>
+                        <span class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Hours/Day:') }}</span>
                         <select wire:model.live="hoursPerDay" class="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1.5 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white">
                             <option value="6">6 hrs</option>
                             <option value="8">8 hrs</option>
@@ -2312,7 +2335,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 </div>
 
                 <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-4">
-                    Total labor cost stays the same regardless of crew size. More painters = faster completion.
+                    {{ __('Total labor cost stays the same regardless of crew size. More painters = faster completion.') }}
                 </p>
 
                 {{-- Mobile Cards --}}
@@ -2328,7 +2351,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                         <flux:icon name="user" class="w-4 h-4 {{ $row['painters'] === $crewSize ? 'text-blue-600' : 'text-zinc-500' }}" />
                                     @endfor
                                     <span class="ml-1 font-medium {{ $row['painters'] === $crewSize ? 'text-blue-700 dark:text-blue-300' : 'text-zinc-900 dark:text-white' }}">
-                                        {{ $row['painters'] }} {{ $row['painters'] === 1 ? 'painter' : 'painters' }}
+                                        {{ $row['painters'] }} {{ $row['painters'] === 1 ? __('painter') : __('painters') }}
                                     </span>
                                 </div>
                                 @if ($row['painters'] === $crewSize)
@@ -2337,15 +2360,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                             </div>
                             <div class="grid grid-cols-3 gap-2 text-sm text-center">
                                 <div>
-                                    <div class="text-xs text-zinc-500">6hr day</div>
+                                    <div class="text-xs text-zinc-500">{{ __('6hr day') }}</div>
                                     <div class="font-medium">{{ $row['days_needed'][6] }}d</div>
                                 </div>
                                 <div>
-                                    <div class="text-xs text-zinc-500">8hr day</div>
+                                    <div class="text-xs text-zinc-500">{{ __('8hr day') }}</div>
                                     <div class="font-medium">{{ $row['days_needed'][8] }}d</div>
                                 </div>
                                 <div>
-                                    <div class="text-xs text-zinc-500">10hr day</div>
+                                    <div class="text-xs text-zinc-500">{{ __('10hr day') }}</div>
                                     <div class="font-medium">{{ $row['days_needed'][10] }}d</div>
                                 </div>
                             </div>
@@ -2358,12 +2381,12 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     <table class="w-full text-sm">
                         <thead>
                             <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                                <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Painters</th>
-                                <th class="text-center py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">6-hr Day</th>
-                                <th class="text-center py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">8-hr Day</th>
-                                <th class="text-center py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">10-hr Day</th>
-                                <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Daily Pay Each</th>
-                                <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">Total Job Pay</th>
+                                <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Painters') }}</th>
+                                <th class="text-center py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('6-hr Day') }}</th>
+                                <th class="text-center py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('8-hr Day') }}</th>
+                                <th class="text-center py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('10-hr Day') }}</th>
+                                <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Daily Pay Each') }}</th>
+                                <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Total Job Pay') }}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2377,17 +2400,17 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                             @for ($i = 0; $i < $row['painters']; $i++)
                                                 <flux:icon name="user" class="w-4 h-4" />
                                             @endfor
-                                            <span>{{ $row['painters'] }} {{ $row['painters'] === 1 ? 'painter' : 'painters' }}</span>
+                                            <span>{{ $row['painters'] }} {{ $row['painters'] === 1 ? __('painter') : __('painters') }}</span>
                                         </button>
                                     </td>
                                     <td class="py-3 px-3 text-center text-zinc-700 dark:text-zinc-300">
-                                        {{ $row['days_needed'][6] }} {{ $row['days_needed'][6] == 1 ? 'day' : 'days' }}
+                                        {{ $row['days_needed'][6] }} {{ $row['days_needed'][6] == 1 ? __('day') : __('days') }}
                                     </td>
                                     <td class="py-3 px-3 text-center text-zinc-700 dark:text-zinc-300">
-                                        {{ $row['days_needed'][8] }} {{ $row['days_needed'][8] == 1 ? 'day' : 'days' }}
+                                        {{ $row['days_needed'][8] }} {{ $row['days_needed'][8] == 1 ? __('day') : __('days') }}
                                     </td>
                                     <td class="py-3 px-3 text-center text-zinc-700 dark:text-zinc-300">
-                                        {{ $row['days_needed'][10] }} {{ $row['days_needed'][10] == 1 ? 'day' : 'days' }}
+                                        {{ $row['days_needed'][10] }} {{ $row['days_needed'][10] == 1 ? __('day') : __('days') }}
                                     </td>
                                     <td class="py-3 px-3 text-right text-zinc-700 dark:text-zinc-300">
                                         ${{ number_format($row['daily_pay_each'], 0) }}
@@ -2402,7 +2425,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 </div>
 
                 <div class="mt-4 p-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg text-sm text-zinc-600 dark:text-zinc-400">
-                    <strong>Note:</strong> Daily pay shown is base wage only. Add burden ({{ $this->painterPayBreakdown['payroll_burden_percent'] }}%) for true company cost per day.
+                    <strong>{{ __('Note:') }}</strong> {{ __('Daily pay shown is base wage only. Add burden (:percent%) for true company cost per day.', ['percent' => $this->painterPayBreakdown['payroll_burden_percent']]) }}
                 </div>
             </div>
 
@@ -2411,54 +2434,54 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
                     <h3 class="text-lg font-bold">
                         <flux:icon name="chart-bar" class="w-5 h-5 inline mr-1 text-white" />
-                        Job Profit Summary
+                        {{ __('Job Profit Summary') }}
                     </h3>
                     @if (! $this->profitSummary['has_actuals'])
-                        <span class="text-xs px-2 py-1 bg-zinc-700 rounded text-zinc-400 self-start sm:self-auto">Using estimated costs</span>
+                        <span class="text-xs px-2 py-1 bg-zinc-700 rounded text-zinc-400 self-start sm:self-auto">{{ __('Using estimated costs') }}</span>
                     @else
-                        <span class="text-xs px-2 py-1 bg-blue-900 rounded text-blue-300 self-start sm:self-auto">Using actual costs</span>
+                        <span class="text-xs px-2 py-1 bg-blue-900 rounded text-blue-300 self-start sm:self-auto">{{ __('Using actual costs') }}</span>
                     @endif
                 </div>
 
                 {{-- Job Price --}}
                 <div class="flex justify-between items-center py-3 border-b-2 border-zinc-600 mb-2">
-                    <span class="text-base sm:text-lg font-bold">Job Price</span>
+                    <span class="text-base sm:text-lg font-bold">{{ __('Job Price') }}</span>
                     <span class="text-xl sm:text-2xl font-bold text-white">${{ number_format($this->profitSummary['job_price'], 2) }}</span>
                 </div>
-                <div class="text-xs text-zinc-500 mb-4">Company pays (loaded labor) + materials</div>
+                <div class="text-xs text-zinc-500 mb-4">{{ __('Company pays (loaded labor) + materials') }}</div>
 
                 <div class="space-y-2">
                     <div class="flex justify-between items-center py-2 border-b border-zinc-700">
-                        <span class="text-zinc-300 text-sm">Crew Wages</span>
+                        <span class="text-zinc-300 text-sm">{{ __('Crew Wages') }}</span>
                         <span class="text-red-300 font-medium">−${{ number_format($this->profitSummary['crew_wages'], 2) }}</span>
                     </div>
                     <div class="flex justify-between items-center py-2 border-b border-zinc-700">
-                        <span class="text-zinc-300 text-sm">Payroll Burden</span>
+                        <span class="text-zinc-300 text-sm">{{ __('Payroll Burden') }}</span>
                         <span class="text-amber-400 font-medium">−${{ number_format($this->profitSummary['burden_cost'], 2) }}</span>
                     </div>
                     <div class="flex justify-between items-center py-2 border-b border-zinc-700">
-                        <span class="text-zinc-300 text-sm">Paint Cost</span>
+                        <span class="text-zinc-300 text-sm">{{ __('Paint Cost') }}</span>
                         <span class="text-red-300 font-medium">−${{ number_format($this->profitSummary['paint_cost'], 2) }}</span>
                     </div>
                     <div class="flex justify-between items-center py-2 border-b border-zinc-700">
-                        <span class="text-zinc-300 text-sm">Sundries</span>
+                        <span class="text-zinc-300 text-sm">{{ __('Sundries') }}</span>
                         <span class="text-red-300 font-medium">−${{ number_format($this->profitSummary['sundries_cost'], 2) }}</span>
                     </div>
                     <div class="flex justify-between items-center py-2 border-b border-zinc-700">
-                        <span class="text-zinc-300 text-sm">Recycle Fees</span>
+                        <span class="text-zinc-300 text-sm">{{ __('Recycle Fees') }}</span>
                         <span class="text-red-300 font-medium">−${{ number_format($this->profitSummary['recycle_fee'], 2) }}</span>
                     </div>
                 </div>
 
                 {{-- Total Costs --}}
                 <div class="flex justify-between items-center py-3 mt-2 border-t border-zinc-600">
-                    <span class="font-bold text-zinc-400">Total Costs</span>
+                    <span class="font-bold text-zinc-400">{{ __('Total Costs') }}</span>
                     <span class="font-bold text-zinc-300">−${{ number_format($this->profitSummary['total_costs'], 2) }}</span>
                 </div>
 
                 {{-- Your Profit --}}
                 <div class="flex justify-between items-center py-3 border-t-2 border-zinc-500">
-                    <span class="text-base sm:text-lg font-bold">Your Profit</span>
+                    <span class="text-base sm:text-lg font-bold">{{ __('Your Profit') }}</span>
                     <div class="text-right">
                         <span class="text-xl sm:text-2xl font-bold {{ $this->profitSummary['gross_profit'] >= 0 ? 'text-green-400' : 'text-red-400' }}">
                             {{ $this->profitSummary['gross_profit'] >= 0 ? '+' : '' }}${{ number_format($this->profitSummary['gross_profit'], 2) }}
@@ -2472,22 +2495,22 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     <div class="mt-4 pt-4 border-t border-dashed border-zinc-600">
                         <div class="flex justify-between items-center py-2">
                             <span class="text-amber-300 font-semibold text-lg">
-                                Crew Lead Bonus
+                                {{ __('Crew Lead Bonus') }}
                                 <span class="text-sm text-zinc-400">({{ number_format($this->crewBonusInfo['bonus_percent'], 1) }}%)</span>
                             </span>
                             <span class="text-2xl font-bold text-green-400">${{ number_format($this->crewBonusInfo['bonus_amount'], 2) }}</span>
                         </div>
                         <div class="mt-3 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-                            <div class="text-sm font-medium text-amber-300 mb-2">How to Earn This Bonus:</div>
+                            <div class="text-sm font-medium text-amber-300 mb-2">{{ __('How to Earn This Bonus:') }}</div>
                             <ul class="text-xs text-zinc-400 space-y-1.5 list-disc list-inside">
-                                <li>Actively use and engage with the job software throughout the project</li>
-                                <li>Be active in the Job Chat - communicate with the team and customer</li>
-                                <li>Upload, view, and manage team and customer photos and communications</li>
-                                <li>Participate in Job Prep to help build a plan the team can follow</li>
-                                <li>Follow the plan as outlined during prep</li>
-                                <li>Do not promote personal business on the job site</li>
-                                <li>Dress appropriately and maintain a professional appearance</li>
-                                <li>Ensure all touchups are completed before job closeout</li>
+                                <li>{{ __('Actively use and engage with the job software throughout the project') }}</li>
+                                <li>{{ __('Be active in the Job Chat - communicate with the team and customer') }}</li>
+                                <li>{{ __('Upload, view, and manage team and customer photos and communications') }}</li>
+                                <li>{{ __('Participate in Job Prep to help build a plan the team can follow') }}</li>
+                                <li>{{ __('Follow the plan as outlined during prep') }}</li>
+                                <li>{{ __('Do not promote personal business on the job site') }}</li>
+                                <li>{{ __('Dress appropriately and maintain a professional appearance') }}</li>
+                                <li>{{ __('Ensure all touchups are completed before job closeout') }}</li>
                             </ul>
                         </div>
                     </div>
@@ -2498,21 +2521,21 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
-                        <h3 class="text-lg font-bold text-zinc-900 dark:text-white">Save Profit Data</h3>
+                        <h3 class="text-lg font-bold text-zinc-900 dark:text-white">{{ __('Save Profit Data') }}</h3>
                         @if ($this->job->estimate?->profit_snapshot)
                             <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                                Last snapshot: {{ \Carbon\Carbon::parse($this->job->estimate->profit_snapshot['captured_at'])->format('M j, Y g:i A') }}
+                                {{ __('Last snapshot:') }} {{ \Carbon\Carbon::parse($this->job->estimate->profit_snapshot['captured_at'])->format('M j, Y g:i A') }}
                             </p>
                         @else
-                            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">No snapshot saved yet.</p>
+                            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{{ __('No snapshot saved yet.') }}</p>
                         @endif
                     </div>
                     <div class="flex gap-2">
                         <flux:button variant="ghost" wire:click="saveActuals" icon="document-check" class="flex-1 sm:flex-none">
-                            Save Actuals
+                            {{ __('Save Actuals') }}
                         </flux:button>
                         <flux:button variant="primary" wire:click="saveSnapshot" icon="camera" class="flex-1 sm:flex-none">
-                            Save Snapshot
+                            {{ __('Save Snapshot') }}
                         </flux:button>
                     </div>
                 </div>
@@ -2523,7 +2546,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @if ($activeTab === 'colors')
             @if ($job->colors->count() > 0)
                 <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6">
-                    <flux:heading size="sm" class="mb-4">Paint Colors</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Paint Colors') }}</flux:heading>
                     <div class="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
                         @foreach ($job->colors as $color)
                             <div class="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg border border-zinc-200 dark:border-zinc-700">
@@ -2550,8 +2573,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             @else
                 <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
                     <flux:icon name="paint-brush" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-                    <flux:heading>No Colors Assigned Yet</flux:heading>
-                    <flux:text class="text-zinc-500 mt-2">Paint colors will appear here once confirmed.</flux:text>
+                    <flux:heading>{{ __('No Colors Assigned Yet') }}</flux:heading>
+                    <flux:text class="text-zinc-500 mt-2">{{ __('Paint colors will appear here once confirmed.') }}</flux:text>
                 </div>
             @endif
         @endif
@@ -2560,7 +2583,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @if ($activeTab === 'materials')
             @if (count($this->materialsNeeded) > 0)
                 <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6">
-                    <flux:heading size="sm" class="mb-4">Materials Needed</flux:heading>
+                    <flux:heading size="sm" class="mb-4">{{ __('Materials Needed') }}</flux:heading>
                     <div class="space-y-3">
                         @foreach ($this->materialsNeeded as $material)
                             <div class="flex items-center gap-3 sm:gap-4 p-3 sm:p-4 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg">
@@ -2575,7 +2598,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 </div>
                                 <div class="text-right shrink-0">
                                     <div class="font-bold text-base sm:text-lg">{{ ceil($material['gallons']) }}</div>
-                                    <div class="text-xs text-zinc-500">{{ ceil($material['gallons']) === 1 ? 'gallon' : 'gallons' }}</div>
+                                    <div class="text-xs text-zinc-500">{{ ceil($material['gallons']) === 1 ? __('gallon') : __('gallons') }}</div>
                                 </div>
                             </div>
                         @endforeach
@@ -2584,8 +2607,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             @else
                 <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
                     <flux:icon name="shopping-cart" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-                    <flux:heading>No Materials Listed</flux:heading>
-                    <flux:text class="text-zinc-500 mt-2">Material requirements will appear here.</flux:text>
+                    <flux:heading>{{ __('No Materials Listed') }}</flux:heading>
+                    <flux:text class="text-zinc-500 mt-2">{{ __('Material requirements will appear here.') }}</flux:text>
                 </div>
             @endif
         @endif
@@ -2601,13 +2624,27 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             @else
                 <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
                     <flux:icon name="photo" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-                    <flux:heading>No Photos</flux:heading>
-                    <flux:text class="text-zinc-500 mt-2">No property is linked to this job.</flux:text>
+                    <flux:heading>{{ __('No Photos') }}</flux:heading>
+                    <flux:text class="text-zinc-500 mt-2">{{ __('No property is linked to this job.') }}</flux:text>
                 </div>
             @endif
         @endif
             </div>
         @endif {{-- end hasAccepted reference tabs --}}
+
+        {{-- Video Walkarounds --}}
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden print:hidden">
+            <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 flex items-center gap-2">
+                <flux:icon name="video-camera" class="w-5 h-5 text-zinc-500" />
+                <flux:heading size="sm">{{ __('Video Walkarounds') }}</flux:heading>
+            </div>
+            <div class="p-4">
+                <livewire:estimates.video-walkarounds
+                    :recordable="$job"
+                    :key="'walkarounds-'.$job->id"
+                />
+            </div>
+        </div>
 
         {{-- 8. Embedded Chat --}}
         @if ($this->hasAccepted && $this->chatThread)
@@ -2615,9 +2652,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
                     <div class="flex items-center gap-2">
                         <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
-                        <flux:heading size="sm">Job Conversation</flux:heading>
+                        <flux:heading size="sm">{{ __('Job Conversation') }}</flux:heading>
                     </div>
-                    <flux:text class="text-xs text-zinc-400 mt-1">Discuss scheduling, tasks, or any questions about this job.</flux:text>
+                    <flux:text class="text-xs text-zinc-400 mt-1">{{ __('Discuss scheduling, tasks, or any questions about this job.') }}</flux:text>
                 </div>
 
                 <div class="max-h-80 overflow-y-auto p-4 space-y-3 bg-white dark:bg-zinc-900" x-data x-init="$el.scrollTop = $el.scrollHeight">
@@ -2644,7 +2681,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
                                     <div class="{{ $isOwnMessage ? 'text-right' : 'text-left' }}">
                                         <div class="flex items-center gap-1 mb-0.5 {{ $isOwnMessage ? 'flex-row-reverse' : '' }}">
-                                            <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? 'Unknown' }}</flux:text>
+                                            <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? __('Unknown') }}</flux:text>
                                             <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
                                         </div>
                                         <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
@@ -2672,7 +2709,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     @empty
                         <div class="text-center py-6">
                             <flux:icon name="chat-bubble-left" class="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
-                            <flux:text class="text-sm text-zinc-500">No messages yet. Send a message to discuss this job.</flux:text>
+                            <flux:text class="text-sm text-zinc-500">{{ __('No messages yet. Send a message to discuss this job.') }}</flux:text>
                         </div>
                     @endforelse
                 </div>
@@ -2682,6 +2719,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 </div>
             </div>
         @endif
+
+        {{-- Video Call Recordings --}}
+        <livewire:video-call.recording-player :job="$job" :key="'recordings-'.$job->id" />
     </div>
 
     {{-- Hide scrollbar but allow scrolling --}}

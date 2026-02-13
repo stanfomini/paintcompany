@@ -101,7 +101,7 @@ new class extends Component {
         $this->importError = null;
 
         if (empty($this->importUrl)) {
-            $this->importError = 'Please enter a listing URL.';
+            $this->importError = __('Please enter a listing URL.');
 
             return;
         }
@@ -154,9 +154,9 @@ new class extends Component {
                 $this->notes = "Imported from {$data['source']}\n".implode("\n", $noteParts);
             }
 
-            $this->dispatch('import-success', message: 'Data imported successfully! Review and adjust the fields as needed.');
+            $this->dispatch('import-success', message: __('Data imported successfully! Review and adjust the fields as needed.'));
         } catch (\Exception $e) {
-            $this->importError = 'An error occurred while importing. Please try again.';
+            $this->importError = __('An error occurred while importing. Please try again.');
         } finally {
             $this->isImporting = false;
         }
@@ -216,25 +216,25 @@ new class extends Component {
         ]);
 
         $this->dispatch('property-created');
-        session()->flash('success', 'Property created successfully.');
+        session()->flash('success', __('Property created successfully.'));
         $this->closeModal();
     }
 }; ?>
 
 <div>
     <flux:button wire:click="openModal" icon="plus">
-        Add Property
+        {{ __('Add Property') }}
     </flux:button>
 
     <flux:modal wire:model="showModal" variant="flyout" class="max-w-lg">
         <form wire:submit="save">
-            <flux:heading size="lg" class="mb-6">Add New Property</flux:heading>
+            <flux:heading size="lg" class="mb-6">{{ __('Add New Property') }}</flux:heading>
 
             <div class="space-y-4">
                 @if ($this->scrapingAvailable)
                     <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
                         <div class="mb-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                            Import from Listing URL
+                            {{ __('Import from Listing URL') }}
                         </div>
                         <div class="flex gap-2">
                             <flux:input
@@ -248,8 +248,8 @@ new class extends Component {
                                 wire:loading.attr="disabled"
                                 wire:target="importFromUrl"
                             >
-                                <span wire:loading.remove wire:target="importFromUrl">Import</span>
-                                <span wire:loading wire:target="importFromUrl">Importing...</span>
+                                <span wire:loading.remove wire:target="importFromUrl">{{ __('Import') }}</span>
+                                <span wire:loading wire:target="importFromUrl">{{ __('Importing...') }}</span>
                             </flux:button>
                         </div>
                         @if ($importError)
@@ -264,9 +264,9 @@ new class extends Component {
                 @endif
 
                 <flux:field>
-                    <flux:label>Customer</flux:label>
+                    <flux:label>{{ __('Customer') }}</flux:label>
                     <flux:select wire:model="customerId">
-                        <option value="">None (agent listing)</option>
+                        <option value="">{{ __('None (agent listing)') }}</option>
                         @foreach ($this->customers as $customer)
                             <option value="{{ $customer->id }}">{{ $customer->first_name }} {{ $customer->last_name }}</option>
                         @endforeach
@@ -276,9 +276,9 @@ new class extends Component {
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:field>
-                        <flux:label>Agent (optional)</flux:label>
+                        <flux:label>{{ __('Agent (optional)') }}</flux:label>
                         <flux:select wire:model="agentId">
-                            <option value="">None</option>
+                            <option value="">{{ __('None') }}</option>
                             @foreach ($this->agents as $agent)
                                 <option value="{{ $agent->id }}">{{ $agent->name }}</option>
                             @endforeach
@@ -287,9 +287,9 @@ new class extends Component {
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Source (optional)</flux:label>
+                        <flux:label>{{ __('Source (optional)') }}</flux:label>
                         <flux:select wire:model="source">
-                            <option value="">None</option>
+                            <option value="">{{ __('None') }}</option>
                             @foreach (\App\Models\Property::SOURCES as $key => $label)
                                 <option value="{{ $key }}">{{ $label }}</option>
                             @endforeach
@@ -300,9 +300,9 @@ new class extends Component {
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:field>
-                        <flux:label>Listing Status (optional)</flux:label>
+                        <flux:label>{{ __('Listing Status (optional)') }}</flux:label>
                         <flux:select wire:model="listingStatus">
-                            <option value="">None</option>
+                            <option value="">{{ __('None') }}</option>
                             @foreach (\App\Models\Property::LISTING_STATUSES as $key => $label)
                                 <option value="{{ $key }}">{{ $label }}</option>
                             @endforeach
@@ -311,81 +311,81 @@ new class extends Component {
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Listing Price (optional)</flux:label>
+                        <flux:label>{{ __('Listing Price (optional)') }}</flux:label>
                         <flux:input wire:model="listingPrice" type="number" step="0.01" placeholder="0.00" />
                         <flux:error name="listingPrice" />
                     </flux:field>
                 </div>
 
                 <flux:field>
-                    <flux:label>Property Name (optional)</flux:label>
-                    <flux:input wire:model="name" placeholder="e.g., Main Office Building" />
+                    <flux:label>{{ __('Property Name (optional)') }}</flux:label>
+                    <flux:input wire:model="name" :placeholder="__('e.g., Main Office Building')" />
                     <flux:error name="name" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Address</flux:label>
+                    <flux:label>{{ __('Address') }}</flux:label>
                     <flux:input wire:model="address" placeholder="123 Main St" />
                     <flux:error name="address" />
                 </flux:field>
 
                 <div class="grid gap-4 sm:grid-cols-3">
                     <flux:field>
-                        <flux:label>City</flux:label>
+                        <flux:label>{{ __('City') }}</flux:label>
                         <flux:input wire:model="city" placeholder="Los Angeles" />
                         <flux:error name="city" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>State</flux:label>
+                        <flux:label>{{ __('State') }}</flux:label>
                         <flux:input wire:model="state" placeholder="CA" />
                         <flux:error name="state" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>ZIP</flux:label>
+                        <flux:label>{{ __('ZIP') }}</flux:label>
                         <flux:input wire:model="zip" placeholder="90001" />
                         <flux:error name="zip" />
                     </flux:field>
                 </div>
 
                 <flux:field>
-                    <flux:label>Property Type</flux:label>
+                    <flux:label>{{ __('Property Type') }}</flux:label>
                     <flux:select wire:model="type">
-                        <option value="residential">Residential</option>
-                        <option value="commercial">Commercial</option>
-                        <option value="industrial">Industrial</option>
+                        <option value="residential">{{ __('Residential') }}</option>
+                        <option value="commercial">{{ __('Commercial') }}</option>
+                        <option value="industrial">{{ __('Industrial') }}</option>
                     </flux:select>
                     <flux:error name="type" />
                 </flux:field>
 
                 <div class="grid gap-4 sm:grid-cols-2">
                     <flux:field>
-                        <flux:label>Square Footage</flux:label>
+                        <flux:label>{{ __('Square Footage') }}</flux:label>
                         <flux:input wire:model="squareFootage" type="number" placeholder="2500" />
                         <flux:error name="squareFootage" />
                     </flux:field>
 
                     <flux:field>
-                        <flux:label>Year Built</flux:label>
+                        <flux:label>{{ __('Year Built') }}</flux:label>
                         <flux:input wire:model="yearBuilt" type="number" placeholder="1990" />
                         <flux:error name="yearBuilt" />
                     </flux:field>
                 </div>
 
                 <flux:field>
-                    <flux:label>Notes</flux:label>
-                    <flux:textarea wire:model="notes" rows="3" placeholder="Any additional notes..." />
+                    <flux:label>{{ __('Notes') }}</flux:label>
+                    <flux:textarea wire:model="notes" rows="3" :placeholder="__('Any additional notes...')" />
                     <flux:error name="notes" />
                 </flux:field>
             </div>
 
             <div class="mt-6 flex justify-end gap-3">
                 <flux:button variant="ghost" wire:click="closeModal" type="button">
-                    Cancel
+                    {{ __('Cancel') }}
                 </flux:button>
                 <flux:button type="submit" variant="primary">
-                    Create Property
+                    {{ __('Create Property') }}
                 </flux:button>
             </div>
         </form>

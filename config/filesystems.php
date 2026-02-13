@@ -62,6 +62,21 @@ return [
             'report' => false,
         ],
 
+        'video-recordings' => [
+            'driver' => env('VIDEO_RECORDINGS_DISK', 'local'),
+            'root' => storage_path('app/video-recordings'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/video-recordings',
+            'visibility' => 'private',
+            'throw' => false,
+            // For S3/Wasabi production:
+            // 'key' => env('WASABI_ACCESS_KEY_ID'),
+            // 'secret' => env('WASABI_SECRET_ACCESS_KEY'),
+            // 'region' => env('WASABI_DEFAULT_REGION', 'us-east-1'),
+            // 'bucket' => env('WASABI_BUCKET'),
+            // 'endpoint' => env('WASABI_ENDPOINT', 'https://s3.wasabisys.com'),
+            // 'use_path_style_endpoint' => true,
+        ],
+
         'photos' => [
             'driver' => env('PHOTOS_DISK_DRIVER', 'local'),
             'root' => storage_path('app/public/photos'),

@@ -8,6 +8,7 @@ use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateSignature;
 use App\Models\EstimateView;
+use App\Models\VideoRecording;
 use App\Services\EstimateAmendmentService;
 use App\Services\EstimateCalculationService;
 use Illuminate\Contracts\View\View;
@@ -52,7 +53,6 @@ new #[Layout('components.layouts.public')] class extends Component {
 
     public string $amendmentInitials = '';
 
-    public bool $showTermsModal = false;
 
     public function mount(string $token): void
     {
@@ -64,7 +64,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                 'areas.surfaces.productionRate',
                 'options.serviceCategory',
                 'packages.items.itemable',
-                'photos' => fn ($q) => $q->forProposal()->with(['annotations', 'comments.user', 'comments.replies.user'])->orderBy('sort_order'),
+                'photos' => fn ($q) => $q->with(['annotations', 'comments.user', 'comments.replies.user'])->orderBy('sort_order'),
                 'estimateNotes' => fn ($q) => $q->external()->rootNotes()->with('user'),
                 'signature',
                 'createdBy.internalUser',
@@ -153,7 +153,7 @@ new #[Layout('components.layouts.public')] class extends Component {
             'areas.surfaces.productionRate',
             'options.serviceCategory',
             'packages',
-            'photos' => fn ($q) => $q->forProposal()->with(['annotations', 'comments.user', 'comments.replies.user'])->orderBy('sort_order'),
+            'photos' => fn ($q) => $q->with(['annotations', 'comments.user', 'comments.replies.user'])->orderBy('sort_order'),
             'estimateNotes' => fn ($q) => $q->external()->rootNotes()->with('user'),
             'signature',
             'createdBy.internalUser',
@@ -181,19 +181,19 @@ new #[Layout('components.layouts.public')] class extends Component {
     {
         // Validate estimate can be accepted
         if ($this->estimate->status === 'accepted') {
-            session()->flash('error', 'This proposal has already been accepted.');
+            session()->flash('error', __('This proposal has already been accepted.'));
 
             return;
         }
 
         if ($this->estimate->status === 'rejected') {
-            session()->flash('error', 'This proposal has been rejected and cannot be accepted.');
+            session()->flash('error', __('This proposal has been rejected and cannot be accepted.'));
 
             return;
         }
 
         if ($this->estimate->isExpired()) {
-            session()->flash('error', 'This proposal has expired and cannot be accepted.');
+            session()->flash('error', __('This proposal has expired and cannot be accepted.'));
 
             return;
         }
@@ -266,12 +266,12 @@ new #[Layout('components.layouts.public')] class extends Component {
             'items',
             'areas.surfaces.productionRate',
             'options.serviceCategory',
-            'photos' => fn ($q) => $q->forProposal()->orderBy('sort_order'),
+            'photos' => fn ($q) => $q->orderBy('sort_order'),
             'estimateNotes' => fn ($q) => $q->external()->rootNotes()->with('user'),
             'signature',
         ]);
 
-        session()->flash('success', 'Thank you! Your proposal has been accepted.');
+        session()->flash('success', __('Thank you! Your proposal has been accepted.'));
     }
 
     /**
@@ -333,14 +333,14 @@ new #[Layout('components.layouts.public')] class extends Component {
         return $this->acceptedTerms && !empty($this->signatureData);
     }
 
-    public function openTermsModal(): void
+    #[Computed]
+    public function proposalVideos()
     {
-        $this->showTermsModal = true;
-    }
-
-    public function closeTermsModal(): void
-    {
-        $this->showTermsModal = false;
+        return VideoRecording::where('recordable_type', Estimate::class)
+            ->where('recordable_id', $this->estimate->id)
+            ->forProposal()
+            ->orderByDesc('created_at')
+            ->get();
     }
 
     public function canAccept(): bool
@@ -546,9 +546,9 @@ new #[Layout('components.layouts.public')] class extends Component {
                 <div class="flex items-center gap-3">
                     <flux:icon name="check-circle" class="w-6 h-6 text-green-600 dark:text-green-400" />
                     <div>
-                        <flux:heading size="base" class="text-green-800 dark:text-green-200">Proposal Accepted</flux:heading>
+                        <flux:heading size="base" class="text-green-800 dark:text-green-200">{{ __('Proposal Accepted') }}</flux:heading>
                         <flux:text size="sm" class="text-green-700 dark:text-green-300">
-                            This proposal was accepted on {{ $estimate->accepted_at?->format('F j, Y \a\t g:i A') }}
+                            {{ __('This proposal was accepted on :date', ['date' => $estimate->accepted_at?->format('F j, Y \a\t g:i A')]) }}
                         </flux:text>
                     </div>
                 </div>
@@ -558,9 +558,9 @@ new #[Layout('components.layouts.public')] class extends Component {
                 <div class="flex items-center gap-3">
                     <flux:icon name="x-circle" class="w-6 h-6 text-red-600 dark:text-red-400" />
                     <div>
-                        <flux:heading size="base" class="text-red-800 dark:text-red-200">Proposal Declined</flux:heading>
+                        <flux:heading size="base" class="text-red-800 dark:text-red-200">{{ __('Proposal Declined') }}</flux:heading>
                         <flux:text size="sm" class="text-red-700 dark:text-red-300">
-                            This proposal was declined on {{ $estimate->rejected_at?->format('F j, Y \a\t g:i A') }}
+                            {{ __('This proposal was declined on :date', ['date' => $estimate->rejected_at?->format('F j, Y \a\t g:i A')]) }}
                         </flux:text>
                     </div>
                 </div>
@@ -570,9 +570,9 @@ new #[Layout('components.layouts.public')] class extends Component {
                 <div class="flex items-center gap-3">
                     <flux:icon name="exclamation-triangle" class="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
                     <div>
-                        <flux:heading size="base" class="text-yellow-800 dark:text-yellow-200">Proposal Expired</flux:heading>
+                        <flux:heading size="base" class="text-yellow-800 dark:text-yellow-200">{{ __('Proposal Expired') }}</flux:heading>
                         <flux:text size="sm" class="text-yellow-700 dark:text-yellow-300">
-                            This proposal expired on {{ $estimate->valid_until?->format('F j, Y') }}. Please contact us for a new quote.
+                            {{ __('This proposal expired on :date. Please contact us for a new quote.', ['date' => $estimate->valid_until?->format('F j, Y')]) }}
                         </flux:text>
                     </div>
                 </div>
@@ -595,17 +595,17 @@ new #[Layout('components.layouts.public')] class extends Component {
                     >
                         {{ $estimate->status_label }}
                     </flux:badge>
-                    <flux:heading size="2xl" class="mb-2">{{ $estimate->title ?: 'Painting Proposal' }}</flux:heading>
+                    <flux:heading size="2xl" class="mb-2">{{ $estimate->title ?: __('Painting Proposal') }}</flux:heading>
                     <flux:text class="text-zinc-600 dark:text-zinc-400">
-                        Estimate #{{ $estimate->estimate_number }}
+                        {{ __('Estimate #:number', ['number' => $estimate->estimate_number]) }}
                     </flux:text>
                 </div>
                 <div class="text-left sm:text-right">
-                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">Date</flux:text>
+                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">{{ __('Date') }}</flux:text>
                     <flux:text class="font-medium">{{ $estimate->created_at->format('F j, Y') }}</flux:text>
                     @if ($estimate->valid_until)
                         <div class="mt-2">
-                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">Valid Until</flux:text>
+                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">{{ __('Valid Until') }}</flux:text>
                             <flux:text class="font-medium {{ $estimate->isExpired() ? 'text-red-600 dark:text-red-400' : '' }}">
                                 {{ $estimate->valid_until->format('F j, Y') }}
                             </flux:text>
@@ -618,7 +618,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Customer Information --}}
         @if ($estimate->deal?->customer)
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Prepared For</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Prepared For') }}</flux:heading>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
@@ -637,7 +637,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                     </div>
                     @if ($estimate->deal->customer->address)
                         <div>
-                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-1">Property Address</flux:text>
+                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-1">{{ __('Property Address') }}</flux:text>
                             <flux:text class="text-zinc-900 dark:text-zinc-100">
                                 {{ $estimate->deal->customer->address }}
                                 @if ($estimate->deal->customer->city || $estimate->deal->customer->state || $estimate->deal->customer->zip)
@@ -654,7 +654,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Description --}}
         @if ($estimate->description)
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Project Description</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Project Description') }}</flux:heading>
                 <flux:text class="whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{{ $estimate->description }}</flux:text>
             </flux:card>
         @endif
@@ -675,7 +675,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         @endphp
         @if ($proposalPhotos->isNotEmpty())
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Project Photos</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Project Photos') }}</flux:heading>
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
                     @foreach ($proposalPhotos as $photo)
                         <div
@@ -685,7 +685,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                         >
                             <img
                                 src="{{ $photo->display_url }}"
-                                alt="{{ $photo->caption ?: 'Project photo' }}"
+                                alt="{{ $photo->caption ?: __('Project photo') }}"
                                 class="w-full h-full object-cover rounded-lg transition-transform group-hover:scale-[1.02]"
                                 loading="lazy"
                             />
@@ -738,6 +738,72 @@ new #[Layout('components.layouts.public')] class extends Component {
             @endif
         @endif
 
+        {{-- Video Walkarounds (visible on proposal) --}}
+        @if ($this->proposalVideos->isNotEmpty())
+            <flux:card class="p-6 mb-6">
+                <flux:heading size="lg" class="mb-4">{{ __('Property Walkaround') }}</flux:heading>
+                <div class="space-y-3">
+                    @foreach ($this->proposalVideos as $video)
+                        <div
+                            wire:key="proposal-video-{{ $video->id }}"
+                            x-data="{ playing: false }"
+                            class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden"
+                        >
+                            <div class="flex items-start gap-4 p-3">
+                                {{-- Thumbnail with play overlay --}}
+                                <div class="relative w-32 aspect-video shrink-0 rounded-md overflow-hidden bg-zinc-200 dark:bg-zinc-700 cursor-pointer" @click="playing = !playing">
+                                    @if ($video->getThumbnailUrl())
+                                        <img src="{{ $video->getThumbnailUrl() }}" alt="" class="w-full h-full object-cover" loading="lazy" />
+                                    @else
+                                        <div class="w-full h-full flex items-center justify-center">
+                                            <svg class="w-8 h-8 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                        </div>
+                                    @endif
+                                    <div class="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/40 transition-colors">
+                                        <svg x-show="!playing" class="w-8 h-8 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"></path></svg>
+                                        <svg x-show="playing" class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"></path></svg>
+                                    </div>
+                                    @if ($video->formatted_duration)
+                                        <div class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-white text-xs font-medium">
+                                            {{ $video->formatted_duration }}
+                                        </div>
+                                    @endif
+                                </div>
+
+                                {{-- Info --}}
+                                <div class="flex-1 min-w-0">
+                                    <flux:text class="font-medium text-sm">
+                                        {{ $video->title ?: __('Property Walkaround') }}
+                                    </flux:text>
+                                    <flux:text class="text-xs text-zinc-500 mt-0.5">
+                                        {{ $video->created_at->diffForHumans() }}
+                                        @if ($video->formatted_duration)
+                                            &bull; {{ $video->formatted_duration }}
+                                        @endif
+                                    </flux:text>
+                                </div>
+                            </div>
+
+                            {{-- Inline video player --}}
+                            <div x-show="playing" x-collapse>
+                                <div class="border-t border-zinc-200 dark:border-zinc-700">
+                                    <video
+                                        x-init="$watch('playing', function(v) { if(v) { $el.play() } else { $el.pause(); $el.currentTime = 0 } })"
+                                        @click="$el.paused ? $el.play() : $el.pause()"
+                                        controls
+                                        playsinline
+                                        preload="metadata"
+                                        class="w-full"
+                                        src="{{ $video->getVideoUrl() }}"
+                                    ></video>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            </flux:card>
+        @endif
+
         {{-- PACKAGES SECTION (Good/Better/Best) - Primary pricing flow --}}
         @if ($this->hasPackages())
             <div class="mb-6">
@@ -752,7 +818,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         @if ($filteredAreas->isNotEmpty())
             <flux:card class="p-6 mb-6">
                 <div class="flex items-center justify-between mb-4">
-                    <flux:heading size="lg">Scope of Work</flux:heading>
+                    <flux:heading size="lg">{{ __('Scope of Work') }}</flux:heading>
                     <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
                         {{ $filteredAreas->count() }} {{ Str::plural('area', $filteredAreas->count()) }}
                     </flux:text>
@@ -791,7 +857,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                                         <flux:heading size="base">{{ $area->name }}</flux:heading>
                                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
                                             @if ($visibleSurfaces->count() > 0)
-                                                {{ $visibleSurfaces->count() }} {{ Str::plural('surface', $visibleSurfaces->count()) }}
+                                                {{ trans_choice(':count surface|:count surfaces', $visibleSurfaces->count()) }}
                                             @endif
                                             @if ($area->wall_sqft > 0 || $area->ceiling_sqft > 0)
                                                 <span class="text-zinc-300 dark:text-zinc-600 mx-1">&bull;</span>
@@ -821,12 +887,12 @@ new #[Layout('components.layouts.public')] class extends Component {
                                                     <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500"></div>
                                                     <div>
                                                         <flux:text class="text-zinc-700 dark:text-zinc-300">
-                                                            {{ $surface->name ?? $surface->productionRate?->name ?? 'Surface' }}
+                                                            {{ $surface->name ?? $surface->productionRate?->name ?? __('Surface') }}
                                                         </flux:text>
                                                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
                                                             {{ number_format($surface->quantity, 0) }} {{ $surface->unit ?? 'sq ft' }}
                                                             @if ($surface->coats > 1)
-                                                                &bull; {{ $surface->coats }} coats
+                                                                &bull; {{ __(':count coats', ['count' => $surface->coats]) }}
                                                             @endif
                                                         </flux:text>
                                                     </div>
@@ -859,15 +925,15 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Line Items (only shown when NOT using packages - packages already include these) --}}
         @if ($estimate->items->isNotEmpty() && ! $this->hasPackages())
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Line Items</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Line Items') }}</flux:heading>
                 <div class="overflow-x-auto">
                     <table class="w-full">
                         <thead>
                             <tr class="border-b border-zinc-200 dark:border-zinc-700">
-                                <th class="text-left py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">Description</th>
-                                <th class="text-right py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">Qty</th>
-                                <th class="text-right py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">Unit Price</th>
-                                <th class="text-right py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">Total</th>
+                                <th class="text-left py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">{{ __('Description') }}</th>
+                                <th class="text-right py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">{{ __('Qty') }}</th>
+                                <th class="text-right py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">{{ __('Unit Price') }}</th>
+                                <th class="text-right py-3 px-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">{{ __('Total') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -905,12 +971,12 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Options Section (only shown when NOT using packages) --}}
         @if ($estimate->options->isNotEmpty() && ! $this->hasPackages())
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-2">Optional Add-ons</flux:heading>
+                <flux:heading size="lg" class="mb-2">{{ __('Optional Add-ons') }}</flux:heading>
                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-4">
-                    Select additional services to customize your project. Prices update in real-time.
+                    {{ __('Select additional services to customize your project. Prices update in real-time.') }}
                 </flux:text>
                 @php
-                    $optionsByCategory = $estimate->options->groupBy(fn($o) => $o->serviceCategory?->name ?? 'Painting');
+                    $optionsByCategory = $estimate->options->groupBy(fn($o) => __($o->serviceCategory?->name ?? 'Painting'));
                     $showCategoryHeaders = $optionsByCategory->count() > 1;
                 @endphp
                 <div class="space-y-3">
@@ -933,7 +999,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                                                 {{ $option->name }}
                                             </flux:text>
                                             @if ($option->is_recommended)
-                                                <flux:badge color="amber" size="sm">Recommended</flux:badge>
+                                                <flux:badge color="amber" size="sm">{{ __('Recommended') }}</flux:badge>
                                             @endif
                                         </div>
                                         @if ($option->description)
@@ -954,7 +1020,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                                             />
                                         @else
                                             <flux:badge :color="$option->is_selected ? 'green' : 'zinc'" size="sm">
-                                                {{ $option->is_selected ? 'Included' : 'Not Included' }}
+                                                {{ $option->is_selected ? __('Included') : __('Not Included') }}
                                             </flux:badge>
                                         @endif
                                     </div>
@@ -969,18 +1035,18 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Pricing Summary (only shown when NOT using packages) --}}
         @if (! $this->hasPackages())
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Pricing Summary</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Pricing Summary') }}</flux:heading>
                 <div class="space-y-3">
                     @if ((float) $estimate->areas_subtotal > 0)
                         <div class="flex justify-between items-center">
-                            <flux:text class="text-zinc-600 dark:text-zinc-400">Painting Work</flux:text>
+                            <flux:text class="text-zinc-600 dark:text-zinc-400">{{ __('Painting Work') }}</flux:text>
                             <flux:text class="text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->areas_subtotal, 2) }}</flux:text>
                         </div>
                     @endif
 
                     @if ((float) $estimate->items_subtotal > 0)
                         <div class="flex justify-between items-center">
-                            <flux:text class="text-zinc-600 dark:text-zinc-400">Line Items</flux:text>
+                            <flux:text class="text-zinc-600 dark:text-zinc-400">{{ __('Line Items') }}</flux:text>
                             <flux:text class="text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->items_subtotal, 2) }}</flux:text>
                         </div>
                     @endif
@@ -988,7 +1054,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                     <flux:separator />
 
                     <div class="flex justify-between items-center">
-                        <flux:heading size="lg">Total</flux:heading>
+                        <flux:heading size="lg">{{ __('Total') }}</flux:heading>
                         <flux:heading size="lg" class="text-blue-600 dark:text-blue-400">${{ number_format($estimate->total, 2) }}</flux:heading>
                     </div>
                 </div>
@@ -998,7 +1064,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Notes Section --}}
         @if ($estimate->estimateNotes->isNotEmpty())
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Notes</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Notes') }}</flux:heading>
                 <div class="space-y-3">
                     @foreach ($estimate->estimateNotes as $note)
                         <div wire:key="note-{{ $note->id }}" class="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4">
@@ -1014,36 +1080,28 @@ new #[Layout('components.layouts.public')] class extends Component {
             </flux:card>
         @endif
 
-        {{-- Terms and Conditions --}}
-        @if ($estimate->terms)
-            <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Terms and Conditions</flux:heading>
-                <div class="prose prose-sm dark:prose-invert max-w-none">
-                    <flux:text class="whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{{ Str::limit($estimate->terms, 300) }}</flux:text>
-                </div>
-                @if (Str::length($estimate->terms) > 300)
-                    <div class="mt-3">
-                        <flux:button variant="ghost" size="sm" wire:click="openTermsModal">
-                            Read Full Terms
-                        </flux:button>
-                    </div>
-                @endif
-            </flux:card>
-        @endif
+        {{-- Legal Links --}}
+        <div class="mb-6 text-center">
+            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                <a href="/terms" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">{{ __('Terms & Conditions') }}</a>
+                <span class="mx-2">&middot;</span>
+                <a href="/privacy" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">{{ __('Privacy Policy') }}</a>
+            </flux:text>
+        </div>
 
         {{-- Signatures Section --}}
         @if ($estimate->createdBy?->internalUser?->hasSignature() || $estimate->signature)
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">Signatures</flux:heading>
+                <flux:heading size="lg" class="mb-4">{{ __('Signatures') }}</flux:heading>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-8">
                     {{-- Prepared By / Estimator Signature --}}
                     @if ($estimate->createdBy?->internalUser?->hasSignature())
                         <div>
-                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3 font-medium uppercase tracking-wider">Prepared By</flux:text>
+                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3 font-medium uppercase tracking-wider">{{ __('Prepared By') }}</flux:text>
                             @if ($estimate->createdBy->internalUser->signature_type === 'drawn')
                                 <img
                                     src="{{ $estimate->createdBy->internalUser->signature_data }}"
-                                    alt="Signature"
+                                    alt="{{ __('Signature') }}"
                                     class="max-h-20 mb-2"
                                 />
                             @else
@@ -1070,11 +1128,11 @@ new #[Layout('components.layouts.public')] class extends Component {
                     {{-- Accepted By / Customer Signature --}}
                     @if ($estimate->signature)
                         <div>
-                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3 font-medium uppercase tracking-wider">Accepted By</flux:text>
+                            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3 font-medium uppercase tracking-wider">{{ __('Accepted By') }}</flux:text>
                             @if ($estimate->signature->signature_type === 'drawn')
                                 <img
                                     src="{{ $estimate->signature->signature_data }}"
-                                    alt="Customer Signature"
+                                    alt="{{ __('Customer Signature') }}"
                                     class="max-h-20 mb-2"
                                 />
                             @else
@@ -1091,7 +1149,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                                 </flux:text>
                                 @if ($estimate->signature->signed_at)
                                     <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
-                                        Signed {{ $estimate->signature->signed_at->format('F j, Y \a\t g:i A') }}
+                                        {{ __('Signed :date', ['date' => $estimate->signature->signed_at->format('F j, Y \a\t g:i A')]) }}
                                     </flux:text>
                                 @endif
                             </div>
@@ -1111,11 +1169,11 @@ new #[Layout('components.layouts.public')] class extends Component {
             <flux:card id="amendments-section" class="p-6 mb-6 border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10">
                 <div class="flex items-center gap-2 mb-4">
                     <flux:icon name="exclamation-triangle" class="w-6 h-6 text-amber-600" />
-                    <flux:heading size="lg" class="text-amber-800 dark:text-amber-200">Action Required: Review Changes</flux:heading>
+                    <flux:heading size="lg" class="text-amber-800 dark:text-amber-200">{{ __('Action Required: Review Changes') }}</flux:heading>
                 </div>
                 <flux:text size="sm" class="text-amber-700 dark:text-amber-300 mb-4">
-                    This estimate has been updated since it was originally sent.
-                    Please review the {{ $pendingAmendments->count() }} {{ Str::plural('change', $pendingAmendments->count()) }} below and enter your initials to acknowledge.
+                    {{ __('This estimate has been updated since it was originally sent.') }}
+                    {{ __('Please review the :count :label below and enter your initials to acknowledge.', ['count' => $pendingAmendments->count(), 'label' => Str::plural('change', $pendingAmendments->count())]) }}
                 </flux:text>
                 <div class="space-y-4">
                     @foreach ($pendingAmendments as $pendingAmendment)
@@ -1129,12 +1187,12 @@ new #[Layout('components.layouts.public')] class extends Component {
                 {{-- Single acknowledgment form for all pending amendments --}}
                 <div class="mt-6 pt-4 border-t border-amber-300 dark:border-amber-700">
                     <flux:text size="sm" class="text-amber-800 dark:text-amber-200 font-medium mb-3">
-                        By entering your initials below, you acknowledge all {{ $pendingAmendments->count() }} {{ Str::plural('change', $pendingAmendments->count()) }} listed above.
+                        {{ __('By entering your initials below, you acknowledge all :count :label listed above.', ['count' => $pendingAmendments->count(), 'label' => Str::plural('change', $pendingAmendments->count())]) }}
                     </flux:text>
                     <div class="flex items-center gap-3">
                         <flux:input
                             wire:model="amendmentInitials"
-                            placeholder="Your initials"
+                            :placeholder="__('Your initials')"
                             class="w-28 uppercase"
                             maxlength="10"
                         />
@@ -1143,8 +1201,8 @@ new #[Layout('components.layouts.public')] class extends Component {
                             variant="primary"
                             wire:loading.attr="disabled"
                         >
-                            <span wire:loading.remove wire:target="acknowledgeAllAmendments">I Acknowledge All Changes</span>
-                            <span wire:loading wire:target="acknowledgeAllAmendments">Acknowledging...</span>
+                            <span wire:loading.remove wire:target="acknowledgeAllAmendments">{{ __('I Acknowledge All Changes') }}</span>
+                            <span wire:loading wire:target="acknowledgeAllAmendments">{{ __('Acknowledging...') }}</span>
                         </flux:button>
                     </div>
                     @error('amendmentInitials')
@@ -1158,15 +1216,15 @@ new #[Layout('components.layouts.public')] class extends Component {
             <flux:card class="p-6 mb-6">
                 <details>
                     <summary class="cursor-pointer">
-                        <flux:heading size="sm" class="inline">Change History ({{ $acknowledgedAmendments->count() }})</flux:heading>
+                        <flux:heading size="sm" class="inline">{{ __('Change History (:count)', ['count' => $acknowledgedAmendments->count()]) }}</flux:heading>
                     </summary>
                     <div class="mt-4 space-y-3">
                         @foreach ($acknowledgedAmendments as $ackedAmendment)
                             <div class="border border-green-200 dark:border-green-800 rounded-lg p-3 bg-green-50/50 dark:bg-green-900/10">
                                 <div class="flex items-center justify-between mb-2">
-                                    <flux:text size="sm" class="font-medium">Amendment #{{ $ackedAmendment->amendment_number }}</flux:text>
+                                    <flux:text size="sm" class="font-medium">{{ __('Amendment #:number', ['number' => $ackedAmendment->amendment_number]) }}</flux:text>
                                     <flux:badge size="sm" color="green">
-                                        Acknowledged ({{ $ackedAmendment->customer_initials }})
+                                        {{ __('Acknowledged (:initials)', ['initials' => $ackedAmendment->customer_initials]) }}
                                     </flux:badge>
                                 </div>
                                 <div class="space-y-1">
@@ -1176,7 +1234,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                                                 {{ $change['label'] }}: {{ $change['field'] }}
                                                 {{ $change['old_value'] }} &rarr; {{ $change['new_value'] }}
                                             @else
-                                                {{ $change['details'] ?? $change['label'] ?? 'Change' }}
+                                                {{ $change['details'] ?? $change['label'] ?? __('Change') }}
                                             @endif
                                         </flux:text>
                                     @endforeach
@@ -1198,7 +1256,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path>
                     </svg>
-                    Accept Proposal
+                    {{ __('Accept Proposal') }}
                 </button>
                 <div>
                     <a
@@ -1206,7 +1264,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                         class="inline-flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium hover:underline text-sm"
                     >
                         <flux:icon name="exclamation-triangle" class="w-4 h-4" />
-                        Review and acknowledge changes made to this estimate before signing
+                        {{ __('Review and acknowledge changes made to this estimate before signing') }}
                     </a>
                 </div>
             @elseif ($this->canAccept() && ! $this->hasPackages())
@@ -1215,25 +1273,25 @@ new #[Layout('components.layouts.public')] class extends Component {
                     wire:click="openSignatureModal"
                     class="px-12 py-3 text-base"
                 >
-                    Accept Proposal
+                    {{ __('Accept Proposal') }}
                 </flux:button>
                 <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mt-3">
-                    By accepting, you agree to the terms and conditions above.
+                    {!! __('By accepting, you agree to the <a href="/terms" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">Terms & Conditions</a> and <a href="/privacy" target="_blank" class="text-blue-600 dark:text-blue-400 hover:underline">Privacy Policy</a>.') !!}
                 </flux:text>
             @elseif ($estimate->status === 'accepted')
                 <div class="inline-flex items-center gap-2 bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200 px-6 py-3 rounded-lg">
                     <flux:icon name="check-circle" class="w-5 h-5" />
-                    <span class="font-medium">Proposal Accepted</span>
+                    <span class="font-medium">{{ __('Proposal Accepted') }}</span>
                 </div>
             @elseif ($estimate->status === 'rejected')
                 <div class="inline-flex items-center gap-2 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200 px-6 py-3 rounded-lg">
                     <flux:icon name="x-circle" class="w-5 h-5" />
-                    <span class="font-medium">Proposal Declined</span>
+                    <span class="font-medium">{{ __('Proposal Declined') }}</span>
                 </div>
             @elseif ($estimate->isExpired())
                 <div class="inline-flex items-center gap-2 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200 px-6 py-3 rounded-lg">
                     <flux:icon name="exclamation-triangle" class="w-5 h-5" />
-                    <span class="font-medium">Proposal Expired</span>
+                    <span class="font-medium">{{ __('Proposal Expired') }}</span>
                 </div>
             @endif
         </div>
@@ -1241,19 +1299,5 @@ new #[Layout('components.layouts.public')] class extends Component {
         {{-- Include Signature Modal Partial --}}
         @include('partials.public.signature-modal')
 
-        {{-- Full Terms Modal --}}
-        @if ($estimate->terms)
-            <flux:modal wire:model="showTermsModal" class="w-full max-w-2xl max-h-[80vh]">
-                <div class="space-y-4">
-                    <flux:heading size="lg">Terms and Conditions</flux:heading>
-                    <div class="overflow-y-auto max-h-[60vh] pr-2">
-                        <flux:text class="whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">{{ $estimate->terms }}</flux:text>
-                    </div>
-                    <div class="flex justify-end pt-4 border-t border-zinc-200 dark:border-zinc-700">
-                        <flux:button variant="primary" wire:click="closeTermsModal">Close</flux:button>
-                    </div>
-                </div>
-            </flux:modal>
-        @endif
     </div>
 </div>

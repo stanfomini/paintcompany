@@ -35,11 +35,11 @@ new #[Layout('components.layouts.guest')] class extends Component {
             $invitation = $invitationService->findByToken($token);
 
             if (! $invitation) {
-                $this->errorMessage = 'This invitation link is invalid.';
+                $this->errorMessage = __('This invitation link is invalid.');
             } elseif ($invitation->isExpired()) {
-                $this->errorMessage = 'This invitation has expired. Please request a new invitation.';
+                $this->errorMessage = __('This invitation has expired. Please request a new invitation.');
             } elseif ($invitation->isAccepted()) {
-                $this->errorMessage = 'This invitation has already been used.';
+                $this->errorMessage = __('This invitation has already been used.');
             }
         }
     }
@@ -51,7 +51,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'password' => ['required', 'string', 'min:8'],
             'passwordConfirmation' => ['required', 'same:password'],
         ], [
-            'passwordConfirmation.same' => 'The password confirmation does not match.',
+            'passwordConfirmation.same' => __('The password confirmation does not match.'),
         ]);
 
         $invitationService = app(InvitationService::class);
@@ -92,25 +92,25 @@ new #[Layout('components.layouts.guest')] class extends Component {
         <div class="text-center mb-8">
             <flux:heading size="2xl" class="mb-2">{{ config('app.name', 'Apex Negotiations') }}</flux:heading>
             <flux:text class="text-zinc-600 dark:text-zinc-400">
-                Accept Your Invitation
+                {{ __('Accept Your Invitation') }}
             </flux:text>
         </div>
 
         <flux:card class="p-6">
             @if ($isValid)
                 <div class="mb-6">
-                    <flux:heading size="lg" class="text-center">Create Your Account</flux:heading>
+                    <flux:heading size="lg" class="text-center">{{ __('Create Your Account') }}</flux:heading>
                     <flux:text class="text-center text-zinc-600 dark:text-zinc-400 mt-2">
-                        You've been invited to join as a
+                        {{ __('You\'ve been invited to join as a') }}
                         <span class="font-medium">
-                            {{ $invitation->invited_user_type === 'internal' ? 'team member' : $invitation->invited_user_type }}
+                            {{ $invitation->invited_user_type === 'internal' ? __('team member') : __($invitation->invited_user_type) }}
                         </span>.
                     </flux:text>
                 </div>
 
                 <form wire:submit="acceptInvitation" class="space-y-4">
                     <div>
-                        <flux:text size="sm" class="font-medium text-zinc-500 mb-1">Email</flux:text>
+                        <flux:text size="sm" class="font-medium text-zinc-500 mb-1">{{ __('Email') }}</flux:text>
                         <flux:text class="font-medium">{{ $invitation->email }}</flux:text>
                     </div>
 
@@ -118,8 +118,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                         <flux:input
                             wire:model="name"
                             type="text"
-                            label="Full Name"
-                            placeholder="Your full name"
+                            label="{{ __('Full Name') }}"
+                            placeholder="{{ __('Your full name') }}"
                             required
                             autofocus
                         />
@@ -132,8 +132,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                         <flux:input
                             wire:model="password"
                             type="password"
-                            label="Password"
-                            placeholder="Create a password"
+                            label="{{ __('Password') }}"
+                            placeholder="{{ __('Create a password') }}"
                             required
                         />
                         @error('password')
@@ -145,8 +145,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
                         <flux:input
                             wire:model="passwordConfirmation"
                             type="password"
-                            label="Confirm Password"
-                            placeholder="Confirm your password"
+                            label="{{ __('Confirm Password') }}"
+                            placeholder="{{ __('Confirm your password') }}"
                             required
                         />
                         @error('passwordConfirmation')
@@ -155,20 +155,20 @@ new #[Layout('components.layouts.guest')] class extends Component {
                     </flux:field>
 
                     <flux:button type="submit" variant="primary" class="w-full justify-center">
-                        <span wire:loading.remove wire:target="acceptInvitation">Create Account</span>
-                        <span wire:loading wire:target="acceptInvitation">Creating Account...</span>
+                        <span wire:loading.remove wire:target="acceptInvitation">{{ __('Create Account') }}</span>
+                        <span wire:loading wire:target="acceptInvitation">{{ __('Creating Account...') }}</span>
                     </flux:button>
                 </form>
             @else
                 <div class="text-center py-6">
                     <flux:icon name="exclamation-triangle" class="w-12 h-12 mx-auto text-amber-500 mb-4" />
-                    <flux:heading size="lg" class="mb-2">Invalid Invitation</flux:heading>
+                    <flux:heading size="lg" class="mb-2">{{ __('Invalid Invitation') }}</flux:heading>
                     <flux:text class="text-zinc-600 dark:text-zinc-400 mb-6">
                         {{ $errorMessage }}
                     </flux:text>
                     <a href="{{ route('welcome') }}">
                         <flux:button variant="primary">
-                            Return to Home
+                            {{ __('Return to Home') }}
                         </flux:button>
                     </a>
                 </div>
@@ -176,7 +176,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
         </flux:card>
 
         <flux:text size="sm" class="text-center mt-6 text-zinc-500">
-            &copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
+            &copy; {{ date('Y') }} {{ config('app.name') }}. {{ __('All rights reserved.') }}
         </flux:text>
     </div>
 </div>

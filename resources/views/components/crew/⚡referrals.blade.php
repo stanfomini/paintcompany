@@ -10,8 +10,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Referrals'])] class extends
 
 <div>
     <div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-        <flux:heading size="xl" class="mb-2">Referral Program</flux:heading>
-        <flux:subheading class="mb-8">Refer friends and earn rewards when they book with us.</flux:subheading>
+        <flux:heading size="xl" class="mb-2">{{ __('Referral Program') }}</flux:heading>
+        <flux:subheading class="mb-8">{{ __('Refer friends and earn rewards when they book with us.') }}</flux:subheading>
 
         @livewire('shared.referral-dashboard')
     </div>

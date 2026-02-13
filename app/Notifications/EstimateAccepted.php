@@ -32,24 +32,24 @@ class EstimateAccepted extends Notification implements ShouldQueue
         $adminUrl = route('estimates.show', $this->estimate);
 
         $message = (new MailMessage)
-            ->subject("Estimate Accepted: {$this->estimate->estimate_number}")
-            ->greeting('Great news!')
-            ->line("**{$customerName}** has accepted estimate **{$this->estimate->estimate_number}**.")
+            ->subject(__('Estimate Accepted: :number', ['number' => $this->estimate->estimate_number]))
+            ->greeting(__('Great news!'))
+            ->line(__('**:customerName** has accepted estimate **:number**.', ['customerName' => $customerName, 'number' => $this->estimate->estimate_number]))
             ->line("**{$this->estimate->title}**")
-            ->line('**Total:** $'.number_format($this->estimate->total, 2));
+            ->line('**'.__('Total').':** $'.number_format($this->estimate->total, 2));
 
         if ($this->estimate->signature) {
             $message->line('---')
-                ->line('**Signature Details:**')
-                ->line("Signed by: {$this->estimate->signature->signer_name}")
-                ->line("Email: {$this->estimate->signature->signer_email}")
-                ->line("Date: {$this->estimate->signature->signed_at->format('M j, Y g:i A')}");
+                ->line('**'.__('Signature Details').':**')
+                ->line(__('Signed by').': '.$this->estimate->signature->signer_name)
+                ->line(__('Email').': '.$this->estimate->signature->signer_email)
+                ->line(__('Date').': '.$this->estimate->signature->signed_at->format('M j, Y g:i A'));
         }
 
         $selectedOptions = $this->estimate->options;
         if ($selectedOptions->count() > 0) {
             $message->line('---')
-                ->line('**Selected Options:**');
+                ->line('**'.__('Selected Options').':**');
 
             foreach ($selectedOptions as $option) {
                 $price = number_format($option->calculated_price ?? $option->fixed_price ?? 0, 2);
@@ -57,8 +57,8 @@ class EstimateAccepted extends Notification implements ShouldQueue
             }
         }
 
-        $message->action('View Estimate', $adminUrl)
-            ->line('Log in to view the full details and begin project scheduling.');
+        $message->action(__('View Estimate'), $adminUrl)
+            ->line(__('Log in to view the full details and begin project scheduling.'));
 
         return $message;
     }

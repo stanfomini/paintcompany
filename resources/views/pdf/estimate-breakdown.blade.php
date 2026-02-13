@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cost Breakdown - {{ $estimate->estimate_number }}</title>
+    <title>{{ __('Cost Breakdown') }} - {{ $estimate->estimate_number }}</title>
     <style>
         * {
             margin: 0;
@@ -168,32 +168,32 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="header-title">COMPANY COST BREAKDOWN</div>
+            <div class="header-title">{{ __('COMPANY COST BREAKDOWN') }}</div>
             <div class="header-subtitle">
-                {{ $estimate->estimate_number }} | {{ ucfirst($estimate->project_type ?? 'Interior') }} | Generated: {{ now()->format('M j, Y g:i A') }}
+                {{ $estimate->estimate_number }} | {{ ucfirst($estimate->project_type ?? 'Interior') }} | {{ __('Generated:') }} {{ now()->format('M j, Y g:i A') }}
             </div>
         </div>
 
         <div class="warning-box">
-            <strong>INTERNAL ONLY</strong> - This breakdown reveals true costs and profit margins. Never share with customers.
+            <strong>{{ __('INTERNAL ONLY') }}</strong> - {{ __('This breakdown reveals true costs and profit margins. Never share with customers.') }}
         </div>
 
         {{-- Summary Cards --}}
         <div class="summary-grid">
             <div class="summary-card">
-                <div class="summary-label">Customer Price</div>
+                <div class="summary-label">{{ __('Customer Price') }}</div>
                 <div class="summary-value">${{ number_format($breakdown['pricing']['customer_price'], 2) }}</div>
-                <div class="summary-sublabel">COGS ratio: {{ number_format($breakdown['pricing']['margin_percent'], 1) }}%</div>
+                <div class="summary-sublabel">{{ __('COGS ratio:') }} {{ number_format($breakdown['pricing']['margin_percent'], 1) }}%</div>
             </div>
             <div class="summary-card">
-                <div class="summary-label">Gross Profit</div>
+                <div class="summary-label">{{ __('Gross Profit') }}</div>
                 <div class="summary-value {{ $breakdown['gross_profit']['amount'] >= 0 ? 'positive' : 'negative' }}">
                     ${{ number_format($breakdown['gross_profit']['amount'], 2) }}
                 </div>
-                <div class="summary-sublabel">{{ number_format($breakdown['gross_profit']['percent'], 1) }}% of price</div>
+                <div class="summary-sublabel">{{ number_format($breakdown['gross_profit']['percent'], 1) }}% {{ __('of price') }}</div>
             </div>
             <div class="summary-card">
-                <div class="summary-label">Net Profit</div>
+                <div class="summary-label">{{ __('Net Profit') }}</div>
                 <div class="summary-value {{ $breakdown['net_profit']['amount'] >= 0 ? 'positive' : 'negative' }}">
                     ${{ number_format($breakdown['net_profit']['amount'], 2) }}
                 </div>
@@ -202,12 +202,12 @@
                 </div>
             </div>
             <div class="summary-card">
-                <div class="summary-label">Target Delta</div>
+                <div class="summary-label">{{ __('Target Delta') }}</div>
                 <div class="summary-value {{ $breakdown['net_profit']['delta_percent'] >= 0 ? 'positive' : 'negative' }}">
                     {{ $breakdown['net_profit']['delta_percent'] >= 0 ? '+' : '' }}{{ number_format($breakdown['net_profit']['delta_percent'], 1) }}%
                 </div>
                 <div class="summary-sublabel">
-                    {{ $breakdown['net_profit']['meets_target'] ? 'Meets target' : 'Below target' }}
+                    {{ $breakdown['net_profit']['meets_target'] ? __('Meets target') : __('Below target') }}
                 </div>
             </div>
         </div>
@@ -215,15 +215,15 @@
         {{-- Areas (from Estimate) --}}
         @if (count($breakdown['areas']) > 0)
         <div class="section">
-            <div class="section-title">1. AREAS (From Estimate)</div>
+            <div class="section-title">{{ __('1. AREAS (From Estimate)') }}</div>
             <table>
                 <thead>
                     <tr>
-                        <th>Area</th>
-                        <th class="right">Hours</th>
-                        <th class="right">COGS</th>
-                        <th class="right">Margin</th>
-                        <th class="right">Customer Price</th>
+                        <th>{{ __('Area') }}</th>
+                        <th class="right">{{ __('Hours') }}</th>
+                        <th class="right">{{ __('COGS') }}</th>
+                        <th class="right">{{ __('Margin') }}</th>
+                        <th class="right">{{ __('Customer Price') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -240,7 +240,7 @@
                 <tfoot>
                     @if (($breakdown['items_total'] ?? 0) > 0)
                     <tr>
-                        <td>Line Items (at cost)</td>
+                        <td>{{ __('Line Items (at cost)') }}</td>
                         <td class="right"></td>
                         <td class="right">${{ number_format($breakdown['items_total'], 2) }}</td>
                         <td class="right">-</td>
@@ -248,7 +248,7 @@
                     </tr>
                     @endif
                     <tr class="row-total">
-                        <td>TOTALS</td>
+                        <td>{{ __('TOTALS') }}</td>
                         <td class="right">{{ number_format($breakdown['totals']['total_hours'], 1) }}</td>
                         <td class="right">${{ number_format($breakdown['cogs']['total'], 2) }}</td>
                         <td class="right">{{ number_format($breakdown['pricing']['margin_percent'], 0) }}%</td>
@@ -261,50 +261,50 @@
 
         {{-- COGS Detail --}}
         <div class="section">
-            <div class="section-title">2. COGS DETAIL (Components from Area Surfaces)</div>
+            <div class="section-title">{{ __('2. COGS DETAIL (Components from Area Surfaces)') }}</div>
             <table>
                 <tr>
-                    <td>Labor: {{ number_format($breakdown['totals']['labor_hours'], 1) }} hrs</td>
+                    <td>{{ __('Labor:') }} {{ number_format($breakdown['totals']['labor_hours'], 1) }} {{ __('hrs') }}</td>
                     <td class="right">${{ number_format($breakdown['cogs']['labor_cost'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Cleanup: {{ number_format($breakdown['totals']['cleanup_hours'], 2) }} hrs</td>
+                    <td>{{ __('Cleanup:') }} {{ number_format($breakdown['totals']['cleanup_hours'], 2) }} {{ __('hrs') }}</td>
                     <td class="right">${{ number_format($breakdown['cogs']['cleanup_cost'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Sundries</td>
+                    <td>{{ __('Sundries') }}</td>
                     <td class="right">${{ number_format($breakdown['cogs']['sundries_cost'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Materials</td>
+                    <td>{{ __('Materials') }}</td>
                     <td class="right">${{ number_format($breakdown['cogs']['material_cost'], 2) }}</td>
                 </tr>
                 @if ($breakdown['cogs']['material_tax'] > 0)
                 <tr>
-                    <td>Material Tax ({{ number_format($breakdown['settings_used']['material_tax_rate'], 1) }}%)</td>
+                    <td>{{ __('Material Tax') }} ({{ number_format($breakdown['settings_used']['material_tax_rate'], 1) }}%)</td>
                     <td class="right">${{ number_format($breakdown['cogs']['material_tax'], 2) }}</td>
                 </tr>
                 @endif
                 @if ($breakdown['cogs']['labor_tax'] > 0)
                 <tr>
-                    <td>Labor Tax ({{ number_format($breakdown['settings_used']['labor_tax_rate'], 1) }}%)</td>
+                    <td>{{ __('Labor Tax') }} ({{ number_format($breakdown['settings_used']['labor_tax_rate'], 1) }}%)</td>
                     <td class="right">${{ number_format($breakdown['cogs']['labor_tax'], 2) }}</td>
                 </tr>
                 @endif
                 @if ($breakdown['cogs']['addon_cost'] > 0)
                 <tr>
-                    <td>Addons (Nested Areas)</td>
+                    <td>{{ __('Addons (Nested Areas)') }}</td>
                     <td class="right">${{ number_format($breakdown['cogs']['addon_cost'], 2) }}</td>
                 </tr>
                 @endif
                 @if (($breakdown['cogs']['items_total'] ?? 0) > 0)
                 <tr>
-                    <td>Line Items ({{ count($breakdown['items'] ?? []) }})</td>
+                    <td>{{ __('Line Items') }} ({{ count($breakdown['items'] ?? []) }})</td>
                     <td class="right">${{ number_format($breakdown['cogs']['items_total'], 2) }}</td>
                 </tr>
                 @endif
                 <tr class="row-total">
-                    <td>TOTAL COGS</td>
+                    <td>{{ __('TOTAL COGS') }}</td>
                     <td class="right">${{ number_format($breakdown['cogs']['total'], 2) }}</td>
                 </tr>
             </table>
@@ -312,10 +312,10 @@
 
         {{-- Customer Price --}}
         <div class="highlight-box">
-            <div class="section-title" style="border: none; margin: 0;">3. CUSTOMER PRICE (Per-Area Margins Applied)</div>
+            <div class="section-title" style="border: none; margin: 0;">{{ __('3. CUSTOMER PRICE (Per-Area Margins Applied)') }}</div>
             <table style="margin-top: 8px;">
                 <tr>
-                    <td>Formula per area: COGS / (margin% / 100)</td>
+                    <td>{{ __('Formula per area: COGS / (margin% / 100)') }}</td>
                     <td class="right"></td>
                 </tr>
                 @foreach ($breakdown['areas'] as $area)
@@ -326,12 +326,12 @@
                 @endforeach
                 @if (($breakdown['items_total'] ?? 0) > 0)
                 <tr>
-                    <td>Line Items (at cost)</td>
+                    <td>{{ __('Line Items (at cost)') }}</td>
                     <td class="right">${{ number_format($breakdown['items_total'], 2) }}</td>
                 </tr>
                 @endif
                 <tr class="row-bold">
-                    <td>CUSTOMER PRICE</td>
+                    <td>{{ __('CUSTOMER PRICE') }}</td>
                     <td class="right">${{ number_format($breakdown['pricing']['customer_price'], 2) }}</td>
                 </tr>
             </table>
@@ -339,14 +339,14 @@
 
         {{-- Gross Profit --}}
         <div class="section">
-            <div class="section-title">4. GROSS PROFIT (Before Allocations)</div>
+            <div class="section-title">{{ __('4. GROSS PROFIT (Before Allocations)') }}</div>
             <table>
                 <tr>
-                    <td>Customer Price - COGS</td>
+                    <td>{{ __('Customer Price') }} - {{ __('COGS') }}</td>
                     <td class="right">${{ number_format($breakdown['pricing']['customer_price'], 2) }} - ${{ number_format($breakdown['cogs']['total'], 2) }}</td>
                 </tr>
                 <tr class="row-total">
-                    <td>GROSS PROFIT</td>
+                    <td>{{ __('GROSS PROFIT') }}</td>
                     <td class="right {{ $breakdown['gross_profit']['amount'] >= 0 ? 'positive' : 'negative' }}">
                         ${{ number_format($breakdown['gross_profit']['amount'], 2) }} ({{ number_format($breakdown['gross_profit']['percent'], 1) }}%)
                     </td>
@@ -356,28 +356,28 @@
 
         {{-- Allocations --}}
         <div class="section">
-            <div class="section-title">5. ALLOCATIONS (% of Revenue)</div>
+            <div class="section-title">{{ __('5. ALLOCATIONS (% of Revenue)') }}</div>
             <table>
                 <tr>
-                    <td>Marketing ({{ number_format($breakdown['allocations']['marketing']['rate'], 1) }}%)</td>
+                    <td>{{ __('Marketing') }} ({{ number_format($breakdown['allocations']['marketing']['rate'], 1) }}%)</td>
                     <td class="right">${{ number_format($breakdown['allocations']['marketing']['amount'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Sales ({{ number_format($breakdown['allocations']['sales']['rate'], 1) }}%)</td>
+                    <td>{{ __('Sales') }} ({{ number_format($breakdown['allocations']['sales']['rate'], 1) }}%)</td>
                     <td class="right">${{ number_format($breakdown['allocations']['sales']['amount'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Production Mgmt ({{ number_format($breakdown['allocations']['production_management']['rate'], 1) }}%)</td>
+                    <td>{{ __('Production Mgmt') }} ({{ number_format($breakdown['allocations']['production_management']['rate'], 1) }}%)</td>
                     <td class="right">${{ number_format($breakdown['allocations']['production_management']['amount'], 2) }}</td>
                 </tr>
                 @if (isset($breakdown['allocations']['overhead']))
                 <tr style="color: #888;">
-                    <td>General Overhead ({{ number_format($breakdown['allocations']['overhead']['rate'], 1) }}%) <em>informational</em></td>
+                    <td>{{ __('General Overhead') }} ({{ number_format($breakdown['allocations']['overhead']['rate'], 1) }}%) <em>{{ __('informational') }}</em></td>
                     <td class="right">${{ number_format($breakdown['allocations']['overhead']['amount'], 2) }}</td>
                 </tr>
                 @endif
                 <tr class="row-total">
-                    <td>TOTAL ALLOCATIONS ({{ number_format($breakdown['allocations']['total_percent'], 1) }}%)</td>
+                    <td>{{ __('TOTAL ALLOCATIONS') }} ({{ number_format($breakdown['allocations']['total_percent'], 1) }}%)</td>
                     <td class="right">${{ number_format($breakdown['allocations']['total'], 2) }}</td>
                 </tr>
             </table>
@@ -385,23 +385,23 @@
 
         {{-- Net Profit --}}
         <div class="highlight-box {{ $breakdown['net_profit']['is_profitable'] ? 'profit-positive' : 'profit-negative' }}">
-            <div class="section-title" style="border: none; margin: 0;">6. NET PROFIT (The Truth)</div>
+            <div class="section-title" style="border: none; margin: 0;">{{ __('6. NET PROFIT (The Truth)') }}</div>
             <table style="margin-top: 8px;">
                 <tr>
-                    <td>Gross Profit - Total Allocations</td>
+                    <td>{{ __('Gross Profit') }} - {{ __('Total Allocations') }}</td>
                     <td class="right">${{ number_format($breakdown['gross_profit']['amount'], 2) }} - ${{ number_format($breakdown['allocations']['total'], 2) }}</td>
                 </tr>
                 <tr class="row-bold">
-                    <td>NET PROFIT</td>
+                    <td>{{ __('NET PROFIT') }}</td>
                     <td class="right {{ $breakdown['net_profit']['is_profitable'] ? 'positive' : 'negative' }}">
                         ${{ number_format($breakdown['net_profit']['amount'], 2) }} ({{ number_format($breakdown['net_profit']['percent'], 1) }}%)
                     </td>
                 </tr>
                 <tr>
-                    <td>Target: {{ number_format($breakdown['net_profit']['target_percent'], 1) }}%</td>
+                    <td>{{ __('Target:') }} {{ number_format($breakdown['net_profit']['target_percent'], 1) }}%</td>
                     <td class="right {{ $breakdown['net_profit']['meets_target'] ? 'positive' : 'warning' }}">
-                        Delta: {{ $breakdown['net_profit']['delta_percent'] >= 0 ? '+' : '' }}{{ number_format($breakdown['net_profit']['delta_percent'], 1) }}%
-                        {{ $breakdown['net_profit']['meets_target'] ? '(Meets target)' : '(Below target)' }}
+                        {{ __('Delta:') }} {{ $breakdown['net_profit']['delta_percent'] >= 0 ? '+' : '' }}{{ number_format($breakdown['net_profit']['delta_percent'], 1) }}%
+                        {{ $breakdown['net_profit']['meets_target'] ? '(' . __('Meets target') . ')' : '(' . __('Below target') . ')' }}
                     </td>
                 </tr>
             </table>
@@ -410,14 +410,14 @@
         {{-- Line Items --}}
         @if (count($breakdown['items'] ?? []) > 0)
         <div class="section">
-            <div class="section-title">LINE ITEMS</div>
+            <div class="section-title">{{ __('LINE ITEMS') }}</div>
             <table>
                 <thead>
                     <tr>
-                        <th>Description</th>
-                        <th class="right">Qty</th>
-                        <th class="right">Unit Price</th>
-                        <th class="right">Total</th>
+                        <th>{{ __('Description') }}</th>
+                        <th class="right">{{ __('Qty') }}</th>
+                        <th class="right">{{ __('Unit Price') }}</th>
+                        <th class="right">{{ __('Total') }}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -432,7 +432,7 @@
                 </tbody>
                 <tfoot>
                     <tr class="row-total">
-                        <td colspan="3">Total</td>
+                        <td colspan="3">{{ __('Total') }}</td>
                         <td class="right">${{ number_format($breakdown['items_total'], 2) }}</td>
                     </tr>
                 </tfoot>
@@ -443,46 +443,46 @@
         {{-- Reconciliation --}}
         @if (isset($breakdown['reconciliation']) && abs($breakdown['reconciliation']['difference']) > 1)
         <div class="warning-box">
-            <strong>PRICE RECONCILIATION</strong><br>
-            Stored Subtotal: ${{ number_format($breakdown['reconciliation']['stored_subtotal'], 2) }}<br>
-            Calculated Price: ${{ number_format($breakdown['reconciliation']['calculated_price'], 2) }}<br>
-            Difference: {{ $breakdown['reconciliation']['difference'] > 0 ? '+' : '' }}${{ number_format($breakdown['reconciliation']['difference'], 2) }}
+            <strong>{{ __('PRICE RECONCILIATION') }}</strong><br>
+            {{ __('Stored Subtotal:') }} ${{ number_format($breakdown['reconciliation']['stored_subtotal'], 2) }}<br>
+            {{ __('Calculated Price:') }} ${{ number_format($breakdown['reconciliation']['calculated_price'], 2) }}<br>
+            {{ __('Difference:') }} {{ $breakdown['reconciliation']['difference'] > 0 ? '+' : '' }}${{ number_format($breakdown['reconciliation']['difference'], 2) }}
         </div>
         @endif
 
         {{-- Settings Reference --}}
         <div class="section">
-            <div class="section-title">SETTINGS USED</div>
+            <div class="section-title">{{ __('SETTINGS USED') }}</div>
             <table>
                 <tr>
-                    <td>Scope</td>
+                    <td>{{ __('Scope') }}</td>
                     <td>{{ ucfirst($breakdown['settings_used']['scope']) }}</td>
-                    <td>Hourly Wage</td>
+                    <td>{{ __('Hourly Wage') }}</td>
                     <td>${{ number_format($breakdown['settings_used']['hourly_wage'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Payroll Burden</td>
+                    <td>{{ __('Payroll Burden') }}</td>
                     <td>{{ number_format($breakdown['settings_used']['payroll_burden_multiplier'], 2) }}x</td>
-                    <td>Margin</td>
+                    <td>{{ __('Margin') }}</td>
                     <td>{{ number_format($breakdown['settings_used']['margin_percent'], 1) }}%</td>
                 </tr>
                 <tr>
-                    <td>Cleanup Ratio</td>
+                    <td>{{ __('Cleanup Ratio') }}</td>
                     <td>{{ number_format($breakdown['settings_used']['cleanup_hours_ratio'], 0) }}:1</td>
-                    <td>Sundries/Hr</td>
+                    <td>{{ __('Sundries/Hr') }}</td>
                     <td>${{ number_format($breakdown['settings_used']['sundries_cost_per_hour'], 2) }}</td>
                 </tr>
                 <tr>
-                    <td>Material Tax</td>
+                    <td>{{ __('Material Tax') }}</td>
                     <td>{{ number_format($breakdown['settings_used']['material_tax_rate'], 1) }}%</td>
-                    <td>Target Net Margin</td>
+                    <td>{{ __('Target Net Margin') }}</td>
                     <td>{{ number_format($breakdown['settings_used']['net_profit_margin_percent'], 1) }}%</td>
                 </tr>
             </table>
         </div>
 
         <div class="footer">
-            Generated by {{ config('app.name') }} | {{ now()->format('M j, Y g:i A') }} | CONFIDENTIAL - INTERNAL USE ONLY
+            {{ __('Generated by') }} {{ config('app.name') }} | {{ now()->format('M j, Y g:i A') }} | {{ __('CONFIDENTIAL - INTERNAL USE ONLY') }}
         </div>
     </div>
 </body>

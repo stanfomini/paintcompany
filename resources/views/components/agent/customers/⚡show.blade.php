@@ -25,7 +25,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-4">
                 <flux:button variant="ghost" :href="route('agent.customers.index')" icon="arrow-left" wire:navigate>
-                    Back
+                    {{ __('Back') }}
                 </flux:button>
                 <flux:heading size="xl">{{ $customer->full_name }}</flux:heading>
             </div>
@@ -33,22 +33,22 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
 
         <div class="grid gap-6 md:grid-cols-2">
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Contact Information</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Contact Information') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Email</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Email') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $customer->email ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Phone</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Phone') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $customer->phone ?? '-' }}</flux:text>
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Address</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Address') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $customer->full_address ?? '-' }}</flux:text>
                         </dd>
@@ -57,20 +57,20 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
             </div>
 
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Referral Details</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Referral Details') }}</flux:heading>
                 <dl class="space-y-3">
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Status</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Status') }}</dt>
                         <dd class="mt-1">
                             @if ($customer->status === 'active')
-                                <flux:badge size="sm" color="green">Active</flux:badge>
+                                <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
                             @else
-                                <flux:badge size="sm" color="yellow">Inactive</flux:badge>
+                                <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
                             @endif
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Referred From Listing</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Referred From Listing') }}</dt>
                         <dd class="mt-1">
                             @if ($customer->originProperty)
                                 <flux:text>{{ $customer->originProperty->full_address }}</flux:text>
@@ -80,7 +80,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
                         </dd>
                     </div>
                     <div>
-                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">Referred Date</dt>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Referred Date') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $customer->created_at->format('M d, Y') }}</flux:text>
                         </dd>
@@ -91,7 +91,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Customer Details'])] class
 
         @if ($customer->notes)
             <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                <flux:heading size="sm" class="mb-4">Notes</flux:heading>
+                <flux:heading size="sm" class="mb-4">{{ __('Notes') }}</flux:heading>
                 <flux:text>{{ $customer->notes }}</flux:text>
             </div>
         @endif

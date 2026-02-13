@@ -1401,11 +1401,12 @@ describe('TemplateBuilder fixed price templates', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
-        // Create a fixed price template (NestedAreaTemplate)
+        // Create a fixed price template with margin pricing off (manual price)
         $fixedPriceTemplate = \App\Models\NestedAreaTemplate::factory()->create([
             'name' => 'Small Closet',
             'code' => 'CLOSET-SM',
             'fixed_price' => 95.00,
+            'use_margin_pricing' => false,
             'scope_type' => 'interior',
             'category' => 'closet',
             'is_active' => true,
@@ -1424,8 +1425,35 @@ describe('TemplateBuilder fixed price templates', function () {
         expect($selectedTemplates[0]['quantity'])->toBe(1);
         expect($selectedTemplates[0]['unit_price'])->toBe(95.00);
         expect($selectedTemplates[0]['price'])->toBe(95.00);
-        // Fixed price items don't have labor calculations
-        expect($selectedTemplates[0]['labor_hours'])->toBe(0);
+    });
+
+    it('snapshots labor hours and material cost from nested template', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $fixedPriceTemplate = \App\Models\NestedAreaTemplate::factory()->create([
+            'name' => 'Walk-in Closet',
+            'code' => 'CLOSET-WI',
+            'fixed_price' => 175.00,
+            'use_margin_pricing' => false,
+            'estimated_hours' => 1.5,
+            'material_cost' => 15.00,
+            'scope_type' => 'interior',
+            'category' => 'closet',
+            'is_active' => true,
+        ]);
+
+        $component = Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->call('addFixedPriceTemplate', $fixedPriceTemplate->id);
+
+        $selectedTemplates = $component->get('selectedTemplates');
+
+        expect($selectedTemplates[0]['labor_hours'])->toBe(1.5);
+        expect($selectedTemplates[0]['material_cost'])->toBe(15.00);
+        expect($selectedTemplates[0]['labor_cost'])->toBeGreaterThan(0);
+        // Customer price uses manual fixed_price (margin pricing off)
+        expect($selectedTemplates[0]['price'])->toBe(175.00);
     });
 
     it('can update quantity of a fixed price template', function () {
@@ -1436,6 +1464,7 @@ describe('TemplateBuilder fixed price templates', function () {
             'name' => 'Entry Door',
             'code' => 'EXT-ENTRY-STD',
             'fixed_price' => 125.00,
+            'use_margin_pricing' => false,
             'scope_type' => 'exterior',
             'category' => 'other',
             'is_active' => true,
@@ -1460,6 +1489,7 @@ describe('TemplateBuilder fixed price templates', function () {
         $fixedPriceTemplate = \App\Models\NestedAreaTemplate::factory()->create([
             'name' => 'Half Bath',
             'fixed_price' => 150.00,
+            'use_margin_pricing' => false,
             'is_active' => true,
         ]);
 
@@ -1515,16 +1545,18 @@ describe('TemplateBuilder fixed price templates', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $deal = Deal::factory()->create();
 
-        // Create two fixed price templates
+        // Create two fixed price templates with margin pricing off
         $template1 = \App\Models\NestedAreaTemplate::factory()->create([
             'name' => 'Closet 1',
             'fixed_price' => 100.00,
+            'use_margin_pricing' => false,
             'scope_type' => 'interior',
             'is_active' => true,
         ]);
         $template2 = \App\Models\NestedAreaTemplate::factory()->create([
             'name' => 'Closet 2',
             'fixed_price' => 150.00,
+            'use_margin_pricing' => false,
             'scope_type' => 'interior',
             'is_active' => true,
         ]);
@@ -1921,5 +1953,255 @@ describe('TemplateBuilder fixed price templates', function () {
 
         // Exterior doors should infer to 'exterior_doors', not 'doors'
         expect($doorSurface['surface_category'])->toBe('exterior_doors');
+    });
+
+    it('saves fixed-price template as EstimateArea with is_fixed_price', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->smallCloset()->create([
+            'use_margin_pricing' => false,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->set('title', 'Fixed Price Estimate')
+            ->call('addFixedPriceTemplate', $nestedTemplate->id)
+            ->call('saveAsDraft')
+            ->assertDispatched('estimate-created');
+
+        $estimate = Estimate::where('title', 'Fixed Price Estimate')->first();
+        expect($estimate)->not->toBeNull();
+
+        // Should have created an EstimateArea with is_fixed_price
+        $areas = $estimate->areas;
+        expect($areas)->toHaveCount(1);
+        expect($areas[0]->is_fixed_price)->toBeTrue();
+        expect((float) $areas[0]->fixed_price_amount)->toBe(95.00);
+        expect($areas[0]->nested_area_template_id)->toBe($nestedTemplate->id);
+        expect($areas[0]->name)->toBe('Small Closet');
+        expect($areas[0]->scope_type)->toBe('interior');
+
+        // Should have created a template usage pointing to the area
+        $usages = $estimate->templateUsages;
+        expect($usages)->toHaveCount(1);
+        expect($usages[0]->template_id)->toBeNull();
+        expect($usages[0]->resultable_type)->toBe(\App\Models\EstimateArea::class);
+        expect($usages[0]->resultable_id)->toBe($areas[0]->id);
+        expect((float) $usages[0]->calculated_price)->toBe(95.00);
+    });
+
+    it('saves fixed-price template with quantity > 1 as multiple areas', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->create([
+            'name' => 'Medium Closet',
+            'code' => 'CLOSET-MD',
+            'fixed_price' => 165.00,
+            'use_margin_pricing' => false,
+            'scope_type' => 'interior',
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->set('title', 'Multi Closet Estimate')
+            ->call('addFixedPriceTemplate', $nestedTemplate->id)
+            ->call('updateFixedPriceQuantity', 0, 3)
+            ->call('saveAsDraft')
+            ->assertDispatched('estimate-created');
+
+        $estimate = Estimate::where('title', 'Multi Closet Estimate')->first();
+
+        // 3 closets = 3 separate EstimateArea records
+        $areas = $estimate->areas;
+        expect($areas)->toHaveCount(3);
+
+        foreach ($areas as $area) {
+            expect($area->is_fixed_price)->toBeTrue();
+            expect((float) $area->fixed_price_amount)->toBe(165.00);
+            expect($area->nested_area_template_id)->toBe($nestedTemplate->id);
+        }
+
+        // 3 template usages
+        $usages = $estimate->templateUsages;
+        expect($usages)->toHaveCount(3);
+
+        foreach ($usages as $usage) {
+            expect($usage->template_id)->toBeNull();
+            expect((float) $usage->calculated_price)->toBe(165.00);
+        }
+
+        // Subtotal should be 165 × 3
+        expect((float) $estimate->subtotal)->toBe(495.00);
+    });
+
+    it('loads fixed-price areas correctly when editing an estimate', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->create([
+            'name' => 'Half Bath',
+            'code' => 'BATH-HALF',
+            'fixed_price' => 175.00,
+            'use_margin_pricing' => false,
+            'scope_type' => 'interior',
+            'category' => 'bathroom',
+            'is_active' => true,
+        ]);
+
+        // First, create an estimate with fixed-price templates
+        Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->set('title', 'Edit Fixed Price Test')
+            ->call('addFixedPriceTemplate', $nestedTemplate->id)
+            ->call('updateFixedPriceQuantity', 0, 2)
+            ->call('saveAsDraft');
+
+        $estimate = Estimate::where('title', 'Edit Fixed Price Test')->first();
+
+        // Now load it for editing
+        $component = Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['estimate' => $estimate]);
+
+        $selectedTemplates = $component->get('selectedTemplates');
+
+        // Should load as one grouped entry with quantity 2
+        expect($selectedTemplates)->toHaveCount(1);
+        expect($selectedTemplates[0]['is_fixed_price'])->toBeTrue();
+        expect($selectedTemplates[0]['name'])->toBe('Half Bath');
+        expect($selectedTemplates[0]['quantity'])->toBe(2);
+        expect((float) $selectedTemplates[0]['unit_price'])->toBe(175.00);
+        expect((float) $selectedTemplates[0]['price'])->toBe(350.00);
+    });
+
+    it('saves mixed estimate with regular templates and fixed-price templates', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        // Regular template
+        $category = EstimateTemplateCategory::factory()->room()->create();
+        $template = EstimateTemplate::factory()->forCategory($category)->fixedPricing(1000)->create([
+            'name' => 'Living Room',
+            'default_quantity' => 200,
+        ]);
+
+        // Fixed-price template
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->create([
+            'name' => 'Small Closet',
+            'code' => 'CLOSET-SM',
+            'fixed_price' => 95.00,
+            'use_margin_pricing' => false,
+            'scope_type' => 'interior',
+            'is_active' => true,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->set('title', 'Mixed Estimate')
+            ->call('addTemplate', $template->id)
+            ->call('addFixedPriceTemplate', $nestedTemplate->id)
+            ->call('saveAsDraft')
+            ->assertDispatched('estimate-created');
+
+        $estimate = Estimate::where('title', 'Mixed Estimate')->first();
+        expect($estimate)->not->toBeNull();
+
+        // Should have template usages for both
+        $usages = $estimate->templateUsages;
+        expect($usages)->toHaveCount(2);
+
+        // One should have a template_id, one should be null
+        $regularUsage = $usages->whereNotNull('template_id')->first();
+        $fixedUsage = $usages->whereNull('template_id')->first();
+
+        expect($regularUsage)->not->toBeNull();
+        expect($fixedUsage)->not->toBeNull();
+
+        // Fixed-price should point to an EstimateArea
+        expect($fixedUsage->resultable_type)->toBe(\App\Models\EstimateArea::class);
+        $fixedArea = $fixedUsage->resultable;
+        expect($fixedArea->is_fixed_price)->toBeTrue();
+        expect((float) $fixedArea->fixed_price_amount)->toBe(95.00);
+
+        // Total should be sum of both
+        expect((float) $estimate->subtotal)->toBe(1095.00);
+    });
+
+    it('saves fixed-price area with labor tracking from nested template', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->smallCloset()->create([
+            'use_margin_pricing' => false,
+        ]);
+        // smallCloset has estimated_hours=1.5, material_cost=12.00
+
+        Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->set('title', 'Labor Tracking Estimate')
+            ->call('addFixedPriceTemplate', $nestedTemplate->id)
+            ->call('saveAsDraft')
+            ->assertDispatched('estimate-created');
+
+        $estimate = Estimate::where('title', 'Labor Tracking Estimate')->first();
+        $area = $estimate->areas->first();
+
+        expect($area->is_fixed_price)->toBeTrue();
+        expect((float) $area->fixed_price_amount)->toBe(95.00);
+        expect((float) $area->estimated_labor_hours)->toBe(1.5);
+        expect((float) $area->estimated_material_cost)->toBe(12.00);
+        expect((float) $area->estimated_labor_cost)->toBeGreaterThan(0);
+    });
+
+    it('loads labor tracking values when editing fixed-price areas', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->smallCloset()->create();
+
+        // Save first
+        Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['deal' => $deal])
+            ->set('title', 'Edit Labor Tracking')
+            ->call('addFixedPriceTemplate', $nestedTemplate->id)
+            ->call('saveAsDraft');
+
+        $estimate = Estimate::where('title', 'Edit Labor Tracking')->first();
+
+        // Now load for editing
+        $component = Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['estimate' => $estimate]);
+
+        $selectedTemplates = $component->get('selectedTemplates');
+
+        expect($selectedTemplates)->toHaveCount(1);
+        expect($selectedTemplates[0]['is_fixed_price'])->toBeTrue();
+        expect((float) $selectedTemplates[0]['labor_hours'])->toBe(1.5);
+        expect((float) $selectedTemplates[0]['material_cost'])->toBe(12.00);
+        expect((float) $selectedTemplates[0]['labor_cost'])->toBeGreaterThan(0);
+    });
+
+    it('uses real COGS for fixed-price area with labor breakdown', function () {
+        $settings = CompanySetting::getInstance();
+
+        $nestedTemplate = \App\Models\NestedAreaTemplate::factory()->smallCloset()->create();
+
+        $estimate = Estimate::factory()->create(['project_type' => 'interior']);
+        $area = \App\Models\EstimateArea::factory()
+            ->forEstimate($estimate)
+            ->fixedPrice(95.00, $nestedTemplate)
+            ->create(['scope_type' => 'interior']);
+
+        // getFullCOGS should return real COGS (not just the fixed price)
+        $cogs = $area->getFullCOGS();
+
+        // COGS should include labor + cleanup + sundries + material + taxes
+        // It should NOT just be the fixed_price_amount
+        expect($cogs)->toBeGreaterThan(0);
+
+        // Customer price stays fixed regardless of COGS
+        expect((float) $area->getCustomerPrice())->toBe(95.00);
     });
 });

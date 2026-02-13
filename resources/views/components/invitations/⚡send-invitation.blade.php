@@ -62,7 +62,7 @@ new class extends Component {
             $invitationService->sendInvitation($user, $this->email, $this->invitedUserType, $this->serviceCategoryId);
 
             $this->dispatch('invitation-sent');
-            session()->flash('success', "Invitation sent to {$this->email}");
+            session()->flash('success', __('Invitation sent to :email', ['email' => $this->email]));
             $this->closeModal();
         } catch (\InvalidArgumentException $e) {
             $this->addError('email', $e->getMessage());
@@ -74,15 +74,15 @@ new class extends Component {
     @if (count($invitableTypes) > 0)
         <flux:button wire:click="openModal" variant="ghost" size="sm" class="w-full justify-start">
             <flux:icon name="envelope" class="mr-2" />
-            Send Invitation
+            {{ __('Send Invitation') }}
         </flux:button>
 
         <flux:modal wire:model="showModal" class="max-w-md">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">Send Invitation</flux:heading>
+                    <flux:heading size="lg">{{ __('Send Invitation') }}</flux:heading>
                     <flux:text class="mt-1 text-zinc-600 dark:text-zinc-400">
-                        Invite someone to join the platform.
+                        {{ __('Invite someone to join the platform.') }}
                     </flux:text>
                 </div>
 
@@ -91,7 +91,7 @@ new class extends Component {
                         <flux:input
                             wire:model="email"
                             type="email"
-                            label="Email Address"
+                            label="{{ __('Email Address') }}"
                             placeholder="email@example.com"
                             required
                         />
@@ -101,10 +101,10 @@ new class extends Component {
                     </flux:field>
 
                     <flux:field>
-                        <flux:select wire:model.live="invitedUserType" label="User Type">
+                        <flux:select wire:model.live="invitedUserType" label="{{ __('User Type') }}">
                             @foreach ($invitableTypes as $type)
                                 <option value="{{ $type }}">
-                                    {{ match($type) { 'internal' => 'Team Member', 'crew' => 'Crew Member', default => ucfirst($type) } }}
+                                    {{ match($type) { 'internal' => __('Team Member'), 'crew' => __('Crew Member'), default => __(ucfirst($type)) } }}
                                 </option>
                             @endforeach
                         </flux:select>
@@ -115,9 +115,9 @@ new class extends Component {
 
                     @if ($invitedUserType === 'crew')
                         <flux:field>
-                            <flux:select wire:model="serviceCategoryId" label="Service Category" placeholder="Select service...">
+                            <flux:select wire:model="serviceCategoryId" label="{{ __('Service Category') }}" placeholder="{{ __('Select service...') }}">
                                 @foreach ($this->serviceCategories as $category)
-                                    <flux:select.option value="{{ $category->id }}">{{ $category->name }}</flux:select.option>
+                                    <flux:select.option value="{{ $category->id }}">{{ __($category->name) }}</flux:select.option>
                                 @endforeach
                             </flux:select>
                             @error('serviceCategoryId')
@@ -128,11 +128,11 @@ new class extends Component {
 
                     <div class="flex justify-end gap-3 pt-4">
                         <flux:button type="button" wire:click="closeModal" variant="ghost">
-                            Cancel
+                            {{ __('Cancel') }}
                         </flux:button>
                         <flux:button type="submit" variant="primary">
-                            <span wire:loading.remove wire:target="sendInvitation">Send Invitation</span>
-                            <span wire:loading wire:target="sendInvitation">Sending...</span>
+                            <span wire:loading.remove wire:target="sendInvitation">{{ __('Send Invitation') }}</span>
+                            <span wire:loading wire:target="sendInvitation">{{ __('Sending...') }}</span>
                         </flux:button>
                     </div>
                 </form>

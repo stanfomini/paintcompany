@@ -7,9 +7,9 @@ use Spatie\Permission\Models\Role;
 
 beforeEach(function () {
     // Create permissions
-    Permission::firstOrCreate(['name' => 'manage roles', 'guard_name' => 'web']);
-    Permission::firstOrCreate(['name' => 'view roadmap', 'guard_name' => 'web']);
-    Permission::firstOrCreate(['name' => 'edit roadmap', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'team.manage_roles', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'roadmap.view', 'guard_name' => 'web']);
+    Permission::firstOrCreate(['name' => 'roadmap.edit', 'guard_name' => 'web']);
     Permission::firstOrCreate(['name' => 'settings.company', 'guard_name' => 'web']);
 
     // Create all roles
@@ -17,16 +17,16 @@ beforeEach(function () {
     $ownerRole->syncPermissions(Permission::all());
 
     $adminRole = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
-    $adminRole->syncPermissions(['view roadmap', 'edit roadmap']);
+    $adminRole->syncPermissions(['roadmap.view', 'roadmap.edit']);
 
     $managerRole = Role::firstOrCreate(['name' => 'manager', 'guard_name' => 'web']);
-    $managerRole->syncPermissions(['view roadmap', 'edit roadmap']);
+    $managerRole->syncPermissions(['roadmap.view', 'roadmap.edit']);
 
     $estimatorRole = Role::firstOrCreate(['name' => 'estimator', 'guard_name' => 'web']);
-    $estimatorRole->syncPermissions(['view roadmap']);
+    $estimatorRole->syncPermissions(['roadmap.view']);
 
     $crewLeadRole = Role::firstOrCreate(['name' => 'crew_lead', 'guard_name' => 'web']);
-    $crewLeadRole->syncPermissions(['view roadmap']);
+    $crewLeadRole->syncPermissions(['roadmap.view']);
 });
 
 it('requires authentication to access roles page', function () {

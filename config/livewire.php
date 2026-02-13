@@ -246,7 +246,9 @@ return [
     |
     */
 
-    'release_token' => 'a',
+    'release_token' => file_exists(public_path('build/manifest.json'))
+        ? md5((string) filemtime(public_path('build/manifest.json')))
+        : 'dev',
 
     /*
     |---------------------------------------------------------------------------

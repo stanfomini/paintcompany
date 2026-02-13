@@ -12,7 +12,7 @@ describe('Deal Pipeline component', function () {
         Livewire::actingAs($user)
             ->test('deals.pipeline')
             ->assertStatus(200)
-            ->assertSee('Deal Pipeline');
+            ->assertSee('Active Leads');
     });
 
     it('allows internal users to view the pipeline', function () {
@@ -31,18 +31,14 @@ describe('Deal Pipeline component', function () {
             ->assertStatus(403);
     });
 
-    it('displays all deal stages', function () {
+    it('displays kanban stage columns', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
-            ->assertSee('Lead')
-            ->assertSee('Quoted')
-            ->assertSee('Scheduled')
-            ->assertSee('In Progress')
-            ->assertSee('Completed')
-            ->assertSee('Paid')
-            ->assertSee('Cancelled');
+            ->assertSee('New Lead')
+            ->assertSee('Quote Scheduled')
+            ->assertSee('Quoted');
     });
 
     it('displays deals in correct stages', function () {

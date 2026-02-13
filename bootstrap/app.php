@@ -1,10 +1,14 @@
 <?php
 
 use App\Exceptions\UserTypeMismatchException;
+use App\Http\Middleware\EnsureAgentOnboarded;
+use App\Http\Middleware\EnsureCrewOnboarded;
+use App\Http\Middleware\EnsureCustomerOnboarded;
 use App\Http\Middleware\EnsureUserIsAgent;
 use App\Http\Middleware\EnsureUserIsCrew;
 use App\Http\Middleware\EnsureUserIsCustomer;
 use App\Http\Middleware\EnsureUserIsInternal;
+use App\Http\Middleware\SetLocale;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -39,11 +43,18 @@ return Application::configure(basePath: dirname(__DIR__))
         ['middleware' => ['web', 'auth:web,agent,customer,crew']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->web(append: [
+            SetLocale::class,
+        ]);
+
         $middleware->alias([
             'auth.internal' => EnsureUserIsInternal::class,
             'auth.agent' => EnsureUserIsAgent::class,
             'auth.customer' => EnsureUserIsCustomer::class,
+            'auth.agent.onboarded' => EnsureAgentOnboarded::class,
+            'auth.customer.onboarded' => EnsureCustomerOnboarded::class,
             'auth.crew' => EnsureUserIsCrew::class,
+            'auth.crew.onboarded' => EnsureCrewOnboarded::class,
             // Spatie Permission middleware
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
@@ -69,7 +80,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     // If user is on the wrong guard (e.g. customer logged in via admin form),
                     // log them out to break any redirect loop and send to correct login
                     if ($guard !== $correctGuard) {
-                        auth()->guard($guard)->logout();
+                        auth()->guard($guard)->logoutCurrentDevice();
 
                         return route(match ($user->type) {
                             'agent' => 'agent.login',
@@ -109,7 +120,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
                     // If user is on the wrong guard, log them out to prevent redirect loops
                     if ($guard !== $correctGuard) {
-                        auth()->guard($guard)->logout();
+                        auth()->guard($guard)->logoutCurrentDevice();
                         session()->flash('warning', 'Please log in with the correct login page for your account.');
 
                         return route(match ($user->type) {
@@ -183,7 +194,7 @@ return Application::configure(basePath: dirname(__DIR__))
                     // If user is on the wrong guard (e.g. customer on web guard),
                     // log them out to prevent redirect loops
                     if ($guard !== $correctGuard) {
-                        auth()->guard($guard)->logout();
+                        auth()->guard($guard)->logoutCurrentDevice();
                         session()->flash('warning', 'Please log in with the correct login page for your account.');
 
                         $loginRoute = match ($user->type) {
@@ -215,6 +226,24 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // Not logged in with any guard - use default behavior (redirect to login)
             return null;
+        });
+
+        // Handle 419 CSRF token mismatch gracefully (e.g. session expired on login page)
+        $exceptions->render(function (HttpException $e, Request $request) {
+            if ($e->getStatusCode() !== 419) {
+                return null;
+            }
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => 'Your session has expired. Please refresh and try again.',
+                ], 419);
+            }
+
+            return redirect()
+                ->back()
+                ->withInput($request->except('password', 'password_confirmation'))
+                ->with('error', 'Your session has expired. Please try again.');
         });
 
         // Handle generic 403 errors from sources other than UserTypeMismatchException

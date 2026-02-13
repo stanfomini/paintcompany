@@ -157,6 +157,11 @@ class PhotoService
             return $customer && $property->customer_id === $customer->id;
         }
 
+        if ($user->type === 'agent') {
+            return $property->agent_id === $user->id
+                || $property->deals()->where('agent_id', $user->id)->exists();
+        }
+
         return false;
     }
 
@@ -191,6 +196,12 @@ class PhotoService
             return $customer && $photo->property && $photo->property->customer_id === $customer->id;
         }
 
+        if ($user->type === 'agent') {
+            return $photo->property
+                && ($photo->property->agent_id === $user->id
+                    || $photo->property->deals()->where('agent_id', $user->id)->exists());
+        }
+
         return false;
     }
 
@@ -215,6 +226,12 @@ class PhotoService
             return $customer && $photo->property->customer_id === $customer->id;
         }
 
+        if ($user->type === 'agent') {
+            return $photo->property
+                && ($photo->property->agent_id === $user->id
+                    || $photo->property->deals()->where('agent_id', $user->id)->exists());
+        }
+
         return false;
     }
 
@@ -235,6 +252,10 @@ class PhotoService
 
         if ($user->type === 'customer') {
             return ['before', 'during', 'after', 'general'];
+        }
+
+        if ($user->type === 'agent') {
+            return ['before', 'reference', 'general'];
         }
 
         return [];

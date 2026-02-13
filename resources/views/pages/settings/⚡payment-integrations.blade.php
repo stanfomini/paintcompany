@@ -119,7 +119,7 @@ new class extends Component {
 
             $this->redirect($url);
         } catch (\Throwable $e) {
-            session()->flash('error', 'Failed to connect with Increase: ' . $e->getMessage());
+            session()->flash('error', __('Failed to connect with Increase: :error', ['error' => $e->getMessage()]));
         }
     }
 
@@ -145,7 +145,7 @@ new class extends Component {
             $this->split_destinations[$index]['stripe_account_id'] = $account->id;
             $this->saveSplitConfig();
         } catch (\Throwable $e) {
-            session()->flash('error', 'Failed to create Stripe account: ' . $e->getMessage());
+            session()->flash('error', __('Failed to create Stripe account: :error', ['error' => $e->getMessage()]));
         }
     }
 
@@ -163,7 +163,7 @@ new class extends Component {
 
             $this->redirect($accountLink->url);
         } catch (\Throwable $e) {
-            session()->flash('error', 'Failed to start Stripe onboarding: ' . $e->getMessage());
+            session()->flash('error', __('Failed to start Stripe onboarding: :error', ['error' => $e->getMessage()]));
         }
     }
 
@@ -178,7 +178,7 @@ new class extends Component {
 
             $this->dispatch('split-retried');
         } catch (\Throwable $e) {
-            session()->flash('error', 'Failed to retry split: ' . $e->getMessage());
+            session()->flash('error', __('Failed to retry split: :error', ['error' => $e->getMessage()]));
         }
     }
 
@@ -212,25 +212,24 @@ new class extends Component {
 
             {{-- Section A: How It Works --}}
             <flux:callout variant="info" icon="information-circle">
-                <flux:callout.heading>How Payment Splitting Works</flux:callout.heading>
+                <flux:callout.heading>{{ __('How Payment Splitting Works') }}</flux:callout.heading>
                 <flux:callout.text>
-                    When a customer pays an invoice, the payment is automatically split across your bank accounts by percentage.
-                    Stripe Connect handles card and ACH payments. Increase handles check deposits with next-day availability and ACH splitting.
+                    {{ __('When a customer pays an invoice, the payment is automatically split across your bank accounts by percentage. Stripe Connect handles card and ACH payments. Increase handles check deposits with next-day availability and ACH splitting.') }}
                 </flux:callout.text>
             </flux:callout>
 
             <flux:separator />
 
             {{-- Section B: Split Destinations --}}
-            <flux:heading size="sm">Split Destinations</flux:heading>
+            <flux:heading size="sm">{{ __('Split Destinations') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                Define how payments are split across your bank accounts. Percentages must total 100%.
+                {{ __('Define how payments are split across your bank accounts. Percentages must total 100%.') }}
             </flux:text>
 
             <div class="mt-4 space-y-4">
                 <div class="flex items-center gap-3">
                     <flux:switch wire:model.live="payment_split_enabled" />
-                    <flux:text>Enable Auto-Splitting</flux:text>
+                    <flux:text>{{ __('Enable Auto-Splitting') }}</flux:text>
                 </div>
 
                 @if ($payment_split_enabled)
@@ -238,22 +237,22 @@ new class extends Component {
                         @foreach ($split_destinations as $index => $dest)
                             <div wire:key="dest-{{ $index }}" class="flex items-end gap-3 rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
                                 <div class="flex-1">
-                                    <flux:input wire:model="split_destinations.{{ $index }}.name" label="Account Name" placeholder="e.g., Operating, Owner Pay" />
+                                    <flux:input wire:model="split_destinations.{{ $index }}.name" :label="__('Account Name')" :placeholder="__('e.g., Operating, Owner Pay')" />
                                 </div>
                                 <div class="w-28">
                                     <flux:input wire:model="split_destinations.{{ $index }}.percentage" label="%" type="number" step="0.01" min="0" max="100" />
                                 </div>
                                 <div>
-                                    <flux:button variant="danger" size="sm" wire:click="removeDestination({{ $index }})">Remove</flux:button>
+                                    <flux:button variant="danger" size="sm" wire:click="removeDestination({{ $index }})">{{ __('Remove') }}</flux:button>
                                 </div>
                             </div>
                         @endforeach
                     </div>
 
                     <div class="flex items-center gap-4">
-                        <flux:button size="sm" wire:click="addDestination">+ Add Destination</flux:button>
+                        <flux:button size="sm" wire:click="addDestination">{{ __('+ Add Destination') }}</flux:button>
                         <flux:text size="sm" class="{{ abs($this->splitPercentageTotal - 100) < 0.01 ? 'text-emerald-600' : 'text-red-500' }}">
-                            Total: {{ number_format($this->splitPercentageTotal, 2) }}%
+                            {{ __('Total:') }} {{ number_format($this->splitPercentageTotal, 2) }}%
                         </flux:text>
                     </div>
 
@@ -262,8 +261,8 @@ new class extends Component {
                     @enderror
 
                     <div class="flex items-center gap-4">
-                        <flux:button variant="primary" wire:click="saveSplitConfig">Save Split Configuration</flux:button>
-                        <x-action-message on="split-config-saved">Saved.</x-action-message>
+                        <flux:button variant="primary" wire:click="saveSplitConfig">{{ __('Save Split Configuration') }}</flux:button>
+                        <x-action-message on="split-config-saved">{{ __('Saved.') }}</x-action-message>
                     </div>
                 @endif
             </div>
@@ -271,26 +270,26 @@ new class extends Component {
             <flux:separator />
 
             {{-- Section C: Stripe Connect --}}
-            <flux:heading size="sm">Stripe Connect</flux:heading>
+            <flux:heading size="sm">{{ __('Stripe Connect') }}</flux:heading>
 
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
                     <flux:switch wire:model.live="stripe_connect_enabled" />
-                    <flux:text>Enable Stripe Connect</flux:text>
+                    <flux:text>{{ __('Enable Stripe Connect') }}</flux:text>
                 </div>
                 <div class="flex items-center gap-3">
                     <flux:switch wire:model.live="stripe_ach_enabled" />
-                    <flux:text>Enable ACH Bank Payments</flux:text>
+                    <flux:text>{{ __('Enable ACH Bank Payments') }}</flux:text>
                 </div>
 
                 <flux:callout variant="warning" icon="wrench">
-                    <flux:callout.heading>Setup Instructions</flux:callout.heading>
+                    <flux:callout.heading>{{ __('Setup Instructions') }}</flux:callout.heading>
                     <flux:callout.text>
                         <ol class="list-inside list-decimal space-y-1">
-                            <li>Ensure STRIPE_KEY, STRIPE_SECRET, and STRIPE_WEBHOOK_SECRET are set in your .env file</li>
-                            <li>Click "Create Connected Account" for each split destination below</li>
-                            <li>Complete Stripe's onboarding flow (links bank accounts, KYC verification)</li>
-                            <li>Once all accounts are active, payments will auto-split via Stripe Transfers</li>
+                            <li>{{ __('Ensure STRIPE_KEY, STRIPE_SECRET, and STRIPE_WEBHOOK_SECRET are set in your .env file') }}</li>
+                            <li>{{ __('Click "Create Connected Account" for each split destination below') }}</li>
+                            <li>{{ __('Complete Stripe\'s onboarding flow (links bank accounts, KYC verification)') }}</li>
+                            <li>{{ __('Once all accounts are active, payments will auto-split via Stripe Transfers') }}</li>
                         </ol>
                     </flux:callout.text>
                 </flux:callout>
@@ -300,29 +299,29 @@ new class extends Component {
                         <table class="w-full text-sm">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
                                 <tr>
-                                    <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Destination</th>
+                                    <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Destination') }}</th>
                                     <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">%</th>
-                                    <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Stripe Account</th>
-                                    <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
+                                    <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Stripe Account') }}</th>
+                                    <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Actions') }}</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
                                 @foreach ($split_destinations as $index => $dest)
                                     <tr wire:key="stripe-{{ $index }}">
-                                        <td class="px-4 py-2 text-zinc-900 dark:text-zinc-100">{{ $dest['name'] ?: 'Unnamed' }}</td>
+                                        <td class="px-4 py-2 text-zinc-900 dark:text-zinc-100">{{ $dest['name'] ?: __('Unnamed') }}</td>
                                         <td class="px-4 py-2 text-zinc-600 dark:text-zinc-400">{{ $dest['percentage'] }}%</td>
                                         <td class="px-4 py-2">
                                             @if (!empty($dest['stripe_account_id']))
                                                 <flux:badge color="green">{{ $dest['stripe_account_id'] }}</flux:badge>
                                             @else
-                                                <flux:badge color="zinc">Not connected</flux:badge>
+                                                <flux:badge color="zinc">{{ __('Not connected') }}</flux:badge>
                                             @endif
                                         </td>
                                         <td class="px-4 py-2">
                                             @if (empty($dest['stripe_account_id']))
-                                                <flux:button size="xs" wire:click="createStripeAccount({{ $index }})">Create Account</flux:button>
+                                                <flux:button size="xs" wire:click="createStripeAccount({{ $index }})">{{ __('Create Account') }}</flux:button>
                                             @else
-                                                <flux:button size="xs" variant="ghost" wire:click="completeStripeOnboarding({{ $index }})">Manage</flux:button>
+                                                <flux:button size="xs" variant="ghost" wire:click="completeStripeOnboarding({{ $index }})">{{ __('Manage') }}</flux:button>
                                             @endif
                                         </td>
                                     </tr>
@@ -333,76 +332,76 @@ new class extends Component {
                 @endif
 
                 <div class="flex items-center gap-4">
-                    <flux:button wire:click="saveStripeSettings">Save Stripe Settings</flux:button>
-                    <x-action-message on="stripe-settings-saved">Saved.</x-action-message>
+                    <flux:button wire:click="saveStripeSettings">{{ __('Save Stripe Settings') }}</flux:button>
+                    <x-action-message on="stripe-settings-saved">{{ __('Saved.') }}</x-action-message>
                 </div>
             </div>
 
             <flux:separator />
 
             {{-- Section D: Increase --}}
-            <flux:heading size="sm">Increase (Check Deposits & ACH)</flux:heading>
+            <flux:heading size="sm">{{ __('Increase (Check Deposits & ACH)') }}</flux:heading>
 
             <div class="space-y-4">
                 <div class="flex items-center gap-3">
                     <flux:switch wire:model.live="increase_enabled" />
-                    <flux:text>Enable Increase</flux:text>
+                    <flux:text>{{ __('Enable Increase') }}</flux:text>
                 </div>
 
-                <flux:select wire:model="increase_environment" label="Environment">
-                    <option value="sandbox">Sandbox (Testing)</option>
-                    <option value="production">Production</option>
+                <flux:select wire:model="increase_environment" :label="__('Environment')">
+                    <option value="sandbox">{{ __('Sandbox (Testing)') }}</option>
+                    <option value="production">{{ __('Production') }}</option>
                 </flux:select>
 
                 <flux:callout variant="warning" icon="wrench">
-                    <flux:callout.heading>Setup Instructions</flux:callout.heading>
+                    <flux:callout.heading>{{ __('Setup Instructions') }}</flux:callout.heading>
                     <flux:callout.text>
                         <ol class="list-inside list-decimal space-y-1">
-                            <li>Create an account at <a href="https://increase.com" target="_blank" class="underline">increase.com</a></li>
-                            <li>Create an OAuth Application in the Increase Dashboard</li>
-                            <li>Set the Redirect URI to: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ route('increase.oauth.callback') }}</code></li>
-                            <li>Add INCREASE_CLIENT_ID and INCREASE_CLIENT_SECRET to your .env file</li>
-                            <li>Click "Connect with Increase" below</li>
+                            <li>{{ __('Create an account at') }} <a href="https://increase.com" target="_blank" class="underline">increase.com</a></li>
+                            <li>{{ __('Create an OAuth Application in the Increase Dashboard') }}</li>
+                            <li>{{ __('Set the Redirect URI to:') }} <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ route('increase.oauth.callback') }}</code></li>
+                            <li>{{ __('Add INCREASE_CLIENT_ID and INCREASE_CLIENT_SECRET to your .env file') }}</li>
+                            <li>{{ __('Click "Connect with Increase" below') }}</li>
                         </ol>
                     </flux:callout.text>
                 </flux:callout>
 
                 <div class="flex items-center gap-4">
                     @if ($this->increaseConnected)
-                        <flux:badge color="green" size="lg">Connected</flux:badge>
-                        <flux:button variant="danger" size="sm" wire:click="disconnectIncrease" wire:confirm="Are you sure you want to disconnect Increase?">Disconnect</flux:button>
+                        <flux:badge color="green" size="lg">{{ __('Connected') }}</flux:badge>
+                        <flux:button variant="danger" size="sm" wire:click="disconnectIncrease" wire:confirm="{{ __('Are you sure you want to disconnect Increase?') }}">{{ __('Disconnect') }}</flux:button>
                     @else
-                        <flux:badge color="zinc" size="lg">Not Connected</flux:badge>
+                        <flux:badge color="zinc" size="lg">{{ __('Not Connected') }}</flux:badge>
                         @if ($increase_enabled)
-                            <flux:button variant="primary" wire:click="connectIncrease">Connect with Increase</flux:button>
+                            <flux:button variant="primary" wire:click="connectIncrease">{{ __('Connect with Increase') }}</flux:button>
                         @endif
                     @endif
                 </div>
 
                 <div class="flex items-center gap-4">
-                    <flux:button wire:click="saveIncreaseSettings">Save Increase Settings</flux:button>
-                    <x-action-message on="increase-settings-saved">Saved.</x-action-message>
+                    <flux:button wire:click="saveIncreaseSettings">{{ __('Save Increase Settings') }}</flux:button>
+                    <x-action-message on="increase-settings-saved">{{ __('Saved.') }}</x-action-message>
                 </div>
             </div>
 
             <flux:separator />
 
             {{-- Section E: Recent Split Activity --}}
-            <flux:heading size="sm">Recent Split Activity</flux:heading>
+            <flux:heading size="sm">{{ __('Recent Split Activity') }}</flux:heading>
 
             @if ($this->recentSplits->isEmpty())
-                <flux:text size="sm" class="text-zinc-400">No payment splits yet.</flux:text>
+                <flux:text size="sm" class="text-zinc-400">{{ __('No payment splits yet.') }}</flux:text>
             @else
                 <div class="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
                     <table class="w-full text-sm">
                         <thead class="bg-zinc-50 dark:bg-zinc-800">
                             <tr>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Date</th>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Payment</th>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Destination</th>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Amount</th>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Status</th>
-                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">Actions</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Date') }}</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Payment') }}</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Destination') }}</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Amount') }}</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Status') }}</th>
+                                <th class="px-4 py-2 text-left font-medium text-zinc-700 dark:text-zinc-300">{{ __('Actions') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -419,7 +418,7 @@ new class extends Component {
                                     </td>
                                     <td class="px-4 py-2">
                                         @if ($split->status === 'failed')
-                                            <flux:button size="xs" wire:click="retrySplit({{ $split->id }})">Retry</flux:button>
+                                            <flux:button size="xs" wire:click="retrySplit({{ $split->id }})">{{ __('Retry') }}</flux:button>
                                         @endif
                                     </td>
                                 </tr>

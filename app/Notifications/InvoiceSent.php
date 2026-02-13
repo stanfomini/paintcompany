@@ -30,24 +30,24 @@ class InvoiceSent extends Notification implements ShouldQueue
         $paymentUrl = $this->invoice->getPublicUrl();
 
         $message = (new MailMessage)
-            ->subject("Invoice {$this->invoice->invoice_number} from {$appName}")
-            ->greeting("Hello {$notifiable->first_name}!")
-            ->line("You have a new invoice from {$appName}.")
-            ->line("**Invoice:** {$this->invoice->invoice_number}")
-            ->line('**Type:** '.ucfirst(str_replace('_', ' ', $this->invoice->type)))
-            ->line('**Total:** $'.number_format((float) $this->invoice->total, 2))
-            ->line('**Balance Due:** $'.number_format((float) $this->invoice->balance_due, 2));
+            ->subject(__('Invoice :number from :appName', ['number' => $this->invoice->invoice_number, 'appName' => $appName]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->first_name]))
+            ->line(__('You have a new invoice from :appName.', ['appName' => $appName]))
+            ->line('**'.__('Invoice').':** '.$this->invoice->invoice_number)
+            ->line('**'.__('Type').':** '.ucfirst(str_replace('_', ' ', $this->invoice->type)))
+            ->line('**'.__('Total').':** $'.number_format((float) $this->invoice->total, 2))
+            ->line('**'.__('Balance Due').':** $'.number_format((float) $this->invoice->balance_due, 2));
 
         if ($this->invoice->due_date) {
-            $message->line("**Due Date:** {$this->invoice->due_date->format('M j, Y')}");
+            $message->line('**'.__('Due Date').':** '.$this->invoice->due_date->format('M j, Y'));
         }
 
         if ($paymentUrl) {
-            $message->action('View & Pay Invoice', $paymentUrl);
+            $message->action(__('View & Pay Invoice'), $paymentUrl);
         }
 
-        $message->line('Click the button above to view your invoice and make a payment.')
-            ->line('If you have any questions, please don\'t hesitate to reach out.');
+        $message->line(__('Click the button above to view your invoice and make a payment.'))
+            ->line(__("If you have any questions, please don't hesitate to reach out."));
 
         return $message;
     }

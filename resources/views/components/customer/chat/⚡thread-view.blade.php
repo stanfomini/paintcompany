@@ -22,8 +22,8 @@ new #[Layout('components.layouts.customer', ['title' => 'Conversation'])] class 
     {
         $user = auth('customer')->user();
 
-        // Authorization: thread must be deal type
-        if ($thread->type !== ChatThread::TYPE_DEAL) {
+        // Authorization: thread must be deal or direct type
+        if (! in_array($thread->type, [ChatThread::TYPE_DEAL, ChatThread::TYPE_DIRECT], true)) {
             throw new NotFoundHttpException('Thread not found.');
         }
 
@@ -38,15 +38,44 @@ new #[Layout('components.layouts.customer', ['title' => 'Conversation'])] class 
         app(ChatService::class)->markThreadAsRead($thread, $user);
     }
 
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:chat.thread.{$this->thread->id},.message.sent" => 'onNewMessage',
+            "echo-private:chat.thread.{$this->thread->id},.message.read" => '$refresh',
+        ];
+    }
+
     #[On('message-sent')]
     public function onMessageSent(): void
     {
         $user = auth('customer')->user();
         app(ChatService::class)->markThreadAsRead($this->thread, $user);
     }
+
+    public function onNewMessage(): void
+    {
+        unset($this->messages);
+        app(ChatService::class)->markThreadAsRead($this->thread, auth('customer')->user());
+    }
 }; ?>
 
-<div wire:poll.10s>
+<div
+    x-data="{ pollTimer: null }"
+    x-init="
+        if (window.Echo?.connector?.pusher) {
+            window.Echo.connector.pusher.connection.bind('disconnected', () => {
+                this.pollTimer = setInterval(() => $wire.$refresh(), 30000);
+            });
+            window.Echo.connector.pusher.connection.bind('connected', () => {
+                if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+            });
+        } else {
+            this.pollTimer = setInterval(() => $wire.$refresh(), 15000);
+        }
+    "
+    x-on:beforeunmount.window="if (this.pollTimer) clearInterval(this.pollTimer)"
+>
     <div class="max-w-4xl mx-auto">
         <div class="mb-6">
             <flux:button variant="ghost" href="{{ route('customer.chat.index') }}" icon="arrow-left">
@@ -58,16 +87,15 @@ new #[Layout('components.layouts.customer', ['title' => 'Conversation'])] class 
             <!-- Thread Header -->
             <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center">
-                        <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
+                    @php $isDirect = $thread->type === \App\Models\ChatThread::TYPE_DIRECT; @endphp
+                    <div class="w-10 h-10 rounded-full {{ $isDirect ? 'bg-teal-100 dark:bg-teal-900/30' : 'bg-zinc-200 dark:bg-zinc-700' }} flex items-center justify-center">
+                        <flux:icon name="{{ $isDirect ? 'user' : 'chat-bubble-left-right' }}" class="w-5 h-5 {{ $isDirect ? 'text-teal-500' : 'text-zinc-500' }}" />
                     </div>
                     <div>
                         <flux:heading size="lg">{{ $thread->getDisplayNameFor(auth('customer')->user()) }}</flux:heading>
-                        @if ($thread->deal)
-                            <flux:text class="text-sm text-zinc-500">
-                                {{ __('Project Conversation') }}
-                            </flux:text>
-                        @endif
+                        <flux:text class="text-sm text-zinc-500">
+                            {{ $isDirect ? __('Direct Message') : __('Project Conversation') }}
+                        </flux:text>
                     </div>
                 </div>
             </div>
@@ -111,9 +139,14 @@ new #[Layout('components.layouts.customer', ['title' => 'Conversation'])] class 
                                             <flux:text class="text-xs text-zinc-400 italic">{{ __('(edited)') }}</flux:text>
                                         @endif
                                     </div>
-                                    <div class="rounded-lg p-3 {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                    <div class="rounded-lg p-3 {{ $isOwnMessage ? 'bg-teal-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
                                         @if ($message->isAudio())
                                             {{-- Audio message --}}
+                                            @php
+                                                $audioUrl = $message->metadata['audio_url'] ?? '';
+                                                $audioMime = $message->metadata['audio_mime_type'] ?? null;
+                                                $isM4a = $audioMime === 'audio/mp4' || str_ends_with($audioUrl, '.m4a');
+                                            @endphp
                                             <div class="space-y-2">
                                                 {{-- Audio player with multiple source formats for cross-browser support --}}
                                                 <div
@@ -138,51 +171,55 @@ new #[Layout('components.layouts.customer', ['title' => 'Conversation'])] class 
                                                         x-on:loadedmetadata="handleLoaded()"
                                                         x-show="!audioError"
                                                     >
-                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}">
-                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}" type="video/webm">
-                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}" type="audio/webm; codecs=opus">
-                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}" type="audio/webm">
-                                                        Your browser does not support audio playback.
+                                                        @if ($isM4a)
+                                                            <source src="{{ $audioUrl }}" type="audio/mp4">
+                                                        @else
+                                                            <source src="{{ $audioUrl }}" type="audio/webm; codecs=opus">
+                                                            <source src="{{ $audioUrl }}" type="audio/webm">
+                                                        @endif
+                                                        <source src="{{ $audioUrl }}" type="audio/mp4">
+                                                        <source src="{{ $audioUrl }}">
+                                                        {{ __('Your browser does not support audio playback.') }}
                                                     </audio>
 
                                                     {{-- Error state --}}
-                                                    <div x-show="audioError" x-cloak class="flex items-center gap-2 text-xs {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-500' }}">
+                                                    <div x-show="audioError" x-cloak class="flex items-center gap-2 text-xs {{ $isOwnMessage ? 'text-teal-200' : 'text-zinc-500' }}">
                                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                                         </svg>
-                                                        <span>Audio unavailable</span>
-                                                        <a href="{{ $message->metadata['audio_url'] ?? '' }}" download class="underline hover:no-underline">Download</a>
+                                                        <span>{{ __('Audio unavailable') }}</span>
+                                                        <a href="{{ $message->metadata['audio_url'] ?? '' }}" download class="underline hover:no-underline">{{ __('Download') }}</a>
                                                     </div>
                                                 </div>
 
                                                 {{-- Duration indicator --}}
                                                 @if (!empty($message->metadata['audio_duration']))
-                                                    <div class="text-xs {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}">
+                                                    <div class="text-xs {{ $isOwnMessage ? 'text-teal-200' : 'text-zinc-500 dark:text-zinc-400' }}">
                                                         {{ gmdate('i:s', (int) $message->metadata['audio_duration']) }}
                                                     </div>
                                                 @endif
 
                                                 {{-- Transcription --}}
                                                 @if (!empty($message->metadata['transcription']))
-                                                    <div class="pt-1 border-t {{ $isOwnMessage ? 'border-blue-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
-                                                        <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-blue-100' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                    <div class="pt-1 border-t {{ $isOwnMessage ? 'border-teal-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
+                                                        <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-teal-100' : 'text-zinc-600 dark:text-zinc-400' }}">
                                                             "{{ $message->metadata['transcription'] }}"
                                                         </flux:text>
                                                     </div>
                                                 @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
-                                                    <div class="text-xs {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-500' }}">
-                                                        <span class="animate-pulse">Transcribing...</span>
+                                                    <div class="text-xs {{ $isOwnMessage ? 'text-teal-200' : 'text-zinc-500' }}">
+                                                        <span class="animate-pulse">{{ __('Transcribing...') }}</span>
                                                     </div>
                                                 @elseif (($message->metadata['transcription_status'] ?? '') === 'failed')
-                                                    <div class="text-xs {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-500' }}">
-                                                        Transcription unavailable
+                                                    <div class="text-xs {{ $isOwnMessage ? 'text-teal-200' : 'text-zinc-500' }}">
+                                                        {{ __('Transcription unavailable') }}
                                                     </div>
                                                 @endif
 
                                                 {{-- Retention notice --}}
-                                                <div class="text-xs {{ $isOwnMessage ? 'text-blue-200/60' : 'text-zinc-400 dark:text-zinc-500' }}">
+                                                <div class="text-xs {{ $isOwnMessage ? 'text-teal-200/60' : 'text-zinc-400 dark:text-zinc-500' }}">
                                                     <flux:icon name="clock" class="inline h-3 w-3 mr-0.5" />
-                                                    Audio files are deleted after 30 days
+                                                    {{ __('Audio files are deleted after 30 days') }}
                                                 </div>
                                             </div>
                                         @else

@@ -35,18 +35,18 @@ class CrewComplianceExpiring extends Notification implements ShouldQueue
         $label = $companyName ? "{$crewName} ({$companyName})" : $crewName;
 
         $mail = (new MailMessage)
-            ->subject("Crew Compliance Alert: {$crewName}")
-            ->greeting("Hello {$notifiable->name}!")
-            ->line("The following compliance documents for **{$label}** need attention:");
+            ->subject(__('Crew Compliance Alert: :name', ['name' => $crewName]))
+            ->greeting(__('Hello :name!', ['name' => $notifiable->name]))
+            ->line(__('The following compliance documents for **:label** need attention:', ['label' => $label]));
 
         foreach ($this->expiringItems as $item) {
-            $status = $item['type'] === 'expired' ? 'EXPIRED' : 'expiring soon';
+            $status = $item['type'] === 'expired' ? __('EXPIRED') : __('expiring soon');
             $mail->line("- **{$item['label']}**: {$status} ({$item['expires']})");
         }
 
         return $mail
-            ->action('View Crew', route('crews.show', $this->crew))
-            ->line('Please reach out to the crew to get their documents updated.');
+            ->action(__('View Crew'), route('crews.show', $this->crew))
+            ->line(__('Please reach out to the crew to get their documents updated.'));
     }
 
     /**

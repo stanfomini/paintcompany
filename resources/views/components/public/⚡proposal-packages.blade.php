@@ -22,6 +22,9 @@ new class extends Component {
     /** @var array<int, array<string, mixed>> */
     public array $optionalItems = [];
 
+    /** @var array<string, array<int, array<string, mixed>>> Template add-ons keyed by legacy tier */
+    public array $templateAddons = [];
+
     /**
      * Whether using the new value-add package template system.
      */
@@ -52,6 +55,7 @@ new class extends Component {
         } else {
             $this->loadPackages();
             $this->loadOptionalItems();
+            $this->loadTemplateAddons();
         }
     }
 
@@ -185,6 +189,72 @@ new class extends Component {
                 'is_selected_by_customer' => $item->is_selected_by_customer,
             ];
         })->toArray();
+    }
+
+    /**
+     * Load add-on items from PackageTemplates for legacy package cards.
+     * Maps template tiers (good/better/best) to legacy tiers (basic/standard/premium).
+     */
+    public function loadTemplateAddons(): void
+    {
+        $templates = PackageTemplate::active()
+            ->with('defaultItems')
+            ->ordered()
+            ->get();
+
+        if ($templates->isEmpty()) {
+            return;
+        }
+
+        $paintingTotal = (float) $this->estimate->areas_subtotal;
+
+        // Map new template tiers to legacy package tiers
+        $tierMap = [
+            'good' => 'basic',
+            'better' => 'standard',
+            'best' => 'premium',
+        ];
+
+        foreach ($templates as $template) {
+            $legacyTier = $tierMap[$template->tier] ?? null;
+
+            if (! $legacyTier) {
+                continue;
+            }
+
+            $templateItems = $template->defaultItems->isNotEmpty()
+                ? $template->defaultItems
+                : $template->items;
+
+            $hasWarrantyItem = $templateItems->contains(function ($item) {
+                return $item->pricing_type === 'percent' && $item->is_customer_selectable;
+            });
+
+            $addons = [];
+
+            // Include template-level warranty only if no warranty item exists in defaultItems
+            if (! $hasWarrantyItem && $template->warranty_months > 0) {
+                $addons[] = [
+                    'name' => $template->warranty_description,
+                    'description' => null,
+                    'pricing_type' => 'percent',
+                    'price' => $template->calculateWarrantyCost($paintingTotal),
+                    'is_warranty' => true,
+                ];
+            }
+
+            foreach ($templateItems as $item) {
+                $addons[] = [
+                    'name' => $item->name,
+                    'description' => $item->description,
+                    'pricing_type' => $item->pricing_type,
+                    'price' => $item->calculatePrice($paintingTotal),
+                    'is_warranty' => $item->pricing_type === 'percent' && $item->is_customer_selectable,
+                ];
+            }
+
+            $this->templateAddons[$legacyTier] = $addons;
+        }
     }
 
     public function selectPackage(int $packageId): void
@@ -468,20 +538,20 @@ new class extends Component {
         // Validate selection based on system used
         if ($this->usePackageTemplates) {
             if (! $this->selectedTier) {
-                session()->flash('error', 'Please select a package before proceeding.');
+                session()->flash('error', __('Please select a package before proceeding.'));
 
                 return;
             }
         } else {
             if (! $this->selectedPackageId) {
-                session()->flash('error', 'Please select a package before proceeding.');
+                session()->flash('error', __('Please select a package before proceeding.'));
 
                 return;
             }
         }
 
         if ($this->estimate->status === 'accepted') {
-            session()->flash('error', 'This proposal has already been accepted.');
+            session()->flash('error', __('This proposal has already been accepted.'));
 
             return;
         }
@@ -576,6 +646,9 @@ new class extends Component {
         }
 
         if ($itemable instanceof \App\Models\EstimateArea) {
+            if ($itemable->is_fixed_price) {
+                return 'Fixed Price';
+            }
             if ($itemable->length && $itemable->width && $itemable->height) {
                 return number_format($itemable->length, 1)."' x ".number_format($itemable->width, 1)."' x ".number_format($itemable->height, 1)."'";
             }

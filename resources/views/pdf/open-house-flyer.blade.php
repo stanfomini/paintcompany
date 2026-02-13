@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Open House Flyer - {{ $listing->address }}</title>
+    <title>{{ __('Open House Flyer') }} - {{ $listing->address }}</title>
     <style>
         * {
             margin: 0;
@@ -224,11 +224,11 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="company-name">Apex Negotiations</div>
-            <div class="company-tagline">Property Tax Savings Specialists</div>
+            <div class="company-name">{{ __('Apex Negotiations') }}</div>
+            <div class="company-tagline">{{ __('Property Tax Savings Specialists') }}</div>
         </div>
 
-        <div class="open-house-badge">Open House</div>
+        <div class="open-house-badge">{{ __('Open House') }}</div>
 
         <div class="property-section">
             <div class="property-address">{{ $listing->address }}</div>
@@ -237,15 +237,15 @@
 
         @if ($listing->open_house_date)
             <div class="open-house-date">
-                <div class="date-label">Date & Time</div>
+                <div class="date-label">{{ __('Date & Time') }}</div>
                 <div class="date-value">{{ $listing->open_house_date->format('l, F j, Y \a\t g:i A') }}</div>
             </div>
         @endif
 
         <div class="services-section">
-            <div class="services-title">Free Property Tax Savings Consultation</div>
+            <div class="services-title">{{ __('Free Property Tax Savings Consultation') }}</div>
             <div class="services-text">
-                Discover how you can potentially reduce your property taxes. Our experts specialize in property tax appeals and negotiations. Sign up today for a free consultation and find out if you're overpaying on your property taxes!
+                {{ __('Discover how you can potentially reduce your property taxes. Our experts specialize in property tax appeals and negotiations. Sign up today for a free consultation and find out if you\'re overpaying on your property taxes!') }}
             </div>
         </div>
 
@@ -253,13 +253,13 @@
             <div class="qr-code">
                 {!! $qrCodeSvg !!}
             </div>
-            <div class="scan-text">Scan to Sign Up</div>
-            <div class="scan-subtext">for your free property tax savings consultation</div>
+            <div class="scan-text">{{ __('Scan to Sign Up') }}</div>
+            <div class="scan-subtext">{{ __('for your free property tax savings consultation') }}</div>
             <div class="url-text">{{ str_replace(['http://', 'https://'], '', $signupUrl) }}</div>
         </div>
 
         <div class="agent-section">
-            <div class="agent-title">Your Agent</div>
+            <div class="agent-title">{{ __('Your Agent') }}</div>
             <div class="agent-info">
                 <div class="agent-details">
                     <div class="agent-name">{{ $agent->name }}</div>
@@ -277,7 +277,7 @@
         </div>
 
         <div class="footer">
-            <p>Apex Negotiations - Helping homeowners save on property taxes</p>
+            <p>{{ __('Apex Negotiations - Helping homeowners save on property taxes') }}</p>
         </div>
     </div>
 </body>

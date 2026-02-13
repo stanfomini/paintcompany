@@ -303,12 +303,12 @@ new class extends Component
     protected function actionTypeLabel(string $type): string
     {
         return match ($type) {
-            'daily' => 'Daily',
-            'weekly' => 'Weekly',
-            'monthly' => 'Monthly',
-            'quarterly' => 'Quarterly',
-            'annual' => 'Annual',
-            'ongoing' => 'Ongoing',
+            'daily' => __('Daily'),
+            'weekly' => __('Weekly'),
+            'monthly' => __('Monthly'),
+            'quarterly' => __('Quarterly'),
+            'annual' => __('Annual'),
+            'ongoing' => __('Ongoing'),
             default => ucfirst($type),
         };
     }
@@ -432,28 +432,28 @@ new class extends Component
     protected function dayOfWeekLabel(int $day): string
     {
         return match ($day) {
-            1 => 'Monday',
-            2 => 'Tuesday',
-            3 => 'Wednesday',
-            4 => 'Thursday',
-            5 => 'Friday',
-            6 => 'Saturday',
-            7 => 'Sunday',
-            default => 'Monday',
+            1 => __('Monday'),
+            2 => __('Tuesday'),
+            3 => __('Wednesday'),
+            4 => __('Thursday'),
+            5 => __('Friday'),
+            6 => __('Saturday'),
+            7 => __('Sunday'),
+            default => __('Monday'),
         };
     }
 
     protected function dayOfWeekShort(int $day): string
     {
         return match ($day) {
-            1 => 'Mon',
-            2 => 'Tue',
-            3 => 'Wed',
-            4 => 'Thu',
-            5 => 'Fri',
-            6 => 'Sat',
-            7 => 'Sun',
-            default => 'Mon',
+            1 => __('Mon'),
+            2 => __('Tue'),
+            3 => __('Wed'),
+            4 => __('Thu'),
+            5 => __('Fri'),
+            6 => __('Sat'),
+            7 => __('Sun'),
+            default => __('Mon'),
         };
     }
 
@@ -468,9 +468,9 @@ new class extends Component
     {{-- Header --}}
     <div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-            <flux:heading size="lg">Life Commitments</flux:heading>
+            <flux:heading size="lg">{{ __('Life Commitments') }}</flux:heading>
             <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                Track personal and business commitments by area of life.
+                {{ __('Track personal and business commitments by area of life.') }}
             </flux:text>
         </div>
 
@@ -481,13 +481,13 @@ new class extends Component
                     wire:click="$set('viewMode', 'commitments')"
                     class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {{ $viewMode === 'commitments' ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
                 >
-                    Commitments
+                    {{ __('Commitments') }}
                 </button>
                 <button
                     wire:click="$set('viewMode', 'calendar')"
                     class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors {{ $viewMode === 'calendar' ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
                 >
-                    Calendar
+                    {{ __('Calendar') }}
                 </button>
             </div>
 
@@ -496,7 +496,7 @@ new class extends Component
 
             @if ($this->canManage)
                 <flux:button wire:click="openCreateModal" variant="primary" icon="plus" size="sm">
-                    Add Commitment
+                    {{ __('Add Commitment') }}
                 </flux:button>
             @endif
         </div>
@@ -506,8 +506,8 @@ new class extends Component
         {{-- Commitments View (Card-based, grouped by area) --}}
         @if ($this->commitments->isEmpty())
             <flux:callout variant="outline" icon="heart">
-                <flux:callout.heading>No commitments yet</flux:callout.heading>
-                <flux:callout.text>Add your first life commitment to start tracking your personal and business goals.</flux:callout.text>
+                <flux:callout.heading>{{ __('No commitments yet') }}</flux:callout.heading>
+                <flux:callout.text>{{ __('Add your first life commitment to start tracking your personal and business goals.') }}</flux:callout.text>
             </flux:callout>
         @else
             <div class="space-y-4">
@@ -546,7 +546,7 @@ new class extends Component
                                             <button
                                                 wire:click="toggleActive({{ $item->id }})"
                                                 class="shrink-0"
-                                                title="{{ $item->is_active ? 'Pause' : 'Activate' }}"
+                                                title="{{ $item->is_active ? __('Pause') : __('Activate') }}"
                                             >
                                                 <div class="flex h-5 w-5 items-center justify-center rounded-full {{ $item->is_active ? $config['dotColor'] : 'bg-zinc-300 dark:bg-zinc-600' }}">
                                                     @if ($item->is_active)
@@ -571,14 +571,14 @@ new class extends Component
                                             </p>
                                             <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                                                 @if ($item->start_date)
-                                                    Starts {{ $item->start_date->format('M j, Y') }}
+                                                    {{ __('Starts') }} {{ $item->start_date->format('M j, Y') }}
                                                 @endif
                                                 @if ($item->action_type === 'weekly' && ! empty($item->recurrence_days))
                                                     @if ($item->start_date) &middot; @endif
-                                                    Every {{ $this->formatRecurrenceDays($item->recurrence_days) }}
+                                                    {{ __('Every') }} {{ $this->formatRecurrenceDays($item->recurrence_days) }}
                                                 @elseif (in_array($item->action_type, ['monthly', 'quarterly']) && $item->recurrence_day_of_month)
                                                     @if ($item->start_date) &middot; @endif
-                                                    Day {{ $item->recurrence_day_of_month }} of month
+                                                    {{ __('Day') }} {{ $item->recurrence_day_of_month }} {{ __('of month') }}
                                                 @endif
                                                 @if ($item->recurrence_time)
                                                     @if ($item->start_date || ($item->action_type === 'weekly' && ! empty($item->recurrence_days)) || (in_array($item->action_type, ['monthly', 'quarterly']) && $item->recurrence_day_of_month))
@@ -600,7 +600,7 @@ new class extends Component
                                                 <flux:button wire:click="moveUp({{ $item->id }})" variant="ghost" size="sm" icon="chevron-up" />
                                                 <flux:button wire:click="moveDown({{ $item->id }})" variant="ghost" size="sm" icon="chevron-down" />
                                                 <flux:button wire:click="openEditModal({{ $item->id }})" variant="ghost" size="sm" icon="pencil-square" />
-                                                <flux:button wire:click="delete({{ $item->id }})" wire:confirm="Are you sure you want to delete this commitment?" variant="ghost" size="sm" icon="trash" class="text-red-500 hover:text-red-700" />
+                                                <flux:button wire:click="delete({{ $item->id }})" wire:confirm="{{ __('Are you sure you want to delete this commitment?') }}" variant="ghost" size="sm" icon="trash" class="text-red-500 hover:text-red-700" />
                                             </div>
                                         @endif
                                     </div>
@@ -683,38 +683,38 @@ new class extends Component
         <form wire:submit="save">
             <div class="space-y-6">
                 <div>
-                    <flux:heading size="lg">{{ $editingId ? 'Edit Commitment' : 'Add Commitment' }}</flux:heading>
-                    <flux:text class="mt-2">Define a personal or business commitment to track.</flux:text>
+                    <flux:heading size="lg">{{ $editingId ? __('Edit Commitment') : __('Add Commitment') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('Define a personal or business commitment to track.') }}</flux:text>
                 </div>
 
                 <flux:field>
-                    <flux:label>Area</flux:label>
-                    <flux:input wire:model="area" placeholder="e.g., Physical Health, Family, Business" />
+                    <flux:label>{{ __('Area') }}</flux:label>
+                    <flux:input wire:model="area" :placeholder="__('e.g., Physical Health, Family, Business')" />
                     <flux:error name="area" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Commitment</flux:label>
-                    <flux:textarea wire:model="commitment" rows="3" placeholder="e.g., Exercise 4x per week" />
+                    <flux:label>{{ __('Commitment') }}</flux:label>
+                    <flux:textarea wire:model="commitment" rows="3" :placeholder="__('e.g., Exercise 4x per week')" />
                     <flux:error name="commitment" />
                 </flux:field>
 
                 <flux:field>
-                    <flux:label>Action Type</flux:label>
+                    <flux:label>{{ __('Action Type') }}</flux:label>
                     <flux:select wire:model.live="action_type">
-                        <flux:select.option value="daily">Daily</flux:select.option>
-                        <flux:select.option value="weekly">Weekly</flux:select.option>
-                        <flux:select.option value="monthly">Monthly</flux:select.option>
-                        <flux:select.option value="quarterly">Quarterly</flux:select.option>
-                        <flux:select.option value="annual">Annual</flux:select.option>
-                        <flux:select.option value="ongoing">Ongoing</flux:select.option>
+                        <flux:select.option value="daily">{{ __('Daily') }}</flux:select.option>
+                        <flux:select.option value="weekly">{{ __('Weekly') }}</flux:select.option>
+                        <flux:select.option value="monthly">{{ __('Monthly') }}</flux:select.option>
+                        <flux:select.option value="quarterly">{{ __('Quarterly') }}</flux:select.option>
+                        <flux:select.option value="annual">{{ __('Annual') }}</flux:select.option>
+                        <flux:select.option value="ongoing">{{ __('Ongoing') }}</flux:select.option>
                     </flux:select>
                     <flux:error name="action_type" />
                 </flux:field>
 
                 @if ($action_type === 'weekly')
                     <flux:field>
-                        <flux:label>Repeat on</flux:label>
+                        <flux:label>{{ __('Repeat on') }}</flux:label>
                         <div class="flex flex-wrap gap-2">
                             @foreach ([1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'] as $dayNum => $dayLabel)
                                 <button
@@ -732,7 +732,7 @@ new class extends Component
 
                 @if (in_array($action_type, ['monthly', 'quarterly']))
                     <flux:field>
-                        <flux:label>Day of month</flux:label>
+                        <flux:label>{{ __('Day of month') }}</flux:label>
                         <flux:input wire:model="recurrence_day_of_month" type="number" min="1" max="31" placeholder="1" />
                         <flux:error name="recurrence_day_of_month" />
                     </flux:field>
@@ -740,29 +740,29 @@ new class extends Component
 
                 @if (in_array($action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual']))
                     <flux:field>
-                        <flux:label>Time (optional)</flux:label>
+                        <flux:label>{{ __('Time (optional)') }}</flux:label>
                         <flux:input wire:model="recurrence_time" type="time" />
                         <flux:error name="recurrence_time" />
                     </flux:field>
                 @endif
 
                 <flux:field>
-                    <flux:label>Start Date (optional)</flux:label>
+                    <flux:label>{{ __('Start Date (optional)') }}</flux:label>
                     <flux:input wire:model="start_date" type="date" />
                     <flux:error name="start_date" />
                 </flux:field>
 
                 <div class="flex items-center gap-3">
                     <flux:switch wire:model="is_active" />
-                    <flux:label>Active</flux:label>
+                    <flux:label>{{ __('Active') }}</flux:label>
                 </div>
 
                 <div class="flex justify-end gap-3">
                     <flux:button variant="ghost" wire:click="$set('showModal', false)" type="button">
-                        Cancel
+                        {{ __('Cancel') }}
                     </flux:button>
                     <flux:button type="submit" variant="primary">
-                        {{ $editingId ? 'Update' : 'Create' }}
+                        {{ $editingId ? __('Update') : __('Create') }}
                     </flux:button>
                 </div>
             </div>
@@ -773,14 +773,14 @@ new class extends Component
     <flux:modal wire:model="showCalendarSync" class="md:w-[28rem]">
         <div class="space-y-6">
             <div>
-                <flux:heading size="lg">Sync to Calendar</flux:heading>
-                <flux:text class="mt-2">Subscribe to your life commitments in your favorite calendar app.</flux:text>
+                <flux:heading size="lg">{{ __('Sync to Calendar') }}</flux:heading>
+                <flux:text class="mt-2">{{ __('Subscribe to your life commitments in your favorite calendar app.') }}</flux:text>
             </div>
 
             @php $calendarUrl = $this->generateCalendarUrl(); @endphp
 
             <flux:field>
-                <flux:label>Calendar Feed URL</flux:label>
+                <flux:label>{{ __('Calendar Feed URL') }}</flux:label>
                 <div class="flex gap-2">
                     <flux:input value="{{ $calendarUrl }}" readonly class="flex-1" />
                     <flux:button
@@ -790,7 +790,7 @@ new class extends Component
                         title="Copy URL"
                     />
                 </div>
-                <flux:text size="sm" class="mt-1 text-zinc-500">This URL auto-updates when you add or change commitments.</flux:text>
+                <flux:text size="sm" class="mt-1 text-zinc-500">{{ __('This URL auto-updates when you add or change commitments.') }}</flux:text>
             </flux:field>
 
             <div class="space-y-2">
@@ -811,7 +811,7 @@ new class extends Component
                         <path d="M0 5.684v12.632h5.684V5.684H0z" fill="#4285F4"/>
                         <path d="M5.684 0H0v5.684h5.684V0z" fill="#188038"/>
                     </svg>
-                    <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Add to Google Calendar</span>
+                    <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ __('Add to Google Calendar') }}</span>
                 </a>
 
                 <a
@@ -821,17 +821,17 @@ new class extends Component
                     <svg class="h-5 w-5 text-zinc-700 dark:text-zinc-300" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V9h14v11z"/>
                     </svg>
-                    <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Add to Apple Calendar / Outlook</span>
+                    <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ __('Add to Apple Calendar / Outlook') }}</span>
                 </a>
             </div>
 
             <flux:text size="sm" class="text-zinc-500">
-                Your calendar app will periodically check for updates. Changes to your commitments will sync automatically.
+                {{ __('Your calendar app will periodically check for updates. Changes to your commitments will sync automatically.') }}
             </flux:text>
 
             <div class="flex justify-end">
                 <flux:button variant="ghost" wire:click="$set('showCalendarSync', false)">
-                    Close
+                    {{ __('Close') }}
                 </flux:button>
             </div>
         </div>

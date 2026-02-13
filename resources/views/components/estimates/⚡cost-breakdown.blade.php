@@ -138,10 +138,10 @@ new class extends Component {
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-4">
                 <flux:button variant="ghost" :href="route('estimates.show', $estimate)" icon="arrow-left" wire:navigate>
-                    Back to Estimate
+                    {{ __('Back to Estimate') }}
                 </flux:button>
                 <div>
-                    <flux:heading size="xl">Cost Breakdown</flux:heading>
+                    <flux:heading size="xl">{{ __('Cost Breakdown') }}</flux:heading>
                     <flux:text class="text-zinc-500">{{ $estimate->estimate_number }} | {{ ucfirst($estimate->project_type ?? 'Interior') }}</flux:text>
                 </div>
             </div>
@@ -217,58 +217,6 @@ new class extends Component {
                             @endif
                         </button>
                     @endforeach
-                </div>
-            </div>
-        @endif
-
-        {{-- Warranty Reserve Status --}}
-        @if (isset($breakdown['warranty_reserve']) && $breakdown['warranty_reserve'])
-            @php $warranty = $breakdown['warranty_reserve']; @endphp
-            <div class="mb-6 border rounded-lg p-4 {{ $warranty['status'] === 'active' ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800' : ($warranty['status'] === 'not_created' ? 'bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700' : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800') }}">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div class="flex-shrink-0">
-                            @if ($warranty['status'] === 'active')
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-                                    <svg class="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-                                    Warranty Active
-                                </span>
-                            @elseif ($warranty['status'] === 'not_created')
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200">
-                                    Warranty Pending
-                                </span>
-                            @elseif ($warranty['status'] === 'expired')
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">
-                                    Warranty Expired
-                                </span>
-                            @elseif ($warranty['status'] === 'fully_claimed')
-                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200">
-                                    Fully Claimed
-                                </span>
-                            @endif
-                        </div>
-                        <div>
-                            <span class="font-semibold">
-                                {{ $warranty['warranty_years'] }}-Year Warranty Reserve
-                            </span>
-                            @if (isset($warranty['warranty_expires_at']))
-                                <span class="text-sm ml-2">
-                                    (Expires: {{ $warranty['warranty_expires_at'] }})
-                                </span>
-                            @endif
-                        </div>
-                    </div>
-                    <div class="text-right">
-                        @if ($warranty['status'] === 'not_created')
-                            <div class="text-lg font-bold">${{ number_format($warranty['expected_reserve'], 2) }}</div>
-                            <div class="text-xs text-zinc-500">Expected reserve</div>
-                        @else
-                            <div class="text-lg font-bold">${{ number_format($warranty['remaining_balance'] ?? 0, 2) }}</div>
-                            <div class="text-xs">
-                                Claimed: ${{ number_format($warranty['amount_claimed'] ?? 0, 2) }} ({{ number_format($warranty['claim_percentage'] ?? 0, 1) }}%)
-                            </div>
-                        @endif
-                    </div>
                 </div>
             </div>
         @endif
@@ -490,12 +438,6 @@ new class extends Component {
                                             <span class="font-mono">${{ number_format($breakdown['cogs']['addon_material_cost'], 2) }}</span>
                                         </div>
                                     @endif
-                                @endif
-                                @if (($breakdown['cogs']['warranty_price'] ?? 0) > 0)
-                                    <div class="flex justify-between text-sm">
-                                        <span class="text-zinc-600 dark:text-zinc-400">Warranty Reserve</span>
-                                        <span class="font-mono">${{ number_format($breakdown['cogs']['warranty_price'], 2) }}</span>
-                                    </div>
                                 @endif
                             </div>
                         </div>
@@ -727,6 +669,9 @@ new class extends Component {
                                             <span class="text-xs text-zinc-500 ml-1">({{ ucfirst($area['scope_type']) }})</span>
                                             @if ($area['is_fixed_price'])
                                                 <span class="ml-1 px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 rounded">Fixed</span>
+                                            @endif
+                                            @if ($area['has_custom_pricing'] ?? false)
+                                                <span class="ml-1 px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded">Custom</span>
                                             @endif
                                         </td>
                                         <td class="px-4 py-3 text-sm text-right">{{ number_format($area['detail']['labor_hours'] + $area['detail']['cleanup_hours'] + ($area['detail']['addon_labor_hours'] ?? 0), 1) }}</td>

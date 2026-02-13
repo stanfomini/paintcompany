@@ -83,6 +83,16 @@ class CustomerFactory extends Factory
     }
 
     /**
+     * Assign the customer to a specific internal user.
+     */
+    public function assignedTo(User $user): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'assigned_to' => $user->id,
+        ]);
+    }
+
+    /**
      * Create a customer with minimal information.
      */
     public function minimal(): static
