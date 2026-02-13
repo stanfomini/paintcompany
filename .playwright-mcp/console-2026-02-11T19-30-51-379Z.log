@@ -1,4 +1,0 @@
-[     458ms] [WARNING] Note: Some companies are required to obtain a license to use Remotion. See: https://remotion.dev/license
-Pass the `acknowledgeRemotionLicense` prop to `<Player />` function to make this message disappear. @ https://apexnegotiations.com/:112
-[     583ms] [WARNING] The AudioContext was not allowed to start. It must be resumed (or created) after a user gesture on the page. https://developer.chrome.com/blog/autoplay/#web_audio @ https://apexnegotiations.com/build/assets/index-OrpPtAux.js:76
-[   33196ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://apexnegotiations.com/images/logo.svg:0

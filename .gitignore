@@ -32,3 +32,20 @@ python/venv/
 __pycache__/
 *.pyc
 *.pyo
+
+# Playwright MCP logs/screenshots
+.playwright-mcp/
+
+# Screenshots (dev artifacts)
+*.png
+!resources/**/*.png
+!public/**/*.png
+
+# Research docs (dev only)
+docs/research/
+
+# Claude plans (dev only)
+.claude/plans/
+
+# Large media files
+public/promo-music.mp3
