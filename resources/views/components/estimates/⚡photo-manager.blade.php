@@ -2,6 +2,7 @@
 
 use App\Models\Estimate;
 use App\Models\PropertyPhoto;
+use App\Services\PhotoService;
 use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
@@ -105,26 +106,44 @@ new class extends Component {
         ]);
 
         $property = $this->estimate->deal?->property;
-        $storagePath = $property
-            ? "photos/properties/{$property->id}/originals"
-            : "photos/estimates/{$this->estimate->id}";
-        $maxSortOrder = $this->estimate->photos()->max('sort_order') ?? 0;
 
-        foreach ($this->uploadedPhotos as $photo) {
-            $filename = $photo->hashName();
-            $path = $photo->storeAs($storagePath, $filename, 'public');
-
-            PropertyPhoto::create([
-                'property_id' => $property?->id,
-                'estimate_id' => $this->estimate->id,
-                'uploaded_by' => auth()->id(),
-                'path' => $path,
-                'filename' => $photo->getClientOriginalName(),
-                'original_filename' => $photo->getClientOriginalName(),
+        if ($property) {
+            $photoService = app(PhotoService::class);
+            $meta = [
                 'category' => $this->defaultCategory,
                 'show_on_proposal' => $this->defaultShowOnProposal,
-                'sort_order' => ++$maxSortOrder,
-            ]);
+                'estimate_id' => $this->estimate->id,
+            ];
+
+            foreach ($this->uploadedPhotos as $photo) {
+                $photoService->upload($photo, $property, auth()->user(), $meta);
+            }
+        } else {
+            // Fallback for estimates without a property
+            $disk = config('filesystems.photos_disk', 'public');
+            $storagePath = "photos/estimates/{$this->estimate->id}";
+            $maxSortOrder = $this->estimate->photos()->max('sort_order') ?? 0;
+
+            foreach ($this->uploadedPhotos as $photo) {
+                $filename = $photo->hashName();
+                $path = $photo->storeAs($storagePath, $filename, $disk);
+
+                PropertyPhoto::create([
+                    'property_id' => null,
+                    'estimate_id' => $this->estimate->id,
+                    'uploaded_by' => auth()->id(),
+                    'path' => $path,
+                    'filename' => $photo->getClientOriginalName(),
+                    'original_filename' => $photo->getClientOriginalName(),
+                    'mime_type' => $photo->getMimeType(),
+                    'file_size' => $photo->getSize(),
+                    'disk' => $disk,
+                    'category' => $this->defaultCategory,
+                    'show_on_proposal' => $this->defaultShowOnProposal,
+                    'sort_order' => ++$maxSortOrder,
+                    'processing_status' => 'pending',
+                ]);
+            }
         }
 
         $this->loadPhotos();
