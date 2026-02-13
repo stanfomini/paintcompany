@@ -63,18 +63,29 @@ return [
         ],
 
         'video-recordings' => [
-            'driver' => env('VIDEO_RECORDINGS_DISK', 'local'),
+            'driver' => 'local',
             'root' => storage_path('app/video-recordings'),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/video-recordings',
             'visibility' => 'private',
             'throw' => false,
-            // For S3/Wasabi production:
-            // 'key' => env('WASABI_ACCESS_KEY_ID'),
-            // 'secret' => env('WASABI_SECRET_ACCESS_KEY'),
-            // 'region' => env('WASABI_DEFAULT_REGION', 'us-east-1'),
-            // 'bucket' => env('WASABI_BUCKET'),
-            // 'endpoint' => env('WASABI_ENDPOINT', 'https://s3.wasabisys.com'),
-            // 'use_path_style_endpoint' => true,
+        ],
+
+        'video-recordings-cloud' => env('VIDEOS_DISK_DRIVER', 'local') === 's3' ? [
+            'driver' => 's3',
+            'key' => env('PHOTOS_AWS_ACCESS_KEY_ID'),
+            'secret' => env('PHOTOS_AWS_SECRET_ACCESS_KEY'),
+            'region' => env('PHOTOS_AWS_DEFAULT_REGION', 'us-east-1'),
+            'bucket' => env('PHOTOS_AWS_BUCKET'),
+            'endpoint' => env('PHOTOS_AWS_ENDPOINT'),
+            'use_path_style_endpoint' => env('PHOTOS_AWS_USE_PATH_STYLE_ENDPOINT', true),
+            'visibility' => 'private',
+            'throw' => true,
+        ] : [
+            'driver' => 'local',
+            'root' => storage_path('app/video-recordings'),
+            'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage/video-recordings',
+            'visibility' => 'private',
+            'throw' => false,
         ],
 
         'photos' => env('PHOTOS_DISK_DRIVER', 'local') === 's3' ? [

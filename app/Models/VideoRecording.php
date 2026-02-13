@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -72,7 +73,7 @@ class VideoRecording extends Model
             return null;
         }
 
-        return Storage::disk($this->disk)->url($path).'?v='.$this->updated_at?->timestamp;
+        return $this->getSignedOrPublicUrl($path, 'video');
     }
 
     public function getThumbnailUrl(): ?string
@@ -81,9 +82,27 @@ class VideoRecording extends Model
             return null;
         }
 
-        $url = Storage::disk($this->disk)->url($this->thumbnail_path);
+        return $this->getSignedOrPublicUrl($this->thumbnail_path, 'thumb');
+    }
 
-        return $url.'?v='.$this->updated_at?->timestamp;
+    /**
+     * Get a signed URL for S3 disks, or a public URL for local disks.
+     */
+    private function getSignedOrPublicUrl(string $path, string $variant): string
+    {
+        $disk = Storage::disk($this->disk);
+        $adapter = $disk->getAdapter();
+
+        if ($adapter instanceof \League\Flysystem\Local\LocalFilesystemAdapter) {
+            return $disk->url($path).'?v='.$this->updated_at?->timestamp;
+        }
+
+        // S3/Wasabi: use cached signed URLs
+        $cacheKey = "video_url:{$this->id}:{$variant}:{$this->updated_at?->timestamp}";
+
+        return Cache::remember($cacheKey, now()->addMinutes(55), function () use ($disk, $path) {
+            return $disk->temporaryUrl($path, now()->addMinutes(60));
+        });
     }
 
     public function getShareableUrl(): ?string

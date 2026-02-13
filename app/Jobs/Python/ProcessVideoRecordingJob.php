@@ -31,8 +31,8 @@ class ProcessVideoRecordingJob implements ShouldQueue
         $this->recording->update(['status' => 'processing']);
 
         try {
-            $disk = Storage::disk($this->recording->disk);
-            $originalPath = $disk->path($this->recording->original_path);
+            $localDisk = Storage::disk('video-recordings');
+            $originalPath = $localDisk->path($this->recording->original_path);
 
             if (! file_exists($originalPath)) {
                 throw new \RuntimeException('Original video file not found: '.$this->recording->original_path);
@@ -51,22 +51,27 @@ class ProcessVideoRecordingJob implements ShouldQueue
                 throw new \RuntimeException('Processing returned failure: '.($result['detail'] ?? 'Unknown error'));
             }
 
-            // Copy processed MP4 to storage
+            // Determine the final storage disk (cloud if configured, else local)
+            $finalDisk = Storage::disk('video-recordings-cloud');
+            $finalDiskName = 'video-recordings-cloud';
+
+            // Copy processed MP4 to final storage
             $videoStoragePath = 'videos/'.$this->recording->id.'.mp4';
             if (isset($result['video_path']) && file_exists($result['video_path'])) {
-                $disk->put($videoStoragePath, file_get_contents($result['video_path']));
+                $finalDisk->put($videoStoragePath, file_get_contents($result['video_path']));
             }
 
-            // Copy thumbnail to storage
+            // Copy thumbnail to final storage
             $thumbnailStoragePath = null;
             if (isset($result['thumbnail_path']) && file_exists($result['thumbnail_path'])) {
                 $thumbnailStoragePath = 'thumbnails/'.$this->recording->id.'.jpg';
-                $disk->put($thumbnailStoragePath, file_get_contents($result['thumbnail_path']));
+                $finalDisk->put($thumbnailStoragePath, file_get_contents($result['thumbnail_path']));
             }
 
-            // Update the recording record
+            // Update the recording record to point at the final disk
             $this->recording->update([
                 'status' => 'ready',
+                'disk' => $finalDiskName,
                 'video_path' => $videoStoragePath,
                 'thumbnail_path' => $thumbnailStoragePath,
                 'duration_seconds' => $result['duration'] ?? null,
@@ -77,11 +82,17 @@ class ProcessVideoRecordingJob implements ShouldQueue
                 'error_message' => null,
             ]);
 
+            // Clean up local originals now that files are on cloud
+            if ($localDisk->exists($this->recording->original_path)) {
+                $localDisk->delete($this->recording->original_path);
+            }
+
             // Clean up temp files on Python side
             $python->cleanupVideoProcessing((string) $this->recording->id);
 
             Log::info('Video recording processed successfully', [
                 'id' => $this->recording->id,
+                'disk' => $finalDiskName,
                 'duration' => $result['duration'] ?? 0,
             ]);
         } catch (\Exception $e) {
@@ -90,7 +101,7 @@ class ProcessVideoRecordingJob implements ShouldQueue
                 'error' => $e->getMessage(),
             ]);
 
-            // Fall back to serving the original file directly
+            // Fall back to serving the original file directly from local disk
             $this->recording->update([
                 'status' => 'ready',
                 'video_path' => null, // getVideoUrl() will fall back to original_path
