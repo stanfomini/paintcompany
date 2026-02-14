@@ -49,6 +49,7 @@ class Estimate extends Model
         'tax_rate',
         'tax_amount',
         'discount_amount',
+        'margin_discount_percent',
         'total',
         'areas_subtotal',
         'items_subtotal',
@@ -89,6 +90,7 @@ class Estimate extends Model
             'tax_rate' => 'decimal:2',
             'tax_amount' => 'decimal:2',
             'discount_amount' => 'decimal:2',
+            'margin_discount_percent' => 'decimal:2',
             'total' => 'decimal:2',
             'areas_subtotal' => 'decimal:2',
             'items_subtotal' => 'decimal:2',
@@ -388,6 +390,108 @@ class Estimate extends Model
     // - Each area uses its scope-specific margin (interior/exterior)
     // - Estimate sums area customer prices + items + options - NO additional margin
     // =========================================================================
+
+    // =========================================================================
+    // MARGIN DISCOUNT METHODS
+    // =========================================================================
+
+    /**
+     * Check if this estimate has a margin discount applied.
+     */
+    public function hasMarginDiscount(): bool
+    {
+        return (float) $this->margin_discount_percent > 0;
+    }
+
+    /**
+     * Get the effective margin for a scope, increased by the estimate's discount.
+     *
+     * In PBP, margin% = COGS-as-%-of-price. Higher margin% = lower customer price.
+     * A "margin discount" increases margin%, making COGS a larger share of the price,
+     * which reduces the customer price (less gross profit).
+     *
+     * Example: Interior 50% margin → OTD = COGS/0.50 = 2x COGS
+     *          With 10% discount  → OTD = COGS/0.60 = 1.67x COGS (lower price)
+     *
+     * @return float Effective margin percent, max 99% (prevents near-zero prices)
+     */
+    public function getEffectiveMarginForScope(string $scope): float
+    {
+        $settings = CompanySetting::getInstance();
+        $globalMargin = $settings->getMarginPercentForScope($scope);
+
+        return min(99, $globalMargin + (float) $this->margin_discount_percent);
+    }
+
+    /**
+     * Calculate OTD (Out The Door) price from COGS using the estimate's effective margin.
+     * PBP Formula: OTD = COGS / (effectiveMargin / 100)
+     */
+    public function calculateOTDFromCOGS(float $cogs, string $scope): float
+    {
+        $effectiveMargin = $this->getEffectiveMarginForScope($scope);
+
+        if ($effectiveMargin <= 0) {
+            return $cogs;
+        }
+
+        return round($cogs / ($effectiveMargin / 100), 2);
+    }
+
+    /**
+     * Calculate the maximum allowable margin discount that keeps net profit >= 10%.
+     *
+     * In PBP, margin% = COGS/price. Discount INCREASES margin%.
+     * Net profit% = (1 - effectiveMargin/100) - allocPercent >= 0.10
+     *
+     * Solving: effectiveMargin <= (1 - allocPercent - 0.10) * 100
+     * maxDiscount = maxEffectiveMargin - globalMargin, clamped to [0, 15]
+     */
+    public function getMaxAllowableDiscount(?string $scope = null): float
+    {
+        $scope = $scope ?? $this->project_type ?? 'interior';
+        $settings = CompanySetting::getInstance();
+        $globalMargin = $settings->getMarginPercentForScope($scope);
+
+        // Calculate total allocation percent (marketing + sales + prod mgmt)
+        $allocPercent = $this->getTotalAllocationPercent($settings);
+
+        // Maximum effective margin to maintain 10% net profit:
+        // netProfit% = (1 - effectiveMargin/100) - allocPercent >= 0.10
+        // effectiveMargin/100 <= 1 - allocPercent - 0.10
+        $maxEffectiveMarginPercent = (1 - $allocPercent - 0.10) * 100;
+
+        // maxDiscount = how far we can increase margin% from global
+        $maxDiscount = $maxEffectiveMarginPercent - $globalMargin;
+
+        return min(15, max(0, round($maxDiscount, 2)));
+    }
+
+    /**
+     * Get the total allocation percent as a decimal (e.g., 0.22 for 22%).
+     * Uses dynamic CompanyAllocation records if they exist, otherwise legacy fields.
+     *
+     * @return float Decimal allocation percent (e.g., 0.22)
+     */
+    protected function getTotalAllocationPercent(CompanySetting $settings): float
+    {
+        if ($settings->allocations()->active()->reducesProfit()->exists()) {
+            $allocations = $settings->getActiveAllocations();
+            $totalPercent = 0;
+            foreach ($allocations as $allocation) {
+                if ($allocation->type === 'percent_of_revenue') {
+                    $totalPercent += (float) $allocation->value;
+                }
+            }
+
+            return $totalPercent / 100;
+        }
+
+        // Legacy fallback: sum the three percent fields
+        return ((float) $settings->marketing_percent
+            + (float) $settings->sales_percent
+            + (float) $settings->production_management_percent) / 100;
+    }
 
     /**
      * Calculate totals from items, areas, and options.

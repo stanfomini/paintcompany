@@ -156,8 +156,8 @@ describe('PhotoManager component', function () {
     });
 
     it('validates photo file size limit', function () {
-        // Create a large image file that exceeds 5MB limit
-        $file = UploadedFile::fake()->image('large-photo.jpg')->size(6000);
+        // Create a large image file that exceeds 20MB limit
+        $file = UploadedFile::fake()->image('large-photo.jpg')->size(21000);
 
         Livewire::actingAs($this->internalUser)
             ->test('estimates.photo-manager', ['estimate' => $this->estimate])

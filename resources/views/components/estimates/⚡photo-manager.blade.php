@@ -44,7 +44,7 @@ new class extends Component {
     {
         return [
             'uploadedPhotos' => ['required', 'array', 'min:1'],
-            'uploadedPhotos.*' => ['image', 'max:5120', 'mimes:jpg,jpeg,png,gif,webp'],
+            'uploadedPhotos.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
             'photoCaption' => ['nullable', 'string', 'max:255'],
             'photoCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'photoShowOnProposal' => ['boolean'],
@@ -56,9 +56,9 @@ new class extends Component {
     {
         return [
             'uploadedPhotos.required' => __('Please select at least one photo to upload.'),
-            'uploadedPhotos.*.image' => __('Each file must be an image.'),
-            'uploadedPhotos.*.max' => __('Each image must be less than 5MB.'),
-            'uploadedPhotos.*.mimes' => __('Only JPG, PNG, GIF, and WebP images are allowed.'),
+            'uploadedPhotos.*.file' => __('Each file must be a valid file.'),
+            'uploadedPhotos.*.max' => __('Each file must be less than 20MB.'),
+            'uploadedPhotos.*.mimes' => __('Only JPG, PNG, GIF, WebP, and PDF files are allowed.'),
         ];
     }
 
@@ -100,7 +100,7 @@ new class extends Component {
     {
         $this->validate([
             'uploadedPhotos' => ['required', 'array', 'min:1'],
-            'uploadedPhotos.*' => ['image', 'max:5120', 'mimes:jpg,jpeg,png,gif,webp'],
+            'uploadedPhotos.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
             'defaultCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'defaultShowOnProposal' => ['boolean'],
         ]);
@@ -328,11 +328,19 @@ new class extends Component {
                 <div wire:key="photo-{{ $photo->id }}" class="group relative border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
                     {{-- Photo Thumbnail --}}
                     <div class="aspect-square bg-zinc-100 dark:bg-zinc-800">
-                        <img
-                            src="{{ $photo->url }}"
-                            alt="{{ $photo->caption ?? $photo->filename }}"
-                            class="w-full h-full object-cover"
-                        />
+                        @if ($photo->mime_type === 'application/pdf')
+                            <a href="{{ $photo->url }}" target="_blank" class="w-full h-full flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+                                <flux:icon name="document" class="w-12 h-12 mb-2" />
+                                <span class="text-xs font-medium">PDF</span>
+                                <span class="text-xs truncate max-w-full px-2">{{ $photo->filename }}</span>
+                            </a>
+                        @else
+                            <img
+                                src="{{ $photo->url }}"
+                                alt="{{ $photo->caption ?? $photo->filename }}"
+                                class="w-full h-full object-cover"
+                            />
+                        @endif
                     </div>
 
                     {{-- Overlay with info --}}
@@ -425,14 +433,14 @@ new class extends Component {
                         <input
                             type="file"
                             wire:model="uploadedPhotos"
-                            accept="image/*"
+                            accept="image/*,.pdf,application/pdf"
                             multiple
                             class="hidden"
                         />
                     </label>
                 </flux:text>
                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                    {{ __('JPG, PNG, GIF, WebP up to 5MB each') }}
+                    {{ __('JPG, PNG, GIF, WebP, PDF up to 20MB each') }}
                 </flux:text>
 
                 {{-- Loading indicator --}}
@@ -459,11 +467,18 @@ new class extends Component {
                         @foreach ($uploadedPhotos as $index => $photo)
                             <div wire:key="preview-{{ $index }}" class="relative aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                                 @if ($photo && method_exists($photo, 'temporaryUrl'))
-                                    <img
-                                        src="{{ $photo->temporaryUrl() }}"
-                                        alt="Preview"
-                                        class="w-full h-full object-cover"
-                                    />
+                                    @if (str_ends_with(strtolower($photo->getClientOriginalName()), '.pdf'))
+                                        <div class="w-full h-full flex flex-col items-center justify-center text-zinc-500">
+                                            <flux:icon name="document" class="w-10 h-10 mb-1" />
+                                            <span class="text-xs truncate max-w-full px-2">{{ $photo->getClientOriginalName() }}</span>
+                                        </div>
+                                    @else
+                                        <img
+                                            src="{{ $photo->temporaryUrl() }}"
+                                            alt="Preview"
+                                            class="w-full h-full object-cover"
+                                        />
+                                    @endif
                                 @endif
                                 <button
                                     type="button"
@@ -526,11 +541,19 @@ new class extends Component {
                 @endphp
                 @if ($editingPhoto)
                     <div class="aspect-video bg-zinc-100 dark:bg-zinc-800 rounded-lg overflow-hidden">
-                        <img
-                            src="{{ $editingPhoto->url }}"
-                            alt="{{ $editingPhoto->caption ?? $editingPhoto->filename }}"
-                            class="w-full h-full object-contain"
-                        />
+                        @if ($editingPhoto->mime_type === 'application/pdf')
+                            <a href="{{ $editingPhoto->url }}" target="_blank" class="w-full h-full flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                                <flux:icon name="document" class="w-16 h-16 mb-2" />
+                                <span class="text-sm font-medium">{{ $editingPhoto->original_filename ?? $editingPhoto->filename }}</span>
+                                <span class="text-xs mt-1 text-blue-600 dark:text-blue-400">{{ __('Click to open PDF') }}</span>
+                            </a>
+                        @else
+                            <img
+                                src="{{ $editingPhoto->url }}"
+                                alt="{{ $editingPhoto->caption ?? $editingPhoto->filename }}"
+                                class="w-full h-full object-contain"
+                            />
+                        @endif
                     </div>
                 @endif
             @endif

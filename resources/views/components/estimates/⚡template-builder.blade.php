@@ -45,6 +45,8 @@ new class extends Component
 
     public float $discountAmount = 0;
 
+    public float $marginDiscountPercent = 0;
+
     public float $depositPercent = 30;
 
     public string $notes = '';
@@ -98,6 +100,7 @@ new class extends Component
             'title' => ['required', 'string', 'max:255'],
             'taxRate' => ['required', 'numeric', 'min:0', 'max:100'],
             'discountAmount' => ['required', 'numeric', 'min:0'],
+            'marginDiscountPercent' => ['required', 'numeric', 'min:0', 'max:15'],
             'depositPercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'validUntil' => ['nullable', 'date', ...($this->isEditing ? [] : ['after_or_equal:today'])],
@@ -154,6 +157,7 @@ new class extends Component
             $this->title = $estimate->title;
             $this->taxRate = (float) $estimate->tax_rate;
             $this->discountAmount = (float) $estimate->discount_amount;
+            $this->marginDiscountPercent = (float) ($estimate->margin_discount_percent ?? 0);
             $this->depositPercent = (float) $estimate->deposit_percent;
             $this->notes = $estimate->notes ?? '';
             $this->validUntil = $estimate->valid_until?->format('Y-m-d');
@@ -389,7 +393,8 @@ new class extends Component
                 // Calculate COGS with taxes
                 $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonTotal);
                 $cogs = $cogsResult['cogs'];
-                $withMargins = $settings->calculateOTDFromCOGS($cogs, $scopeType);
+                $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+                $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
                 // Update template entry with calculated values from surfaces
                 $templateEntry['labor_hours'] = round($totalLaborHours, 2);
@@ -747,8 +752,9 @@ new class extends Component
         $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost);
         $cogs = $cogsResult['cogs'];
 
-        // Apply scope-specific margin: OTD = COGS / (margin% / 100)
-        $withMargins = $settings->calculateOTDFromCOGS($cogs, $scopeType);
+        // Apply scope-specific margin (with discount if applicable): OTD = COGS / (margin% / 100)
+        $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+        $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
         // Get primary paint product ID (for backward compatibility, use first resolved or template default)
         $primaryPaintProductId = $options['paint_product_id'] ?? $this->defaultPaintProductId ?? $template->default_paint_product_id;
@@ -1087,9 +1093,9 @@ new class extends Component
         $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
         $cogs = $cogsResult['cogs'];
 
-        // 8. Apply scope-specific margin: OTD = COGS / (margin% / 100)
-        $marginPercent = $settings->getMarginPercentForScope($scopeType);
-        $withMargins = $settings->calculateOTDFromCOGS($cogs, $scopeType);
+        // 8. Apply scope-specific margin (with discount): OTD = COGS / (margin% / 100)
+        $marginPercent = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+        $withMargins = round($cogs / ($marginPercent / 100), 2);
         $profit = round($withMargins - $cogs, 2);
 
         return [
@@ -1410,6 +1416,123 @@ new class extends Component
         );
     }
 
+    // ===== MARGIN DISCOUNT METHODS =====
+
+    /**
+     * Calculate the maximum allowable margin discount that keeps net profit >= 10%.
+     */
+    #[Computed]
+    public function maxAllowableDiscount(): float
+    {
+        $settings = CompanySetting::getInstance();
+        $globalMargin = $settings->getMarginPercentForScope($this->projectScope);
+
+        // Calculate total allocation percent
+        $allocPercent = 0;
+        if ($settings->allocations()->where('is_active', true)->where('is_informational', false)->exists()) {
+            $allocations = $settings->getActiveAllocations();
+            foreach ($allocations as $allocation) {
+                if ($allocation->type === 'percent_of_revenue') {
+                    $allocPercent += (float) $allocation->value;
+                }
+            }
+            $allocPercent = $allocPercent / 100;
+        } else {
+            $allocPercent = ((float) $settings->marketing_percent
+                + (float) $settings->sales_percent
+                + (float) $settings->production_management_percent) / 100;
+        }
+
+        // Max effective margin to keep 10% net profit:
+        // netProfit% = (1 - effectiveMargin/100) - allocPercent >= 0.10
+        // effectiveMargin <= (1 - allocPercent - 0.10) * 100
+        $maxEffectiveMargin = (1 - $allocPercent - 0.10) * 100;
+        $maxDiscount = $maxEffectiveMargin - $globalMargin;
+
+        return min(15, max(0, round($maxDiscount, 2)));
+    }
+
+    /**
+     * Get the estimated net profit percent after margin discount and allocations.
+     */
+    #[Computed]
+    public function estimatedNetProfitPercent(): float
+    {
+        $settings = CompanySetting::getInstance();
+        $effectiveMargin = min(99, $settings->getMarginPercentForScope($this->projectScope) + $this->marginDiscountPercent);
+
+        // Gross profit % = 1 - (COGS/price) = 1 - (effectiveMargin/100)
+        $grossProfitPercent = 1 - ($effectiveMargin / 100);
+
+        // Allocation percent
+        $allocPercent = 0;
+        if ($settings->allocations()->where('is_active', true)->where('is_informational', false)->exists()) {
+            $allocations = $settings->getActiveAllocations();
+            foreach ($allocations as $allocation) {
+                if ($allocation->type === 'percent_of_revenue') {
+                    $allocPercent += (float) $allocation->value;
+                }
+            }
+            $allocPercent = $allocPercent / 100;
+        } else {
+            $allocPercent = ((float) $settings->marketing_percent
+                + (float) $settings->sales_percent
+                + (float) $settings->production_management_percent) / 100;
+        }
+
+        return round(($grossProfitPercent - $allocPercent) * 100, 1);
+    }
+
+    /**
+     * Handle margin discount changes - recalculate all prices.
+     */
+    public function updatedMarginDiscountPercent(): void
+    {
+        // Clamp to [0, min(15, maxAllowableDiscount)]
+        $max = min(15, $this->maxAllowableDiscount);
+        $this->marginDiscountPercent = max(0, min($max, $this->marginDiscountPercent));
+
+        // Recalculate all areas/templates with new effective margin
+        $this->recalculateAllPricesWithDiscount();
+    }
+
+    /**
+     * Recalculate all prices applying the current margin discount.
+     * Only reapplies margin to existing COGS - does not recalculate COGS.
+     */
+    protected function recalculateAllPricesWithDiscount(): void
+    {
+        $settings = CompanySetting::getInstance();
+
+        // Recalculate areas
+        foreach ($this->areas as $index => $area) {
+            $cogs = $area['base_total'] ?? 0;
+            if ($cogs <= 0) {
+                continue;
+            }
+            $scopeType = $area['scope_type'] ?? $this->projectScope;
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+            $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+            $this->areas[$index]['with_margins'] = $withMargins;
+            $this->areas[$index]['price'] = $withMargins;
+        }
+
+        // Recalculate selectedTemplates
+        foreach ($this->selectedTemplates as $index => $templateData) {
+            $cogs = $templateData['base_total'] ?? 0;
+            if ($cogs <= 0) {
+                continue;
+            }
+            $scopeType = $templateData['scope_type'] ?? $this->projectScope;
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+            $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+            $this->selectedTemplates[$index]['with_margins'] = $withMargins;
+            $this->selectedTemplates[$index]['price'] = $withMargins;
+        }
+    }
+
     /**
      * Calculate the subtotal from all areas or selected templates.
      */
@@ -1706,7 +1829,8 @@ new class extends Component
         // Calculate COGS with taxes
         $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonCost);
         $cogs = $cogsResult['cogs'];
-        $withMargins = $settings->calculateOTDFromCOGS($cogs, $scopeType);
+        $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+        $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
         $this->selectedTemplates[$index]['labor_hours'] = round($totalLaborHours, 2);
         $this->selectedTemplates[$index]['labor_cost'] = round($laborCost, 2);
@@ -2010,6 +2134,7 @@ new class extends Component
             'tax_rate' => $this->taxRate,
             'tax_amount' => $this->taxAmount,
             'discount_amount' => $this->discountAmount,
+            'margin_discount_percent' => $this->marginDiscountPercent,
             'total' => $this->total,
             'deposit_percent' => $this->depositPercent,
             'deposit_amount' => $this->depositAmount,
@@ -2537,13 +2662,6 @@ new class extends Component
         }
 
         if (! $this->estimate) {
-            return;
-        }
-
-        // Check if estimate already has areas
-        if ($this->estimate->areas()->count() > 0) {
-            $this->aiBuildMessage = 'This estimate already has areas. Clear them before using AI Build.';
-
             return;
         }
 
@@ -3488,6 +3606,34 @@ new class extends Component
                                 </div>
                             </flux:field>
                             <flux:field>
+                                <flux:label>{{ __('Margin Discount') }}</flux:label>
+                                <div class="flex items-center gap-2">
+                                    <flux:input wire:model.live.debounce.300ms="marginDiscountPercent" type="number" step="0.5" min="0" max="{{ $this->maxAllowableDiscount }}" placeholder="0" class="flex-1" />
+                                    <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">%</span>
+                                </div>
+                                @if ($marginDiscountPercent > 0)
+                                    <div class="mt-1 space-y-1">
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ __('Effective margin') }}: {{ number_format(\App\Models\CompanySetting::getInstance()->getMarginPercentForScope($projectScope) + $marginDiscountPercent, 1) }}%
+                                            <span class="text-zinc-400 dark:text-zinc-500">({{ __('was') }} {{ number_format(\App\Models\CompanySetting::getInstance()->getMarginPercentForScope($projectScope), 1) }}%)</span>
+                                        </p>
+                                        @if ($this->estimatedNetProfitPercent < 12 && $this->estimatedNetProfitPercent >= 10)
+                                            <p class="text-xs text-amber-600 dark:text-amber-400">
+                                                {{ __('Net profit: :percent% — approaching floor', ['percent' => number_format($this->estimatedNetProfitPercent, 1)]) }}
+                                            </p>
+                                        @elseif ($this->estimatedNetProfitPercent <= 10)
+                                            <p class="text-xs text-red-600 dark:text-red-400 font-medium">
+                                                {{ __('Net profit: :percent% — at minimum floor', ['percent' => number_format($this->estimatedNetProfitPercent, 1)]) }}
+                                            </p>
+                                        @else
+                                            <p class="text-xs text-green-600 dark:text-green-400">
+                                                {{ __('Est. net profit: :percent%', ['percent' => number_format($this->estimatedNetProfitPercent, 1)]) }}
+                                            </p>
+                                        @endif
+                                    </div>
+                                @endif
+                            </flux:field>
+                            <flux:field>
                                 <flux:label>{{ __('Deposit Required') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <flux:input wire:model.live="depositPercent" type="number" step="1" min="0" max="100" placeholder="30" class="flex-1" />
@@ -3541,7 +3687,7 @@ new class extends Component
                     </div>
 
                     {{-- AI Build Button --}}
-                    @if (config('ai-build.enabled') && $isEditing && $estimate->areas()->count() === 0)
+                    @if (config('ai-build.enabled') && $isEditing)
                         <div class="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
                             @if ($aiBuildInProgress)
                                 <div class="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-300">
@@ -3559,7 +3705,7 @@ new class extends Component
                             @else
                                 <flux:button wire:click="triggerAiBuild" wire:loading.attr="disabled" size="sm" class="w-full" variant="primary">
                                     <flux:icon name="sparkles" class="w-4 h-4 mr-1" />
-                                    <span wire:loading.remove wire:target="triggerAiBuild">{{ __('AI Build from Blueprints') }}</span>
+                                    <span wire:loading.remove wire:target="triggerAiBuild">{{ $estimate->areas()->count() > 0 ? __('AI Rebuild from Blueprints') : __('AI Build from Blueprints') }}</span>
                                     <span wire:loading wire:target="triggerAiBuild">{{ __('Starting...') }}</span>
                                 </flux:button>
                                 <p class="text-xs text-purple-600 dark:text-purple-400 mt-1 text-center">

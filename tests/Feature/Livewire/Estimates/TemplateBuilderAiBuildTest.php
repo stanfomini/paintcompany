@@ -22,7 +22,7 @@ it('shows AI build button when estimate has no areas', function () {
         ->assertSee('AI Build from Blueprints');
 });
 
-it('hides AI build button when estimate has areas', function () {
+it('shows AI build button when estimate has areas', function () {
     $user = User::factory()->internal()->create();
     $deal = Deal::factory()->create();
     $estimate = Estimate::factory()->for($deal)->create();
@@ -33,7 +33,7 @@ it('hides AI build button when estimate has areas', function () {
 
     Livewire::actingAs($user)
         ->test('estimates.template-builder', ['estimate' => $estimate])
-        ->assertDontSee('AI Build from Blueprints');
+        ->assertSee('AI Rebuild from Blueprints');
 });
 
 it('sends webhook to dev server when AI build is triggered', function () {
@@ -44,6 +44,31 @@ it('sends webhook to dev server when AI build is triggered', function () {
     $user = User::factory()->internal()->create();
     $deal = Deal::factory()->create();
     $estimate = Estimate::factory()->for($deal)->create();
+
+    Livewire::actingAs($user)
+        ->test('estimates.template-builder', ['estimate' => $estimate])
+        ->call('triggerAiBuild')
+        ->assertSet('aiBuildInProgress', true)
+        ->assertSet('aiBuildStatus', 'building');
+
+    Http::assertSent(function ($request) use ($estimate) {
+        return $request->url() === 'https://apexnegotiations.com/webhooks/ai-build'
+            && $request['estimate_id'] === $estimate->id;
+    });
+});
+
+it('sends webhook even when estimate has existing areas', function () {
+    Http::fake([
+        'apexnegotiations.com/*' => Http::response(['status' => 'building', 'request_id' => 1]),
+    ]);
+
+    $user = User::factory()->internal()->create();
+    $deal = Deal::factory()->create();
+    $estimate = Estimate::factory()->for($deal)->create();
+    $estimate->areas()->create([
+        'name' => 'Existing Area',
+        'scope_type' => 'interior',
+    ]);
 
     Livewire::actingAs($user)
         ->test('estimates.template-builder', ['estimate' => $estimate])

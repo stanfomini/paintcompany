@@ -534,7 +534,14 @@ class EstimateCostBreakdownService
 
         // Get settings for display of component detail
         $settings = CompanySetting::getInstance();
-        $marginPercent = $settings->getMarginPercentForScope($scope);
+        $globalMarginPercent = $settings->getMarginPercentForScope($scope);
+
+        // Use effective margin if the estimate has a margin discount
+        $estimate = $area->relationLoaded('estimate') ? $area->estimate : $area->estimate;
+        $marginPercent = $globalMarginPercent;
+        if ($estimate && $estimate->hasMarginDiscount()) {
+            $marginPercent = $estimate->getEffectiveMarginForScope($scope);
+        }
 
         // Decompose COGS into components for visibility (informational detail)
         $detail = $this->decomposeAreaCosts($area, $settings);

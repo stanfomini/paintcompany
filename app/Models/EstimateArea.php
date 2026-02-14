@@ -435,6 +435,26 @@ class EstimateArea extends Model
      * USE THIS for displaying prices to customers.
      * Margins are ALWAYS pulled fresh from CompanySetting - never hardcoded.
      */
+    /**
+     * Get the parent estimate for pricing purposes.
+     * Uses the already-loaded relationship if available, otherwise loads it.
+     * Caches on the model instance to avoid repeated queries within a request.
+     */
+    protected function getEstimateForPricing(): ?Estimate
+    {
+        if ($this->relationLoaded('estimate')) {
+            return $this->estimate;
+        }
+
+        if ($this->estimate_id) {
+            $this->setRelation('estimate', Estimate::find($this->estimate_id));
+
+            return $this->estimate;
+        }
+
+        return null;
+    }
+
     public function getCustomerPrice(): float
     {
         // Fixed price areas already include everything
@@ -455,6 +475,12 @@ class EstimateArea extends Model
 
             if ($cogs <= 0) {
                 return 0.0;
+            }
+
+            // Use estimate-level discounted margin if available
+            $estimate = $this->getEstimateForPricing();
+            if ($estimate && $estimate->hasMarginDiscount()) {
+                return $estimate->calculateOTDFromCOGS($cogs, $scope);
             }
 
             return $settings->calculateOTDFromCOGS($cogs, $scope);
@@ -488,7 +514,14 @@ class EstimateArea extends Model
 
             $addonCost = (float) $this->addons()->sum('total_price');
             $cogsResult = $settings->calculateCOGS($nonCustomLaborCost, $cleanupCost, $sundriesCost, $nonCustomMaterialCost + $addonCost);
-            $nonCustomPrice = $settings->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+
+            // Use estimate-level discounted margin if available
+            $estimate = $this->getEstimateForPricing();
+            if ($estimate && $estimate->hasMarginDiscount()) {
+                $nonCustomPrice = $estimate->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+            } else {
+                $nonCustomPrice = $settings->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+            }
         }
 
         return $customSaleTotal + $nonCustomPrice;

@@ -111,6 +111,14 @@ class EstimateFactory extends Factory
     }
 
     /**
+     * Apply a margin discount to the estimate.
+     */
+    public function withMarginDiscount(float $percent = 10): static
+    {
+        return $this->state(fn () => ['margin_discount_percent' => $percent]);
+    }
+
+    /**
      * Set high value estimate.
      */
     public function highValue(): static

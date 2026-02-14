@@ -47,7 +47,7 @@ new class extends Component {
     {
         return [
             'photos' => ['required', 'array', 'min:1'],
-            'photos.*' => ['image', 'max:15360', 'mimes:jpg,jpeg,png,webp'],
+            'photos.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,webp,pdf'],
             'category' => ['required', 'string', 'in:' . implode(',', array_keys(PropertyPhoto::CATEGORIES))],
             'caption' => ['nullable', 'string', 'max:255'],
             'showOnProposal' => ['boolean'],
@@ -57,10 +57,10 @@ new class extends Component {
     protected function messages(): array
     {
         return [
-            'photos.required' => __('Please select at least one photo to upload.'),
-            'photos.*.image' => __('Each file must be an image.'),
-            'photos.*.max' => __('Each image must be less than 15MB.'),
-            'photos.*.mimes' => __('Only JPG, PNG, and WebP images are allowed.'),
+            'photos.required' => __('Please select at least one file to upload.'),
+            'photos.*.file' => __('Each file must be a valid file.'),
+            'photos.*.max' => __('Each file must be less than 20MB.'),
+            'photos.*.mimes' => __('Only JPG, PNG, WebP, and PDF files are allowed.'),
         ];
     }
 
@@ -143,7 +143,7 @@ new class extends Component {
                         <input
                             type="file"
                             wire:model="photos"
-                            accept="image/*"
+                            accept="image/*,.pdf,application/pdf"
                             capture="environment"
                             class="hidden"
                         />
@@ -154,7 +154,7 @@ new class extends Component {
                         <input
                             type="file"
                             wire:model="photos"
-                            accept="image/jpeg,image/png,image/webp"
+                            accept="image/jpeg,image/png,image/webp,application/pdf,.pdf"
                             multiple
                             class="hidden"
                         />
@@ -162,7 +162,7 @@ new class extends Component {
                 </div>
 
                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mt-3">
-                    {{ __('JPG, PNG, WebP up to 15MB each') }}
+                    {{ __('JPG, PNG, WebP, PDF up to 20MB each') }}
                 </flux:text>
 
                 {{-- Loading Indicator --}}
@@ -189,11 +189,18 @@ new class extends Component {
                         @foreach ($photos as $index => $photo)
                             <div wire:key="preview-{{ $index }}" class="relative aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                                 @if ($photo && method_exists($photo, 'temporaryUrl'))
-                                    <img
-                                        src="{{ $photo->temporaryUrl() }}"
-                                        alt="{{ __('Preview') }}"
-                                        class="w-full h-full object-cover"
-                                    />
+                                    @if (str_ends_with(strtolower($photo->getClientOriginalName()), '.pdf'))
+                                        <div class="w-full h-full flex flex-col items-center justify-center text-zinc-500">
+                                            <flux:icon name="document" class="w-10 h-10 mb-1" />
+                                            <span class="text-xs truncate max-w-full px-2">{{ $photo->getClientOriginalName() }}</span>
+                                        </div>
+                                    @else
+                                        <img
+                                            src="{{ $photo->temporaryUrl() }}"
+                                            alt="{{ __('Preview') }}"
+                                            class="w-full h-full object-cover"
+                                        />
+                                    @endif
                                 @endif
                                 <button
                                     type="button"
