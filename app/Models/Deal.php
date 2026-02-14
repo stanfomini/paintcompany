@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ChatService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -290,13 +291,24 @@ class Deal extends Model
 
     /**
      * Get or create a chat thread for this deal.
+     * Automatically adds deal stakeholders (creator, customer, agent) as participants.
      */
     public function getOrCreateChatThread(): ChatThread
     {
-        return $this->chatThread ?? $this->chatThread()->create([
+        if ($this->chatThread) {
+            return $this->chatThread;
+        }
+
+        $thread = $this->chatThread()->create([
             'type' => ChatThread::TYPE_DEAL,
             'subject' => $this->title,
+            'last_message_at' => now(),
         ]);
+
+        // Add deal stakeholders
+        app(ChatService::class)->addDealStakeholders($thread, $this);
+
+        return $thread;
     }
 
     /**

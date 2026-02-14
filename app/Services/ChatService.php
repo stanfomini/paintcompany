@@ -98,6 +98,9 @@ class ChatService
             // Add initiator as participant
             $thread->addParticipant($initiator);
 
+            // Auto-add deal stakeholders so all parties see the thread
+            $this->addDealStakeholders($thread, $deal, $initiator);
+
             // Notify about new thread
             broadcast(new NewThreadNotification($thread, $initiator))->toOthers();
         } elseif (! $thread->hasParticipant($initiator)) {
@@ -105,6 +108,38 @@ class ChatService
         }
 
         return $thread;
+    }
+
+    /**
+     * Add all relevant stakeholders to a deal chat thread.
+     * Ensures the deal creator, customer, and agent are all participants.
+     * Optionally excludes a user (e.g., the initiator who was already added).
+     */
+    public function addDealStakeholders(ChatThread $thread, Deal $deal, ?User $excludeUser = null): void
+    {
+        $excludeId = $excludeUser?->id;
+
+        // Add deal creator (internal user who created the deal)
+        if ($deal->created_by && $deal->created_by !== $excludeId) {
+            $creator = User::find($deal->created_by);
+            if ($creator && ! $thread->hasParticipant($creator)) {
+                $thread->addParticipant($creator);
+            }
+        }
+
+        // Add deal's customer user
+        $customerUser = $deal->customer?->user;
+        if ($customerUser && $customerUser->id !== $excludeId && ! $thread->hasParticipant($customerUser)) {
+            $thread->addParticipant($customerUser);
+        }
+
+        // Add deal's agent
+        if ($deal->agent_id && $deal->agent_id !== $excludeId) {
+            $agent = User::find($deal->agent_id);
+            if ($agent && ! $thread->hasParticipant($agent)) {
+                $thread->addParticipant($agent);
+            }
+        }
     }
 
     /**
