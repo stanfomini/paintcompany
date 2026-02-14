@@ -51,8 +51,11 @@ class EstimateAiBuildCommand extends Command
         file_put_contents($promptFile, $prompt);
 
         // Spawn Claude Code in a tmux session
+        // --disable-slash-commands: skip loading skills/plugins (saves minutes of startup)
+        // --tools "Bash,Read": only tools needed for SSH commands and reading downloaded files
+        // --model sonnet: faster model, sufficient for following structured prompts
         $command = sprintf(
-            'tmux new-session -d -s %s "cd %s && %s --dangerously-skip-permissions -p %s 2>&1 | tee %s; sleep 5"',
+            'tmux new-session -d -s %s "cd %s && %s --dangerously-skip-permissions --disable-slash-commands --tools Bash,Read --model sonnet -p %s 2>&1 | tee %s; sleep 5"',
             escapeshellarg($tmuxSession),
             escapeshellarg($workingDir),
             escapeshellarg($claudeBin),
