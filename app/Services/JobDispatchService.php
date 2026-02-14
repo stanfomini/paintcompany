@@ -10,6 +10,7 @@ use App\Models\JobActivity;
 use App\Models\JobServiceRequirement;
 use App\Models\ServiceCategory;
 use App\Models\User;
+use App\Notifications\CrewJobDispatched;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -102,9 +103,12 @@ class JobDispatchService
 
             CrewDispatched::dispatch($job, $dispatched, $category?->id);
 
-            // Notify each crew member on their personal channel
+            // Notify each crew member on their personal channel + email
             foreach ($crewUserIds as $crewUserId) {
                 JobDispatchedToCrew::dispatch($job, $crewUserId, $category?->id);
+
+                $crewUser = User::find($crewUserId);
+                $crewUser?->notify(new CrewJobDispatched($job, $category));
             }
 
             $this->plannerAutomation->onCrewDispatched($job, $dispatched);
@@ -329,6 +333,81 @@ class JobDispatchService
             'crew_name' => $oldCrew->name,
             'service_category_id' => $category->id,
         ]);
+    }
+
+    /**
+     * Remove a crew from a job entirely by hard-deleting the pivot row.
+     *
+     * If the removed crew was accepted, reverts the service requirement to pending
+     * (or dispatched if other dispatched crews remain for the same category).
+     * Also removes the crew from the deal's chat thread if they have no other
+     * job_crew links to that deal's jobs.
+     */
+    public function removeCrew(Job $job, User $crew, ?ServiceCategory $category = null): bool
+    {
+        $query = DB::table('job_crew')
+            ->where('job_id', $job->id)
+            ->where('crew_user_id', $crew->id);
+
+        if ($category) {
+            $query->where('service_category_id', $category->id);
+        }
+
+        $row = $query->first();
+
+        if (! $row) {
+            return false;
+        }
+
+        $previousStatus = $row->status;
+        $serviceCategoryId = $row->service_category_id;
+
+        // Hard-delete the pivot row
+        DB::table('job_crew')
+            ->where('job_id', $job->id)
+            ->where('crew_user_id', $crew->id)
+            ->where('service_category_id', $serviceCategoryId)
+            ->delete();
+
+        // If the removed crew was accepted, revert the service requirement
+        if ($previousStatus === 'accepted' && $serviceCategoryId) {
+            $hasOtherDispatched = DB::table('job_crew')
+                ->where('job_id', $job->id)
+                ->where('service_category_id', $serviceCategoryId)
+                ->where('status', 'dispatched')
+                ->exists();
+
+            $job->serviceRequirements()
+                ->where('service_category_id', $serviceCategoryId)
+                ->update([
+                    'status' => $hasOtherDispatched
+                        ? JobServiceRequirement::STATUS_DISPATCHED
+                        : JobServiceRequirement::STATUS_PENDING,
+                ]);
+        }
+
+        // Remove crew from deal chat thread if they have no other job_crew links to this deal's jobs
+        $deal = $job->deal;
+        if ($deal && $deal->chatThread) {
+            $hasOtherJobLinks = DB::table('job_crew')
+                ->join('painting_jobs', 'painting_jobs.id', '=', 'job_crew.job_id')
+                ->where('painting_jobs.deal_id', $deal->id)
+                ->where('job_crew.crew_user_id', $crew->id)
+                ->exists();
+
+            if (! $hasOtherJobLinks) {
+                $deal->chatThread->removeParticipant($crew);
+            }
+        }
+
+        JobActivity::log($job, 'crew_removed', "{$crew->name} removed from job", [
+            'crew_user_id' => $crew->id,
+            'crew_name' => $crew->name,
+            'service_category_id' => $serviceCategoryId,
+            'previous_status' => $previousStatus,
+        ]);
+
+        return true;
     }
 
     /**

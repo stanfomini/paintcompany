@@ -3,8 +3,10 @@
 use App\Events\JobDispatchedToCrew;
 use App\Models\Job;
 use App\Models\User;
+use App\Notifications\CrewJobDispatched;
 use App\Services\JobDispatchService;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Notification;
 
 describe('JobDispatchService', function () {
     it('gets eligible crews filtered by crew size', function () {
@@ -135,6 +137,25 @@ describe('JobDispatchService', function () {
 
         Event::assertDispatched(JobDispatchedToCrew::class, function ($event) use ($job, $crew2) {
             return $event->job->id === $job->id && $event->crewUserId === $crew2->id;
+        });
+    });
+
+    it('sends CrewJobDispatched email notification to each crew member', function () {
+        Notification::fake();
+
+        $service = new JobDispatchService;
+        $crew1 = User::factory()->crew()->create();
+        $crew2 = User::factory()->crew()->create();
+        $job = Job::factory()->create();
+
+        $service->dispatchToCrews($job, [$crew1->id, $crew2->id]);
+
+        Notification::assertSentTo($crew1, CrewJobDispatched::class, function ($notification) use ($job) {
+            return $notification->job->id === $job->id;
+        });
+
+        Notification::assertSentTo($crew2, CrewJobDispatched::class, function ($notification) use ($job) {
+            return $notification->job->id === $job->id;
         });
     });
 

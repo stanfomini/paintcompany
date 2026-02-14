@@ -242,6 +242,23 @@ new class extends Component
     }
 
     /**
+     * Remove a crew from the job entirely.
+     */
+    public function removeCrew(int $crewUserId, int $serviceCategoryId): void
+    {
+        $crew = User::findOrFail($crewUserId);
+        $category = ServiceCategory::findOrFail($serviceCategoryId);
+
+        app(JobDispatchService::class)->removeCrew($this->job, $crew, $category);
+
+        $this->job->refresh();
+        unset($this->serviceRequirements);
+
+        session()->flash('success', __(':crew removed from :category.', ['crew' => $crew->name, 'category' => __($category->name)]));
+        $this->dispatch('crew-dispatched');
+    }
+
+    /**
      * Replace an accepted crew for a specific service category.
      */
     public function replaceCrew(int $crewUserId, int $serviceCategoryId): void
@@ -575,6 +592,13 @@ new class extends Component
                                             @elseif ($crew->pivot->status === 'replaced')
                                                 <flux:badge size="sm" color="zinc">{{ __('Replaced') }}</flux:badge>
                                             @endif
+                                            <flux:button
+                                                wire:click="removeCrew({{ $crew->id }}, {{ $category->id }})"
+                                                wire:confirm="{{ __('Remove :name from this job? This will permanently unlink them.', ['name' => $crew->name]) }}"
+                                                size="xs"
+                                                variant="ghost"
+                                                icon="x-mark"
+                                            />
                                         </div>
                                     </div>
                                 @endforeach

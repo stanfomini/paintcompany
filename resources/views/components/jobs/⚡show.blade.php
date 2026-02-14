@@ -4,8 +4,10 @@ use App\Models\ChatThread;
 use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\ServiceCategory;
+use App\Models\User;
 use App\Services\ChatService;
 use App\Services\InvoiceService;
+use App\Services\JobDispatchService;
 use App\Services\JobService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -293,6 +295,27 @@ new class extends Component {
             $this->refreshJob();
             $this->viewingStage = $this->job->stage;
             session()->flash('success', __('Job advanced to :stage', ['stage' => $this->job->stage_label]));
+        }
+    }
+
+    /**
+     * Remove a crew from the job entirely.
+     */
+    public function removeCrew(int $crewUserId, ?int $serviceCategoryId = null): void
+    {
+        abort_unless(auth()->user()->can('jobs.edit'), 403);
+
+        $crew = User::findOrFail($crewUserId);
+        $category = $serviceCategoryId ? ServiceCategory::find($serviceCategoryId) : null;
+
+        $removed = app(JobDispatchService::class)->removeCrew($this->job, $crew, $category);
+
+        $this->refreshJob();
+
+        if ($removed) {
+            session()->flash('success', __(':crew removed from job.', ['crew' => $crew->name]));
+        } else {
+            session()->flash('error', __('Crew not found on this job.'));
         }
     }
 
@@ -662,7 +685,18 @@ new class extends Component {
                                                 default => 'yellow',
                                             };
                                         @endphp
-                                        <flux:badge size="sm" color="{{ $statusColor }}">{{ ucfirst($crew->pivot->status) }}</flux:badge>
+                                        <div class="flex items-center gap-2">
+                                            <flux:badge size="sm" color="{{ $statusColor }}">{{ ucfirst($crew->pivot->status) }}</flux:badge>
+                                            @can('jobs.edit')
+                                                <flux:button
+                                                    wire:click="removeCrew({{ $crew->id }}, {{ $crew->pivot->service_category_id ?? 'null' }})"
+                                                    wire:confirm="{{ __('Remove :name from this job? This will permanently unlink them.', ['name' => $crew->name]) }}"
+                                                    size="xs"
+                                                    variant="ghost"
+                                                    icon="x-mark"
+                                                />
+                                            @endcan
+                                        </div>
                                     </div>
                                 @endforeach
                             </div>

@@ -43,6 +43,7 @@ class JobActivity extends Model
         'service_accepted' => 'Service Crew Accepted',
         'prep_section_approved' => 'Prep Section Approved',
         'crew_replaced' => 'Crew Replaced',
+        'crew_removed' => 'Crew Removed',
         'prep_change_proposed' => 'Prep Change Proposed',
     ];
 
