@@ -21,8 +21,10 @@ trait PasswordValidationRules
      *
      * @return array<int, \Illuminate\Contracts\Validation\Rule|array<mixed>|string>
      */
-    protected function currentPasswordRules(): array
+    protected function currentPasswordRules(?string $guard = null): array
     {
-        return ['required', 'string', 'current_password'];
+        $rule = $guard ? "current_password:{$guard}" : 'current_password';
+
+        return ['required', 'string', $rule];
     }
 }

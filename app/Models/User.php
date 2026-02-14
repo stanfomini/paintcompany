@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Spatie\Permission\Traits\HasRoles;
@@ -25,6 +26,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'avatar_path',
         'password',
         'type',
         'is_active',
@@ -265,6 +267,28 @@ class User extends Authenticatable
     public function hasAcceptedReferralTerms(): bool
     {
         return $this->referral_terms_accepted_at !== null;
+    }
+
+    public function hasAvatar(): bool
+    {
+        return $this->avatar_path !== null;
+    }
+
+    public function getAvatarUrl(): ?string
+    {
+        if (! $this->hasAvatar()) {
+            return null;
+        }
+
+        return Storage::disk('public')->url($this->avatar_path);
+    }
+
+    public function deleteAvatar(): void
+    {
+        if ($this->avatar_path) {
+            Storage::disk('public')->delete($this->avatar_path);
+            $this->update(['avatar_path' => null]);
+        }
     }
 
     /**

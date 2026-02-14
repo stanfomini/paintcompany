@@ -47,12 +47,13 @@
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile
+                :avatar="auth('agent')->user()->getAvatarUrl()"
                 :name="auth('agent')->user()->name"
                 :initials="auth('agent')->user()->initials()"
             />
 
             <flux:menu>
-                <flux:menu.item icon="user" href="#">{{ __('Profile') }}</flux:menu.item>
+                <flux:menu.item icon="cog-6-tooth" href="{{ route('agent.settings.profile') }}">{{ __('Settings') }}</flux:menu.item>
                 <flux:menu.separator />
                 <form method="POST" action="{{ route('agent.logout') }}">
                     @csrf
@@ -71,11 +72,12 @@
 
         <flux:dropdown position="top" align="end">
             <flux:profile
+                :avatar="auth('agent')->user()->getAvatarUrl()"
                 :initials="auth('agent')->user()->initials()"
             />
 
             <flux:menu>
-                <flux:menu.item icon="user" href="#">{{ __('Profile') }}</flux:menu.item>
+                <flux:menu.item icon="cog-6-tooth" href="{{ route('agent.settings.profile') }}">{{ __('Settings') }}</flux:menu.item>
                 <flux:menu.separator />
                 <form method="POST" action="{{ route('agent.logout') }}">
                     @csrf

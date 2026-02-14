@@ -1,5 +1,6 @@
 <?php
 
+use App\Concerns\HandlesAvatarUpload;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -8,9 +9,10 @@ use Illuminate\Support\Facades\Session;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component {
-    use ProfileValidationRules;
+    use HandlesAvatarUpload, ProfileValidationRules, WithFileUploads;
 
     public string $name = '';
     public string $email = '';
@@ -40,6 +42,8 @@ new class extends Component {
         }
 
         $user->save();
+
+        $this->saveAvatar($user);
 
         $this->dispatch('profile-updated', name: $user->name);
     }
@@ -83,6 +87,8 @@ new class extends Component {
 
     <x-pages::settings.layout :heading="__('Profile')" :subheading="__('Update your name and email address')">
         <form wire:submit="updateProfileInformation" class="my-6 w-full space-y-6">
+            <x-avatar-upload :user="Auth::user()" :avatar="$avatar" />
+
             <flux:input wire:model="name" :label="__('Name')" type="text" required autofocus autocomplete="name" />
 
             <div>

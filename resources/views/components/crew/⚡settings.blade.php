@@ -85,10 +85,14 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
     }
 }; ?>
 
-<div class="max-w-2xl mx-auto">
-    <flux:heading size="xl" class="mb-2">{{ __('Crew Settings') }}</flux:heading>
-    <flux:text class="text-zinc-500 mb-6">{{ __('Manage your crew profile and preferences.') }}</flux:text>
+<section class="w-full">
+    <div class="relative mb-6 w-full">
+        <flux:heading size="xl" level="1">{{ __('Settings') }}</flux:heading>
+        <flux:subheading size="lg" class="mb-6">{{ __('Manage your profile and account settings') }}</flux:subheading>
+        <flux:separator variant="subtle" />
+    </div>
 
+    <x-user-settings-layout route-prefix="crew.settings" user-type="crew" :heading="__('Crew Profile')" :subheading="__('Manage your crew profile and preferences')" full-width>
     @if (session('success'))
         <flux:callout variant="success" class="mb-6">
             {{ session('success') }}
@@ -174,4 +178,5 @@ new #[Layout('components.layouts.crew', ['title' => 'Crew Settings'])] class ext
             </flux:button>
         </div>
     </form>
-</div>
+    </x-user-settings-layout>
+</section>

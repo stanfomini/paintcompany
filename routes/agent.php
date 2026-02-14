@@ -56,5 +56,12 @@ Route::middleware(['auth:agent', 'auth.agent'])->group(function () {
 
         Route::livewire('chat', 'agent.chat.thread-list')->name('chat.index');
         Route::livewire('chat/{thread}', 'agent.chat.thread-view')->name('chat.show');
+
+        // Settings
+        Route::redirect('settings', 'agent/settings/profile');
+        Route::livewire('settings/profile', 'agent.settings.profile')->name('settings.profile');
+        Route::livewire('settings/password', 'agent.settings.password')->name('settings.password');
+        Route::livewire('settings/appearance', 'agent.settings.appearance')->name('settings.appearance');
+        Route::livewire('settings/two-factor', 'agent.settings.two-factor')->name('settings.two-factor');
     });
 });

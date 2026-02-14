@@ -2,6 +2,7 @@
 <flux:dropdown position="bottom" align="start">
     <flux:sidebar.profile
         {{ $attributes->only('name') }}
+        :avatar="auth()->user()->getAvatarUrl()"
         :initials="auth()->user()->initials()"
         icon:trailing="chevrons-up-down"
         data-test="sidebar-menu-button"
@@ -10,6 +11,7 @@
     <flux:menu>
         <div class="flex items-center gap-2 px-1 py-1.5 text-start text-sm">
             <flux:avatar
+                :src="auth()->user()->getAvatarUrl()"
                 :name="auth()->user()->name"
                 :initials="auth()->user()->initials()"
             />

@@ -36,7 +36,7 @@
             <flux:navlist.item icon="gift" href="{{ route('crew.referrals') }}" :current="request()->routeIs('crew.referrals')">
                 {{ __('Referrals') }}
             </flux:navlist.item>
-            <flux:navlist.item icon="cog-6-tooth" href="{{ route('crew.settings') }}" :current="request()->routeIs('crew.settings')">
+            <flux:navlist.item icon="cog-6-tooth" href="{{ route('crew.settings.profile') }}" :current="request()->routeIs('crew.settings') || request()->routeIs('crew.settings.*')">
                 {{ __('Settings') }}
             </flux:navlist.item>
         </flux:navlist>
@@ -49,12 +49,13 @@
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile
+                :avatar="auth('crew')->user()->getAvatarUrl()"
                 :name="auth('crew')->user()->name"
                 :initials="auth('crew')->user()->initials()"
             />
 
             <flux:menu>
-                <flux:menu.item icon="cog-6-tooth" href="{{ route('crew.settings') }}">{{ __('Settings') }}</flux:menu.item>
+                <flux:menu.item icon="cog-6-tooth" href="{{ route('crew.settings.profile') }}">{{ __('Settings') }}</flux:menu.item>
                 <flux:menu.separator />
                 <form method="POST" action="{{ route('crew.logout') }}">
                     @csrf
@@ -73,11 +74,12 @@
 
         <flux:dropdown position="top" align="end">
             <flux:profile
+                :avatar="auth('crew')->user()->getAvatarUrl()"
                 :initials="auth('crew')->user()->initials()"
             />
 
             <flux:menu>
-                <flux:menu.item icon="cog-6-tooth" href="{{ route('crew.settings') }}">{{ __('Settings') }}</flux:menu.item>
+                <flux:menu.item icon="cog-6-tooth" href="{{ route('crew.settings.profile') }}">{{ __('Settings') }}</flux:menu.item>
                 <flux:menu.separator />
                 <form method="POST" action="{{ route('crew.logout') }}">
                     @csrf

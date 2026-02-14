@@ -31,10 +31,17 @@ Route::middleware(['auth:crew', 'auth.crew'])->group(function () {
 
     // Dashboard, settings, chat - accessible during onboarding (soft block)
     Route::livewire('dashboard', 'crew.dashboard')->name('dashboard');
-    Route::livewire('settings', 'crew.settings')->name('settings');
+    Route::livewire('settings/crew-profile', 'crew.settings')->name('settings');
     Route::livewire('chat', 'crew.chat.thread-list')->name('chat.index');
     Route::livewire('chat/{thread}', 'crew.chat.thread-view')->name('chat.show');
     Route::livewire('referrals', 'crew.referrals')->name('referrals');
+
+    // General settings (profile, password, appearance, 2FA)
+    Route::redirect('settings', 'crew/settings/profile');
+    Route::livewire('settings/profile', 'crew.settings.profile')->name('settings.profile');
+    Route::livewire('settings/password', 'crew.settings.password')->name('settings.password');
+    Route::livewire('settings/appearance', 'crew.settings.appearance')->name('settings.appearance');
+    Route::livewire('settings/two-factor', 'crew.settings.two-factor')->name('settings.two-factor');
 
     // Routes that require onboarding to be complete
     Route::middleware('auth.crew.onboarded')->group(function () {

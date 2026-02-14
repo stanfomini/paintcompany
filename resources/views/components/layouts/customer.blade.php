@@ -43,12 +43,13 @@
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile
+                :avatar="auth('customer')->user()->getAvatarUrl()"
                 :name="auth('customer')->user()->name"
                 :initials="auth('customer')->user()->initials()"
             />
 
             <flux:menu>
-                <flux:menu.item icon="user" href="#">{{ __('Profile') }}</flux:menu.item>
+                <flux:menu.item icon="cog-6-tooth" href="{{ route('customer.settings.profile') }}">{{ __('Settings') }}</flux:menu.item>
                 <flux:menu.separator />
                 <form method="POST" action="{{ route('customer.logout') }}">
                     @csrf
@@ -67,11 +68,12 @@
 
         <flux:dropdown position="top" align="end">
             <flux:profile
+                :avatar="auth('customer')->user()->getAvatarUrl()"
                 :initials="auth('customer')->user()->initials()"
             />
 
             <flux:menu>
-                <flux:menu.item icon="user" href="#">{{ __('Profile') }}</flux:menu.item>
+                <flux:menu.item icon="cog-6-tooth" href="{{ route('customer.settings.profile') }}">{{ __('Settings') }}</flux:menu.item>
                 <flux:menu.separator />
                 <form method="POST" action="{{ route('customer.logout') }}">
                     @csrf

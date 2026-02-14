@@ -133,6 +133,16 @@ class UserFactory extends Factory
     }
 
     /**
+     * Indicate that the user has an uploaded avatar.
+     */
+    public function withAvatar(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'avatar_path' => 'avatars/test-avatar.jpg',
+        ]);
+    }
+
+    /**
      * Configure the internal user to have a signature.
      * Only applies to internal users.
      */
