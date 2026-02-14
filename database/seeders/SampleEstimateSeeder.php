@@ -9,6 +9,8 @@ use App\Models\Estimate;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\Job;
+use App\Models\PaintBrand;
+use App\Models\PaintProduct;
 use App\Models\Property;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -17,6 +19,16 @@ use Illuminate\Support\Facades\DB;
 class SampleEstimateSeeder extends Seeder
 {
     public const ESTIMATE_NUMBER = 'SAMPLE-ONBOARDING-001';
+
+    /**
+     * Hardcoded paint data so this works on any server without PaintCatalogSeeder.
+     * If PaintProduct records exist, we also set paint_product_id for rich display.
+     */
+    private const PAINT_DATA = [
+        'walls' => ['brand' => 'sherwin_williams', 'type' => 'duration_home', 'price' => 79.99],
+        'ceiling' => ['brand' => 'sherwin_williams', 'type' => 'promar_ceiling', 'price' => 34.99],
+        'trim' => ['brand' => 'sherwin_williams', 'type' => 'emerald_urethane_trim', 'price' => 89.99],
+    ];
 
     /**
      * Idempotent: returns existing sample estimate or creates one.
@@ -38,6 +50,34 @@ class SampleEstimateSeeder extends Seeder
             ->first();
 
         if ($existing) {
+            // Self-heal: update if data is stale (pre-v2 seeder)
+            $needsRefresh = $existing->actual_painters === null
+                || ! isset($existing->actual_painters[0]['hourly_rate'])
+                || (float) $existing->actual_painters[0]['hourly_rate'] === 35.0;
+
+            // Also heal if job is missing (created before job code was added)
+            $needsJob = ! $existing->job;
+
+            if ($needsRefresh) {
+                self::refreshSampleData($existing);
+            }
+
+            if ($needsJob) {
+                self::ensureSampleJob($existing);
+            }
+
+            if ($needsRefresh || $needsJob) {
+                $existing->refresh()->load([
+                    'areas.surfaces.productionRate',
+                    'areas.surfaces.paintProduct.brand',
+                    'areas.addons.nestedAreaTemplate',
+                    'areas.substrate',
+                    'deal.property',
+                    'deal.customer.user',
+                    'job.crews.crewProfile',
+                ]);
+            }
+
             return $existing;
         }
 
@@ -47,6 +87,145 @@ class SampleEstimateSeeder extends Seeder
     public function run(): void
     {
         self::ensureExists();
+    }
+
+    /**
+     * Look up PaintProduct IDs if the catalog is seeded. Returns null-safe array.
+     */
+    private static function lookupPaintProducts(): array
+    {
+        $swBrand = PaintBrand::where('code', 'SW')->first();
+
+        return [
+            'walls' => $swBrand ? PaintProduct::where('paint_brand_id', $swBrand->id)->where('name', 'Duration Home')->first() : null,
+            'ceiling' => $swBrand ? PaintProduct::where('paint_brand_id', $swBrand->id)->where('name', 'ProMar Ceiling Paint')->first() : null,
+            'trim' => $swBrand ? PaintProduct::where('paint_brand_id', $swBrand->id)->where('name', 'Emerald Urethane Trim')->first() : null,
+        ];
+    }
+
+    /**
+     * Build actual_paint_costs keyed to match materialsWithCosts computed property.
+     * Uses PaintProduct IDs when available, legacy string keys as fallback.
+     */
+    private static function buildActualPaintCosts(array $products): array
+    {
+        $costs = [];
+
+        // Crew discount prices per gallon
+        $discounts = ['walls' => 55.00, 'ceiling' => 22.00, 'trim' => 62.00];
+
+        foreach ($discounts as $type => $discountPrice) {
+            if ($products[$type]) {
+                // PaintProduct exists - key by ID (matches materialsWithCosts product path)
+                $costs[(string) $products[$type]->id] = $discountPrice;
+            } else {
+                // No PaintProduct - key by legacy string (matches materialsWithCosts legacy path)
+                $paint = self::PAINT_DATA[$type];
+                $costs["{$paint['brand']}_{$paint['type']}"] = $discountPrice;
+            }
+        }
+
+        return $costs;
+    }
+
+    /**
+     * Update an existing sample estimate with correct paint data and painter rates.
+     */
+    private static function refreshSampleData(Estimate $estimate): void
+    {
+        $products = self::lookupPaintProducts();
+
+        // Update surfaces with correct paint data
+        foreach ($estimate->areas as $area) {
+            foreach ($area->surfaces as $surface) {
+                $paintKey = match (true) {
+                    str_contains(strtolower($surface->name), 'wall') => 'walls',
+                    str_contains(strtolower($surface->name), 'ceiling') => 'ceiling',
+                    str_contains(strtolower($surface->name), 'baseboard'),
+                    str_contains(strtolower($surface->name), 'door') => 'trim',
+                    default => null,
+                };
+
+                if ($paintKey) {
+                    $paint = self::PAINT_DATA[$paintKey];
+                    $product = $products[$paintKey];
+                    $gallons = (float) ($surface->paint_gallons ?? 1);
+                    $pricePerGallon = $product ? (float) $product->price_per_gallon : $paint['price'];
+
+                    $surface->paint_product_id = $product?->id;
+                    $surface->paint_brand = $paint['brand'];
+                    $surface->paint_type = $paint['type'];
+                    $surface->paint_cost = round($gallons * $pricePerGallon, 2);
+                    $surface->material_cost = $surface->paint_cost;
+                    $surface->total = round($surface->labor_cost + $surface->material_cost, 2);
+                    $surface->save();
+                }
+            }
+        }
+
+        // Fix painter rates
+        $estimate->actual_painters = [
+            ['name' => 'Mike Rodriguez', 'hourly_rate' => 27.00, 'hours' => 8, 'notes' => 'Lead painter - walls & ceilings'],
+            ['name' => 'Carlos Mendez', 'hourly_rate' => 23.00, 'hours' => 8, 'notes' => 'Trim, baseboards & doors'],
+        ];
+
+        $estimate->actual_paint_costs = self::buildActualPaintCosts($products);
+        $estimate->save();
+    }
+
+    /**
+     * Create the job + crew records if they're missing on an existing sample estimate.
+     */
+    private static function ensureSampleJob(Estimate $estimate): void
+    {
+        $deal = $estimate->deal;
+
+        $job = Job::create([
+            'deal_id' => $deal->id,
+            'estimate_id' => $estimate->id,
+            'job_number' => 'JOB-SAMPLE-001',
+            'stage' => 'in_progress',
+            'title' => $deal->title,
+            'description' => $estimate->description,
+            'required_crew_size' => 2,
+            'scheduled_date' => now()->addDays(3),
+        ]);
+
+        $crewUser = User::firstOrCreate(
+            ['email' => 'sample-crew@system.local'],
+            [
+                'name' => 'Mike Rodriguez',
+                'type' => 'crew',
+                'password' => bcrypt('not-a-real-password'),
+            ]
+        );
+
+        CrewProfile::updateOrCreate(
+            ['user_id' => $crewUser->id],
+            [
+                'company_name' => 'Rodriguez Painting LLC',
+                'phone' => '(303) 555-0200',
+                'crew_size' => 2,
+                'specialties' => ['interior', 'exterior'],
+                'hourly_rate' => 35.00,
+                'bonus_percent' => 2.00,
+                'bio' => '10+ years of residential painting experience in the Denver metro area.',
+            ]
+        );
+
+        // Only insert if not already attached
+        if (! DB::table('job_crew')->where('job_id', $job->id)->where('crew_user_id', $crewUser->id)->exists()) {
+            DB::table('job_crew')->insert([
+                'job_id' => $job->id,
+                'crew_user_id' => $crewUser->id,
+                'status' => 'accepted',
+                'dispatched_at' => now()->subDays(5),
+                'responded_at' => now()->subDays(4),
+                'notes' => 'Ready to go!',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 
     private static function createSampleEstimate(): Estimate
@@ -122,10 +301,13 @@ class SampleEstimateSeeder extends Seeder
             'discount_amount' => 0,
         ]);
 
+        // Look up PaintProducts (optional - works without them via legacy fallback)
+        $products = self::lookupPaintProducts();
+
         // Effective rate: $25/hr base × 1.35 burden = $33.75/hr
         $effectiveRate = 33.75;
 
-        // ===== LIVING ROOM (15×12×9) =====
+        // ===== LIVING ROOM (15x12x9) =====
         $livingRoom = EstimateArea::create([
             'estimate_id' => $estimate->id,
             'name' => 'Living Room',
@@ -133,23 +315,19 @@ class SampleEstimateSeeder extends Seeder
             'length' => 15,
             'width' => 12,
             'height' => 9,
-            'wall_sqft' => 486,    // 2×(15+12)×9
-            'ceiling_sqft' => 180, // 15×12
+            'wall_sqft' => 486,    // 2*(15+12)*9
+            'ceiling_sqft' => 180, // 15*12
             'perimeter_lnft' => 54,
             'baseboard_lnft' => 54,
             'sort_order' => 1,
         ]);
 
-        // Walls: 486 sqft, 200 sqft/hr, 2 coats → ~4.37 hrs, ~2.43 gal
-        self::createSurface($livingRoom, 'Walls', 'sqft', 486, 200, 2, $effectiveRate, 'sherwin_williams', 'duration', 1);
-        // Ceiling: 180 sqft, 250 sqft/hr, 1 coat → 0.72 hrs, ~0.45 gal
-        self::createSurface($livingRoom, 'Ceiling', 'sqft', 180, 250, 1, $effectiveRate, 'sherwin_williams', 'duration', 2);
-        // Baseboards: 54 lnft, 60 lnft/hr, 1 coat → 0.90 hrs
-        self::createSurface($livingRoom, 'Baseboards', 'lnft', 54, 60, 1, $effectiveRate, 'sherwin_williams', 'duration', 3);
-        // Door: 1 unit, 2 units/hr, 2 coats → 0.90 hrs
-        self::createSurface($livingRoom, 'Door', 'unit', 1, 2, 2, $effectiveRate, 'sherwin_williams', 'duration', 4);
+        self::createSurface($livingRoom, 'Walls', 'sqft', 486, 200, 2, $effectiveRate, 1, 'walls', $products);
+        self::createSurface($livingRoom, 'Ceiling', 'sqft', 180, 250, 1, $effectiveRate, 2, 'ceiling', $products);
+        self::createSurface($livingRoom, 'Baseboards', 'lnft', 54, 60, 1, $effectiveRate, 3, 'trim', $products);
+        self::createSurface($livingRoom, 'Door', 'unit', 1, 2, 2, $effectiveRate, 4, 'trim', $products);
 
-        // ===== KITCHEN (12×10×9) =====
+        // ===== KITCHEN (12x10x9) =====
         $kitchen = EstimateArea::create([
             'estimate_id' => $estimate->id,
             'name' => 'Kitchen',
@@ -157,18 +335,18 @@ class SampleEstimateSeeder extends Seeder
             'length' => 12,
             'width' => 10,
             'height' => 9,
-            'wall_sqft' => 396,    // 2×(12+10)×9
-            'ceiling_sqft' => 120, // 12×10
+            'wall_sqft' => 396,    // 2*(12+10)*9
+            'ceiling_sqft' => 120, // 12*10
             'perimeter_lnft' => 44,
             'baseboard_lnft' => 44,
             'sort_order' => 2,
         ]);
 
-        self::createSurface($kitchen, 'Walls', 'sqft', 396, 200, 2, $effectiveRate, 'sherwin_williams', 'duration', 1);
-        self::createSurface($kitchen, 'Ceiling', 'sqft', 120, 250, 1, $effectiveRate, 'sherwin_williams', 'duration', 2);
-        self::createSurface($kitchen, 'Baseboards', 'lnft', 44, 60, 1, $effectiveRate, 'sherwin_williams', 'duration', 3);
+        self::createSurface($kitchen, 'Walls', 'sqft', 396, 200, 2, $effectiveRate, 1, 'walls', $products);
+        self::createSurface($kitchen, 'Ceiling', 'sqft', 120, 250, 1, $effectiveRate, 2, 'ceiling', $products);
+        self::createSurface($kitchen, 'Baseboards', 'lnft', 44, 60, 1, $effectiveRate, 3, 'trim', $products);
 
-        // ===== MASTER BEDROOM (14×13×9) =====
+        // ===== MASTER BEDROOM (14x13x9) =====
         $masterBedroom = EstimateArea::create([
             'estimate_id' => $estimate->id,
             'name' => 'Master Bedroom',
@@ -176,19 +354,19 @@ class SampleEstimateSeeder extends Seeder
             'length' => 14,
             'width' => 13,
             'height' => 9,
-            'wall_sqft' => 486,    // 2×(14+13)×9
-            'ceiling_sqft' => 182, // 14×13
+            'wall_sqft' => 486,    // 2*(14+13)*9
+            'ceiling_sqft' => 182, // 14*13
             'perimeter_lnft' => 54,
             'baseboard_lnft' => 54,
             'sort_order' => 3,
         ]);
 
-        self::createSurface($masterBedroom, 'Walls', 'sqft', 486, 200, 2, $effectiveRate, 'sherwin_williams', 'duration', 1);
-        self::createSurface($masterBedroom, 'Ceiling', 'sqft', 182, 250, 1, $effectiveRate, 'sherwin_williams', 'duration', 2);
-        self::createSurface($masterBedroom, 'Baseboards', 'lnft', 54, 60, 1, $effectiveRate, 'sherwin_williams', 'duration', 3);
-        self::createSurface($masterBedroom, 'Doors', 'unit', 2, 2, 2, $effectiveRate, 'sherwin_williams', 'duration', 4);
+        self::createSurface($masterBedroom, 'Walls', 'sqft', 486, 200, 2, $effectiveRate, 1, 'walls', $products);
+        self::createSurface($masterBedroom, 'Ceiling', 'sqft', 182, 250, 1, $effectiveRate, 2, 'ceiling', $products);
+        self::createSurface($masterBedroom, 'Baseboards', 'lnft', 54, 60, 1, $effectiveRate, 3, 'trim', $products);
+        self::createSurface($masterBedroom, 'Doors', 'unit', 2, 2, 2, $effectiveRate, 4, 'trim', $products);
 
-        // ===== BATHROOM (8×6×9) =====
+        // ===== BATHROOM (8x6x9) =====
         $bathroom = EstimateArea::create([
             'estimate_id' => $estimate->id,
             'name' => 'Bathroom',
@@ -196,16 +374,16 @@ class SampleEstimateSeeder extends Seeder
             'length' => 8,
             'width' => 6,
             'height' => 9,
-            'wall_sqft' => 252,   // 2×(8+6)×9
-            'ceiling_sqft' => 48, // 8×6
+            'wall_sqft' => 252,   // 2*(8+6)*9
+            'ceiling_sqft' => 48, // 8*6
             'perimeter_lnft' => 28,
             'baseboard_lnft' => 28,
             'sort_order' => 4,
         ]);
 
-        self::createSurface($bathroom, 'Walls', 'sqft', 252, 200, 2, $effectiveRate, 'sherwin_williams', 'duration', 1);
-        self::createSurface($bathroom, 'Ceiling', 'sqft', 48, 250, 1, $effectiveRate, 'sherwin_williams', 'duration', 2);
-        self::createSurface($bathroom, 'Baseboards', 'lnft', 28, 60, 1, $effectiveRate, 'sherwin_williams', 'duration', 3);
+        self::createSurface($bathroom, 'Walls', 'sqft', 252, 200, 2, $effectiveRate, 1, 'walls', $products);
+        self::createSurface($bathroom, 'Ceiling', 'sqft', 48, 250, 1, $effectiveRate, 2, 'ceiling', $products);
+        self::createSurface($bathroom, 'Baseboards', 'lnft', 28, 60, 1, $effectiveRate, 3, 'trim', $products);
 
         // Recalculate estimate totals from the surfaces we just created
         $estimate->refresh();
@@ -260,33 +438,12 @@ class SampleEstimateSeeder extends Seeder
         ]);
 
         // ===== PRE-POPULATE FINANCIALS =====
-        // Total labor hours from surfaces: ~25.2 hrs
-        // Split between 2 painters (crew of 2)
-        $totalLaborHours = (float) $estimate->areas->sum(fn ($area) => $area->surfaces->sum('labor_hours'));
-        $painter1Hours = round($totalLaborHours * 0.55, 1); // Lead painter takes slightly more
-        $painter2Hours = round($totalLaborHours * 0.45, 1);
-
         $estimate->actual_painters = [
-            [
-                'name' => 'Mike Rodriguez',
-                'hourly_rate' => 35.00,
-                'hours' => $painter1Hours,
-                'notes' => 'Lead painter - walls & ceilings',
-            ],
-            [
-                'name' => 'Carlos Mendez',
-                'hourly_rate' => 35.00,
-                'hours' => $painter2Hours,
-                'notes' => 'Trim, baseboards & doors',
-            ],
+            ['name' => 'Mike Rodriguez', 'hourly_rate' => 27.00, 'hours' => 8, 'notes' => 'Lead painter - walls & ceilings'],
+            ['name' => 'Carlos Mendez', 'hourly_rate' => 23.00, 'hours' => 8, 'notes' => 'Trim, baseboards & doors'],
         ];
 
-        // Actual paint costs: crew discount on SW Duration ($45/gal vs $65 catalog)
-        // The materialsNeeded computed groups by legacy key "sherwin_williams_duration"
-        $estimate->actual_paint_costs = [
-            'sherwin_williams_duration' => 45.00,
-        ];
-
+        $estimate->actual_paint_costs = self::buildActualPaintCosts($products);
         $estimate->save();
 
         return $estimate->load([
@@ -302,9 +459,8 @@ class SampleEstimateSeeder extends Seeder
 
     /**
      * Create a surface with pre-computed values.
-     * Sets labor_hours, labor_cost, material_cost, and total directly
-     * so the saving() hook on EstimateAreaSurface skips auto-calculation
-     * (the guard at line 91 checks if these values are already set).
+     * Always sets paint_brand/paint_type (legacy fallback) AND paint_product_id (when available).
+     * This ensures the materialsWithCosts computed finds the data via either path.
      */
     private static function createSurface(
         EstimateArea $area,
@@ -314,10 +470,13 @@ class SampleEstimateSeeder extends Seeder
         float $productionRate,
         int $coats,
         float $hourlyRate,
-        string $paintBrand,
-        string $paintType,
-        int $sortOrder = 0,
+        int $sortOrder,
+        string $paintKey,
+        array $products,
     ): EstimateAreaSurface {
+        $paint = self::PAINT_DATA[$paintKey];
+        $product = $products[$paintKey] ?? null;
+
         // coat multiplier: 1 coat = 1.0, 2 coats = 1.8
         $coatMultiplier = $coats === 1 ? 1.0 : 1.8;
 
@@ -325,7 +484,6 @@ class SampleEstimateSeeder extends Seeder
         $laborCost = round($laborHours * $hourlyRate, 2);
 
         // Paint gallons: sqft surfaces use ~400 sqft/gal coverage, lnft ~200 lnft/gal
-        // These match Sherwin-Williams Duration typical coverage rates
         $paintGallons = match ($unit) {
             'sqft' => ceil(($quantity * $coatMultiplier) / 400),
             'lnft' => ceil(($quantity * $coatMultiplier) / 200),
@@ -333,13 +491,10 @@ class SampleEstimateSeeder extends Seeder
             default => 0,
         };
 
-        // Paint cost: Sherwin-Williams Duration ~$65/gal retail
-        $pricePerGallon = 65.00;
+        // Use PaintProduct price if available, otherwise hardcoded price
+        $pricePerGallon = $product ? (float) $product->price_per_gallon : $paint['price'];
         $paintCost = round($paintGallons * $pricePerGallon, 2);
-
-        // Material cost includes paint + sundries allocation
         $materialCost = $paintCost;
-
         $total = round($laborCost + $materialCost, 2);
 
         return EstimateAreaSurface::create([
@@ -350,8 +505,9 @@ class SampleEstimateSeeder extends Seeder
             'unit' => $unit,
             'coats' => $coats,
             'application_method' => 'brush_roll',
-            'paint_brand' => $paintBrand,
-            'paint_type' => $paintType,
+            'paint_product_id' => $product?->id,
+            'paint_brand' => $paint['brand'],
+            'paint_type' => $paint['type'],
             'production_rate_value' => $productionRate,
             'hourly_labor_rate' => $hourlyRate,
             'material_cost_per_unit' => 0,

@@ -4,6 +4,9 @@ use App\Models\CompanySetting;
 use App\Models\CrewSignedContract;
 use App\Models\CrewW9Form;
 use App\Models\Estimate;
+use App\Models\User;
+use App\Notifications\CrewOnboardingCallRequested;
+use Illuminate\Support\Carbon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -16,6 +19,9 @@ new #[Layout('components.layouts.crew')] class extends Component {
 
     // Step 2: Call
     public bool $callSelfConfirmed = false;
+    public ?string $callDate = null;
+    public ?string $callTimeSlot = null;
+    public string $callNotes = '';
 
     // Step 3: Contracts
     public int $currentContractIndex = 0;
@@ -183,6 +189,39 @@ new #[Layout('components.layouts.crew')] class extends Component {
     public function skipCall(): void
     {
         // Allow progression but don't mark as confirmed
+        $this->currentStep = 3;
+    }
+
+    public function scheduleCall(): void
+    {
+        $this->validate([
+            'callDate' => 'required|date|after_or_equal:today',
+            'callTimeSlot' => 'required|in:morning,afternoon,evening',
+        ]);
+
+        $timeMap = [
+            'morning' => '09:00:00',
+            'afternoon' => '13:00:00',
+            'evening' => '17:00:00',
+        ];
+
+        $scheduledAt = Carbon::parse($this->callDate.' '.$timeMap[$this->callTimeSlot]);
+
+        $profile = $this->user->crewProfile;
+        $profile->update([
+            'onboarding_call_scheduled_at' => $scheduledAt,
+            'onboarding_call_notes' => $this->callNotes ?: null,
+        ]);
+
+        $internalUsers = User::where('type', 'internal')->get();
+        foreach ($internalUsers as $internalUser) {
+            $internalUser->notify(new CrewOnboardingCallRequested(
+                crew: $this->user,
+                requestedAt: $scheduledAt,
+                notes: $this->callNotes ?: null,
+            ));
+        }
+
         $this->currentStep = 3;
     }
 
@@ -614,21 +653,18 @@ new #[Layout('components.layouts.crew')] class extends Component {
                                 <p class="mt-3 text-lg font-medium text-emerald-700 dark:text-emerald-300">{{ __('Call Confirmed!') }}</p>
                                 <p class="text-sm text-emerald-600 dark:text-emerald-400">{{ __('Your onboarding call has been completed.') }}</p>
                             </div>
+                        @elseif($this->profile->onboarding_call_scheduled_at)
+                            <div class="rounded-lg bg-blue-50 p-6 text-center dark:bg-blue-900/20">
+                                <flux:icon.calendar-days class="mx-auto size-12 text-blue-500" />
+                                <p class="mt-3 text-lg font-medium text-blue-700 dark:text-blue-300">{{ __('Call Scheduled') }}</p>
+                                <p class="text-sm text-blue-600 dark:text-blue-400">
+                                    {{ $this->profile->onboarding_call_scheduled_at->format('l, M j, Y \a\t g:i A') }}
+                                </p>
+                                <p class="mt-2 text-sm text-blue-600 dark:text-blue-400">{{ __('We\'ll be in touch to confirm the time.') }}</p>
+                            </div>
                         @else
                             <div class="rounded-lg bg-zinc-50 p-6 dark:bg-zinc-800">
                                 <div class="space-y-4">
-                                    <div class="flex items-start gap-3">
-                                        <flux:icon.phone class="mt-0.5 size-5 text-blue-500" />
-                                        <div>
-                                            <p class="font-medium text-zinc-900 dark:text-white">{{ __('Schedule a Quick Call') }}</p>
-                                            <p class="text-sm text-zinc-500 dark:text-zinc-400">
-                                                {{ __('Contact us at') }} <strong>{{ $this->settings->company_phone ?? __('our office number') }}</strong>
-                                                {{ __('or email') }} <strong>{{ $this->settings->company_email ?? __('our team') }}</strong>
-                                                {{ __('to schedule your onboarding call.') }}
-                                            </p>
-                                        </div>
-                                    </div>
-
                                     <div class="flex items-start gap-3">
                                         <flux:icon.clock class="mt-0.5 size-5 text-blue-500" />
                                         <div>
@@ -640,6 +676,48 @@ new #[Layout('components.layouts.crew')] class extends Component {
                                     </div>
                                 </div>
                             </div>
+
+                            {{-- Scheduling Form --}}
+                            <div class="space-y-4">
+                                <flux:heading size="lg">{{ __('Pick a Time') }}</flux:heading>
+
+                                <flux:field>
+                                    <flux:label>{{ __('Preferred Date') }} <span class="text-red-500">*</span></flux:label>
+                                    <flux:input wire:model="callDate" type="date" :min="now()->format('Y-m-d')" />
+                                    @error('callDate') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                                </flux:field>
+
+                                <div>
+                                    <flux:label class="mb-2">{{ __('Preferred Time') }} <span class="text-red-500">*</span></flux:label>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        @foreach([
+                                            'morning' => __('Morning (8-11am)'),
+                                            'afternoon' => __('Afternoon (12-3pm)'),
+                                            'evening' => __('Evening (4-6pm)'),
+                                        ] as $slot => $label)
+                                            <label
+                                                class="flex cursor-pointer items-center justify-center rounded-lg border-2 px-3 py-3 text-center text-sm font-medium transition-colors
+                                                    {{ $callTimeSlot === $slot
+                                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
+                                                        : 'border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' }}"
+                                            >
+                                                <input type="radio" wire:model.live="callTimeSlot" value="{{ $slot }}" class="sr-only" />
+                                                {{ $label }}
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                    @error('callTimeSlot') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                                </div>
+
+                                <flux:field>
+                                    <flux:label>{{ __('Notes (optional)') }}</flux:label>
+                                    <flux:textarea wire:model="callNotes" :placeholder="__('Any questions or preferences for the call...')" rows="2" />
+                                </flux:field>
+
+                                <flux:button wire:click="scheduleCall" variant="primary" class="w-full">
+                                    {{ __('Schedule Call') }}
+                                </flux:button>
+                            </div>
                         @endif
 
                         <div class="flex items-center justify-between pt-4">
@@ -647,16 +725,16 @@ new #[Layout('components.layouts.crew')] class extends Component {
                                 {{ __('Back') }}
                             </flux:button>
                             <div class="flex gap-3">
-                                @if(! $this->profile->had_onboarding_call)
+                                @if($this->profile->had_onboarding_call || $this->profile->onboarding_call_scheduled_at)
+                                    <flux:button wire:click="goToStep(3)" variant="primary">
+                                        {{ __('Continue') }}
+                                    </flux:button>
+                                @else
                                     <flux:button wire:click="skipCall" variant="ghost">
                                         {{ __('Skip for Now') }}
                                     </flux:button>
                                     <flux:button wire:click="confirmCall" variant="primary">
                                         {{ __('I\'ve Had My Call') }}
-                                    </flux:button>
-                                @else
-                                    <flux:button wire:click="goToStep(3)" variant="primary">
-                                        {{ __('Continue') }}
                                     </flux:button>
                                 @endif
                             </div>
@@ -811,26 +889,33 @@ new #[Layout('components.layouts.crew')] class extends Component {
                         </div>
 
                         {{-- Insurance Certificate --}}
-                        <div class="rounded-lg border border-zinc-200 p-5 dark:border-zinc-700"
+                        <div class="rounded-lg border {{ $this->profile->insurance_photo ? 'border-emerald-200 dark:border-emerald-800' : 'border-red-200 dark:border-red-800' }} border-l-4 p-5"
                              x-data="{ open: {{ empty($this->profile->insurance_photo) ? 'true' : 'false' }} }">
-                            <div class="flex items-center justify-between">
+                            <button type="button" @click="open = !open" class="flex w-full items-center justify-between text-left">
                                 <div class="flex items-center gap-3">
                                     @if($this->profile->insurance_photo)
-                                        <flux:icon.check-circle class="size-5 text-emerald-500" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                            <flux:icon.check-circle class="size-6 text-emerald-500" />
+                                        </div>
                                     @else
-                                        <flux:icon.document-arrow-up class="size-5 text-zinc-400" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                                            <flux:icon.document-arrow-up class="size-6 text-red-500 dark:text-red-400" />
+                                        </div>
                                     @endif
                                     <div>
-                                        <p class="font-medium text-zinc-900 dark:text-white">{{ __('Insurance Certificate') }}</p>
-                                        <p class="text-xs {{ $this->profile->insurance_photo ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400' }}">
-                                            {{ $this->profile->insurance_photo ? __('On file') : __('Required - PDF or image') }}
-                                        </p>
+                                        <p class="text-base font-semibold text-zinc-900 dark:text-white">{{ __('Insurance Certificate') }}</p>
+                                        <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Upload your general liability insurance certificate') }}</p>
                                     </div>
                                 </div>
-                                <button type="button" @click="open = !open">
+                                <div class="flex items-center gap-2">
+                                    @if($this->profile->insurance_photo)
+                                        <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{{ __('ON FILE') }}</span>
+                                    @else
+                                        <span class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ __('REQUIRED') }}</span>
+                                    @endif
                                     <flux:icon.chevron-down class="size-5 text-zinc-400 transition-transform" ::class="open ? 'rotate-180' : ''" />
-                                </button>
-                            </div>
+                                </div>
+                            </button>
                             <div x-show="open" x-collapse class="mt-4">
                                 <form wire:submit="uploadInsurance" class="space-y-3">
                                     <div class="grid gap-3 sm:grid-cols-2">
@@ -872,26 +957,33 @@ new #[Layout('components.layouts.crew')] class extends Component {
                         </div>
 
                         {{-- Workers Comp --}}
-                        <div class="rounded-lg border border-zinc-200 p-5 dark:border-zinc-700"
+                        <div class="rounded-lg border {{ $this->profile->workers_comp_document ? 'border-emerald-200 dark:border-emerald-800' : 'border-amber-200 dark:border-amber-800' }} border-l-4 p-5"
                              x-data="{ open: {{ empty($this->profile->workers_comp_document) ? 'true' : 'false' }} }">
-                            <div class="flex items-center justify-between">
+                            <button type="button" @click="open = !open" class="flex w-full items-center justify-between text-left">
                                 <div class="flex items-center gap-3">
                                     @if($this->profile->workers_comp_document)
-                                        <flux:icon.check-circle class="size-5 text-emerald-500" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                            <flux:icon.check-circle class="size-6 text-emerald-500" />
+                                        </div>
                                     @else
-                                        <flux:icon.document-arrow-up class="size-5 text-zinc-400" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                                            <flux:icon.document-arrow-up class="size-6 text-amber-500 dark:text-amber-400" />
+                                        </div>
                                     @endif
                                     <div>
-                                        <p class="font-medium text-zinc-900 dark:text-white">{{ __('Workers Comp Certificate') }}</p>
-                                        <p class="text-xs {{ $this->profile->workers_comp_document ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400' }}">
-                                            {{ $this->profile->workers_comp_document ? __('On file') : __('Required - PDF or image') }}
-                                        </p>
+                                        <p class="text-base font-semibold text-zinc-900 dark:text-white">{{ __('Workers Comp Certificate') }}</p>
+                                        <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Upload your workers compensation insurance certificate') }}</p>
                                     </div>
                                 </div>
-                                <button type="button" @click="open = !open">
+                                <div class="flex items-center gap-2">
+                                    @if($this->profile->workers_comp_document)
+                                        <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{{ __('ON FILE') }}</span>
+                                    @else
+                                        <span class="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{{ __('REQUIRED') }}</span>
+                                    @endif
                                     <flux:icon.chevron-down class="size-5 text-zinc-400 transition-transform" ::class="open ? 'rotate-180' : ''" />
-                                </button>
-                            </div>
+                                </div>
+                            </button>
                             <div x-show="open" x-collapse class="mt-4">
                                 <form wire:submit="uploadWorkersComp" class="space-y-3">
                                     <div class="grid gap-3 sm:grid-cols-2">
@@ -933,26 +1025,33 @@ new #[Layout('components.layouts.crew')] class extends Component {
                         </div>
 
                         {{-- Driver's License --}}
-                        <div class="rounded-lg border border-zinc-200 p-5 dark:border-zinc-700"
+                        <div class="rounded-lg border {{ $this->profile->drivers_license_front ? 'border-emerald-200 dark:border-emerald-800' : 'border-amber-200 dark:border-amber-800' }} border-l-4 p-5"
                              x-data="{ open: {{ empty($this->profile->drivers_license_front) ? 'true' : 'false' }} }">
-                            <div class="flex items-center justify-between">
+                            <button type="button" @click="open = !open" class="flex w-full items-center justify-between text-left">
                                 <div class="flex items-center gap-3">
                                     @if($this->profile->drivers_license_front)
-                                        <flux:icon.check-circle class="size-5 text-emerald-500" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                            <flux:icon.check-circle class="size-6 text-emerald-500" />
+                                        </div>
                                     @else
-                                        <flux:icon.identification class="size-5 text-zinc-400" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
+                                            <flux:icon.identification class="size-6 text-amber-500 dark:text-amber-400" />
+                                        </div>
                                     @endif
                                     <div>
-                                        <p class="font-medium text-zinc-900 dark:text-white">{{ __("Driver's License") }}</p>
-                                        <p class="text-xs {{ $this->profile->drivers_license_front ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400' }}">
-                                            {{ $this->profile->drivers_license_front ? __('On file') : __('Required - Front (and optionally back)') }}
-                                        </p>
+                                        <p class="text-base font-semibold text-zinc-900 dark:text-white">{{ __("Driver's License") }}</p>
+                                        <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Photo of the front of your license (back is optional)') }}</p>
                                     </div>
                                 </div>
-                                <button type="button" @click="open = !open">
+                                <div class="flex items-center gap-2">
+                                    @if($this->profile->drivers_license_front)
+                                        <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{{ __('ON FILE') }}</span>
+                                    @else
+                                        <span class="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">{{ __('REQUIRED') }}</span>
+                                    @endif
                                     <flux:icon.chevron-down class="size-5 text-zinc-400 transition-transform" ::class="open ? 'rotate-180' : ''" />
-                                </button>
-                            </div>
+                                </div>
+                            </button>
                             <div x-show="open" x-collapse class="mt-4">
                                 <form wire:submit="uploadDriversLicense" class="space-y-3">
                                     <div class="grid gap-3 sm:grid-cols-2">
@@ -976,26 +1075,33 @@ new #[Layout('components.layouts.crew')] class extends Component {
 
                         {{-- W9 Form --}}
                         @php $hasW9 = $this->user->crewW9Form()->exists(); @endphp
-                        <div class="rounded-lg border border-zinc-200 p-5 dark:border-zinc-700"
+                        <div class="rounded-lg border {{ $hasW9 ? 'border-emerald-200 dark:border-emerald-800' : 'border-red-200 dark:border-red-800' }} border-l-4 p-5"
                              x-data="{ open: {{ !$hasW9 ? 'true' : 'false' }} }">
-                            <div class="flex items-center justify-between">
+                            <button type="button" @click="open = !open" class="flex w-full items-center justify-between text-left">
                                 <div class="flex items-center gap-3">
                                     @if($hasW9)
-                                        <flux:icon.check-circle class="size-5 text-emerald-500" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30">
+                                            <flux:icon.check-circle class="size-6 text-emerald-500" />
+                                        </div>
                                     @else
-                                        <flux:icon.document-text class="size-5 text-zinc-400" />
+                                        <div class="flex size-10 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/30">
+                                            <flux:icon.document-text class="size-6 text-red-500 dark:text-red-400" />
+                                        </div>
                                     @endif
                                     <div>
-                                        <p class="font-medium text-zinc-900 dark:text-white">{{ __('W-9 Form') }}</p>
-                                        <p class="text-xs {{ $hasW9 ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500 dark:text-zinc-400' }}">
-                                            {{ $hasW9 ? __('On file') : __('Required - Complete the form below') }}
-                                        </p>
+                                        <p class="text-base font-semibold text-zinc-900 dark:text-white">{{ __('W-9 Form') }}</p>
+                                        <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('IRS taxpayer identification form for independent contractors') }}</p>
                                     </div>
                                 </div>
-                                <button type="button" @click="open = !open">
+                                <div class="flex items-center gap-2">
+                                    @if($hasW9)
+                                        <span class="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{{ __('ON FILE') }}</span>
+                                    @else
+                                        <span class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-300">{{ __('REQUIRED') }}</span>
+                                    @endif
                                     <flux:icon.chevron-down class="size-5 text-zinc-400 transition-transform" ::class="open ? 'rotate-180' : ''" />
-                                </button>
-                            </div>
+                                </div>
+                            </button>
                             <div x-show="open" x-collapse class="mt-4">
                                 <form wire:submit="saveW9" class="space-y-4">
                                     <div class="rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800">

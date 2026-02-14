@@ -12,9 +12,11 @@ new class extends Component {
     public string $recordableType;
     public ?int $authUserId = null;
     public ?int $estimateId = null;
+    public bool $readOnly = false;
 
-    public function mount(Model $recordable): void
+    public function mount(Model $recordable, bool $readOnly = false): void
     {
+        $this->readOnly = $readOnly;
         $this->recordableId = $recordable->getKey();
         $this->recordableType = get_class($recordable);
         $this->authUserId = auth()->id() ?? auth('customer')->id() ?? auth('agent')->id() ?? auth('crew')->id();
@@ -57,6 +59,10 @@ new class extends Component {
 
     public function updateTitle(int $recordingId, string $title): void
     {
+        if ($this->readOnly) {
+            return;
+        }
+
         $recording = VideoRecording::findOrFail($recordingId);
 
         if ($recording->user_id !== $this->authUserId) {
@@ -69,6 +75,10 @@ new class extends Component {
 
     public function toggleProposalVisibility(int $recordingId): void
     {
+        if ($this->readOnly) {
+            return;
+        }
+
         $recording = VideoRecording::findOrFail($recordingId);
 
         // Allow the recording owner OR internal team members to toggle visibility
@@ -85,6 +95,10 @@ new class extends Component {
 
     public function deleteRecording(int $recordingId): void
     {
+        if ($this->readOnly) {
+            return;
+        }
+
         $recording = VideoRecording::findOrFail($recordingId);
 
         if ($recording->user_id !== $this->authUserId) {
@@ -111,26 +125,31 @@ new class extends Component {
 
 <div
     @if ($this->hasPendingRecordings) wire:poll.2s @endif
-    x-data="walkaroundRecorder({
-        recordableId: @js($recordableId),
-        recordableType: @js($recordableType),
-        csrfToken: @js(csrf_token()),
-    })"
+    @if (! $readOnly)
+        x-data="walkaroundRecorder({
+            recordableId: @js($recordableId),
+            recordableType: @js($recordableType),
+            csrfToken: @js(csrf_token()),
+        })"
+    @endif
 >
     {{-- Section Header --}}
     <div class="flex items-center justify-between mb-4">
         <flux:heading size="sm">{{ __('Video Walkarounds') }}</flux:heading>
-        <button
-            type="button"
-            x-show="stage === 'idle'"
-            @click="startCamera()"
-            class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
-        >
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg>
-            {{ __('Record Walkaround') }}
-        </button>
+        @if (! $readOnly)
+            <button
+                type="button"
+                x-show="stage === 'idle'"
+                @click="startCamera()"
+                class="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+            >
+                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle></svg>
+                {{ __('Record Walkaround') }}
+            </button>
+        @endif
     </div>
 
+    @if (! $readOnly)
     {{-- Fullscreen Recorder Overlay --}}
     <template x-teleport="body">
         <div
@@ -287,6 +306,7 @@ new class extends Component {
             </div>
         </div>
     </template>
+    @endif
 
     {{-- Video List --}}
     @if ($this->recordings->isNotEmpty())
@@ -325,22 +345,28 @@ new class extends Component {
                                 <div class="flex items-start justify-between gap-2">
                                     <div class="min-w-0">
                                         {{-- Editable title --}}
-                                        <div x-show="!editing" @dblclick="editing = true; $nextTick(() => $refs['titleInput{{ $recording->id }}']?.focus())" class="cursor-pointer">
+                                        @if ($readOnly)
                                             <flux:text class="font-medium text-sm truncate">
                                                 {{ $recording->title ?: __('Untitled Walkaround') }}
                                             </flux:text>
-                                        </div>
-                                        <div x-show="editing" x-cloak>
-                                            <input
-                                                x-ref="titleInput{{ $recording->id }}"
-                                                type="text"
-                                                x-model="editTitle"
-                                                @blur="editing = false; if (editTitle.trim()) $wire.updateTitle({{ $recording->id }}, editTitle.trim())"
-                                                @keydown.enter="editing = false; if (editTitle.trim()) $wire.updateTitle({{ $recording->id }}, editTitle.trim())"
-                                                @keydown.escape="editing = false"
-                                                class="w-full px-2 py-0.5 text-sm rounded border border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800"
-                                            />
-                                        </div>
+                                        @else
+                                            <div x-show="!editing" @dblclick="editing = true; $nextTick(() => $refs['titleInput{{ $recording->id }}']?.focus())" class="cursor-pointer">
+                                                <flux:text class="font-medium text-sm truncate">
+                                                    {{ $recording->title ?: __('Untitled Walkaround') }}
+                                                </flux:text>
+                                            </div>
+                                            <div x-show="editing" x-cloak>
+                                                <input
+                                                    x-ref="titleInput{{ $recording->id }}"
+                                                    type="text"
+                                                    x-model="editTitle"
+                                                    @blur="editing = false; if (editTitle.trim()) $wire.updateTitle({{ $recording->id }}, editTitle.trim())"
+                                                    @keydown.enter="editing = false; if (editTitle.trim()) $wire.updateTitle({{ $recording->id }}, editTitle.trim())"
+                                                    @keydown.escape="editing = false"
+                                                    class="w-full px-2 py-0.5 text-sm rounded border border-zinc-300 dark:border-zinc-600 dark:bg-zinc-800"
+                                                />
+                                            </div>
+                                        @endif
                                         <div class="flex items-center gap-1.5 mt-0.5">
                                             <flux:text class="text-xs text-zinc-500">
                                                 {{ $recording->created_at->diffForHumans() }}
@@ -354,7 +380,7 @@ new class extends Component {
 
                                     {{-- Actions --}}
                                     <div class="flex items-center gap-1 shrink-0">
-                                        @if ($recording->recordable_type === \App\Models\Estimate::class && ($recording->user_id === $authUserId || (auth()->check() && auth()->user()->type === 'internal')))
+                                        @if (! $readOnly && $recording->recordable_type === \App\Models\Estimate::class && ($recording->user_id === $authUserId || (auth()->check() && auth()->user()->type === 'internal')))
                                             <button
                                                 type="button"
                                                 wire:click="toggleProposalVisibility({{ $recording->id }})"
@@ -368,28 +394,30 @@ new class extends Component {
                                                 @endif
                                             </button>
                                         @endif
-                                        <button
-                                            type="button"
-                                            x-data="{ copied: false }"
-                                            @click="navigator.clipboard.writeText(@js($recording->getShareableUrl())).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"
-                                            class="p-1.5 rounded text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                            title="Copy share link"
-                                        >
-                                            <svg x-show="!copied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                                            <svg x-show="copied" class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            x-data="{ canShare: !!navigator.share }"
-                                            x-show="canShare"
-                                            x-cloak
-                                            @click="navigator.share({ title: @js($recording->title ?: 'Walkaround Video'), url: @js($recording->getShareableUrl()) }).catch(() => {})"
-                                            class="p-1.5 rounded text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-                                            title="Share"
-                                        >
-                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
-                                        </button>
-                                        @if ($recording->user_id === $authUserId)
+                                        @if (! $readOnly)
+                                            <button
+                                                type="button"
+                                                x-data="{ copied: false }"
+                                                @click="navigator.clipboard.writeText(@js($recording->getShareableUrl())).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"
+                                                class="p-1.5 rounded text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                                title="Copy share link"
+                                            >
+                                                <svg x-show="!copied" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                                                <svg x-show="copied" class="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                x-data="{ canShare: !!navigator.share }"
+                                                x-show="canShare"
+                                                x-cloak
+                                                @click="navigator.share({ title: @js($recording->title ?: 'Walkaround Video'), url: @js($recording->getShareableUrl()) }).catch(() => {})"
+                                                class="p-1.5 rounded text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                                title="Share"
+                                            >
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                                            </button>
+                                        @endif
+                                        @if (! $readOnly && $recording->user_id === $authUserId)
                                             <button
                                                 type="button"
                                                 wire:click="deleteRecording({{ $recording->id }})"
@@ -443,7 +471,7 @@ new class extends Component {
                                     <flux:text class="text-xs text-red-600/70 dark:text-red-400/70">{{ __('Processing failed') }}</flux:text>
                                 </div>
                             </div>
-                            @if ($recording->user_id === $authUserId)
+                            @if (! $readOnly && $recording->user_id === $authUserId)
                                 <button
                                     type="button"
                                     wire:click="deleteRecording({{ $recording->id }})"

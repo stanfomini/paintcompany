@@ -4,7 +4,9 @@ use App\Models\CompanySetting;
 use App\Models\CrewSignedContract;
 use App\Models\CrewW9Form;
 use App\Models\User;
+use App\Notifications\CrewOnboardingCallRequested;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
@@ -115,16 +117,23 @@ describe('Step 1: Pitch', function () {
     it('pre-populates financials with painters, paint costs, and crew bonus', function () {
         $sample = \Database\Seeders\SampleEstimateSeeder::ensureExists();
 
-        // Verify actual_painters pre-populated with 2 painters at $35/hr
+        // Verify actual_painters pre-populated with correct rates
         expect($sample->actual_painters)->toHaveCount(2);
         expect($sample->actual_painters[0]['name'])->toBe('Mike Rodriguez');
-        expect((float) $sample->actual_painters[0]['hourly_rate'])->toBe(35.0);
+        expect((float) $sample->actual_painters[0]['hourly_rate'])->toBe(27.0);
+        expect((float) $sample->actual_painters[0]['hours'])->toBe(8.0);
         expect($sample->actual_painters[1]['name'])->toBe('Carlos Mendez');
-        expect((float) $sample->actual_painters[1]['hourly_rate'])->toBe(35.0);
+        expect((float) $sample->actual_painters[1]['hourly_rate'])->toBe(23.0);
+        expect((float) $sample->actual_painters[1]['hours'])->toBe(8.0);
 
-        // Verify actual paint costs (crew discount)
-        expect($sample->actual_paint_costs)->toHaveKey('sherwin_williams_duration');
-        expect((float) $sample->actual_paint_costs['sherwin_williams_duration'])->toBe(45.0);
+        // Verify actual paint costs exist (keyed by product ID or legacy string depending on catalog)
+        expect($sample->actual_paint_costs)->not->toBeEmpty();
+        // In test env without PaintCatalogSeeder, keys are legacy strings
+        $swBrand = \App\Models\PaintBrand::where('code', 'SW')->first();
+        if (! $swBrand) {
+            expect($sample->actual_paint_costs)->toHaveKey('sherwin_williams_duration_home');
+            expect((float) $sample->actual_paint_costs['sherwin_williams_duration_home'])->toBe(55.0);
+        }
 
         // Verify job exists with accepted crew
         expect($sample->job)->not->toBeNull();
@@ -132,6 +141,17 @@ describe('Step 1: Pitch', function () {
         expect($acceptedCrew)->not->toBeNull();
         expect($acceptedCrew->name)->toBe('Mike Rodriguez');
         expect((float) $acceptedCrew->crewProfile->bonus_percent)->toBe(2.00);
+    });
+
+    it('hides save controls and shows bonus in preview mode', function () {
+        $sample = \Database\Seeders\SampleEstimateSeeder::ensureExists();
+
+        Livewire::actingAs($this->crew, 'crew')
+            ->test('estimates.painter-breakdown', ['estimate' => $sample, 'previewMode' => true])
+            ->call('setTab', 'financials')
+            ->assertDontSee('Save Profit Data')
+            ->assertDontSee('Save Snapshot')
+            ->assertSee('Crew Bonus');
     });
 
     it('advances to step 2 when completeStep1 is called', function () {
@@ -173,6 +193,47 @@ describe('Step 2: Call', function () {
 
         $this->crew->refresh();
         expect($this->crew->crewProfile->had_onboarding_call)->toBeFalse();
+    });
+
+    it('schedules an onboarding call and notifies internal users', function () {
+        Notification::fake();
+
+        $internalUser = User::factory()->internal()->withFullAccess()->create();
+
+        Livewire::actingAs($this->crew, 'crew')
+            ->test('crew.onboarding')
+            ->set('currentStep', 2)
+            ->set('callDate', now()->addDays(2)->format('Y-m-d'))
+            ->set('callTimeSlot', 'morning')
+            ->set('callNotes', 'I prefer video calls')
+            ->call('scheduleCall')
+            ->assertHasNoErrors()
+            ->assertSet('currentStep', 3);
+
+        $this->crew->refresh();
+        expect($this->crew->crewProfile->onboarding_call_scheduled_at)->not->toBeNull()
+            ->and($this->crew->crewProfile->onboarding_call_notes)->toBe('I prefer video calls');
+
+        Notification::assertSentTo($internalUser, CrewOnboardingCallRequested::class);
+    });
+
+    it('validates call scheduling requires date and time slot', function () {
+        Livewire::actingAs($this->crew, 'crew')
+            ->test('crew.onboarding')
+            ->set('currentStep', 2)
+            ->call('scheduleCall')
+            ->assertHasErrors(['callDate', 'callTimeSlot']);
+    });
+
+    it('shows scheduled confirmation when call already scheduled', function () {
+        $this->crew->crewProfile->update([
+            'onboarding_call_scheduled_at' => now()->addDays(3)->setTime(9, 0),
+        ]);
+
+        Livewire::actingAs($this->crew, 'crew')
+            ->test('crew.onboarding')
+            ->set('currentStep', 2)
+            ->assertSee('Call Scheduled');
     });
 });
 
@@ -634,6 +695,18 @@ describe('Mount Auto-Detection', function () {
         Livewire::actingAs($this->crew, 'crew')
             ->test('crew.onboarding')
             ->assertSet('currentStep', 2);
+    });
+
+    it('advances past step 2 when call is scheduled', function () {
+        $this->crew->crewProfile->update([
+            'onboarding_call_scheduled_at' => now()->addDays(2),
+        ]);
+
+        Livewire::actingAs($this->crew, 'crew')
+            ->test('crew.onboarding')
+            ->assertSet('currentStep', 3);
+
+        expect($this->crew->crewProfile->getCurrentOnboardingStep())->toBe(3);
     });
 
     it('auto-detects step 3 when call is done but contracts are not signed', function () {

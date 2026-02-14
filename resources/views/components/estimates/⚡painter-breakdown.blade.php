@@ -614,7 +614,7 @@ new class extends Component
 
         // Use the full customer price (selected package total), not the painter-level job price
         $customerPrice = $this->estimate->selectedPackage?->total
-            ?? $this->estimate->packages()->where('is_active', true)->value('total')
+            ?? $this->estimate->packages()->where('is_selected', true)->value('total')
             ?? $this->profitSummary['job_price'];
         $bonusAmount = $customerPrice * ($crew->crewProfile->bonus_percent / 100);
 
@@ -1746,30 +1746,61 @@ new class extends Component
                 @endif
             </div>
 
-            {{-- Save Controls --}}
-            <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h3 class="text-lg font-bold text-zinc-900 dark:text-white">{{ __('Save Profit Data') }}</h3>
-                        @if ($this->estimate->profit_snapshot)
-                            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
-                                Last snapshot: {{ \Carbon\Carbon::parse($this->estimate->profit_snapshot['captured_at'])->format('M j, Y g:i A') }}
-                                — Total COGS: ${{ number_format($this->estimate->profit_snapshot['total_costs'] ?? 0, 2) }}
-                            </p>
-                        @else
-                            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{{ __('No snapshot saved yet.') }}</p>
-                        @endif
-                    </div>
-                    <div class="flex gap-2">
-                        <flux:button variant="ghost" wire:click="saveActuals" icon="document-check">
-                            {{ __('Save Actuals') }}
-                        </flux:button>
-                        <flux:button variant="primary" wire:click="saveSnapshot" icon="camera">
-                            {{ __('Save Snapshot') }}
-                        </flux:button>
+            @if (! $previewMode)
+                {{-- Save Controls --}}
+                <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-lg font-bold text-zinc-900 dark:text-white">{{ __('Save Profit Data') }}</h3>
+                            @if ($this->estimate->profit_snapshot)
+                                <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">
+                                    Last snapshot: {{ \Carbon\Carbon::parse($this->estimate->profit_snapshot['captured_at'])->format('M j, Y g:i A') }}
+                                    — Total COGS: ${{ number_format($this->estimate->profit_snapshot['total_costs'] ?? 0, 2) }}
+                                </p>
+                            @else
+                                <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{{ __('No snapshot saved yet.') }}</p>
+                            @endif
+                        </div>
+                        <div class="flex gap-2">
+                            <flux:button variant="ghost" wire:click="saveActuals" icon="document-check">
+                                {{ __('Save Actuals') }}
+                            </flux:button>
+                            <flux:button variant="primary" wire:click="saveSnapshot" icon="camera">
+                                {{ __('Save Snapshot') }}
+                            </flux:button>
+                        </div>
                     </div>
                 </div>
-            </div>
+            @endif
+
+            @if ($previewMode && $this->crewBonusInfo)
+                {{-- Crew Bonus Card (preview mode only) --}}
+                <div class="bg-gradient-to-r from-amber-50 to-amber-100 dark:from-amber-900/30 dark:to-amber-800/20 border border-amber-200 dark:border-amber-700 rounded-lg p-6 mb-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <flux:icon name="gift" class="w-6 h-6 text-amber-600 dark:text-amber-400" />
+                        <h3 class="text-lg font-bold text-amber-800 dark:text-amber-200">
+                            {{ __('Crew Bonus') }}
+                        </h3>
+                    </div>
+                    <div class="flex items-center justify-between mb-4">
+                        <span class="text-amber-700 dark:text-amber-300 font-medium">
+                            {{ __('Bonus on this job') }}
+                        </span>
+                        <span class="text-2xl font-bold text-green-600 dark:text-green-400">
+                            ${{ number_format($this->crewBonusInfo['bonus_amount'], 2) }}
+                        </span>
+                    </div>
+                    <div class="rounded-lg bg-white/60 dark:bg-zinc-800/60 p-4 border border-amber-200/50 dark:border-amber-700/50">
+                        <p class="text-sm font-medium text-amber-800 dark:text-amber-200 mb-2">
+                            {{ __('How to earn your bonus on every job:') }}
+                        </p>
+                        <ul class="text-sm text-amber-700 dark:text-amber-300 space-y-2 list-disc list-inside">
+                            <li>{{ __('Use the app to follow production plans and post updates throughout the project') }}</li>
+                            <li>{{ __('Complete the job with customer satisfaction by following the plan built in the app') }}</li>
+                        </ul>
+                    </div>
+                </div>
+            @endif
         @endif
     </div>
 

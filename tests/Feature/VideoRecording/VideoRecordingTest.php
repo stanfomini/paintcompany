@@ -720,3 +720,60 @@ it('job has videoRecordings relationship', function () {
     expect($job->videoRecordings)->toHaveCount(1)
         ->and($job->videoRecordings->first())->toBeInstanceOf(VideoRecording::class);
 });
+
+// ── Read-Only Mode Tests ────────────────────────────────────────────────
+
+it('renders in readOnly mode and hides record button', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $job = Job::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test('estimates.video-walkarounds', ['recordable' => $job, 'readOnly' => true])
+        ->assertStatus(200)
+        ->assertDontSee('Record Walkaround');
+});
+
+it('shows record button when not in readOnly mode', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $job = Job::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test('estimates.video-walkarounds', ['recordable' => $job, 'readOnly' => false])
+        ->assertStatus(200)
+        ->assertSee('Record Walkaround');
+});
+
+it('prevents updating title in readOnly mode', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $job = Job::factory()->create();
+
+    $recording = VideoRecording::factory()->ready()->create([
+        'user_id' => $user->id,
+        'title' => 'Original Title',
+        'recordable_type' => Job::class,
+        'recordable_id' => $job->id,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('estimates.video-walkarounds', ['recordable' => $job, 'readOnly' => true])
+        ->call('updateTitle', $recording->id, 'New Title');
+
+    expect($recording->fresh()->title)->toBe('Original Title');
+});
+
+it('prevents deleting recording in readOnly mode', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $job = Job::factory()->create();
+
+    $recording = VideoRecording::factory()->ready()->create([
+        'user_id' => $user->id,
+        'recordable_type' => Job::class,
+        'recordable_id' => $job->id,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('estimates.video-walkarounds', ['recordable' => $job, 'readOnly' => true])
+        ->call('deleteRecording', $recording->id);
+
+    expect(VideoRecording::find($recording->id))->not->toBeNull();
+});

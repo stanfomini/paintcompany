@@ -56,11 +56,16 @@ new class extends Component
         ?Estimate $estimate = null,
         ?Job $job = null,
         string $context = 'property',
+        bool $readOnly = false,
     ): void {
         $this->property = $property;
         $this->estimateId = $estimate?->id;
         $this->jobId = $job?->id;
         $this->context = $context;
+
+        if ($readOnly) {
+            return;
+        }
 
         $this->resolvePermissions($estimate, $job);
     }

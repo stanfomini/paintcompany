@@ -166,6 +166,9 @@
         @auth
             @if (auth()->user()->isInternal())
                 @livewire('notifications.new-lead-alert')
+                @can('chat.access')
+                    @livewire('chat.floating-chat')
+                @endcan
             @endif
         @endauth
 

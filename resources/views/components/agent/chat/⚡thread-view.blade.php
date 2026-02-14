@@ -213,7 +213,11 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                     this.$el.scrollTop = this.$el.scrollHeight;
                 }
             }"
-            x-init="scrollToBottom()"
+            x-init="
+                scrollToBottom();
+                const observer = new MutationObserver(() => $nextTick(() => scrollToBottom()));
+                observer.observe($el, { childList: true, subtree: true });
+            "
             @message-sent.window="$nextTick(() => scrollToBottom())"
         >
             {{-- Load more button --}}
@@ -283,7 +287,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                         {{-- Message content --}}
                         <div @class([
                             'rounded-lg px-4 py-2',
-                            'bg-teal-600 text-white' => $message->user_id === auth('agent')->id(),
+                            'bg-blue-50 text-zinc-800 dark:bg-blue-600 dark:text-white' => $message->user_id === auth('agent')->id(),
                             'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' => $message->user_id !== auth('agent')->id() && !$message->isSystem(),
                             'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400 italic' => $message->isSystem(),
                         ])>
@@ -332,7 +336,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                         </audio>
 
                                         {{-- Error state --}}
-                                        <div x-show="audioError" x-cloak class="flex items-center gap-2 text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500' }}">
+                                        <div x-show="audioError" x-cloak class="flex items-center gap-2 text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                             </svg>
@@ -343,30 +347,30 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
 
                                     {{-- Duration indicator --}}
                                     @if (!empty($message->metadata['audio_duration']))
-                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500 dark:text-zinc-400' }}">
+                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}">
                                             {{ gmdate('i:s', (int) $message->metadata['audio_duration']) }}
                                         </div>
                                     @endif
 
                                     {{-- Transcription --}}
                                     @if (!empty($message->metadata['transcription']))
-                                        <div class="pt-1 border-t {{ $message->user_id === auth('agent')->id() ? 'border-teal-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
-                                            <flux:text class="text-sm italic {{ $message->user_id === auth('agent')->id() ? 'text-teal-100' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                        <div class="pt-1 border-t {{ $message->user_id === auth('agent')->id() ? 'border-blue-200 dark:border-blue-500' : 'border-zinc-200 dark:border-zinc-700' }}">
+                                            <flux:text class="text-sm italic {{ $message->user_id === auth('agent')->id() ? 'text-blue-500 dark:text-blue-200' : 'text-zinc-600 dark:text-zinc-400' }}">
                                                 "{{ $message->metadata['transcription'] }}"
                                             </flux:text>
                                         </div>
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
-                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500' }}">
+                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                             <span class="animate-pulse">{{ __('Transcribing...') }}</span>
                                         </div>
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'failed')
-                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200' : 'text-zinc-500' }}">
+                                        <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                             {{ __('Transcription unavailable') }}
                                         </div>
                                     @endif
 
                                     {{-- Retention notice --}}
-                                    <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-teal-200/60' : 'text-zinc-400 dark:text-zinc-500' }}">
+                                    <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-400/60 dark:text-blue-200/60' : 'text-zinc-400 dark:text-zinc-500' }}">
                                         <flux:icon name="clock" class="inline h-3 w-3 mr-0.5" />
                                         {{ __('Audio files are deleted after 30 days') }}
                                     </div>

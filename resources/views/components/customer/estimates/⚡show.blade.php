@@ -1188,7 +1188,20 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
                 </div>
 
                 {{-- Messages --}}
-                <div class="max-h-80 overflow-y-auto p-4 space-y-3 bg-white dark:bg-zinc-900" x-data x-init="$el.scrollTop = $el.scrollHeight">
+                <div
+                    class="max-h-80 overflow-y-auto p-4 space-y-3 bg-white dark:bg-zinc-900"
+                    x-data="{
+                        scrollToBottom() {
+                            this.$el.scrollTop = this.$el.scrollHeight;
+                        }
+                    }"
+                    x-init="
+                        scrollToBottom();
+                        const observer = new MutationObserver(() => $nextTick(() => scrollToBottom()));
+                        observer.observe($el, { childList: true, subtree: true });
+                    "
+                    @message-sent.window="$nextTick(() => scrollToBottom())"
+                >
                     @forelse ($this->chatMessages as $message)
                         @php
                             $isOwnMessage = $message->user_id === auth('customer')->id();
@@ -1215,16 +1228,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
                                             <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? __('Unknown') }}</flux:text>
                                             <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
                                         </div>
-                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-teal-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-50 text-zinc-800 dark:bg-blue-600 dark:text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
                                             @if ($message->isAudio())
                                                 <div class="flex items-center gap-2">
-                                                    <flux:icon name="microphone" class="w-4 h-4 {{ $isOwnMessage ? 'text-teal-200' : 'text-zinc-400' }}" />
+                                                    <flux:icon name="microphone" class="w-4 h-4 {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-400' }}" />
                                                     <audio controls preload="metadata" class="h-8 max-w-[200px]">
                                                         <source src="{{ $message->metadata['audio_url'] ?? '' }}">
                                                     </audio>
                                                 </div>
                                                 @if (! empty($message->metadata['transcription']))
-                                                    <flux:text class="text-xs italic mt-1 {{ $isOwnMessage ? 'text-teal-200' : 'text-zinc-500' }}">
+                                                    <flux:text class="text-xs italic mt-1 {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                                         "{{ $message->metadata['transcription'] }}"
                                                     </flux:text>
                                                 @endif

@@ -2641,6 +2641,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             <div class="p-4">
                 <livewire:estimates.video-walkarounds
                     :recordable="$job"
+                    :readOnly="! $this->hasAccepted"
                     :key="'walkarounds-'.$job->id"
                 />
             </div>

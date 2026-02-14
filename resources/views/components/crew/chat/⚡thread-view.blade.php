@@ -114,7 +114,20 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
             </div>
 
             <!-- Messages Container -->
-            <div class="h-[500px] overflow-y-auto p-4 space-y-4 bg-white dark:bg-zinc-900">
+            <div
+                class="h-[500px] overflow-y-auto p-4 space-y-4 bg-white dark:bg-zinc-900"
+                x-data="{
+                    scrollToBottom() {
+                        this.$el.scrollTop = this.$el.scrollHeight;
+                    }
+                }"
+                x-init="
+                    scrollToBottom();
+                    const observer = new MutationObserver(() => $nextTick(() => scrollToBottom()));
+                    observer.observe($el, { childList: true, subtree: true });
+                "
+                @message-sent.window="$nextTick(() => scrollToBottom())"
+            >
                 @forelse ($this->messages as $message)
                     @php
                         $isOwnMessage = $message->user_id === auth('crew')->id();
@@ -152,7 +165,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
                                             <flux:text class="text-xs text-zinc-400 italic">{{ __('(edited)') }}</flux:text>
                                         @endif
                                     </div>
-                                    <div class="rounded-lg p-3 {{ $isOwnMessage ? 'bg-teal-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                    <div class="rounded-lg p-3 {{ $isOwnMessage ? 'bg-blue-50 text-zinc-800 dark:bg-blue-600 dark:text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
                                         @if ($message->isAudio())
                                             @php
                                                 $audioUrl = $message->metadata['audio_url'] ?? '';
@@ -171,8 +184,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
                                                     <source src="{{ $audioUrl }}">
                                                 </audio>
                                                 @if (!empty($message->metadata['transcription']))
-                                                    <div class="pt-1 border-t {{ $isOwnMessage ? 'border-teal-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
-                                                        <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-teal-100' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                    <div class="pt-1 border-t {{ $isOwnMessage ? 'border-blue-200 dark:border-blue-500' : 'border-zinc-200 dark:border-zinc-700' }}">
+                                                        <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-blue-500 dark:text-blue-200' : 'text-zinc-600 dark:text-zinc-400' }}">
                                                             "{{ $message->metadata['transcription'] }}"
                                                         </flux:text>
                                                     </div>

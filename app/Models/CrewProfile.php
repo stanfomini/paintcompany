@@ -37,6 +37,8 @@ class CrewProfile extends Model
         'notes',
         // Onboarding fields
         'had_onboarding_call',
+        'onboarding_call_scheduled_at',
+        'onboarding_call_notes',
         'onboarding_completed_at',
         'drivers_license_front',
         'drivers_license_back',
@@ -58,6 +60,7 @@ class CrewProfile extends Model
             'w9_received_date' => 'date',
             'license_expiration_date' => 'date',
             'had_onboarding_call' => 'boolean',
+            'onboarding_call_scheduled_at' => 'datetime',
             'onboarding_completed_at' => 'datetime',
             'onboarding_call_confirmed_at' => 'datetime',
         ];
@@ -192,8 +195,8 @@ class CrewProfile extends Model
         $user = $this->user;
 
         // Step 1: Pitch - always viewable, considered done once you advance
-        // Step 2: Call
-        if (! $this->had_onboarding_call) {
+        // Step 2: Call - complete if call confirmed OR call scheduled
+        if (! $this->had_onboarding_call && ! $this->onboarding_call_scheduled_at) {
             return 2;
         }
 
