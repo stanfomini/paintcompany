@@ -107,6 +107,35 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
                 $this->zip = $this->customer->zip ?? '';
             }
         }
+
+        // Prefill from landing page session data (fills empty fields only)
+        $prefill = session('landing_page_prefill', []);
+        if (! empty($prefill)) {
+            if (empty($this->phone) && ! empty($prefill['phone'])) {
+                $this->phone = $prefill['phone'];
+            }
+            if (empty($this->address) && ! empty($prefill['address'])) {
+                $this->address = $prefill['address'];
+            }
+            if (empty($this->city) && ! empty($prefill['city'])) {
+                $this->city = $prefill['city'];
+            }
+            if (empty($this->state) && ! empty($prefill['state'])) {
+                $this->state = $prefill['state'];
+            }
+            if (empty($this->zip) && ! empty($prefill['zip'])) {
+                $this->zip = $prefill['zip'];
+            }
+            if (empty($this->estimatePreference) && ! empty($prefill['estimate_preference'])) {
+                $this->estimatePreference = $prefill['estimate_preference'];
+            }
+            if (empty($this->projectNotes) && ! empty($prefill['description'])) {
+                $this->projectNotes = $prefill['description'];
+            }
+
+            // Clear session after reading
+            session()->forget('landing_page_prefill');
+        }
     }
 
     public function nextStep(): void

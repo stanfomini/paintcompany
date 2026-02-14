@@ -70,7 +70,7 @@ describe('Landing page', function () {
             ->set('estimate_preference', 'virtual')
             ->call('submitLeadForm')
             ->assertHasNoErrors()
-            ->assertRedirect(route('next-steps'));
+            ->assertRedirect();
 
         expect(Customer::where('email', 'jane@example.com')->exists())->toBeTrue();
         $customer = Customer::where('email', 'jane@example.com')->first();
@@ -93,7 +93,7 @@ describe('Landing page', function () {
             ->set('estimate_preference', 'in_person')
             ->call('submitLeadForm')
             ->assertHasNoErrors()
-            ->assertRedirect(route('next-steps'));
+            ->assertRedirect();
 
         $customer = Customer::where('email', 'referred@example.com')->first();
         expect($customer)->not->toBeNull();
@@ -104,7 +104,7 @@ describe('Landing page', function () {
         expect($referral->referrer_id)->toBe($referrer->id);
     });
 
-    it('redirects to next-steps after successful submission', function () {
+    it('redirects to invitation accept URL after successful submission', function () {
         Notification::fake();
 
         Livewire::test('public.landing-page')
@@ -113,7 +113,13 @@ describe('Landing page', function () {
             ->set('email', 'test@example.com')
             ->set('estimate_preference', 'virtual')
             ->call('submitLeadForm')
-            ->assertRedirect(route('next-steps'));
+            ->assertRedirect();
+
+        $invitation = Invitation::where('email', 'test@example.com')
+            ->where('invited_user_type', 'customer')
+            ->first();
+
+        expect($invitation)->not->toBeNull();
     });
 
     it('handles honeypot by redirecting without creating records', function () {
@@ -138,7 +144,7 @@ describe('Landing page', function () {
             ->set('estimate_preference', 'virtual')
             ->call('submitLeadForm')
             ->assertHasNoErrors()
-            ->assertRedirect(route('next-steps'));
+            ->assertRedirect();
 
         $invitation = Invitation::where('email', 'portal@example.com')
             ->where('invited_user_type', 'customer')
@@ -148,7 +154,7 @@ describe('Landing page', function () {
         expect($invitation->accepted_at)->toBeNull();
     });
 
-    it('does not fail form if user already exists (auto-invite catches exception)', function () {
+    it('redirects existing user to customer login', function () {
         Notification::fake();
 
         // Pre-create a User with the same email
@@ -164,10 +170,9 @@ describe('Landing page', function () {
             ->set('estimate_preference', 'virtual')
             ->call('submitLeadForm')
             ->assertHasNoErrors()
-            ->assertRedirect(route('next-steps'));
+            ->assertRedirect(route('customer.login'));
 
-        // Customer record still created, no invitation since user exists
-        expect(Customer::where('email', 'existing@example.com')->exists())->toBeTrue();
+        // No customer/invitation created since user already exists
         expect(Invitation::where('email', 'existing@example.com')->exists())->toBeFalse();
     });
 

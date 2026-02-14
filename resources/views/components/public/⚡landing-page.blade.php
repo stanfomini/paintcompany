@@ -2,16 +2,14 @@
 
 use App\Models\Activity;
 use App\Models\CompanySetting;
-use App\Models\Customer;
 use App\Models\LeadSource;
 use App\Models\User;
 use Carbon\Carbon;
-use Illuminate\Support\Str;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\Validate;
 use Livewire\Component;
 
-new #[Layout('components.layouts.guest')] class extends Component {
+new #[Layout('components.layouts.guest')] class extends Component
+{
     public string $referralCode = '';
 
     public string $first_name = '';
@@ -91,12 +89,34 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'email.email' => 'Please enter a valid email address.',
         ]);
 
+        // Check if user already exists
+        $existingUser = User::where('email', $validated['email'])->first();
+        if ($existingUser) {
+            session()->flash('info', 'You already have an account. Please log in.');
+            $this->redirect(route('customer.login'));
+
+            return;
+        }
+
         $service = app(\App\Services\ReferralService::class);
         $referralCode = $validated['referralCode'] ?? null;
         unset($validated['referralCode']);
         $service->createFromLeadForm($validated, $referralCode ?: null);
 
-        // Auto-send portal invitation email
+        // Store prefill data for onboarding
+        session()->put('landing_page_prefill', [
+            'first_name' => $this->first_name,
+            'last_name' => $this->last_name,
+            'phone' => $this->phone,
+            'address' => $this->address,
+            'city' => $this->city,
+            'state' => $this->state,
+            'zip' => $this->zip,
+            'estimate_preference' => $this->estimate_preference,
+            'description' => $this->description,
+        ]);
+
+        // Create invitation and redirect to accept URL
         try {
             $invitationService = app(\App\Services\InvitationService::class);
             $firstInternal = User::where('type', 'internal')->first();
@@ -108,13 +128,15 @@ new #[Layout('components.layouts.guest')] class extends Component {
                     'customer'
                 );
                 $acceptUrl = $invitationService->generateAcceptUrl($invitation);
-                session()->flash('invitation_accept_url', $acceptUrl);
+                $this->redirect($acceptUrl);
+
+                return;
             }
         } catch (\Exception $e) {
-            // Don't fail form submission - customer/deal still created successfully
             \Illuminate\Support\Facades\Log::warning('Auto-invite failed: '.$e->getMessage());
         }
 
+        // Fallback if invitation creation fails
         $this->redirect(route('next-steps'));
     }
 
@@ -133,45 +155,57 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'scarcityEmail.email' => 'Please enter a valid email address.',
         ]);
 
-        $user = User::where('email', $this->scarcityEmail)->first();
+        // Check if user already exists
+        $existingUser = User::where('email', $this->scarcityEmail)->first();
+        if ($existingUser) {
+            session()->flash('info', 'You already have an account. Please log in.');
+            $this->redirect(route('customer.login'));
 
-        if (! $user) {
-            $user = User::create([
-                'name' => explode('@', $this->scarcityEmail)[0],
-                'email' => $this->scarcityEmail,
-                'password' => bcrypt(Str::random(32)),
-                'type' => 'customer',
-                'needs_onboarding' => true,
-            ]);
+            return;
         }
 
-        // Find or create a Customer record linked to this user
-        $customer = Customer::where('user_id', $user->id)->first();
-        if (! $customer) {
-            $createdBy = User::where('type', 'internal')->first()?->id;
-            $nameParts = explode('@', $this->scarcityEmail);
-            $customer = Customer::create([
-                'user_id' => $user->id,
-                'first_name' => $nameParts[0],
-                'last_name' => '',
-                'email' => $this->scarcityEmail,
-                'status' => 'active',
-                'created_by' => $createdBy,
-            ]);
-        }
+        // Create Customer + Deal via ReferralService
+        $service = app(\App\Services\ReferralService::class);
+        $result = $service->createFromLeadForm([
+            'first_name' => explode('@', $this->scarcityEmail)[0],
+            'last_name' => '',
+            'email' => $this->scarcityEmail,
+            'estimate_preference' => $this->scarcityPreference,
+        ]);
 
-        $updates = ['estimate_preference' => $this->scarcityPreference];
-
+        // Set lead source on customer
         $leadSource = LeadSource::findBySlug('landing_page_scarcity');
         if ($leadSource) {
-            $updates['lead_source_id'] = $leadSource->id;
+            $result['customer']->update(['lead_source_id' => $leadSource->id]);
         }
 
-        $customer->update($updates);
+        // Store prefill data
+        session()->put('landing_page_prefill', [
+            'estimate_preference' => $this->scarcityPreference,
+        ]);
 
-        auth('customer')->login($user);
+        // Create invitation and redirect to accept URL
+        try {
+            $invitationService = app(\App\Services\InvitationService::class);
+            $firstInternal = User::where('type', 'internal')->first();
 
-        $this->redirect(route('customer.onboarding').'?step=4&preference='.$this->scarcityPreference);
+            if ($firstInternal) {
+                $invitation = $invitationService->sendInvitation(
+                    $firstInternal,
+                    $this->scarcityEmail,
+                    'customer'
+                );
+                $acceptUrl = $invitationService->generateAcceptUrl($invitation);
+                $this->redirect($acceptUrl);
+
+                return;
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning('Scarcity invite failed: '.$e->getMessage());
+        }
+
+        // Fallback
+        $this->redirect(route('next-steps'));
     }
 
     public function submitAgentSignup(): void

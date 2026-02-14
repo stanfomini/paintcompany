@@ -42,6 +42,12 @@ new #[Layout('components.layouts.guest')] class extends Component {
                 $this->errorMessage = __('This invitation has already been used.');
             }
         }
+
+        // Prefill name from landing page session data
+        $prefill = session('landing_page_prefill', []);
+        if (!empty($prefill['first_name'])) {
+            $this->name = trim(($prefill['first_name'] ?? '') . ' ' . ($prefill['last_name'] ?? ''));
+        }
     }
 
     public function acceptInvitation(): void

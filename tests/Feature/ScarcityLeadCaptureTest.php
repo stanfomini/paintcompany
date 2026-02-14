@@ -56,18 +56,17 @@ it('opens scarcity modal with in_person preference', function () {
         ->assertSet('showScarcityModal', true);
 });
 
-it('creates a new customer user via scarcity lead submission', function () {
+it('creates a new customer via scarcity lead submission', function () {
     Livewire::test('public.landing-page')
         ->call('openScarcityModal', 'virtual')
         ->set('scarcityEmail', 'newlead@example.com')
         ->call('submitScarcityLead')
         ->assertRedirect();
 
-    $user = User::where('email', 'newlead@example.com')->first();
+    $customer = Customer::where('email', 'newlead@example.com')->first();
 
-    expect($user)->not->toBeNull()
-        ->and($user->type)->toBe('customer')
-        ->and($user->needs_onboarding)->toBeTrue();
+    expect($customer)->not->toBeNull()
+        ->and($customer->first_name)->toBe('newlead');
 });
 
 it('sets lead source and estimate preference on customer from scarcity lead', function () {
@@ -76,8 +75,7 @@ it('sets lead source and estimate preference on customer from scarcity lead', fu
         ->set('scarcityEmail', 'scarcitylead@example.com')
         ->call('submitScarcityLead');
 
-    $user = User::where('email', 'scarcitylead@example.com')->first();
-    $customer = Customer::where('user_id', $user->id)->first();
+    $customer = Customer::where('email', 'scarcitylead@example.com')->first();
 
     expect($customer)->not->toBeNull()
         ->and($customer->estimate_preference)->toBe('in_person');
@@ -86,8 +84,8 @@ it('sets lead source and estimate preference on customer from scarcity lead', fu
     expect($customer->lead_source_id)->toBe($leadSource->id);
 });
 
-it('does not duplicate an existing user on scarcity lead submission', function () {
-    $existingUser = User::factory()->customer()->create([
+it('redirects existing user to login on scarcity lead submission', function () {
+    User::factory()->customer()->create([
         'email' => 'existing@example.com',
         'needs_onboarding' => true,
     ]);
@@ -96,19 +94,21 @@ it('does not duplicate an existing user on scarcity lead submission', function (
         ->call('openScarcityModal', 'virtual')
         ->set('scarcityEmail', 'existing@example.com')
         ->call('submitScarcityLead')
-        ->assertRedirect();
+        ->assertRedirect(route('customer.login'));
 
     expect(User::where('email', 'existing@example.com')->count())->toBe(1);
 });
 
-it('redirects scarcity lead to onboarding step 4 with preference', function () {
+it('redirects scarcity lead to invitation accept URL', function () {
     $component = Livewire::test('public.landing-page')
         ->call('openScarcityModal', 'virtual')
         ->set('scarcityEmail', 'redirect@example.com')
         ->call('submitScarcityLead');
 
-    $expectedUrl = route('customer.onboarding').'?step=4&preference=virtual';
-    $component->assertRedirect($expectedUrl);
+    $invitation = Invitation::where('email', 'redirect@example.com')->first();
+    expect($invitation)->not->toBeNull();
+
+    $component->assertRedirect();
 });
 
 it('validates email is required for scarcity lead', function () {
