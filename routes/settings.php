@@ -60,4 +60,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/lead-sources', 'pages::settings.lead-sources')
         ->middleware('permission:settings.lead_sources')
         ->name('lead-sources.edit');
+
+    Route::livewire('settings/workflows', 'pages::settings.workflows')
+        ->middleware('permission:settings.workflows')
+        ->name('workflows.edit');
 });

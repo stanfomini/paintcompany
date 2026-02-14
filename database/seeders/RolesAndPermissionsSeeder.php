@@ -85,6 +85,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'settings.referral',
             'settings.contracts',
             'settings.lead_sources',
+            'settings.workflows',
 
             // Roadmap
             'roadmap.view',
@@ -176,7 +177,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'settings.company', 'settings.packages', 'settings.allocations',
             'settings.payment_integrations', 'settings.service_categories',
             'settings.budget_mappings', 'settings.referral', 'settings.contracts',
-            'settings.lead_sources',
+            'settings.lead_sources', 'settings.workflows',
             // Roadmap
             'roadmap.view', 'roadmap.edit', 'roadmap.manage',
             // KPIs

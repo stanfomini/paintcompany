@@ -39,6 +39,9 @@
                 @can('settings.lead_sources')
                     <flux:navlist.item :href="route('lead-sources.edit')" wire:navigate>{{ __('Lead Sources') }}</flux:navlist.item>
                 @endcan
+                @can('settings.workflows')
+                    <flux:navlist.item :href="route('workflows.edit')" wire:navigate>{{ __('Workflows') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>
