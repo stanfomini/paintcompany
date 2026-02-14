@@ -195,6 +195,16 @@ new class extends Component
                 $this->paintMode = 'category';
             }
         }
+
+        // Restore AI build state from cache (survives page refresh)
+        if ($this->estimate) {
+            $cached = \Illuminate\Support\Facades\Cache::get("ai-build-estimate:{$this->estimate->id}");
+            if ($cached && in_array($cached['status'] ?? '', ['building', 'sending'])) {
+                $this->aiBuildInProgress = true;
+                $this->aiBuildStatus = $cached['status'];
+                $this->aiBuildMessage = $cached['message'] ?? 'AI is building your estimate...';
+            }
+        }
     }
 
     /**
@@ -2679,6 +2689,13 @@ new class extends Component
             if ($response->successful()) {
                 $this->aiBuildStatus = 'building';
                 $this->aiBuildMessage = 'AI is building your estimate. This may take a few minutes...';
+
+                // Persist build state to cache so it survives page refresh
+                \Illuminate\Support\Facades\Cache::put(
+                    "ai-build-estimate:{$this->estimate->id}",
+                    ['status' => 'building', 'message' => $this->aiBuildMessage, 'started_at' => now()->toISOString()],
+                    now()->addMinutes(15)
+                );
             } else {
                 $this->aiBuildInProgress = false;
                 $this->aiBuildStatus = 'failed';
@@ -2688,6 +2705,39 @@ new class extends Component
             $this->aiBuildInProgress = false;
             $this->aiBuildStatus = 'failed';
             $this->aiBuildMessage = 'Could not connect to AI build service.';
+        }
+    }
+
+    /**
+     * Poll for AI build status updates (runs every 5s while build is in progress).
+     */
+    public function pollAiBuildStatus(): void
+    {
+        if (! $this->estimate) {
+            return;
+        }
+
+        $cached = \Illuminate\Support\Facades\Cache::get("ai-build-estimate:{$this->estimate->id}");
+
+        if (! $cached) {
+            // Build finished or was never started
+            $this->aiBuildInProgress = false;
+
+            return;
+        }
+
+        $this->aiBuildInProgress = true;
+        $this->aiBuildStatus = $cached['status'] ?? 'building';
+        $this->aiBuildMessage = $cached['message'] ?? 'AI is working...';
+
+        // If final status, clear cache and reload the page to show new areas
+        if (in_array($cached['status'] ?? '', ['completed', 'partial', 'failed', 'nothing_to_build', 'unreadable_blueprints'])) {
+            \Illuminate\Support\Facades\Cache::forget("ai-build-estimate:{$this->estimate->id}");
+            $this->aiBuildInProgress = false;
+
+            if (in_array($cached['status'], ['completed', 'partial'])) {
+                $this->redirect(route('estimates.edit', $this->estimate), navigate: true);
+            }
         }
     }
 
@@ -2706,6 +2756,11 @@ new class extends Component
 
         // Final status — stop spinner
         $this->aiBuildInProgress = false;
+
+        // Clear the cache since we got the final status via Reverb
+        if ($this->estimate) {
+            \Illuminate\Support\Facades\Cache::forget("ai-build-estimate:{$this->estimate->id}");
+        }
 
         $this->aiBuildMessage = match ($data['status']) {
             'completed' => "AI built {$data['areas_created']} areas with {$data['surfaces_created']} surfaces! Refreshing...",
@@ -3700,7 +3755,7 @@ new class extends Component
                     @if (config('ai-build.enabled') && $isEditing)
                         <div class="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
                             @if ($aiBuildInProgress)
-                                <div class="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-300">
+                                <div wire:poll.5s="pollAiBuildStatus" class="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-300">
                                     <flux:icon name="arrow-path" class="w-4 h-4 animate-spin" />
                                     <span>{{ $aiBuildMessage ?? 'AI is working...' }}</span>
                                 </div>

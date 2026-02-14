@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AiBuildRequest;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class AiBuildCallbackController extends Controller
@@ -43,6 +44,33 @@ class AiBuildCallbackController extends Controller
                 );
             }
             $buildRequest->update(['callback_sent_at' => now()]);
+        }
+
+        // Update cache so Livewire polling picks up status changes
+        $estimateId = $validated['estimate_id'];
+        $cacheKey = "ai-build-estimate:{$estimateId}";
+
+        if ($validated['status'] === 'building') {
+            // Progress update — keep the cache alive
+            Cache::put($cacheKey, [
+                'status' => 'building',
+                'message' => $validated['summary'] ?? 'AI is working...',
+            ], now()->addMinutes(15));
+        } else {
+            // Final status — write it so the next poll picks it up, then it clears itself
+            $message = match ($validated['status']) {
+                'completed' => 'AI built '.($validated['areas_created'] ?? 0).' areas with '.($validated['surfaces_created'] ?? 0).' surfaces!',
+                'partial' => 'AI built '.($validated['areas_created'] ?? 0).' areas but had some issues.',
+                'nothing_to_build' => 'No blueprints, photos, or notes found.',
+                'unreadable_blueprints' => "Couldn't read the blueprints.",
+                default => $validated['error_message'] ?? 'Build finished.',
+            };
+            Cache::put($cacheKey, [
+                'status' => $validated['status'],
+                'message' => $message,
+                'areas_created' => $validated['areas_created'] ?? 0,
+                'surfaces_created' => $validated['surfaces_created'] ?? 0,
+            ], now()->addMinutes(5));
         }
 
         // Broadcast to connected clients via Reverb
