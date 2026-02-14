@@ -33,6 +33,13 @@ class Activity extends Model
         'cancelled' => 'Cancelled',
     ];
 
+    public const PRIORITIES = [
+        'low' => 'Low',
+        'normal' => 'Normal',
+        'high' => 'High',
+        'urgent' => 'Urgent',
+    ];
+
     protected $fillable = [
         'user_id',
         'assigned_to',
@@ -45,6 +52,9 @@ class Activity extends Model
         'due_at',
         'completed_at',
         'automation_key',
+        'priority',
+        'priority_score',
+        'snoozed_until',
         'meeting_type',
         'meeting_status',
         'proposed_by',
@@ -62,6 +72,8 @@ class Activity extends Model
             'is_completed' => 'boolean',
             'due_at' => 'datetime',
             'completed_at' => 'datetime',
+            'snoozed_until' => 'datetime',
+            'priority_score' => 'integer',
             'customer_confirmed_at' => 'datetime',
             'agent_confirmed_at' => 'datetime',
             'team_confirmed_at' => 'datetime',
@@ -369,5 +381,52 @@ class Activity extends Model
             User::class => $this->subject?->name ?? 'User',
             default => null,
         };
+    }
+
+    /**
+     * Scope to filter by priority.
+     */
+    public function scopeOfPriority($query, string $priority)
+    {
+        return $query->where('priority', $priority);
+    }
+
+    /**
+     * Scope to exclude snoozed activities.
+     */
+    public function scopeNotSnoozed($query)
+    {
+        return $query->where(function ($q) {
+            $q->whereNull('snoozed_until')
+                ->orWhere('snoozed_until', '<=', now());
+        });
+    }
+
+    /**
+     * Scope for smart inbox: incomplete, not snoozed, ordered by priority score.
+     */
+    public function scopeSmartInbox($query)
+    {
+        return $query->incomplete()
+            ->notSnoozed()
+            ->orderByDesc('priority_score');
+    }
+
+    /**
+     * Check if the activity is currently snoozed.
+     */
+    public function isSnoozed(): bool
+    {
+        return $this->snoozed_until && $this->snoozed_until->isFuture();
+    }
+
+    /**
+     * Snooze this activity until a given time.
+     */
+    public function snoozeUntil(\DateTimeInterface $until): bool
+    {
+        $this->snoozed_until = $until;
+
+        return $this->save();
     }
 }

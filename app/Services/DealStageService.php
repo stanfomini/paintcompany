@@ -16,12 +16,17 @@ class DealStageService
             return;
         }
 
+        $oldStage = $deal->stage;
+
         $deal->update([
             'stage' => $newStage,
             'follow_up_date' => in_array($newStage, Deal::PLANNER_STAGES)
                 ? ($followUpDate ?? now()->addDay()->toDateString())
                 : $deal->follow_up_date,
         ]);
+
+        // Auto-complete prior activities based on stage transitions
+        $this->autoCompletePriorActivities($deal, $oldStage, $newStage);
 
         if (in_array($newStage, Deal::PLANNER_STAGES)) {
             $this->createFollowUpActivity($deal, $followUpDate);
@@ -33,10 +38,51 @@ class DealStageService
     }
 
     /**
+     * Auto-complete prior activities when a deal transitions stages.
+     */
+    protected function autoCompletePriorActivities(Deal $deal, string $oldStage, string $newStage): void
+    {
+        // Deal reaches terminal stage -> complete ALL deal activities
+        if (in_array($newStage, Deal::TERMINAL_STAGES)) {
+            Activity::query()
+                ->forSubject($deal)
+                ->incomplete()
+                ->get()
+                ->each->markAsCompleted();
+
+            return;
+        }
+
+        // Deal leaves planner stages OR moves to quote_scheduled -> complete follow-up activities
+        $wasPlannerStage = in_array($oldStage, Deal::PLANNER_STAGES);
+        $isNowQuoteScheduled = $newStage === 'quote_scheduled';
+
+        if ($wasPlannerStage || $isNowQuoteScheduled) {
+            Activity::query()
+                ->byAutomationKey('deal_follow_up')
+                ->forSubject($deal)
+                ->incomplete()
+                ->get()
+                ->each->markAsCompleted();
+        }
+    }
+
+    /**
      * Create a quote-scheduled activity linked to the deal.
      */
     protected function createQuoteScheduledActivity(Deal $deal, ?string $scheduledDate = null): void
     {
+        // Dedup: don't create if an incomplete one already exists for this deal
+        $exists = Activity::query()
+            ->byAutomationKey('deal_quote_scheduled')
+            ->forSubject($deal)
+            ->incomplete()
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
         $customerName = $deal->customer?->full_name ?? 'Unknown';
         $dueAt = $scheduledDate
             ? \Carbon\Carbon::parse($scheduledDate)
@@ -56,6 +102,7 @@ class DealStageService
             'title' => "Quote appointment: {$customerName}",
             'due_at' => $dueAt,
             'is_completed' => false,
+            'automation_key' => 'deal_quote_scheduled',
         ]);
     }
 
@@ -64,6 +111,17 @@ class DealStageService
      */
     protected function createFollowUpActivity(Deal $deal, ?string $followUpDate = null): void
     {
+        // Dedup: don't create if an incomplete one already exists for this deal
+        $exists = Activity::query()
+            ->byAutomationKey('deal_follow_up')
+            ->forSubject($deal)
+            ->incomplete()
+            ->exists();
+
+        if ($exists) {
+            return;
+        }
+
         $customerName = $deal->customer?->full_name ?? 'Unknown';
         $dueAt = $followUpDate
             ? \Carbon\Carbon::parse($followUpDate)->setTime(9, 0)
@@ -78,6 +136,7 @@ class DealStageService
             'title' => "Follow up: {$customerName} - {$deal->title}",
             'due_at' => $dueAt,
             'is_completed' => false,
+            'automation_key' => 'deal_follow_up',
         ]);
     }
 }

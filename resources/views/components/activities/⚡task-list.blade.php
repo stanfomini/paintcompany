@@ -42,7 +42,7 @@ new class extends Component {
     public function toggleComplete(int $activityId): void
     {
         $activity = Activity::query()
-            ->forUser(auth()->user())
+            ->forUserOrAssignedTo(auth()->user())
             ->findOrFail($activityId);
 
         if ($activity->is_completed) {
@@ -56,7 +56,7 @@ new class extends Component {
     public function activities()
     {
         return Activity::query()
-            ->forUser(auth()->user())
+            ->forUserOrAssignedTo(auth()->user())
             ->with('subject')
             ->when($this->typeFilter !== 'all', function ($query) {
                 return $query->ofType($this->typeFilter);

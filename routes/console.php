@@ -10,3 +10,4 @@ Artisan::command('inspire', function () {
 
 Schedule::command('crew:check-compliance')->dailyAt('07:00');
 Schedule::command('meetings:send-reminders')->everyFiveMinutes();
+Schedule::command('priority-scores:recalculate')->everyFifteenMinutes();
