@@ -200,9 +200,15 @@ new class extends Component
         if ($this->estimate) {
             $cached = \Illuminate\Support\Facades\Cache::get("ai-build-estimate:{$this->estimate->id}");
             if ($cached && in_array($cached['status'] ?? '', ['building', 'sending'])) {
-                $this->aiBuildInProgress = true;
-                $this->aiBuildStatus = $cached['status'];
-                $this->aiBuildMessage = $cached['message'] ?? 'AI is building your estimate...';
+                // Ignore stale build state older than 10 minutes
+                $startedAt = isset($cached['started_at']) ? \Carbon\Carbon::parse($cached['started_at']) : null;
+                if ($startedAt && $startedAt->diffInMinutes(now()) > 10) {
+                    \Illuminate\Support\Facades\Cache::forget("ai-build-estimate:{$this->estimate->id}");
+                } else {
+                    $this->aiBuildInProgress = true;
+                    $this->aiBuildStatus = $cached['status'];
+                    $this->aiBuildMessage = $cached['message'] ?? 'AI is building your estimate...';
+                }
             }
         }
     }
