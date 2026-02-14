@@ -6,7 +6,17 @@ SSH into production: `ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}}`
 Production app path: `{{PROD_PATH}}`
 Callback URL: `{{CALLBACK_URL}}`
 Callback secret: `{{API_SECRET}}`
-Build request ID: `{{REQUEST_ID}}
+Build request ID: `{{REQUEST_ID}}`
+
+## CRITICAL: All Database Operations Go Through SSH
+
+You are running on the DEV server. The estimate data lives on the PRODUCTION server. **NEVER use local `php artisan tinker` directly.** Every single database read or write MUST be wrapped in SSH:
+
+```bash
+ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"...your code here...\""
+```
+
+If you run tinker without the SSH prefix, you are writing to the wrong database and the user will see nothing. This is the #1 rule.
 
 ## Progress Updates
 
@@ -33,11 +43,9 @@ Send a progress update at each major step:
 
 ## Instructions
 
-Use the blueprint-estimator skill (`/home/forge/apexnegotiations.com/.claude/skills/blueprint-estimator/SKILL.md`) as your guide. Follow ALL phases.
+Read the blueprint-estimator skill at `/home/forge/apexnegotiations.com/.claude/skills/blueprint-estimator/SKILL.md` for domain knowledge about how estimates work, what surfaces look like, production rates, substrates, etc. Use it as a REFERENCE for what data to create. But **do NOT follow its tinker commands directly** — those are for local use. Instead, wrap every command in SSH as shown below.
 
 ### Phase 0: Triage - Check What's Available
-
-SSH into production and query what materials exist:
 
 ```bash
 ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"
@@ -72,35 +80,88 @@ echo json_encode([
 
 **Decision logic:**
 - If `pdf_count == 0 AND image_count == 0 AND video_count == 0 AND has_notes == false`: Send callback with status `nothing_to_build` and exit.
-- If `existing_areas > 0`: Delete all existing areas, template usages, and packages first, then proceed to build fresh. Use this command to clear them:
+- If `existing_areas > 0`: Delete all existing areas, template usages, and packages first via SSH, then proceed to build fresh:
   ```bash
   ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"
   \\\$estimate = App\\\\Models\\\\Estimate::find({{ESTIMATE_ID}});
   \\\$estimate->areas()->delete();
   \\\$estimate->templateUsages()->delete();
   \\\$estimate->packages()->delete();
-  echo 'Cleared ' . \\\$estimate->id . ' for rebuild.';
+  echo 'Cleared estimate ' . \\\$estimate->id . ' for rebuild.';
   \""
   ```
 - If PDFs exist: Try to extract text. If extraction fails completely: Send callback with status `unreadable_blueprints` and exit.
 - Otherwise: Proceed with whatever materials are available.
 
-### Phase 1: Gather Data
+### Phase 1: Gather Data via SSH
 
-Follow the blueprint-estimator skill Phase 1. For each step, SSH into production to query data.
+Query the estimate's photos, notes, and property details — all via SSH:
 
-To download a PDF for local processing:
+```bash
+ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"
+\\\$estimate = App\\\\Models\\\\Estimate::find({{ESTIMATE_ID}});
+\\\$photos = \\\$estimate->deal->property->photos;
+echo json_encode(\\\$photos->map(fn(\\\$p) => ['id' => \\\$p->id, 'path' => \\\$p->file_path, 'mime' => \\\$p->mime_type, 'comment' => \\\$p->comment]));
+\""
+```
+
+To download a PDF for local processing (this is the ONE exception where you use a local command — SCP downloads the file to the dev server for text extraction):
 ```bash
 scp -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}}:{{PROD_PATH}}/storage/app/public/{file_path} /tmp/blueprint-{{ESTIMATE_ID}}.pdf
 ```
 
-### Phase 2-7: Build the Estimate
+Process the PDF locally with Python pdfplumber or similar. Then use the extracted text to build areas.
 
-Follow the blueprint-estimator skill Phases 2-7. All database writes go through SSH + artisan tinker on production.
+### Phase 2-7: Build Areas and Surfaces via SSH
 
-### Phase 8: Generate Packages (Save Draft equivalent)
+For EACH area you want to create, use SSH + tinker on production. Example for creating one area with surfaces:
 
-After all areas and surfaces are created, generate packages:
+```bash
+ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"
+\\\$area = App\\\\Models\\\\EstimateArea::create([
+    'estimate_id' => {{ESTIMATE_ID}},
+    'name' => 'Living Room',
+    'scope_type' => 'interior',
+    'length' => 20,
+    'width' => 15,
+    'height' => 9,
+]);
+// Add surfaces
+\\\$area->surfaces()->create([
+    'name' => 'Walls',
+    'surface_type' => 'walls',
+    'quantity' => \\\$area->wall_sqft,
+    'unit' => 'sqft',
+    'production_rate_id' => App\\\\Models\\\\ProductionRate::where('name', 'like', '%Walls%')->where('category', 'Interior Painting')->first()?->id,
+    'coats' => 2,
+]);
+\\\$area->surfaces()->create([
+    'name' => 'Ceiling',
+    'surface_type' => 'ceiling',
+    'quantity' => \\\$area->ceiling_sqft,
+    'unit' => 'sqft',
+    'production_rate_id' => App\\\\Models\\\\ProductionRate::where('name', 'like', '%Ceiling%')->where('category', 'Interior Painting')->first()?->id,
+    'coats' => 2,
+]);
+\\\$area->surfaces()->create([
+    'name' => 'Baseboards',
+    'surface_type' => 'trim',
+    'quantity' => \\\$area->perimeter_lnft,
+    'unit' => 'lnft',
+    'production_rate_id' => App\\\\Models\\\\ProductionRate::where('name', 'like', '%Baseboard%')->first()?->id,
+    'coats' => 2,
+]);
+echo json_encode(['area_id' => \\\$area->id, 'name' => \\\$area->name, 'surfaces' => \\\$area->surfaces()->count()]);
+\""
+```
+
+Send a progress callback after each area is created.
+
+Repeat for every room found in the blueprints/photos/notes. Use the blueprint-estimator skill as reference for which surfaces to add (walls, ceiling, baseboards, doors, windows, closets, etc.) and which production rates to use.
+
+### Phase 8: Generate Packages via SSH
+
+After ALL areas and surfaces are created:
 
 ```bash
 ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"
@@ -108,13 +169,11 @@ ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan ti
 \\\$generator = app(App\\\\Services\\\\EstimatePackageGeneratorService::class);
 \\\$generator->regenerateFromTemplates(\\\$estimate);
 \\\$estimate->calculateTotals();
-echo 'Packages generated. Total: \$' . number_format(\\\$estimate->total, 2);
+echo 'Packages generated. Total: \\\$' . number_format(\\\$estimate->total, 2);
 \""
 ```
 
-### Phase 9: Send Callback
-
-When done (or on any failure), send the callback:
+### Phase 9: Send Final Callback
 
 ```bash
 curl -X POST "{{CALLBACK_URL}}" \
