@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\Automation\DealStageChanged;
 use App\Models\Activity;
 use App\Models\Deal;
 
@@ -35,6 +36,9 @@ class DealStageService
         if ($newStage === 'quote_scheduled') {
             $this->createQuoteScheduledActivity($deal, $followUpDate);
         }
+
+        // Dispatch automation event for workflow engine
+        event(new DealStageChanged($deal, $oldStage, $newStage));
     }
 
     /**

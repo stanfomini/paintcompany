@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Events\Automation\EstimateStatusChanged;
+use App\Events\Automation\JobStageChanged;
 use App\Models\Activity;
 use App\Models\Estimate;
 use App\Models\Job;
@@ -112,6 +114,8 @@ class PlannerAutomationService
             dueAt: now()->addDay(),
             assignedTo: $assignee,
         );
+
+        event(new JobStageChanged($job, null, $job->stage));
     }
 
     /**
@@ -295,6 +299,8 @@ class PlannerAutomationService
             dueAt: now()->addDay(),
             assignedTo: $assignee,
         );
+
+        event(new JobStageChanged($job, 'in_progress', 'completed'));
     }
 
     // ========================================
@@ -322,6 +328,8 @@ class PlannerAutomationService
             dueAt: now()->addDays(3),
             assignedTo: $assignee,
         );
+
+        event(new EstimateStatusChanged($estimate, null, 'sent'));
     }
 
     /**
@@ -345,6 +353,8 @@ class PlannerAutomationService
         );
 
         $this->autoComplete('estimate_sent_followup', $estimate);
+
+        event(new EstimateStatusChanged($estimate, 'sent', 'accepted'));
     }
 
     /**
@@ -368,5 +378,7 @@ class PlannerAutomationService
         );
 
         $this->autoComplete('estimate_sent_followup', $estimate);
+
+        event(new EstimateStatusChanged($estimate, 'sent', 'rejected'));
     }
 }

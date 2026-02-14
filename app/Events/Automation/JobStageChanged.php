@@ -10,7 +10,7 @@ class JobStageChanged extends AutomationEvent
 {
     public function __construct(
         public Job $job,
-        public string $oldStage,
+        public ?string $oldStage,
         public string $newStage,
         public ?User $user = null,
     ) {}

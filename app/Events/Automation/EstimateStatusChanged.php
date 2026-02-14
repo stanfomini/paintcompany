@@ -10,7 +10,7 @@ class EstimateStatusChanged extends AutomationEvent
 {
     public function __construct(
         public Estimate $estimate,
-        public string $oldStatus,
+        public ?string $oldStatus,
         public string $newStatus,
         public ?User $user = null,
     ) {}
