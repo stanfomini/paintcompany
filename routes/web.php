@@ -321,6 +321,8 @@ Route::post('/webhooks/ai-build', [\App\Http\Controllers\Api\AiBuildWebhookContr
     ->name('webhooks.ai-build');
 Route::get('/webhooks/ai-build/{requestId}', [\App\Http\Controllers\Api\AiBuildWebhookController::class, 'status'])
     ->name('webhooks.ai-build.status');
+Route::post('/webhooks/ai-build-callback', [\App\Http\Controllers\Api\AiBuildCallbackController::class, 'handle'])
+    ->name('webhooks.ai-build-callback');
 
 // Automation webhook (public - authenticated by token + optional auth header)
 Route::post('/webhooks/automation/{token}', \App\Http\Controllers\AutomationWebhookController::class)

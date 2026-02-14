@@ -1,4 +1,6 @@
 *
+!ai-prompts/
+!ai-prompts/**
 !private/
 !public/
 !.gitignore
