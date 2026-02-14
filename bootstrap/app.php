@@ -47,6 +47,10 @@ return Application::configure(basePath: dirname(__DIR__))
             SetLocale::class,
         ]);
 
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/*',
+        ]);
+
         $middleware->alias([
             'auth.internal' => EnsureUserIsInternal::class,
             'auth.agent' => EnsureUserIsAgent::class,

@@ -316,6 +316,17 @@ Route::post('/webhooks/leads/{token}', \App\Http\Controllers\WebhookLeadControll
     ->middleware('throttle:60,1')
     ->name('webhook.lead');
 
+// AI Build webhooks (no auth - verified by API secret header)
+Route::post('/webhooks/ai-build', [\App\Http\Controllers\Api\AiBuildWebhookController::class, 'trigger'])
+    ->name('webhooks.ai-build');
+Route::get('/webhooks/ai-build/{requestId}', [\App\Http\Controllers\Api\AiBuildWebhookController::class, 'status'])
+    ->name('webhooks.ai-build.status');
+
+// Automation webhook (public - authenticated by token + optional auth header)
+Route::post('/webhooks/automation/{token}', \App\Http\Controllers\AutomationWebhookController::class)
+    ->middleware('throttle:60,1')
+    ->name('webhook.automation');
+
 // Video API endpoint (public for player embeds)
 Route::get('/api/video-data/{type}/{id}', [VideoDataController::class, 'show'])
     ->name('api.video-data')
