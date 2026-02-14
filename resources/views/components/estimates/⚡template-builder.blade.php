@@ -2694,8 +2694,18 @@ new class extends Component
     #[\Livewire\Attributes\On('echo-private:estimate.{estimate.id},ai.build.completed')]
     public function onAiBuildCompleted(array $data): void
     {
-        $this->aiBuildInProgress = false;
         $this->aiBuildStatus = $data['status'];
+
+        // Progress update — keep spinner going, just update the message
+        if ($data['status'] === 'building') {
+            $this->aiBuildInProgress = true;
+            $this->aiBuildMessage = $data['summary'] ?? 'AI is working...';
+
+            return;
+        }
+
+        // Final status — stop spinner
+        $this->aiBuildInProgress = false;
 
         $this->aiBuildMessage = match ($data['status']) {
             'completed' => "AI built {$data['areas_created']} areas with {$data['surfaces_created']} surfaces! Refreshing...",

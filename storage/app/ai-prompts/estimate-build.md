@@ -8,6 +8,29 @@ Callback URL: `{{CALLBACK_URL}}`
 Callback secret: `{{API_SECRET}}`
 Build request ID: `{{REQUEST_ID}}
 
+## Progress Updates
+
+Send progress callbacks so the user sees real-time updates in the browser. Use status `building` with a `summary` describing what you're doing:
+
+```bash
+curl -X POST "{{CALLBACK_URL}}" \
+  -H "Content-Type: application/json" \
+  -H "X-AI-Build-Secret: {{API_SECRET}}" \
+  -d '{
+    "estimate_id": {{ESTIMATE_ID}},
+    "request_id": {{REQUEST_ID}},
+    "status": "building",
+    "summary": "Downloading blueprints..."
+  }'
+```
+
+Send a progress update at each major step:
+- "Analyzing estimate materials..." (Phase 0)
+- "Downloading and reading blueprints..." (Phase 1)
+- "Extracting rooms from floor plan..." (Phase 2)
+- "Building area: Living Room..." (Phase 3+, per area)
+- "Generating packages and pricing..." (Phase 8)
+
 ## Instructions
 
 Use the blueprint-estimator skill (`/home/forge/apexnegotiations.com/.claude/skills/blueprint-estimator/SKILL.md`) as your guide. Follow ALL phases.

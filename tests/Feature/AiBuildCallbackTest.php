@@ -46,6 +46,32 @@ it('handles completed build callback and broadcasts event', function () {
     });
 });
 
+it('broadcasts progress update without changing build request status', function () {
+    Event::fake([AiBuildCompleted::class]);
+
+    $estimate = Estimate::factory()->create();
+    $request = AiBuildRequest::create([
+        'estimate_id' => $estimate->id,
+        'status' => 'building',
+    ]);
+
+    $this->postJson('/webhooks/ai-build-callback', [
+        'estimate_id' => $estimate->id,
+        'request_id' => $request->id,
+        'status' => 'building',
+        'summary' => 'Extracting rooms from floor plan...',
+    ], ['X-AI-Build-Secret' => 'test-secret-123'])
+        ->assertOk();
+
+    // Status should remain 'building', not changed to completed/failed
+    expect($request->fresh()->status)->toBe('building');
+
+    Event::assertDispatched(AiBuildCompleted::class, function ($event) {
+        return $event->status === 'building'
+            && $event->summary === 'Extracting rooms from floor plan...';
+    });
+});
+
 it('handles failure callback', function () {
     Event::fake([AiBuildCompleted::class]);
 

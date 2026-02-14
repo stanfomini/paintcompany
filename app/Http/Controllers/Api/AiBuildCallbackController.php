@@ -20,16 +20,16 @@ class AiBuildCallbackController extends Controller
         $validated = $request->validate([
             'estimate_id' => 'required|integer',
             'request_id' => 'required|integer',
-            'status' => 'required|string|in:completed,nothing_to_build,unreadable_blueprints,failed,partial',
+            'status' => 'required|string|in:building,completed,nothing_to_build,unreadable_blueprints,failed,partial',
             'areas_created' => 'integer',
             'surfaces_created' => 'integer',
             'summary' => 'nullable|string',
             'error_message' => 'nullable|string',
         ]);
 
-        // Update build request record
+        // Update build request record (skip DB update for progress-only callbacks)
         $buildRequest = AiBuildRequest::find($validated['request_id']);
-        if ($buildRequest) {
+        if ($buildRequest && $validated['status'] !== 'building') {
             if (in_array($validated['status'], ['completed', 'partial'])) {
                 $buildRequest->markCompleted(
                     $validated['areas_created'] ?? 0,
