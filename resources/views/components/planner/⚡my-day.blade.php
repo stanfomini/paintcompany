@@ -10,6 +10,9 @@ use App\Notifications\TaskAssigned;
 use App\Services\CommandCenterService;
 use App\Services\DealStageService;
 use App\Services\PriorityScoreService;
+use App\Services\SlaMetricService;
+use App\Services\UnifiedCalendarService;
+use Carbon\Carbon;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
@@ -47,6 +50,120 @@ new class extends Component
 
     // Calendar sync
     public bool $showCalendarSync = false;
+
+    // Calendar view
+    public string $calendarMode = 'month'; // day, week, month
+
+    public ?string $calendarDate = null;
+
+    public function mountCalendar(): void
+    {
+        $this->calendarDate = today()->format('Y-m-d');
+    }
+
+    public function mount(): void
+    {
+        $this->calendarDate = today()->format('Y-m-d');
+    }
+
+    public function calendarPrev(): void
+    {
+        $date = Carbon::parse($this->calendarDate);
+        $this->calendarDate = match ($this->calendarMode) {
+            'day' => $date->subDay()->format('Y-m-d'),
+            'week' => $date->subWeek()->format('Y-m-d'),
+            'month' => $date->subMonth()->format('Y-m-d'),
+        };
+    }
+
+    public function calendarNext(): void
+    {
+        $date = Carbon::parse($this->calendarDate);
+        $this->calendarDate = match ($this->calendarMode) {
+            'day' => $date->addDay()->format('Y-m-d'),
+            'week' => $date->addWeek()->format('Y-m-d'),
+            'month' => $date->addMonth()->format('Y-m-d'),
+        };
+    }
+
+    public function calendarToday(): void
+    {
+        $this->calendarDate = today()->format('Y-m-d');
+    }
+
+    #[Computed]
+    public function calendarEvents(): array
+    {
+        $service = app(UnifiedCalendarService::class);
+        $date = Carbon::parse($this->calendarDate);
+
+        $events = match ($this->calendarMode) {
+            'day' => $service->getEventsForDate(auth()->user(), $date),
+            'week' => $service->getEventsForWeek(auth()->user(), $date->copy()->startOfWeek()),
+            'month' => $service->getEventsForMonth(auth()->user(), $date->copy()->startOfMonth()),
+        };
+
+        return $events->map(fn ($event) => [
+            'id' => $event['id'],
+            'title' => $event['title'],
+            'start' => $event['start']->format('Y-m-d H:i'),
+            'start_time' => $event['start']->format('g:ia'),
+            'end' => $event['end']->format('Y-m-d H:i'),
+            'date' => $event['start']->format('Y-m-d'),
+            'type' => $event['type'],
+            'source' => $event['source'],
+            'color' => $event['color'],
+            'url' => $event['url'],
+            'meta' => $event['meta'],
+        ])->toArray();
+    }
+
+    #[Computed]
+    public function calendarTitle(): string
+    {
+        $date = Carbon::parse($this->calendarDate);
+
+        return match ($this->calendarMode) {
+            'day' => $date->format('l, F j, Y'),
+            'week' => $date->copy()->startOfWeek()->format('M j') . ' - ' . $date->copy()->endOfWeek()->format('M j, Y'),
+            'month' => $date->format('F Y'),
+        };
+    }
+
+    #[Computed]
+    public function calendarDays(): array
+    {
+        $date = Carbon::parse($this->calendarDate);
+
+        if ($this->calendarMode === 'day') {
+            return [$date->format('Y-m-d')];
+        }
+
+        if ($this->calendarMode === 'week') {
+            $start = $date->copy()->startOfWeek();
+            $days = [];
+            for ($i = 0; $i < 7; $i++) {
+                $days[] = $start->copy()->addDays($i)->format('Y-m-d');
+            }
+
+            return $days;
+        }
+
+        // Month view - include padding days from previous/next month
+        $monthStart = $date->copy()->startOfMonth();
+        $monthEnd = $date->copy()->endOfMonth();
+        $calStart = $monthStart->copy()->startOfWeek();
+        $calEnd = $monthEnd->copy()->endOfWeek();
+
+        $days = [];
+        $current = $calStart->copy();
+        while ($current <= $calEnd) {
+            $days[] = $current->format('Y-m-d');
+            $current->addDay();
+        }
+
+        return $days;
+    }
 
     // Quick add form
     public bool $showAddTask = false;
@@ -123,6 +240,12 @@ new class extends Component
     }
 
     #[Computed]
+    public function dashboardMetrics(): array
+    {
+        return app(SlaMetricService::class)->getDashboardMetrics(auth()->user());
+    }
+
+    #[Computed]
     public function activityCalendarUrl(): string
     {
         $token = auth()->user()->getOrCreateCalendarToken();
@@ -137,6 +260,7 @@ new class extends Component
         unset($this->smartInbox);
         unset($this->activities);
         unset($this->unreadThreads);
+        unset($this->calendarEvents);
     }
 
     // ============ Smart Inbox ============
@@ -526,6 +650,50 @@ new class extends Component
             </flux:callout>
         @endif
 
+        {{-- Dashboard Metrics --}}
+        @if ($view === 'command_center')
+            <div x-data="{ metricsOpen: false }" class="mb-4">
+                <button x-on:click="metricsOpen = !metricsOpen" class="flex items-center gap-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors">
+                    <flux:icon name="chart-bar" class="w-4 h-4" />
+                    <span>{{ __('Performance Metrics') }}</span>
+                    <flux:icon x-bind:class="metricsOpen ? 'rotate-180' : ''" name="chevron-down" class="w-3 h-3 transition-transform" />
+                </button>
+                <div x-show="metricsOpen" x-collapse x-cloak class="mt-3">
+                    @php $metrics = $this->dashboardMetrics; @endphp
+                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-red-600">{{ $metrics['overdue_count'] }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Overdue') }}</div>
+                        </div>
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-amber-600">{{ $metrics['due_today_count'] }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Due Today') }}</div>
+                        </div>
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-green-600">{{ $metrics['completed_today_count'] }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Done Today') }}</div>
+                        </div>
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-blue-600">{{ $metrics['speed_to_lead'] ? number_format($metrics['speed_to_lead'], 0) . 'm' : '-' }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Speed to Lead') }}</div>
+                        </div>
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-purple-600">{{ $metrics['follow_up_compliance'] ? number_format($metrics['follow_up_compliance'], 0) . '%' : '-' }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Follow-Up Rate') }}</div>
+                        </div>
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-cyan-600">{{ $metrics['response_time'] ? number_format($metrics['response_time'], 0) . 'm' : '-' }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Avg Response') }}</div>
+                        </div>
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-orange-600">{{ $metrics['estimate_turnaround'] ? number_format($metrics['estimate_turnaround'], 0) . 'h' : '-' }}</div>
+                            <div class="text-xs text-zinc-500 mt-1">{{ __('Est. Turnaround') }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         {{-- Search Bar --}}
         <div class="mb-4">
             <flux:input
@@ -601,8 +769,163 @@ new class extends Component
         @endif
 
         @if ($view === 'calendar')
-            <div x-data="calendarView" class="mt-4">
-                <div x-ref="calendar"></div>
+            {{-- Calendar Controls --}}
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2">
+                    <flux:button size="sm" variant="ghost" wire:click="calendarPrev" icon="chevron-left" />
+                    <flux:button size="sm" variant="ghost" wire:click="calendarToday">{{ __('Today') }}</flux:button>
+                    <flux:button size="sm" variant="ghost" wire:click="calendarNext" icon="chevron-right" />
+                    <flux:heading size="lg" class="ml-2">{{ $this->calendarTitle }}</flux:heading>
+                </div>
+                <div class="flex items-center gap-1">
+                    <flux:button size="sm" :variant="$calendarMode === 'day' ? 'primary' : 'ghost'" wire:click="$set('calendarMode', 'day')">{{ __('Day') }}</flux:button>
+                    <flux:button size="sm" :variant="$calendarMode === 'week' ? 'primary' : 'ghost'" wire:click="$set('calendarMode', 'week')">{{ __('Week') }}</flux:button>
+                    <flux:button size="sm" :variant="$calendarMode === 'month' ? 'primary' : 'ghost'" wire:click="$set('calendarMode', 'month')">{{ __('Month') }}</flux:button>
+                </div>
+            </div>
+
+            @php
+                $events = $this->calendarEvents;
+                $eventsByDate = collect($events)->groupBy('date');
+                $days = $this->calendarDays;
+                $today = today()->format('Y-m-d');
+                $currentMonth = \Carbon\Carbon::parse($this->calendarDate)->month;
+            @endphp
+
+            @if ($calendarMode === 'month')
+                {{-- Month Grid --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                    {{-- Day headers --}}
+                    <div class="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+                        @foreach (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as $dayName)
+                            <div class="px-2 py-2 text-xs font-medium text-center text-zinc-500 dark:text-zinc-400">{{ __($dayName) }}</div>
+                        @endforeach
+                    </div>
+                    {{-- Day cells --}}
+                    <div class="grid grid-cols-7">
+                        @foreach ($days as $day)
+                            @php
+                                $dayCarbon = \Carbon\Carbon::parse($day);
+                                $isCurrentMonth = $dayCarbon->month === $currentMonth;
+                                $isToday = $day === $today;
+                                $dayEvents = $eventsByDate->get($day, collect());
+                            @endphp
+                            <div class="min-h-[100px] border-b border-r border-zinc-200 dark:border-zinc-700 p-1 {{ ! $isCurrentMonth ? 'bg-zinc-50/50 dark:bg-zinc-800/30' : '' }}">
+                                <div class="flex items-center justify-center mb-1">
+                                    <span class="text-xs font-medium {{ $isToday ? 'bg-blue-600 text-white rounded-full w-6 h-6 flex items-center justify-center' : ($isCurrentMonth ? 'text-zinc-700 dark:text-zinc-300' : 'text-zinc-400 dark:text-zinc-600') }}">
+                                        {{ $dayCarbon->day }}
+                                    </span>
+                                </div>
+                                <div class="space-y-0.5">
+                                    @foreach ($dayEvents->take(3) as $event)
+                                        <div
+                                            class="text-xs px-1 py-0.5 rounded truncate cursor-default"
+                                            style="background-color: {{ $event['color'] }}20; color: {{ $event['color'] }}; border-left: 2px solid {{ $event['color'] }};"
+                                            title="{{ $event['title'] }} ({{ $event['start_time'] }})"
+                                            @if ($event['url'])
+                                                onclick="window.location='{{ $event['url'] }}'"
+                                                class="cursor-pointer"
+                                            @endif
+                                        >
+                                            {{ $event['start_time'] }} {{ Str::limit($event['title'], 15) }}
+                                        </div>
+                                    @endforeach
+                                    @if ($dayEvents->count() > 3)
+                                        <div class="text-xs text-zinc-500 dark:text-zinc-400 px-1">+{{ $dayEvents->count() - 3 }} {{ __('more') }}</div>
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @elseif ($calendarMode === 'week')
+                {{-- Week View --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                    {{-- Day columns header --}}
+                    <div class="grid grid-cols-7 bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+                        @foreach ($days as $day)
+                            @php $dayCarbon = \Carbon\Carbon::parse($day); @endphp
+                            <div class="px-2 py-2 text-center border-r border-zinc-200 dark:border-zinc-700 last:border-r-0">
+                                <div class="text-xs font-medium text-zinc-500 dark:text-zinc-400">{{ $dayCarbon->format('D') }}</div>
+                                <div class="text-sm font-semibold {{ $day === $today ? 'text-blue-600' : 'text-zinc-700 dark:text-zinc-300' }}">{{ $dayCarbon->day }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                    {{-- Event rows --}}
+                    <div class="grid grid-cols-7 min-h-[400px]">
+                        @foreach ($days as $day)
+                            @php $dayEvents = $eventsByDate->get($day, collect()); @endphp
+                            <div class="p-1 border-r border-zinc-200 dark:border-zinc-700 last:border-r-0 space-y-1">
+                                @foreach ($dayEvents as $event)
+                                    <div
+                                        class="text-xs p-1.5 rounded"
+                                        style="background-color: {{ $event['color'] }}15; border-left: 3px solid {{ $event['color'] }};"
+                                        @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" style="cursor:pointer;" @endif
+                                    >
+                                        <div class="font-medium truncate" style="color: {{ $event['color'] }};">{{ $event['start_time'] }}</div>
+                                        <div class="truncate text-zinc-700 dark:text-zinc-300">{{ $event['title'] }}</div>
+                                        <div class="text-zinc-500 dark:text-zinc-400 capitalize">{{ $event['source'] }}</div>
+                                    </div>
+                                @endforeach
+                                @if ($dayEvents->isEmpty())
+                                    <div class="flex items-center justify-center h-full text-xs text-zinc-400">-</div>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @else
+                {{-- Day View --}}
+                @php $dayEvents = collect($events)->sortBy('start'); @endphp
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                    @if ($dayEvents->isEmpty())
+                        <div class="p-8 text-center">
+                            <flux:icon name="calendar" class="w-8 h-8 mx-auto text-zinc-300 dark:text-zinc-600 mb-2" />
+                            <flux:text class="text-zinc-500">{{ __('No events scheduled for this day.') }}</flux:text>
+                        </div>
+                    @else
+                        <div class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                            @foreach ($dayEvents as $event)
+                                <div
+                                    class="flex items-start gap-3 p-3 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors {{ $event['url'] ? 'cursor-pointer' : '' }}"
+                                    @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" @endif
+                                >
+                                    <div class="shrink-0 w-1 h-10 rounded-full mt-0.5" style="background-color: {{ $event['color'] }};"></div>
+                                    <div class="shrink-0 w-16 text-right">
+                                        <div class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ $event['start_time'] }}</div>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{{ $event['title'] }}</div>
+                                        <div class="flex items-center gap-2 mt-0.5">
+                                            <span class="text-xs capitalize px-1.5 py-0.5 rounded-full" style="background-color: {{ $event['color'] }}15; color: {{ $event['color'] }};">
+                                                {{ str_replace('_', ' ', $event['source']) }}
+                                            </span>
+                                            @if ($event['type'] !== $event['source'])
+                                                <span class="text-xs text-zinc-500 capitalize">{{ str_replace('_', ' ', $event['type']) }}</span>
+                                            @endif
+                                            @if (! empty($event['meta']['is_completed']))
+                                                <span class="text-xs text-green-600">{{ __('Completed') }}</span>
+                                            @elseif (! empty($event['meta']['is_overdue']))
+                                                <span class="text-xs text-red-600">{{ __('Overdue') }}</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
+            @endif
+
+            {{-- Color legend --}}
+            <div class="flex flex-wrap items-center gap-4 mt-4 text-xs text-zinc-500 dark:text-zinc-400">
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> {{ __('Tasks') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span> {{ __('Meetings') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> {{ __('Calls') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> {{ __('Emails / Jobs') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span> {{ __('Commitments') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> {{ __('Overdue') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span> {{ __('Completed') }}</div>
             </div>
         @elseif ($view === 'command_center')
             {{-- ===== LAYER 1: Smart Inbox ===== --}}

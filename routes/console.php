@@ -14,3 +14,4 @@ Schedule::command('priority-scores:recalculate')->everyFifteenMinutes();
 Schedule::command('workflows:process-waiting')->everyFiveMinutes();
 Schedule::command('workflows:run-scheduled')->everyFifteenMinutes();
 Schedule::command('workflows:cleanup-stale')->daily();
+Schedule::command('sla:calculate-metrics')->dailyAt('06:00');

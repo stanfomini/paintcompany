@@ -40,6 +40,14 @@ class Activity extends Model
         'urgent' => 'Urgent',
     ];
 
+    public const RECURRENCE_RULES = [
+        'daily' => 'Daily',
+        'weekdays' => 'Weekdays (Mon-Fri)',
+        'weekly' => 'Weekly',
+        'biweekly' => 'Every 2 Weeks',
+        'monthly' => 'Monthly',
+    ];
+
     protected $fillable = [
         'user_id',
         'assigned_to',
@@ -55,6 +63,8 @@ class Activity extends Model
         'priority',
         'priority_score',
         'snoozed_until',
+        'recurrence_rule',
+        'recurrence_parent_id',
         'meeting_type',
         'meeting_status',
         'proposed_by',
@@ -203,7 +213,13 @@ class Activity extends Model
         $this->is_completed = true;
         $this->completed_at = now();
 
-        return $this->save();
+        $saved = $this->save();
+
+        if ($saved && $this->isRecurring()) {
+            $this->createNextOccurrence();
+        }
+
+        return $saved;
     }
 
     /**
@@ -381,6 +397,98 @@ class Activity extends Model
             User::class => $this->subject?->name ?? 'User',
             default => null,
         };
+    }
+
+    /**
+     * Get the parent recurring activity.
+     */
+    public function recurrenceParent(): BelongsTo
+    {
+        return $this->belongsTo(Activity::class, 'recurrence_parent_id');
+    }
+
+    /**
+     * Get child occurrences of this recurring activity.
+     */
+    public function recurrenceChildren(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Activity::class, 'recurrence_parent_id');
+    }
+
+    /**
+     * Check if this activity is recurring.
+     */
+    public function isRecurring(): bool
+    {
+        return $this->recurrence_rule !== null;
+    }
+
+    /**
+     * Create the next occurrence of a recurring activity.
+     */
+    public function createNextOccurrence(): ?self
+    {
+        if (! $this->isRecurring() || ! $this->due_at) {
+            return null;
+        }
+
+        $nextDue = $this->calculateNextDueDate();
+
+        if (! $nextDue) {
+            return null;
+        }
+
+        $parentId = $this->recurrence_parent_id ?? $this->id;
+
+        return static::create([
+            'user_id' => $this->user_id,
+            'assigned_to' => $this->assigned_to,
+            'subject_type' => $this->subject_type,
+            'subject_id' => $this->subject_id,
+            'type' => $this->type,
+            'title' => $this->title,
+            'description' => $this->description,
+            'is_completed' => false,
+            'due_at' => $nextDue,
+            'automation_key' => $this->automation_key,
+            'priority' => $this->priority ?? 'normal',
+            'recurrence_rule' => $this->recurrence_rule,
+            'recurrence_parent_id' => $parentId,
+        ]);
+    }
+
+    /**
+     * Calculate the next due date based on recurrence rule.
+     */
+    public function calculateNextDueDate(): ?\Carbon\CarbonInterface
+    {
+        if (! $this->due_at || ! $this->recurrence_rule) {
+            return null;
+        }
+
+        $base = $this->due_at->copy();
+
+        return match ($this->recurrence_rule) {
+            'daily' => $base->addDay(),
+            'weekdays' => $this->nextWeekday($base),
+            'weekly' => $base->addWeek(),
+            'biweekly' => $base->addWeeks(2),
+            'monthly' => $base->addMonth(),
+            default => null,
+        };
+    }
+
+    /**
+     * Get the next weekday after a given date.
+     */
+    protected function nextWeekday(\Carbon\CarbonInterface $date): \Carbon\CarbonInterface
+    {
+        $next = $date->copy()->addDay();
+        while ($next->isWeekend()) {
+            $next = $next->addDay();
+        }
+
+        return $next;
     }
 
     /**

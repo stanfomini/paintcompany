@@ -220,4 +220,15 @@ class ActivityFactory extends Factory
             'estimate_id' => $estimate->id,
         ]);
     }
+
+    /**
+     * Set as a recurring activity.
+     */
+    public function recurring(string $rule = 'weekly'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'recurrence_rule' => $rule,
+            'due_at' => $attributes['due_at'] ?? now()->addDay(),
+        ]);
+    }
 }
