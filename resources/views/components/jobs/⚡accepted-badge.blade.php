@@ -41,7 +41,7 @@ new class extends Component {
 
 <span wire:poll.30s>
     @if ($this->count > 0)
-        <span class="inline-flex items-center gap-1 bg-green-100 dark:bg-green-900/60 text-green-700 dark:text-green-300 text-[10px] font-semibold rounded-full px-1.5 py-0.5 leading-none">
+        <span class="inline-flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-semibold rounded-full px-1.5 py-0.5 leading-none">
             {{ $this->count > 99 ? '99+' : $this->count }}
             <span class="hidden sm:inline">{{ __('accepted') }}</span>
         </span>

@@ -14,7 +14,7 @@ it('shows count of deals in lead stage', function () {
     Livewire::actingAs($user)
         ->test('deals.new-leads-badge')
         ->assertSee('3')
-        ->assertSeeHtml('bg-blue-100');
+        ->assertSeeHtml('bg-blue-500');
 });
 
 it('hides badge when no new leads exist', function () {
@@ -24,7 +24,7 @@ it('hides badge when no new leads exist', function () {
 
     Livewire::actingAs($user)
         ->test('deals.new-leads-badge')
-        ->assertDontSeeHtml('bg-blue-100');
+        ->assertDontSeeHtml('bg-blue-500');
 });
 
 it('updates count after refresh', function () {

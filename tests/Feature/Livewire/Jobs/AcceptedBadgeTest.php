@@ -14,7 +14,7 @@ it('shows count of jobs in estimate_accepted stage', function () {
     Livewire::actingAs($user)
         ->test('jobs.accepted-badge')
         ->assertSee('2')
-        ->assertSeeHtml('bg-green-100');
+        ->assertSeeHtml('bg-emerald-500');
 });
 
 it('hides badge when no accepted jobs exist', function () {
@@ -24,7 +24,7 @@ it('hides badge when no accepted jobs exist', function () {
 
     Livewire::actingAs($user)
         ->test('jobs.accepted-badge')
-        ->assertDontSeeHtml('bg-green-100');
+        ->assertDontSeeHtml('bg-emerald-500');
 });
 
 it('updates count after refresh', function () {
