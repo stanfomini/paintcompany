@@ -573,7 +573,7 @@ class ChatService
             if ($detectedLang === $targetLang) {
                 $metadata['detected_lang'] = $detectedLang;
                 $message->update(['metadata' => $metadata]);
-                broadcast(new MessageTranslated($message));
+                $this->safeBroadcast(new MessageTranslated($message));
 
                 return;
             }
@@ -588,7 +588,7 @@ class ChatService
             $metadata['translations'][$targetLang] = $translated;
             $message->update(['metadata' => $metadata]);
 
-            broadcast(new MessageTranslated($message));
+            $this->safeBroadcast(new MessageTranslated($message));
         } catch (\Exception $e) {
             Log::error('Chat translation failed', [
                 'message_id' => $message->id,
@@ -613,6 +613,12 @@ class ChatService
             broadcast($event)->toOthers();
         } catch (\Pusher\PusherException $e) {
             // Socket ID invalid (e.g., "undefined" when Echo not connected).
+            // Clear the contaminated socket before retrying, since toOthers()
+            // already set $event->socket to the invalid value.
+            if (property_exists($event, 'socket')) {
+                $event->socket = null;
+            }
+
             // Fall back to broadcasting to everyone instead of crashing.
             try {
                 broadcast($event);
@@ -623,6 +629,21 @@ class ChatService
                     'error' => $e->getMessage(),
                 ]);
             }
+        }
+    }
+
+    /**
+     * Safely broadcast an event (to everyone), catching any broadcast errors.
+     */
+    private function safeBroadcast(object $event): void
+    {
+        try {
+            broadcast($event);
+        } catch (\Throwable $e) {
+            Log::warning('Chat broadcast failed', [
+                'event' => get_class($event),
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
