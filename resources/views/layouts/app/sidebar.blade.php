@@ -22,12 +22,18 @@
                     @endcan
                     @can('deals.view')
                         <flux:sidebar.item icon="briefcase" :href="route('deals.index')" :current="request()->routeIs('deals.*')" wire:navigate>
-                            {{ __('Active Leads') }}
+                            <div class="flex items-center justify-between w-full">
+                                {{ __('Active Leads') }}
+                                @livewire('deals.new-leads-badge')
+                            </div>
                         </flux:sidebar.item>
                     @endcan
                     @can('jobs.view')
                         <flux:sidebar.item icon="clipboard-document-check" :href="route('jobs.index')" :current="request()->routeIs('jobs.*')" wire:navigate>
-                            {{ __('Jobs') }}
+                            <div class="flex items-center justify-between w-full">
+                                {{ __('Jobs') }}
+                                @livewire('jobs.accepted-badge')
+                            </div>
                         </flux:sidebar.item>
                     @endcan
                     @can('planner.view')
