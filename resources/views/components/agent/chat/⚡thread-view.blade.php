@@ -36,6 +36,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
         return [
             "echo-private:chat.thread.{$this->thread->id},.message.sent" => 'onNewMessage',
             "echo-private:chat.thread.{$this->thread->id},.message.read" => '$refresh',
+            "echo-private:chat.thread.{$this->thread->id},.message.translated" => '$refresh',
         ];
     }
 
@@ -106,6 +107,48 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
 
         unset($this->messages);
         $this->dispatch('message-deleted');
+    }
+
+    public function translateMessage(int $messageId): void
+    {
+        $message = ChatMessage::findOrFail($messageId);
+        abort_unless($message->thread_id === $this->thread->id, 403);
+
+        $text = trim($message->content);
+        if (mb_strlen($text) < 5) {
+            return;
+        }
+
+        $tr = new \Stichoza\GoogleTranslate\GoogleTranslate();
+        $tr->setSource(null);
+        $tr->setTarget('en');
+        $translated = $tr->translate($text);
+        $detectedLang = $tr->getLastDetectedSource();
+
+        $targetLang = $detectedLang === 'en' ? 'es' : 'en';
+
+        if ($detectedLang === $targetLang) {
+            $metadata = $message->metadata ?? [];
+            $metadata['detected_lang'] = $detectedLang;
+            $message->update(['metadata' => $metadata]);
+            unset($this->messages);
+
+            return;
+        }
+
+        if ($targetLang !== 'en') {
+            $tr->setSource(null);
+            $tr->setTarget($targetLang);
+            $translated = $tr->translate($text);
+        }
+
+        $metadata = $message->metadata ?? [];
+        $metadata['detected_lang'] = $detectedLang;
+        $metadata['translations'][$targetLang] = $translated;
+        unset($metadata['translation_status']);
+        $message->update(['metadata' => $metadata]);
+
+        unset($this->messages);
     }
 
     #[Computed]
@@ -359,6 +402,28 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                                 "{{ $message->metadata['transcription'] }}"
                                             </flux:text>
                                         </div>
+                                        {{-- Audio transcription translation toggle --}}
+                                        @if ($message->needsTranslationFor(app()->getLocale()))
+                                            <div x-data="{ showTranslation: false }" class="mt-1">
+                                                <button
+                                                    @click="showTranslation = !showTranslation"
+                                                    class="text-xs underline opacity-70 hover:opacity-100 transition-opacity {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}"
+                                                >
+                                                    <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                                    <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                </button>
+                                                <div x-show="showTranslation" x-cloak class="mt-1">
+                                                    <flux:text class="text-sm italic {{ $message->user_id === auth('agent')->id() ? 'text-blue-500 dark:text-blue-200' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                        "{{ $message->getTranslation(app()->getLocale()) }}"
+                                                    </flux:text>
+                                                    <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                                </div>
+                                            </div>
+                                        @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
+                                            <div class="mt-1 text-xs opacity-70 {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
+                                                <span class="animate-pulse">{{ __('Translating...') }}</span>
+                                            </div>
+                                        @endif
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
                                         <div class="text-xs {{ $message->user_id === auth('agent')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                             <span class="animate-pulse">{{ __('Transcribing...') }}</span>
@@ -377,6 +442,27 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                 </div>
                             @else
                                 <flux:text class="whitespace-pre-wrap break-words">{{ $message->content }}</flux:text>
+
+                            {{-- Translation toggle --}}
+                            @if ($message->needsTranslationFor(app()->getLocale()) && !$message->isSystem())
+                                <div x-data="{ showTranslation: false }" class="mt-1">
+                                    <button
+                                        @click="showTranslation = !showTranslation"
+                                        class="text-xs underline opacity-70 hover:opacity-100 transition-opacity"
+                                    >
+                                        <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                        <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                    </button>
+                                    <div x-show="showTranslation" x-cloak class="mt-1">
+                                        <flux:text class="whitespace-pre-wrap break-words">{{ $message->getTranslation(app()->getLocale()) }}</flux:text>
+                                        <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                    </div>
+                                </div>
+                            @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
+                                <div class="mt-1 text-xs opacity-70">
+                                    <span class="animate-pulse">{{ __('Translating...') }}</span>
+                                </div>
+                            @endif
                             @endif
 
                             {{-- Attachments --}}
@@ -432,6 +518,14 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                         >
                                             {{ __('Reply') }}
                                         </flux:menu.item>
+                                        @if (! $message->getDetectedLanguage() && ($message->metadata['translation_status'] ?? '') !== 'pending')
+                                            <flux:menu.item
+                                                wire:click="translateMessage({{ $message->id }})"
+                                                icon="language"
+                                            >
+                                                {{ __('Translate') }}
+                                            </flux:menu.item>
+                                        @endif
                                         @if ($message->user_id === auth('agent')->id())
                                             <flux:menu.item
                                                 wire:click="deleteMessage({{ $message->id }})"

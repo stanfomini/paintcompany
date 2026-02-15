@@ -69,6 +69,7 @@ class MeetingService
         // Check if already fully confirmed (single-party deal)
         if ($activity->fresh()->isFullyConfirmed($deal)) {
             $activity->update(['meeting_status' => 'confirmed']);
+            $activity->load('videoCall');
             $this->notifyAllParties($deal, $activity, MeetingConfirmed::class);
         } else {
             // Notify parties that need to confirm
@@ -108,6 +109,7 @@ class MeetingService
         // Check if fully confirmed
         if ($activity->isFullyConfirmed($deal)) {
             $activity->update(['meeting_status' => 'confirmed']);
+            $activity->load('videoCall');
             $this->notifyAllParties($deal, $activity, MeetingConfirmed::class);
         }
 
@@ -173,6 +175,7 @@ class MeetingService
 
             if ($activity->fresh()->isFullyConfirmed($deal)) {
                 $activity->update(['meeting_status' => 'confirmed']);
+                $activity->load('videoCall');
                 $this->notifyAllParties($deal, $activity, MeetingConfirmed::class);
             } else {
                 $this->notifyPartiesNeedingConfirmation($deal, $activity, $user);

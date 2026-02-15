@@ -189,6 +189,18 @@ Broadcast::channel('deal.{dealId}', function (User $user, int $dealId) {
  * Authorize access to an estimate channel.
  * Internal users, agents on the deal, or the deal's customer can listen.
  */
+/**
+ * Authorize access to a user's notification channel.
+ * This is the default channel Laravel uses for database notifications with broadcast.
+ */
+Broadcast::channel('App.Models.User.{id}', function (User $user, int $id) {
+    return $user->id === $id;
+});
+
+/**
+ * Authorize access to an estimate channel.
+ * Internal users, agents on the deal, or the deal's customer can listen.
+ */
 Broadcast::channel('estimate.{estimateId}', function (User $user, int $estimateId) {
     if ($user->isInternal()) {
         return true;

@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Events\MessageRead;
 use App\Events\MessageSent;
+use App\Events\MessageTranslated;
 use App\Events\NewThreadNotification;
+use App\Jobs\SendUnreadChatEmailJob;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\Deal;
@@ -12,8 +14,10 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Stichoza\GoogleTranslate\GoogleTranslate;
 
 class ChatService
 {
@@ -102,7 +106,7 @@ class ChatService
             $this->addDealStakeholders($thread, $deal, $initiator);
 
             // Notify about new thread
-            broadcast(new NewThreadNotification($thread, $initiator))->toOthers();
+            $this->safeBroadcastToOthers(new NewThreadNotification($thread, $initiator));
         } elseif (! $thread->hasParticipant($initiator)) {
             $thread->addParticipant($initiator);
         }
@@ -169,7 +173,7 @@ class ChatService
             $thread->addParticipant($user2);
 
             // Notify user2 about new thread
-            broadcast(new NewThreadNotification($thread, $user1))->toOthers();
+            $this->safeBroadcastToOthers(new NewThreadNotification($thread, $user1));
         }
 
         return $thread;
@@ -211,7 +215,13 @@ class ChatService
         $participant?->markAsRead();
 
         // Broadcast message to thread
-        broadcast(new MessageSent($message))->toOthers();
+        $this->safeBroadcastToOthers(new MessageSent($message));
+
+        // Dispatch delayed email for offline participants
+        $this->dispatchUnreadEmailJobs($thread, $message, $sender, $isInternal);
+
+        // Translate message inline (real-time)
+        $this->translateMessageInline($message);
 
         return $message;
     }
@@ -262,7 +272,12 @@ class ChatService
             $participant = $thread->getParticipant($sender);
             $participant?->markAsRead();
 
-            broadcast(new MessageSent($message->load('attachments')))->toOthers();
+            $this->safeBroadcastToOthers(new MessageSent($message->load('attachments')));
+
+            $this->dispatchUnreadEmailJobs($thread, $message, $sender, $isInternal);
+
+            // Translate message inline (real-time)
+            $this->translateMessageInline($message);
 
             return $message;
         });
@@ -282,7 +297,7 @@ class ChatService
 
         $thread->touchLastMessage();
 
-        broadcast(new MessageSent($message))->toOthers();
+        $this->safeBroadcastToOthers(new MessageSent($message));
 
         return $message;
     }
@@ -330,7 +345,13 @@ class ChatService
         $participant?->markAsRead();
 
         // Broadcast message to thread
-        broadcast(new MessageSent($message))->toOthers();
+        $this->safeBroadcastToOthers(new MessageSent($message));
+
+        // Dispatch delayed email for offline participants
+        $this->dispatchUnreadEmailJobs($thread, $message, $sender, $isInternal);
+
+        // Translate message inline (real-time)
+        $this->translateMessageInline($message);
 
         return $message;
     }
@@ -353,7 +374,15 @@ class ChatService
             'edited_at' => now(),
         ]);
 
-        broadcast(new MessageSent($message->fresh()))->toOthers();
+        $this->safeBroadcastToOthers(new MessageSent($message->fresh()));
+
+        // Clear old translation and re-translate
+        $metadata = $message->metadata ?? [];
+        unset($metadata['detected_lang'], $metadata['translations'], $metadata['translation_error']);
+        $message->update(['metadata' => $metadata ?: null]);
+
+        // Re-translate inline (real-time)
+        $this->translateMessageInline($message->fresh());
 
         return $message;
     }
@@ -380,7 +409,7 @@ class ChatService
         if ($participant) {
             $participant->markAsRead();
 
-            broadcast(new MessageRead($thread->id, $user->id, now()))->toOthers();
+            $this->safeBroadcastToOthers(new MessageRead($thread->id, $user->id, now()));
         }
     }
 
@@ -481,6 +510,120 @@ class ChatService
     public function unarchiveThread(ChatThread $thread): bool
     {
         return $thread->update(['is_archived' => false]);
+    }
+
+    /**
+     * Dispatch delayed email notifications for offline participants.
+     */
+    private function dispatchUnreadEmailJobs(ChatThread $thread, ChatMessage $message, User $sender, bool $isInternal): void
+    {
+        $participants = $thread->activeParticipants()
+            ->where('user_id', '!=', $sender->id)
+            ->with('user')
+            ->get();
+
+        foreach ($participants as $participant) {
+            if ($isInternal && ! $participant->user->isInternal()) {
+                continue;
+            }
+
+            SendUnreadChatEmailJob::dispatch($message, $participant->user)
+                ->delay(now()->addMinutes(5));
+        }
+    }
+
+    /**
+     * Translate a message inline using GoogleTranslate (real-time, no queue).
+     */
+    private function translateMessageInline(ChatMessage $message): void
+    {
+        if ($message->isSystem()) {
+            return;
+        }
+
+        $text = trim($message->content);
+
+        if (mb_strlen($text) < 5) {
+            return;
+        }
+
+        $metadata = $message->metadata ?? [];
+
+        if (isset($metadata['detected_lang'])) {
+            return;
+        }
+
+        if (mb_strlen($text) > 5000) {
+            $metadata['translation_error'] = 'text_too_large';
+            $message->update(['metadata' => $metadata]);
+
+            return;
+        }
+
+        try {
+            $tr = app(GoogleTranslate::class);
+            $tr->setSource(null);
+            $tr->setTarget('en');
+
+            $translated = $tr->translate($text);
+            $detectedLang = $tr->getLastDetectedSource();
+
+            $targetLang = $detectedLang === 'en' ? 'es' : 'en';
+
+            if ($detectedLang === $targetLang) {
+                $metadata['detected_lang'] = $detectedLang;
+                $message->update(['metadata' => $metadata]);
+                broadcast(new MessageTranslated($message));
+
+                return;
+            }
+
+            if ($targetLang !== 'en') {
+                $tr->setSource(null);
+                $tr->setTarget($targetLang);
+                $translated = $tr->translate($text);
+            }
+
+            $metadata['detected_lang'] = $detectedLang;
+            $metadata['translations'][$targetLang] = $translated;
+            $message->update(['metadata' => $metadata]);
+
+            broadcast(new MessageTranslated($message));
+        } catch (\Exception $e) {
+            Log::error('Chat translation failed', [
+                'message_id' => $message->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $metadata['translation_error'] = $e->getMessage();
+            $message->update(['metadata' => $metadata]);
+        }
+    }
+
+    /**
+     * Safely broadcast an event to others, catching invalid socket ID errors.
+     *
+     * When Echo/Reverb isn't connected, Livewire may pass "undefined" as the
+     * socket ID, causing Pusher to throw. Broadcasting is non-critical, so
+     * we fall back to broadcasting to everyone (including the sender).
+     */
+    private function safeBroadcastToOthers(object $event): void
+    {
+        try {
+            broadcast($event)->toOthers();
+        } catch (\Pusher\PusherException $e) {
+            // Socket ID invalid (e.g., "undefined" when Echo not connected).
+            // Fall back to broadcasting to everyone instead of crashing.
+            try {
+                broadcast($event);
+            } catch (\Throwable) {
+                // Broadcasting completely failed - log but don't crash.
+                Log::warning('Chat broadcast failed', [
+                    'event' => get_class($event),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**

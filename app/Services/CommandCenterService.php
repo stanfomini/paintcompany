@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -32,6 +33,7 @@ class CommandCenterService
                 $morphTo->morphWith([
                     Deal::class => ['customer'],
                     Job::class => ['deal.customer'],
+                    Estimate::class => ['deal.customer'],
                     User::class => ['agentProfile'],
                 ]);
             }])
@@ -66,6 +68,7 @@ class CommandCenterService
                 $morphTo->morphWith([
                     Deal::class => ['customer'],
                     Job::class => ['deal.customer'],
+                    Estimate::class => ['deal.customer'],
                     User::class => ['agentProfile'],
                 ]);
             }]);
@@ -80,6 +83,15 @@ class CommandCenterService
                             $q2->whereNull('assigned_to')
                                 ->where('user_id', $user->id);
                         });
+
+                    // Internal users also see proposed meetings needing team confirmation
+                    if ($user->isInternal()) {
+                        $q->orWhere(function ($q2) {
+                            $q2->where('type', 'meeting')
+                                ->where('meeting_status', 'proposed')
+                                ->whereNull('team_confirmed_at');
+                        });
+                    }
                 });
                 break;
             case 'team':
@@ -249,6 +261,19 @@ class CommandCenterService
             $context['related'] = [
                 'deals' => $subject->deals()->latest()->limit(5)->get(),
                 'properties' => $subject->properties,
+            ];
+        } elseif ($subject instanceof Estimate) {
+            $subject->load(['deal.customer', 'deal.property']);
+
+            $context['activities'] = Activity::query()
+                ->forSubject($subject)
+                ->with(['user', 'assignee'])
+                ->orderByDesc('created_at')
+                ->limit(20)
+                ->get();
+
+            $context['related'] = [
+                'deal' => $subject->deal,
             ];
         } elseif ($subject instanceof User) {
             $context['activities'] = Activity::query()

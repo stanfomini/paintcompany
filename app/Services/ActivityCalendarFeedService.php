@@ -44,7 +44,10 @@ class ActivityCalendarFeedService
                     ->orWhere('completed_at', '>=', now()->subWeek());
             })
             ->where('due_at', '>=', now()->subMonths(1))
-            ->with(['subject' => fn ($m) => $m->morphWith([Deal::class => ['customer']])])
+            ->with([
+                'subject' => fn ($m) => $m->morphWith([Deal::class => ['customer', 'property']]),
+                'videoCall',
+            ])
             ->get();
 
         foreach ($activities as $activity) {
@@ -68,7 +71,7 @@ class ActivityCalendarFeedService
                 $q->where('assigned_to', $user->id)
                     ->orWhere('created_by', $user->id);
             })
-            ->with(['deal.customer'])
+            ->with(['deal.customer', 'deal.property'])
             ->get();
 
         foreach ($jobs as $job) {
@@ -143,6 +146,20 @@ class ActivityCalendarFeedService
             $event->url($url);
         }
 
+        // Virtual meetings: set the video call join URL as location
+        if ($activity->isVirtualMeeting() && $activity->videoCall) {
+            $joinUrl = route('video-call.test', $activity->videoCall->room_id);
+            $event->address("Virtual Meeting: {$joinUrl}");
+        }
+
+        // In-person meetings: set the property address as location
+        if ($activity->isMeeting() && $activity->meeting_type === 'in_person') {
+            $address = $this->getActivityAddress($activity);
+            if ($address) {
+                $event->address($address);
+            }
+        }
+
         return $event;
     }
 
@@ -156,12 +173,21 @@ class ActivityCalendarFeedService
         if ($job->company_date_confirmed && $job->customer_date_confirmed) {
             $description .= "\nDate: Confirmed";
         }
+        $description .= "\nView Job: ".route('jobs.show', $job);
 
-        return Event::create("{$jobTitle} - {$customerName}")
+        $event = Event::create("{$jobTitle} - {$customerName}")
             ->uniqueIdentifier("job-{$job->id}@apexnegotiations.com")
             ->startsAt($start)
             ->endsAt($start->copy()->addHours(8))
-            ->description($description);
+            ->description($description)
+            ->url(route('jobs.show', $job));
+
+        $address = $job->deal?->property?->full_address;
+        if ($address) {
+            $event->address($address);
+        }
+
+        return $event;
     }
 
     protected function buildActivityDescription(Activity $activity): string
@@ -186,6 +212,27 @@ class ActivityCalendarFeedService
             $parts[] = "Join Video Call: {$joinUrl}";
         }
 
+        $url = $activity->getSubjectUrl();
+        if ($url) {
+            $parts[] = "View: {$url}";
+        }
+
         return implode("\n", $parts);
+    }
+
+    /**
+     * Get the address for an activity from its subject's property.
+     */
+    protected function getActivityAddress(Activity $activity): ?string
+    {
+        if ($activity->subject instanceof Deal && $activity->subject->property) {
+            return $activity->subject->property->full_address;
+        }
+
+        if ($activity->subject instanceof Job && $activity->subject->deal?->property) {
+            return $activity->subject->deal->property->full_address;
+        }
+
+        return null;
     }
 }

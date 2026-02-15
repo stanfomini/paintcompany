@@ -2,6 +2,7 @@
 
 use App\Models\CompanySetting;
 use Livewire\Component;
+use Stichoza\GoogleTranslate\GoogleTranslate;
 
 new class extends Component {
     public function boot(): void
@@ -104,6 +105,54 @@ new class extends Component {
 
         session()->flash('crew_background_status', __('Background Check Consent saved.'));
     }
+
+    public function translateToSpanish(string $field): void
+    {
+        $esField = $field . '_es';
+        $text = trim($this->$field);
+
+        if (empty($text)) {
+            return;
+        }
+
+        $tr = new GoogleTranslate('es');
+        $tr->setSource('en');
+
+        if (strlen($text) <= 4500) {
+            $this->$esField = $tr->translate($text);
+        } else {
+            $chunks = $this->splitTextIntoChunks($text, 4500);
+            $translated = [];
+            foreach ($chunks as $chunk) {
+                $translated[] = $tr->translate($chunk);
+                usleep(300000);
+            }
+            $this->$esField = implode("\n\n", $translated);
+        }
+    }
+
+    private function splitTextIntoChunks(string $text, int $maxLen): array
+    {
+        $paragraphs = preg_split('/\n\s*\n/', $text);
+        $chunks = [];
+        $current = '';
+
+        foreach ($paragraphs as $para) {
+            if (strlen($current) + strlen($para) + 2 > $maxLen) {
+                if ($current !== '') {
+                    $chunks[] = $current;
+                }
+                $current = $para;
+            } else {
+                $current .= ($current !== '' ? "\n\n" : '') . $para;
+            }
+        }
+        if ($current !== '') {
+            $chunks[] = $current;
+        }
+
+        return $chunks;
+    }
 };
 ?>
 
@@ -153,6 +202,12 @@ new class extends Component {
                             </div>
 
                             <div x-show="lang === 'es'">
+                                <div class="mb-2 flex justify-end">
+                                    <flux:button size="xs" variant="ghost" wire:click="translateToSpanish('terms_and_conditions')" wire:loading.attr="disabled" wire:target="translateToSpanish('terms_and_conditions')">
+                                        <span wire:loading.remove wire:target="translateToSpanish('terms_and_conditions')">{{ __('Translate from English') }}</span>
+                                        <span wire:loading wire:target="translateToSpanish('terms_and_conditions')">{{ __('Translating...') }}</span>
+                                    </flux:button>
+                                </div>
                                 <flux:field>
                                     <flux:textarea wire:model="terms_and_conditions_es" rows="12" :placeholder="__('Enter your terms and conditions in Spanish...')" />
                                     <flux:description>
@@ -211,6 +266,12 @@ new class extends Component {
                             </div>
 
                             <div x-show="lang === 'es'">
+                                <div class="mb-2 flex justify-end">
+                                    <flux:button size="xs" variant="ghost" wire:click="translateToSpanish('privacy_policy')" wire:loading.attr="disabled" wire:target="translateToSpanish('privacy_policy')">
+                                        <span wire:loading.remove wire:target="translateToSpanish('privacy_policy')">{{ __('Translate from English') }}</span>
+                                        <span wire:loading wire:target="translateToSpanish('privacy_policy')">{{ __('Translating...') }}</span>
+                                    </flux:button>
+                                </div>
                                 <flux:field>
                                     <flux:textarea wire:model="privacy_policy_es" rows="12" :placeholder="__('Enter your privacy policy in Spanish...')" />
                                     <flux:description>
@@ -269,6 +330,12 @@ new class extends Component {
                             </div>
 
                             <div x-show="lang === 'es'">
+                                <div class="mb-2 flex justify-end">
+                                    <flux:button size="xs" variant="ghost" wire:click="translateToSpanish('referral_terms')" wire:loading.attr="disabled" wire:target="translateToSpanish('referral_terms')">
+                                        <span wire:loading.remove wire:target="translateToSpanish('referral_terms')">{{ __('Translate from English') }}</span>
+                                        <span wire:loading wire:target="translateToSpanish('referral_terms')">{{ __('Translating...') }}</span>
+                                    </flux:button>
+                                </div>
                                 <flux:field>
                                     <flux:textarea wire:model="referral_terms_es" rows="12" :placeholder="__('Enter your referral program terms in Spanish...')" />
                                     <flux:description>
@@ -333,6 +400,12 @@ new class extends Component {
                             </div>
 
                             <div x-show="lang === 'es'">
+                                <div class="mb-2 flex justify-end">
+                                    <flux:button size="xs" variant="ghost" wire:click="translateToSpanish('crew_colorado_compliance_contract')" wire:loading.attr="disabled" wire:target="translateToSpanish('crew_colorado_compliance_contract')">
+                                        <span wire:loading.remove wire:target="translateToSpanish('crew_colorado_compliance_contract')">{{ __('Translate from English') }}</span>
+                                        <span wire:loading wire:target="translateToSpanish('crew_colorado_compliance_contract')">{{ __('Translating...') }}</span>
+                                    </flux:button>
+                                </div>
                                 <flux:field>
                                     <flux:textarea wire:model="crew_colorado_compliance_contract_es" rows="16" :placeholder="__('Enter the Colorado contractor compliance contract in Spanish...')" />
                                     <flux:description>
@@ -390,6 +463,12 @@ new class extends Component {
                             </div>
 
                             <div x-show="lang === 'es'">
+                                <div class="mb-2 flex justify-end">
+                                    <flux:button size="xs" variant="ghost" wire:click="translateToSpanish('crew_contractor_agreement')" wire:loading.attr="disabled" wire:target="translateToSpanish('crew_contractor_agreement')">
+                                        <span wire:loading.remove wire:target="translateToSpanish('crew_contractor_agreement')">{{ __('Translate from English') }}</span>
+                                        <span wire:loading wire:target="translateToSpanish('crew_contractor_agreement')">{{ __('Translating...') }}</span>
+                                    </flux:button>
+                                </div>
                                 <flux:field>
                                     <flux:textarea wire:model="crew_contractor_agreement_es" rows="16" :placeholder="__('Enter the contractor agreement in Spanish...')" />
                                     <flux:description>
@@ -447,6 +526,12 @@ new class extends Component {
                             </div>
 
                             <div x-show="lang === 'es'">
+                                <div class="mb-2 flex justify-end">
+                                    <flux:button size="xs" variant="ghost" wire:click="translateToSpanish('crew_background_check_consent')" wire:loading.attr="disabled" wire:target="translateToSpanish('crew_background_check_consent')">
+                                        <span wire:loading.remove wire:target="translateToSpanish('crew_background_check_consent')">{{ __('Translate from English') }}</span>
+                                        <span wire:loading wire:target="translateToSpanish('crew_background_check_consent')">{{ __('Translating...') }}</span>
+                                    </flux:button>
+                                </div>
                                 <flux:field>
                                     <flux:textarea wire:model="crew_background_check_consent_es" rows="16" :placeholder="__('Enter the background check consent form in Spanish...')" />
                                     <flux:description>

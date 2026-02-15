@@ -374,11 +374,10 @@ class Activity extends Model
     public function getSubjectUrl(): ?string
     {
         return match ($this->subject_type) {
-            Deal::class => $this->subject?->customer_id
-                ? route('customers.show', $this->subject->customer_id)
-                : null,
+            Deal::class => route('deals.show', $this->subject_id),
             Customer::class => route('customers.show', $this->subject_id),
             Job::class => route('jobs.show', $this->subject_id),
+            Estimate::class => route('estimates.show', $this->subject_id),
             User::class => match ($this->subject?->type) {
                 'agent' => route('agents.show', $this->subject_id),
                 'crew' => route('crews.show', $this->subject_id),
@@ -394,6 +393,7 @@ class Activity extends Model
             Deal::class => $this->subject?->customer?->full_name ?? $this->subject?->title,
             Customer::class => $this->subject?->full_name ?? 'Customer',
             Job::class => $this->subject?->title ?? 'Job',
+            Estimate::class => $this->subject?->title ?? $this->subject?->estimate_number ?? 'Estimate',
             User::class => $this->subject?->name ?? 'User',
             default => null,
         };

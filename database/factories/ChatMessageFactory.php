@@ -149,4 +149,48 @@ class ChatMessageFactory extends Factory
             'metadata' => $metadata,
         ]);
     }
+
+    /**
+     * Set as Spanish message with English translation.
+     */
+    public function spanishWithTranslation(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'content' => 'Necesito más pintura para la cocina',
+            'metadata' => [
+                'detected_lang' => 'es',
+                'translations' => [
+                    'en' => 'I need more paint for the kitchen',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Set as English message with Spanish translation.
+     */
+    public function englishWithTranslation(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'content' => 'The job starts Monday at 9am',
+            'metadata' => [
+                'detected_lang' => 'en',
+                'translations' => [
+                    'es' => 'El trabajo comienza el lunes a las 9am',
+                ],
+            ],
+        ]);
+    }
+
+    /**
+     * Set as translation pending.
+     */
+    public function translationPending(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'metadata' => [
+                'translation_status' => 'pending',
+            ],
+        ]);
+    }
 }

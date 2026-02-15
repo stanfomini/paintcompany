@@ -849,10 +849,9 @@ describe('Planner User context block', function () {
             ->assertSee('Test Agent');
     });
 
-    it('shows company name for agent with profile', function () {
+    it('shows agent profile link in activity row', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $agent = User::factory()->agent()->create(['name' => 'Jane Realtor']);
-        $agent->agentProfile->update(['company_name' => 'Apex Realty Co']);
 
         Activity::factory()->forUser($agent)->create([
             'user_id' => $user->id,
@@ -865,17 +864,20 @@ describe('Planner User context block', function () {
 
         Livewire::actingAs($user)
             ->test('planner.my-day')
-            ->assertSee('Apex Realty Co');
+            ->assertSee('Jane Realtor')
+            ->assertSeeHtml(route('agents.show', $agent->id));
     });
 
-    it('shows View Profile link to agents.show for agent activity', function () {
+    it('shows crew profile link in activity row', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
-        $agent = User::factory()->agent()->create();
+        $crew = User::factory()->crew()->create(['name' => 'Mike Painter']);
 
-        Activity::factory()->forUser($agent)->create([
+        Activity::factory()->create([
             'user_id' => $user->id,
             'assigned_to' => $user->id,
-            'title' => 'Agent task',
+            'subject_type' => User::class,
+            'subject_id' => $crew->id,
+            'title' => 'Schedule crew training',
             'type' => 'task',
             'due_at' => today(),
             'is_completed' => false,
@@ -883,7 +885,7 @@ describe('Planner User context block', function () {
 
         Livewire::actingAs($user)
             ->test('planner.my-day')
-            ->assertSee('View Profile')
-            ->assertSeeHtml(route('agents.show', $agent->id));
+            ->assertSee('Mike Painter')
+            ->assertSeeHtml(route('crews.show', $crew->id));
     });
 });

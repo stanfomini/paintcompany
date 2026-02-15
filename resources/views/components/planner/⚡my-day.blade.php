@@ -819,13 +819,10 @@ new class extends Component
                                 <div class="space-y-0.5">
                                     @foreach ($dayEvents->take(3) as $event)
                                         <div
-                                            class="text-xs px-1 py-0.5 rounded truncate cursor-default"
+                                            class="text-xs px-1 py-0.5 rounded truncate {{ $event['url'] ? 'cursor-pointer' : 'cursor-default' }}"
                                             style="background-color: {{ $event['color'] }}20; color: {{ $event['color'] }}; border-left: 2px solid {{ $event['color'] }};"
                                             title="{{ $event['title'] }} ({{ $event['start_time'] }})"
-                                            @if ($event['url'])
-                                                onclick="window.location='{{ $event['url'] }}'"
-                                                class="cursor-pointer"
-                                            @endif
+                                            @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" @endif
                                         >
                                             {{ $event['start_time'] }} {{ Str::limit($event['title'], 15) }}
                                         </div>
@@ -858,9 +855,9 @@ new class extends Component
                             <div class="p-1 border-r border-zinc-200 dark:border-zinc-700 last:border-r-0 space-y-1">
                                 @foreach ($dayEvents as $event)
                                     <div
-                                        class="text-xs p-1.5 rounded"
+                                        class="text-xs p-1.5 rounded {{ $event['url'] ? 'cursor-pointer' : '' }}"
                                         style="background-color: {{ $event['color'] }}15; border-left: 3px solid {{ $event['color'] }};"
-                                        @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" style="cursor:pointer;" @endif
+                                        @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" @endif
                                     >
                                         <div class="font-medium truncate" style="color: {{ $event['color'] }};">{{ $event['start_time'] }}</div>
                                         <div class="truncate text-zinc-700 dark:text-zinc-300">{{ $event['title'] }}</div>
@@ -952,7 +949,7 @@ new class extends Component
                     </div>
                     <div class="border border-blue-200 dark:border-blue-800 rounded-lg divide-y divide-blue-100 dark:divide-blue-900 bg-blue-50/50 dark:bg-blue-950/20">
                         @foreach ($this->unreadThreads as $thread)
-                            <a href="{{ route('chat.show', $thread) }}" wire:navigate wire:key="thread-{{ $thread->id }}" class="flex items-start gap-3 p-3 hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors">
+                            <div wire:key="thread-{{ $thread->id }}" onclick="window.location='{{ route('chat.show', $thread) }}'" class="flex items-start gap-3 p-3 hover:bg-blue-100/50 dark:hover:bg-blue-900/30 transition-colors cursor-pointer">
                                 <div class="shrink-0 mt-0.5">
                                     <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
                                         <flux:icon name="chat-bubble-left-right" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
@@ -960,7 +957,20 @@ new class extends Component
                                 </div>
                                 <div class="flex-1 min-w-0">
                                     <flux:text class="font-medium text-sm">
-                                        {{ $thread->latestMessage?->user?->name ?? 'Unknown' }}
+                                        @php $sender = $thread->latestMessage?->user; @endphp
+                                        @if ($sender?->isAgent())
+                                            <a href="{{ route('agents.show', $sender) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400" onclick="event.stopPropagation()">{{ $sender->name }}</a>
+                                        @elseif ($sender?->isCrew())
+                                            <a href="{{ route('crews.show', $sender) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400" onclick="event.stopPropagation()">{{ $sender->name }}</a>
+                                        @elseif ($sender?->isCustomer())
+                                            @if ($sender->customerProfile)
+                                                <a href="{{ route('customers.show', $sender->customerProfile) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400" onclick="event.stopPropagation()">{{ $sender->name }}</a>
+                                            @else
+                                                {{ $sender->name }}
+                                            @endif
+                                        @else
+                                            {{ $sender?->name ?? 'Unknown' }}
+                                        @endif
                                     </flux:text>
                                     <flux:text class="text-xs text-zinc-600 dark:text-zinc-400 truncate">
                                         {{ $thread->getDisplayNameFor(auth()->user()) }}
@@ -979,7 +989,7 @@ new class extends Component
                                         <flux:badge size="sm" color="blue" class="mt-1">Deal</flux:badge>
                                     @endif
                                 </div>
-                            </a>
+                            </div>
                         @endforeach
                     </div>
                 </div>

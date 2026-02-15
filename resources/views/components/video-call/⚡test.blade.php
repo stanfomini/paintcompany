@@ -481,7 +481,7 @@ new #[Layout('layouts.video-call')] class extends Component {
 Alpine.data('videoCallTest', (config) => ({
     // Config
     roomId: config.roomId,
-    userId: config.userId,
+    userId: String(config.userId),
     userName: config.userName,
 
     // Screen state
@@ -621,7 +621,7 @@ Alpine.data('videoCallTest', (config) => ({
         this.channel = window.Echo.join('video-call.' + this.roomId)
             .here((users) => {
                 this.echoConnected = true;
-                this.lobbyPeerCount = users.filter(u => u.id !== this.userId).length;
+                this.lobbyPeerCount = users.filter(u => String(u.id) !== this.userId).length;
                 this.log(`Lobby: ${users.length} user(s) in room`);
             })
             .joining((user) => {
@@ -745,7 +745,7 @@ Alpine.data('videoCallTest', (config) => ({
         // Re-read the channel members and create offers to existing call participants
         // We need to re-trigger connection to peers who are already in the call
         this.channel.here && this.channel.subscription.members.each((member) => {
-            if (member.id !== this.userId) {
+            if (String(member.id) !== this.userId) {
                 this.log('Creating offer for peer: ' + member.info.name);
                 this.createPeerConnection(String(member.id), member.info.name, true);
                 this.participantCount++;
@@ -974,7 +974,7 @@ Alpine.data('videoCallTest', (config) => ({
         // Polite peer pattern — resolve offer glare when both sides send offers
         const existingPc = this.peerConnections[peerId];
         if (existingPc && existingPc.signalingState === 'have-local-offer') {
-            if (this.userId < Number(peerId)) {
+            if (Number(this.userId) < Number(peerId)) {
                 // Lower userId is "impolite" — keeps our offer, ignores theirs
                 this.log(`Offer glare with ${displayName}: ignoring (we have priority)`);
                 return;

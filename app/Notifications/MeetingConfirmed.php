@@ -3,15 +3,18 @@
 namespace App\Notifications;
 
 use App\Models\Activity;
+use App\Models\Deal;
 use App\Models\User;
+use App\Notifications\Concerns\ResolvesUserPortalUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class MeetingConfirmed extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, ResolvesUserPortalUrl;
 
     public function __construct(
         public Activity $activity,
@@ -23,7 +26,7 @@ class MeetingConfirmed extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['mail', 'database', 'broadcast'];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -39,11 +42,14 @@ class MeetingConfirmed extends Notification implements ShouldQueue
             ->line('**'.__('Date & Time').':** '.$this->activity->due_at->format('l, F j, Y \a\t g:i A'));
 
         if ($this->activity->isVirtualMeeting() && $this->activity->videoCall) {
-            $message->line('**'.__('Video Call').':** '.__('A video call link will be available when the meeting starts.'));
+            $joinUrl = $this->getVideoCallUrl($notifiable);
+            $message->line('**'.__('Video Call').':** '.$joinUrl)
+                ->action(__('Join Video Call'), $joinUrl);
+        } else {
+            $message->action(__('View Meeting Details'), $this->getEstimateUrl($notifiable));
         }
 
-        $message->action(__('View Details'), $this->getUrl($notifiable))
-            ->line(__('You will receive a reminder 1 hour before the meeting.'));
+        $message->line(__('You will receive a reminder 1 hour before the meeting.'));
 
         return $message;
     }
@@ -58,23 +64,12 @@ class MeetingConfirmed extends Notification implements ShouldQueue
             'title' => $this->activity->title,
             'meeting_type' => $this->activity->meeting_type,
             'due_at' => $this->activity->due_at?->toIso8601String(),
+            'deal_id' => $this->activity->subject_type === Deal::class ? $this->activity->subject_id : null,
         ];
     }
 
-    private function getUrl(object $notifiable): string
+    public function toBroadcast(object $notifiable): BroadcastMessage
     {
-        if ($notifiable->isCustomer() && $this->activity->estimate_id) {
-            return route('customer.estimates.show', $this->activity->estimate_id);
-        }
-
-        if ($notifiable->isAgent() && $this->activity->estimate_id) {
-            return route('agent.estimates.show', $this->activity->estimate_id);
-        }
-
-        if ($this->activity->estimate_id) {
-            return route('estimates.show', $this->activity->estimate_id);
-        }
-
-        return url('/');
+        return new BroadcastMessage($this->toArray($notifiable));
     }
 }

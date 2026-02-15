@@ -33,7 +33,7 @@ class VideoCallInvitation extends Notification implements ShouldQueue
             ->subject(__(':name started a video call - :title', ['name' => $this->initiatorName, 'title' => $job->title]))
             ->greeting(__('Video Call Started'))
             ->line(__(':name started a video call for job :number.', ['name' => $this->initiatorName, 'number' => $job->job_number]))
-            ->action(__('Join Video Call'), url("/video-call-test/{$this->videoCall->room_id}"))
+            ->action(__('Join Video Call'), route('video-call.test', $this->videoCall->room_id))
             ->line(__('This call is in progress. Click the button above to join.'));
     }
 

@@ -102,23 +102,9 @@
         </flux:sidebar>
 
 
-        {{-- Desktop top bar with notification bell --}}
-        @auth
-            @if (auth()->user()->isInternal())
-                <div class="hidden lg:flex items-center justify-end gap-3 px-6 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
-                    @livewire('notifications.notification-center')
-                </div>
-            @endif
-        @endauth
-
         <!-- Mobile User Menu -->
         <flux:header class="lg:hidden">
             <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
-            @auth
-                @if (auth()->user()->isInternal())
-                    @livewire('notifications.notification-center')
-                @endif
-            @endauth
 
             <flux:spacer />
 
@@ -184,9 +170,12 @@
         {{-- Global notification listener for internal users --}}
         @auth
             @if (auth()->user()->isInternal())
+                @livewire('notifications.notification-center')
                 @livewire('notifications.new-lead-alert')
                 @can('chat.access')
-                    @livewire('chat.floating-chat')
+                    @persist('chat-dock')
+                        @livewire('chat.chat-dock')
+                    @endpersist
                 @endcan
             @endif
         @endauth

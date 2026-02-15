@@ -202,4 +202,46 @@ class ChatMessage extends Model
     {
         return $query->where('type', '!=', self::TYPE_SYSTEM);
     }
+
+    /**
+     * Get the auto-detected language of the message content.
+     */
+    public function getDetectedLanguage(): ?string
+    {
+        return $this->metadata['detected_lang'] ?? null;
+    }
+
+    /**
+     * Check if a translation exists for the given locale.
+     */
+    public function hasTranslation(string $locale): bool
+    {
+        return isset($this->metadata['translations'][$locale]);
+    }
+
+    /**
+     * Get the translation for the given locale.
+     */
+    public function getTranslation(string $locale): ?string
+    {
+        return $this->metadata['translations'][$locale] ?? null;
+    }
+
+    /**
+     * Check if this message needs a translation toggle for the viewer.
+     */
+    public function needsTranslationFor(string $viewerLocale): bool
+    {
+        $detectedLang = $this->getDetectedLanguage();
+
+        if (! $detectedLang) {
+            return false;
+        }
+
+        if ($detectedLang === $viewerLocale) {
+            return false;
+        }
+
+        return $this->hasTranslation($viewerLocale);
+    }
 }

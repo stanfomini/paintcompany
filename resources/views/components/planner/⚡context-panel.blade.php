@@ -113,6 +113,7 @@ new class extends Component
             $isJob = $subject instanceof \App\Models\Job;
             $isCustomer = $subject instanceof \App\Models\Customer;
             $isUser = $subject instanceof \App\Models\User;
+            $isEstimate = $subject instanceof \App\Models\Estimate;
 
             $dealStageColors = [
                 'lead' => 'blue', 'not_contacted' => 'zinc', 'follow_up' => 'yellow',
@@ -138,7 +139,7 @@ new class extends Component
                 @if ($subject->customer?->user)
                     <flux:text class="text-sm text-zinc-500 mt-1">
                         <flux:icon name="user" class="w-3.5 h-3.5 inline" />
-                        {{ $subject->customer->user->name }}
+                        <a href="{{ route('customers.show', $subject->customer) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">{{ $subject->customer->user->name }}</a>
                         @if ($subject->customer->user->email)
                             &middot; {{ $subject->customer->user->email }}
                         @endif
@@ -146,7 +147,7 @@ new class extends Component
                 @endif
                 @if ($subject->agent)
                     <flux:text class="text-xs text-zinc-400 mt-0.5">
-                        {{ __('Agent') }}: {{ $subject->agent->name }}
+                        {{ __('Agent') }}: <a href="{{ route('agents.show', $subject->agent) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">{{ $subject->agent->name }}</a>
                     </flux:text>
                 @endif
                 @if ($subject->estimated_value)
@@ -166,7 +167,7 @@ new class extends Component
                 @if ($subject->deal?->customer?->user)
                     <flux:text class="text-sm text-zinc-500 mt-1">
                         <flux:icon name="user" class="w-3.5 h-3.5 inline" />
-                        {{ $subject->deal->customer->user->name }}
+                        <a href="{{ route('customers.show', $subject->deal->customer) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">{{ $subject->deal->customer->user->name }}</a>
                     </flux:text>
                 @endif
                 @if ($subject->scheduled_date)
@@ -185,6 +186,26 @@ new class extends Component
                 @endif
                 @if ($subject->user?->phone)
                     <flux:text class="text-xs text-zinc-400 mt-0.5">{{ $subject->user->phone }}</flux:text>
+                @endif
+
+            @elseif ($isEstimate)
+                <div class="flex items-center gap-2 mb-1">
+                    <flux:badge size="sm" color="orange">{{ __('Estimate') }}</flux:badge>
+                    <flux:badge size="sm" :color="match($subject->status) { 'draft' => 'zinc', 'sent' => 'blue', 'accepted' => 'green', 'rejected' => 'red', default => 'zinc' }">
+                        {{ ucfirst($subject->status) }}
+                    </flux:badge>
+                </div>
+                <flux:heading size="lg">{{ $subject->title ?? $subject->estimate_number }}</flux:heading>
+                @if ($subject->deal?->customer?->user)
+                    <flux:text class="text-sm text-zinc-500 mt-1">
+                        <flux:icon name="user" class="w-3.5 h-3.5 inline" />
+                        <a href="{{ route('customers.show', $subject->deal->customer) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">{{ $subject->deal->customer->user->name }}</a>
+                    </flux:text>
+                @endif
+                @if ($subject->total)
+                    <flux:text class="text-sm font-medium text-green-600 mt-1">
+                        ${{ number_format($subject->total, 2) }}
+                    </flux:text>
                 @endif
 
             @elseif ($isUser)
@@ -214,11 +235,28 @@ new class extends Component
                     href="{{ route('jobs.show', $subject) }}" wire:navigate>
                     {{ __('View Job') }}
                 </flux:button>
+            @elseif ($isEstimate)
+                <flux:button size="sm" icon="document-text" variant="ghost"
+                    href="{{ route('estimates.show', $subject) }}" wire:navigate>
+                    {{ __('View Estimate') }}
+                </flux:button>
             @elseif ($isCustomer)
                 <flux:button size="sm" icon="user" variant="ghost"
                     href="{{ route('customers.show', $subject) }}" wire:navigate>
                     {{ __('View Customer') }}
                 </flux:button>
+            @elseif ($isUser)
+                @if ($subject->isAgent())
+                    <flux:button size="sm" icon="user" variant="ghost"
+                        href="{{ route('agents.show', $subject) }}" wire:navigate>
+                        {{ __('View Profile') }}
+                    </flux:button>
+                @elseif ($subject->isCrew())
+                    <flux:button size="sm" icon="user" variant="ghost"
+                        href="{{ route('crews.show', $subject) }}" wire:navigate>
+                        {{ __('View Profile') }}
+                    </flux:button>
+                @endif
             @endif
         </div>
 
@@ -393,7 +431,15 @@ new class extends Component
                                         <span>&middot; {{ $activity->due_at->format('M j') }}</span>
                                     @endif
                                     @if ($activity->assignee)
-                                        <span>&middot; {{ $activity->assignee->name }}</span>
+                                        <span>&middot;
+                                            @if ($activity->assignee->isAgent())
+                                                <a href="{{ route('agents.show', $activity->assignee) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">{{ $activity->assignee->name }}</a>
+                                            @elseif ($activity->assignee->isCrew())
+                                                <a href="{{ route('crews.show', $activity->assignee) }}" wire:navigate class="text-blue-600 hover:underline dark:text-blue-400">{{ $activity->assignee->name }}</a>
+                                            @else
+                                                {{ $activity->assignee->name }}
+                                            @endif
+                                        </span>
                                     @endif
                                 </div>
                             </div>

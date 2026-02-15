@@ -2,7 +2,9 @@
 
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\User;
 use App\Services\ChatService;
+use Stichoza\GoogleTranslate\GoogleTranslate;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -44,6 +46,7 @@ new class extends Component {
         return [
             "echo-private:chat.thread.{$this->thread->id},.message.sent" => 'onNewMessage',
             "echo-private:chat.thread.{$this->thread->id},.message.read" => '$refresh',
+            "echo-private:chat.thread.{$this->thread->id},.message.translated" => '$refresh',
         ];
     }
 
@@ -114,6 +117,49 @@ new class extends Component {
         $this->dispatch('message-deleted');
     }
 
+    public function translateMessage(int $messageId): void
+    {
+        $message = ChatMessage::findOrFail($messageId);
+        abort_unless($message->thread_id === $this->thread->id, 403);
+
+        $text = trim($message->content);
+        if (mb_strlen($text) < 5) {
+            return;
+        }
+
+        $tr = new GoogleTranslate();
+        $tr->setSource(null);
+        $tr->setTarget('en');
+        $translated = $tr->translate($text);
+        $detectedLang = $tr->getLastDetectedSource();
+
+        $targetLang = $detectedLang === 'en' ? 'es' : 'en';
+
+        if ($detectedLang === $targetLang) {
+            $metadata = $message->metadata ?? [];
+            $metadata['detected_lang'] = $detectedLang;
+            $message->update(['metadata' => $metadata]);
+            unset($this->messages);
+
+            return;
+        }
+
+        // Re-translate if initial target was wrong
+        if ($targetLang !== 'en') {
+            $tr->setSource(null);
+            $tr->setTarget($targetLang);
+            $translated = $tr->translate($text);
+        }
+
+        $metadata = $message->metadata ?? [];
+        $metadata['detected_lang'] = $detectedLang;
+        $metadata['translations'][$targetLang] = $translated;
+        unset($metadata['translation_status']);
+        $message->update(['metadata' => $metadata]);
+
+        unset($this->messages);
+    }
+
     #[Computed]
     public function participants(): Collection
     {
@@ -149,6 +195,63 @@ new class extends Component {
             ->visibleTo(auth()->user())
             ->where('id', '<', $oldestMessage->id)
             ->exists();
+    }
+
+    #[Computed]
+    public function threadContext(): ?array
+    {
+        if (! auth()->user()->isInternal() || $this->embedded) {
+            return null;
+        }
+
+        if ($this->thread->type === 'deal' && $this->thread->deal) {
+            $deal = $this->thread->deal->load(['customer.user', 'estimates', 'job']);
+            $customer = $deal->customer;
+
+            return [
+                'type' => 'deal',
+                'customer_name' => $customer?->full_name,
+                'customer_email' => $customer?->user?->email,
+                'customer_phone' => $customer?->phone,
+                'property_address' => $deal->property?->full_address ?? null,
+                'customer_url' => $customer ? route('customers.show', $customer) : null,
+                'deal_url' => route('deals.show', $deal),
+                'estimates' => $deal->estimates->map(fn ($e) => [
+                    'url' => route('estimates.show', $e),
+                    'number' => $e->estimate_number,
+                ])->toArray(),
+                'job_url' => $deal->job ? route('jobs.show', $deal->job) : null,
+            ];
+        }
+
+        if ($this->thread->type === 'direct') {
+            $other = $this->participants->first(fn ($p) => $p->id !== auth()->id());
+
+            if (! $other) {
+                return null;
+            }
+
+            return [
+                'type' => 'direct',
+                'name' => $other->name,
+                'type_badge' => ucfirst($other->type),
+                'email' => $other->email,
+                'phone' => $other->phone ?? null,
+                'profile_url' => $this->getProfileUrl($other),
+            ];
+        }
+
+        return null;
+    }
+
+    private function getProfileUrl(User $user): ?string
+    {
+        return match ($user->type) {
+            'customer' => $user->customerProfile ? route('customers.show', $user->customerProfile) : null,
+            'agent' => route('agents.show', $user),
+            'crew' => route('crews.show', $user),
+            default => null,
+        };
     }
 }; ?>
 
@@ -205,6 +308,130 @@ new class extends Component {
                         @if ($this->participants->count() > 5)
                             <div class="flex items-center justify-center w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 ring-2 ring-white dark:ring-zinc-900 text-xs font-medium">
                                 +{{ $this->participants->count() - 5 }}
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
+
+        {{-- Profile Context Card (internal users only) --}}
+        @if ($this->threadContext)
+            <div
+                x-data="{ contextOpen: false }"
+                class="shrink-0 mb-2"
+            >
+                <button
+                    @click="contextOpen = !contextOpen"
+                    class="w-full flex items-center justify-between px-3 py-2 text-sm text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                >
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="information-circle" class="size-4" />
+                        @if ($this->threadContext['type'] === 'deal')
+                            <span>{{ $this->threadContext['customer_name'] ?? __('Customer Info') }}</span>
+                        @else
+                            <span>{{ $this->threadContext['name'] ?? __('Contact Info') }}</span>
+                        @endif
+                    </div>
+                    <flux:icon
+                        name="chevron-down"
+                        class="size-4 transition-transform"
+                        ::class="contextOpen ? 'rotate-180' : ''"
+                    />
+                </button>
+
+                <div x-show="contextOpen" x-collapse x-cloak>
+                    <div class="mx-1 mt-1 p-3 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-lg">
+                        @if ($this->threadContext['type'] === 'deal')
+                            {{-- Deal thread context --}}
+                            <div class="space-y-2">
+                                @if ($this->threadContext['customer_name'])
+                                    <div class="flex items-center gap-2">
+                                        <flux:icon name="user" class="size-4 text-zinc-400" />
+                                        <flux:text class="text-sm font-medium">{{ $this->threadContext['customer_name'] }}</flux:text>
+                                    </div>
+                                @endif
+
+                                @if ($this->threadContext['customer_email'])
+                                    <div class="flex items-center gap-2">
+                                        <flux:icon name="envelope" class="size-4 text-zinc-400" />
+                                        <flux:text class="text-sm">{{ $this->threadContext['customer_email'] }}</flux:text>
+                                    </div>
+                                @endif
+
+                                @if ($this->threadContext['customer_phone'])
+                                    <div class="flex items-center gap-2">
+                                        <flux:icon name="phone" class="size-4 text-zinc-400" />
+                                        <flux:text class="text-sm">{{ $this->threadContext['customer_phone'] }}</flux:text>
+                                    </div>
+                                @endif
+
+                                @if ($this->threadContext['property_address'])
+                                    <div class="flex items-center gap-2">
+                                        <flux:icon name="map-pin" class="size-4 text-zinc-400" />
+                                        <flux:text class="text-sm">{{ $this->threadContext['property_address'] }}</flux:text>
+                                    </div>
+                                @endif
+
+                                {{-- Quick Links --}}
+                                <div class="flex flex-wrap gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                                    @if ($this->threadContext['customer_url'])
+                                        <a href="{{ $this->threadContext['customer_url'] }}" wire:navigate class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                            <flux:icon name="user" class="size-3" />
+                                            {{ __('Customer') }}
+                                        </a>
+                                    @endif
+
+                                    <a href="{{ $this->threadContext['deal_url'] }}" wire:navigate class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                        <flux:icon name="briefcase" class="size-3" />
+                                        {{ __('Deal') }}
+                                    </a>
+
+                                    @foreach ($this->threadContext['estimates'] as $estimate)
+                                        <a href="{{ $estimate['url'] }}" wire:navigate class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                            <flux:icon name="document-text" class="size-3" />
+                                            {{ $estimate['number'] }}
+                                        </a>
+                                    @endforeach
+
+                                    @if ($this->threadContext['job_url'])
+                                        <a href="{{ $this->threadContext['job_url'] }}" wire:navigate class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                            <flux:icon name="clipboard-document-check" class="size-3" />
+                                            {{ __('Job') }}
+                                        </a>
+                                    @endif
+                                </div>
+                            </div>
+                        @else
+                            {{-- Direct thread context --}}
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2">
+                                    <flux:text class="text-sm font-medium">{{ $this->threadContext['name'] }}</flux:text>
+                                    <flux:badge size="sm">{{ $this->threadContext['type_badge'] }}</flux:badge>
+                                </div>
+
+                                @if ($this->threadContext['email'])
+                                    <div class="flex items-center gap-2">
+                                        <flux:icon name="envelope" class="size-4 text-zinc-400" />
+                                        <flux:text class="text-sm">{{ $this->threadContext['email'] }}</flux:text>
+                                    </div>
+                                @endif
+
+                                @if ($this->threadContext['phone'])
+                                    <div class="flex items-center gap-2">
+                                        <flux:icon name="phone" class="size-4 text-zinc-400" />
+                                        <flux:text class="text-sm">{{ $this->threadContext['phone'] }}</flux:text>
+                                    </div>
+                                @endif
+
+                                @if ($this->threadContext['profile_url'])
+                                    <div class="pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                                        <a href="{{ $this->threadContext['profile_url'] }}" wire:navigate class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                            <flux:icon name="arrow-top-right-on-square" class="size-3" />
+                                            {{ __('View Profile') }}
+                                        </a>
+                                    </div>
+                                @endif
                             </div>
                         @endif
                     </div>
@@ -380,6 +607,28 @@ new class extends Component {
                                                 "{{ $message->metadata['transcription'] }}"
                                             </flux:text>
                                         </div>
+                                        {{-- Audio transcription translation toggle --}}
+                                        @if ($message->needsTranslationFor(app()->getLocale()))
+                                            <div x-data="{ showTranslation: false }" class="mt-1">
+                                                <button
+                                                    @click="showTranslation = !showTranslation"
+                                                    class="text-xs underline opacity-70 hover:opacity-100 transition-opacity {{ $message->user_id === auth()->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}"
+                                                >
+                                                    <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                                    <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                </button>
+                                                <div x-show="showTranslation" x-cloak class="mt-1">
+                                                    <flux:text class="text-sm italic {{ $message->user_id === auth()->id() ? 'text-blue-500 dark:text-blue-200' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                        "{{ $message->getTranslation(app()->getLocale()) }}"
+                                                    </flux:text>
+                                                    <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                                </div>
+                                            </div>
+                                        @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
+                                            <div class="mt-1 text-xs opacity-70 {{ $message->user_id === auth()->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
+                                                <span class="animate-pulse">{{ __('Translating...') }}</span>
+                                            </div>
+                                        @endif
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
                                         <div class="text-xs {{ $message->user_id === auth()->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                             <span class="animate-pulse">{{ __('Transcribing...') }}</span>
@@ -398,6 +647,27 @@ new class extends Component {
                                 </div>
                             @else
                                 <flux:text class="whitespace-pre-wrap break-words">{{ $message->content }}</flux:text>
+
+                            {{-- Translation toggle --}}
+                            @if ($message->needsTranslationFor(app()->getLocale()))
+                                <div x-data="{ showTranslation: false }" class="mt-1">
+                                    <button
+                                        @click="showTranslation = !showTranslation"
+                                        class="text-xs underline opacity-70 hover:opacity-100 transition-opacity"
+                                    >
+                                        <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                        <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                    </button>
+                                    <div x-show="showTranslation" x-cloak class="mt-1">
+                                        <flux:text class="whitespace-pre-wrap break-words">{{ $message->getTranslation(app()->getLocale()) }}</flux:text>
+                                        <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                    </div>
+                                </div>
+                            @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
+                                <div class="mt-1 text-xs opacity-70">
+                                    <span class="animate-pulse">{{ __('Translating...') }}</span>
+                                </div>
+                            @endif
                             @endif
 
                             {{-- Attachments --}}
@@ -453,6 +723,14 @@ new class extends Component {
                                         >
                                             {{ __('Reply') }}
                                         </flux:menu.item>
+                                        @if (! $message->getDetectedLanguage() && ($message->metadata['translation_status'] ?? '') !== 'pending')
+                                            <flux:menu.item
+                                                wire:click="translateMessage({{ $message->id }})"
+                                                icon="language"
+                                            >
+                                                {{ __('Translate') }}
+                                            </flux:menu.item>
+                                        @endif
                                         @if ($message->user_id === auth()->id() || auth()->user()->isInternal())
                                             <flux:menu.item
                                                 wire:click="deleteMessage({{ $message->id }})"

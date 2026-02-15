@@ -500,28 +500,32 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
 <div>
     <div class="max-w-4xl mx-auto">
         {{-- Header --}}
-        <div class="flex items-center gap-4 mb-4">
-            <flux:button variant="ghost" :href="route('customer.jobs.index')" icon="arrow-left" wire:navigate>
-                {{ __('Back') }}
-            </flux:button>
-            <div class="flex-1">
-                <flux:heading size="xl">{{ $job->title }}</flux:heading>
-                <flux:text class="text-zinc-500">{{ $job->job_number }}</flux:text>
-            </div>
-            @if (! $job->isCompleted())
-                <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
-            @endif
-            @if ($job->estimate)
-                <flux:button
-                    :href="route('customer.estimates.show', $job->estimate)"
-                    variant="ghost"
-                    icon="document-text"
-                    wire:navigate
-                    class="shrink-0"
-                >
-                    {{ __('View Estimate') }}
+        <div class="flex flex-col gap-4 mb-4">
+            <div class="flex items-center gap-3">
+                <flux:button variant="ghost" :href="route('customer.jobs.index')" icon="arrow-left" wire:navigate class="shrink-0">
+                    {{ __('Back') }}
                 </flux:button>
-            @endif
+                <div class="flex-1 min-w-0">
+                    <flux:heading size="xl" class="truncate">{{ $job->title }}</flux:heading>
+                    <flux:text class="text-zinc-500">{{ $job->job_number }}</flux:text>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                @if (! $job->isCompleted())
+                    <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
+                @endif
+                @if ($job->estimate)
+                    <flux:button
+                        :href="route('customer.estimates.show', $job->estimate)"
+                        variant="ghost"
+                        icon="document-text"
+                        wire:navigate
+                        class="shrink-0"
+                    >
+                        {{ __('View Estimate') }}
+                    </flux:button>
+                @endif
+            </div>
         </div>
 
         {{-- Quick Info Bar --}}
@@ -1402,16 +1406,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                             <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? __('Unknown') }}</flux:text>
                                             <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
                                         </div>
-                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-50 text-zinc-800 dark:bg-blue-600 dark:text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
                                             @if ($message->isAudio())
                                                 <div class="flex items-center gap-2">
-                                                    <flux:icon name="microphone" class="w-4 h-4 {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-400' }}" />
+                                                    <flux:icon name="microphone" class="w-4 h-4 {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-400' }}" />
                                                     <audio controls preload="metadata" class="h-8 max-w-[200px]">
                                                         <source src="{{ $message->metadata['audio_url'] ?? '' }}">
                                                     </audio>
                                                 </div>
                                                 @if (! empty($message->metadata['transcription']))
-                                                    <flux:text class="text-xs italic mt-1 {{ $isOwnMessage ? 'text-blue-200' : 'text-zinc-500' }}">
+                                                    <flux:text class="text-xs italic mt-1 {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                                         "{{ $message->metadata['transcription'] }}"
                                                     </flux:text>
                                                 @endif

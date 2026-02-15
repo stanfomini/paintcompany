@@ -7,6 +7,7 @@ use Livewire\Component;
 
 new class extends Component {
     public bool $open = false;
+    public bool $showHistory = false;
 
     public function boot(): void
     {
@@ -26,27 +27,40 @@ new class extends Component {
 
     public function onNewNotification(): void
     {
-        unset($this->unreadCount);
-        unset($this->notifications);
-
+        $this->clearCache();
         $this->dispatch('play-notification-sound');
     }
 
     public function toggleOpen(): void
     {
         $this->open = ! $this->open;
+        $this->showHistory = false;
 
         if ($this->open) {
-            unset($this->unreadCount);
-            unset($this->notifications);
+            $this->clearCache();
         }
+    }
+
+    public function toggleHistory(): void
+    {
+        $this->showHistory = ! $this->showHistory;
     }
 
     public function markAllAsRead(): void
     {
         auth()->user()->unreadNotifications->markAsRead();
-        unset($this->unreadCount);
-        unset($this->notifications);
+        $this->clearCache();
+    }
+
+    public function markAsRead(string $notificationId): void
+    {
+        $notification = auth()->user()->notifications()->find($notificationId);
+
+        if ($notification && ! $notification->read_at) {
+            $notification->markAsRead();
+        }
+
+        $this->clearCache();
     }
 
     public function markAsReadAndNavigate(string $notificationId, ?string $url = null): void
@@ -57,8 +71,7 @@ new class extends Component {
             $notification->markAsRead();
         }
 
-        unset($this->unreadCount);
-        unset($this->notifications);
+        $this->clearCache();
 
         if ($url) {
             $this->redirect($url, navigate: true);
@@ -72,26 +85,46 @@ new class extends Component {
     }
 
     #[Computed]
-    public function notifications(): Collection
+    public function unreadNotifications(): Collection
     {
         return auth()->user()
-            ->notifications()
+            ->unreadNotifications()
+            ->latest()
+            ->get()
+            ->map(fn (DatabaseNotification $n) => $this->formatNotification($n));
+    }
+
+    #[Computed]
+    public function historyNotifications(): Collection
+    {
+        return auth()->user()
+            ->readNotifications()
             ->latest()
             ->take(15)
             ->get()
-            ->map(function (DatabaseNotification $notification) {
-                return [
-                    'id' => $notification->id,
-                    'type' => class_basename($notification->type),
-                    'data' => $notification->data,
-                    'read' => ! is_null($notification->read_at),
-                    'time' => $notification->created_at->diffForHumans(),
-                    'url' => $this->getNotificationUrl($notification),
-                    'icon' => $this->getNotificationIcon($notification),
-                    'title' => $this->getNotificationTitle($notification),
-                    'description' => $this->getNotificationDescription($notification),
-                ];
-            });
+            ->map(fn (DatabaseNotification $n) => $this->formatNotification($n));
+    }
+
+    private function clearCache(): void
+    {
+        unset($this->unreadCount);
+        unset($this->unreadNotifications);
+        unset($this->historyNotifications);
+    }
+
+    private function formatNotification(DatabaseNotification $notification): array
+    {
+        return [
+            'id' => $notification->id,
+            'type' => class_basename($notification->type),
+            'data' => $notification->data,
+            'read' => ! is_null($notification->read_at),
+            'time' => $notification->created_at->diffForHumans(),
+            'url' => $this->getNotificationUrl($notification),
+            'icon' => $this->getNotificationIcon($notification),
+            'title' => $this->getNotificationTitle($notification),
+            'description' => $this->getNotificationDescription($notification),
+        ];
     }
 
     /**
@@ -141,8 +174,8 @@ new class extends Component {
             // Task → planner
             'TaskAssigned' => route('planner.index'),
 
-            // Meeting notifications → job if available, otherwise planner
-            'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => isset($data['job_id']) ? route('jobs.show', $data['job_id']) : route('planner.index'),
+            // Meeting notifications → deal if available, otherwise planner
+            'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => isset($data['deal_id']) ? route('deals.show', $data['deal_id']) : route('planner.index'),
 
             // Collaborator access → deal
             'CollaboratorAccessGranted' => isset($data['deal_id']) ? route('deals.show', $data['deal_id']) : null,
@@ -276,98 +309,163 @@ new class extends Component {
     }
 }; ?>
 
-<div class="relative" x-data="{ }" @click.outside="$wire.set('open', false)">
-    {{-- Bell Button --}}
-    <button
-        wire:click="toggleOpen"
-        class="relative p-2 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
-        aria-label="{{ __('Notifications') }}"
-    >
-        <flux:icon name="bell" class="size-5" />
-
-        @if ($this->unreadCount > 0)
-            <span class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs rounded-full min-w-4 h-4 flex items-center justify-center px-0.5 font-medium pointer-events-none text-[10px]">
-                {{ $this->unreadCount > 99 ? '99+' : $this->unreadCount }}
-            </span>
-        @endif
-    </button>
-
-    {{-- Dropdown Panel --}}
+<div class="fixed bottom-4 inset-x-0 z-50 pointer-events-none lg:pl-64">
+    <div class="pl-4 flex flex-col items-start gap-2 w-fit">
+    {{-- Notifications Panel (above the FAB button) --}}
     @if ($open)
-        <div class="absolute right-0 top-full mt-2 w-80 max-h-[28rem] flex flex-col bg-white dark:bg-zinc-800 rounded-xl shadow-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden z-50">
-            {{-- Header --}}
+        <div
+            x-data
+            @click.outside="$wire.set('open', false)"
+            class="w-80 max-h-[calc(100vh-8rem)] flex flex-col bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden pointer-events-auto"
+        >
+            {{-- Header with tab toggle --}}
             <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 shrink-0">
-                <flux:heading size="sm">{{ __('Notifications') }}</flux:heading>
-                @if ($this->unreadCount > 0)
-                    <flux:badge size="sm" color="red">{{ $this->unreadCount }} {{ __('new') }}</flux:badge>
-                @endif
+                <div class="flex items-center gap-2">
+                    @if ($showHistory)
+                        <button
+                            wire:click="toggleHistory"
+                            class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+                            aria-label="{{ __('Back to notifications') }}"
+                        >
+                            <flux:icon name="arrow-left" class="size-4" />
+                        </button>
+                        <flux:heading size="sm">{{ __('History') }}</flux:heading>
+                    @else
+                        <flux:heading size="sm">{{ __('Notifications') }}</flux:heading>
+                        @if ($this->unreadCount > 0)
+                            <flux:badge size="sm" color="red">{{ $this->unreadCount }}</flux:badge>
+                        @endif
+                    @endif
+                </div>
+                <div class="flex items-center gap-1">
+                    @if (! $showHistory)
+                        <button
+                            wire:click="toggleHistory"
+                            class="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors px-1.5 py-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                            title="{{ __('View history') }}"
+                        >
+                            {{ __('History') }}
+                        </button>
+                    @endif
+                    <button
+                        wire:click="toggleOpen"
+                        class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-0.5"
+                        aria-label="{{ __('Close notifications') }}"
+                    >
+                        <flux:icon name="x-mark" class="size-5" />
+                    </button>
+                </div>
             </div>
 
-            {{-- Notification List --}}
-            <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                @forelse ($this->notifications as $notification)
-                    <button
-                        wire:key="notification-{{ $notification['id'] }}"
-                        wire:click="markAsReadAndNavigate('{{ $notification['id'] }}', '{{ $notification['url'] }}')"
-                        @class([
-                            'w-full text-left px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors flex items-start gap-3',
-                            'bg-blue-50/50 dark:bg-blue-900/10' => !$notification['read'],
-                        ])
-                    >
-                        <div @class([
-                            'shrink-0 mt-0.5 p-1.5 rounded-full',
-                            'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400' => !$notification['read'],
-                            'bg-zinc-100 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500' => $notification['read'],
-                        ])>
-                            <flux:icon :name="$notification['icon']" class="size-4" />
-                        </div>
-
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-center justify-between gap-2">
-                                <span @class([
-                                    'text-sm truncate',
-                                    'font-semibold text-zinc-900 dark:text-white' => !$notification['read'],
-                                    'font-medium text-zinc-600 dark:text-zinc-400' => $notification['read'],
-                                ])>
+            @if ($showHistory)
+                {{-- History List: Last 15 read notifications --}}
+                <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
+                    @forelse ($this->historyNotifications as $notification)
+                        <button
+                            wire:key="history-{{ $notification['id'] }}"
+                            wire:click="markAsReadAndNavigate('{{ $notification['id'] }}', '{{ $notification['url'] }}')"
+                            class="w-full text-left px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors flex items-start gap-3"
+                        >
+                            <div class="shrink-0 mt-0.5 p-1.5 rounded-full bg-zinc-100 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500">
+                                <flux:icon :name="$notification['icon']" class="size-3.5" />
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <span class="text-sm font-medium text-zinc-500 dark:text-zinc-400 truncate block">
                                     {{ $notification['title'] }}
                                 </span>
-                                @if (!$notification['read'])
-                                    <span class="shrink-0 w-2 h-2 bg-blue-500 rounded-full"></span>
-                                @endif
+                                <p class="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
+                                    {{ $notification['description'] }}
+                                </p>
+                                <p class="text-xs text-zinc-300 dark:text-zinc-600 mt-0.5">
+                                    {{ $notification['time'] }}
+                                </p>
                             </div>
-                            <p class="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
-                                {{ $notification['description'] }}
-                            </p>
-                            <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
-                                {{ $notification['time'] }}
-                            </p>
+                        </button>
+                    @empty
+                        <div class="px-4 py-8 text-center">
+                            <flux:icon name="clock" class="mx-auto size-8 text-zinc-300 dark:text-zinc-600" />
+                            <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('No history yet') }}</p>
                         </div>
-                    </button>
-                @empty
-                    <div class="px-4 py-8 text-center">
-                        <flux:icon name="bell-slash" class="mx-auto size-8 text-zinc-300 dark:text-zinc-600" />
-                        <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('No notifications yet') }}</p>
-                    </div>
-                @endforelse
-            </div>
+                    @endforelse
+                </div>
+            @else
+                {{-- Unread Notification List --}}
+                <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
+                    @forelse ($this->unreadNotifications as $notification)
+                        <div
+                            wire:key="notification-{{ $notification['id'] }}"
+                            class="flex items-start gap-3 px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                        >
+                            {{-- Clickable notification body --}}
+                            <button
+                                wire:click="markAsReadAndNavigate('{{ $notification['id'] }}', '{{ $notification['url'] }}')"
+                                class="flex items-start gap-3 min-w-0 flex-1 text-left"
+                            >
+                                <div class="shrink-0 mt-0.5 p-1.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                    <flux:icon :name="$notification['icon']" class="size-4" />
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <span class="text-sm font-semibold text-zinc-900 dark:text-white truncate block">
+                                        {{ $notification['title'] }}
+                                    </span>
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                                        {{ $notification['description'] }}
+                                    </p>
+                                    <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                        {{ $notification['time'] }}
+                                    </p>
+                                </div>
+                            </button>
 
-            {{-- Footer --}}
-            @if ($this->notifications->isNotEmpty())
-                <div class="border-t border-zinc-200 dark:border-zinc-700 px-4 py-2.5 shrink-0">
-                    @if ($this->unreadCount > 0)
+                            {{-- Mark Read button --}}
+                            <button
+                                wire:click="markAsRead('{{ $notification['id'] }}')"
+                                class="shrink-0 mt-1 p-1 rounded-full text-zinc-300 hover:text-blue-600 hover:bg-blue-100 dark:text-zinc-600 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+                                title="{{ __('Mark as read') }}"
+                            >
+                                <flux:icon name="check" class="size-4" />
+                            </button>
+                        </div>
+                    @empty
+                        <div class="px-4 py-8 text-center">
+                            <flux:icon name="check-circle" class="mx-auto size-8 text-green-300 dark:text-green-700" />
+                            <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('All caught up!') }}</p>
+                        </div>
+                    @endforelse
+                </div>
+
+                {{-- Footer: Mark all as read --}}
+                @if ($this->unreadNotifications->isNotEmpty())
+                    <div class="border-t border-zinc-200 dark:border-zinc-700 px-4 py-2.5 shrink-0">
                         <button
                             wire:click="markAllAsRead"
                             class="block w-full text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                         >
                             {{ __('Mark all as read') }}
                         </button>
-                    @else
-                        <p class="text-center text-sm text-zinc-400 dark:text-zinc-500">{{ __('All caught up!') }}</p>
-                    @endif
-                </div>
+                    </div>
+                @endif
             @endif
         </div>
     @endif
+
+    {{-- Floating Bell Button --}}
+    <div class="relative pointer-events-auto">
+        <button
+            wire:click="toggleOpen"
+            class="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-600 text-white shadow-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
+            aria-label="{{ __('Toggle notifications') }}"
+        >
+            <flux:icon name="bell" class="size-4" />
+        </button>
+
+        {{-- Unread Badge --}}
+        @if ($this->unreadCount > 0)
+            <span class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] rounded-full min-w-4 h-4 flex items-center justify-center px-0.5 font-medium pointer-events-none">
+                {{ $this->unreadCount > 99 ? '99+' : $this->unreadCount }}
+            </span>
+        @endif
+    </div>
 
     {{-- Notification Sound --}}
     <audio id="notification-sound" preload="auto">
@@ -385,4 +483,5 @@ new class extends Component {
         });
     </script>
     @endscript
+    </div>
 </div>

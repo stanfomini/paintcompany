@@ -335,20 +335,20 @@ new class extends Component {
 <div>
     <div class="max-w-5xl mx-auto">
         {{-- Header --}}
-        <div class="flex items-center justify-between mb-6">
-            <div class="flex items-center gap-4">
-                <flux:button variant="ghost" :href="route('jobs.index')" icon="arrow-left" wire:navigate>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+            <div class="flex items-center gap-3 min-w-0">
+                <flux:button variant="ghost" :href="route('jobs.index')" icon="arrow-left" wire:navigate class="shrink-0">
                     {{ __('Back') }}
                 </flux:button>
-                <div>
-                    <flux:heading size="xl">{{ $job->title }}</flux:heading>
+                <div class="min-w-0">
+                    <flux:heading size="xl" class="truncate">{{ $job->title }}</flux:heading>
                     <flux:text class="text-zinc-500">{{ $job->job_number }}</flux:text>
                 </div>
-                <flux:badge size="sm" color="{{ $this->stageColors[$job->stage] ?? 'zinc' }}">
+                <flux:badge size="sm" color="{{ $this->stageColors[$job->stage] ?? 'zinc' }}" class="shrink-0 whitespace-nowrap">
                     {{ $job->stage_label }}
                 </flux:badge>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 shrink-0">
                 @if (! $job->isCompleted())
                     <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
                 @endif

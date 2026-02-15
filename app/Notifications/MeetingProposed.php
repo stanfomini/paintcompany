@@ -3,15 +3,18 @@
 namespace App\Notifications;
 
 use App\Models\Activity;
+use App\Models\Deal;
 use App\Models\User;
+use App\Notifications\Concerns\ResolvesUserPortalUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class MeetingProposed extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, ResolvesUserPortalUrl;
 
     public function __construct(
         public Activity $activity,
@@ -23,12 +26,11 @@ class MeetingProposed extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['mail', 'database', 'broadcast'];
     }
 
     public function toMail(object $notifiable): MailMessage
     {
-        $appName = config('app.name', 'Apex Negotiations');
         $typeBadge = $this->activity->meeting_type === 'virtual' ? 'Virtual' : 'In Person';
 
         $message = (new MailMessage)
@@ -43,7 +45,8 @@ class MeetingProposed extends Notification implements ShouldQueue
             $message->line('**'.__('Details').':** '.$this->activity->description);
         }
 
-        $message->action(__('Confirm Meeting'), $this->getConfirmUrl($notifiable))
+        $message->line(__('Log in to your account to confirm or decline.'))
+            ->action(__('Log In & Confirm Meeting'), $this->getEstimateUrl($notifiable))
             ->line(__('Please confirm or decline this meeting at your earliest convenience.'));
 
         return $message;
@@ -59,23 +62,12 @@ class MeetingProposed extends Notification implements ShouldQueue
             'title' => $this->activity->title,
             'meeting_type' => $this->activity->meeting_type,
             'due_at' => $this->activity->due_at?->toIso8601String(),
+            'deal_id' => $this->activity->subject_type === Deal::class ? $this->activity->subject_id : null,
         ];
     }
 
-    private function getConfirmUrl(object $notifiable): string
+    public function toBroadcast(object $notifiable): BroadcastMessage
     {
-        if ($notifiable->isCustomer() && $this->activity->estimate_id) {
-            return route('customer.estimates.show', $this->activity->estimate_id);
-        }
-
-        if ($notifiable->isAgent() && $this->activity->estimate_id) {
-            return route('agent.estimates.show', $this->activity->estimate_id);
-        }
-
-        if ($this->activity->estimate_id) {
-            return route('estimates.show', $this->activity->estimate_id);
-        }
-
-        return url('/');
+        return new BroadcastMessage($this->toArray($notifiable));
     }
 }

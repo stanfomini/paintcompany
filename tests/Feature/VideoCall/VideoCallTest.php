@@ -83,7 +83,7 @@ it('renders the start call button when no active call', function () {
 
     Livewire::actingAs($user)
         ->test('video-call.job-call', ['job' => $job])
-        ->assertSee('Start Video Call')
+        ->assertSee('Start Now')
         ->assertDontSee('Join Active Call');
 });
 
@@ -99,7 +99,7 @@ it('renders the join button when an active call exists', function () {
     Livewire::actingAs($user)
         ->test('video-call.job-call', ['job' => $job])
         ->assertSee('Return to Call')
-        ->assertDontSee('Start Video Call');
+        ->assertDontSee('Start Now');
 });
 
 it('creates a video call record when starting a call', function () {
@@ -382,7 +382,7 @@ it('customer can see video call button on job progress page', function () {
 
     Livewire::actingAs($customerUser, 'customer')
         ->test('customer.job-progress', ['job' => $job])
-        ->assertSee('Start Video Call');
+        ->assertSee('Start Now');
 });
 
 // ── Recording Player Tests ──────────────────────────────────────────────

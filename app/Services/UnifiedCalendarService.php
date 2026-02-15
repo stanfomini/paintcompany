@@ -89,7 +89,18 @@ class UnifiedCalendarService
     protected function getActivityEvents(User $user, CarbonInterface $from, CarbonInterface $to): Collection
     {
         $activities = Activity::query()
-            ->forUserOrAssignedTo($user)
+            ->where(function ($q) use ($user) {
+                $q->forUserOrAssignedTo($user);
+
+                // Internal users also see meetings needing team confirmation on the calendar
+                if ($user->isInternal()) {
+                    $q->orWhere(function ($q2) {
+                        $q2->where('type', 'meeting')
+                            ->whereIn('meeting_status', ['proposed', 'confirmed'])
+                            ->whereNull('team_confirmed_at');
+                    });
+                }
+            })
             ->whereNotNull('due_at')
             ->whereBetween('due_at', [$from, $to])
             ->where(function ($q) {
@@ -160,7 +171,7 @@ class UnifiedCalendarService
                 'color' => '#2563eb',
                 'subject_type' => Job::class,
                 'subject_id' => $job->id,
-                'url' => null,
+                'url' => route('jobs.show', $job),
                 'meta' => [
                     'job_id' => $job->id,
                     'stage' => $job->stage,

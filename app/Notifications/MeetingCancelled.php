@@ -3,15 +3,18 @@
 namespace App\Notifications;
 
 use App\Models\Activity;
+use App\Models\Deal;
 use App\Models\User;
+use App\Notifications\Concerns\ResolvesUserPortalUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class MeetingCancelled extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, ResolvesUserPortalUrl;
 
     public function __construct(
         public Activity $activity,
@@ -23,7 +26,7 @@ class MeetingCancelled extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['mail', 'database', 'broadcast'];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -55,6 +58,12 @@ class MeetingCancelled extends Notification implements ShouldQueue
             'title' => $this->activity->title,
             'meeting_status' => $this->activity->meeting_status,
             'cancelled_by' => $this->cancelledBy?->id,
+            'deal_id' => $this->activity->subject_type === Deal::class ? $this->activity->subject_id : null,
         ];
+    }
+
+    public function toBroadcast(object $notifiable): BroadcastMessage
+    {
+        return new BroadcastMessage($this->toArray($notifiable));
     }
 }

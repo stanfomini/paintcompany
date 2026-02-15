@@ -11,6 +11,7 @@ use App\Observers\PaymentObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -34,6 +35,11 @@ class AppServiceProvider extends ServiceProvider
         Payment::observe(PaymentObserver::class);
         OverheadEntry::observe(OverheadEntryObserver::class);
         Invoice::observe(InvoiceObserver::class);
+
+        Event::listen(
+            \Illuminate\Auth\Events\Login::class,
+            \App\Listeners\NotifyOnCustomerLogin::class
+        );
     }
 
     protected function configureDefaults(): void

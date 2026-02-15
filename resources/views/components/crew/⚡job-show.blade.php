@@ -2685,15 +2685,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                             <flux:text class="text-xs font-medium text-zinc-500">{{ $message->user?->name ?? __('Unknown') }}</flux:text>
                                             <flux:text class="text-xs text-zinc-400">{{ $message->created_at->diffForHumans() }}</flux:text>
                                         </div>
-                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                        <div class="rounded-lg px-3 py-2 text-sm {{ $isOwnMessage ? 'bg-blue-50 text-zinc-800 dark:bg-blue-600 dark:text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
                                             @if ($message->isAudio())
                                                 <div class="space-y-2">
                                                     <audio controls class="w-full max-w-[240px]" preload="metadata">
                                                         <source src="{{ $message->metadata['audio_url'] ?? '' }}">
                                                     </audio>
                                                     @if (!empty($message->metadata['transcription']))
-                                                        <div class="pt-1 border-t {{ $isOwnMessage ? 'border-blue-500/30' : 'border-zinc-200 dark:border-zinc-700' }}">
-                                                            <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-blue-100' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                        <div class="pt-1 border-t {{ $isOwnMessage ? 'border-blue-200 dark:border-blue-500' : 'border-zinc-200 dark:border-zinc-700' }}">
+                                                            <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-blue-500 dark:text-blue-200' : 'text-zinc-600 dark:text-zinc-400' }}">
                                                                 "{{ $message->metadata['transcription'] }}"
                                                             </flux:text>
                                                         </div>

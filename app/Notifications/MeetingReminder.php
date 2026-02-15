@@ -3,15 +3,18 @@
 namespace App\Notifications;
 
 use App\Models\Activity;
+use App\Models\Deal;
 use App\Models\User;
+use App\Notifications\Concerns\ResolvesUserPortalUrl;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\BroadcastMessage;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class MeetingReminder extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, ResolvesUserPortalUrl;
 
     public function __construct(
         public Activity $activity,
@@ -23,7 +26,7 @@ class MeetingReminder extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        return ['mail', 'database', 'broadcast'];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -41,7 +44,7 @@ class MeetingReminder extends Notification implements ShouldQueue
         if ($this->activity->isVirtualMeeting() && $this->activity->videoCall) {
             $message->action(__('Join Video Call'), $this->getVideoCallUrl($notifiable));
         } else {
-            $message->action(__('View Details'), $this->getUrl($notifiable));
+            $message->action(__('View Details'), $this->getEstimateUrl($notifiable));
         }
 
         return $message;
@@ -57,32 +60,12 @@ class MeetingReminder extends Notification implements ShouldQueue
             'title' => $this->activity->title,
             'meeting_type' => $this->activity->meeting_type,
             'due_at' => $this->activity->due_at?->toIso8601String(),
+            'deal_id' => $this->activity->subject_type === Deal::class ? $this->activity->subject_id : null,
         ];
     }
 
-    private function getVideoCallUrl(object $notifiable): string
+    public function toBroadcast(object $notifiable): BroadcastMessage
     {
-        if ($this->activity->videoCall) {
-            return route('video-call.test', $this->activity->videoCall->room_id);
-        }
-
-        return $this->getUrl($notifiable);
-    }
-
-    private function getUrl(object $notifiable): string
-    {
-        if ($notifiable->isCustomer() && $this->activity->estimate_id) {
-            return route('customer.estimates.show', $this->activity->estimate_id);
-        }
-
-        if ($notifiable->isAgent() && $this->activity->estimate_id) {
-            return route('agent.estimates.show', $this->activity->estimate_id);
-        }
-
-        if ($this->activity->estimate_id) {
-            return route('estimates.show', $this->activity->estimate_id);
-        }
-
-        return url('/');
+        return new BroadcastMessage($this->toArray($notifiable));
     }
 }
