@@ -1842,7 +1842,8 @@ new class extends Component
             scopeType: $this->projectScope,
             paintMode: $this->paintMode,
             paintProductId: $this->defaultPaintProductId,
-            paintByCategory: $this->paintByCategory
+            paintByCategory: $this->paintByCategory,
+            marginDiscountPercent: $this->marginDiscountPercent,
         );
     }
 
@@ -1882,7 +1883,8 @@ new class extends Component
                 editingIndex: $index,
                 paintMode: $this->paintMode,
                 paintProductId: $this->defaultPaintProductId,
-                paintByCategory: $this->paintByCategory
+                paintByCategory: $this->paintByCategory,
+                marginDiscountPercent: $this->marginDiscountPercent,
             );
         } elseif ($templateData['template_id']) {
             // Open AreaBuilder with the original template, passing index for update
@@ -1892,7 +1894,8 @@ new class extends Component
                 editingIndex: $index,
                 paintMode: $this->paintMode,
                 paintProductId: $this->defaultPaintProductId,
-                paintByCategory: $this->paintByCategory
+                paintByCategory: $this->paintByCategory,
+                marginDiscountPercent: $this->marginDiscountPercent,
             );
         }
     }

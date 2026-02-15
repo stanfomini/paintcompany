@@ -76,6 +76,9 @@ new class extends Component
 
     public ?float $directCeilingSqft = null;
 
+    // Margin discount from parent estimate (commercial discount)
+    public float $marginDiscountPercent = 0;
+
     // Service category
     public ?int $serviceCategoryId = null;
 
@@ -125,8 +128,10 @@ new class extends Component
         ?int $editingIndex = null,
         string $paintMode = 'single',
         ?int $paintProductId = null,
-        array $paintByCategory = []
+        array $paintByCategory = [],
+        float $marginDiscountPercent = 0,
     ): void {
+        $this->marginDiscountPercent = $marginDiscountPercent;
         $template = EstimateTemplate::with(['surfaces.productionRate', 'nestedOptions.nestedAreaTemplate'])
             ->find($templateId);
 
@@ -178,8 +183,10 @@ new class extends Component
         string $scopeType = 'interior',
         string $paintMode = 'single',
         ?int $paintProductId = null,
-        array $paintByCategory = []
+        array $paintByCategory = [],
+        float $marginDiscountPercent = 0,
     ): void {
+        $this->marginDiscountPercent = $marginDiscountPercent;
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = null;
@@ -216,8 +223,10 @@ new class extends Component
         int $editingIndex,
         string $paintMode = 'single',
         ?int $paintProductId = null,
-        array $paintByCategory = []
+        array $paintByCategory = [],
+        float $marginDiscountPercent = 0,
     ): void {
+        $this->marginDiscountPercent = $marginDiscountPercent;
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = $editingIndex;
@@ -923,9 +932,9 @@ new class extends Component
             $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $totalMaterialWithAddons);
             $cogs = $cogsResult['cogs'];
 
-            // Apply scope-specific margin: OTD = COGS / (margin% / 100)
-            $marginPercent = $settings->getMarginPercentForScope($this->scopeType);
-            $withMargins = $settings->calculateOTDFromCOGS($cogs, $this->scopeType);
+            // Apply scope-specific margin with discount: OTD = COGS / (margin% / 100)
+            $marginPercent = min(99, $settings->getMarginPercentForScope($this->scopeType) + $this->marginDiscountPercent);
+            $withMargins = round($cogs / ($marginPercent / 100), 2);
 
             return [
                 'dimensions' => [
