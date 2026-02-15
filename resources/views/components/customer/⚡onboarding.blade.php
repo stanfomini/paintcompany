@@ -36,6 +36,11 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
 
     public string $propertyType = 'residential';
 
+    // Step 2: Property picker
+    public ?int $selectedPropertyId = null;
+
+    public bool $showNewPropertyForm = false;
+
     // Step 3: Project
     public string $timeline = '';
 
@@ -48,6 +53,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
     public function customer(): ?Customer
     {
         return Customer::where('user_id', auth('customer')->id())->first();
+    }
+
+    #[Computed]
+    public function existingProperties(): \Illuminate\Database\Eloquent\Collection
+    {
+        if (! $this->customer) {
+            return new \Illuminate\Database\Eloquent\Collection();
+        }
+
+        return $this->customer->properties()->latest()->get();
     }
 
     public function mount(): void
@@ -172,6 +187,36 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
         $this->step = max($this->step - 1, 1);
     }
 
+    public function selectProperty(int $propertyId): void
+    {
+        $customer = $this->customer;
+
+        if (! $customer) {
+            return;
+        }
+
+        // Verify the property belongs to this customer
+        $property = $customer->properties()->find($propertyId);
+
+        if (! $property) {
+            return;
+        }
+
+        $this->selectedPropertyId = $propertyId;
+        $this->step = min($this->step + 1, 4);
+    }
+
+    public function showAddPropertyForm(): void
+    {
+        $this->showNewPropertyForm = true;
+        $this->selectedPropertyId = null;
+    }
+
+    public function cancelAddPropertyForm(): void
+    {
+        $this->showNewPropertyForm = false;
+    }
+
     public function selectEstimatePreference(string $preference): void
     {
         if (! in_array($preference, ['virtual', 'in_person'])) {
@@ -246,9 +291,11 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
                 $customer->update($updates);
             }
 
-            // Create property if address provided and no existing property matches
+            // Resolve property: use selected existing property or create new one
             $property = null;
-            if ($this->address && $this->city) {
+            if ($this->selectedPropertyId) {
+                $property = $customer->properties()->find($this->selectedPropertyId);
+            } elseif ($this->address && $this->city) {
                 $existingProperty = $customer->properties()
                     ->where('address', $this->address)
                     ->where('city', $this->city)
@@ -271,7 +318,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
             if ($this->isNewProject) {
                 $this->createNewProjectDealAndEstimate($customer, $property);
             } else {
-                $this->createDealAndEstimate($customer);
+                $this->createDealAndEstimate($customer, $property);
             }
         }
 
@@ -330,7 +377,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
         }
     }
 
-    private function createDealAndEstimate(Customer $customer): void
+    private function createDealAndEstimate(Customer $customer, ?Property $property = null): void
     {
         $createdBy = $customer->assigned_to ?? User::where('type', 'internal')->first()?->id;
 
@@ -344,7 +391,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
         if (! $deal) {
             $deal = Deal::create([
                 'customer_id' => $customer->id,
-                'property_id' => $customer->properties()->latest()->first()?->id,
+                'property_id' => $property?->id ?? $customer->properties()->latest()->first()?->id,
                 'title' => 'Painting Estimate - '.$customer->first_name.' '.$customer->last_name,
                 'stage' => 'lead',
                 'created_by' => $createdBy,
@@ -490,48 +537,85 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
             <flux:heading size="lg" class="mb-1">{{ __('Property Details') }}</flux:heading>
             <flux:text size="sm" class="text-zinc-500 mb-6">{{ __('Where is the project located?') }}</flux:text>
 
-            <div class="space-y-4">
-                <flux:field>
-                    <flux:label>{{ __('Address') }}</flux:label>
-                    <flux:input wire:model="address" placeholder="123 Main St" />
-                    <flux:error name="address" />
-                </flux:field>
+            @if ($this->existingProperties->isNotEmpty() && ! $showNewPropertyForm)
+                {{-- Property cards --}}
+                <div class="grid gap-4 sm:grid-cols-2">
+                    @foreach ($this->existingProperties as $prop)
+                        <button
+                            wire:key="property-{{ $prop->id }}"
+                            wire:click="selectProperty({{ $prop->id }})"
+                            class="flex flex-col items-start gap-1 rounded-lg border-2 p-4 text-left transition-all hover:border-blue-500 hover:shadow-md border-zinc-200 dark:border-zinc-700"
+                        >
+                            <div class="flex items-center gap-2">
+                                <flux:icon name="home" class="h-5 w-5 text-zinc-400" />
+                                <p class="font-semibold text-zinc-900 dark:text-zinc-100">{{ $prop->address }}</p>
+                            </div>
+                            <p class="text-sm text-zinc-500">{{ $prop->city }}{{ $prop->state ? ', ' . $prop->state : '' }}{{ $prop->zip ? ' ' . $prop->zip : '' }}</p>
+                            <flux:badge size="sm" class="mt-1">{{ ucfirst($prop->type) }}</flux:badge>
+                        </button>
+                    @endforeach
 
-                <div class="grid gap-4 sm:grid-cols-3">
+                    <button
+                        wire:click="showAddPropertyForm"
+                        class="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed p-4 text-center transition-all hover:border-blue-500 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 border-zinc-300 dark:border-zinc-600"
+                    >
+                        <flux:icon name="plus" class="h-8 w-8 text-zinc-400" />
+                        <p class="font-medium text-zinc-600 dark:text-zinc-400">{{ __('Add a New Property') }}</p>
+                    </button>
+                </div>
+
+                <div class="mt-6 flex justify-between">
+                    <flux:button variant="ghost" wire:click="previousStep">{{ __('Back') }}</flux:button>
+                </div>
+            @else
+                {{-- New property form (shown when no properties exist or "Add New" clicked) --}}
+                <div class="space-y-4">
                     <flux:field>
-                        <flux:label>{{ __('City') }}</flux:label>
-                        <flux:input wire:model="city" placeholder="Denver" />
-                        <flux:error name="city" />
+                        <flux:label>{{ __('Address') }}</flux:label>
+                        <flux:input wire:model="address" placeholder="123 Main St" />
+                        <flux:error name="address" />
                     </flux:field>
 
-                    <flux:field>
-                        <flux:label>{{ __('State') }}</flux:label>
-                        <flux:input wire:model="state" placeholder="CO" />
-                        <flux:error name="state" />
-                    </flux:field>
+                    <div class="grid gap-4 sm:grid-cols-3">
+                        <flux:field>
+                            <flux:label>{{ __('City') }}</flux:label>
+                            <flux:input wire:model="city" placeholder="Denver" />
+                            <flux:error name="city" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>{{ __('State') }}</flux:label>
+                            <flux:input wire:model="state" placeholder="CO" />
+                            <flux:error name="state" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>{{ __('ZIP') }}</flux:label>
+                            <flux:input wire:model="zip" placeholder="80202" />
+                            <flux:error name="zip" />
+                        </flux:field>
+                    </div>
 
                     <flux:field>
-                        <flux:label>{{ __('ZIP') }}</flux:label>
-                        <flux:input wire:model="zip" placeholder="80202" />
-                        <flux:error name="zip" />
+                        <flux:label>{{ __('Property Type') }}</flux:label>
+                        <flux:select wire:model="propertyType">
+                            <option value="residential">{{ __('Residential') }}</option>
+                            <option value="commercial">{{ __('Commercial') }}</option>
+                            <option value="industrial">{{ __('Industrial') }}</option>
+                        </flux:select>
+                        <flux:error name="propertyType" />
                     </flux:field>
                 </div>
 
-                <flux:field>
-                    <flux:label>{{ __('Property Type') }}</flux:label>
-                    <flux:select wire:model="propertyType">
-                        <option value="residential">{{ __('Residential') }}</option>
-                        <option value="commercial">{{ __('Commercial') }}</option>
-                        <option value="industrial">{{ __('Industrial') }}</option>
-                    </flux:select>
-                    <flux:error name="propertyType" />
-                </flux:field>
-            </div>
-
-            <div class="mt-6 flex justify-between">
-                <flux:button variant="ghost" wire:click="previousStep">{{ __('Back') }}</flux:button>
-                <flux:button variant="primary" wire:click="nextStep">{{ __('Continue') }}</flux:button>
-            </div>
+                <div class="mt-6 flex justify-between">
+                    @if ($this->existingProperties->isNotEmpty())
+                        <flux:button variant="ghost" wire:click="cancelAddPropertyForm">{{ __('Back to Properties') }}</flux:button>
+                    @else
+                        <flux:button variant="ghost" wire:click="previousStep">{{ __('Back') }}</flux:button>
+                    @endif
+                    <flux:button variant="primary" wire:click="nextStep">{{ __('Continue') }}</flux:button>
+                </div>
+            @endif
         @endif
 
         {{-- Step 3: Project --}}
