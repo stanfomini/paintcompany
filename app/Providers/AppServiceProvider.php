@@ -5,9 +5,11 @@ namespace App\Providers;
 use App\Models\Invoice;
 use App\Models\OverheadEntry;
 use App\Models\Payment;
+use App\Models\User;
 use App\Observers\InvoiceObserver;
 use App\Observers\OverheadEntryObserver;
 use App\Observers\PaymentObserver;
+use App\Observers\UserObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +37,7 @@ class AppServiceProvider extends ServiceProvider
         Payment::observe(PaymentObserver::class);
         OverheadEntry::observe(OverheadEntryObserver::class);
         Invoice::observe(InvoiceObserver::class);
+        User::observe(UserObserver::class);
 
         Event::listen(
             \Illuminate\Auth\Events\Login::class,

@@ -6,26 +6,13 @@ use App\Models\Estimate;
 use App\Models\EstimateView;
 use App\Models\User;
 use App\Notifications\ProposalViewed;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
 
 beforeEach(function () {
     Notification::fake();
-    Cache::flush();
 });
 
-it('sends notification on first proposal view', function () {
-    $assignee = User::factory()->internal()->create();
-    $customer = Customer::factory()->assignedTo($assignee)->create();
-    $deal = Deal::factory()->forCustomer($customer)->create();
-    $estimate = Estimate::factory()->forDeal($deal)->create();
-
-    EstimateView::record($estimate);
-
-    Notification::assertSentTo($assignee, ProposalViewed::class);
-});
-
-it('throttles notification for same estimate within 1 hour', function () {
+it('sends notification on every proposal view', function () {
     $assignee = User::factory()->internal()->create();
     $customer = Customer::factory()->assignedTo($assignee)->create();
     $deal = Deal::factory()->forCustomer($customer)->create();
@@ -35,22 +22,7 @@ it('throttles notification for same estimate within 1 hour', function () {
     EstimateView::record($estimate);
     EstimateView::record($estimate);
 
-    Notification::assertSentToTimes($assignee, ProposalViewed::class, 1);
-});
-
-it('re-sends notification after cache expires', function () {
-    $assignee = User::factory()->internal()->create();
-    $customer = Customer::factory()->assignedTo($assignee)->create();
-    $deal = Deal::factory()->forCustomer($customer)->create();
-    $estimate = Estimate::factory()->forDeal($deal)->create();
-
-    EstimateView::record($estimate);
-    Notification::assertSentToTimes($assignee, ProposalViewed::class, 1);
-
-    Cache::forget("proposal_viewed_notify:{$estimate->id}");
-
-    EstimateView::record($estimate);
-    Notification::assertSentToTimes($assignee, ProposalViewed::class, 2);
+    Notification::assertSentToTimes($assignee, ProposalViewed::class, 3);
 });
 
 it('resolves assignee from deal first', function () {

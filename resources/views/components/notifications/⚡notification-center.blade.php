@@ -156,6 +156,9 @@ new class extends Component {
             // Customer login → customer profile
             'CustomerPortalLogin' => isset($data['customer_id']) ? route('customers.show', $data['customer_id']) : null,
 
+            // New account → dashboard
+            'NewAccountCreated' => route('dashboard'),
+
             // Deal notifications → deal detail
             'NewProjectRequested', 'AgentListingSubmitted' => isset($data['deal_id']) ? route('deals.show', $data['deal_id']) : null,
 
@@ -213,6 +216,7 @@ new class extends Component {
             'EstimateReadyForAgent' => 'document-check',
             'ProposalViewed' => 'eye',
             'CustomerPortalLogin' => 'arrow-right-end-on-rectangle',
+            'NewAccountCreated' => 'user-plus',
             'JobCreated' => 'clipboard-document-check',
             'JobCompleted' => 'trophy',
             'JobStageAdvanced' => 'arrow-right',
@@ -252,6 +256,7 @@ new class extends Component {
             'EstimateProposalSent' => __('Proposal Sent'),
             'ProposalViewed' => __('Proposal Viewed'),
             'CustomerPortalLogin' => __('Customer Login'),
+            'NewAccountCreated' => __('New Account'),
             'JobCreated' => __('New Job Created'),
             'JobCompleted' => __('Job Completed'),
             'JobStageAdvanced' => __('Job Stage Updated'),
@@ -304,6 +309,7 @@ new class extends Component {
             'TaskAssigned' => $data['title'] ?? '',
             'VideoCallInvitation' => ($data['initiator_name'] ?? '') . ' ' . __('started a call'),
             'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => $data['title'] ?? '',
+            'NewAccountCreated' => ucfirst($data['account_type'] ?? 'user') . ' — ' . ($data['user_name'] ?? ''),
             default => $data['customer_name'] ?? $data['estimate_number'] ?? $data['title'] ?? $data['message'] ?? '',
         };
     }
