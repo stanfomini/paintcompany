@@ -146,11 +146,10 @@ describe('Package template value-add scenario', function () {
     it('calculates good/better/best tiers correctly', function () {
         $paintingTotal = 2920.00;
 
-        // Good: 3 month warranty (1%)
+        // Good: no warranty, no add-ons
         $good = PackageTemplate::factory()->good()->create();
-        // No add-ons for good tier
 
-        // Better: 6 month warranty (3%) + cleaning
+        // Better: no warranty + cleaning
         $better = PackageTemplate::factory()->better()->create();
         PackageTemplateItem::factory()->forPackageTemplate($better)->create([
             'name' => 'Cleaning Service',
@@ -159,7 +158,7 @@ describe('Package template value-add scenario', function () {
             'is_included_by_default' => true,
         ]);
 
-        // Best: 1 year warranty (5%) + cleaning + consultation
+        // Best: no warranty + cleaning + consultation
         $best = PackageTemplate::factory()->best()->create();
         PackageTemplateItem::factory()->forPackageTemplate($best)->create([
             'name' => 'Cleaning Service',
@@ -174,13 +173,13 @@ describe('Package template value-add scenario', function () {
             'is_included_by_default' => true,
         ]);
 
-        // Good: $2920 + 1% = $2949.20
-        expect(round($good->calculatePackageTotal($paintingTotal), 2))->toBe(2949.20);
+        // Good: $2920 (no extras)
+        expect(round($good->calculatePackageTotal($paintingTotal), 2))->toBe(2920.00);
 
-        // Better: $2920 + 3% ($87.60) + $400 = $3407.60
-        expect(round($better->calculatePackageTotal($paintingTotal), 2))->toBe(3407.60);
+        // Better: $2920 + $400 = $3320.00
+        expect(round($better->calculatePackageTotal($paintingTotal), 2))->toBe(3320.00);
 
-        // Best: $2920 + 5% ($146) + $400 + $125 = $3591.00
-        expect(round($best->calculatePackageTotal($paintingTotal), 2))->toBe(3591.00);
+        // Best: $2920 + $400 + $125 = $3445.00
+        expect(round($best->calculatePackageTotal($paintingTotal), 2))->toBe(3445.00);
     });
 });
