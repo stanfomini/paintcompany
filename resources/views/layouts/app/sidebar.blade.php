@@ -42,7 +42,10 @@
                     @endcan
                     @can('chat.access')
                         <flux:sidebar.item icon="chat-bubble-left-right" :href="route('chat.index')" :current="request()->routeIs('chat.*')" wire:navigate>
-                            {{ __('Messages') }}
+                            <div class="flex items-center justify-between w-full">
+                                {{ __('Messages') }}
+                                @livewire('chat.unread-badge')
+                            </div>
                         </flux:sidebar.item>
                     @endcan
                     @can('business_plan.view')
@@ -99,9 +102,23 @@
         </flux:sidebar>
 
 
+        {{-- Desktop top bar with notification bell --}}
+        @auth
+            @if (auth()->user()->isInternal())
+                <div class="hidden lg:flex items-center justify-end gap-3 px-6 py-2 border-b border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
+                    @livewire('notifications.notification-center')
+                </div>
+            @endif
+        @endauth
+
         <!-- Mobile User Menu -->
         <flux:header class="lg:hidden">
             <flux:sidebar.toggle class="lg:hidden" icon="bars-2" inset="left" />
+            @auth
+                @if (auth()->user()->isInternal())
+                    @livewire('notifications.notification-center')
+                @endif
+            @endauth
 
             <flux:spacer />
 

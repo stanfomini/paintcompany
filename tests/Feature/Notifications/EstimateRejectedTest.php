@@ -101,12 +101,12 @@ describe('EstimateRejected Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail channel only', function () {
+    it('uses mail and database channels', function () {
         $estimate = Estimate::factory()->make();
         $notification = new EstimateRejected($estimate);
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail']);
+        expect($channels)->toBe(['mail', 'database']);
     });
 
     it('converts to array with correct structure', function () {

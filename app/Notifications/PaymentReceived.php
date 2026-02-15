@@ -21,7 +21,7 @@ class PaymentReceived extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        return ['mail', 'database'];
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -50,6 +50,7 @@ class PaymentReceived extends Notification implements ShouldQueue
         return [
             'payment_id' => $this->payment->id,
             'invoice_id' => $this->payment->invoice_id,
+            'invoice_number' => $this->payment->invoice?->invoice_number,
             'amount' => $this->payment->amount,
         ];
     }
