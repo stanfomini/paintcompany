@@ -136,7 +136,11 @@ From the extracted text and photos, identify:
 
 ## STEP 4: Build Areas and Surfaces (send callback per area: "Building area: [Name]...")
 
-For each room, create an area with surfaces via SSH. Here is the pattern for creating ONE complete area:
+For each room, create an area with surfaces AND a template usage record via SSH. The template usage is **required** — it links the area to the template builder page so the user can see and edit it there.
+
+**Keep a running sort order counter** starting at 1, incrementing for each area.
+
+Here is the pattern for creating ONE complete area:
 
 ```bash
 ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan tinker --execute=\"
@@ -187,9 +191,26 @@ ssh -i {{SSH_KEY}} {{SSH_USER}}@{{SSH_HOST}} "cd {{PROD_PATH}} && php artisan ti
     'is_included' => true, 'sort_order' => 4,
 ]);
 
-echo json_encode(['area' => \\\$area->name, 'id' => \\\$area->id, 'surfaces' => \\\$area->surfaces()->count()]);
+// Calculate the area customer price for the template usage
+\\\$price = \\\$area->getCustomerPrice();
+
+// REQUIRED: Create template usage so area appears in the template builder
+App\\\\Models\\\\EstimateTemplateUsage::create([
+    'estimate_id' => {{ESTIMATE_ID}},
+    'template_id' => null,
+    'resultable_type' => 'App\\\\Models\\\\EstimateArea',
+    'resultable_id' => \\\$area->id,
+    'quantity' => \\\$area->wall_sqft,
+    'coats' => 2,
+    'calculated_price' => \\\$price,
+    'sort_order' => SORT_ORDER,
+]);
+
+echo json_encode(['area' => \\\$area->name, 'id' => \\\$area->id, 'surfaces' => \\\$area->surfaces()->count(), 'price' => \\\$price]);
 \""
 ```
+
+**IMPORTANT**: Replace `SORT_ORDER` with a running counter (1, 2, 3...) for each area you create. This controls the display order in the template builder.
 
 **Adjust these values per room:**
 - `name`, `length`, `width`, `height`, `wall_count` — from blueprints
