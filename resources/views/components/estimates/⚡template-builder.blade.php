@@ -450,6 +450,131 @@ new class extends Component
         foreach ($fixedPriceGroups as $entry) {
             $this->selectedTemplates[] = $entry;
         }
+
+        // Load "orphan" areas created directly (e.g. by AI builder) without template usages
+        $usedAreaIds = $this->estimate->templateUsages()
+            ->where('resultable_type', EstimateArea::class)
+            ->pluck('resultable_id')
+            ->toArray();
+
+        $orphanAreas = $this->estimate->areas()
+            ->with(['surfaces.productionRate', 'addons.nestedAreaTemplate'])
+            ->whereNotIn('id', $usedAreaIds)
+            ->where('is_fixed_price', false)
+            ->get();
+
+        foreach ($orphanAreas as $area) {
+            $surfaces = [];
+            $totalLaborHours = 0;
+            $totalLaborCost = 0;
+            $totalMaterialCost = 0;
+
+            foreach ($area->surfaces as $surface) {
+                $surfaceCategory = $surface->productionRate?->surface_category
+                    ?? $this->inferSurfaceCategory($surface->surface_type, $area->scope_type ?? 'interior');
+
+                $surfaces[] = [
+                    'id' => $surface->id,
+                    'name' => $surface->name,
+                    'surface_type' => $surface->surface_type,
+                    'surface_category' => $surfaceCategory,
+                    'production_rate_id' => $surface->production_rate_id ? (string) $surface->production_rate_id : null,
+                    'quantity_source' => match (true) {
+                        $surface->surface_type === 'doors' => 'door_count',
+                        $surface->surface_type === 'windows' => 'window_count',
+                        $surface->surface_type === 'ceiling' && $surface->unit === 'sqft' => 'ceiling_sqft',
+                        $surface->unit === 'sqft' => 'wall_sqft',
+                        $surface->unit === 'lnft' => 'perimeter_lnft',
+                        default => 'custom',
+                    },
+                    'quantity' => (float) $surface->quantity,
+                    'quantity_override' => $surface->unit === 'units' ? (float) $surface->quantity : null,
+                    'default_coats' => $surface->coats,
+                    'is_required' => false,
+                    'is_default_enabled' => $surface->is_included,
+                    'is_custom' => (bool) $surface->is_custom,
+                    'fixed_price' => null,
+                    'labor_hours' => (float) ($surface->labor_hours ?? 0),
+                    'labor_cost' => (float) ($surface->labor_cost ?? 0),
+                    'material_cost' => (float) ($surface->material_cost ?? 0),
+                ];
+
+                if ($surface->is_included) {
+                    $totalLaborHours += (float) ($surface->labor_hours ?? 0);
+                    $totalLaborCost += (float) ($surface->labor_cost ?? 0);
+                    $totalMaterialCost += (float) ($surface->material_cost ?? 0);
+                }
+            }
+
+            $addons = [];
+            $addonTotal = 0;
+            foreach ($area->addons ?? [] as $addon) {
+                $addons[] = [
+                    'nested_area_template_id' => $addon->nested_area_template_id,
+                    'name' => $addon->nestedAreaTemplate?->name ?? 'Add-on',
+                    'quantity' => $addon->quantity,
+                    'unit_price' => (float) $addon->unit_price,
+                    'total_price' => (float) $addon->total_price,
+                ];
+                $addonTotal += (float) $addon->total_price;
+            }
+
+            $settings = CompanySetting::getInstance();
+            $scopeType = $area->scope_type ?? 'interior';
+            $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+
+            $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
+            $cleanupCost = $cleanupHours * $hourlyWage;
+            $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scopeType);
+
+            $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonTotal);
+            $cogs = $cogsResult['cogs'];
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+            $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+            $this->selectedTemplates[] = [
+                'template_id' => null,
+                'name' => $area->name,
+                'scope_type' => $scopeType,
+                'quantity' => $area->wall_sqft,
+                'coats' => $area->surfaces->first()?->coats ?? 2,
+                'price' => round($withMargins, 2),
+                'default_quantity' => $area->wall_sqft,
+                'pricing_method' => 'per_sqft',
+                'icon' => null,
+                'category_type' => 'room',
+                'labor_hours' => round($totalLaborHours, 2),
+                'labor_cost' => round($totalLaborCost, 2),
+                'cleanup_hours' => round($cleanupHours, 2),
+                'cleanup_cost' => round($cleanupCost, 2),
+                'sundries_cost' => round($sundriesCost, 2),
+                'material_cost' => round($totalMaterialCost, 2),
+                'material_tax' => $cogsResult['material_tax'],
+                'labor_tax' => $cogsResult['labor_tax'],
+                'base_total' => $cogs,
+                'with_margins' => round($withMargins, 2),
+                'sizes' => null,
+                'selected_size' => null,
+                'surface_ratios' => null,
+                'surfaces' => null,
+                'service_category_id' => $area->service_category_id,
+                'area_data' => [
+                    'length' => $area->length,
+                    'width' => $area->width,
+                    'height' => $area->height,
+                    'wall_sqft' => $area->wall_sqft,
+                    'ceiling_sqft' => $area->ceiling_sqft,
+                    'perimeter_lnft' => $area->perimeter_lnft,
+                    'measurement_type' => $area->measurement_type ?? 'dimensions',
+                    'wall_count' => $area->wall_count ?? 4,
+                    'direct_sqft' => $area->direct_sqft,
+                    'direct_lnft' => $area->direct_lnft,
+                    'direct_ceiling_sqft' => $area->direct_ceiling_sqft,
+                    'surfaces' => $surfaces,
+                    'addons' => $addons,
+                ],
+            ];
+        }
     }
 
     /**
