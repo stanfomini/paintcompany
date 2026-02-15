@@ -50,17 +50,24 @@ class EstimateAiBuildCommand extends Command
         $promptFile = "/tmp/ai-build-prompt-{$estimateId}.md";
         file_put_contents($promptFile, $prompt);
 
-        // Spawn Claude Code in a tmux session
-        // --disable-slash-commands: skip loading skills/plugins (saves minutes of startup)
-        // --tools "Bash,Read": only tools needed for SSH commands and reading downloaded files
-        // --model sonnet: faster model, sufficient for following structured prompts
+        // Write a launcher script to avoid shell quoting issues with tmux.
+        // The prompt file is read by the script at runtime via $(cat ...).
+        $scriptFile = "/tmp/ai-build-run-{$estimateId}.sh";
+        $scriptContent = implode("\n", [
+            '#!/bin/bash',
+            'unset CLAUDECODE',  // Prevent "nested session" detection
+            'cd '.escapeshellarg($workingDir),
+            escapeshellarg($claudeBin).' --dangerously-skip-permissions --disable-slash-commands --tools "Bash,Read" --model sonnet -p "$(cat '.escapeshellarg($promptFile).')" 2>&1 | tee '.escapeshellarg($logFile),
+            'sleep 5',
+        ]);
+        file_put_contents($scriptFile, $scriptContent);
+        chmod($scriptFile, 0755);
+
+        // Spawn in tmux session
         $command = sprintf(
-            'tmux new-session -d -s %s "cd %s && %s --dangerously-skip-permissions --disable-slash-commands --tools Bash,Read --model sonnet -p %s 2>&1 | tee %s; sleep 5"',
+            'tmux new-session -d -s %s %s',
             escapeshellarg($tmuxSession),
-            escapeshellarg($workingDir),
-            escapeshellarg($claudeBin),
-            escapeshellarg("$(cat {$promptFile})"),
-            escapeshellarg($logFile),
+            escapeshellarg($scriptFile),
         );
 
         $this->info("Starting AI build for estimate #{$estimateId}...");
