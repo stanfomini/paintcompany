@@ -154,7 +154,6 @@ new class extends Component {
         $metadata = $message->metadata ?? [];
         $metadata['detected_lang'] = $detectedLang;
         $metadata['translations'][$targetLang] = $translated;
-        unset($metadata['translation_status']);
         $message->update(['metadata' => $metadata]);
 
         unset($this->messages);
@@ -624,10 +623,6 @@ new class extends Component {
                                                     <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
                                                 </div>
                                             </div>
-                                        @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
-                                            <div class="mt-1 text-xs opacity-70 {{ $message->user_id === auth()->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
-                                                <span class="animate-pulse">{{ __('Translating...') }}</span>
-                                            </div>
                                         @endif
                                     @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
                                         <div class="text-xs {{ $message->user_id === auth()->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
@@ -662,10 +657,6 @@ new class extends Component {
                                         <flux:text class="whitespace-pre-wrap break-words">{{ $message->getTranslation(app()->getLocale()) }}</flux:text>
                                         <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
                                     </div>
-                                </div>
-                            @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
-                                <div class="mt-1 text-xs opacity-70">
-                                    <span class="animate-pulse">{{ __('Translating...') }}</span>
                                 </div>
                             @endif
                             @endif
@@ -723,7 +714,7 @@ new class extends Component {
                                         >
                                             {{ __('Reply') }}
                                         </flux:menu.item>
-                                        @if (! $message->getDetectedLanguage() && ($message->metadata['translation_status'] ?? '') !== 'pending')
+                                        @if (! $message->getDetectedLanguage())
                                             <flux:menu.item
                                                 wire:click="translateMessage({{ $message->id }})"
                                                 icon="language"

@@ -74,7 +74,6 @@ class TranslateChatMessageJob implements ShouldQueue
             // If detected language matches target, no translation needed
             if ($detectedLang === $targetLang) {
                 $metadata['detected_lang'] = $detectedLang;
-                unset($metadata['translation_status']);
                 $this->message->metadata = $metadata;
                 $this->message->save();
 
@@ -95,7 +94,6 @@ class TranslateChatMessageJob implements ShouldQueue
 
             $metadata['detected_lang'] = $detectedLang;
             $metadata['translations'][$targetLang] = $finalTranslation;
-            unset($metadata['translation_status']);
 
             $this->message->metadata = $metadata;
             $this->message->save();

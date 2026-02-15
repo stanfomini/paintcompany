@@ -44,16 +44,16 @@ it('does not show "See translation" for same-language messages', function () {
         ->assertDontSee('See translation');
 });
 
-it('shows "Translating..." for pending translations', function () {
+it('shows "Translate" button for messages without detected language', function () {
     ChatMessage::factory()
         ->forThread($this->thread)
         ->fromUser($this->otherUser)
-        ->translationPending()
+        ->withContent('A message that has not been translated yet')
         ->create();
 
     Livewire::actingAs($this->internalUser)
         ->test('chat.thread-view', ['thread' => $this->thread])
-        ->assertSee('Translating...');
+        ->assertSee('Translate');
 });
 
 it('can trigger on-demand translate for old messages', function () {

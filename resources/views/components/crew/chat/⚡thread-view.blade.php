@@ -267,10 +267,6 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
                                                         <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
                                                     </div>
                                                 </div>
-                                            @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
-                                                <div class="mt-1 text-xs opacity-70 {{ $message->user_id === auth('crew')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
-                                                    <span class="animate-pulse">{{ __('Translating...') }}</span>
-                                                </div>
                                             @endif
                                         @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
                                             <div class="text-xs {{ $message->user_id === auth('crew')->id() ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
@@ -305,10 +301,6 @@ new #[Layout('components.layouts.crew', ['title' => 'Conversation'])] class exte
                                                 <flux:text class="whitespace-pre-wrap break-words">{{ $message->getTranslation(app()->getLocale()) }}</flux:text>
                                                 <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
                                             </div>
-                                        </div>
-                                    @elseif (($message->metadata['translation_status'] ?? '') === 'pending')
-                                        <div class="mt-1 text-xs opacity-70">
-                                            <span class="animate-pulse">{{ __('Translating...') }}</span>
                                         </div>
                                     @endif
                                 @endif
