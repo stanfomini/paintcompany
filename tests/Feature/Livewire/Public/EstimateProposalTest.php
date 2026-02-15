@@ -331,6 +331,91 @@ describe('EstimateProposal public functionality', function () {
     });
 });
 
+describe('EstimateProposal sign-in button and contact privacy', function () {
+    beforeEach(function () {
+        $this->internalUser = User::factory()->internal()->withFullAccess()->create();
+        $this->customer = Customer::factory()->create([
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'email' => 'john@example.com',
+            'phone' => '(303) 555-1245',
+        ]);
+        $this->deal = Deal::factory()->forCustomer($this->customer)->create();
+        $this->estimate = Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'valid_until' => now()->addMonth(),
+        ]);
+        $this->estimate->generatePublicToken(30);
+    });
+
+    it('shows customer sign-in button when customer exists', function () {
+        Livewire::test('public.estimate-proposal', ['token' => $this->estimate->public_token])
+            ->assertSee('Customer Sign In');
+    });
+
+    it('shows agent sign-in button when no customer but agent exists', function () {
+        $agent = User::factory()->agent()->create();
+        $deal = Deal::factory()->referredByAgent($agent)->create(['customer_id' => null]);
+        $estimate = Estimate::factory()->forDeal($deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'valid_until' => now()->addMonth(),
+        ]);
+        $estimate->generatePublicToken(30);
+
+        Livewire::test('public.estimate-proposal', ['token' => $estimate->public_token])
+            ->assertSee('Agent Sign In')
+            ->assertDontSee('Customer Sign In');
+    });
+
+    it('hides customer sign-in button when authenticated as customer', function () {
+        $customerUser = User::factory()->customer()->create();
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('public.estimate-proposal', ['token' => $this->estimate->public_token])
+            ->assertDontSee('Customer Sign In');
+    });
+
+    it('hides agent sign-in button when authenticated as agent', function () {
+        $agent = User::factory()->agent()->create();
+        $deal = Deal::factory()->referredByAgent($agent)->create(['customer_id' => null]);
+        $estimate = Estimate::factory()->forDeal($deal)->sent()->create([
+            'created_by' => $this->internalUser->id,
+            'valid_until' => now()->addMonth(),
+        ]);
+        $estimate->generatePublicToken(30);
+
+        Livewire::actingAs($agent, 'agent')
+            ->test('public.estimate-proposal', ['token' => $estimate->public_token])
+            ->assertDontSee('Agent Sign In');
+    });
+
+    it('prioritizes customer sign-in over agent when both exist', function () {
+        $agent = User::factory()->agent()->create();
+        $this->deal->update(['agent_id' => $agent->id]);
+
+        Livewire::test('public.estimate-proposal', ['token' => $this->estimate->public_token])
+            ->assertSee('Customer Sign In')
+            ->assertDontSee('Agent Sign In');
+    });
+
+    it('blurs email and phone for unauthenticated visitors', function () {
+        Livewire::test('public.estimate-proposal', ['token' => $this->estimate->public_token])
+            ->assertDontSee('john@example.com')
+            ->assertDontSee('(303) 555-1245')
+            ->assertSee('blur-sm select-none');
+    });
+
+    it('shows full email and phone for authenticated visitors', function () {
+        $customerUser = User::factory()->customer()->create();
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('public.estimate-proposal', ['token' => $this->estimate->public_token])
+            ->assertSee('john@example.com')
+            ->assertSee('(303) 555-1245')
+            ->assertDontSee('blur-sm select-none');
+    });
+});
+
 describe('EstimateProposal pricing consistency', function () {
     uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 

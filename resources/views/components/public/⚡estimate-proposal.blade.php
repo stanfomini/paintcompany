@@ -59,6 +59,7 @@ new #[Layout('components.layouts.public')] class extends Component {
         $estimate = Estimate::byPublicToken($token)
             ->with([
                 'deal.customer',
+                'deal.agent',
                 'deal.property',
                 'items',
                 'areas.surfaces.productionRate',
@@ -616,23 +617,49 @@ new #[Layout('components.layouts.public')] class extends Component {
         </flux:card>
 
         {{-- Customer Information --}}
+        @php
+            $isAuthenticated = auth('web')->check() || auth('customer')->check() || auth('agent')->check();
+        @endphp
         @if ($estimate->deal?->customer)
             <flux:card class="p-6 mb-6">
-                <flux:heading size="lg" class="mb-4">{{ __('Prepared For') }}</flux:heading>
+                <div class="flex items-center justify-between mb-4">
+                    <flux:heading size="lg">{{ __('Prepared For') }}</flux:heading>
+                    @if ($estimate->deal->customer && ! auth('customer')->check())
+                        <flux:button variant="subtle" size="sm" icon="arrow-right-start-on-rectangle" :href="route('customer.login')">
+                            {{ __('Customer Sign In') }}
+                        </flux:button>
+                    @elseif (! $estimate->deal->customer && $estimate->deal->agent && ! auth('agent')->check())
+                        <flux:button variant="subtle" size="sm" icon="arrow-right-start-on-rectangle" :href="route('agent.login')">
+                            {{ __('Agent Sign In') }}
+                        </flux:button>
+                    @endif
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                         <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
                             {{ $estimate->deal->customer->first_name }} {{ $estimate->deal->customer->last_name }}
                         </flux:text>
                         @if ($estimate->deal->customer->email)
-                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
-                                {{ $estimate->deal->customer->email }}
-                            </flux:text>
+                            @if ($isAuthenticated)
+                                <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
+                                    {{ $estimate->deal->customer->email }}
+                                </flux:text>
+                            @else
+                                <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 blur-sm select-none" aria-hidden="true">
+                                    {{ preg_replace('/[^@.]/', '*', $estimate->deal->customer->email) }}
+                                </flux:text>
+                            @endif
                         @endif
                         @if ($estimate->deal->customer->phone)
-                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
-                                {{ $estimate->deal->customer->phone }}
-                            </flux:text>
+                            @if ($isAuthenticated)
+                                <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
+                                    {{ $estimate->deal->customer->phone }}
+                                </flux:text>
+                            @else
+                                <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 blur-sm select-none" aria-hidden="true">
+                                    {{ preg_replace('/\d/', '*', $estimate->deal->customer->phone) }}
+                                </flux:text>
+                            @endif
                         @endif
                     </div>
                     @if ($estimate->deal->customer->address)
@@ -646,6 +673,17 @@ new #[Layout('components.layouts.public')] class extends Component {
                                 @endif
                             </flux:text>
                         </div>
+                    @endif
+                </div>
+            </flux:card>
+        @elseif ($estimate->deal?->agent)
+            <flux:card class="p-6 mb-6">
+                <div class="flex items-center justify-between">
+                    <flux:heading size="lg">{{ __('Prepared For') }}</flux:heading>
+                    @if (! auth('agent')->check())
+                        <flux:button variant="subtle" size="sm" icon="arrow-right-start-on-rectangle" :href="route('agent.login')">
+                            {{ __('Agent Sign In') }}
+                        </flux:button>
                     @endif
                 </div>
             </flux:card>
