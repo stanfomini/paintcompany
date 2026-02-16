@@ -19,6 +19,7 @@ class LifeCommitment extends Model
         'action_type',
         'sort_order',
         'is_active',
+        'completed_at',
         'start_date',
         'recurrence_days',
         'recurrence_time',
@@ -30,6 +31,7 @@ class LifeCommitment extends Model
         return [
             'sort_order' => 'integer',
             'is_active' => 'boolean',
+            'completed_at' => 'datetime',
             'start_date' => 'date',
             'recurrence_days' => 'array',
             'recurrence_day_of_month' => 'integer',
@@ -58,5 +60,13 @@ class LifeCommitment extends Model
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
+    }
+
+    /**
+     * Scope to only incomplete commitments (not yet completed).
+     */
+    public function scopeIncomplete(Builder $query): Builder
+    {
+        return $query->whereNull('completed_at');
     }
 }

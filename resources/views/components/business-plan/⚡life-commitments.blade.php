@@ -37,6 +37,8 @@ new class extends Component
 
     public ?int $recurrence_day_of_month = null;
 
+    public ?string $completed_at = null;
+
     /** @var array<string, bool> */
     public array $collapsedAreas = [];
 
@@ -147,9 +149,9 @@ new class extends Component
         $this->validate([
             'area' => ['required', 'string', 'max:255'],
             'commitment' => ['required', 'string', 'max:5000'],
-            'action_type' => ['required', 'string', 'in:daily,weekly,monthly,quarterly,annual,ongoing'],
+            'action_type' => ['required', 'string', 'in:daily,weekly,monthly,quarterly,annual,ongoing,one_time'],
             'is_active' => ['boolean'],
-            'start_date' => ['nullable', 'date'],
+            'start_date' => [$this->action_type === 'one_time' ? 'required' : 'nullable', 'date'],
             'recurrence_days' => ['nullable', 'array'],
             'recurrence_days.*' => ['integer', 'min:1', 'max:7'],
             'recurrence_time' => ['nullable', 'string', 'regex:/^\d{1,2}:\d{2}$/'],
@@ -165,7 +167,7 @@ new class extends Component
             'is_active' => $this->is_active,
             'start_date' => $this->start_date,
             'recurrence_days' => $this->action_type === 'weekly' && ! empty($this->recurrence_days) ? $this->recurrence_days : null,
-            'recurrence_time' => in_array($this->action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual']) ? $this->recurrence_time : null,
+            'recurrence_time' => in_array($this->action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual', 'one_time']) ? $this->recurrence_time : null,
             'recurrence_day_of_month' => in_array($this->action_type, ['monthly', 'quarterly']) ? $this->recurrence_day_of_month : null,
         ];
 
@@ -200,6 +202,22 @@ new class extends Component
 
         $commitment = LifeCommitment::findOrFail($id);
         $commitment->update(['is_active' => ! $commitment->is_active]);
+        unset($this->commitments, $this->commitmentsByArea, $this->calendarDays);
+    }
+
+    public function markComplete(int $id): void
+    {
+        $this->authorize('business_plan.manage');
+
+        LifeCommitment::findOrFail($id)->update(['completed_at' => now()]);
+        unset($this->commitments, $this->commitmentsByArea, $this->calendarDays);
+    }
+
+    public function markIncomplete(int $id): void
+    {
+        $this->authorize('business_plan.manage');
+
+        LifeCommitment::findOrFail($id)->update(['completed_at' => null]);
         unset($this->commitments, $this->commitmentsByArea, $this->calendarDays);
     }
 
@@ -297,6 +315,7 @@ new class extends Component
         $this->recurrence_days = [];
         $this->recurrence_time = null;
         $this->recurrence_day_of_month = null;
+        $this->completed_at = null;
         $this->resetValidation();
     }
 
@@ -309,6 +328,7 @@ new class extends Component
             'quarterly' => __('Quarterly'),
             'annual' => __('Annual'),
             'ongoing' => __('Ongoing'),
+            'one_time' => __('One-Time'),
             default => ucfirst($type),
         };
     }
@@ -322,6 +342,7 @@ new class extends Component
             'quarterly' => 'amber',
             'annual' => 'red',
             'ongoing' => 'zinc',
+            'one_time' => 'rose',
             default => 'zinc',
         };
     }
@@ -425,6 +446,7 @@ new class extends Component
                 && in_array($date->month, [1, 4, 7, 10]),
             'annual' => $date->month === $startDate->month && $date->day === $startDate->day,
             'ongoing' => true,
+            'one_time' => $date->isSameDay($startDate),
             default => false,
         };
     }
@@ -539,10 +561,22 @@ new class extends Component
                                 @foreach ($items as $item)
                                     <div
                                         wire:key="commitment-{{ $item->id }}"
-                                        class="flex items-center gap-4 px-4 py-3 {{ ! $item->is_active ? 'opacity-50' : '' }}"
+                                        class="flex items-center gap-4 px-4 py-3 {{ ! $item->is_active ? 'opacity-50' : '' }} {{ $item->completed_at ? 'opacity-60' : '' }}"
                                     >
-                                        {{-- Active Toggle --}}
-                                        @if ($this->canManage)
+                                        {{-- Active/Complete Toggle --}}
+                                        @if ($item->action_type === 'one_time' && $this->canManage)
+                                            <button
+                                                wire:click="{{ $item->completed_at ? 'markIncomplete' : 'markComplete' }}({{ $item->id }})"
+                                                class="shrink-0"
+                                                title="{{ $item->completed_at ? __('Mark incomplete') : __('Mark complete') }}"
+                                            >
+                                                <div class="flex h-5 w-5 items-center justify-center rounded {{ $item->completed_at ? 'bg-green-500' : 'border-2 border-zinc-300 dark:border-zinc-600' }}">
+                                                    @if ($item->completed_at)
+                                                        <flux:icon name="check" class="text-white" variant="micro" />
+                                                    @endif
+                                                </div>
+                                            </button>
+                                        @elseif ($this->canManage)
                                             <button
                                                 wire:click="toggleActive({{ $item->id }})"
                                                 class="shrink-0"
@@ -556,6 +590,12 @@ new class extends Component
                                                     @endif
                                                 </div>
                                             </button>
+                                        @elseif ($item->action_type === 'one_time')
+                                            <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded {{ $item->completed_at ? 'bg-green-500' : 'border-2 border-zinc-300 dark:border-zinc-600' }}">
+                                                @if ($item->completed_at)
+                                                    <flux:icon name="check" class="text-white" variant="micro" />
+                                                @endif
+                                            </div>
                                         @else
                                             <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full {{ $item->is_active ? $config['dotColor'] : 'bg-zinc-300 dark:bg-zinc-600' }}">
                                                 @if ($item->is_active)
@@ -566,11 +606,16 @@ new class extends Component
 
                                         {{-- Commitment Text --}}
                                         <div class="min-w-0 flex-1">
-                                            <p class="text-sm text-zinc-900 dark:text-zinc-100 {{ ! $item->is_active ? 'line-through' : '' }}">
+                                            <p class="text-sm text-zinc-900 dark:text-zinc-100 {{ ! $item->is_active || $item->completed_at ? 'line-through' : '' }}">
                                                 {{ $item->commitment }}
                                             </p>
                                             <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-                                                @if ($item->start_date)
+                                                @if ($item->action_type === 'one_time' && $item->start_date)
+                                                    {{ $item->start_date->format('M j, Y') }}
+                                                    @if ($item->completed_at)
+                                                        &middot; {{ __('Completed') }} {{ $item->completed_at->format('M j, Y') }}
+                                                    @endif
+                                                @elseif ($item->start_date)
                                                     {{ __('Starts') }} {{ $item->start_date->format('M j, Y') }}
                                                 @endif
                                                 @if ($item->action_type === 'weekly' && ! empty($item->recurrence_days))
@@ -708,6 +753,7 @@ new class extends Component
                         <flux:select.option value="quarterly">{{ __('Quarterly') }}</flux:select.option>
                         <flux:select.option value="annual">{{ __('Annual') }}</flux:select.option>
                         <flux:select.option value="ongoing">{{ __('Ongoing') }}</flux:select.option>
+                        <flux:select.option value="one_time">{{ __('One-Time') }}</flux:select.option>
                     </flux:select>
                     <flux:error name="action_type" />
                 </flux:field>
@@ -738,7 +784,7 @@ new class extends Component
                     </flux:field>
                 @endif
 
-                @if (in_array($action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual']))
+                @if (in_array($action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual', 'one_time']))
                     <flux:field>
                         <flux:label>{{ __('Time (optional)') }}</flux:label>
                         <flux:input wire:model="recurrence_time" type="time" />
@@ -746,11 +792,19 @@ new class extends Component
                     </flux:field>
                 @endif
 
-                <flux:field>
-                    <flux:label>{{ __('Start Date (optional)') }}</flux:label>
-                    <flux:input wire:model="start_date" type="date" />
-                    <flux:error name="start_date" />
-                </flux:field>
+                @if ($action_type === 'one_time')
+                    <flux:field>
+                        <flux:label>{{ __('Date') }}</flux:label>
+                        <flux:input wire:model="start_date" type="date" />
+                        <flux:error name="start_date" />
+                    </flux:field>
+                @else
+                    <flux:field>
+                        <flux:label>{{ __('Start Date (optional)') }}</flux:label>
+                        <flux:input wire:model="start_date" type="date" />
+                        <flux:error name="start_date" />
+                    </flux:field>
+                @endif
 
                 <div class="flex items-center gap-3">
                     <flux:switch wire:model="is_active" />

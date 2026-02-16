@@ -515,6 +515,139 @@ it('shows paused commitments with reduced opacity class', function () {
         ->assertSee('Paused item');
 });
 
+it('can create a one-time commitment with date', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('openCreateModal')
+        ->set('area', 'Business')
+        ->set('commitment', 'Renew business license')
+        ->set('action_type', 'one_time')
+        ->set('start_date', '2026-04-01')
+        ->call('save')
+        ->assertSet('showModal', false)
+        ->assertSee('Renew business license');
+
+    $record = LifeCommitment::where('commitment', 'Renew business license')->first();
+    expect($record)->not->toBeNull()
+        ->and($record->action_type)->toBe('one_time')
+        ->and($record->start_date->format('Y-m-d'))->toBe('2026-04-01')
+        ->and($record->recurrence_days)->toBeNull()
+        ->and($record->recurrence_day_of_month)->toBeNull()
+        ->and($record->completed_at)->toBeNull();
+});
+
+it('requires start_date for one-time commitments', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('openCreateModal')
+        ->set('area', 'Business')
+        ->set('commitment', 'Renew license')
+        ->set('action_type', 'one_time')
+        ->set('start_date', null)
+        ->call('save')
+        ->assertHasErrors(['start_date']);
+});
+
+it('can mark a one-time commitment complete', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $commitment = LifeCommitment::factory()->create([
+        'area' => 'Business',
+        'commitment' => 'Dentist appointment',
+        'action_type' => 'one_time',
+        'start_date' => '2026-03-05',
+        'completed_at' => null,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('markComplete', $commitment->id);
+
+    expect($commitment->fresh()->completed_at)->not->toBeNull();
+});
+
+it('can mark a completed one-time commitment incomplete', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $commitment = LifeCommitment::factory()->create([
+        'area' => 'Business',
+        'commitment' => 'Dentist appointment',
+        'action_type' => 'one_time',
+        'start_date' => '2026-03-05',
+        'completed_at' => now(),
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('markIncomplete', $commitment->id);
+
+    expect($commitment->fresh()->completed_at)->toBeNull();
+});
+
+it('includes one-time commitment in calendar feed on its date only', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $targetDate = now()->addDays(7);
+
+    LifeCommitment::factory()->create([
+        'area' => 'Business',
+        'commitment' => 'Tax filing deadline',
+        'action_type' => 'one_time',
+        'start_date' => $targetDate->format('Y-m-d'),
+        'is_active' => true,
+    ]);
+
+    $service = new \App\Services\ActivityCalendarFeedService;
+    $feed = $service->generateFeed($user);
+
+    // The one-time event should appear in the feed
+    expect($feed)->toContain('Tax filing deadline');
+
+    // Should have exactly one VEVENT for this commitment
+    $matches = substr_count($feed, 'Tax filing deadline');
+    expect($matches)->toBe(1);
+});
+
+it('completed one-time tasks remain visible', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    LifeCommitment::factory()->create([
+        'area' => 'Business',
+        'commitment' => 'File quarterly taxes',
+        'action_type' => 'one_time',
+        'start_date' => '2026-03-15',
+        'completed_at' => now(),
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->assertSee('File quarterly taxes')
+        ->assertSee('Completed');
+});
+
+it('requires business_plan.manage permission to mark complete', function () {
+    $viewOnly = Permission::firstOrCreate(['name' => 'business_plan.view', 'guard_name' => 'web']);
+    $viewRole = Role::firstOrCreate(['name' => 'viewer', 'guard_name' => 'web']);
+    $viewRole->syncPermissions([$viewOnly]);
+
+    $user = User::factory()->internal()->create();
+    $user->assignRole('viewer');
+
+    $commitment = LifeCommitment::factory()->create([
+        'action_type' => 'one_time',
+        'start_date' => '2026-03-05',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('markComplete', $commitment->id)
+        ->assertForbidden();
+});
+
 it('can create weekly commitment with time and multiple days', function () {
     $user = User::factory()->internal()->withFullAccess()->create();
 

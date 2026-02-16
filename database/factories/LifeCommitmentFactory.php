@@ -37,6 +37,7 @@ class LifeCommitmentFactory extends Factory
                 'quarterly',
                 'annual',
                 'ongoing',
+                'one_time',
             ]),
             'sort_order' => fake()->numberBetween(0, 100),
             'is_active' => true,

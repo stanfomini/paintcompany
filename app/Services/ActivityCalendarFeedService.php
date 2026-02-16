@@ -94,9 +94,28 @@ class ActivityCalendarFeedService
         $period = CarbonPeriod::create($from->startOfDay(), $to->endOfDay());
 
         foreach ($commitments as $commitment) {
+            $time = $commitment->recurrence_time ?? '09:00';
+
+            // Handle one-time events
+            if ($commitment->action_type === 'one_time') {
+                if ($commitment->start_date && $commitment->start_date->between($from, $to)) {
+                    $timeParts = explode(':', $time);
+                    $start = $commitment->start_date->copy()->setTime((int) ($timeParts[0] ?? 9), (int) ($timeParts[1] ?? 0));
+
+                    $calendar->event(
+                        Event::create($commitment->commitment)
+                            ->uniqueIdentifier("commitment-{$commitment->id}@apexnegotiations.com")
+                            ->startsAt($start)
+                            ->endsAt($start->copy()->addMinutes(30))
+                            ->description("Area: {$commitment->area}\nType: One-Time")
+                    );
+                }
+
+                continue;
+            }
+
             $recurrenceDays = $commitment->recurrence_days ?? [];
             $dayOfMonth = $commitment->recurrence_day_of_month;
-            $time = $commitment->recurrence_time ?? '09:00';
 
             if (empty($recurrenceDays) && ! $dayOfMonth) {
                 continue;
