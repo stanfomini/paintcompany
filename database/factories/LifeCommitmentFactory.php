@@ -44,6 +44,7 @@ class LifeCommitmentFactory extends Factory
             'start_date' => null,
             'recurrence_days' => null,
             'recurrence_time' => null,
+            'recurrence_end_time' => null,
             'recurrence_day_of_month' => null,
         ];
     }

@@ -112,13 +112,14 @@ class UnifiedCalendarService
 
         return $activities->map(function (Activity $activity) {
             $start = Carbon::parse($activity->due_at);
+            $end = $activity->ends_at ? Carbon::parse($activity->ends_at) : $start->copy()->addHour();
             $isMeeting = $activity->isMeeting();
 
             return [
                 'id' => "activity-{$activity->id}",
                 'title' => $activity->title,
                 'start' => $start,
-                'end' => $start->copy()->addHour(),
+                'end' => $end,
                 'type' => $activity->type,
                 'source' => 'activity',
                 'color' => $this->getActivityColor($activity),
@@ -241,11 +242,18 @@ class UnifiedCalendarService
             $timeParts = explode(':', $recurrenceTime);
             $start = $date->copy()->setTime((int) ($timeParts[0] ?? 9), (int) ($timeParts[1] ?? 0));
 
+            $endTime = $commitment->recurrence_end_time;
+            if ($endTime && preg_match('/^(\d{1,2}):(\d{2})$/', $endTime, $endParts)) {
+                $end = $date->copy()->setTime((int) $endParts[1], (int) $endParts[2]);
+            } else {
+                $end = $start->copy()->addMinutes(30);
+            }
+
             $events->push([
                 'id' => "commitment-{$commitment->id}-{$date->format('Y-m-d')}",
                 'title' => $commitment->commitment,
                 'start' => $start,
-                'end' => $start->copy()->addMinutes(30),
+                'end' => $end,
                 'type' => 'commitment',
                 'source' => 'life_commitment',
                 'color' => '#8b5cf6',

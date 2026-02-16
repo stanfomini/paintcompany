@@ -102,11 +102,18 @@ class ActivityCalendarFeedService
                     $timeParts = explode(':', $time);
                     $start = $commitment->start_date->copy()->setTime((int) ($timeParts[0] ?? 9), (int) ($timeParts[1] ?? 0));
 
+                    $endTimeStr = $commitment->recurrence_end_time;
+                    if ($endTimeStr && preg_match('/^(\d{1,2}):(\d{2})$/', $endTimeStr, $endParts)) {
+                        $end = $commitment->start_date->copy()->setTime((int) $endParts[1], (int) $endParts[2]);
+                    } else {
+                        $end = $start->copy()->addMinutes(30);
+                    }
+
                     $calendar->event(
                         Event::create($commitment->commitment)
                             ->uniqueIdentifier("commitment-{$commitment->id}@apexnegotiations.com")
                             ->startsAt($start)
-                            ->endsAt($start->copy()->addMinutes(30))
+                            ->endsAt($end)
                             ->description("Area: {$commitment->area}\nType: One-Time")
                     );
                 }
@@ -139,11 +146,18 @@ class ActivityCalendarFeedService
                 $timeParts = explode(':', $time);
                 $start = $date->copy()->setTime((int) ($timeParts[0] ?? 9), (int) ($timeParts[1] ?? 0));
 
+                $endTimeStr = $commitment->recurrence_end_time;
+                if ($endTimeStr && preg_match('/^(\d{1,2}):(\d{2})$/', $endTimeStr, $endParts)) {
+                    $end = $date->copy()->setTime((int) $endParts[1], (int) $endParts[2]);
+                } else {
+                    $end = $start->copy()->addMinutes(30);
+                }
+
                 $calendar->event(
                     Event::create($commitment->commitment)
                         ->uniqueIdentifier("commitment-{$commitment->id}-{$date->format('Y-m-d')}@apexnegotiations.com")
                         ->startsAt($start)
-                        ->endsAt($start->copy()->addMinutes(30))
+                        ->endsAt($end)
                         ->description("Area: {$commitment->area}\nType: {$commitment->action_type}")
                 );
             }
@@ -153,11 +167,12 @@ class ActivityCalendarFeedService
     protected function buildActivityEvent(Activity $activity): ?Event
     {
         $start = Carbon::parse($activity->due_at);
+        $end = $activity->ends_at ? Carbon::parse($activity->ends_at) : $start->copy()->addHour();
 
         $event = Event::create($activity->title)
             ->uniqueIdentifier("activity-{$activity->id}@apexnegotiations.com")
             ->startsAt($start)
-            ->endsAt($start->copy()->addHour())
+            ->endsAt($end)
             ->description($this->buildActivityDescription($activity));
 
         $url = $activity->getSubjectUrl();

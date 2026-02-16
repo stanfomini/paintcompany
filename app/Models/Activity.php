@@ -58,6 +58,7 @@ class Activity extends Model
         'description',
         'is_completed',
         'due_at',
+        'ends_at',
         'completed_at',
         'automation_key',
         'priority',
@@ -81,6 +82,7 @@ class Activity extends Model
         return [
             'is_completed' => 'boolean',
             'due_at' => 'datetime',
+            'ends_at' => 'datetime',
             'completed_at' => 'datetime',
             'snoozed_until' => 'datetime',
             'priority_score' => 'integer',
@@ -440,6 +442,12 @@ class Activity extends Model
 
         $parentId = $this->recurrence_parent_id ?? $this->id;
 
+        $nextEndsAt = null;
+        if ($this->ends_at && $this->due_at) {
+            $duration = $this->due_at->diffInSeconds($this->ends_at);
+            $nextEndsAt = $nextDue->copy()->addSeconds($duration);
+        }
+
         return static::create([
             'user_id' => $this->user_id,
             'assigned_to' => $this->assigned_to,
@@ -450,6 +458,7 @@ class Activity extends Model
             'description' => $this->description,
             'is_completed' => false,
             'due_at' => $nextDue,
+            'ends_at' => $nextEndsAt,
             'automation_key' => $this->automation_key,
             'priority' => $this->priority ?? 'normal',
             'recurrence_rule' => $this->recurrence_rule,

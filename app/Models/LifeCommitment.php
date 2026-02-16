@@ -23,6 +23,7 @@ class LifeCommitment extends Model
         'start_date',
         'recurrence_days',
         'recurrence_time',
+        'recurrence_end_time',
         'recurrence_day_of_month',
     ];
 

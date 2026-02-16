@@ -35,6 +35,8 @@ new class extends Component
 
     public ?string $recurrence_time = null;
 
+    public ?string $recurrence_end_time = null;
+
     public ?int $recurrence_day_of_month = null;
 
     public ?string $completed_at = null;
@@ -138,6 +140,7 @@ new class extends Component
         $this->start_date = $commitment->start_date?->format('Y-m-d');
         $this->recurrence_days = $commitment->recurrence_days ?? [];
         $this->recurrence_time = $commitment->recurrence_time;
+        $this->recurrence_end_time = $commitment->recurrence_end_time;
         $this->recurrence_day_of_month = $commitment->recurrence_day_of_month;
         $this->showModal = true;
     }
@@ -155,6 +158,7 @@ new class extends Component
             'recurrence_days' => ['nullable', 'array'],
             'recurrence_days.*' => ['integer', 'min:1', 'max:7'],
             'recurrence_time' => ['nullable', 'string', 'regex:/^\d{1,2}:\d{2}$/'],
+            'recurrence_end_time' => ['nullable', 'string', 'regex:/^\d{1,2}:\d{2}$/'],
             'recurrence_day_of_month' => ['nullable', 'integer', 'min:1', 'max:31'],
         ]);
 
@@ -168,6 +172,7 @@ new class extends Component
             'start_date' => $this->start_date,
             'recurrence_days' => $this->action_type === 'weekly' && ! empty($this->recurrence_days) ? $this->recurrence_days : null,
             'recurrence_time' => in_array($this->action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual', 'one_time']) ? $this->recurrence_time : null,
+            'recurrence_end_time' => in_array($this->action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual', 'one_time']) ? $this->recurrence_end_time : null,
             'recurrence_day_of_month' => in_array($this->action_type, ['monthly', 'quarterly']) ? $this->recurrence_day_of_month : null,
         ];
 
@@ -314,6 +319,7 @@ new class extends Component
         $this->start_date = null;
         $this->recurrence_days = [];
         $this->recurrence_time = null;
+        $this->recurrence_end_time = null;
         $this->recurrence_day_of_month = null;
         $this->completed_at = null;
         $this->resetValidation();
@@ -630,6 +636,9 @@ new class extends Component
                                                         &middot;
                                                     @endif
                                                     {{ \Carbon\Carbon::createFromFormat('H:i', $item->recurrence_time)->format('g:i A') }}
+                                                    @if ($item->recurrence_end_time)
+                                                        - {{ \Carbon\Carbon::createFromFormat('H:i', $item->recurrence_end_time)->format('g:i A') }}
+                                                    @endif
                                                 @endif
                                             </p>
                                         </div>
@@ -785,11 +794,18 @@ new class extends Component
                 @endif
 
                 @if (in_array($action_type, ['daily', 'weekly', 'monthly', 'quarterly', 'annual', 'one_time']))
-                    <flux:field>
-                        <flux:label>{{ __('Time (optional)') }}</flux:label>
-                        <flux:input wire:model="recurrence_time" type="time" />
-                        <flux:error name="recurrence_time" />
-                    </flux:field>
+                    <div class="grid grid-cols-2 gap-4">
+                        <flux:field>
+                            <flux:label>{{ __('Start Time') }}</flux:label>
+                            <flux:input wire:model="recurrence_time" type="time" />
+                            <flux:error name="recurrence_time" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('End Time') }}</flux:label>
+                            <flux:input wire:model="recurrence_end_time" type="time" />
+                            <flux:error name="recurrence_end_time" />
+                        </flux:field>
+                    </div>
                 @endif
 
                 @if ($action_type === 'one_time')

@@ -29,6 +29,7 @@ class ActivityFactory extends Factory
             'description' => fake()->optional(0.5)->paragraph(),
             'is_completed' => false,
             'due_at' => fake()->optional(0.7)->dateTimeBetween('now', '+2 weeks'),
+            'ends_at' => null,
         ];
     }
 

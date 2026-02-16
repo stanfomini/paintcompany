@@ -109,6 +109,7 @@ new class extends Component
             'start' => $event['start']->format('Y-m-d H:i'),
             'start_time' => $event['start']->format('g:ia'),
             'end' => $event['end']->format('Y-m-d H:i'),
+            'end_time' => $event['end']->format('g:ia'),
             'date' => $event['start']->format('Y-m-d'),
             'type' => $event['type'],
             'source' => $event['source'],
@@ -175,6 +176,8 @@ new class extends Component
     public string $taskPriority = 'normal';
 
     public ?string $taskDueAt = null;
+
+    public ?string $taskEndsAt = null;
 
     public string $taskDescription = '';
 
@@ -428,14 +431,14 @@ new class extends Component
     // Quick Add Task
     public function openAddTask(): void
     {
-        $this->taskDueAt = today()->format('Y-m-d');
+        $this->taskDueAt = now()->format('Y-m-d\TH:i');
         $this->showAddTask = true;
     }
 
     public function closeAddTask(): void
     {
         $this->showAddTask = false;
-        $this->reset(['taskTitle', 'taskType', 'taskPriority', 'taskDueAt', 'taskDescription', 'taskAssignedTo']);
+        $this->reset(['taskTitle', 'taskType', 'taskPriority', 'taskDueAt', 'taskEndsAt', 'taskDescription', 'taskAssignedTo']);
         $this->taskType = 'task';
         $this->taskPriority = 'normal';
         $this->resetValidation();
@@ -448,6 +451,7 @@ new class extends Component
             'taskType' => ['required', 'in:task,note,call,email,meeting,other'],
             'taskPriority' => ['required', 'in:low,normal,high,urgent'],
             'taskDueAt' => ['nullable', 'date'],
+            'taskEndsAt' => ['nullable', 'date'],
             'taskDescription' => ['nullable', 'string', 'max:5000'],
             'taskAssignedTo' => ['nullable', 'exists:users,id'],
         ]);
@@ -464,6 +468,7 @@ new class extends Component
             'title' => $this->taskTitle,
             'description' => $this->taskDescription ?: null,
             'due_at' => $this->taskDueAt ?: null,
+            'ends_at' => $this->taskEndsAt ?: null,
             'priority' => $this->taskPriority,
             'is_completed' => false,
         ]);
@@ -821,7 +826,7 @@ new class extends Component
                                         <div
                                             class="text-xs px-1 py-0.5 rounded truncate {{ $event['url'] ? 'cursor-pointer' : 'cursor-default' }}"
                                             style="background-color: {{ $event['color'] }}20; color: {{ $event['color'] }}; border-left: 2px solid {{ $event['color'] }};"
-                                            title="{{ $event['title'] }} ({{ $event['start_time'] }})"
+                                            title="{{ $event['title'] }} ({{ $event['start_time'] }} - {{ $event['end_time'] }})"
                                             @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" @endif
                                         >
                                             {{ $event['start_time'] }} {{ Str::limit($event['title'], 15) }}
@@ -859,7 +864,7 @@ new class extends Component
                                         style="background-color: {{ $event['color'] }}15; border-left: 3px solid {{ $event['color'] }};"
                                         @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" @endif
                                     >
-                                        <div class="font-medium truncate" style="color: {{ $event['color'] }};">{{ $event['start_time'] }}</div>
+                                        <div class="font-medium truncate" style="color: {{ $event['color'] }};">{{ $event['start_time'] }} - {{ $event['end_time'] }}</div>
                                         <div class="truncate text-zinc-700 dark:text-zinc-300">{{ $event['title'] }}</div>
                                         <div class="text-zinc-500 dark:text-zinc-400 capitalize">{{ $event['source'] }}</div>
                                     </div>
@@ -888,8 +893,9 @@ new class extends Component
                                     @if ($event['url']) onclick="window.location='{{ $event['url'] }}'" @endif
                                 >
                                     <div class="shrink-0 w-1 h-10 rounded-full mt-0.5" style="background-color: {{ $event['color'] }};"></div>
-                                    <div class="shrink-0 w-16 text-right">
+                                    <div class="shrink-0 text-right">
                                         <div class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ $event['start_time'] }}</div>
+                                        <div class="text-xs text-zinc-400 dark:text-zinc-500">{{ $event['end_time'] }}</div>
                                     </div>
                                     <div class="flex-1 min-w-0">
                                         <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{{ $event['title'] }}</div>
@@ -1065,11 +1071,18 @@ new class extends Component
                     </flux:field>
                 </div>
 
-                <flux:field>
-                    <flux:label>{{ __('Due Date') }}</flux:label>
-                    <flux:input wire:model="taskDueAt" type="date" />
-                    <flux:error name="taskDueAt" />
-                </flux:field>
+                <div class="grid grid-cols-2 gap-4">
+                    <flux:field>
+                        <flux:label>{{ __('Start Date/Time') }}</flux:label>
+                        <flux:input wire:model="taskDueAt" type="datetime-local" />
+                        <flux:error name="taskDueAt" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('End Date/Time') }}</flux:label>
+                        <flux:input wire:model="taskEndsAt" type="datetime-local" />
+                        <flux:error name="taskEndsAt" />
+                    </flux:field>
+                </div>
 
                 @can('planner.manage')
                 <flux:field>

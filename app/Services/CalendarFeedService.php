@@ -52,28 +52,29 @@ class CalendarFeedService
             ->uniqueIdentifier("life-commitment-{$commitment->id}@apexnegotiations.com");
 
         return match ($commitment->action_type) {
-            'daily' => $this->buildDailyEvent($event, $startDate, $commitment->recurrence_time),
-            'weekly' => $this->buildWeeklyEvent($event, $startDate, $commitment->recurrence_days, $commitment->recurrence_time),
-            'monthly' => $this->buildMonthlyEvent($event, $startDate, $commitment->recurrence_day_of_month, $commitment->recurrence_time),
-            'quarterly' => $this->buildQuarterlyEvent($event, $startDate, $commitment->recurrence_day_of_month, $commitment->recurrence_time),
-            'annual' => $this->buildAnnualEvent($event, $startDate, $commitment->recurrence_time),
+            'daily' => $this->buildDailyEvent($event, $startDate, $commitment->recurrence_time, $commitment->recurrence_end_time),
+            'weekly' => $this->buildWeeklyEvent($event, $startDate, $commitment->recurrence_days, $commitment->recurrence_time, $commitment->recurrence_end_time),
+            'monthly' => $this->buildMonthlyEvent($event, $startDate, $commitment->recurrence_day_of_month, $commitment->recurrence_time, $commitment->recurrence_end_time),
+            'quarterly' => $this->buildQuarterlyEvent($event, $startDate, $commitment->recurrence_day_of_month, $commitment->recurrence_time, $commitment->recurrence_end_time),
+            'annual' => $this->buildAnnualEvent($event, $startDate, $commitment->recurrence_time, $commitment->recurrence_end_time),
             'ongoing' => $this->buildOngoingEvent($event, $startDate),
             default => null,
         };
     }
 
-    protected function buildDailyEvent(Event $event, DateTimeInterface $startDate, ?string $time): Event
+    protected function buildDailyEvent(Event $event, DateTimeInterface $startDate, ?string $time, ?string $endTime = null): Event
     {
         [$hour, $minute] = $this->parseTime($time);
+        [$endHour, $endMinute] = $endTime ? $this->parseTime($endTime) : [$hour + 1, $minute];
 
         return $event
             ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
-            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($endHour, $endMinute))
             ->rrule(RRule::frequency(RecurrenceFrequency::Daily));
     }
 
     /** @param  array<int>|null  $recurrenceDays */
-    protected function buildWeeklyEvent(Event $event, DateTimeInterface $startDate, ?array $recurrenceDays, ?string $time): Event
+    protected function buildWeeklyEvent(Event $event, DateTimeInterface $startDate, ?array $recurrenceDays, ?string $time, ?string $endTime = null): Event
     {
         $days = array_map(
             fn (int $d) => $this->mapRecurrenceDay($d),
@@ -81,6 +82,7 @@ class CalendarFeedService
         );
 
         [$hour, $minute] = $this->parseTime($time);
+        [$endHour, $endMinute] = $endTime ? $this->parseTime($endTime) : [$hour + 1, $minute];
 
         $rrule = RRule::frequency(RecurrenceFrequency::Weekly);
         foreach ($days as $day) {
@@ -89,32 +91,34 @@ class CalendarFeedService
 
         return $event
             ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
-            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($endHour, $endMinute))
             ->rrule($rrule);
     }
 
-    protected function buildMonthlyEvent(Event $event, DateTimeInterface $startDate, ?int $dayOfMonth, ?string $time): Event
+    protected function buildMonthlyEvent(Event $event, DateTimeInterface $startDate, ?int $dayOfMonth, ?string $time, ?string $endTime = null): Event
     {
         $monthDay = $dayOfMonth ?? 1;
         [$hour, $minute] = $this->parseTime($time);
+        [$endHour, $endMinute] = $endTime ? $this->parseTime($endTime) : [$hour + 1, $minute];
 
         return $event
             ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
-            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($endHour, $endMinute))
             ->rrule(
                 RRule::frequency(RecurrenceFrequency::Monthly)
                     ->onMonthDay($monthDay)
             );
     }
 
-    protected function buildQuarterlyEvent(Event $event, DateTimeInterface $startDate, ?int $dayOfMonth, ?string $time): Event
+    protected function buildQuarterlyEvent(Event $event, DateTimeInterface $startDate, ?int $dayOfMonth, ?string $time, ?string $endTime = null): Event
     {
         $monthDay = $dayOfMonth ?? 1;
         [$hour, $minute] = $this->parseTime($time);
+        [$endHour, $endMinute] = $endTime ? $this->parseTime($endTime) : [$hour + 1, $minute];
 
         return $event
             ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
-            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($endHour, $endMinute))
             ->rrule(
                 RRule::frequency(RecurrenceFrequency::Monthly)
                     ->interval(3)
@@ -128,13 +132,14 @@ class CalendarFeedService
             );
     }
 
-    protected function buildAnnualEvent(Event $event, DateTimeInterface $startDate, ?string $time): Event
+    protected function buildAnnualEvent(Event $event, DateTimeInterface $startDate, ?string $time, ?string $endTime = null): Event
     {
         [$hour, $minute] = $this->parseTime($time);
+        [$endHour, $endMinute] = $endTime ? $this->parseTime($endTime) : [$hour + 1, $minute];
 
         return $event
             ->startsAt(Carbon::parse($startDate)->setTime($hour, $minute))
-            ->endsAt(Carbon::parse($startDate)->setTime($hour + 1, $minute))
+            ->endsAt(Carbon::parse($startDate)->setTime($endHour, $endMinute))
             ->rrule(RRule::frequency(RecurrenceFrequency::Yearly));
     }
 

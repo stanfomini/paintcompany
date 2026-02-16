@@ -670,3 +670,95 @@ it('can create weekly commitment with time and multiple days', function () {
         ->and($record->recurrence_time)->toBe('06:30')
         ->and($record->start_date->format('Y-m-d'))->toBe('2026-02-10');
 });
+
+it('can create commitment with start and end time', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('openCreateModal')
+        ->set('area', 'Physical Health')
+        ->set('commitment', 'Morning yoga')
+        ->set('action_type', 'daily')
+        ->set('recurrence_time', '06:00')
+        ->set('recurrence_end_time', '07:30')
+        ->call('save')
+        ->assertSet('showModal', false);
+
+    $record = LifeCommitment::where('commitment', 'Morning yoga')->first();
+    expect($record)->not->toBeNull()
+        ->and($record->recurrence_time)->toBe('06:00')
+        ->and($record->recurrence_end_time)->toBe('07:30');
+});
+
+it('displays time range when both start and end time are set', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    LifeCommitment::factory()->create([
+        'area' => 'Physical Health',
+        'commitment' => 'Gym session',
+        'action_type' => 'daily',
+        'recurrence_time' => '09:00',
+        'recurrence_end_time' => '10:30',
+        'sort_order' => 0,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->assertSee('9:00 AM')
+        ->assertSee('10:30 AM');
+});
+
+it('loads end time in edit modal', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $commitment = LifeCommitment::factory()->create([
+        'area' => 'Business',
+        'commitment' => 'Team standup',
+        'action_type' => 'daily',
+        'recurrence_time' => '09:00',
+        'recurrence_end_time' => '09:30',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('openEditModal', $commitment->id)
+        ->assertSet('recurrence_time', '09:00')
+        ->assertSet('recurrence_end_time', '09:30');
+});
+
+it('clears end time for ongoing action type', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    Livewire::actingAs($user)
+        ->test('business-plan.life-commitments')
+        ->call('openCreateModal')
+        ->set('area', 'Family')
+        ->set('commitment', 'Family time')
+        ->set('action_type', 'ongoing')
+        ->set('recurrence_end_time', '18:00')
+        ->call('save');
+
+    $record = LifeCommitment::where('commitment', 'Family time')->first();
+    expect($record->recurrence_end_time)->toBeNull();
+});
+
+it('calendar feed uses custom end time for commitments', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    LifeCommitment::factory()->create([
+        'area' => 'Business',
+        'commitment' => 'Daily standup with end time',
+        'action_type' => 'daily',
+        'recurrence_time' => '09:00',
+        'recurrence_end_time' => '09:15',
+        'is_active' => true,
+    ]);
+
+    $service = new \App\Services\CalendarFeedService;
+    $feed = $service->generateFeed($user);
+
+    expect($feed)->toContain('Daily standup with end time');
+    // The iCal event should contain the end time (09:15 = T091500)
+    expect($feed)->toContain('T091500');
+});
