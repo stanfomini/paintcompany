@@ -98,7 +98,8 @@ describe('SendAgentInvitations command', function () {
         $this->artisan('invitations:send-agents', [
             '--emails' => 'agent1@test.com,agent2@test.com',
             '--inviter' => $inviter->id,
-        ])->assertSuccessful();
+        ])->expectsConfirmation('Send invitations to all 2 emails above?', 'yes')
+            ->assertSuccessful();
 
         expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(2);
     });
@@ -135,7 +136,8 @@ describe('SendAgentInvitations command', function () {
         $this->artisan('invitations:send-agents', [
             '--emails' => 'existing@test.com,new@test.com',
             '--inviter' => $inviter->id,
-        ])->assertSuccessful();
+        ])->expectsConfirmation('Send invitations to all 2 emails above?', 'yes')
+            ->assertSuccessful();
 
         expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(1);
         expect(Invitation::where('email', 'new@test.com')->exists())->toBeTrue();
@@ -148,5 +150,23 @@ describe('SendAgentInvitations command', function () {
             '--emails' => 'not-an-email,also-bad',
             '--inviter' => $inviter->id,
         ])->assertFailed();
+    });
+
+    it('reads emails from a file', function () {
+        Notification::fake();
+
+        $inviter = User::factory()->internal()->withFullAccess()->create();
+        $filePath = storage_path('test-agent-emails.txt');
+        file_put_contents($filePath, "file1@test.com\nfile2@test.com\nfile3@test.com\n");
+
+        $this->artisan('invitations:send-agents', [
+            '--file' => $filePath,
+            '--inviter' => $inviter->id,
+        ])->expectsConfirmation('Send invitations to all 3 emails above?', 'yes')
+            ->assertSuccessful();
+
+        expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(3);
+
+        @unlink($filePath);
     });
 });
