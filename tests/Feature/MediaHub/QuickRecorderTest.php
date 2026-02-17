@@ -27,50 +27,6 @@ it('hides quick recorder without media.record permission', function () {
         ->assertDontSeeLivewire('media.quick-recorder');
 });
 
-it('can toggle panel visibility', function () {
-    $user = User::factory()->internal()->create();
-    $user->givePermissionTo('media.record');
-
-    Livewire::actingAs($user)
-        ->test('media.quick-recorder')
-        ->assertSet('showPanel', false)
-        ->call('togglePanel')
-        ->assertSet('showPanel', true)
-        ->call('togglePanel')
-        ->assertSet('showPanel', false);
-});
-
-it('can save recording title', function () {
-    $user = User::factory()->internal()->create();
-    $user->givePermissionTo('media.record');
-
-    $recording = VideoRecording::factory()->ready()->create(['user_id' => $user->id, 'title' => 'Old Title']);
-
-    Livewire::actingAs($user)
-        ->test('media.quick-recorder')
-        ->set('recordingId', $recording->id)
-        ->set('recordingTitle', 'My New Title')
-        ->call('saveTitle');
-
-    expect($recording->fresh()->title)->toBe('My New Title');
-});
-
-it('cannot save title for other users recording', function () {
-    $user = User::factory()->internal()->create();
-    $user->givePermissionTo('media.record');
-
-    $otherUser = User::factory()->internal()->create();
-    $recording = VideoRecording::factory()->ready()->create(['user_id' => $otherUser->id, 'title' => 'Other Title']);
-
-    Livewire::actingAs($user)
-        ->test('media.quick-recorder')
-        ->set('recordingId', $recording->id)
-        ->set('recordingTitle', 'Hacked Title')
-        ->call('saveTitle');
-
-    expect($recording->fresh()->title)->toBe('Other Title');
-});
-
 it('can add recording to a channel', function () {
     $user = User::factory()->internal()->create();
     $user->givePermissionTo('media.record');
@@ -80,7 +36,7 @@ it('can add recording to a channel', function () {
 
     Livewire::actingAs($user)
         ->test('media.quick-recorder')
-        ->set('recordingId', $recording->id)
+        ->set('lastRecordingId', $recording->id)
         ->call('addToChannel', $channel->id);
 
     expect(VideoChannelItem::where('video_channel_id', $channel->id)
@@ -98,7 +54,7 @@ it('does not duplicate when adding to same channel twice', function () {
 
     Livewire::actingAs($user)
         ->test('media.quick-recorder')
-        ->set('recordingId', $recording->id)
+        ->set('lastRecordingId', $recording->id)
         ->call('addToChannel', $channel->id)
         ->call('addToChannel', $channel->id);
 
@@ -108,18 +64,43 @@ it('does not duplicate when adding to same channel twice', function () {
     )->toBe(1);
 });
 
-it('can reset recording state', function () {
+it('can dismiss post-save actions', function () {
     $user = User::factory()->internal()->create();
     $user->givePermissionTo('media.record');
 
     Livewire::actingAs($user)
         ->test('media.quick-recorder')
-        ->set('recordingId', 123)
-        ->set('recordingTitle', 'Some Title')
-        ->set('shareUrl', '/v/abc123')
-        ->call('resetRecording')
-        ->assertSet('recordingId', null)
-        ->assertSet('recordingTitle', '')
-        ->assertSet('shareUrl', null)
-        ->assertSet('linkCopied', false);
+        ->set('lastRecordingId', 123)
+        ->set('lastShareToken', 'abc123')
+        ->set('showPostActions', true)
+        ->call('dismissPostActions')
+        ->assertSet('showPostActions', false)
+        ->assertSet('lastRecordingId', null)
+        ->assertSet('lastShareToken', null);
+});
+
+it('shows channels list for authenticated user', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('media.record');
+
+    VideoChannel::factory()->create(['user_id' => $user->id, 'name' => 'My Channel']);
+
+    // Channel shows when post-actions are visible
+    Livewire::actingAs($user)
+        ->test('media.quick-recorder')
+        ->set('lastRecordingId', 1)
+        ->set('lastShareToken', 'test-token')
+        ->set('showPostActions', true)
+        ->assertSee('My Channel');
+});
+
+it('renders the component without errors', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('media.record');
+
+    Livewire::actingAs($user)
+        ->test('media.quick-recorder')
+        ->assertOk()
+        ->assertSet('showPostActions', false)
+        ->assertSet('lastRecordingId', null);
 });

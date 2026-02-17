@@ -4,42 +4,16 @@ use App\Models\VideoChannel;
 use App\Models\VideoChannelItem;
 use App\Models\VideoRecording;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
-    public bool $showPanel = false;
-    public ?int $recordingId = null;
-    public string $recordingTitle = '';
-    public ?string $shareUrl = null;
-    public bool $linkCopied = false;
-
-    public function togglePanel(): void
-    {
-        $this->showPanel = ! $this->showPanel;
-    }
-
-    public function closePanel(): void
-    {
-        $this->showPanel = false;
-    }
-
-    public function saveTitle(): void
-    {
-        if (! $this->recordingId || ! $this->recordingTitle) {
-            return;
-        }
-
-        $recording = VideoRecording::find($this->recordingId);
-
-        if ($recording && $recording->user_id === auth()->id()) {
-            $recording->update(['title' => $this->recordingTitle]);
-        }
-    }
+    public ?int $lastRecordingId = null;
+    public ?string $lastShareToken = null;
+    public bool $showPostActions = false;
 
     public function addToChannel(int $channelId): void
     {
-        if (! $this->recordingId) {
+        if (! $this->lastRecordingId) {
             return;
         }
 
@@ -50,7 +24,7 @@ new class extends Component {
         }
 
         $exists = VideoChannelItem::where('video_channel_id', $channelId)
-            ->where('video_recording_id', $this->recordingId)
+            ->where('video_recording_id', $this->lastRecordingId)
             ->exists();
 
         if (! $exists) {
@@ -58,7 +32,7 @@ new class extends Component {
 
             VideoChannelItem::create([
                 'video_channel_id' => $channelId,
-                'video_recording_id' => $this->recordingId,
+                'video_recording_id' => $this->lastRecordingId,
                 'sort_order' => $maxSort + 1,
                 'published_at' => now(),
             ]);
@@ -67,12 +41,11 @@ new class extends Component {
         $this->dispatch('notify', message: __('Added to channel'));
     }
 
-    public function resetRecording(): void
+    public function dismissPostActions(): void
     {
-        $this->recordingId = null;
-        $this->recordingTitle = '';
-        $this->shareUrl = null;
-        $this->linkCopied = false;
+        $this->showPostActions = false;
+        $this->lastRecordingId = null;
+        $this->lastShareToken = null;
     }
 
     #[Computed]
@@ -87,344 +60,689 @@ new class extends Component {
 };
 ?>
 
-<div>
-    {{-- Floating record button --}}
+<div
+    x-data="quickRecorder({ csrfToken: @js(csrf_token()) })"
+>
+    {{-- Floating record button (next to notification bell, bottom-left) --}}
     <button
-        wire:click="togglePanel"
-        class="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-full bg-red-600 px-4 py-3 text-sm font-medium text-white shadow-lg hover:bg-red-700 transition-colors"
+        type="button"
+        x-show="stage === 'idle'"
+        @click="startCamera()"
+        class="fixed bottom-4 left-16 lg:left-80 z-50 w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
         title="{{ __('Quick Record') }}"
     >
-        <flux:icon name="video-camera" class="size-5" />
-        <span class="hidden sm:inline">{{ __('Record') }}</span>
+        <flux:icon name="video-camera" class="size-4" />
     </button>
 
-    {{-- Recording panel --}}
-    @if($showPanel)
-        <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" wire:click.self="closePanel">
-            <div class="w-full max-w-lg bg-white dark:bg-zinc-800 rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden" @click.stop>
+    {{-- Fullscreen Recorder Overlay (teleported to body, same as walkaround) --}}
+    <template x-teleport="body">
+        <div
+            x-show="stage !== 'idle'"
+            x-transition:enter="transition ease-out duration-200"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            x-transition:leave="transition ease-in duration-150"
+            x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"
+            x-effect="
+                if (stage !== 'idle') {
+                    document.body.style.overflow = 'hidden';
+                    document.body.style.position = 'fixed';
+                    document.body.style.width = '100%';
+                } else {
+                    document.body.style.overflow = '';
+                    document.body.style.position = '';
+                    document.body.style.width = '';
+                }
+            "
+            class="fixed inset-0 z-[9999] bg-black flex flex-col"
+            style="touch-action: none;"
+            @touchmove.prevent
+        >
+            {{-- Video fills the screen --}}
+            <div class="relative flex-1 overflow-hidden">
+                <video
+                    x-ref="videoPreview"
+                    autoplay
+                    muted
+                    playsinline
+                    x-show="stage === 'previewing' || stage === 'recording'"
+                    class="absolute inset-0 w-full h-full object-cover"
+                ></video>
 
-                {{-- Header --}}
-                <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
-                    <h3 class="text-base font-semibold text-zinc-900 dark:text-white">{{ __('Quick Record') }}</h3>
-                    <button wire:click="closePanel" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
-                        <flux:icon name="x-mark" class="size-5" />
+                <video
+                    x-ref="videoReview"
+                    playsinline
+                    controls
+                    x-show="stage === 'review'"
+                    class="absolute inset-0 w-full h-full object-cover"
+                ></video>
+
+                {{-- Top bar: status indicators --}}
+                <div class="absolute top-0 left-0 right-0 pt-[env(safe-area-inset-top,12px)] px-4 pb-2 bg-gradient-to-b from-black/60 to-transparent z-10">
+                    <div class="flex items-center justify-between h-12">
+                        {{-- Close button (previewing only) --}}
+                        <button
+                            x-show="stage === 'previewing'"
+                            type="button"
+                            @click="cancelRecorder()"
+                            class="w-10 h-10 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white active:bg-black/60"
+                        >
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"></path></svg>
+                        </button>
+                        <div x-show="stage !== 'previewing'" class="w-10"></div>
+
+                        {{-- Recording time badge --}}
+                        <div x-show="stage === 'recording'" class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-red-600/90 backdrop-blur-sm text-white text-sm font-semibold">
+                            <div class="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></div>
+                            <span x-text="recordingTime"></span>
+                        </div>
+                        <div x-show="stage !== 'recording'" class="h-8"></div>
+
+                        {{-- Flip camera button --}}
+                        <button
+                            x-show="stage === 'previewing' || stage === 'recording'"
+                            type="button"
+                            @click="flipCamera()"
+                            class="w-10 h-10 flex items-center justify-center rounded-full bg-black/40 backdrop-blur-sm text-white active:bg-black/60"
+                        >
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                        </button>
+                        <div x-show="stage !== 'previewing' && stage !== 'recording'" class="w-10"></div>
+                    </div>
+                </div>
+
+                {{-- Upload / Finalizing / Processing overlays --}}
+                <div x-show="stage === 'uploading'" class="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+                    <div class="text-center">
+                        <div class="w-20 h-20 mx-auto mb-4 relative">
+                            <svg class="w-20 h-20 transform -rotate-90" viewBox="0 0 80 80">
+                                <circle cx="40" cy="40" r="34" fill="none" stroke="#3f3f46" stroke-width="5" />
+                                <circle cx="40" cy="40" r="34" fill="none" stroke="#ef4444" stroke-width="5" stroke-linecap="round"
+                                    :stroke-dasharray="'213.63'"
+                                    :stroke-dashoffset="213.63 - (213.63 * uploadProgress / 100)"
+                                />
+                            </svg>
+                            <span class="absolute inset-0 flex items-center justify-center text-white text-lg font-bold" x-text="Math.round(uploadProgress) + '%'"></span>
+                        </div>
+                        <p class="text-white text-base font-medium">{{ __('Uploading...') }}</p>
+                    </div>
+                </div>
+
+                <div x-show="stage === 'finalizing'" class="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+                    <div class="text-center">
+                        <div class="animate-spin w-14 h-14 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
+                        <p class="text-white text-base font-medium" x-text="uploadQueue.length > 0 ? '{{ __('Sending final chunks...') }}' : '{{ __('Finalizing...') }}'"></p>
+                    </div>
+                </div>
+
+                <div x-show="stage === 'processing'" class="absolute inset-0 flex items-center justify-center bg-black/80 z-20">
+                    <div class="text-center">
+                        <div class="animate-spin w-14 h-14 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"></div>
+                        <p class="text-white text-base font-medium">{{ __('Processing video...') }}</p>
+                        <p class="text-zinc-400 text-sm mt-1">{{ __('This may take a moment') }}</p>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Bottom controls bar --}}
+            <div class="shrink-0 bg-black pb-[env(safe-area-inset-bottom,16px)]">
+                {{-- Previewing: big record button --}}
+                <div x-show="stage === 'previewing'" class="flex items-center justify-center py-6">
+                    <button
+                        type="button"
+                        @click="startRecording()"
+                        class="w-20 h-20 rounded-full border-[5px] border-white flex items-center justify-center active:scale-95 transition-transform"
+                    >
+                        <div class="w-14 h-14 rounded-full bg-red-600"></div>
                     </button>
                 </div>
 
-                {{-- Content --}}
-                <div class="p-4" x-data="quickRecorder(@js($this->recordingId), @js($this->shareUrl))">
+                {{-- Recording: stop button --}}
+                <div x-show="stage === 'recording'" class="flex items-center justify-center py-6">
+                    <button
+                        type="button"
+                        @click="stopRecording()"
+                        class="w-20 h-20 rounded-full border-[5px] border-white flex items-center justify-center active:scale-95 transition-transform"
+                    >
+                        <div class="w-8 h-8 rounded-sm bg-red-600"></div>
+                    </button>
+                </div>
 
-                    {{-- Camera preview / recording --}}
-                    <template x-if="state === 'idle' || state === 'recording' || state === 'countdown'">
-                        <div>
-                            <div class="relative rounded-lg overflow-hidden bg-black aspect-video mb-4">
-                                <video x-ref="preview" autoplay muted playsinline class="w-full h-full object-cover"></video>
+                {{-- Review: retake / title / save --}}
+                <div x-show="stage === 'review'" class="px-4 py-4 space-y-3">
+                    <input
+                        type="text"
+                        x-model="videoTitle"
+                        placeholder="{{ __('Add a title (optional)') }}"
+                        class="w-full px-4 py-3 text-base rounded-xl bg-zinc-900 border border-zinc-700 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                    />
+                    <div class="flex items-center gap-3">
+                        <button type="button" @click="retake()" class="flex-1 py-3 rounded-xl bg-zinc-800 text-white font-semibold text-base active:bg-zinc-700 transition-colors">
+                            {{ __('Retake') }}
+                        </button>
+                        <button type="button" @click="saveRecording()" class="flex-[2] py-3 rounded-xl bg-red-600 text-white font-semibold text-base active:bg-red-700 transition-colors flex items-center justify-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg>
+                            {{ __('Save') }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
 
-                                {{-- Countdown overlay --}}
-                                <template x-if="state === 'countdown'">
-                                    <div class="absolute inset-0 flex items-center justify-center bg-black/60">
-                                        <span class="text-6xl font-bold text-white" x-text="countdownValue"></span>
-                                    </div>
-                                </template>
+    {{-- Post-save actions panel (shown after successful save) --}}
+    @if($showPostActions && $lastShareToken)
+        <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" wire:click.self="dismissPostActions">
+            <div class="w-full max-w-sm bg-white dark:bg-zinc-800 rounded-t-xl sm:rounded-xl shadow-2xl overflow-hidden" @click.stop>
+                <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+                    <h3 class="text-base font-semibold text-zinc-900 dark:text-white">{{ __('Video Saved') }}</h3>
+                    <button wire:click="dismissPostActions" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                        <flux:icon name="x-mark" class="size-5" />
+                    </button>
+                </div>
+                <div class="p-4 space-y-2">
+                    {{-- Copy link --}}
+                    <button
+                        x-data="{ copied: false }"
+                        @click="navigator.clipboard.writeText(@js(url('/v/' . $lastShareToken))).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"
+                        class="w-full flex items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-600 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
+                    >
+                        <flux:icon name="link" class="size-5 text-zinc-500" />
+                        <span class="text-zinc-700 dark:text-zinc-300" x-text="copied ? '{{ __('Copied!') }}' : '{{ __('Copy Share Link') }}'"></span>
+                    </button>
 
-                                {{-- Recording indicator --}}
-                                <template x-if="state === 'recording'">
-                                    <div class="absolute top-3 left-3 flex items-center gap-2">
-                                        <span class="relative flex h-3 w-3">
-                                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                            <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                                        </span>
-                                        <span class="text-sm font-mono text-white bg-black/50 px-2 py-0.5 rounded" x-text="elapsed"></span>
-                                    </div>
-                                </template>
-                            </div>
-
-                            {{-- Controls --}}
-                            <div class="flex items-center justify-center gap-4">
-                                <template x-if="state === 'idle'">
-                                    <button @click="startCountdown()" class="flex items-center gap-2 rounded-full bg-red-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-red-700 transition-colors">
-                                        <span class="h-3 w-3 rounded-full bg-white"></span>
-                                        {{ __('Start Recording') }}
-                                    </button>
-                                </template>
-                                <template x-if="state === 'recording'">
-                                    <button @click="stopRecording()" class="flex items-center gap-2 rounded-full bg-zinc-700 px-6 py-2.5 text-sm font-medium text-white hover:bg-zinc-600 transition-colors">
-                                        <span class="h-3 w-3 rounded bg-red-500"></span>
-                                        {{ __('Stop') }}
-                                    </button>
-                                </template>
-                            </div>
-
-                            <template x-if="error">
-                                <p class="mt-3 text-sm text-red-500 text-center" x-text="error"></p>
-                            </template>
-                        </div>
-                    </template>
-
-                    {{-- Uploading state --}}
-                    <template x-if="state === 'uploading'">
-                        <div class="text-center py-8">
-                            <flux:icon name="arrow-up-tray" class="mx-auto size-10 text-zinc-400 animate-pulse" />
-                            <p class="mt-3 text-sm text-zinc-600 dark:text-zinc-400">{{ __('Uploading...') }}</p>
-                            <div class="mt-3 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2">
-                                <div class="bg-blue-600 h-2 rounded-full transition-all" :style="'width: ' + uploadProgress + '%'"></div>
-                            </div>
-                        </div>
-                    </template>
-
-                    {{-- Done state --}}
-                    <template x-if="state === 'done'">
-                        <div>
-                            <div class="mb-4">
-                                <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">{{ __('Title') }}</label>
-                                <input
-                                    type="text"
-                                    wire:model.blur="recordingTitle"
-                                    wire:change="saveTitle"
-                                    class="w-full rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 px-3 py-2 text-sm text-zinc-900 dark:text-white focus:ring-2 focus:ring-blue-500"
-                                    placeholder="{{ __('Untitled Recording') }}"
-                                />
-                            </div>
-
-                            <div class="space-y-2">
-                                {{-- Copy link --}}
+                    {{-- Add to channel --}}
+                    @if($this->channels->isNotEmpty())
+                        <div class="border border-zinc-200 dark:border-zinc-600 rounded-lg">
+                            <p class="px-4 py-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{{ __('Add to Channel') }}</p>
+                            @foreach($this->channels as $channel)
                                 <button
-                                    @click="copyLink()"
-                                    class="w-full flex items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-600 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
+                                    wire:click="addToChannel({{ $channel->id }})"
+                                    class="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors border-t border-zinc-100 dark:border-zinc-700"
                                 >
-                                    <flux:icon name="link" class="size-5 text-zinc-500" />
-                                    <span class="text-zinc-700 dark:text-zinc-300" x-text="linkCopied ? '{{ __('Copied!') }}' : '{{ __('Copy Share Link') }}'"></span>
+                                    <flux:icon name="plus" class="size-4 text-zinc-400" />
+                                    <span class="text-zinc-700 dark:text-zinc-300">{{ $channel->name }}</span>
                                 </button>
-
-                                {{-- Add to channel --}}
-                                @if($this->channels->isNotEmpty())
-                                    <div class="border border-zinc-200 dark:border-zinc-600 rounded-lg">
-                                        <p class="px-4 py-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{{ __('Add to Channel') }}</p>
-                                        @foreach($this->channels as $channel)
-                                            <button
-                                                wire:click="addToChannel({{ $channel->id }})"
-                                                class="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors border-t border-zinc-100 dark:border-zinc-700"
-                                            >
-                                                <flux:icon name="plus" class="size-4 text-zinc-400" />
-                                                <span class="text-zinc-700 dark:text-zinc-300">{{ $channel->name }}</span>
-                                            </button>
-                                        @endforeach
-                                    </div>
-                                @endif
-
-                                {{-- Record another --}}
-                                <button
-                                    @click="recordAnother()"
-                                    wire:click="resetRecording"
-                                    class="w-full flex items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-600 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
-                                >
-                                    <flux:icon name="video-camera" class="size-5 text-zinc-500" />
-                                    <span class="text-zinc-700 dark:text-zinc-300">{{ __('Record Another') }}</span>
-                                </button>
-                            </div>
+                            @endforeach
                         </div>
-                    </template>
+                    @endif
+
+                    {{-- Done --}}
+                    <button
+                        wire:click="dismissPostActions"
+                        class="w-full flex items-center justify-center gap-2 rounded-lg bg-zinc-100 dark:bg-zinc-700 px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
+                    >
+                        {{ __('Done') }}
+                    </button>
                 </div>
             </div>
         </div>
     @endif
-
-    <script>
-        document.addEventListener('alpine:init', () => {
-            Alpine.data('quickRecorder', (existingRecordingId, existingShareUrl) => ({
-                state: existingRecordingId ? 'done' : 'idle',
-                stream: null,
-                mediaRecorder: null,
-                chunks: [],
-                elapsed: '00:00',
-                timerInterval: null,
-                startTime: null,
-                error: null,
-                uploadProgress: 0,
-                recordingId: existingRecordingId,
-                shareUrl: existingShareUrl,
-                linkCopied: false,
-                countdownValue: 3,
-
-                init() {
-                    if (this.state === 'idle') {
-                        this.initCamera();
-                    }
-
-                    // Cleanup on panel close
-                    this.$watch('$wire.showPanel', (open) => {
-                        if (open && this.state === 'idle') {
-                            this.$nextTick(() => this.initCamera());
-                        } else if (!open) {
-                            this.cleanup();
-                        }
-                    });
-                },
-
-                async initCamera() {
-                    try {
-                        this.stream = await navigator.mediaDevices.getUserMedia({
-                            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-                            audio: true,
-                        });
-                        this.$nextTick(() => {
-                            if (this.$refs.preview) {
-                                this.$refs.preview.srcObject = this.stream;
-                            }
-                        });
-                        this.error = null;
-                    } catch (e) {
-                        this.error = 'Camera access denied. Please allow camera and microphone permissions.';
-                    }
-                },
-
-                startCountdown() {
-                    this.state = 'countdown';
-                    this.countdownValue = 3;
-                    const interval = setInterval(() => {
-                        this.countdownValue--;
-                        if (this.countdownValue <= 0) {
-                            clearInterval(interval);
-                            this.startRecording();
-                        }
-                    }, 1000);
-                },
-
-                startRecording() {
-                    if (!this.stream) return;
-
-                    this.state = 'recording';
-                    this.chunks = [];
-
-                    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
-                        ? 'video/webm;codecs=vp9,opus' : 'video/webm';
-
-                    this.mediaRecorder = new MediaRecorder(this.stream, {
-                        mimeType,
-                        videoBitsPerSecond: 2_500_000,
-                    });
-
-                    this.mediaRecorder.ondataavailable = (e) => {
-                        if (e.data.size > 0) this.chunks.push(e.data);
-                    };
-
-                    this.mediaRecorder.onstop = () => {
-                        this.uploadRecording();
-                    };
-
-                    this.mediaRecorder.start(1000);
-                    this.startTime = Date.now();
-                    this.timerInterval = setInterval(() => this.updateTimer(), 1000);
-                },
-
-                updateTimer() {
-                    const seconds = Math.floor((Date.now() - this.startTime) / 1000);
-                    const m = Math.floor(seconds / 60);
-                    const s = seconds % 60;
-                    this.elapsed = String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
-                },
-
-                stopRecording() {
-                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-                        this.mediaRecorder.stop();
-                    }
-                    if (this.timerInterval) {
-                        clearInterval(this.timerInterval);
-                        this.timerInterval = null;
-                    }
-                },
-
-                async uploadRecording() {
-                    this.state = 'uploading';
-                    this.uploadProgress = 0;
-
-                    const mimeType = this.chunks[0]?.type || 'video/webm';
-                    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
-
-                    try {
-                        // Start chunked upload
-                        const startResp = await fetch('/api/video-recordings/start', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
-                            body: JSON.stringify({ mime_type: mimeType, title: 'Quick Recording ' + new Date().toLocaleString() }),
-                        });
-                        const startData = await startResp.json();
-                        this.recordingId = startData.id;
-                        this.shareUrl = startData.share_token ? ('/v/' + startData.share_token) : null;
-
-                        // Upload chunks
-                        for (let i = 0; i < this.chunks.length; i++) {
-                            const formData = new FormData();
-                            formData.append('chunk', this.chunks[i]);
-                            formData.append('chunk_index', i);
-
-                            await fetch('/api/video-recordings/' + this.recordingId + '/chunk', {
-                                method: 'POST',
-                                headers: { 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
-                                body: formData,
-                            });
-
-                            this.uploadProgress = Math.round(((i + 1) / this.chunks.length) * 90);
-                        }
-
-                        // Finalize
-                        await fetch('/api/video-recordings/' + this.recordingId + '/finalize', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken, 'Accept': 'application/json' },
-                            body: JSON.stringify({}),
-                        });
-
-                        this.uploadProgress = 100;
-
-                        // Set Livewire properties
-                        this.$wire.set('recordingId', this.recordingId);
-                        this.$wire.set('recordingTitle', 'Quick Recording ' + new Date().toLocaleString());
-                        this.$wire.set('shareUrl', this.shareUrl);
-
-                        this.state = 'done';
-                    } catch (e) {
-                        this.error = 'Upload failed. Please try again.';
-                        this.state = 'idle';
-                        this.initCamera();
-                    }
-                },
-
-                async copyLink() {
-                    if (this.shareUrl) {
-                        await navigator.clipboard.writeText(window.location.origin + this.shareUrl);
-                        this.linkCopied = true;
-                        this.$wire.set('linkCopied', true);
-                        setTimeout(() => { this.linkCopied = false; }, 3000);
-                    }
-                },
-
-                recordAnother() {
-                    this.state = 'idle';
-                    this.recordingId = null;
-                    this.shareUrl = null;
-                    this.chunks = [];
-                    this.elapsed = '00:00';
-                    this.linkCopied = false;
-                    this.$nextTick(() => this.initCamera());
-                },
-
-                cleanup() {
-                    if (this.stream) {
-                        this.stream.getTracks().forEach(t => t.stop());
-                        this.stream = null;
-                    }
-                    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
-                        this.mediaRecorder.stop();
-                    }
-                    if (this.timerInterval) {
-                        clearInterval(this.timerInterval);
-                    }
-                },
-
-                destroy() {
-                    this.cleanup();
-                },
-            }));
-        });
-    </script>
 </div>
+
+@script
+<script>
+Alpine.data('quickRecorder', (config) => ({
+    stage: 'idle', // idle, previewing, recording, review, finalizing, uploading, processing
+    stream: null,
+    mediaRecorder: null,
+    recordedChunks: [],
+    recordedBlob: null,
+    videoTitle: '',
+    uploadProgress: 0,
+    recordingSeconds: 0,
+    recordingTimer: null,
+    useFrontCamera: true,
+    maxDuration: 120,
+
+    // Raw stream reference (not wrapped by Alpine's Proxy, safe for MediaRecorder)
+    _rawStream: null,
+
+    // Chunked streaming properties
+    recordingId: null,
+    chunkIndex: 0,
+    uploadQueue: [],
+    isUploading: false,
+    totalUploaded: 0,
+    chunkRetries: {},
+    maxRetries: 3,
+    useChunkedUpload: true,
+
+    init() {
+        this._beforeUnloadHandler = (e) => {
+            if (this.useChunkedUpload && this.recordingId && (this.stage === 'review' || this.stage === 'recording')) {
+                navigator.sendBeacon(
+                    `/api/video-recordings/${this.recordingId}/finalize`,
+                    new Blob([JSON.stringify({ _token: config.csrfToken })], { type: 'application/json' })
+                );
+            }
+        };
+        window.addEventListener('beforeunload', this._beforeUnloadHandler);
+    },
+
+    destroy() {
+        window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+        this.cleanupStream();
+    },
+
+    get recordingTime() {
+        const m = Math.floor(this.recordingSeconds / 60);
+        const s = this.recordingSeconds % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    },
+
+    async enterFullscreen() {
+        try {
+            const el = document.documentElement;
+            if (el.requestFullscreen) {
+                await el.requestFullscreen();
+            } else if (el.webkitRequestFullscreen) {
+                await el.webkitRequestFullscreen();
+            }
+        } catch (_) {}
+
+        try {
+            if (screen.orientation && screen.orientation.lock) {
+                await screen.orientation.lock('portrait');
+            }
+        } catch (_) {}
+    },
+
+    async exitFullscreen() {
+        try {
+            if (screen.orientation && screen.orientation.unlock) {
+                screen.orientation.unlock();
+            }
+        } catch (_) {}
+        try {
+            if (document.fullscreenElement) {
+                await document.exitFullscreen();
+            } else if (document.webkitFullscreenElement) {
+                await document.webkitExitFullscreen();
+            }
+        } catch (_) {}
+    },
+
+    async startCamera(options = {}) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: this.useFrontCamera ? 'user' : 'environment',
+                    width: { ideal: 1280, max: 1280 },
+                    height: { ideal: 720, max: 720 },
+                    frameRate: { ideal: 30, max: 30 },
+                },
+                audio: true,
+            });
+
+            this._rawStream = stream;
+            this.stream = stream;
+            this.stage = 'previewing';
+
+            if (!options.skipFullscreen) {
+                await this.enterFullscreen();
+            }
+
+            this.$nextTick(() => {
+                if (this.$refs.videoPreview) {
+                    this.$refs.videoPreview.srcObject = this._rawStream;
+                }
+            });
+        } catch (e) {
+            console.error('Camera access failed:', e);
+            alert('Could not access camera. Please check permissions.');
+        }
+    },
+
+    async flipCamera() {
+        this.useFrontCamera = !this.useFrontCamera;
+        if (this._rawStream) {
+            this._rawStream.getTracks().forEach(t => t.stop());
+            this._rawStream = null;
+            this.stream = null;
+        }
+        await this.startCamera({ skipFullscreen: true });
+    },
+
+    async startRecording() {
+        if (!this._rawStream) return;
+
+        this.recordedChunks = [];
+        this.recordingSeconds = 0;
+        this.chunkIndex = 0;
+        this.uploadQueue = [];
+        this.isUploading = false;
+        this.totalUploaded = 0;
+        this.chunkRetries = {};
+        this.recordingId = null;
+        this.useChunkedUpload = true;
+
+        const mimeType = this.getSupportedMimeType();
+        if (!mimeType) {
+            alert('Your browser does not support video recording.');
+            return;
+        }
+
+        // Start chunked upload session on the server
+        try {
+            const response = await fetch('/api/video-recordings/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': config.csrfToken,
+                    'Accept': 'application/json',
+                },
+                body: JSON.stringify({ mime_type: mimeType }),
+            });
+
+            if (!response.ok) throw new Error('Failed to start upload session');
+
+            const data = await response.json();
+            this.recordingId = data.id;
+        } catch (e) {
+            console.warn('Chunked upload init failed, will use legacy upload:', e);
+            this.useChunkedUpload = false;
+        }
+
+        // Use raw stream to avoid Alpine Proxy issues with MediaRecorder
+        this.mediaRecorder = new MediaRecorder(this._rawStream, {
+            mimeType,
+            videoBitsPerSecond: 2500000,
+        });
+
+        this.mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) {
+                this.recordedChunks.push(e.data);
+
+                // Stream chunk to server during recording
+                if (this.useChunkedUpload && this.recordingId) {
+                    this.uploadQueue.push(e.data);
+                    this.processUploadQueue();
+                }
+            }
+        };
+
+        this.mediaRecorder.onstop = () => {
+            this.recordedBlob = new Blob(this.recordedChunks, { type: mimeType });
+            this.stage = 'review';
+
+            this.$nextTick(() => {
+                if (this.$refs.videoReview) {
+                    this.$refs.videoReview.src = URL.createObjectURL(this.recordedBlob);
+                }
+            });
+        };
+
+        this.mediaRecorder.start(1000);
+        this.stage = 'recording';
+
+        this.recordingTimer = setInterval(() => {
+            this.recordingSeconds++;
+            if (this.recordingSeconds >= this.maxDuration) {
+                this.stopRecording();
+            }
+        }, 1000);
+    },
+
+    async processUploadQueue() {
+        if (this.isUploading || this.uploadQueue.length === 0) return;
+
+        this.isUploading = true;
+
+        while (this.uploadQueue.length > 0) {
+            const chunk = this.uploadQueue.shift();
+            const currentIndex = this.chunkIndex;
+            const retryKey = `chunk_${currentIndex}`;
+
+            try {
+                const formData = new FormData();
+                formData.append('chunk', chunk, `chunk_${currentIndex}.webm`);
+                formData.append('chunk_index', currentIndex);
+
+                const response = await fetch(`/api/video-recordings/${this.recordingId}/chunk`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRF-TOKEN': config.csrfToken,
+                        'Accept': 'application/json',
+                    },
+                    body: formData,
+                });
+
+                if (!response.ok) throw new Error('Chunk upload failed');
+
+                this.chunkIndex++;
+                this.totalUploaded += chunk.size;
+                this.chunkRetries[retryKey] = 0;
+            } catch (e) {
+                const retries = (this.chunkRetries[retryKey] || 0) + 1;
+                this.chunkRetries[retryKey] = retries;
+
+                if (retries <= this.maxRetries) {
+                    this.uploadQueue.unshift(chunk);
+                    await new Promise(r => setTimeout(r, 1000 * retries));
+                } else {
+                    console.error(`Chunk ${currentIndex} failed after ${this.maxRetries} retries`);
+                }
+            }
+        }
+
+        this.isUploading = false;
+    },
+
+    stopRecording() {
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+
+        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+            this.mediaRecorder.stop();
+        }
+
+        if (this._rawStream) {
+            this._rawStream.getTracks().forEach(t => t.stop());
+            this._rawStream = null;
+            this.stream = null;
+        }
+    },
+
+    retake() {
+        if (this.recordingId) {
+            fetch(`/api/video-recordings/${this.recordingId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-CSRF-TOKEN': config.csrfToken,
+                    'Accept': 'application/json',
+                },
+            }).catch(() => {});
+        }
+
+        this.recordedBlob = null;
+        this.recordedChunks = [];
+        this.videoTitle = '';
+        this.recordingId = null;
+        this.chunkIndex = 0;
+        this.uploadQueue = [];
+        this.totalUploaded = 0;
+
+        this.startCamera({ skipFullscreen: true });
+    },
+
+    async saveRecording() {
+        if (this.useChunkedUpload && this.recordingId) {
+            await this.finalizeChunkedUpload();
+        } else {
+            await this.uploadRecordingLegacy();
+        }
+    },
+
+    async finalizeChunkedUpload() {
+        this.stage = 'finalizing';
+
+        while (this.uploadQueue.length > 0 || this.isUploading) {
+            await new Promise(r => setTimeout(r, 200));
+        }
+
+        try {
+            const promises = [];
+
+            if (this.videoTitle.trim()) {
+                promises.push(
+                    fetch(`/api/video-recordings/${this.recordingId}/title`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': config.csrfToken,
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({ title: this.videoTitle.trim() }),
+                    })
+                );
+            }
+
+            promises.push(
+                fetch(`/api/video-recordings/${this.recordingId}/finalize`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': config.csrfToken,
+                        'Accept': 'application/json',
+                    },
+                })
+            );
+
+            const results = await Promise.all(promises);
+            const finalizeResponse = results[results.length - 1];
+
+            if (!finalizeResponse.ok) throw new Error('Finalize failed');
+
+            // Show post-save actions via Livewire
+            const statusResp = await fetch(`/api/video-recordings/${this.recordingId}/status`, {
+                headers: { 'Accept': 'application/json' },
+            });
+            const statusData = await statusResp.json();
+
+            this.$wire.set('lastRecordingId', this.recordingId);
+            this.$wire.set('lastShareToken', statusData.share_url ? statusData.share_url.split('/v/')[1] : null);
+            this.$wire.set('showPostActions', true);
+
+            this.stage = 'processing';
+            this.recordedBlob = null;
+            this.recordedChunks = [];
+            this.videoTitle = '';
+            this.recordingId = null;
+            this.totalUploaded = 0;
+
+            setTimeout(async () => {
+                this.stage = 'idle';
+                await this.exitFullscreen();
+            }, 1500);
+        } catch (e) {
+            console.error('Finalize failed:', e);
+            alert('Failed to save recording. Please try again.');
+            this.stage = 'review';
+        }
+    },
+
+    async uploadRecordingLegacy() {
+        if (!this.recordedBlob) return;
+
+        this.stage = 'uploading';
+        this.uploadProgress = 0;
+
+        const ext = this.recordedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+        const formData = new FormData();
+        formData.append('file', this.recordedBlob, `recording.${ext}`);
+        if (this.videoTitle.trim()) {
+            formData.append('title', this.videoTitle.trim());
+        }
+
+        try {
+            const xhr = new XMLHttpRequest();
+
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable) {
+                    this.uploadProgress = (e.loaded / e.total) * 100;
+                }
+            });
+
+            const response = await new Promise((resolve, reject) => {
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        resolve(JSON.parse(xhr.responseText));
+                    } else {
+                        reject(new Error('Upload failed: ' + xhr.statusText));
+                    }
+                };
+                xhr.onerror = () => reject(new Error('Upload failed'));
+
+                xhr.open('POST', '/api/video-recordings');
+                xhr.setRequestHeader('X-CSRF-TOKEN', config.csrfToken);
+                xhr.setRequestHeader('Accept', 'application/json');
+                xhr.send(formData);
+            });
+
+            this.$wire.set('lastRecordingId', response.id);
+            this.$wire.set('lastShareToken', response.share_token);
+            this.$wire.set('showPostActions', true);
+
+            this.stage = 'processing';
+            this.recordedBlob = null;
+            this.recordedChunks = [];
+            this.videoTitle = '';
+
+            setTimeout(async () => {
+                this.stage = 'idle';
+                await this.exitFullscreen();
+            }, 1500);
+        } catch (e) {
+            console.error('Upload failed:', e);
+            alert('Upload failed. Please try again.');
+            this.stage = 'review';
+        }
+    },
+
+    async cancelRecorder() {
+        this.cleanupStream();
+        if (this.recordingTimer) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+        this.mediaRecorder = null;
+        this.recordedBlob = null;
+        this.recordedChunks = [];
+        this.videoTitle = '';
+        this.recordingId = null;
+        this.chunkIndex = 0;
+        this.uploadQueue = [];
+        this.totalUploaded = 0;
+        this.stage = 'idle';
+
+        await this.exitFullscreen();
+    },
+
+    cleanupStream() {
+        if (this._rawStream) {
+            this._rawStream.getTracks().forEach(t => t.stop());
+            this._rawStream = null;
+            this.stream = null;
+        }
+    },
+
+    getSupportedMimeType() {
+        const types = [
+            'video/webm;codecs=vp8,opus',
+            'video/webm;codecs=vp9,opus',
+            'video/webm',
+            'video/mp4;codecs=h264,aac',
+            'video/mp4',
+        ];
+        for (const type of types) {
+            if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) return type;
+        }
+        return '';
+    },
+}));
+</script>
+@endscript

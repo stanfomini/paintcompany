@@ -616,6 +616,86 @@ it('has no next step on last step', function () {
     expect($component->get('nextStep'))->toBeNull();
 });
 
+it('shows completed badge when step is already completed', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    TrainingProgress::factory()->completed()->create([
+        'user_id' => $user->id,
+        'training_path_step_id' => $step->id,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->assertSet('isCompleted', true)
+        ->assertSee('Completed');
+});
+
+it('shows watch percentage badge for partially watched step', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    TrainingProgress::factory()->create([
+        'user_id' => $user->id,
+        'training_path_step_id' => $step->id,
+        'watch_percentage' => 45,
+        'completed_at' => null,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->assertSet('watchPercentage', 45)
+        ->assertSet('isCompleted', false)
+        ->assertSee('45%');
+});
+
+it('clamps progress values to valid range', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->call('updateProgress', 150);
+
+    $progress = TrainingProgress::where('user_id', $user->id)
+        ->where('training_path_step_id', $step->id)
+        ->first();
+
+    // 150 should be clamped to 100, and >= 90 auto-completes
+    expect($progress->watch_percentage)->toBe(100);
+    expect($progress->completed_at)->not->toBeNull();
+});
+
+it('shows all steps in the step list sidebar', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step1 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 0, 'title' => 'First Lesson']);
+    $step2 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 1, 'title' => 'Second Lesson']);
+    $step3 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 2, 'title' => 'Third Lesson']);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step1])
+        ->assertSee('All Steps')
+        ->assertSee('First Lesson')
+        ->assertSee('Second Lesson')
+        ->assertSee('Third Lesson');
+});
+
+it('training center links steps to player route', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create(['visibility' => 'all_internal']);
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'title' => 'Watch This']);
+
+    $expectedUrl = route('my.training.play', [$path, $step]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-center')
+        ->assertSeeHtml($expectedUrl);
+});
+
 it('returns 100% completion for path with no required steps', function () {
     $user = User::factory()->internal()->withFullAccess()->create();
     $path = TrainingPath::factory()->create(['visibility' => 'all_internal']);
