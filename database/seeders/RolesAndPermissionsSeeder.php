@@ -171,6 +171,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Media Hub
             'media.view',
             'media.record',
+            'media.manage',
             'media.manage_channels',
             'media.manage_training',
             'media.send_emails',
@@ -250,7 +251,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Payroll (view only)
             'payroll.view',
             // Media Hub
-            'media.view', 'media.record', 'media.send_emails',
+            'media.view', 'media.record', 'media.manage', 'media.send_emails',
         ]);
 
         // Manager - view + edit, no management or deletion
