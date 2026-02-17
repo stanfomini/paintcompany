@@ -254,15 +254,20 @@
         {{-- Global notification listener for internal users --}}
         @auth
             @if (auth()->user()->isInternal())
-                @livewire('notifications.notification-center')
+                {{-- Floating bottom-left button bar (bell + record) --}}
+                <div class="fixed bottom-4 inset-x-0 z-50 pointer-events-none lg:pl-64">
+                    <div class="pl-4 flex items-end gap-2">
+                        @livewire('notifications.notification-center')
+                        @can('media.record')
+                            @livewire('media.quick-recorder')
+                        @endcan
+                    </div>
+                </div>
                 @livewire('notifications.new-lead-alert')
                 @can('chat.access')
                     @persist('chat-dock')
                         @livewire('chat.chat-dock')
                     @endpersist
-                @endcan
-                @can('media.record')
-                    @livewire('media.quick-recorder')
                 @endcan
             @endif
         @endauth

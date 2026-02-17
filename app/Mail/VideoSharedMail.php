@@ -29,15 +29,12 @@ class VideoSharedMail extends Mailable
 
     public function content(): Content
     {
-        $shareUrl = $this->recording->getShareableUrl();
-        $trackingUrl = $shareUrl.'?ref=email&eid='.$this->videoEmail->id;
-
         return new Content(
             markdown: 'mail.video-shared',
             with: [
                 'videoTitle' => $this->recording->title,
                 'message' => $this->customMessage,
-                'watchUrl' => $trackingUrl,
+                'watchUrl' => route('api.video-emails.click', $this->videoEmail),
                 'senderName' => $this->videoEmail->sender->name ?? 'Someone',
                 'pixelUrl' => route('api.video-emails.pixel', $this->videoEmail),
             ],

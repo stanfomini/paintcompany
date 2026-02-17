@@ -49,6 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->validateCsrfTokens(except: [
             'webhooks/*',
+            'api/video-views',
         ]);
 
         $middleware->alias([
