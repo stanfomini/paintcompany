@@ -90,18 +90,16 @@ describe('Agent invitation notification', function () {
 });
 
 describe('SendAgentInvitations command', function () {
-    it('sends invitations to valid emails', function () {
+    it('sends invitations from the hardcoded email list', function () {
         Notification::fake();
 
         $inviter = User::factory()->internal()->withFullAccess()->create();
 
         $this->artisan('invitations:send-agents', [
-            '--emails' => 'agent1@test.com,agent2@test.com',
             '--inviter' => $inviter->id,
-        ])->expectsConfirmation('Send invitations to all 2 emails above?', 'yes')
-            ->assertSuccessful();
+        ])->assertSuccessful();
 
-        expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(2);
+        expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(15);
     });
 
     it('supports dry-run mode without sending', function () {
@@ -110,63 +108,30 @@ describe('SendAgentInvitations command', function () {
         $inviter = User::factory()->internal()->withFullAccess()->create();
 
         $this->artisan('invitations:send-agents', [
-            '--emails' => 'dryrun@test.com',
             '--inviter' => $inviter->id,
             '--dry-run' => true,
         ])->assertSuccessful();
 
-        expect(Invitation::where('email', 'dryrun@test.com')->exists())->toBeFalse();
+        expect(Invitation::count())->toBe(0);
     });
 
     it('requires a valid internal inviter', function () {
         $agent = User::factory()->agent()->create();
 
         $this->artisan('invitations:send-agents', [
-            '--emails' => 'test@test.com',
             '--inviter' => $agent->id,
         ])->assertFailed();
     });
 
-    it('skips already existing users', function () {
+    it('defaults to first internal user when no inviter specified', function () {
         Notification::fake();
 
         $inviter = User::factory()->internal()->withFullAccess()->create();
-        User::factory()->agent()->create(['email' => 'existing@test.com']);
 
-        $this->artisan('invitations:send-agents', [
-            '--emails' => 'existing@test.com,new@test.com',
-            '--inviter' => $inviter->id,
-        ])->expectsConfirmation('Send invitations to all 2 emails above?', 'yes')
-            ->assertSuccessful();
+        $this->artisan('invitations:send-agents')->assertSuccessful();
 
-        expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(1);
-        expect(Invitation::where('email', 'new@test.com')->exists())->toBeTrue();
-    });
-
-    it('filters invalid email addresses', function () {
-        $inviter = User::factory()->internal()->withFullAccess()->create();
-
-        $this->artisan('invitations:send-agents', [
-            '--emails' => 'not-an-email,also-bad',
-            '--inviter' => $inviter->id,
-        ])->assertFailed();
-    });
-
-    it('reads emails from a file', function () {
-        Notification::fake();
-
-        $inviter = User::factory()->internal()->withFullAccess()->create();
-        $filePath = storage_path('test-agent-emails.txt');
-        file_put_contents($filePath, "file1@test.com\nfile2@test.com\nfile3@test.com\n");
-
-        $this->artisan('invitations:send-agents', [
-            '--file' => $filePath,
-            '--inviter' => $inviter->id,
-        ])->expectsConfirmation('Send invitations to all 3 emails above?', 'yes')
-            ->assertSuccessful();
-
-        expect(Invitation::where('invited_user_type', 'agent')->count())->toBe(3);
-
-        @unlink($filePath);
+        $invitation = Invitation::first();
+        expect($invitation)->not->toBeNull();
+        expect($invitation->inviter_id)->toBe($inviter->id);
     });
 });
