@@ -49,6 +49,7 @@ class EstimatePackageFactory extends Factory
             'warranty_type' => fake()->optional(0.5)->randomElement(['labor', 'materials', 'full']),
             'is_recommended' => false,
             'is_selected' => false,
+            'is_visible' => true,
             'sort_order' => 0,
         ];
     }
@@ -98,6 +99,16 @@ class EstimatePackageFactory extends Factory
             'name' => 'Custom Package',
             'tier' => EstimatePackage::TIER_CUSTOM,
             'sort_order' => 4,
+        ]);
+    }
+
+    /**
+     * Mark this package as hidden (not visible on proposal).
+     */
+    public function hidden(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_visible' => false,
         ]);
     }
 

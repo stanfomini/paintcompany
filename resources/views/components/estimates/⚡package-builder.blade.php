@@ -113,6 +113,12 @@ new class extends Component {
             ->orderBy('sort_order')
             ->get()
             ->map(function (EstimatePackage $package) {
+                // Resolve paint tier for this package
+                $paintTier = null;
+                if ($this->estimate->hasPaintTiers()) {
+                    $paintTier = $package->getPaintTier();
+                }
+
                 // Group surface items by area
                 $surfaceItems = $package->items->filter(
                     fn ($item) => $item->itemable_type === EstimateAreaSurface::class
@@ -142,8 +148,8 @@ new class extends Component {
                             'surfaces' => [],
                             'included_total' => 0, // calculated below after all surfaces collected
                         ];
-                        // Cache proportional customer prices for this area's surfaces
-                        $areaPriceCache[$areaId] = $area->getSurfaceCustomerPrices();
+                        // Cache proportional customer prices for this area's surfaces (tier-aware)
+                        $areaPriceCache[$areaId] = $area->getSurfaceCustomerPrices($paintTier);
                     }
 
                     $surfaceData = [
@@ -180,7 +186,7 @@ new class extends Component {
                         'is_fixed_price' => true,
                         'item_id' => $item->id,
                         'is_included' => $item->is_included,
-                        'included_total' => $item->is_included ? $area->getCustomerPrice() : 0,
+                        'included_total' => $item->is_included ? $area->getCustomerPrice($paintTier) : 0,
                     ];
                 }
 
@@ -196,7 +202,7 @@ new class extends Component {
                         ->pluck('surface_id')
                         ->toArray();
 
-                    $areaData['included_total'] = $areaData['area_model']->getPartialCustomerPrice($includedSurfaceIds);
+                    $areaData['included_total'] = $areaData['area_model']->getPartialCustomerPrice($includedSurfaceIds, $paintTier);
                 }
                 unset($areaData);
 
@@ -215,6 +221,26 @@ new class extends Component {
                     ];
                 })->values()->toArray();
 
+                // Resolve paint products for this package's tier
+                $paintProducts = [];
+                if ($paintTier && $this->estimate->hasPaintTiers()) {
+                    $seen = [];
+                    foreach ($this->estimate->areas as $area) {
+                        foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+                            $product = $surface->getPaintProductForTier($paintTier);
+                            if ($product && ! isset($seen[$product->id])) {
+                                $seen[$product->id] = true;
+                                $paintProducts[] = [
+                                    'name' => $product->full_name,
+                                    'brand' => $product->brand?->name ?? 'Unknown',
+                                    'sheen' => ucfirst($product->sheen ?? ''),
+                                    'price_per_gallon' => (float) $product->price_per_gallon,
+                                ];
+                            }
+                        }
+                    }
+                }
+
                 return [
                     'id' => $package->id,
                     'name' => $package->name,
@@ -225,6 +251,7 @@ new class extends Component {
                     'discount_amount' => (float) $package->discount_amount,
                     'is_recommended' => $package->is_recommended,
                     'is_selected' => $package->is_selected,
+                    'is_visible' => $package->is_visible,
                     'subtotal' => (float) $package->subtotal,
                     'tax_rate' => (float) $package->tax_rate,
                     'tax_amount' => (float) $package->tax_amount,
@@ -232,6 +259,7 @@ new class extends Component {
                     'deposit_amount' => (float) $package->deposit_amount,
                     'balance_due' => (float) $package->balance_due,
                     'warranty_price' => (float) $package->warranty_price,
+                    'paint_products' => $paintProducts,
                     'areas' => array_values(array_map(function ($area) {
                         unset($area['area_model']);
                         return $area;
@@ -505,6 +533,58 @@ new class extends Component {
     }
 
     /**
+     * Toggle visibility of a package on the customer proposal.
+     * At least one package must remain visible.
+     */
+    public function toggleVisibility(int $packageId): void
+    {
+        $package = EstimatePackage::find($packageId);
+        if (! $package || $package->estimate_id !== $this->estimate->id) {
+            return;
+        }
+
+        // If hiding, ensure at least 1 package remains visible
+        if ($package->is_visible) {
+            $visibleCount = $this->estimate->packages()->where('is_visible', true)->count();
+            if ($visibleCount <= 1) {
+                session()->flash('error', __('At least one package must remain visible on the proposal.'));
+
+                return;
+            }
+        }
+
+        $package->is_visible = ! $package->is_visible;
+        $package->save();
+
+        // If hiding a selected package, deselect it
+        if (! $package->is_visible && $package->is_selected) {
+            $package->update(['is_selected' => false]);
+            if ($this->estimate->selected_package_id === $package->id) {
+                $this->estimate->update(['selected_package_id' => null]);
+            }
+        }
+
+        // If hiding the recommended package, move recommendation to first visible
+        if (! $package->is_visible && $package->is_recommended) {
+            $package->update(['is_recommended' => false]);
+            $firstVisible = $this->estimate->packages()
+                ->where('is_visible', true)
+                ->orderBy('sort_order')
+                ->first();
+            if ($firstVisible) {
+                $firstVisible->update(['is_recommended' => true]);
+            }
+        }
+
+        // Notify customer if estimate is already sent
+        $action = $package->is_visible ? 'shown on' : 'hidden from';
+        $this->notifyPackageChange($package, ["{$package->name} {$action} the proposal"], 'visibility_toggled');
+
+        $this->loadPackages();
+        $this->dispatch('packages-updated');
+    }
+
+    /**
      * Open modal to add a service add-on to a specific package.
      */
     public function openAddonModal(int $packageId): void
@@ -701,11 +781,22 @@ new class extends Component {
         </div>
 
         @if (count($packages) > 0)
+            @php
+                $visibleCount = collect($packages)->where('is_visible', true)->count();
+                $totalCount = count($packages);
+            @endphp
+            @if ($visibleCount < $totalCount)
+                <div class="px-4 pt-3">
+                    <flux:text size="sm" class="text-amber-600 dark:text-amber-400">
+                        {{ __(':visible of :total packages visible on the proposal', ['visible' => $visibleCount, 'total' => $totalCount]) }}
+                    </flux:text>
+                </div>
+            @endif
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 p-4">
                 @foreach ($packages as $package)
                     <div
                         wire:key="package-{{ $package['id'] }}"
-                        class="border rounded-lg {{ $package['is_recommended'] ? 'border-green-500 dark:border-green-400 ring-2 ring-green-500/20' : 'border-zinc-200 dark:border-zinc-700' }}"
+                        class="border rounded-lg {{ !$package['is_visible'] ? 'opacity-50 grayscale' : '' }} {{ $package['is_recommended'] ? 'border-green-500 dark:border-green-400 ring-2 ring-green-500/20' : 'border-zinc-200 dark:border-zinc-700' }}"
                     >
                         {{-- Package Header --}}
                         <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 {{ $package['is_recommended'] ? 'bg-green-50 dark:bg-green-900/20' : 'bg-zinc-50 dark:bg-zinc-800' }} rounded-t-lg">
@@ -715,15 +806,28 @@ new class extends Component {
                                     <flux:badge color="{{ $this->getTierBadgeColor($package['tier']) }}" size="sm">
                                         {{ $package['tier_label'] }}
                                     </flux:badge>
+                                    @if (!$package['is_visible'])
+                                        <flux:badge color="red" size="sm">{{ __('Hidden') }}</flux:badge>
+                                    @endif
                                 </div>
-                                <flux:button
-                                    wire:click="openPackageModal({{ $package['id'] }})"
-                                    type="button"
-                                    variant="ghost"
-                                    size="xs"
-                                    icon="pencil"
-                                    title="Edit package details"
-                                />
+                                <div class="flex items-center gap-1">
+                                    <flux:button
+                                        wire:click="toggleVisibility({{ $package['id'] }})"
+                                        type="button"
+                                        variant="ghost"
+                                        size="xs"
+                                        icon="{{ $package['is_visible'] ? 'eye' : 'eye-slash' }}"
+                                        title="{{ $package['is_visible'] ? __('Hide from proposal') : __('Show on proposal') }}"
+                                    />
+                                    <flux:button
+                                        wire:click="openPackageModal({{ $package['id'] }})"
+                                        type="button"
+                                        variant="ghost"
+                                        size="xs"
+                                        icon="pencil"
+                                        title="Edit package details"
+                                    />
+                                </div>
                             </div>
 
                             @if ($package['is_recommended'])
@@ -744,6 +848,23 @@ new class extends Component {
                                 <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mt-2">
                                     {{ $package['description'] }}
                                 </flux:text>
+                            @endif
+
+                            @if (! empty($package['paint_products']))
+                                <div class="mt-3 space-y-1">
+                                    @foreach ($package['paint_products'] as $paint)
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <svg class="w-3.5 h-3.5 text-blue-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                                <path d="M3.5 2A1.5 1.5 0 002 3.5V5c0 .325.103.625.278.871L7 12.5V17a1 1 0 001.555.832l3-2A1 1 0 0012 15v-2.5l4.722-6.629A1.5 1.5 0 0017 5V3.5A1.5 1.5 0 0015.5 2h-12z"/>
+                                            </svg>
+                                            <span class="text-zinc-700 dark:text-zinc-300 font-medium">{{ $paint['name'] }}</span>
+                                            @if ($paint['sheen'])
+                                                <span class="text-zinc-400">&middot;</span>
+                                                <span class="text-zinc-500 dark:text-zinc-400">{{ $paint['sheen'] }}</span>
+                                            @endif
+                                        </div>
+                                    @endforeach
+                                </div>
                             @endif
                         </div>
 

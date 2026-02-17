@@ -50,6 +50,20 @@ new class extends Component
     /** @var array<int, array{surfaces: array, nested_items: array}> */
     public array $areaConfigs = [];
 
+    /**
+     * Get the effective hourly rate for a scope, using estimate override if set.
+     */
+    protected function getEffectiveRateForScope(string $scopeType): float
+    {
+        $settings = CompanySetting::getInstance();
+
+        if ($this->estimate->hasHourlyRateOverride()) {
+            return $this->estimate->getOverrideEffectiveHourlyRate($scopeType);
+        }
+
+        return $this->getEffectiveRateForScope($scopeType);
+    }
+
     public function mount(Estimate $estimate): void
     {
         $this->estimate = $estimate->load([
@@ -360,7 +374,7 @@ new class extends Component
                 $total = (float) $templateSurface->fixed_price;
             } elseif ($rate) {
                 $laborHours = $rate->calculateHoursForQuantity($quantity, $coats);
-                $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $effectiveRate = $this->getEffectiveRateForScope($scopeType);
                 $laborCost = $laborHours * $effectiveRate;
                 $materialCost = 0.0; // Material costs come from PaintProduct, not ProductionRate
 
@@ -379,7 +393,7 @@ new class extends Component
                 'coats' => $coats,
                 'production_rate_id' => $templateSurface->production_rate_id,
                 'production_rate_value' => $rate?->production_rate,
-                'hourly_labor_rate' => $settings->getEffectiveHourlyRateForScope($scopeType),
+                'hourly_labor_rate' => $this->getEffectiveRateForScope($scopeType),
                 'material_cost_per_unit' => 0.0, // Material costs come from PaintProduct
                 'labor_hours' => round($laborHours, 2),
                 'labor_cost' => round($laborCost, 2),
@@ -456,7 +470,7 @@ new class extends Component
     {
         $settings = CompanySetting::getInstance();
         $scopeType = $area->scope_type ?? 'interior';
-        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $effectiveRate = $this->getEffectiveRateForScope($scopeType);
 
         // Get default production rates for each surface type
         $categories = ProductionRate::getCategoriesForScope($scopeType);
@@ -680,7 +694,7 @@ new class extends Component
             $quantity = (float) $surface->quantity;
             $coats = $surface->coats;
             $laborHours = $rate->calculateHoursForQuantity($quantity, $coats);
-            $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+            $effectiveRate = $this->getEffectiveRateForScope($scopeType);
             $laborCost = $laborHours * $effectiveRate;
             $materialCost = 0.0; // Material costs come from PaintProduct, not ProductionRate
             $total = $laborCost + $materialCost;  // Store COGS, not OTD
@@ -850,7 +864,7 @@ new class extends Component
     {
         $settings = CompanySetting::getInstance();
         $scopeType = $area->scope_type ?? 'interior';
-        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $effectiveRate = $this->getEffectiveRateForScope($scopeType);
 
         foreach ($area->surfaces as $surface) {
             if (! $surface->production_rate_id) {

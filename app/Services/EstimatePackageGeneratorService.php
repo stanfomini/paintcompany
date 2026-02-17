@@ -32,10 +32,19 @@ class EstimatePackageGeneratorService
             return collect();
         }
 
-        $paintingTotal = $this->getPaintingTotal($estimate);
         $packages = collect();
 
         foreach ($templates as $index => $template) {
+            // Determine paint tier for this package template
+            $packageTier = $this->mapTier($template->tier);
+            $paintTier = match ($packageTier) {
+                EstimatePackage::TIER_BASIC => 'good',
+                EstimatePackage::TIER_STANDARD => 'better',
+                EstimatePackage::TIER_PREMIUM => 'best',
+                default => null,
+            };
+
+            $paintingTotal = $this->getPaintingTotal($estimate, $paintTier);
             $package = $this->createPackageFromTemplate($estimate, $template, $paintingTotal, $index);
             $packages->push($package);
         }
@@ -60,9 +69,15 @@ class EstimatePackageGeneratorService
     /**
      * Get the painting total for warranty and percentage calculations.
      * areas_subtotal already includes margins (applied at area level).
+     *
+     * @param  string|null  $paintTier  Paint quality tier (good/better/best) or null for default
      */
-    protected function getPaintingTotal(Estimate $estimate): float
+    protected function getPaintingTotal(Estimate $estimate, ?string $paintTier = null): float
     {
+        if ($paintTier !== null && $estimate->hasPaintTiers()) {
+            return $estimate->calculateAreasSubtotalForTier($paintTier);
+        }
+
         // areas_subtotal = sum of area customer prices (COGS + margin already applied)
         // See Estimate::calculateAreasSubtotal() - it sums getCustomerPrice() per area
         return (float) $estimate->areas_subtotal;
@@ -133,6 +148,7 @@ class EstimatePackageGeneratorService
             'warranty_type' => $warrantyType,
             'is_recommended' => $template->is_popular,
             'is_selected' => $template->is_default,
+            'is_visible' => true,
             'sort_order' => $sortIndex,
             'service_category_id' => $template->service_category_id,
         ]);

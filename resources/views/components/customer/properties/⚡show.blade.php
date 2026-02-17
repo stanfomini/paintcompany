@@ -127,7 +127,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Property Details'])] cl
                     @foreach ($this->photos as $photo)
                         <div wire:key="photo-{{ $photo->id }}" class="aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
                             <img
-                                src="{{ Storage::url($photo->path) }}"
+                                src="{{ storage_url($photo->path) }}"
                                 alt="{{ $photo->caption ?? __('Property photo') }}"
                                 class="w-full h-full object-cover"
                             />

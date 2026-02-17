@@ -568,7 +568,7 @@ describe('Crew Confirmation Status Display', function () {
 
 describe('Crew Audio Messaging', function () {
     beforeEach(function () {
-        \Illuminate\Support\Facades\Storage::fake('public');
+        \Illuminate\Support\Facades\Storage::fake();
     });
 
     it('renders crew message composer with audio recording state', function () {

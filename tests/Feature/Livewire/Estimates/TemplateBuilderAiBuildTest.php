@@ -48,8 +48,9 @@ it('sends webhook to dev server when AI build is triggered', function () {
     $deal = Deal::factory()->create();
     $estimate = Estimate::factory()->for($deal)->create();
 
+    // AI build now lives in the ai-builder child component
     Livewire::actingAs($user)
-        ->test('estimates.template-builder', ['estimate' => $estimate])
+        ->test('estimates.ai-builder', ['estimate' => $estimate])
         ->call('triggerAiBuild')
         ->assertSet('aiBuildInProgress', true)
         ->assertSet('aiBuildStatus', 'building');
@@ -73,8 +74,9 @@ it('sends webhook even when estimate has existing areas', function () {
         'scope_type' => 'interior',
     ]);
 
+    // AI build now lives in the ai-builder child component
     Livewire::actingAs($user)
-        ->test('estimates.template-builder', ['estimate' => $estimate])
+        ->test('estimates.ai-builder', ['estimate' => $estimate])
         ->call('triggerAiBuild')
         ->assertSet('aiBuildInProgress', true)
         ->assertSet('aiBuildStatus', 'building');

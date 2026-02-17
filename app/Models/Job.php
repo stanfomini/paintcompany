@@ -37,6 +37,8 @@ class Job extends Model
     protected $fillable = [
         'deal_id',
         'estimate_id',
+        'sales_person_id',
+        'assigned_to',
         'job_number',
         'stage',
         'title',
@@ -80,6 +82,16 @@ class Job extends Model
     public function estimate(): BelongsTo
     {
         return $this->belongsTo(Estimate::class);
+    }
+
+    public function salesPerson(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'sales_person_id');
+    }
+
+    public function productionManager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_to');
     }
 
     public function colors(): HasMany

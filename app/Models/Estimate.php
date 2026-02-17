@@ -50,6 +50,7 @@ class Estimate extends Model
         'tax_amount',
         'discount_amount',
         'margin_discount_percent',
+        'hourly_rate_override',
         'total',
         'areas_subtotal',
         'items_subtotal',
@@ -72,6 +73,7 @@ class Estimate extends Model
         'selected_package_id',
         'default_paint_product_id',
         'paint_products_by_category',
+        'paint_tiers',
         'settings_snapshot',
         'actual_paint_costs',
         'actual_painters',
@@ -91,6 +93,7 @@ class Estimate extends Model
             'tax_amount' => 'decimal:2',
             'discount_amount' => 'decimal:2',
             'margin_discount_percent' => 'decimal:2',
+            'hourly_rate_override' => 'decimal:2',
             'total' => 'decimal:2',
             'areas_subtotal' => 'decimal:2',
             'items_subtotal' => 'decimal:2',
@@ -106,6 +109,7 @@ class Estimate extends Model
             'rejected_at' => 'datetime',
             'public_token_expires_at' => 'datetime',
             'paint_products_by_category' => 'array',
+            'paint_tiers' => 'array',
             'settings_snapshot' => 'array',
             'actual_paint_costs' => 'array',
             'actual_painters' => 'array',
@@ -493,6 +497,128 @@ class Estimate extends Model
             + (float) $settings->production_management_percent) / 100;
     }
 
+    // =========================================================================
+    // PAINT TIER METHODS
+    // =========================================================================
+
+    /**
+     * Check if this estimate uses paint tier pricing.
+     */
+    public function hasPaintTiers(): bool
+    {
+        $tiers = $this->paint_tiers;
+
+        return is_array($tiers) && ! empty($tiers);
+    }
+
+    /**
+     * Get the paint tier configuration for a specific tier.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getPaintTierConfig(string $tier): ?array
+    {
+        $tiers = $this->paint_tiers;
+
+        return $tiers[$tier] ?? null;
+    }
+
+    /**
+     * Resolve the paint product for a tier, category, and scope.
+     */
+    public function resolveTierPaint(string $tier, string $category, ?string $scope = null): ?PaintProduct
+    {
+        $scope = $scope ?? $this->project_type ?? 'interior';
+        $config = $this->getPaintTierConfig($tier);
+
+        if (! $config) {
+            return null;
+        }
+
+        // Check category-specific paint first
+        if (isset($config['paint_by_category'][$scope][$category])) {
+            return PaintProduct::find($config['paint_by_category'][$scope][$category]);
+        }
+
+        // Fall back to default paint for this tier
+        if (isset($config['default_paint_product_id'])) {
+            return PaintProduct::find($config['default_paint_product_id']);
+        }
+
+        return null;
+    }
+
+    /**
+     * Set the paint configuration for a specific tier.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    public function setPaintTier(string $tier, array $config): void
+    {
+        $tiers = $this->paint_tiers ?? [];
+        $tiers[$tier] = $config;
+        $this->paint_tiers = $tiers;
+    }
+
+    /**
+     * Calculate the areas subtotal for a specific tier.
+     */
+    public function calculateAreasSubtotalForTier(string $tier): float
+    {
+        $total = 0.0;
+        foreach ($this->areas as $area) {
+            $total += $area->getCustomerPrice($tier);
+        }
+
+        return round($total, 2);
+    }
+
+    // =========================================================================
+    // HOURLY RATE OVERRIDE METHODS
+    // =========================================================================
+
+    /**
+     * Check if this estimate has an hourly rate override applied.
+     */
+    public function hasHourlyRateOverride(): bool
+    {
+        return $this->hourly_rate_override !== null && (float) $this->hourly_rate_override > 0;
+    }
+
+    /**
+     * Get the effective hourly rate for a scope, using the override if set.
+     * Effective rate = base wage × payroll burden multiplier.
+     *
+     * @param  string  $scope  'interior' or 'exterior'
+     * @return float Effective hourly rate (with burden)
+     */
+    public function getOverrideEffectiveHourlyRate(string $scope): float
+    {
+        if ($this->hasHourlyRateOverride()) {
+            $settings = CompanySetting::getInstance();
+
+            return (float) $this->hourly_rate_override * (float) $settings->payroll_burden_multiplier;
+        }
+
+        return CompanySetting::getInstance()->getEffectiveHourlyRateForScope($scope);
+    }
+
+    /**
+     * Get the base wage for a scope, using the override if set.
+     * This is the raw wage before payroll burden.
+     *
+     * @param  string  $scope  'interior' or 'exterior'
+     * @return float Base wage (without burden)
+     */
+    public function getOverrideBaseWage(string $scope): float
+    {
+        if ($this->hasHourlyRateOverride()) {
+            return (float) $this->hourly_rate_override;
+        }
+
+        return CompanySetting::getInstance()->getHourlyWageForScope($scope);
+    }
+
     /**
      * Calculate totals from items, areas, and options.
      *
@@ -551,6 +677,15 @@ class Estimate extends Model
     public function getMarginAmount(): float
     {
         return (float) $this->subtotal - $this->getCOGS();
+    }
+
+    /**
+     * Get the gross profit (total revenue minus COGS).
+     * Used by CommissionService for profit-based commission calculations.
+     */
+    public function getGrossProfit(): float
+    {
+        return (float) $this->total - $this->getCOGS();
     }
 
     /**

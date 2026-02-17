@@ -133,6 +133,24 @@ class UserFactory extends Factory
     }
 
     /**
+     * Assign a specific role to the user. Seeds permissions if needed.
+     * Must be used with internal() state.
+     */
+    public function withRole(string $role): static
+    {
+        return $this->afterCreating(function (\App\Models\User $user) use ($role) {
+            $registrar = app(\Spatie\Permission\PermissionRegistrar::class);
+            $registrar->forgetCachedPermissions();
+
+            if (\Spatie\Permission\Models\Permission::count() === 0) {
+                (new \Database\Seeders\RolesAndPermissionsSeeder)->run();
+            }
+
+            $user->assignRole($role);
+        });
+    }
+
+    /**
      * Indicate that the user has an uploaded avatar.
      */
     public function withAvatar(): static

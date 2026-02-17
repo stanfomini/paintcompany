@@ -50,7 +50,7 @@ new class extends Component {
             'category' => ['required', 'string', 'in:before,during,after,general'],
         ]);
 
-        $path = $this->photo->store('property-photos', 'public');
+        $path = $this->photo->store('property-photos', config('filesystems.default'));
 
         $maxSortOrder = $this->property->photos()->max('sort_order') ?? -1;
 

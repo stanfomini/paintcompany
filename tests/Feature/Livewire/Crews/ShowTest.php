@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\User;
 use Livewire\Livewire;
 
@@ -181,5 +182,144 @@ describe('Crew Show component', function () {
         $crew->refresh();
         expect($crew->crewProfile->workers_comp_document)->not->toBeNull();
         expect($crew->crewProfile->workers_comp_document_type)->toBe('file');
+    });
+});
+
+describe('Crew Show - Activities', function () {
+    it('shows crew activities on activities tab', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Activity::factory()->task()->forUser($crew)->byUser($user)->create([
+            'title' => 'Check crew insurance',
+            'is_completed' => false,
+            'due_at' => today(),
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('setTab', 'activities')
+            ->assertSee('Check crew insurance');
+    });
+
+    it('can toggle activity completion', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        $activity = Activity::factory()->task()->forUser($crew)->byUser($user)->create([
+            'title' => 'Complete crew setup',
+            'is_completed' => false,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('toggleActivityComplete', $activity->id);
+
+        expect($activity->fresh()->is_completed)->toBeTrue();
+    });
+
+    it('can toggle completed activity back to incomplete', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        $activity = Activity::factory()->task()->forUser($crew)->byUser($user)->completed()->create([
+            'title' => 'Setup task',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('toggleActivityComplete', $activity->id);
+
+        expect($activity->fresh()->is_completed)->toBeFalse();
+    });
+
+    it('can add new activity via form', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('openAddActivity')
+            ->assertSet('showAddActivity', true)
+            ->set('activityTitle', 'Follow up with crew')
+            ->set('activityType', 'call')
+            ->set('activityDueAt', today()->format('Y-m-d'))
+            ->call('saveActivity');
+
+        $activity = Activity::where('subject_type', User::class)
+            ->where('subject_id', $crew->id)
+            ->where('title', 'Follow up with crew')
+            ->first();
+
+        expect($activity)->not->toBeNull()
+            ->and($activity->type)->toBe('call')
+            ->and($activity->user_id)->toBe($user->id)
+            ->and($activity->subject_type)->toBe(User::class)
+            ->and($activity->subject_id)->toBe($crew->id);
+    });
+
+    it('validates activity title is required', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('openAddActivity')
+            ->set('activityTitle', '')
+            ->call('saveActivity')
+            ->assertHasErrors('activityTitle');
+    });
+
+    it('shows empty state for activities when none exist', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('setTab', 'activities')
+            ->assertSee('No activities')
+            ->assertSee('No activities for this crew yet');
+    });
+
+    it('displays open tasks count in stats', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Activity::factory()->task()->forUser($crew)->byUser($user)->create([
+            'is_completed' => false,
+        ]);
+        Activity::factory()->task()->forUser($crew)->byUser($user)->completed()->create();
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->assertSee('Open Tasks');
+    });
+
+    it('shows activities count in tab', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Activity::factory()->task()->forUser($crew)->byUser($user)->count(3)->create([
+            'is_completed' => false,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->assertSee('Activities (3)');
+    });
+
+    it('closes and resets add activity form', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $crew = User::factory()->crew()->create();
+
+        Livewire::actingAs($user)
+            ->test('crews.show', ['user' => $crew])
+            ->call('openAddActivity')
+            ->set('activityTitle', 'Test title')
+            ->set('activityType', 'meeting')
+            ->call('closeAddActivity')
+            ->assertSet('showAddActivity', false)
+            ->assertSet('activityTitle', '')
+            ->assertSet('activityType', 'task');
     });
 });

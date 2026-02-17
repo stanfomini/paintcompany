@@ -3,6 +3,7 @@
 use App\Models\Estimate;
 use App\Services\AllocationEvaluationService;
 use App\Services\EstimateCostBreakdownService;
+use App\Services\EstimateTierPricingService;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -116,6 +117,21 @@ new class extends Component {
         );
     }
 
+    /**
+     * Get tier comparison data if the estimate uses paint tiers.
+     *
+     * @return array{good: float, better: float, best: float}|null
+     */
+    #[Computed]
+    public function tierComparison(): ?array
+    {
+        if (! $this->estimate->hasPaintTiers()) {
+            return null;
+        }
+
+        return app(EstimateTierPricingService::class)->calculateTierTotals($this->estimate);
+    }
+
     public function setActiveTab(string $tab): void
     {
         $this->activeTab = $tab;
@@ -165,6 +181,26 @@ new class extends Component {
                 <strong>Internal Only</strong> - This breakdown reveals true costs and profit margins. Never share with customers.
             </div>
         </flux:callout>
+
+        {{-- Tier Comparison --}}
+        @if ($this->tierComparison)
+            <div class="mb-6 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                <h3 class="mb-3 text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Good / Better / Best Comparison') }}</h3>
+                <div class="grid grid-cols-3 gap-4">
+                    @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $tierLabel)
+                        <div class="rounded-lg border border-zinc-200 p-3 text-center dark:border-zinc-700 {{ $tierKey === 'better' ? 'ring-2 ring-blue-500' : '' }}">
+                            <div class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ $tierLabel }}</div>
+                            <div class="mt-1 text-lg font-bold text-zinc-900 dark:text-white">${{ number_format($this->tierComparison[$tierKey], 2) }}</div>
+                            @if ($tierKey !== 'good')
+                                <div class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                    +${{ number_format($this->tierComparison[$tierKey] - $this->tierComparison['good'], 2) }}
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        @endif
 
         @php $breakdown = $this->currentBreakdown; @endphp
 
@@ -387,7 +423,8 @@ new class extends Component {
                                 </div>
                             </div>
                             @php
-                                $effectiveRate = $breakdown['settings_used']['hourly_wage'] * $breakdown['settings_used']['payroll_burden_multiplier'];
+                                $baseWage = $breakdown['settings_used']['hourly_rate_override'] ?? $breakdown['settings_used']['hourly_wage'];
+                                $effectiveRate = $baseWage * $breakdown['settings_used']['payroll_burden_multiplier'];
                             @endphp
                             <div class="space-y-2 pl-4 border-l-2 border-zinc-200 dark:border-zinc-700">
                                 <div class="flex justify-between text-sm">
@@ -650,6 +687,7 @@ new class extends Component {
                     <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3">
                         Numbers from each area's model - the same source as the estimate page.
                     </flux:text>
+                    @php $hasTierPricing = !empty($breakdown['areas'][0]['tier_pricing'] ?? null); @endphp
                     <div class="overflow-x-auto">
                         <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                             <thead class="bg-zinc-50 dark:bg-zinc-800">
@@ -658,7 +696,13 @@ new class extends Component {
                                     <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Hours</th>
                                     <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">COGS</th>
                                     <th class="px-4 py-3 text-center text-xs font-medium text-zinc-500 uppercase">Margin</th>
-                                    <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Customer Price</th>
+                                    @if ($hasTierPricing)
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-green-600 uppercase">Good</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-blue-600 uppercase">Better</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-purple-600 uppercase">Best</th>
+                                    @else
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">Customer Price</th>
+                                    @endif
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -677,7 +721,15 @@ new class extends Component {
                                         <td class="px-4 py-3 text-sm text-right">{{ number_format($area['detail']['labor_hours'] + $area['detail']['cleanup_hours'] + ($area['detail']['addon_labor_hours'] ?? 0), 1) }}</td>
                                         <td class="px-4 py-3 text-sm text-right">${{ number_format($area['cogs'], 2) }}</td>
                                         <td class="px-4 py-3 text-sm text-center">{{ number_format($area['margin_percent'], 0) }}%</td>
-                                        <td class="px-4 py-3 text-sm text-right font-medium">${{ number_format($area['customer_price'], 2) }}</td>
+                                        @if ($hasTierPricing && isset($area['tier_pricing']))
+                                            <td class="px-4 py-3 text-sm text-right text-green-700 dark:text-green-400">${{ number_format($area['tier_pricing']['good']['customer_price'], 2) }}</td>
+                                            <td class="px-4 py-3 text-sm text-right font-medium text-blue-700 dark:text-blue-400">${{ number_format($area['tier_pricing']['better']['customer_price'], 2) }}</td>
+                                            <td class="px-4 py-3 text-sm text-right text-purple-700 dark:text-purple-400">${{ number_format($area['tier_pricing']['best']['customer_price'], 2) }}</td>
+                                        @elseif ($hasTierPricing)
+                                            <td class="px-4 py-3 text-sm text-right" colspan="3">${{ number_format($area['customer_price'], 2) }}</td>
+                                        @else
+                                            <td class="px-4 py-3 text-sm text-right font-medium">${{ number_format($area['customer_price'], 2) }}</td>
+                                        @endif
                                     </tr>
                                 @endforeach
                                 @if (($breakdown['items_total'] ?? 0) > 0)
@@ -696,7 +748,13 @@ new class extends Component {
                                     <td class="px-4 py-3 text-sm text-right">{{ number_format($breakdown['totals']['total_hours'], 1) }}</td>
                                     <td class="px-4 py-3 text-sm text-right">${{ number_format($breakdown['cogs']['total'], 2) }}</td>
                                     <td class="px-4 py-3 text-sm text-center">{{ number_format($breakdown['pricing']['margin_percent'], 0) }}%</td>
-                                    <td class="px-4 py-3 text-sm text-right">${{ number_format($breakdown['pricing']['customer_price'], 2) }}</td>
+                                    @if ($hasTierPricing && $this->tierComparison)
+                                        <td class="px-4 py-3 text-sm text-right text-green-700 dark:text-green-400">${{ number_format($this->tierComparison['good'], 2) }}</td>
+                                        <td class="px-4 py-3 text-sm text-right text-blue-700 dark:text-blue-400">${{ number_format($this->tierComparison['better'], 2) }}</td>
+                                        <td class="px-4 py-3 text-sm text-right text-purple-700 dark:text-purple-400">${{ number_format($this->tierComparison['best'], 2) }}</td>
+                                    @else
+                                        <td class="px-4 py-3 text-sm text-right">${{ number_format($breakdown['pricing']['customer_price'], 2) }}</td>
+                                    @endif
                                 </tr>
                             </tfoot>
                         </table>
@@ -784,7 +842,10 @@ new class extends Component {
                         </div>
                         <div>
                             <span class="text-zinc-500">Hourly Wage:</span>
-                            <span class="font-medium ml-1">${{ number_format($breakdown['settings_used']['hourly_wage'], 2) }}</span>
+                            <span class="font-medium ml-1">${{ number_format($breakdown['settings_used']['hourly_rate_override'] ?? $breakdown['settings_used']['hourly_wage'], 2) }}</span>
+                            @if ($breakdown['settings_used']['hourly_rate_override'] ?? null)
+                                <span class="text-xs text-amber-600 dark:text-amber-400">(override)</span>
+                            @endif
                         </div>
                         <div>
                             <span class="text-zinc-500">Payroll Burden:</span>

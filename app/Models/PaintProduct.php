@@ -38,6 +38,12 @@ class PaintProduct extends Model
 
     public const SCOPE_BOTH = 'both';
 
+    public const TIER_GOOD = 'good';
+
+    public const TIER_BETTER = 'better';
+
+    public const TIER_BEST = 'best';
+
     protected $fillable = [
         'paint_brand_id',
         'name',
@@ -47,6 +53,7 @@ class PaintProduct extends Model
         'product_type',
         'scope_type',
         'surface_type',
+        'quality_tier',
         'price_per_gallon',
         'price_per_five_gallon',
         'coverage_sqft_brush_roll',
@@ -64,6 +71,7 @@ class PaintProduct extends Model
     protected function casts(): array
     {
         return [
+            'quality_tier' => 'string',
             'price_per_gallon' => 'decimal:2',
             'price_per_five_gallon' => 'decimal:2',
             'coverage_sqft_brush_roll' => 'integer',
@@ -141,6 +149,22 @@ class PaintProduct extends Model
     public function scopeProductType(Builder $query, string $type): Builder
     {
         return $query->where('product_type', $type);
+    }
+
+    /**
+     * Scope by quality tier.
+     */
+    public function scopeForTier(Builder $query, string $tier): Builder
+    {
+        return $query->where('quality_tier', $tier);
+    }
+
+    /**
+     * Scope to paints only (excludes primers, stains, sealers).
+     */
+    public function scopePaintsOnly(Builder $query): Builder
+    {
+        return $query->where('product_type', self::TYPE_PAINT);
     }
 
     /**

@@ -23,7 +23,7 @@ describe('PhotoGallery component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
-        Storage::fake('public');
+        Storage::fake();
 
         $photo = PropertyPhoto::factory()->create([
             'property_id' => $property->id,
@@ -77,7 +77,7 @@ describe('PhotoGallery component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
-        Storage::fake('public');
+        Storage::fake();
 
         Livewire::actingAs($user)
             ->test('properties.photo-gallery', ['property' => $property])
@@ -90,7 +90,7 @@ describe('PhotoGallery component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
-        Storage::fake('public');
+        Storage::fake();
 
         Livewire::actingAs($user)
             ->test('properties.photo-gallery', ['property' => $property])
@@ -104,7 +104,7 @@ describe('PhotoGallery component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
-        Storage::fake('public');
+        Storage::fake();
 
         Livewire::actingAs($user)
             ->test('properties.photo-gallery', ['property' => $property])
@@ -128,7 +128,7 @@ describe('PhotoGallery component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
-        Storage::fake('public');
+        Storage::fake();
 
         PropertyPhoto::factory()->create([
             'property_id' => $property->id,
@@ -156,9 +156,9 @@ describe('PhotoGallery component', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $property = Property::factory()->create();
 
-        Storage::fake('public');
+        Storage::fake();
         $path = 'property-photos/test.jpg';
-        Storage::disk('public')->put($path, 'fake content');
+        Storage::put($path, 'fake content');
 
         $photo = PropertyPhoto::factory()->create([
             'property_id' => $property->id,

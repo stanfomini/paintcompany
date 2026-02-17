@@ -64,7 +64,7 @@ class ChatAttachment extends Model
      */
     public function getUrl(): string
     {
-        return Storage::disk('local')->url($this->path);
+        return storage_url($this->path);
     }
 
     /**
@@ -103,7 +103,7 @@ class ChatAttachment extends Model
     protected static function booted(): void
     {
         static::deleting(function (ChatAttachment $attachment) {
-            Storage::disk('local')->delete($attachment->path);
+            Storage::delete($attachment->path);
         });
     }
 }

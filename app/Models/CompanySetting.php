@@ -112,6 +112,14 @@ class CompanySetting extends Model
         'crew_pitch_job_price',
         'crew_pitch_paint_cost',
         'crew_pitch_bonus_percent',
+        // Time Tracking Settings
+        'pay_period_type',
+        'overtime_threshold_weekly',
+        'overtime_multiplier',
+        'break_duration_minutes',
+        'break_required_after_hours',
+        'geofence_radius_feet',
+        'locationiq_api_key',
     ];
 
     protected function casts(): array
@@ -183,6 +191,13 @@ class CompanySetting extends Model
             'crew_pitch_job_price' => 'decimal:2',
             'crew_pitch_paint_cost' => 'decimal:2',
             'crew_pitch_bonus_percent' => 'decimal:2',
+            // Time Tracking Settings
+            'overtime_threshold_weekly' => 'decimal:1',
+            'overtime_multiplier' => 'decimal:2',
+            'break_duration_minutes' => 'integer',
+            'break_required_after_hours' => 'integer',
+            'geofence_radius_feet' => 'integer',
+            'locationiq_api_key' => 'encrypted',
         ];
     }
 

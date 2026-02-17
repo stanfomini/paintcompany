@@ -183,6 +183,11 @@ new class extends Component
 
     public ?int $taskAssignedTo = null;
 
+    // Task subject linking (Step 4)
+    public ?string $taskSubjectType = null;
+
+    public ?int $taskSubjectId = null;
+
     // Context panel
     public bool $showContextPanel = false;
 
@@ -254,6 +259,19 @@ new class extends Component
         $token = auth()->user()->getOrCreateCalendarToken();
 
         return route('calendar.activities', ['token' => $token]);
+    }
+
+    // ============ Contact Searchable List ============
+
+    #[Computed]
+    public function searchableContacts()
+    {
+        return User::query()
+            ->whereIn('type', ['customer', 'agent', 'crew'])
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->limit(200)
+            ->get(['id', 'name', 'type']);
     }
 
     #[On('activity-created')]
@@ -438,7 +456,7 @@ new class extends Component
     public function closeAddTask(): void
     {
         $this->showAddTask = false;
-        $this->reset(['taskTitle', 'taskType', 'taskPriority', 'taskDueAt', 'taskEndsAt', 'taskDescription', 'taskAssignedTo']);
+        $this->reset(['taskTitle', 'taskType', 'taskPriority', 'taskDueAt', 'taskEndsAt', 'taskDescription', 'taskAssignedTo', 'taskSubjectType', 'taskSubjectId']);
         $this->taskType = 'task';
         $this->taskPriority = 'normal';
         $this->resetValidation();
@@ -461,7 +479,7 @@ new class extends Component
             $assignedTo = auth()->id();
         }
 
-        $activity = Activity::create([
+        $data = [
             'user_id' => auth()->id(),
             'assigned_to' => $assignedTo,
             'type' => $this->taskType,
@@ -471,7 +489,18 @@ new class extends Component
             'ends_at' => $this->taskEndsAt ?: null,
             'priority' => $this->taskPriority,
             'is_completed' => false,
-        ]);
+        ];
+
+        // Link to a contact if selected
+        if ($this->taskSubjectType && $this->taskSubjectId) {
+            $validTypes = [User::class, Customer::class];
+            if (in_array($this->taskSubjectType, $validTypes)) {
+                $data['subject_type'] = $this->taskSubjectType;
+                $data['subject_id'] = $this->taskSubjectId;
+            }
+        }
+
+        $activity = Activity::create($data);
 
         app(PriorityScoreService::class)->updateScore($activity);
 
@@ -1011,6 +1040,7 @@ new class extends Component
         @elseif ($view === 'stream')
             {{-- Pure stream view without inbox --}}
             @include('components.planner._activity-stream')
+
         @endif
     </div>
 
@@ -1098,6 +1128,60 @@ new class extends Component
                     <flux:error name="taskAssignedTo" />
                 </flux:field>
                 @endcan
+
+                <flux:field>
+                    <flux:label>{{ __('Link to Contact (Optional)') }}</flux:label>
+                    <div x-data="{
+                        open: false,
+                        search: '',
+                        get filtered() {
+                            if (!this.search) return $wire.searchableContacts.slice(0, 20);
+                            const s = this.search.toLowerCase();
+                            return $wire.searchableContacts.filter(c => c.name.toLowerCase().includes(s)).slice(0, 20);
+                        },
+                        select(contact) {
+                            $wire.set('taskSubjectType', 'App\\\\Models\\\\User');
+                            $wire.set('taskSubjectId', contact.id);
+                            this.open = false;
+                            this.search = contact.name;
+                        },
+                        clear() {
+                            $wire.set('taskSubjectType', null);
+                            $wire.set('taskSubjectId', null);
+                            this.search = '';
+                        }
+                    }">
+                        <div class="relative">
+                            <flux:input
+                                x-model="search"
+                                x-on:focus="open = true"
+                                x-on:click="open = true"
+                                :placeholder="__('Search contacts...')"
+                                icon="user"
+                            />
+                            <template x-if="search">
+                                <button x-on:click="clear()" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </template>
+                        </div>
+                        <div x-show="open" x-on:click.away="open = false" x-cloak class="absolute z-50 mt-1 w-full max-h-48 overflow-auto rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 shadow-lg">
+                            <template x-for="contact in filtered" :key="contact.id">
+                                <button
+                                    type="button"
+                                    x-on:click="select(contact)"
+                                    class="flex w-full items-center gap-2 px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-left"
+                                >
+                                    <span x-text="contact.name" class="flex-1"></span>
+                                    <flux:badge size="sm" x-text="contact.type" />
+                                </button>
+                            </template>
+                            <template x-if="filtered.length === 0">
+                                <div class="px-3 py-2 text-sm text-zinc-500">{{ __('No contacts found') }}</div>
+                            </template>
+                        </div>
+                    </div>
+                </flux:field>
 
                 <flux:field>
                     <flux:label>{{ __('Description (Optional)') }}</flux:label>
@@ -1201,4 +1285,5 @@ new class extends Component
             </div>
         </div>
     </flux:modal>
+
 </div>

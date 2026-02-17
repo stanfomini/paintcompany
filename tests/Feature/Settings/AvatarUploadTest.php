@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 
 test('user can upload avatar', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->create();
 
@@ -22,14 +22,14 @@ test('user can upload avatar', function () {
     $user->refresh();
 
     expect($user->avatar_path)->not->toBeNull();
-    Storage::disk('public')->assertExists($user->avatar_path);
+    Storage::assertExists($user->avatar_path);
 });
 
 test('user can remove avatar', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->create();
-    $path = UploadedFile::fake()->image('avatar.jpg')->store('avatars', 'public');
+    $path = UploadedFile::fake()->image('avatar.jpg')->store('avatars');
     $user->update(['avatar_path' => $path]);
 
     $this->actingAs($user);
@@ -41,11 +41,11 @@ test('user can remove avatar', function () {
     $user->refresh();
 
     expect($user->avatar_path)->toBeNull();
-    Storage::disk('public')->assertMissing($path);
+    Storage::assertMissing($path);
 });
 
 test('avatar upload rejects non-image files', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->create();
 
@@ -57,7 +57,7 @@ test('avatar upload rejects non-image files', function () {
 });
 
 test('avatar upload rejects oversized files', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->create();
 
@@ -83,7 +83,7 @@ test('getAvatarUrl returns null when no avatar', function () {
 });
 
 test('getAvatarUrl returns url when avatar exists', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->create(['avatar_path' => 'avatars/test.jpg']);
 
@@ -91,7 +91,7 @@ test('getAvatarUrl returns url when avatar exists', function () {
 });
 
 test('agent can upload avatar', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->agent()->create();
 
@@ -107,11 +107,11 @@ test('agent can upload avatar', function () {
     $user->refresh();
 
     expect($user->avatar_path)->not->toBeNull();
-    Storage::disk('public')->assertExists($user->avatar_path);
+    Storage::assertExists($user->avatar_path);
 });
 
 test('customer can upload avatar', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->customer()->create();
 
@@ -127,11 +127,11 @@ test('customer can upload avatar', function () {
     $user->refresh();
 
     expect($user->avatar_path)->not->toBeNull();
-    Storage::disk('public')->assertExists($user->avatar_path);
+    Storage::assertExists($user->avatar_path);
 });
 
 test('crew can upload avatar', function () {
-    Storage::fake('public');
+    Storage::fake();
 
     $user = User::factory()->crew()->create();
 
@@ -147,21 +147,21 @@ test('crew can upload avatar', function () {
     $user->refresh();
 
     expect($user->avatar_path)->not->toBeNull();
-    Storage::disk('public')->assertExists($user->avatar_path);
+    Storage::assertExists($user->avatar_path);
 });
 
 test('deleteAvatar cleans up file and nulls column', function () {
-    Storage::fake('public');
+    Storage::fake();
 
-    $path = UploadedFile::fake()->image('avatar.jpg')->store('avatars', 'public');
+    $path = UploadedFile::fake()->image('avatar.jpg')->store('avatars');
     $user = User::factory()->create(['avatar_path' => $path]);
 
-    Storage::disk('public')->assertExists($path);
+    Storage::assertExists($path);
 
     $user->deleteAvatar();
 
     $user->refresh();
 
     expect($user->avatar_path)->toBeNull();
-    Storage::disk('public')->assertMissing($path);
+    Storage::assertMissing($path);
 });

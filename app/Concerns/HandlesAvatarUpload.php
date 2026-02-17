@@ -25,10 +25,10 @@ trait HandlesAvatarUpload
 
         // Delete old avatar if exists
         if ($user->avatar_path) {
-            Storage::disk('public')->delete($user->avatar_path);
+            Storage::delete($user->avatar_path);
         }
 
-        $path = $this->avatar->store('avatars', 'public');
+        $path = $this->avatar->store('avatars', config('filesystems.default'));
 
         // Auto-resize to 256x256 using GD
         $this->resizeAvatar($path);
@@ -50,7 +50,7 @@ trait HandlesAvatarUpload
      */
     protected function resizeAvatar(string $path): void
     {
-        $fullPath = Storage::disk('public')->path($path);
+        $fullPath = Storage::path($path);
 
         if (! file_exists($fullPath)) {
             return;

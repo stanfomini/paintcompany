@@ -50,13 +50,13 @@ new class extends Component {
             'category' => ['required', 'string', 'in:before,after,general'],
         ]);
 
-        $path = $this->photo->store('listing-photos', 'public');
+        $path = $this->photo->store('listing-photos', config('filesystems.default'));
 
         $maxSortOrder = $this->listing->photos()->max('sort_order') ?? -1;
 
         PropertyPhoto::create([
             'property_id' => $this->listing->id,
-            'disk' => 'public',
+            'disk' => config('filesystems.default'),
             'uploaded_by' => auth()->id(),
             'path' => $path,
             'filename' => $this->photo->getClientOriginalName(),

@@ -19,9 +19,11 @@ class VideoRecordingService
             return;
         }
 
+        $diskName = config('filesystems.default');
+
         // Upload all HLS files (manifest + segments)
         foreach (File::files($outputDir) as $file) {
-            Storage::disk('video-recordings')->putFileAs(
+            Storage::putFileAs(
                 $basePath,
                 $file,
                 $file->getFilename()
@@ -30,7 +32,7 @@ class VideoRecordingService
 
         $videoCall->update([
             'recording_path' => "{$basePath}/playlist.m3u8",
-            'recording_disk' => 'video-recordings',
+            'recording_disk' => $diskName,
         ]);
     }
 
@@ -46,17 +48,6 @@ class VideoRecordingService
             return null;
         }
 
-        $disk = Storage::disk('video-recordings');
-        $driver = config('filesystems.disks.video-recordings.driver', 'local');
-
-        if ($driver === 'local') {
-            return $disk->url($videoCall->recording_path);
-        }
-
-        // S3/Wasabi: generate a temporary signed URL (4 hours)
-        return $disk->temporaryUrl(
-            $videoCall->recording_path,
-            now()->addHours(4)
-        );
+        return storage_url($videoCall->recording_path, 240);
     }
 }

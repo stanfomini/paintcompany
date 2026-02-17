@@ -54,6 +54,18 @@ new class extends Component {
             $this->loadPackageTemplates();
         } else {
             $this->loadPackages();
+
+            // Clear selection if the selected package is no longer visible
+            if ($this->selectedPackageId && ! collect($this->packages)->contains('id', $this->selectedPackageId)) {
+                $this->selectedPackageId = null;
+                $this->estimate->update(['selected_package_id' => null]);
+            }
+
+            // Auto-select if only one visible package
+            if (count($this->packages) === 1 && ! $this->selectedPackageId) {
+                $this->selectPackage($this->packages[0]['id']);
+            }
+
             $this->loadOptionalItems();
             $this->loadTemplateAddons();
         }
@@ -70,9 +82,11 @@ new class extends Component {
             ->ordered()
             ->get();
 
-        $paintingTotal = $this->getPaintingTotal();
+        $this->packageTemplates = $templates->map(function (PackageTemplate $template) {
+            // Use tier-specific painting total when estimate has paint tiers
+            $paintTier = $this->estimate->hasPaintTiers() ? $template->tier : null;
+            $paintingTotal = $this->getPaintingTotal($paintTier);
 
-        $this->packageTemplates = $templates->map(function (PackageTemplate $template) use ($paintingTotal) {
             // Use defaultItems (pivot) if available, else fall back to items (legacy)
             $templateItems = $template->defaultItems->isNotEmpty()
                 ? $template->defaultItems
@@ -104,6 +118,25 @@ new class extends Component {
                 ];
             })->toArray();
 
+            // Resolve paint products for this tier
+            $paintProducts = [];
+            if ($paintTier && $this->estimate->hasPaintTiers()) {
+                $seen = [];
+                foreach ($this->estimate->areas as $area) {
+                    foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+                        $product = $surface->getPaintProductForTier($paintTier);
+                        if ($product && ! isset($seen[$product->id])) {
+                            $seen[$product->id] = true;
+                            $paintProducts[] = [
+                                'name' => $product->full_name,
+                                'brand' => $product->brand?->name ?? 'Unknown',
+                                'sheen' => ucfirst($product->sheen ?? ''),
+                            ];
+                        }
+                    }
+                }
+            }
+
             return [
                 'id' => $template->id,
                 'name' => $template->name,
@@ -112,6 +145,7 @@ new class extends Component {
                 'is_default' => $template->is_default,
                 'is_popular' => $template->is_popular,
                 'painting_total' => $paintingTotal,
+                'paint_products' => $paintProducts,
                 'items' => $items,
             ];
         })->toArray();
@@ -124,21 +158,46 @@ new class extends Component {
     }
 
     /**
-     * Get the painting total (areas_subtotal) for the estimate.
+     * Get the painting total for the estimate, optionally for a specific paint tier.
      */
-    protected function getPaintingTotal(): float
+    protected function getPaintingTotal(?string $paintTier = null): float
     {
+        if ($paintTier !== null && $this->estimate->hasPaintTiers()) {
+            return $this->estimate->calculateAreasSubtotalForTier($paintTier);
+        }
+
         return (float) $this->estimate->areas_subtotal;
     }
 
     public function loadPackages(): void
     {
         $packages = $this->estimate->packages()
+            ->where('is_visible', true)
             ->with(['items.itemable'])
             ->orderBy('sort_order')
             ->get();
 
         $this->packages = $packages->map(function (EstimatePackage $package) {
+            // Resolve paint products for this package's tier
+            $paintProducts = [];
+            $paintTier = $package->getPaintTier();
+            if ($paintTier && $this->estimate->hasPaintTiers()) {
+                $seen = [];
+                foreach ($this->estimate->areas as $area) {
+                    foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+                        $product = $surface->getPaintProductForTier($paintTier);
+                        if ($product && ! isset($seen[$product->id])) {
+                            $seen[$product->id] = true;
+                            $paintProducts[] = [
+                                'name' => $product->full_name,
+                                'brand' => $product->brand?->name ?? 'Unknown',
+                                'sheen' => ucfirst($product->sheen ?? ''),
+                            ];
+                        }
+                    }
+                }
+            }
+
             return [
                 'id' => $package->id,
                 'name' => $package->name,
@@ -157,6 +216,7 @@ new class extends Component {
                 'warranty_type' => $package->warranty_type,
                 'is_recommended' => $package->is_recommended,
                 'is_selected' => $package->is_selected,
+                'paint_products' => $paintProducts,
                 'items' => $package->items->map(function (EstimatePackageItem $item) {
                     return [
                         'id' => $item->id,
@@ -206,8 +266,6 @@ new class extends Component {
             return;
         }
 
-        $paintingTotal = (float) $this->estimate->areas_subtotal;
-
         // Map new template tiers to legacy package tiers
         $tierMap = [
             'good' => 'basic',
@@ -217,6 +275,9 @@ new class extends Component {
 
         foreach ($templates as $template) {
             $legacyTier = $tierMap[$template->tier] ?? null;
+            $paintingTotal = $this->getPaintingTotal(
+                $this->estimate->hasPaintTiers() ? $template->tier : null
+            );
 
             if (! $legacyTier) {
                 continue;
@@ -264,7 +325,7 @@ new class extends Component {
             return;
         }
 
-        $package = $this->estimate->packages()->find($packageId);
+        $package = $this->estimate->packages()->where('is_visible', true)->find($packageId);
 
         if (! $package) {
             return;

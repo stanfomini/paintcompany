@@ -48,6 +48,8 @@ it('selects a package when clicked', function () {
         ->basic()
         ->withPricing(1000, 0, 0)
         ->create();
+    // Add second package so auto-select doesn't fire
+    EstimatePackage::factory()->forEstimate($estimate)->standard()->create();
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSet('selectedPackageId', null)
@@ -313,6 +315,8 @@ it('dispatches proceed-to-signature event when package selected', function () {
 it('shows error when proceeding without package selection', function () {
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
+    // Add second package so auto-select doesn't fire
+    EstimatePackage::factory()->forEstimate($estimate)->standard()->create();
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->call('proceedToSignature')
@@ -350,6 +354,8 @@ it('updates estimate selected_package_id when package selected', function () {
 it('shows sign button as disabled when no package selected', function () {
     $estimate = Estimate::factory()->create(['status' => 'sent']);
     EstimatePackage::factory()->forEstimate($estimate)->basic()->create();
+    // Add second package so auto-select doesn't fire
+    EstimatePackage::factory()->forEstimate($estimate)->standard()->create();
 
     Livewire::test('public.proposal-packages', ['estimate' => $estimate])
         ->assertSee('Please select a package above to continue');

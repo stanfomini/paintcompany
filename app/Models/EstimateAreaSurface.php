@@ -36,6 +36,12 @@ class EstimateAreaSurface extends Model
         'is_custom',
         'sort_order',
         'paint_product_id',
+        'material_cost_good',
+        'material_cost_better',
+        'material_cost_best',
+        'paint_product_id_good',
+        'paint_product_id_better',
+        'paint_product_id_best',
         'sale_price',
         'crew_price',
     ];
@@ -57,6 +63,9 @@ class EstimateAreaSurface extends Model
             'is_custom' => 'boolean',
             'coats' => 'integer',
             'sort_order' => 'integer',
+            'material_cost_good' => 'decimal:2',
+            'material_cost_better' => 'decimal:2',
+            'material_cost_best' => 'decimal:2',
             'sale_price' => 'decimal:2',
             'crew_price' => 'decimal:2',
         ];
@@ -73,10 +82,15 @@ class EstimateAreaSurface extends Model
                 $scopeType = $surface->area?->scope_type ?? 'interior';
                 $settings = CompanySetting::getInstance();
 
-                // Use custom rate if set, otherwise company effective rate
-                $hourlyRate = ($surface->hourly_labor_rate && $surface->hourly_labor_rate > 0)
-                    ? (float) $surface->hourly_labor_rate
-                    : $settings->getEffectiveHourlyRateForScope($scopeType);
+                // Use custom rate if set, otherwise estimate override or company effective rate
+                if ($surface->hourly_labor_rate && $surface->hourly_labor_rate > 0) {
+                    $hourlyRate = (float) $surface->hourly_labor_rate;
+                } else {
+                    $estimate = $surface->area?->estimate;
+                    $hourlyRate = ($estimate && $estimate->hasHourlyRateOverride())
+                        ? $estimate->getOverrideEffectiveHourlyRate($scopeType)
+                        : $settings->getEffectiveHourlyRateForScope($scopeType);
+                }
 
                 $surface->hourly_labor_rate = $hourlyRate;
                 $surface->labor_cost = (float) ($surface->labor_hours ?? 0) * $hourlyRate;
@@ -108,10 +122,13 @@ class EstimateAreaSurface extends Model
                 // Apply substrate multipliers: (quantity / rate) × prep_multiplier × paint_multiplier × coat_multiplier
                 $surface->labor_hours = ($surface->quantity / $surface->production_rate_value) * $prepMultiplier * $paintMultiplier * $coatMultiplier;
 
-                // Labor cost = labor_hours * effective hourly rate from CompanySetting
+                // Labor cost = labor_hours * effective hourly rate (estimate override or CompanySetting)
                 $scopeType = $surface->area?->scope_type ?? 'interior';
                 $settings = CompanySetting::getInstance();
-                $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $estimate = $surface->area?->estimate;
+                $effectiveRate = ($estimate && $estimate->hasHourlyRateOverride())
+                    ? $estimate->getOverrideEffectiveHourlyRate($scopeType)
+                    : $settings->getEffectiveHourlyRateForScope($scopeType);
 
                 // Store the hourly rate for reference
                 $surface->hourly_labor_rate = $effectiveRate;
@@ -318,10 +335,13 @@ class EstimateAreaSurface extends Model
     ): static {
         $coats = $coats ?? $rate->default_coats ?? 1;
 
-        // Get effective rate from Company Settings based on area scope
+        // Get effective rate: estimate override → Company Settings based on area scope
         $scopeType = $area->scope_type ?? 'interior';
         $settings = CompanySetting::getInstance();
-        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $estimate = $area->estimate;
+        $effectiveRate = ($estimate && $estimate->hasHourlyRateOverride())
+            ? $estimate->getOverrideEffectiveHourlyRate($scopeType)
+            : $settings->getEffectiveHourlyRateForScope($scopeType);
 
         return static::create([
             'area_id' => $area->id,
@@ -410,6 +430,41 @@ class EstimateAreaSurface extends Model
     }
 
     // =========================================================================
+    // TIER PRICING METHODS
+    // =========================================================================
+
+    /**
+     * Get the material cost for a specific tier.
+     * Falls back to the standard material_cost if tier column is null.
+     */
+    public function getMaterialCostForTier(?string $tier): float
+    {
+        if ($tier === null) {
+            return (float) $this->material_cost;
+        }
+
+        $tierColumn = "material_cost_{$tier}";
+        $value = $this->{$tierColumn};
+
+        return $value !== null ? (float) $value : (float) $this->material_cost;
+    }
+
+    /**
+     * Get the paint product for a specific tier.
+     */
+    public function getPaintProductForTier(?string $tier): ?PaintProduct
+    {
+        if ($tier === null) {
+            return $this->paintProduct;
+        }
+
+        $tierColumn = "paint_product_id_{$tier}";
+        $productId = $this->{$tierColumn};
+
+        return $productId ? PaintProduct::find($productId) : $this->paintProduct;
+    }
+
+    // =========================================================================
     // CUSTOM PRICING METHODS
     // =========================================================================
 
@@ -485,18 +540,21 @@ class EstimateAreaSurface extends Model
      * NO margins applied - this is pure cost.
      *
      * Formula: labor + cleanup + sundries + materials (with taxes)
+     *
+     * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
      */
-    public function getFullCOGS(): float
+    public function getFullCOGS(?string $tier = null): float
     {
         $settings = CompanySetting::getInstance();
         $scopeType = $this->area?->scope_type ?? 'interior';
 
         $laborHours = (float) $this->labor_hours;
         $laborCost = (float) $this->labor_cost;
-        $materialCost = (float) $this->material_cost;
+        $materialCost = $this->getMaterialCostForTier($tier);
 
         // This surface's proportional share of cleanup and sundries
         // Use effective rate (with payroll burden) to match area-level calculation
+        // Cleanup and sundries are the SAME across all tiers (labor doesn't change)
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
         $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scopeType);
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
@@ -512,10 +570,12 @@ class EstimateAreaSurface extends Model
      *
      * NOTE: This is for DISPLAY purposes only (e.g., proposal surface breakdown,
      * package items). Estimate totals use area-level margin via EstimateArea::getCustomerPrice().
+     *
+     * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
      */
-    public function getCustomerPrice(): float
+    public function getCustomerPrice(?string $tier = null): float
     {
-        $cogs = $this->getFullCOGS();
+        $cogs = $this->getFullCOGS($tier);
 
         if ($cogs <= 0) {
             return 0.0;

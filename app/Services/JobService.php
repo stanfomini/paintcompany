@@ -43,6 +43,7 @@ class JobService
         $job = Job::create([
             'deal_id' => $deal->id,
             'estimate_id' => $estimate->id,
+            'sales_person_id' => $deal->assigned_to,
             'job_number' => Job::generateJobNumber(),
             'stage' => 'estimate_accepted',
             'title' => $deal->title,
@@ -295,6 +296,9 @@ class JobService
 
         // Update cost card status to completed
         app(JobCostCardService::class)->updateCardOnJobCompletion($job);
+
+        // Auto-create commission entries for job completion
+        app(CommissionService::class)->createFromJob($job);
 
         $this->plannerAutomation->onJobCompleted($job);
 

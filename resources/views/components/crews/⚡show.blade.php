@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\CrewSignedContract;
 use App\Models\ServiceCategory;
 use App\Models\User;
@@ -97,6 +98,17 @@ new class extends Component
     public $editWorkersCompDocumentFile = null;
 
     public string $editWorkersCompDocumentType = 'url';
+
+    // Quick add activity form
+    public bool $showAddActivity = false;
+
+    public string $activityTitle = '';
+
+    public string $activityType = 'task';
+
+    public ?string $activityDueAt = null;
+
+    public string $activityDescription = '';
 
     public function mount(User $user): void
     {
@@ -243,7 +255,7 @@ new class extends Component
 
         // Handle insurance photo
         if ($this->editInsurancePhotoType === 'file' && $this->editInsurancePhotoFile) {
-            $path = $this->editInsurancePhotoFile->store('crew-documents', 'public');
+            $path = $this->editInsurancePhotoFile->store('crew-documents', config('filesystems.default'));
             $data['insurance_photo'] = $path;
             $data['insurance_photo_type'] = 'file';
         } elseif ($this->editInsurancePhotoType === 'url' && $this->editInsurancePhotoUrl) {
@@ -253,7 +265,7 @@ new class extends Component
 
         // Handle W9 photo
         if ($this->editW9PhotoType === 'file' && $this->editW9PhotoFile) {
-            $path = $this->editW9PhotoFile->store('crew-documents', 'public');
+            $path = $this->editW9PhotoFile->store('crew-documents', config('filesystems.default'));
             $data['w9_photo'] = $path;
             $data['w9_photo_type'] = 'file';
         } elseif ($this->editW9PhotoType === 'url' && $this->editW9PhotoUrl) {
@@ -263,7 +275,7 @@ new class extends Component
 
         // Handle Workers' Comp document
         if ($this->editWorkersCompDocumentType === 'file' && $this->editWorkersCompDocumentFile) {
-            $path = $this->editWorkersCompDocumentFile->store('crew-documents', 'public');
+            $path = $this->editWorkersCompDocumentFile->store('crew-documents', config('filesystems.default'));
             $data['workers_comp_document'] = $path;
             $data['workers_comp_document_type'] = 'file';
         } elseif ($this->editWorkersCompDocumentType === 'url' && $this->editWorkersCompDocumentUrl) {
@@ -337,6 +349,84 @@ new class extends Component
     public function onboardingProgress(): int
     {
         return $this->user->crewProfile?->getOnboardingProgressPercent() ?? 0;
+    }
+
+    #[Computed]
+    public function crewActivities()
+    {
+        return Activity::query()
+            ->where('subject_type', User::class)
+            ->where('subject_id', $this->user->id)
+            ->with(['user', 'assignee'])
+            ->orderByRaw('is_completed ASC')
+            ->orderByRaw('CASE WHEN due_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('due_at')
+            ->orderBy('created_at', 'desc')
+            ->limit(50)
+            ->get();
+    }
+
+    #[Computed]
+    public function activityTypes(): array
+    {
+        return Activity::TYPES;
+    }
+
+    public function toggleActivityComplete(int $activityId): void
+    {
+        $activity = Activity::query()
+            ->where('subject_type', User::class)
+            ->where('subject_id', $this->user->id)
+            ->findOrFail($activityId);
+
+        if ($activity->is_completed) {
+            $activity->markAsIncomplete();
+        } else {
+            $activity->markAsCompleted();
+        }
+
+        unset($this->crewActivities);
+    }
+
+    public function openAddActivity(): void
+    {
+        $this->showAddActivity = true;
+    }
+
+    public function closeAddActivity(): void
+    {
+        $this->showAddActivity = false;
+        $this->reset(['activityTitle', 'activityType', 'activityDueAt', 'activityDescription']);
+        $this->activityType = 'task';
+        $this->resetValidation();
+    }
+
+    public function saveActivity(): void
+    {
+        abort_unless(auth()->user()->can('people.edit'), 403);
+
+        $this->validate([
+            'activityTitle' => ['required', 'string', 'max:255'],
+            'activityType' => ['required', 'in:task,note,call,email,meeting,other'],
+            'activityDueAt' => ['nullable', 'date'],
+            'activityDescription' => ['nullable', 'string', 'max:5000'],
+        ]);
+
+        Activity::create([
+            'user_id' => auth()->id(),
+            'assigned_to' => auth()->id(),
+            'subject_type' => User::class,
+            'subject_id' => $this->user->id,
+            'type' => $this->activityType,
+            'title' => $this->activityTitle,
+            'description' => $this->activityDescription ?: null,
+            'due_at' => $this->activityDueAt ?: null,
+            'is_completed' => false,
+        ]);
+
+        unset($this->crewActivities);
+        session()->flash('success', __('Activity added successfully.'));
+        $this->closeAddActivity();
     }
 
     public function confirmOnboardingCall(): void
@@ -424,6 +514,13 @@ new class extends Component
                     <flux:badge size="sm" color="yellow">{{ __('Expiring Soon') }}</flux:badge>
                 @endif
             </div>
+            <div class="flex items-center gap-2">
+                @can('people.edit')
+                    <flux:button size="sm" icon="plus" wire:click="openAddActivity">
+                        {{ __('Add Activity') }}
+                    </flux:button>
+                @endcan
+            </div>
         </div>
 
         @if (session('success'))
@@ -433,7 +530,7 @@ new class extends Component
         @endif
 
         <!-- Stats Overview -->
-        <div class="grid gap-4 md:grid-cols-4 mb-6">
+        <div class="grid gap-4 md:grid-cols-5 mb-6">
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                 <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Crew Size') }}</flux:text>
                 <flux:heading size="xl" class="mt-1">{{ $user->crewProfile?->crew_size ?? 1 }}</flux:heading>
@@ -456,11 +553,15 @@ new class extends Component
                 <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Completed Jobs') }}</flux:text>
                 <flux:heading size="xl" class="mt-1">{{ $this->completedJobs->count() }}</flux:heading>
             </div>
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Open Tasks') }}</flux:text>
+                <flux:heading size="xl" class="mt-1">{{ $this->crewActivities->where('is_completed', false)->count() }}</flux:heading>
+            </div>
         </div>
 
         <!-- Tab Navigation -->
         <div class="border-b border-zinc-200 dark:border-zinc-700 mb-6">
-            <nav class="-mb-px flex space-x-8">
+            <nav class="-mb-px flex space-x-8 overflow-x-auto">
                 <button
                     wire:click="setTab('overview')"
                     class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'overview' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
@@ -498,6 +599,12 @@ new class extends Component
                     class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'completed-jobs' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
                 >
                     Completed Jobs ({{ $this->completedJobs->count() }})
+                </button>
+                <button
+                    wire:click="setTab('activities')"
+                    class="py-4 px-1 border-b-2 font-medium text-sm {{ $activeTab === 'activities' ? 'border-zinc-800 dark:border-zinc-200 text-zinc-900 dark:text-white' : 'border-transparent text-zinc-500 hover:text-zinc-700 hover:border-zinc-300 dark:hover:text-zinc-300' }}"
+                >
+                    {{ __('Activities') }} ({{ $this->crewActivities->count() }})
                 </button>
             </nav>
         </div>
@@ -592,6 +699,35 @@ new class extends Component
                 <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
                     <flux:heading size="sm" class="mb-4">{{ __('Bio') }}</flux:heading>
                     <flux:text>{{ $user->crewProfile->bio }}</flux:text>
+                </div>
+            @endif
+
+            {{-- Recent Activities on Overview --}}
+            @if ($this->crewActivities->where('is_completed', false)->isNotEmpty())
+                <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <flux:heading size="sm">{{ __('Open Tasks') }}</flux:heading>
+                        <flux:button size="xs" variant="ghost" wire:click="setTab('activities')">{{ __('View All') }}</flux:button>
+                    </div>
+                    <div class="space-y-2">
+                        @foreach ($this->crewActivities->where('is_completed', false)->take(5) as $activity)
+                            <div wire:key="overview-activity-{{ $activity->id }}" class="flex items-center gap-3 p-2 rounded {{ $activity->isOverdue() ? 'bg-red-50 dark:bg-red-900/10' : 'bg-zinc-50 dark:bg-zinc-900/50' }}">
+                                <button
+                                    wire:click="toggleActivityComplete({{ $activity->id }})"
+                                    class="w-5 h-5 shrink-0 rounded border-2 flex items-center justify-center border-zinc-300 dark:border-zinc-600 hover:border-green-500"
+                                >
+                                </button>
+                                <div class="flex-1 min-w-0">
+                                    <flux:text class="text-sm {{ $activity->isOverdue() ? 'text-red-600' : '' }}">{{ $activity->title }}</flux:text>
+                                </div>
+                                @if ($activity->due_at)
+                                    <flux:text size="xs" class="{{ $activity->isOverdue() ? 'text-red-500' : 'text-zinc-500' }}">
+                                        {{ $activity->due_at->format('M j') }}
+                                    </flux:text>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
                 </div>
             @endif
         @endif
@@ -908,16 +1044,16 @@ new class extends Component
                             @if ($user->crewProfile->drivers_license_front)
                                 <div>
                                     <flux:text class="text-sm text-zinc-500 mb-2">{{ __('Front') }}</flux:text>
-                                    <a href="{{ Storage::url($user->crewProfile->drivers_license_front) }}" target="_blank" class="block">
-                                        <img src="{{ Storage::url($user->crewProfile->drivers_license_front) }}" alt="{{ __('Driver\'s License Front') }}" class="h-32 w-auto rounded-lg border border-zinc-200 object-cover shadow-sm transition hover:shadow-md dark:border-zinc-700" />
+                                    <a href="{{ storage_url($user->crewProfile->drivers_license_front) }}" target="_blank" class="block">
+                                        <img src="{{ storage_url($user->crewProfile->drivers_license_front) }}" alt="{{ __('Driver\'s License Front') }}" class="h-32 w-auto rounded-lg border border-zinc-200 object-cover shadow-sm transition hover:shadow-md dark:border-zinc-700" />
                                     </a>
                                 </div>
                             @endif
                             @if ($user->crewProfile->drivers_license_back)
                                 <div>
                                     <flux:text class="text-sm text-zinc-500 mb-2">{{ __('Back') }}</flux:text>
-                                    <a href="{{ Storage::url($user->crewProfile->drivers_license_back) }}" target="_blank" class="block">
-                                        <img src="{{ Storage::url($user->crewProfile->drivers_license_back) }}" alt="{{ __('Driver\'s License Back') }}" class="h-32 w-auto rounded-lg border border-zinc-200 object-cover shadow-sm transition hover:shadow-md dark:border-zinc-700" />
+                                    <a href="{{ storage_url($user->crewProfile->drivers_license_back) }}" target="_blank" class="block">
+                                        <img src="{{ storage_url($user->crewProfile->drivers_license_back) }}" alt="{{ __('Driver\'s License Back') }}" class="h-32 w-auto rounded-lg border border-zinc-200 object-cover shadow-sm transition hover:shadow-md dark:border-zinc-700" />
                                     </a>
                                 </div>
                             @endif
@@ -996,7 +1132,7 @@ new class extends Component
                                             {{ __('View Insurance Document') }}
                                         </a>
                                     @else
-                                        <a href="{{ Storage::url($user->crewProfile->insurance_photo) }}" target="_blank" class="text-blue-600 hover:underline">
+                                        <a href="{{ storage_url($user->crewProfile->insurance_photo) }}" target="_blank" class="text-blue-600 hover:underline">
                                             {{ __('View Insurance Document') }}
                                         </a>
                                     @endif
@@ -1052,7 +1188,7 @@ new class extends Component
                                             {{ __("View Workers' Comp Document") }}
                                         </a>
                                     @else
-                                        <a href="{{ Storage::url($user->crewProfile->workers_comp_document) }}" target="_blank" class="text-blue-600 hover:underline">
+                                        <a href="{{ storage_url($user->crewProfile->workers_comp_document) }}" target="_blank" class="text-blue-600 hover:underline">
                                             {{ __("View Workers' Comp Document") }}
                                         </a>
                                     @endif
@@ -1281,6 +1417,89 @@ new class extends Component
                     <flux:icon name="check-circle" class="mx-auto h-12 w-12 text-zinc-400" />
                     <flux:heading size="sm" class="mt-4">{{ __('No completed jobs') }}</flux:heading>
                     <flux:text class="mt-2 text-zinc-500">{{ __('This crew has not completed any jobs yet.') }}</flux:text>
+                </div>
+            @endif
+        @endif
+
+        @if ($activeTab === 'activities')
+            <div class="flex items-center justify-between mb-4">
+                <flux:heading size="sm">{{ __('Activities') }}</flux:heading>
+                @can('people.edit')
+                    <flux:button size="sm" icon="plus" wire:click="openAddActivity">{{ __('Add Activity') }}</flux:button>
+                @endcan
+            </div>
+            @if ($this->crewActivities->isNotEmpty())
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg divide-y divide-zinc-200 dark:divide-zinc-700">
+                    @foreach ($this->crewActivities as $activity)
+                        <div
+                            wire:key="activity-{{ $activity->id }}"
+                            class="p-4 flex items-start gap-4 {{ $activity->is_completed ? 'bg-zinc-50 dark:bg-zinc-900/50' : '' }}"
+                        >
+                            <div class="shrink-0 pt-0.5">
+                                <button
+                                    wire:click="toggleActivityComplete({{ $activity->id }})"
+                                    class="w-5 h-5 rounded border-2 flex items-center justify-center transition-colors {{ $activity->is_completed ? 'bg-green-500 border-green-500 text-white' : 'border-zinc-300 dark:border-zinc-600 hover:border-green-500' }}"
+                                >
+                                    @if ($activity->is_completed)
+                                        <flux:icon name="check" class="w-3 h-3" />
+                                    @endif
+                                </button>
+                            </div>
+
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div>
+                                        <flux:text class="font-medium {{ $activity->is_completed ? 'line-through text-zinc-500' : '' }} {{ $activity->isOverdue() ? 'text-red-600' : '' }}">
+                                            {{ $activity->title }}
+                                        </flux:text>
+                                        @if ($activity->description)
+                                            <flux:text size="sm" class="text-zinc-500 line-clamp-2 mt-1">
+                                                {{ $activity->description }}
+                                            </flux:text>
+                                        @endif
+                                    </div>
+                                    <div class="shrink-0">
+                                        <flux:badge size="sm" color="zinc">{{ $activity->type_label }}</flux:badge>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-wrap items-center gap-3 mt-2">
+                                    @if ($activity->due_at)
+                                        <div class="flex items-center gap-1 text-xs {{ $activity->isOverdue() ? 'text-red-500' : 'text-zinc-500' }}">
+                                            <flux:icon name="calendar" class="w-3 h-3" />
+                                            <span>{{ $activity->due_at->format('M j, Y') }}</span>
+                                            @if ($activity->isOverdue())
+                                                <span class="font-medium">{{ __('(Overdue)') }}</span>
+                                            @endif
+                                        </div>
+                                    @endif
+
+                                    @if ($activity->assignee)
+                                        <div class="flex items-center gap-1 text-xs text-zinc-500">
+                                            <flux:icon name="user" class="w-3 h-3" />
+                                            <span>{{ $activity->assignee->name }}</span>
+                                        </div>
+                                    @endif
+
+                                    @if ($activity->is_completed && $activity->completed_at)
+                                        <div class="flex items-center gap-1 text-xs text-green-600">
+                                            <flux:icon name="check-circle" class="w-3 h-3" />
+                                            <span>{{ __('Completed') }} {{ $activity->completed_at->diffForHumans() }}</span>
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
+                    <flux:icon name="clipboard-document-list" class="mx-auto h-12 w-12 text-zinc-400" />
+                    <flux:heading size="sm" class="mt-4">{{ __('No activities') }}</flux:heading>
+                    <flux:text class="mt-2 text-zinc-500">{{ __('No activities for this crew yet.') }}</flux:text>
+                    @can('people.edit')
+                        <flux:button size="sm" class="mt-4" wire:click="openAddActivity">{{ __('Add Activity') }}</flux:button>
+                    @endcan
                 </div>
             @endif
         @endif
@@ -1540,5 +1759,47 @@ new class extends Component
                 <flux:button wire:click="emailCompliancePack" variant="primary" icon="paper-airplane">{{ __('Send') }}</flux:button>
             </div>
         </div>
+    </flux:modal>
+
+    {{-- Add Activity Modal --}}
+    <flux:modal wire:model="showAddActivity" variant="flyout" class="max-w-md">
+        <form wire:submit="saveActivity">
+            <flux:heading size="lg" class="mb-4">{{ __('Add Activity') }}</flux:heading>
+
+            <div class="space-y-4">
+                <flux:field>
+                    <flux:label>{{ __('Title') }}</flux:label>
+                    <flux:input wire:model="activityTitle" :placeholder="__('Follow up call')" />
+                    <flux:error name="activityTitle" />
+                </flux:field>
+
+                <flux:field>
+                    <flux:label>{{ __('Type') }}</flux:label>
+                    <flux:select wire:model="activityType">
+                        @foreach ($this->activityTypes as $value => $label)
+                            <option value="{{ $value }}">{{ $label }}</option>
+                        @endforeach
+                    </flux:select>
+                    <flux:error name="activityType" />
+                </flux:field>
+
+                <flux:field>
+                    <flux:label>{{ __('Due Date (Optional)') }}</flux:label>
+                    <flux:input wire:model="activityDueAt" type="date" />
+                    <flux:error name="activityDueAt" />
+                </flux:field>
+
+                <flux:field>
+                    <flux:label>{{ __('Description (Optional)') }}</flux:label>
+                    <flux:textarea wire:model="activityDescription" rows="3" :placeholder="__('Add notes...')" />
+                    <flux:error name="activityDescription" />
+                </flux:field>
+            </div>
+
+            <div class="mt-6 flex justify-end gap-3">
+                <flux:button variant="ghost" wire:click="closeAddActivity" type="button">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary">{{ __('Add Activity') }}</flux:button>
+            </div>
+        </form>
     </flux:modal>
 </div>

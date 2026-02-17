@@ -376,17 +376,68 @@ class Activity extends Model
     public function getSubjectUrl(): ?string
     {
         return match ($this->subject_type) {
-            Deal::class => route('deals.show', $this->subject_id),
+            Deal::class => $this->getDealProfileUrl(),
             Customer::class => route('customers.show', $this->subject_id),
-            Job::class => route('jobs.show', $this->subject_id),
-            Estimate::class => route('estimates.show', $this->subject_id),
+            Job::class => $this->getJobProfileUrl(),
+            Estimate::class => $this->getEstimateProfileUrl(),
             User::class => match ($this->subject?->type) {
                 'agent' => route('agents.show', $this->subject_id),
                 'crew' => route('crews.show', $this->subject_id),
+                'customer' => $this->subject->customerProfile
+                    ? route('customers.show', $this->subject->customerProfile->id)
+                    : null,
                 default => null,
             },
             default => null,
         };
+    }
+
+    /**
+     * Get the customer profile URL for a deal-linked activity.
+     */
+    protected function getDealProfileUrl(): ?string
+    {
+        $deal = $this->subject ?? Deal::find($this->subject_id);
+
+        if ($deal?->customer_id) {
+            return route('customers.show', ['customer' => $deal->customer_id, 'deal' => $deal->id]);
+        }
+
+        if ($deal?->agent_id) {
+            return route('agents.show', $deal->agent_id);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the customer profile URL for a job-linked activity.
+     */
+    protected function getJobProfileUrl(): ?string
+    {
+        $job = $this->subject ?? Job::find($this->subject_id);
+        $deal = $job?->deal;
+
+        if ($deal?->customer_id) {
+            return route('customers.show', ['customer' => $deal->customer_id, 'deal' => $deal->id]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the customer profile URL for an estimate-linked activity.
+     */
+    protected function getEstimateProfileUrl(): ?string
+    {
+        $estimate = $this->subject ?? Estimate::find($this->subject_id);
+        $deal = $estimate?->deal;
+
+        if ($deal?->customer_id) {
+            return route('customers.show', ['customer' => $deal->customer_id, 'deal' => $deal->id]);
+        }
+
+        return null;
     }
 
     public function getSubjectLabel(): ?string

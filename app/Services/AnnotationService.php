@@ -120,8 +120,12 @@ class AnnotationService
             return;
         }
 
-        $fullPath = Storage::disk($disk)->path($originalPath);
-        $sourceImage = $this->createImageFromFile($fullPath, $photo->mime_type);
+        // Download to temp file for GD processing
+        $tempFile = tempnam(sys_get_temp_dir(), 'annot_src_');
+        file_put_contents($tempFile, Storage::disk($disk)->get($originalPath));
+
+        $sourceImage = $this->createImageFromFile($tempFile, $photo->mime_type);
+        @unlink($tempFile);
 
         if (! $sourceImage) {
             return;
@@ -173,8 +177,12 @@ class AnnotationService
             return;
         }
 
-        $fullPath = Storage::disk($disk)->path($originalPath);
-        $sourceImage = $this->createImageFromFile($fullPath, $photo->mime_type);
+        // Download to temp file for GD processing
+        $tempFile = tempnam(sys_get_temp_dir(), 'annot_layer_');
+        file_put_contents($tempFile, Storage::disk($disk)->get($originalPath));
+
+        $sourceImage = $this->createImageFromFile($tempFile, $photo->mime_type);
+        @unlink($tempFile);
 
         if (! $sourceImage) {
             return;

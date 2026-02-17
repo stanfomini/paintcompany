@@ -5,6 +5,7 @@ use App\Models\Estimate;
 use App\Models\User;
 use App\Notifications\EstimateProposalSent;
 use App\Notifications\EstimateRejected;
+use App\Services\EstimateTierPricingService;
 use App\Services\MeetingService;
 use Illuminate\Contracts\View\View;
 use Livewire\Attributes\Computed;
@@ -323,6 +324,21 @@ new class extends Component {
         unset($this->meetingActivities);
         session()->flash('success', __('Meeting cancelled.'));
     }
+
+    /**
+     * Get tier totals if the estimate uses paint tier pricing.
+     *
+     * @return array{good: float, better: float, best: float}|null
+     */
+    #[Computed]
+    public function tierTotals(): ?array
+    {
+        if (! $this->estimate->hasPaintTiers()) {
+            return null;
+        }
+
+        return app(EstimateTierPricingService::class)->calculateTierTotals($this->estimate);
+    }
 }; ?>
 
 <div>
@@ -588,7 +604,18 @@ new class extends Component {
                                                     : $area->surfaces->where('is_included', true)->sum('labor_hours');
                                             @endphp
                                             <div class="text-right">
-                                                <div class="text-lg font-bold text-blue-600 dark:text-blue-400">${{ number_format($areaCustomerPrice, 2) }}</div>
+                                                @if ($this->estimate->hasPaintTiers() && !$area->is_fixed_price)
+                                                    <div class="flex items-center gap-2">
+                                                        @foreach (['good' => 'G', 'better' => 'B', 'best' => 'Be'] as $tierKey => $tierAbbrev)
+                                                            <div class="text-center">
+                                                                <div class="text-[10px] text-zinc-400 uppercase">{{ $tierAbbrev }}</div>
+                                                                <div class="text-xs font-semibold {{ $tierKey === 'better' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-400' }}">${{ number_format($area->getCustomerPrice($tierKey), 0) }}</div>
+                                                            </div>
+                                                        @endforeach
+                                                    </div>
+                                                @else
+                                                    <div class="text-lg font-bold text-blue-600 dark:text-blue-400">${{ number_format($areaCustomerPrice, 2) }}</div>
+                                                @endif
                                                 <div class="text-xs text-zinc-500">{{ number_format($totalLaborHours, 1) }} hrs</div>
                                             </div>
                                             <svg x-show="!expanded" class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
@@ -611,7 +638,10 @@ new class extends Component {
 
                                                 @if ($fpLaborHours > 0)
                                                     @php
-                                                        $hourlyRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+                                                        $fpEstimate = $area->estimate;
+                                                        $hourlyRate = ($fpEstimate && $fpEstimate->hasHourlyRateOverride())
+                                                            ? $fpEstimate->getOverrideEffectiveHourlyRate($scopeType)
+                                                            : $settings->getEffectiveHourlyRateForScope($scopeType);
                                                         $cleanupHours = $settings->calculateCleanupHours($fpLaborHours, $scopeType);
                                                         $cleanupCost = $cleanupHours * $hourlyRate;
                                                         $sundriesCost = $settings->calculateSundriesCost($fpLaborHours, $scopeType);
@@ -685,12 +715,15 @@ new class extends Component {
                                                 @php
                                                     $settings = \App\Models\CompanySetting::getInstance();
                                                     $scopeType = $area->scope_type ?? 'interior';
-                                                    $hourlyWage = $settings->getHourlyWageForScope($scopeType);
+                                                    $areaEstimate = $area->estimate;
+                                                    $effectiveRate = ($areaEstimate && $areaEstimate->hasHourlyRateOverride())
+                                                        ? $areaEstimate->getOverrideEffectiveHourlyRate($scopeType)
+                                                        : $settings->getEffectiveHourlyRateForScope($scopeType);
                                                     $includedSurfaces = $area->surfaces->where('is_included', true);
                                                     $totalLaborCost = $includedSurfaces->sum('labor_cost');
                                                     $totalMaterialCost = $includedSurfaces->sum('material_cost');
                                                     $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
-                                                    $cleanupCost = $cleanupHours * $hourlyWage;
+                                                    $cleanupCost = $cleanupHours * $effectiveRate;
                                                     $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scopeType);
                                                     $addonCost = (float) $area->addons()->sum('total_price');
                                                     $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonCost);
@@ -702,7 +735,7 @@ new class extends Component {
                                                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                                                         <div>
                                                             <div class="text-zinc-500 dark:text-zinc-400">{{ __('Labor') }}</div>
-                                                            <div class="font-medium">{{ number_format($totalLaborHours, 1) }} hrs × ${{ number_format($hourlyWage, 2) }} = ${{ number_format($totalLaborCost, 2) }}</div>
+                                                            <div class="font-medium">{{ number_format($totalLaborHours, 1) }} hrs × ${{ number_format($effectiveRate, 2) }} = ${{ number_format($totalLaborCost, 2) }}</div>
                                                         </div>
                                                         <div>
                                                             <div class="text-zinc-500 dark:text-zinc-400">{{ __('Cleanup') }}</div>
@@ -1188,6 +1221,21 @@ new class extends Component {
                         </div>
                     </div>
                 </flux:card>
+            @endif
+
+            {{-- Paint Tier Pricing Summary --}}
+            @if ($this->tierTotals)
+                <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                    <h4 class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Paint Tier Pricing') }}</h4>
+                    <div class="mt-2 grid grid-cols-3 gap-3">
+                        @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $tierLabel)
+                            <div class="text-center">
+                                <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $tierLabel }}</div>
+                                <div class="text-sm font-semibold text-zinc-900 dark:text-white">${{ number_format($this->tierTotals[$tierKey], 2) }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
             @endif
 
             {{-- Package Builder Section --}}

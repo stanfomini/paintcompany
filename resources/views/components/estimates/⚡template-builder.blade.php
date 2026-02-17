@@ -5,9 +5,9 @@ use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaAddon;
+use App\Models\EstimateTemplateCategory;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateTemplate;
-use App\Models\EstimateTemplateCategory;
 use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
 use App\Models\ProductionRate;
@@ -15,9 +15,12 @@ use App\Models\Substrate;
 use App\Services\EstimateAmendmentService;
 use App\Services\EstimatePackageGeneratorService;
 use App\Services\EstimateTemplateService;
+use App\Services\EstimateTierPricingService;
+use App\Services\TemplatePricingService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component
@@ -41,13 +44,15 @@ new class extends Component
      */
     public array $areas = [];
 
-    public float $taxRate = 0;
+    public ?float $taxRate = 0;
 
-    public float $discountAmount = 0;
+    public ?float $discountAmount = 0;
 
-    public float $marginDiscountPercent = 0;
+    public ?float $marginDiscountPercent = 0;
 
-    public float $depositPercent = 30;
+    public ?float $hourlyRateOverride = null;
+
+    public ?float $depositPercent = 30;
 
     public string $notes = '';
 
@@ -81,15 +86,17 @@ new class extends Component
 
     public string $scopeFilter = 'interior';
 
-    // Template picker modal state
-    public bool $showTemplatePicker = false;
 
-    // AI Build state
-    public bool $aiBuildInProgress = false;
+    // Tier paint pricing (Good / Better / Best)
+    public bool $useTierPricing = false;
 
-    public ?string $aiBuildStatus = null;
+    /** @var array<string, array{mode: string, default_paint_product_id: int|null, paint_by_category: array}> */
+    public array $tierPaintConfig = [
+        'good' => ['mode' => 'single', 'default_paint_product_id' => null, 'paint_by_category' => []],
+        'better' => ['mode' => 'single', 'default_paint_product_id' => null, 'paint_by_category' => []],
+        'best' => ['mode' => 'single', 'default_paint_product_id' => null, 'paint_by_category' => []],
+    ];
 
-    public ?string $aiBuildMessage = null;
 
     protected function rules(): array
     {
@@ -101,6 +108,7 @@ new class extends Component
             'taxRate' => ['required', 'numeric', 'min:0', 'max:100'],
             'discountAmount' => ['required', 'numeric', 'min:0'],
             'marginDiscountPercent' => ['required', 'numeric', 'min:0', 'max:15'],
+            'hourlyRateOverride' => ['nullable', 'numeric', 'min:10', 'max:100'],
             'depositPercent' => ['required', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'validUntil' => ['nullable', 'date', ...($this->isEditing ? [] : ['after_or_equal:today'])],
@@ -158,6 +166,7 @@ new class extends Component
             $this->taxRate = (float) $estimate->tax_rate;
             $this->discountAmount = (float) $estimate->discount_amount;
             $this->marginDiscountPercent = (float) ($estimate->margin_discount_percent ?? 0);
+            $this->hourlyRateOverride = $estimate->hourly_rate_override !== null ? (float) $estimate->hourly_rate_override : null;
             $this->depositPercent = (float) $estimate->deposit_percent;
             $this->notes = $estimate->notes ?? '';
             $this->validUntil = $estimate->valid_until?->format('Y-m-d');
@@ -174,6 +183,17 @@ new class extends Component
                 $this->paintMode = 'category';
             } elseif ($this->defaultPaintProductId) {
                 $this->paintMode = 'single';
+            }
+
+            // Hydrate tier pricing config
+            if ($estimate->hasPaintTiers()) {
+                $this->useTierPricing = true;
+                foreach (['good', 'better', 'best'] as $tier) {
+                    $config = $estimate->getPaintTierConfig($tier);
+                    if ($config) {
+                        $this->tierPaintConfig[$tier] = $config;
+                    }
+                }
             }
 
             // Load existing template usages (template mode only)
@@ -196,21 +216,6 @@ new class extends Component
             }
         }
 
-        // Restore AI build state from cache (survives page refresh)
-        if ($this->estimate) {
-            $cached = \Illuminate\Support\Facades\Cache::get("ai-build-estimate:{$this->estimate->id}");
-            if ($cached && in_array($cached['status'] ?? '', ['building', 'sending'])) {
-                // Ignore stale build state older than 10 minutes
-                $startedAt = isset($cached['started_at']) ? \Carbon\Carbon::parse($cached['started_at']) : null;
-                if ($startedAt && $startedAt->diffInMinutes(now()) > 10) {
-                    \Illuminate\Support\Facades\Cache::forget("ai-build-estimate:{$this->estimate->id}");
-                } else {
-                    $this->aiBuildInProgress = true;
-                    $this->aiBuildStatus = $cached['status'];
-                    $this->aiBuildMessage = $cached['message'] ?? 'AI is building your estimate...';
-                }
-            }
-        }
     }
 
     /**
@@ -361,7 +366,7 @@ new class extends Component
 
                 $settings = CompanySetting::getInstance();
                 $scopeType = $area->scope_type ?? 'interior';
-                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $hourlyWage = $this->getEffectiveRateForScope($scopeType);
 
                 $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
                 $cleanupCost = $cleanupHours * $hourlyWage;
@@ -369,7 +374,7 @@ new class extends Component
 
                 $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonTotal);
                 $cogs = $cogsResult['cogs'];
-                $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+                $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
                 $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
                 $this->selectedTemplates[] = [
@@ -518,7 +523,7 @@ new class extends Component
                 // Recalculate the breakdown using PBP formula with actual surface data
                 $settings = CompanySetting::getInstance();
                 $scopeType = $area->scope_type ?? 'interior';
-                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $hourlyWage = $this->getEffectiveRateForScope($scopeType);
 
                 $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
                 $cleanupCost = $cleanupHours * $hourlyWage; // Effective rate = base wage × payroll burden
@@ -527,7 +532,7 @@ new class extends Component
                 // Calculate COGS with taxes
                 $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonTotal);
                 $cogs = $cogsResult['cogs'];
-                $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+                $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
                 $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
                 // Update template entry with calculated values from surfaces
@@ -639,7 +644,7 @@ new class extends Component
 
             $settings = CompanySetting::getInstance();
             $scopeType = $area->scope_type ?? 'interior';
-            $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+            $hourlyWage = $this->getEffectiveRateForScope($scopeType);
 
             $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
             $cleanupCost = $cleanupHours * $hourlyWage;
@@ -647,7 +652,7 @@ new class extends Component
 
             $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonTotal);
             $cogs = $cogsResult['cogs'];
-            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
             $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
             $this->selectedTemplates[] = [
@@ -757,394 +762,32 @@ new class extends Component
         ];
     }
 
+
     /**
-     * Get templates grouped by category.
-     *
-     * @return Collection<string, Collection<int, EstimateTemplate>>
+     * Get a configured TemplatePricingService instance.
      */
-    public function getTemplatesByCategoryProperty(): Collection
+    protected function pricingService(): TemplatePricingService
     {
-        $categories = EstimateTemplateCategory::query()
-            ->active()
-            ->with(['templates' => function ($q) {
-                $q->active()->with('productionRate')->orderBy('sort_order');
-
-                // Filter by scope type if not 'all'
-                if ($this->scopeFilter === 'interior') {
-                    $q->whereIn('scope_type', [EstimateTemplate::SCOPE_TYPE_INTERIOR, EstimateTemplate::SCOPE_TYPE_BOTH]);
-                } elseif ($this->scopeFilter === 'exterior') {
-                    $q->whereIn('scope_type', [EstimateTemplate::SCOPE_TYPE_EXTERIOR, EstimateTemplate::SCOPE_TYPE_BOTH]);
-                }
-            }])
-            ->orderBy('sort_order')
-            ->get();
-
-        return $categories->mapWithKeys(function (EstimateTemplateCategory $category) {
-            return [$category->type => $category->templates];
-        });
+        return app(TemplatePricingService::class)->withConfig([
+            'paintMode' => $this->paintMode,
+            'defaultPaintProductId' => $this->defaultPaintProductId,
+            'paintByCategory' => $this->paintByCategory,
+            'projectScope' => $this->projectScope,
+            'marginDiscountPercent' => $this->marginDiscountPercent,
+            'hourlyRateOverride' => $this->hourlyRateOverride,
+        ]);
     }
 
-    /**
-     * Get categories for tabs.
-     *
-     * @return Collection<int, EstimateTemplateCategory>
-     */
-    public function getCategoriesProperty(): Collection
-    {
-        return EstimateTemplateCategory::query()
-            ->active()
-            ->orderBy('sort_order')
-            ->get();
-    }
-
-    /**
-     * Calculate detailed cost breakdown for a template using PBP formula.
-     *
-     * For templates with surface_ratios in metadata, calculates each surface
-     * (walls, ceiling, baseboards, doors, etc.) using their specific production rates.
-     *
-     * PBP Formula per surface:
-     * 1. labor_hours = (quantity / production_rate) × prep_multiplier × paint_multiplier × coat_multiplier
-     * 2. labor_cost = labor_hours × scope_effective_hourly_rate
-     * 3. cleanup_hours = labor_hours / cleanup_ratio
-     * 4. cleanup_cost = cleanup_hours × scope_effective_hourly_rate
-     * 5. sundries_cost = labor_hours × scope_sundries_rate
-     * 6. material_cost = (sqft × coats / coverage) × paint_price × material_multiplier + recycle_fee
-     * 7. base_total = labor_cost + cleanup_cost + sundries_cost + material_cost
-     * 8. with_margins = COGS / (margin% / 100) where margin% is scope-specific from CompanySetting
-     *
-     * @param  array<string, mixed>  $options  Optional overrides: substrate_id, paint_product_id
-     * @return array{labor_hours: float, labor_cost: float, cleanup_hours: float, cleanup_cost: float, sundries_cost: float, material_cost: float, base_total: float, with_margins: float, surfaces?: array, substrate_id?: int, paint_product_id?: int}
-     */
-
-    /**
-     * Infer the surface category from surface_type and scope when no production rate is set.
-     */
     protected function inferSurfaceCategory(string $surfaceType, string $scopeType): string
     {
-        if ($scopeType === 'exterior') {
-            return match ($surfaceType) {
-                'walls' => 'body',
-                'ceiling' => 'eaves',
-                'trim' => 'trim',
-                'doors' => 'exterior_doors',
-                'windows' => 'windows',
-                default => 'body',
-            };
-        }
-
-        return match ($surfaceType) {
-            'walls' => 'walls',
-            'ceiling' => 'ceiling',
-            'trim' => 'baseboard',
-            'doors' => 'doors',
-            'windows' => 'windows',
-            default => 'walls',
-        };
+        return $this->pricingService()->inferSurfaceCategory($surfaceType, $scopeType);
     }
 
     public function getTemplateCostBreakdown(int $templateId, float $quantity, int $coats, array $options = []): array
     {
-        $template = EstimateTemplate::with(['productionRate', 'substrate', 'defaultPaintProduct'])->find($templateId);
-        $settings = CompanySetting::getInstance();
-
-        // Handle templates without production rates (fixed price, per sqft, etc.)
-        if (! $template) {
-            return [
-                'labor_hours' => 0,
-                'labor_cost' => 0,
-                'cleanup_hours' => 0,
-                'cleanup_cost' => 0,
-                'sundries_cost' => 0,
-                'material_cost' => 0,
-                'base_total' => 0,
-                'with_margins' => 0,
-            ];
-        }
-
-        $metadata = $template->metadata ?? [];
-        $surfaceRatios = $metadata['surface_ratios'] ?? null;
-
-        // If template has surface_ratios, calculate each surface separately
-        if ($surfaceRatios && is_array($surfaceRatios)) {
-            return $this->calculateSurfaceBasedBreakdown($template, $surfaceRatios, $quantity, $coats, $settings, $options);
-        }
-
-        // Fallback to simple calculation for templates without surface ratios
-        return $this->calculateSimpleBreakdown($template, $quantity, $coats, $settings, $options);
+        return $this->pricingService()->getTemplateCostBreakdown($templateId, $quantity, $coats, $options);
     }
 
-    /**
-     * Map a surface name to its category for paint product resolution.
-     *
-     * @return string Category key (walls, ceiling, trim, doors, body, fascia, eaves)
-     */
-    protected function mapSurfaceToCategory(string $surfaceName): string
-    {
-        $name = strtolower($surfaceName);
-
-        return match (true) {
-            str_contains($name, 'wall') => 'walls',
-            str_contains($name, 'ceiling') => 'ceiling',
-            str_contains($name, 'baseboard'), str_contains($name, 'crown'), str_contains($name, 'trim'), str_contains($name, 'molding') => 'trim',
-            str_contains($name, 'door') => 'doors',
-            str_contains($name, 'body'), str_contains($name, 'siding') => 'body',
-            str_contains($name, 'fascia') => 'fascia',
-            str_contains($name, 'eave'), str_contains($name, 'soffit') => 'eaves',
-            default => 'walls', // Default to walls
-        };
-    }
-
-    /**
-     * Resolve the paint product ID for a specific surface.
-     * Priority depends on paintMode:
-     * - single: surface override → defaultPaintProductId → company category default
-     * - category: surface override → paintByCategory → company category default → defaultPaintProductId
-     *
-     * @param  array<string, mixed>  $options  Optional overrides: paint_product_id
-     */
-    protected function resolvePaintForSurface(string $surfaceName, array $options): ?int
-    {
-        // 1. Direct surface override (highest priority - always wins)
-        if (! empty($options['paint_product_id'])) {
-            return (int) $options['paint_product_id'];
-        }
-
-        $category = $this->mapSurfaceToCategory($surfaceName);
-        $settings = CompanySetting::getInstance();
-
-        if ($this->paintMode === 'single') {
-            // Single mode: use default paint for everything
-            // 2a. Estimate default paint
-            if ($this->defaultPaintProductId) {
-                return $this->defaultPaintProductId;
-            }
-
-            // 3a. Company default for this category
-            $companyDefault = $settings->getDefaultPaintForCategory($category, $this->projectScope);
-            if ($companyDefault) {
-                return $companyDefault;
-            }
-        } else {
-            // Category mode: use per-category selections
-            // 2b. Category-level override from paintByCategory
-            if (! empty($this->paintByCategory[$category])) {
-                return (int) $this->paintByCategory[$category];
-            }
-
-            // 3b. Company default for this category
-            $companyDefault = $settings->getDefaultPaintForCategory($category, $this->projectScope);
-            if ($companyDefault) {
-                return $companyDefault;
-            }
-
-            // 4b. Fall back to estimate default paint
-            if ($this->defaultPaintProductId) {
-                return $this->defaultPaintProductId;
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * Calculate breakdown for templates with surface_ratios (rooms).
-     * Each surface is calculated individually using its specific production rate.
-     *
-     * Now includes substrate multipliers and paint product pricing.
-     *
-     * @param  array<string, array>  $surfaceRatios
-     * @param  array<string, mixed>  $options  Optional overrides: substrate_id, paint_product_id
-     * @return array{labor_hours: float, labor_cost: float, cleanup_hours: float, cleanup_cost: float, sundries_cost: float, material_cost: float, base_total: float, with_margins: float, surfaces: array, substrate_id: ?int, paint_product_id: ?int}
-     */
-    protected function calculateSurfaceBasedBreakdown(
-        EstimateTemplate $template,
-        array $surfaceRatios,
-        float $roomSqft,
-        int $coats,
-        CompanySetting $settings,
-        array $options = []
-    ): array {
-        $scopeType = $template->scope_type ?? 'interior';
-        // Use effective hourly rate (base wage × payroll burden) for COGS
-        $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
-
-        // Get substrate from options or template default
-        $substrateId = $options['substrate_id'] ?? $template->substrate_id;
-
-        $totalLaborHours = 0;
-        $totalLaborCost = 0;
-        $totalMaterialCost = 0;
-        $surfaces = [];
-
-        foreach ($surfaceRatios as $surfaceName => $surfaceConfig) {
-            // Resolve paint product for this specific surface using cascade
-            $surfacePaintProductId = $this->resolvePaintForSurface($surfaceName, $options);
-
-            $surfaceOptions = [
-                'substrate_id' => $substrateId,
-                'paint_product_id' => $surfacePaintProductId,
-            ];
-
-            $surfaceResult = $this->calculateSurfaceCost(
-                $surfaceName,
-                $surfaceConfig,
-                $roomSqft,
-                $coats,
-                $hourlyWage, // Effective rate (base wage × payroll burden)
-                $settings,
-                $surfaceOptions
-            );
-
-            $totalLaborHours += $surfaceResult['labor_hours'];
-            $totalLaborCost += $surfaceResult['labor_cost'];
-            $totalMaterialCost += $surfaceResult['material_cost'];
-            $surfaces[$surfaceName] = $surfaceResult;
-        }
-
-        // Calculate cleanup and sundries based on total labor hours
-        $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scopeType);
-        $cleanupCost = $cleanupHours * $hourlyWage; // Effective rate = base wage × payroll burden
-        $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scopeType);
-
-        // Calculate COGS with taxes (material tax and labor tax if applicable)
-        $cogsResult = $settings->calculateCOGS($totalLaborCost, $cleanupCost, $sundriesCost, $totalMaterialCost);
-        $cogs = $cogsResult['cogs'];
-
-        // Apply scope-specific margin (with discount if applicable): OTD = COGS / (margin% / 100)
-        $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
-        $withMargins = round($cogs / ($effectiveMargin / 100), 2);
-
-        // Get primary paint product ID (for backward compatibility, use first resolved or template default)
-        $primaryPaintProductId = $options['paint_product_id'] ?? $this->defaultPaintProductId ?? $template->default_paint_product_id;
-
-        return [
-            'labor_hours' => round($totalLaborHours, 2),
-            'labor_cost' => round($totalLaborCost, 2),
-            'cleanup_hours' => round($cleanupHours, 2),
-            'cleanup_cost' => round($cleanupCost, 2),
-            'sundries_cost' => round($sundriesCost, 2),
-            'material_cost' => round($totalMaterialCost, 2),
-            'material_tax' => $cogsResult['material_tax'],
-            'labor_tax' => $cogsResult['labor_tax'],
-            'base_total' => $cogs, // COGS = labor + cleanup + sundries + materials + taxes
-            'with_margins' => round($withMargins, 2),
-            'surfaces' => $surfaces,
-            'substrate_id' => $substrateId,
-            'paint_product_id' => $primaryPaintProductId,
-        ];
-    }
-
-    /**
-     * Calculate cost for a single surface based on its config.
-     *
-     * Now includes substrate multipliers and paint product pricing.
-     *
-     * @param  array<string, mixed>  $config
-     * @param  array<string, mixed>  $options  Optional: substrate_id, paint_product_id overrides
-     * @return array{name: string, quantity: float, unit: string, labor_hours: float, labor_cost: float, material_cost: float, substrate_multiplier: float}
-     */
-    protected function calculateSurfaceCost(
-        string $surfaceName,
-        array $config,
-        float $roomSqft,
-        int $coats,
-        float $hourlyRate,
-        CompanySetting $settings,
-        array $options = []
-    ): array {
-        $type = $config['type'] ?? 'sqft';
-
-        // Handle fixed-price surfaces (e.g., closets)
-        if ($type === 'fixed') {
-            return [
-                'name' => ucfirst(str_replace('_', ' ', $surfaceName)),
-                'quantity' => 1,
-                'unit' => 'fixed',
-                'labor_hours' => 0,
-                'labor_cost' => 0,
-                'material_cost' => (float) ($config['price'] ?? 0),
-                'substrate_multiplier' => 1.0,
-            ];
-        }
-
-        // Calculate surface quantity based on config
-        $quantity = $this->calculateSurfaceQuantity($config, $roomSqft);
-        $unit = $type === 'unit' ? 'units' : ($type === 'lnft' ? 'lnft' : 'sqft');
-
-        // Get production rate for this surface
-        $rate = null;
-        if (isset($config['rate_id'])) {
-            $rate = ProductionRate::find($config['rate_id']);
-        }
-
-        if (! $rate) {
-            // Fallback: estimate labor at 200 sqft/hr for walls
-            $productionRate = 200;
-        } else {
-            $productionRate = $rate->production_rate;
-        }
-
-        // Get substrate multipliers (prep and paint time adjustments)
-        $substrate = null;
-        $prepMultiplier = 1.0;
-        $paintMultiplier = 1.0;
-
-        if (isset($options['substrate_id'])) {
-            $substrate = Substrate::find($options['substrate_id']);
-        }
-
-        if ($substrate) {
-            $prepMultiplier = (float) ($substrate->prep_time_multiplier ?? 1.0);
-            $paintMultiplier = (float) ($substrate->paint_time_multiplier ?? 1.0);
-        }
-
-        // Combined substrate multiplier for display
-        $substrateMultiplier = $prepMultiplier * $paintMultiplier;
-
-        // Get coat multiplier
-        $coatMultiplier = $rate ? $rate->getCoatMultiplier($coats) : ($coats > 1 ? 1.8 : 1.0);
-
-        // Calculate labor hours with substrate multipliers applied
-        // Formula: (quantity / rate) × prep_multiplier × paint_multiplier × coat_multiplier
-        $laborHours = ($quantity / $productionRate) * $prepMultiplier * $paintMultiplier * $coatMultiplier;
-        $laborCost = $laborHours * $hourlyRate;
-
-        // No fallback material cost - material_cost_per_unit was removed from ProductionRate
-        // Material costs now come exclusively from PaintProduct selection
-        $fallbackMaterialCost = null;
-
-        // Calculate material cost from PaintProduct if available, else use production rate fallback
-        $materialCost = $this->calculateMaterialCostForSurface(
-            $quantity,
-            $coats,
-            $options['paint_product_id'] ?? null,
-            $substrate,
-            $settings,
-            $fallbackMaterialCost,
-            $coatMultiplier
-        );
-
-        return [
-            'name' => ucfirst(str_replace('_', ' ', $surfaceName)),
-            'quantity' => round($quantity, 1),
-            'unit' => $unit,
-            'labor_hours' => round($laborHours, 2),
-            'labor_cost' => round($laborCost, 2),
-            'material_cost' => round($materialCost, 2),
-            'substrate_multiplier' => round($substrateMultiplier, 2),
-        ];
-    }
-
-    /**
-     * Calculate material cost for a surface using PaintProduct pricing.
-     *
-     * Formula: (sqft × coats / coverage) × paint_price × material_multiplier + recycle_fee
-     *
-     * Falls back to production rate's material_cost_per_unit if no paint product is linked.
-     *
-     * @param  float|null  $fallbackMaterialCostPerUnit  From production rate, used if no paint product
-     */
     protected function calculateMaterialCostForSurface(
         float $quantity,
         int $coats,
@@ -1154,226 +797,11 @@ new class extends Component
         ?float $fallbackMaterialCostPerUnit = null,
         float $coatMultiplier = 1.0
     ): float {
-        // Try to get paint product (with in-memory cache to avoid repeated queries)
-        static $paintProductCache = [];
-        $paintProduct = null;
-        if ($paintProductId) {
-            if (! array_key_exists($paintProductId, $paintProductCache)) {
-                $paintProductCache[$paintProductId] = PaintProduct::find($paintProductId);
-            }
-            $paintProduct = $paintProductCache[$paintProductId];
-        }
-
-        if (! $paintProduct) {
-            // No fallback - material_cost_per_unit was removed from ProductionRate
-            // Material costs must come from PaintProduct selection
-            // If no paint product is configured, material cost is 0
-            return 0.0;
-        }
-
-        // Calculate gallons needed using proper coverage method
-        // Use brush_roll coverage as default (most common application method)
-        $coverage = $paintProduct->getCoverage('brush_roll');
-        if ($coverage <= 0) {
-            $coverage = 400; // Fallback
-        }
-        $totalSqft = $quantity * $coats;
-        $gallonsNeeded = $totalSqft / $coverage;
-
-        // Apply material multiplier from substrate (e.g., rough surfaces need more paint)
-        $materialMultiplier = $substrate ? (float) ($substrate->material_multiplier ?? 1.0) : 1.0;
-        $gallonsNeeded = $gallonsNeeded * $materialMultiplier;
-
-        // Round up to nearest gallon for ordering
-        $gallonsRounded = (int) ceil($gallonsNeeded);
-
-        // Calculate paint cost
-        $pricePerGallon = (float) ($paintProduct->price_per_gallon ?? 50.00);
-        $paintCost = $gallonsRounded * $pricePerGallon;
-
-        // Add recycle fee
-        $recycleFee = $gallonsRounded * (float) ($settings->recycle_fee_per_gallon ?? 0.54);
-
-        return $paintCost + $recycleFee;
-    }
-
-    /**
-     * Calculate surface quantity from room sqft using surface config.
-     *
-     * @param  array<string, mixed>  $config
-     */
-    protected function calculateSurfaceQuantity(array $config, float $roomSqft): float
-    {
-        $type = $config['type'] ?? 'sqft';
-
-        // Ratio-based (e.g., walls = 1.0 × roomSqft, ceiling = 0.9 × roomSqft)
-        if (isset($config['ratio'])) {
-            return $roomSqft * (float) $config['ratio'];
-        }
-
-        // Per 100 sqft (e.g., baseboards = 28 lnft per 100 sqft)
-        if (isset($config['per_100sqft'])) {
-            return ($roomSqft / 100) * (float) $config['per_100sqft'];
-        }
-
-        // Per linear foot (e.g., fence = 12 sqft per lnft)
-        if (isset($config['per_lnft'])) {
-            return $roomSqft * (float) $config['per_lnft'];
-        }
-
-        // Fixed count (e.g., doors = 1)
-        if (isset($config['count'])) {
-            return (float) $config['count'];
-        }
-
-        return $roomSqft;
-    }
-
-    /**
-     * Simple calculation for templates without surface ratios.
-     *
-     * PBP Formula:
-     * 1. COGS = Labor + Cleanup + Sundries + Materials + Material Tax + Labor Tax
-     * 2. OTD = COGS × (1 + markup%)
-     *
-     * Note: Payroll burden is NOT applied to the hourly wage - it's factored into the markup.
-     *
-     * @param  array<string, mixed>  $options  Optional overrides: substrate_id, paint_product_id
-     * @return array{labor_hours: float, labor_cost: float, cleanup_hours: float, cleanup_cost: float, sundries_cost: float, material_cost: float, base_total: float, with_margins: float, substrate_id: ?int, paint_product_id: ?int}
-     */
-    protected function calculateSimpleBreakdown(
-        EstimateTemplate $template,
-        float $quantity,
-        int $coats,
-        CompanySetting $settings,
-        array $options = []
-    ): array {
-        // Handle fixed-price templates with full cost tracking
-        if (! $template->productionRate) {
-            $scopeType = $template->scope_type ?? 'interior';
-
-            // Check if template has cost tracking data
-            $hasCosting = $template->estimated_labor_hours !== null
-                || $template->labor_cost !== null
-                || $template->material_cost !== null;
-
-            if ($hasCosting) {
-                // Use the new cost calculation method
-                $breakdown = $template->calculateFixedPrice($scopeType);
-
-                // For fixed templates, quantity is typically 1 (or ignored)
-                // but support quantity multiplier for items like "per room" charges
-                $multiplier = $quantity > 1 ? $quantity : 1;
-
-                return [
-                    'labor_hours' => $breakdown['labor_hours'] * $multiplier,
-                    'labor_cost' => $breakdown['labor_cost'] * $multiplier,
-                    'cleanup_hours' => 0, // Fixed items don't have cleanup
-                    'cleanup_cost' => 0,
-                    'sundries_cost' => 0, // Included in material_cost if applicable
-                    'material_cost' => $breakdown['material_cost'] * $multiplier,
-                    'material_tax' => 0, // Can add if needed
-                    'labor_tax' => 0,
-                    'base_total' => $breakdown['cogs'] * $multiplier,
-                    'with_margins' => $breakdown['final_price'] * $multiplier,
-                    'margin_percent' => $breakdown['margin_percent'],
-                    'profit' => $breakdown['profit'] * $multiplier,
-                    'substrate_id' => null,
-                    'paint_product_id' => null,
-                ];
-            }
-
-            // Legacy fixed-price without cost tracking
-            $price = $template->calculatePrice($quantity, $coats);
-
-            return [
-                'labor_hours' => 0,
-                'labor_cost' => 0,
-                'cleanup_hours' => 0,
-                'cleanup_cost' => 0,
-                'sundries_cost' => 0,
-                'material_cost' => 0,
-                'material_tax' => 0,
-                'labor_tax' => 0,
-                'base_total' => $price,
-                'with_margins' => $price,
-                'margin_percent' => null,
-                'profit' => null,
-                'substrate_id' => null,
-                'paint_product_id' => null,
-            ];
-        }
-
-        $rate = $template->productionRate;
-        $scopeType = $template->scope_type ?? 'interior';
-
-        // Get substrate from options or template default
-        $substrateId = $options['substrate_id'] ?? $template->substrate_id;
-        $paintProductId = $options['paint_product_id'] ?? $template->default_paint_product_id;
-
-        // Get substrate multipliers
-        $substrate = $substrateId ? Substrate::find($substrateId) : null;
-        $prepMultiplier = $substrate ? (float) ($substrate->prep_time_multiplier ?? 1.0) : 1.0;
-        $paintMultiplier = $substrate ? (float) ($substrate->paint_time_multiplier ?? 1.0) : 1.0;
-        $materialMultiplier = $substrate ? (float) ($substrate->material_multiplier ?? 1.0) : 1.0;
-
-        // Get coat multiplier (1 coat = 1.0, 2 coats = 1.8, 3 coats = 2.5)
-        $coatMultiplier = $rate->getCoatMultiplier($coats);
-
-        // 1. Calculate labor hours with substrate multipliers
-        $laborHours = ($quantity / $rate->production_rate) * $prepMultiplier * $paintMultiplier * $coatMultiplier;
-
-        // 2. Get effective hourly rate (base wage × payroll burden)
-        $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
-
-        // 3. Calculate labor cost
-        $laborCost = $laborHours * $hourlyWage;
-
-        // 4. Calculate cleanup hours and cost
-        $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
-        $cleanupCost = $cleanupHours * $hourlyWage;
-
-        // 5. Calculate sundries cost
-        $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
-
-        // 6. Calculate material cost from PaintProduct if available
-        // No fallback - material_cost_per_unit was removed from ProductionRate
-        $materialCost = $this->calculateMaterialCostForSurface(
-            $quantity,
-            $coats,
-            $paintProductId,
-            $substrate,
-            $settings,
-            null, // No fallback material cost
-            $coatMultiplier
+        return $this->pricingService()->calculateMaterialCostForSurface(
+            $quantity, $coats, $paintProductId, $substrate, $settings, $fallbackMaterialCostPerUnit, $coatMultiplier
         );
-
-        // 7. Calculate COGS with taxes
-        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
-        $cogs = $cogsResult['cogs'];
-
-        // 8. Apply scope-specific margin (with discount): OTD = COGS / (margin% / 100)
-        $marginPercent = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
-        $withMargins = round($cogs / ($marginPercent / 100), 2);
-        $profit = round($withMargins - $cogs, 2);
-
-        return [
-            'labor_hours' => round($laborHours, 2),
-            'labor_cost' => round($laborCost, 2),
-            'cleanup_hours' => round($cleanupHours, 2),
-            'cleanup_cost' => round($cleanupCost, 2),
-            'sundries_cost' => round($sundriesCost, 2),
-            'material_cost' => round($materialCost, 2),
-            'material_tax' => $cogsResult['material_tax'],
-            'labor_tax' => $cogsResult['labor_tax'],
-            'base_total' => $cogs, // COGS = labor + cleanup + sundries + materials + taxes
-            'with_margins' => round($withMargins, 2),
-            'margin_percent' => $marginPercent,
-            'profit' => $profit,
-            'substrate_id' => $substrateId,
-            'paint_product_id' => $paintProductId,
-        ];
     }
+
 
     /**
      * Add a template to the selected list.
@@ -1512,7 +940,7 @@ new class extends Component
         if ($laborHours > 0) {
             $scope = $template->scope_type ?? 'interior';
             $settings = CompanySetting::getInstance();
-            $laborCost = $laborHours * $settings->getEffectiveHourlyRateForScope($scope);
+            $laborCost = $laborHours * $this->getEffectiveRateForScope($scope);
         }
 
         $this->selectedTemplates[] = [
@@ -1718,7 +1146,7 @@ new class extends Component
     public function estimatedNetProfitPercent(): float
     {
         $settings = CompanySetting::getInstance();
-        $effectiveMargin = min(99, $settings->getMarginPercentForScope($this->projectScope) + $this->marginDiscountPercent);
+        $effectiveMargin = min(99, $settings->getMarginPercentForScope($this->projectScope) + ($this->marginDiscountPercent ?? 0));
 
         // Gross profit % = 1 - (COGS/price) = 1 - (effectiveMargin/100)
         $grossProfitPercent = 1 - ($effectiveMargin / 100);
@@ -1749,10 +1177,111 @@ new class extends Component
     {
         // Clamp to [0, min(15, maxAllowableDiscount)]
         $max = min(15, $this->maxAllowableDiscount);
-        $this->marginDiscountPercent = max(0, min($max, $this->marginDiscountPercent));
+        $this->marginDiscountPercent = max(0, min($max, $this->marginDiscountPercent ?? 0));
 
         // Recalculate all areas/templates with new effective margin
         $this->recalculateAllPricesWithDiscount();
+    }
+
+    protected function getEffectiveRateForScope(string $scopeType): float
+    {
+        return $this->pricingService()->getEffectiveRateForScope($scopeType);
+    }
+
+    /**
+     * Handle hourly rate override changes - recalculate all COGS and prices.
+     */
+    public function updatedHourlyRateOverride(): void
+    {
+        // Null or empty means "use defaults"
+        if ($this->hourlyRateOverride === null || $this->hourlyRateOverride === '') {
+            $this->hourlyRateOverride = null;
+            $this->recalculateAllCOGSWithOverride();
+
+            return;
+        }
+
+        // Only recalculate when value is in valid range — don't clamp mid-typing
+        $value = (float) $this->hourlyRateOverride;
+        if ($value >= 10 && $value <= 100) {
+            $this->recalculateAllCOGSWithOverride();
+        }
+    }
+
+    /**
+     * Recalculate all area/template COGS when the hourly rate override changes.
+     * Unlike margin discount (which only reapplies margin), this must recalculate labor costs.
+     */
+    protected function recalculateAllCOGSWithOverride(): void
+    {
+        $settings = CompanySetting::getInstance();
+
+        // Recalculate areas
+        foreach ($this->areas as $index => $area) {
+            if ($area['is_fixed_price'] ?? false) {
+                continue;
+            }
+
+            $scopeType = $area['scope_type'] ?? $this->projectScope;
+            $effectiveRate = $this->getEffectiveRateForScope($scopeType);
+
+            // Recalculate labor cost from hours
+            $laborHours = (float) ($area['labor_hours'] ?? 0);
+            $laborCost = $laborHours * $effectiveRate;
+
+            // Recalculate cleanup cost
+            $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
+            $cleanupCost = $cleanupHours * $effectiveRate;
+            $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
+            $materialCost = (float) ($area['material_cost'] ?? 0);
+            $addonCost = (float) ($area['addon_cost'] ?? 0);
+
+            $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost + $addonCost);
+            $cogs = $cogsResult['cogs'];
+
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
+            $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+            $this->areas[$index]['labor_cost'] = round($laborCost, 2);
+            $this->areas[$index]['cleanup_hours'] = round($cleanupHours, 2);
+            $this->areas[$index]['cleanup_cost'] = round($cleanupCost, 2);
+            $this->areas[$index]['sundries_cost'] = round($sundriesCost, 2);
+            $this->areas[$index]['base_total'] = round($cogs, 2);
+            $this->areas[$index]['with_margins'] = $withMargins;
+            $this->areas[$index]['price'] = $withMargins;
+        }
+
+        // Recalculate selectedTemplates
+        foreach ($this->selectedTemplates as $index => $templateData) {
+            if ($templateData['is_fixed_price'] ?? false) {
+                continue;
+            }
+
+            $scopeType = $templateData['scope_type'] ?? $this->projectScope;
+            $effectiveRate = $this->getEffectiveRateForScope($scopeType);
+
+            $laborHours = (float) ($templateData['labor_hours'] ?? 0);
+            $laborCost = $laborHours * $effectiveRate;
+
+            $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
+            $cleanupCost = $cleanupHours * $effectiveRate;
+            $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
+            $materialCost = (float) ($templateData['material_cost'] ?? 0);
+
+            $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+            $cogs = $cogsResult['cogs'];
+
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
+            $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+            $this->selectedTemplates[$index]['labor_cost'] = round($laborCost, 2);
+            $this->selectedTemplates[$index]['cleanup_hours'] = round($cleanupHours, 2);
+            $this->selectedTemplates[$index]['cleanup_cost'] = round($cleanupCost, 2);
+            $this->selectedTemplates[$index]['sundries_cost'] = round($sundriesCost, 2);
+            $this->selectedTemplates[$index]['base_total'] = round($cogs, 2);
+            $this->selectedTemplates[$index]['with_margins'] = $withMargins;
+            $this->selectedTemplates[$index]['price'] = $withMargins;
+        }
     }
 
     /**
@@ -1770,7 +1299,7 @@ new class extends Component
                 continue;
             }
             $scopeType = $area['scope_type'] ?? $this->projectScope;
-            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
             $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
             $this->areas[$index]['with_margins'] = $withMargins;
@@ -1784,7 +1313,7 @@ new class extends Component
                 continue;
             }
             $scopeType = $templateData['scope_type'] ?? $this->projectScope;
-            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+            $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
             $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
             $this->selectedTemplates[$index]['with_margins'] = $withMargins;
@@ -1808,28 +1337,36 @@ new class extends Component
     // ===== AREA MANAGEMENT METHODS =====
 
     /**
-     * Open template picker modal.
+     * Handle template selection from the picker child component.
      */
-    public function openTemplatePicker(): void
+    #[On('add-template-from-picker')]
+    public function onAddTemplateFromPicker(int $templateId): void
     {
-        $this->showTemplatePicker = true;
-    }
-
-    /**
-     * Close template picker modal.
-     */
-    public function closeTemplatePicker(): void
-    {
-        $this->showTemplatePicker = false;
-    }
-
-    /**
-     * Add area template directly to the estimate.
-     */
-    public function addAreaFromTemplate(int $templateId): void
-    {
-        $this->showTemplatePicker = false;
         $this->addTemplate($templateId);
+    }
+
+    /**
+     * Handle fixed price template selection from the picker child component.
+     */
+    #[On('add-fixed-price-from-picker')]
+    public function onAddFixedPriceFromPicker(int $nestedTemplateId): void
+    {
+        $this->addFixedPriceTemplate($nestedTemplateId);
+    }
+
+    /**
+     * Handle paint config changes from the paint selector child component.
+     */
+    #[On('paint-config-changed')]
+    public function onPaintConfigChanged(array $config): void
+    {
+        $this->paintMode = $config['paintMode'] ?? $this->paintMode;
+        $this->defaultPaintProductId = $config['defaultPaintProductId'] ?? $this->defaultPaintProductId;
+        $this->paintByCategory = $config['paintByCategory'] ?? $this->paintByCategory;
+        $this->useTierPricing = $config['useTierPricing'] ?? $this->useTierPricing;
+        $this->tierPaintConfig = $config['tierPaintConfig'] ?? $this->tierPaintConfig;
+
+        $this->recalculateAllPrices();
     }
 
     /**
@@ -1843,7 +1380,8 @@ new class extends Component
             paintMode: $this->paintMode,
             paintProductId: $this->defaultPaintProductId,
             paintByCategory: $this->paintByCategory,
-            marginDiscountPercent: $this->marginDiscountPercent,
+            marginDiscountPercent: $this->marginDiscountPercent ?? 0,
+            hourlyRateOverride: $this->hourlyRateOverride,
         );
     }
 
@@ -1884,7 +1422,7 @@ new class extends Component
                 paintMode: $this->paintMode,
                 paintProductId: $this->defaultPaintProductId,
                 paintByCategory: $this->paintByCategory,
-                marginDiscountPercent: $this->marginDiscountPercent,
+                marginDiscountPercent: $this->marginDiscountPercent ?? 0,
             );
         } elseif ($templateData['template_id']) {
             // Open AreaBuilder with the original template, passing index for update
@@ -1895,7 +1433,7 @@ new class extends Component
                 paintMode: $this->paintMode,
                 paintProductId: $this->defaultPaintProductId,
                 paintByCategory: $this->paintByCategory,
-                marginDiscountPercent: $this->marginDiscountPercent,
+                marginDiscountPercent: $this->marginDiscountPercent ?? 0,
             );
         }
     }
@@ -2028,7 +1566,7 @@ new class extends Component
         $settings = CompanySetting::getInstance();
         $scopeType = $templateData['scope_type'] ?? 'interior';
         // Use base hourly wage (payroll burden is factored into markup, not COGS)
-        $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $hourlyWage = $this->getEffectiveRateForScope($scopeType);
 
         $totalLaborHours = 0;
         $totalMaterialCost = 0;
@@ -2091,7 +1629,7 @@ new class extends Component
         // Calculate COGS with taxes
         $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonCost);
         $cogs = $cogsResult['cogs'];
-        $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + $this->marginDiscountPercent);
+        $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
         $withMargins = round($cogs / ($effectiveMargin / 100), 2);
 
         $this->selectedTemplates[$index]['labor_hours'] = round($totalLaborHours, 2);
@@ -2120,202 +1658,7 @@ new class extends Component
         return array_sum(array_column($this->selectedTemplates, 'labor_hours'));
     }
 
-    /**
-     * Get available templates for the template picker.
-     *
-     * @return Collection<int, EstimateTemplate>
-     */
-    #[Computed]
-    public function pickerTemplates(): Collection
-    {
-        return EstimateTemplate::query()
-            ->active()
-            ->configurable() // Only area templates (is_configurable = true)
-            ->whereIn('scope_type', [$this->projectScope, EstimateTemplate::SCOPE_TYPE_BOTH])
-            ->with(['templateCategory', 'surfaces'])
-            ->orderBy('name')
-            ->get();
-    }
 
-    /**
-     * Get fixed price templates (NestedAreaTemplates) for the picker.
-     * These are simple fixed-cost add-ons like closets, pantries, exterior features.
-     *
-     * @return Collection<int, NestedAreaTemplate>
-     */
-    #[Computed]
-    public function fixedPriceTemplates(): Collection
-    {
-        return NestedAreaTemplate::query()
-            ->active()
-            ->forScope($this->projectScope)
-            ->ordered()
-            ->get();
-    }
-
-    /**
-     * Get fixed price templates grouped by category.
-     *
-     * @return Collection<string, Collection<int, NestedAreaTemplate>>
-     */
-    #[Computed]
-    public function fixedPriceTemplatesByCategory(): Collection
-    {
-        return $this->fixedPriceTemplates->groupBy('category');
-    }
-
-    /**
-     * Get available paint products for the project scope.
-     *
-     * @return Collection<int, PaintProduct>
-     */
-    #[Computed]
-    public function availablePaintProducts(): Collection
-    {
-        return PaintProduct::query()
-            ->active()
-            ->forScope($this->projectScope)
-            ->with('brand')
-            ->orderBy('paint_brand_id')
-            ->orderBy('name')
-            ->get();
-    }
-
-    /**
-     * Get the selected default paint product.
-     */
-    #[Computed]
-    public function selectedPaintProduct(): ?PaintProduct
-    {
-        if (! $this->defaultPaintProductId) {
-            return null;
-        }
-
-        return PaintProduct::with('brand')->find($this->defaultPaintProductId);
-    }
-
-    /**
-     * Get surface categories for the current project scope.
-     *
-     * @return array<string, string>
-     */
-    #[Computed]
-    public function surfaceCategoriesForScope(): array
-    {
-        return CompanySetting::getSurfaceCategoriesForScope($this->projectScope);
-    }
-
-    /**
-     * Get paint summary by category showing current selection for each category.
-     *
-     * @return array<string, array{name: string, price: float|null, product: PaintProduct|null, is_override: bool, is_company_default: bool}>
-     */
-    #[Computed]
-    public function paintSummaryByCategory(): array
-    {
-        $categories = $this->surfaceCategoriesForScope;
-        $settings = CompanySetting::getInstance();
-        $companyDefaults = $settings->getPaintDefaultsForScope($this->projectScope);
-
-        // Collect all paint product IDs first, then batch-load
-        $productIds = [];
-        $categoryMeta = [];
-
-        foreach ($categories as $key => $label) {
-            $paintProductId = $this->paintByCategory[$key] ?? null;
-            $isOverride = $paintProductId !== null && $paintProductId !== '';
-
-            $isCompanyDefault = false;
-            if (! $isOverride) {
-                $paintProductId = $companyDefaults[$key] ?? null;
-                $isCompanyDefault = $paintProductId !== null;
-            }
-
-            if ($paintProductId) {
-                $productIds[] = $paintProductId;
-            }
-
-            $categoryMeta[$key] = [
-                'label' => $label,
-                'paint_product_id' => $paintProductId ?: null,
-                'is_override' => $isOverride,
-                'is_company_default' => $isCompanyDefault,
-            ];
-        }
-
-        // Single query to load all paint products with brands
-        $products = ! empty($productIds)
-            ? PaintProduct::with('brand')->whereIn('id', array_unique($productIds))->get()->keyBy('id')
-            : collect();
-
-        $summary = [];
-        foreach ($categoryMeta as $key => $meta) {
-            $product = $meta['paint_product_id'] ? $products->get($meta['paint_product_id']) : null;
-
-            $summary[$key] = [
-                'label' => $meta['label'],
-                'name' => $product?->full_name ?? 'Not set',
-                'price' => $product?->price_per_gallon,
-                'product' => $product,
-                'is_override' => $meta['is_override'],
-                'is_company_default' => $meta['is_company_default'],
-                'paint_product_id' => $meta['paint_product_id'],
-            ];
-        }
-
-        return $summary;
-    }
-
-    /**
-     * Get the count of paint category overrides.
-     */
-    #[Computed]
-    public function paintOverrideCount(): int
-    {
-        return count(array_filter($this->paintByCategory, fn ($v) => $v !== null && $v !== ''));
-    }
-
-    /**
-     * Handle paint mode changes.
-     * Recalculates all prices when switching between single and category modes.
-     */
-    public function updatedPaintMode(): void
-    {
-        $this->recalculateAllPrices();
-    }
-
-    /**
-     * Handle default paint product changes.
-     * Recalculates all prices when the default paint is changed.
-     */
-    public function updatedDefaultPaintProductId(): void
-    {
-        $this->recalculateAllPrices();
-    }
-
-    /**
-     * Update paint product for a specific category.
-     */
-    public function updatePaintForCategory(string $category, ?int $paintProductId): void
-    {
-        if ($paintProductId === null || $paintProductId === 0 || $paintProductId === '') {
-            unset($this->paintByCategory[$category]);
-        } else {
-            $this->paintByCategory[$category] = (int) $paintProductId;
-        }
-
-        // Recalculate all templates/areas that might be affected
-        $this->recalculateAllPrices();
-    }
-
-    /**
-     * Reset a category to use company default (remove estimate override).
-     */
-    public function resetCategoryToDefault(string $category): void
-    {
-        unset($this->paintByCategory[$category]);
-        $this->recalculateAllPrices();
-    }
 
     /**
      * Recalculate prices for all selected templates/areas.
@@ -2336,7 +1679,7 @@ new class extends Component
      */
     public function getTaxAmountProperty(): float
     {
-        return $this->subtotal * ($this->taxRate / 100);
+        return $this->subtotal * (($this->taxRate ?? 0) / 100);
     }
 
     /**
@@ -2344,7 +1687,7 @@ new class extends Component
      */
     public function getTotalProperty(): float
     {
-        return $this->subtotal + $this->taxAmount - $this->discountAmount;
+        return $this->subtotal + $this->taxAmount - ($this->discountAmount ?? 0);
     }
 
     /**
@@ -2352,7 +1695,7 @@ new class extends Component
      */
     public function getDepositAmountProperty(): float
     {
-        return $this->total * ($this->depositPercent / 100);
+        return $this->total * (($this->depositPercent ?? 0) / 100);
     }
 
     /**
@@ -2393,12 +1736,13 @@ new class extends Component
             'areas_subtotal' => $this->subtotal,
             'options_subtotal' => 0,
             'subtotal' => $this->subtotal,
-            'tax_rate' => $this->taxRate,
+            'tax_rate' => $this->taxRate ?? 0,
             'tax_amount' => $this->taxAmount,
-            'discount_amount' => $this->discountAmount,
-            'margin_discount_percent' => $this->marginDiscountPercent,
+            'discount_amount' => $this->discountAmount ?? 0,
+            'margin_discount_percent' => $this->marginDiscountPercent ?? 0,
+            'hourly_rate_override' => $this->hourlyRateOverride,
             'total' => $this->total,
-            'deposit_percent' => $this->depositPercent,
+            'deposit_percent' => $this->depositPercent ?? 30,
             'deposit_amount' => $this->depositAmount,
             'balance_due' => $this->balanceDue,
             'notes' => $this->notes ?: null,
@@ -2486,6 +1830,21 @@ new class extends Component
             session()->flash('success', __('Estimate created successfully.'));
         }
 
+        // Save tier pricing config if enabled
+        if ($this->useTierPricing) {
+            foreach (['good', 'better', 'best'] as $tier) {
+                $this->estimate->setPaintTier($tier, $this->tierPaintConfig[$tier]);
+            }
+            $this->estimate->save();
+            app(EstimateTierPricingService::class)->recalculateTierCosts($this->estimate);
+
+            // Recalculate packages with tier pricing
+            foreach ($this->estimate->packages as $package) {
+                $package->calculateTotals();
+                $package->save();
+            }
+        }
+
         $this->redirect(route('estimates.show', $this->estimate), navigate: true);
     }
 
@@ -2533,7 +1892,7 @@ new class extends Component
                     $laborHours = (float) ($surfaceData['labor_hours'] ?? 0);
                     $materialCost = (float) ($surfaceData['material_cost'] ?? 0);
                     $scopeType = $areaData['scope_type'] ?? 'interior';
-                    $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                    $hourlyWage = $this->getEffectiveRateForScope($scopeType);
                     $laborCost = $laborHours * $hourlyWage;
                     $productionRateValue = 0;
                     $materialCostPerUnit = 0;
@@ -2563,7 +1922,7 @@ new class extends Component
                     $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
 
                     $scopeType = $areaData['scope_type'] ?? 'interior';
-                    $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                    $hourlyWage = $this->getEffectiveRateForScope($scopeType);
                     $laborCost = $laborHours * $hourlyWage;
 
                     // Get effective paint product ID (cascade: surface → area → estimate)
@@ -2761,7 +2120,7 @@ new class extends Component
                 $materialCost = (float) ($surfaceData['material_cost'] ?? 0);
                 $settings = CompanySetting::getInstance();
                 $scopeType = $templateData['scope_type'] ?? 'interior';
-                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $hourlyWage = $this->getEffectiveRateForScope($scopeType);
                 $laborCost = $laborHours * $hourlyWage;
                 $productionRateValue = 0;
                 $materialCostPerUnit = 0;
@@ -2792,7 +2151,7 @@ new class extends Component
 
                 $settings = CompanySetting::getInstance();
                 $scopeType = $templateData['scope_type'] ?? 'interior';
-                $hourlyWage = $settings->getEffectiveHourlyRateForScope($scopeType);
+                $hourlyWage = $this->getEffectiveRateForScope($scopeType);
                 $laborCost = $laborHours * $hourlyWage;
 
                 // Get effective paint product ID (cascade: surface → area → template → estimate)
@@ -2912,119 +2271,6 @@ new class extends Component
             if ($template->templateCategory?->type === EstimateTemplateCategory::TYPE_ROOM && $usage->resultable) {
                 $lastArea = $usage->resultable;
             }
-        }
-    }
-
-    public function triggerAiBuild(): void
-    {
-        if (! config('ai-build.enabled')) {
-            $this->aiBuildMessage = 'AI Build is not currently available.';
-
-            return;
-        }
-
-        if (! $this->estimate) {
-            return;
-        }
-
-        $this->aiBuildInProgress = true;
-        $this->aiBuildStatus = 'sending';
-        $this->aiBuildMessage = null;
-
-        try {
-            $response = \Illuminate\Support\Facades\Http::withHeaders([
-                'X-AI-Build-Secret' => config('ai-build.api_secret'),
-            ])->post(config('ai-build.dev_server_url').'/webhooks/ai-build', [
-                'estimate_id' => $this->estimate->id,
-            ]);
-
-            if ($response->successful()) {
-                $this->aiBuildStatus = 'building';
-                $this->aiBuildMessage = 'AI is building your estimate. This may take a few minutes...';
-
-                // Persist build state to cache so it survives page refresh
-                \Illuminate\Support\Facades\Cache::put(
-                    "ai-build-estimate:{$this->estimate->id}",
-                    ['status' => 'building', 'message' => $this->aiBuildMessage, 'started_at' => now()->toISOString()],
-                    now()->addMinutes(15)
-                );
-            } else {
-                $this->aiBuildInProgress = false;
-                $this->aiBuildStatus = 'failed';
-                $this->aiBuildMessage = $response->json('error', 'Failed to start AI build.');
-            }
-        } catch (\Exception $e) {
-            $this->aiBuildInProgress = false;
-            $this->aiBuildStatus = 'failed';
-            $this->aiBuildMessage = 'Could not connect to AI build service.';
-        }
-    }
-
-    /**
-     * Poll for AI build status updates (runs every 5s while build is in progress).
-     */
-    public function pollAiBuildStatus(): void
-    {
-        if (! $this->estimate) {
-            return;
-        }
-
-        $cached = \Illuminate\Support\Facades\Cache::get("ai-build-estimate:{$this->estimate->id}");
-
-        if (! $cached) {
-            // Build finished or was never started
-            $this->aiBuildInProgress = false;
-
-            return;
-        }
-
-        $this->aiBuildInProgress = true;
-        $this->aiBuildStatus = $cached['status'] ?? 'building';
-        $this->aiBuildMessage = $cached['message'] ?? 'AI is working...';
-
-        // If final status, clear cache and reload the page to show new areas
-        if (in_array($cached['status'] ?? '', ['completed', 'partial', 'failed', 'nothing_to_build', 'unreadable_blueprints'])) {
-            \Illuminate\Support\Facades\Cache::forget("ai-build-estimate:{$this->estimate->id}");
-            $this->aiBuildInProgress = false;
-
-            if (in_array($cached['status'], ['completed', 'partial'])) {
-                $this->redirect(route('estimates.edit', $this->estimate), navigate: true);
-            }
-        }
-    }
-
-    #[\Livewire\Attributes\On('echo-private:estimate.{estimate.id},ai.build.completed')]
-    public function onAiBuildCompleted(array $data): void
-    {
-        $this->aiBuildStatus = $data['status'];
-
-        // Progress update — keep spinner going, just update the message
-        if ($data['status'] === 'building') {
-            $this->aiBuildInProgress = true;
-            $this->aiBuildMessage = $data['summary'] ?? 'AI is working...';
-
-            return;
-        }
-
-        // Final status — stop spinner
-        $this->aiBuildInProgress = false;
-
-        // Clear the cache since we got the final status via Reverb
-        if ($this->estimate) {
-            \Illuminate\Support\Facades\Cache::forget("ai-build-estimate:{$this->estimate->id}");
-        }
-
-        $this->aiBuildMessage = match ($data['status']) {
-            'completed' => "AI built {$data['areas_created']} areas with {$data['surfaces_created']} surfaces! Refreshing...",
-            'partial' => "AI built {$data['areas_created']} areas but had some issues. Please review.",
-            'nothing_to_build' => 'No blueprints, photos, or notes found. Upload materials first.',
-            'unreadable_blueprints' => "Couldn't extract text from the blueprints. They may need manual entry.",
-            'failed' => $data['error_message'] ?? 'AI build encountered an error.',
-            default => 'Build finished with unknown status.',
-        };
-
-        if (in_array($data['status'], ['completed', 'partial'])) {
-            $this->redirect(route('estimates.edit', $this->estimate), navigate: true);
         }
     }
 
@@ -3166,136 +2412,7 @@ new class extends Component
                     </div>
                 </div>
 
-                {{-- Unified Paint Selection --}}
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
-                    <div class="p-4 border-b border-zinc-100 dark:border-zinc-800">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <flux:heading size="sm">{{ __('Paint Selection') }}</flux:heading>
-                                <flux:text size="sm" class="text-zinc-500">{{ __('Choose paint products for this estimate') }}</flux:text>
-                            </div>
-                            @if ($paintMode === 'category' && $this->paintOverrideCount > 0)
-                                <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
-                                    {{ $this->paintOverrideCount }} {{ __('custom') }}
-                                </span>
-                            @endif
-                        </div>
-                    </div>
-
-                    <div class="p-4">
-                        {{-- Paint Mode Toggle --}}
-                        <div class="flex flex-col sm:flex-row gap-3 mb-4">
-                            <label class="flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all {{ $paintMode === 'single' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}">
-                                <input
-                                    type="radio"
-                                    wire:model.live="paintMode"
-                                    value="single"
-                                    class="text-blue-600 focus:ring-blue-500"
-                                />
-                                <div>
-                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ __('Same paint for all surfaces') }}</div>
-                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Use one paint product across the entire estimate') }}</div>
-                                </div>
-                            </label>
-                            <label class="flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all {{ $paintMode === 'category' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}">
-                                <input
-                                    type="radio"
-                                    wire:model.live="paintMode"
-                                    value="category"
-                                    class="text-blue-600 focus:ring-blue-500"
-                                />
-                                <div>
-                                    <div class="font-medium text-zinc-900 dark:text-zinc-100">{{ __('Different paint per surface type') }}</div>
-                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Customize paint for walls, ceiling, trim, doors') }}</div>
-                                </div>
-                            </label>
-                        </div>
-
-                        {{-- Single Paint Mode --}}
-                        @if ($paintMode === 'single')
-                            <div class="space-y-3">
-                                <flux:select wire:model.live="defaultPaintProductId" :placeholder="__('Select paint product...')">
-                                    <flux:select.option value="">{{ __('No default (use production rate material cost)') }}</flux:select.option>
-                                    @foreach ($this->availablePaintProducts as $product)
-                                        <flux:select.option value="{{ $product->id }}">
-                                            {{ $product->brand?->name ?? 'Other' }} - {{ $product->name }} ({{ ucfirst($product->sheen) }}) - ${{ number_format($product->price_per_gallon, 2) }}/gal
-                                        </flux:select.option>
-                                    @endforeach
-                                </flux:select>
-
-                                @if ($this->selectedPaintProduct)
-                                    <div class="p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg text-sm">
-                                        <div class="flex items-center gap-3">
-                                            <div class="flex-1">
-                                                <span class="font-medium text-blue-800 dark:text-blue-200">{{ $this->selectedPaintProduct->full_name }}</span>
-                                                <span class="text-blue-600 dark:text-blue-400 ml-2">{{ ucfirst($this->selectedPaintProduct->sheen) }}</span>
-                                            </div>
-                                            <div class="text-right text-blue-700 dark:text-blue-300">
-                                                <div>Coverage: {{ $this->selectedPaintProduct->coverage_sqft_brush_roll }} sqft/gal</div>
-                                                <div>${{ number_format($this->selectedPaintProduct->price_per_gallon, 2) }}/gallon</div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                @endif
-                            </div>
-                        @else
-                            {{-- Category Paint Mode --}}
-                            <div class="space-y-3">
-                                <div class="grid sm:grid-cols-2 gap-3">
-                                    @foreach ($this->paintSummaryByCategory as $categoryKey => $categoryData)
-                                        <div class="p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg">
-                                            <div class="flex items-center justify-between mb-2">
-                                                <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $categoryData['label'] }}</span>
-                                                @if ($categoryData['is_override'])
-                                                    <span class="text-xs text-blue-600 dark:text-blue-400">({{ __('Custom') }})</span>
-                                                @elseif ($categoryData['is_company_default'])
-                                                    <span class="text-xs text-green-600 dark:text-green-400">({{ __('Default') }})</span>
-                                                @endif
-                                            </div>
-                                            <select
-                                                wire:change="updatePaintForCategory('{{ $categoryKey }}', $event.target.value)"
-                                                class="w-full text-sm bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded-md py-1.5 px-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                            >
-                                                <option value="">
-                                                    @php
-                                                        $companyDefault = \App\Models\CompanySetting::getInstance()->getDefaultPaintForCategory($categoryKey, $projectScope);
-                                                    @endphp
-                                                    @if ($companyDefault)
-                                                        {{ __('Company Default') }}
-                                                    @else
-                                                        {{ __('Not Set') }}
-                                                    @endif
-                                                </option>
-                                                @foreach ($this->availablePaintProducts as $product)
-                                                    <option value="{{ $product->id }}" {{ ($categoryData['paint_product_id'] ?? null) == $product->id && $categoryData['is_override'] ? 'selected' : '' }}>
-                                                        {{ $product->brand?->name ?? 'Other' }} - {{ $product->name }} (${{ number_format($product->price_per_gallon, 2) }})
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                            @if ($categoryData['price'])
-                                                <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                                                    ${{ number_format($categoryData['price'], 2) }}/gal · {{ $categoryData['product']?->coverage_sqft_brush_roll ?? 400 }} sqft coverage
-                                                </div>
-                                            @endif
-                                        </div>
-                                    @endforeach
-                                </div>
-
-                                @if ($this->paintOverrideCount > 0)
-                                    <div class="pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                                        <button
-                                            wire:click="$set('paintByCategory', [])"
-                                            type="button"
-                                            class="text-sm text-zinc-500 dark:text-zinc-400 hover:text-red-600 dark:hover:text-red-400"
-                                        >
-                                            {{ __('Reset to company defaults') }}
-                                        </button>
-                                    </div>
-                                @endif
-                            </div>
-                        @endif
-                    </div>
-                </div>
+                <livewire:estimates.paint-selector :project-scope="$projectScope" :estimate="$estimate" />
 
                 {{-- ADD AREAS Section (New Design) --}}
                 <div class="border-2 border-green-200 dark:border-green-800 rounded-lg p-4 bg-gradient-to-r from-green-50 to-white dark:from-green-950/30 dark:to-zinc-900">
@@ -3305,7 +2422,7 @@ new class extends Component
                             <flux:text size="sm" class="text-green-600 dark:text-green-400">{{ __('Add rooms with full dimension and surface control') }}</flux:text>
                         </div>
                         <div class="flex gap-2">
-                            <flux:button wire:click="openTemplatePicker" variant="primary" icon="squares-2x2">
+                            <flux:button wire:click="$dispatch('open-template-picker')" variant="primary" icon="squares-2x2">
                                 {{ __('+ From Template') }}
                             </flux:button>
                             <flux:button wire:click="addDetailedArea" icon="plus">
@@ -3777,7 +2894,7 @@ new class extends Component
                                                         <div>
                                                             <div class="text-zinc-500 dark:text-zinc-400">{{ __('Labor') }}</div>
                                                             <div class="font-medium text-zinc-900 dark:text-zinc-100">
-                                                                {{ number_format($templateData['labor_hours'], 1) }} {{ __('hrs') }} × ${{ number_format(\App\Models\CompanySetting::getInstance()->getEffectiveHourlyRateForScope($templateData['scope_type'] ?? 'interior'), 2) }}
+                                                                {{ number_format($templateData['labor_hours'], 1) }} {{ __('hrs') }} × ${{ number_format($this->getEffectiveRateForScope($templateData['scope_type'] ?? 'interior'), 2) }}
                                                             </div>
                                                             <div class="text-zinc-600 dark:text-zinc-400">= ${{ number_format($templateData['labor_cost'] ?? 0, 2) }}</div>
                                                         </div>
@@ -3951,6 +3068,37 @@ new class extends Component
                                 @endif
                             </flux:field>
                             <flux:field>
+                                <flux:label>{{ __('Hourly Rate Override') }}</flux:label>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">$</span>
+                                    <flux:input wire:model.live.debounce.300ms="hourlyRateOverride" type="number" step="0.50" min="10" max="100" placeholder="{{ number_format(\App\Models\CompanySetting::getInstance()->getHourlyWageForScope($projectScope), 2) }}" class="flex-1" />
+                                    <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">/hr</span>
+                                </div>
+                                @if ($hourlyRateOverride !== null && $hourlyRateOverride > 0)
+                                    @php
+                                        $defaultWage = \App\Models\CompanySetting::getInstance()->getHourlyWageForScope($projectScope);
+                                        $burdenMultiplier = (float) \App\Models\CompanySetting::getInstance()->payroll_burden_multiplier;
+                                        $overrideEffective = $hourlyRateOverride * $burdenMultiplier;
+                                        $defaultEffective = $defaultWage * $burdenMultiplier;
+                                    @endphp
+                                    <div class="mt-1 space-y-1">
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                            {{ __('Effective rate') }}: ${{ number_format($overrideEffective, 2) }}/hr
+                                            <span class="text-zinc-400 dark:text-zinc-500">({{ __('default') }} ${{ number_format($defaultEffective, 2) }}/hr)</span>
+                                        </p>
+                                        @if ($hourlyRateOverride < $defaultWage)
+                                            <p class="text-xs text-amber-600 dark:text-amber-400">
+                                                {{ __('Below default rate — competitive bid') }}
+                                            </p>
+                                        @elseif ($hourlyRateOverride > $defaultWage)
+                                            <p class="text-xs text-blue-600 dark:text-blue-400">
+                                                {{ __('Above default rate — premium bid') }}
+                                            </p>
+                                        @endif
+                                    </div>
+                                @endif
+                            </flux:field>
+                            <flux:field>
                                 <flux:label>{{ __('Deposit Required') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <flux:input wire:model.live="depositPercent" type="number" step="1" min="0" max="100" placeholder="30" class="flex-1" />
@@ -3976,7 +3124,7 @@ new class extends Component
                             @endif
                             @if ($taxRate > 0)
                                 <div class="flex justify-between">
-                                    <dt class="text-zinc-600 dark:text-zinc-400">{{ __('Tax') }} ({{ number_format($taxRate, 1) }}%)</dt>
+                                    <dt class="text-zinc-600 dark:text-zinc-400">{{ __('Tax') }} ({{ number_format($taxRate ?? 0, 1) }}%)</dt>
                                     <dd>${{ number_format($this->taxAmount, 2) }}</dd>
                                 </div>
                             @endif
@@ -3992,7 +3140,7 @@ new class extends Component
                             </div>
                             <div class="pt-3 border-t border-blue-100 dark:border-blue-900 space-y-1">
                                 <div class="flex justify-between text-zinc-600 dark:text-zinc-400">
-                                    <dt>{{ __('Deposit') }} ({{ number_format($depositPercent, 0) }}%)</dt>
+                                    <dt>{{ __('Deposit') }} ({{ number_format($depositPercent ?? 0, 0) }}%)</dt>
                                     <dd class="font-medium text-zinc-900 dark:text-zinc-100">${{ number_format($this->depositAmount, 2) }}</dd>
                                 </div>
                                 <div class="flex justify-between text-zinc-600 dark:text-zinc-400">
@@ -4003,33 +3151,9 @@ new class extends Component
                         </dl>
                     </div>
 
-                    {{-- AI Build Button --}}
+                    {{-- AI Build Button (child component) --}}
                     @if (config('ai-build.enabled') && $isEditing)
-                        <div class="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
-                            @if ($aiBuildInProgress)
-                                <div wire:poll.5s="pollAiBuildStatus" class="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-300">
-                                    <flux:icon name="arrow-path" class="w-4 h-4 animate-spin" />
-                                    <span>{{ $aiBuildMessage ?? 'AI is working...' }}</span>
-                                </div>
-                            @elseif ($aiBuildMessage)
-                                <div class="text-sm mb-2 {{ $aiBuildStatus === 'failed' || str_contains($aiBuildStatus ?? '', 'nothing') ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400' }}">
-                                    {{ $aiBuildMessage }}
-                                </div>
-                                <flux:button wire:click="triggerAiBuild" size="sm" class="w-full" variant="primary">
-                                    <flux:icon name="sparkles" class="w-4 h-4 mr-1" />
-                                    {{ __('Retry AI Build') }}
-                                </flux:button>
-                            @else
-                                <flux:button wire:click="triggerAiBuild" wire:loading.attr="disabled" size="sm" class="w-full" variant="primary">
-                                    <flux:icon name="sparkles" class="w-4 h-4 mr-1" />
-                                    <span wire:loading.remove wire:target="triggerAiBuild">{{ $estimate->areas()->count() > 0 ? __('AI Rebuild from Blueprints') : __('AI Build from Blueprints') }}</span>
-                                    <span wire:loading wire:target="triggerAiBuild">{{ __('Starting...') }}</span>
-                                </flux:button>
-                                <p class="text-xs text-purple-600 dark:text-purple-400 mt-1 text-center">
-                                    {{ __('Reads blueprints & photos to auto-build estimate') }}
-                                </p>
-                            @endif
-                        </div>
+                        <livewire:estimates.ai-builder :estimate="$estimate" />
                     @endif
 
                     {{-- Actions --}}
@@ -4057,142 +3181,9 @@ new class extends Component
         </div>
     </div>
 
-    {{-- Area Template Picker Modal --}}
-    <flux:modal wire:model="showTemplatePicker" name="template-picker-modal" class="max-w-3xl" x-data="{ pickerTab: 'areas' }">
-        <div class="p-6">
-            <flux:heading size="lg" class="mb-4">
-                {{ __('Add to Estimate') }}
-            </flux:heading>
+    {{-- Template Picker (Child Component) --}}
+    <livewire:estimates.template-picker :project-scope="$projectScope" />
 
-            {{-- Tabs for Area Templates vs Fixed Price --}}
-            <div class="flex gap-2 mb-4 border-b border-zinc-200 dark:border-zinc-700">
-                <button
-                    @click="pickerTab = 'areas'"
-                    type="button"
-                    :class="pickerTab === 'areas' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'"
-                    class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
-                >
-                    {{ __('Area Templates') }}
-                    <span class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800">
-                        {{ $this->pickerTemplates->count() }}
-                    </span>
-                </button>
-                <button
-                    @click="pickerTab = 'fixed'"
-                    type="button"
-                    :class="pickerTab === 'fixed' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'"
-                    class="px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors"
-                >
-                    {{ __('Fixed Price') }}
-                    <span class="ml-1.5 px-1.5 py-0.5 text-xs rounded-full bg-zinc-100 dark:bg-zinc-800">
-                        {{ $this->fixedPriceTemplates->count() }}
-                    </span>
-                </button>
-            </div>
-
-            {{-- Area Templates Tab --}}
-            <div x-show="pickerTab === 'areas'" x-cloak>
-                <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-4">
-                    {{ __('Choose an area template with full dimension and surface control.') }}
-                </flux:text>
-
-                @if ($this->pickerTemplates->isEmpty())
-                    <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                        <flux:icon name="squares-2x2" class="w-12 h-12 mx-auto mb-3 text-zinc-300 dark:text-zinc-600" />
-                        <p class="font-medium">{{ __('No area templates available') }}</p>
-                        <p class="text-sm mt-1">{{ __('Create area templates in Area Templates first, or add a custom area.') }}</p>
-                    </div>
-                @else
-                    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-[50vh] overflow-y-auto">
-                        @foreach ($this->pickerTemplates as $template)
-                            <button
-                                wire:click="addAreaFromTemplate({{ $template->id }})"
-                                wire:key="picker-template-{{ $template->id }}"
-                                type="button"
-                                class="p-4 border-2 border-zinc-200 dark:border-zinc-700 rounded-xl hover:border-blue-500 hover:shadow-md dark:hover:bg-zinc-800/50 transition-all text-left group active:scale-[0.98]"
-                            >
-                                <div class="flex items-center gap-3 mb-2">
-                                    <div class="flex-shrink-0 w-10 h-10 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/30 dark:to-blue-800/20 rounded-xl flex items-center justify-center group-hover:from-blue-200 group-hover:to-blue-100 transition-colors">
-                                        <flux:icon name="{{ $template->icon ?? 'squares-2x2' }}" class="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                                    </div>
-                                    <div class="flex-1 min-w-0">
-                                        <div class="font-semibold text-sm text-zinc-900 dark:text-zinc-100 truncate">
-                                            {{ __($template->name) }}
-                                        </div>
-                                        <div class="text-xs text-zinc-500 dark:text-zinc-400">
-                                            {{ __($template->templateCategory?->name ?? 'Room') }}
-                                        </div>
-                                    </div>
-                                </div>
-                                @if ($template->description)
-                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">
-                                        {{ $template->description }}
-                                    </p>
-                                @endif
-                            </button>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
-
-            {{-- Fixed Price Tab --}}
-            <div x-show="pickerTab === 'fixed'" x-cloak>
-                <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-4">
-                    {{ __('Add fixed-price items like closets, pantries, and exterior features.') }}
-                </flux:text>
-
-                @if ($this->fixedPriceTemplates->isEmpty())
-                    <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                        <flux:icon name="currency-dollar" class="w-12 h-12 mx-auto mb-3 text-zinc-300 dark:text-zinc-600" />
-                        <p class="font-medium">{{ __('No fixed price templates available') }}</p>
-                        <p class="text-sm mt-1">{{ __('Create fixed price templates in Production Rates first.') }}</p>
-                    </div>
-                @else
-                    <div class="max-h-[50vh] overflow-y-auto space-y-4">
-                        @foreach ($this->fixedPriceTemplatesByCategory as $category => $templates)
-                            <div>
-                                <div class="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-2">
-                                    {{ ucfirst($category) }}
-                                </div>
-                                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                    @foreach ($templates as $template)
-                                        <button
-                                            wire:click="addFixedPriceTemplate({{ $template->id }})"
-                                            wire:key="fixed-price-{{ $template->id }}"
-                                            type="button"
-                                            class="p-3 border-2 border-zinc-200 dark:border-zinc-700 rounded-lg hover:border-emerald-500 hover:shadow-md dark:hover:bg-zinc-800/50 transition-all text-left group active:scale-[0.98]"
-                                        >
-                                            <div class="flex items-center justify-between gap-2">
-                                                <div class="min-w-0">
-                                                    <div class="font-medium text-sm text-zinc-900 dark:text-zinc-100 truncate">
-                                                        {{ __($template->name) }}
-                                                    </div>
-                                                    <div class="text-xs text-zinc-500 dark:text-zinc-400 font-mono">
-                                                        {{ $template->code }}
-                                                    </div>
-                                                </div>
-                                                <div class="flex-shrink-0 text-right">
-                                                    <div class="font-bold text-emerald-600 dark:text-emerald-400">
-                                                        {{ $template->formatted_price }}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </button>
-                                    @endforeach
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
-            </div>
-
-            <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-zinc-200 dark:border-zinc-700">
-                <flux:button wire:click="closeTemplatePicker" variant="ghost">
-                    {{ __('Cancel') }}
-                </flux:button>
-            </div>
-        </div>
-    </flux:modal>
 
     {{-- Area Builder Component (Flyout) --}}
     <livewire:estimates.area-builder />

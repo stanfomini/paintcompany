@@ -327,7 +327,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('uploads insurance file', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('insurance.pdf', 100, 'application/pdf');
 
@@ -347,7 +347,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('validates insurance file type', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('insurance.txt', 100, 'text/plain');
 
@@ -360,7 +360,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('uploads workers comp file', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('workers-comp.pdf', 100, 'application/pdf');
 
@@ -380,7 +380,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('uploads drivers license front', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->image('license-front.jpg', 400, 300);
 
@@ -544,7 +544,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('requires insurance metadata when uploading insurance', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('insurance.pdf', 100, 'application/pdf');
 
@@ -559,7 +559,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('saves insurance metadata alongside file upload', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('insurance.pdf', 100, 'application/pdf');
 
@@ -582,7 +582,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('requires workers comp metadata when uploading workers comp', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('wc.pdf', 100, 'application/pdf');
 
@@ -597,7 +597,7 @@ describe('Step 4: Documents', function () {
     });
 
     it('saves workers comp metadata alongside file upload', function () {
-        Storage::fake('public');
+        Storage::fake();
 
         $file = UploadedFile::fake()->create('wc.pdf', 100, 'application/pdf');
 

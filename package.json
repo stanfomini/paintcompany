@@ -25,6 +25,7 @@
         "html2canvas": "^1.4.1",
         "laravel-echo": "^2.3.0",
         "laravel-vite-plugin": "^2.0",
+        "pdfjs-dist": "^5.4.624",
         "playwright-extra": "^4.3.6",
         "puppeteer-extra-plugin-stealth": "^2.11.2",
         "pusher-js": "^8.4.0",

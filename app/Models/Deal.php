@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\ChatService;
+use App\Services\CommissionService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -15,6 +16,15 @@ use Illuminate\Support\Facades\DB;
 class Deal extends Model
 {
     use HasFactory, SoftDeletes;
+
+    protected static function booted(): void
+    {
+        static::updated(function (Deal $deal) {
+            if ($deal->wasChanged('assigned_to') && $deal->assigned_to) {
+                app(CommissionService::class)->createFromDeal($deal);
+            }
+        });
+    }
 
     public const LEAD_SOURCES = [
         'referral' => 'Referral',

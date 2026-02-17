@@ -88,8 +88,28 @@ class EstimatePackageItem extends Model
     }
 
     /**
+     * Resolve the paint tier for this item from its parent package.
+     * Maps package tier (basic/standard/premium) → paint tier (good/better/best).
+     */
+    public function resolvePaintTier(): ?string
+    {
+        $package = $this->relationLoaded('package') ? $this->package : $this->package()->first();
+        if (! $package) {
+            return null;
+        }
+
+        $estimate = $package->relationLoaded('estimate') ? $package->estimate : $package->estimate()->first();
+        if (! $estimate || ! $estimate->hasPaintTiers()) {
+            return null;
+        }
+
+        return $package->getPaintTier();
+    }
+
+    /**
      * Get the effective price for this item (customer-facing price).
      * Returns price_override if set, otherwise calculates from the itemable.
+     * When the parent package has a paint tier, uses tier-specific material costs.
      *
      * IMPORTANT: This returns the CUSTOMER PRICE (with margins applied).
      * Margins are calculated fresh from CompanySetting - never hardcoded.
@@ -111,14 +131,16 @@ class EstimatePackageItem extends Model
             return (float) $itemable->total;
         }
 
+        $paintTier = $this->resolvePaintTier();
+
         // EstimateAreaSurface - get customer price (COGS + margin from CompanySetting)
         if ($itemable instanceof EstimateAreaSurface) {
-            return $itemable->getCustomerPrice();
+            return $itemable->getCustomerPrice($paintTier);
         }
 
         // EstimateArea - get customer price (COGS + margin from CompanySetting)
         if ($itemable instanceof EstimateArea) {
-            return $itemable->getCustomerPrice();
+            return $itemable->getCustomerPrice($paintTier);
         }
 
         return 0.0;
@@ -127,12 +149,11 @@ class EstimatePackageItem extends Model
     /**
      * Get the COGS (Cost of Goods Sold) for this item.
      * Returns the raw cost without margins.
+     * When the parent package has a paint tier, uses tier-specific material costs.
      */
     public function getCOGS(): float
     {
         if ($this->price_override !== null) {
-            // If price is overridden, we can't know the COGS
-            // Return the override as an approximation
             return (float) $this->price_override;
         }
 
@@ -146,12 +167,14 @@ class EstimatePackageItem extends Model
             return (float) $itemable->total;
         }
 
+        $paintTier = $this->resolvePaintTier();
+
         if ($itemable instanceof EstimateAreaSurface) {
-            return $itemable->getCOGS();
+            return $itemable->getFullCOGS($paintTier);
         }
 
         if ($itemable instanceof EstimateArea) {
-            return $itemable->getCOGS();
+            return $itemable->getFullCOGS($paintTier);
         }
 
         return 0.0;

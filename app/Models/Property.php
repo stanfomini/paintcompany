@@ -35,6 +35,8 @@ class Property extends Model
         'city',
         'state',
         'zip',
+        'latitude',
+        'longitude',
         'type',
         'square_footage',
         'year_built',
@@ -51,6 +53,8 @@ class Property extends Model
         return [
             'square_footage' => 'integer',
             'year_built' => 'integer',
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'listing_price' => 'decimal:2',
             'open_house_date' => 'datetime',
             'deleted_at' => 'datetime',

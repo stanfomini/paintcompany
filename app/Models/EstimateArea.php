@@ -55,6 +55,7 @@ class EstimateArea extends Model
         'agent_checklist',
         'sort_order',
         'default_paint_product_id',
+        'paint_tier_overrides',
         'measurement_type',
         'wall_count',
         'direct_sqft',
@@ -86,6 +87,7 @@ class EstimateArea extends Model
             'direct_sqft' => 'decimal:2',
             'direct_lnft' => 'decimal:2',
             'direct_ceiling_sqft' => 'decimal:2',
+            'paint_tier_overrides' => 'array',
         ];
     }
 
@@ -350,13 +352,22 @@ class EstimateArea extends Model
      * NO margins applied - this is pure cost.
      *
      * Formula: labor + cleanup + sundries + materials + addons (with taxes)
+     *
+     * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
      */
-    public function getFullCOGS(): float
+    public function getFullCOGS(?string $tier = null): float
     {
         $settings = CompanySetting::getInstance();
         $scope = $this->scope_type ?? 'interior';
+        $estimate = $this->getEstimateForPricing();
+
+        // Resolve effective hourly rate: estimate override → global setting
+        $effectiveRate = ($estimate && $estimate->hasHourlyRateOverride())
+            ? $estimate->getOverrideEffectiveHourlyRate($scope)
+            : $settings->getEffectiveHourlyRateForScope($scope);
 
         // Fixed price areas: use stored labor breakdown if available, else fall back to fixed_price_amount
+        // Fixed price areas are unchanged by tier
         if ($this->is_fixed_price) {
             if ($this->estimated_labor_hours !== null && $this->estimated_labor_hours > 0) {
                 $laborCost = (float) ($this->estimated_labor_cost ?? 0);
@@ -364,7 +375,7 @@ class EstimateArea extends Model
                 $laborHours = (float) $this->estimated_labor_hours;
 
                 $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
-                $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+                $cleanupCost = $cleanupHours * $effectiveRate;
                 $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
 
                 $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
@@ -375,14 +386,24 @@ class EstimateArea extends Model
             return (float) $this->fixed_price_amount;
         }
 
-        // Sum from surfaces
-        $laborHours = (float) $this->surfaces()->where('is_included', true)->sum('labor_hours');
-        $laborCost = (float) $this->surfaces()->where('is_included', true)->sum('labor_cost');
-        $materialCost = (float) $this->surfaces()->where('is_included', true)->sum('material_cost');
+        // Sum from surfaces - labor is the same, only material changes by tier
+        $surfaces = $this->surfaces()->where('is_included', true);
+        $laborHours = (float) $surfaces->sum('labor_hours');
+        $laborCost = (float) $surfaces->sum('labor_cost');
 
-        // Add cleanup, sundries from CompanySetting (effective rate = base wage × payroll burden)
+        // Material cost: use tier-specific if available, otherwise standard
+        if ($tier !== null) {
+            $materialCost = 0.0;
+            foreach ($surfaces->get() as $surface) {
+                $materialCost += $surface->getMaterialCostForTier($tier);
+            }
+        } else {
+            $materialCost = (float) $surfaces->sum('material_cost');
+        }
+
+        // Add cleanup, sundries (effective rate = base wage × payroll burden, with override if set)
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
-        $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+        $cleanupCost = $cleanupHours * $effectiveRate;
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
 
         // Add addon costs (nested area templates like closets)
@@ -418,7 +439,11 @@ class EstimateArea extends Model
         if ($this->estimated_labor_cost === null && $this->estimated_labor_hours !== null && $this->estimated_labor_hours > 0) {
             $scope = $this->scope_type ?? 'interior';
             $settings = CompanySetting::getInstance();
-            $this->estimated_labor_cost = (float) $this->estimated_labor_hours * $settings->getEffectiveHourlyRateForScope($scope);
+            $estimate = $this->getEstimateForPricing();
+            $effectiveRate = ($estimate && $estimate->hasHourlyRateOverride())
+                ? $estimate->getOverrideEffectiveHourlyRate($scope)
+                : $settings->getEffectiveHourlyRateForScope($scope);
+            $this->estimated_labor_cost = (float) $this->estimated_labor_hours * $effectiveRate;
         }
     }
 
@@ -455,7 +480,10 @@ class EstimateArea extends Model
         return null;
     }
 
-    public function getCustomerPrice(): float
+    /**
+     * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
+     */
+    public function getCustomerPrice(?string $tier = null): float
     {
         // Fixed price areas already include everything
         if ($this->is_fixed_price) {
@@ -471,7 +499,7 @@ class EstimateArea extends Model
 
         if (! $hasCustomSalePrices) {
             // Standard path: all COGS get margin applied uniformly
-            $cogs = $this->getFullCOGS();
+            $cogs = $this->getFullCOGS($tier);
 
             if ($cogs <= 0) {
                 return 0.0;
@@ -501,22 +529,25 @@ class EstimateArea extends Model
             } else {
                 $nonCustomLaborHours += (float) $surface->labor_hours;
                 $nonCustomLaborCost += (float) $surface->labor_cost;
-                $nonCustomMaterialCost += (float) $surface->material_cost;
+                $nonCustomMaterialCost += $surface->getMaterialCostForTier($tier);
             }
         }
 
         // Calculate COGS for non-custom portion (including their share of overhead)
         $nonCustomPrice = 0.0;
         if ($nonCustomLaborCost > 0 || $nonCustomMaterialCost > 0) {
+            $estimate = $this->getEstimateForPricing();
+            $effectiveRate = ($estimate && $estimate->hasHourlyRateOverride())
+                ? $estimate->getOverrideEffectiveHourlyRate($scope)
+                : $settings->getEffectiveHourlyRateForScope($scope);
             $cleanupHours = $settings->calculateCleanupHours($nonCustomLaborHours, $scope);
-            $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+            $cleanupCost = $cleanupHours * $effectiveRate;
             $sundriesCost = $settings->calculateSundriesCost($nonCustomLaborHours, $scope);
 
             $addonCost = (float) $this->addons()->sum('total_price');
             $cogsResult = $settings->calculateCOGS($nonCustomLaborCost, $cleanupCost, $sundriesCost, $nonCustomMaterialCost + $addonCost);
 
             // Use estimate-level discounted margin if available
-            $estimate = $this->getEstimateForPricing();
             if ($estimate && $estimate->hasMarginDiscount()) {
                 $nonCustomPrice = $estimate->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
             } else {
@@ -537,9 +568,9 @@ class EstimateArea extends Model
      *
      * @return array<int, float> Map of surface_id => proportional customer price
      */
-    public function getSurfaceCustomerPrices(): array
+    public function getSurfaceCustomerPrices(?string $tier = null): array
     {
-        $customerPrice = $this->getCustomerPrice();
+        $customerPrice = $this->getCustomerPrice($tier);
         $surfaces = $this->surfaces()->where('is_included', true)->get();
 
         if ($surfaces->isEmpty()) {
@@ -550,8 +581,15 @@ class EstimateArea extends Model
         $hasCustomSalePrices = $surfaces->contains(fn ($s) => $s->is_custom && $s->sale_price !== null);
 
         if (! $hasCustomSalePrices) {
-            // Standard proportional allocation
-            $totalCogs = (float) $surfaces->sum('total');
+            // Standard proportional allocation - use tier-specific COGS when available
+            if ($tier !== null) {
+                $totalCogs = 0.0;
+                foreach ($surfaces as $surface) {
+                    $totalCogs += (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                }
+            } else {
+                $totalCogs = (float) $surfaces->sum('total');
+            }
 
             if ($totalCogs <= 0) {
                 return [];
@@ -565,7 +603,12 @@ class EstimateArea extends Model
                 if ($surface->id === $lastId) {
                     $prices[$surface->id] = round($customerPrice - $allocated, 2);
                 } else {
-                    $price = round(((float) $surface->total / $totalCogs) * $customerPrice, 2);
+                    if ($tier !== null) {
+                        $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                    } else {
+                        $surfaceCogs = (float) $surface->total;
+                    }
+                    $price = round(($surfaceCogs / $totalCogs) * $customerPrice, 2);
                     $prices[$surface->id] = $price;
                     $allocated += $price;
                 }
@@ -586,7 +629,11 @@ class EstimateArea extends Model
                 $customTotal += (float) $surface->sale_price;
             } else {
                 $nonCustomSurfaces[] = $surface;
-                $nonCustomCogs += (float) $surface->total;
+                if ($tier !== null) {
+                    $nonCustomCogs += (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                } else {
+                    $nonCustomCogs += (float) $surface->total;
+                }
             }
         }
 
@@ -601,7 +648,12 @@ class EstimateArea extends Model
                 if ($surface->id === $lastNonCustom->id) {
                     $prices[$surface->id] = round($remainingPrice - $allocated, 2);
                 } else {
-                    $price = round(((float) $surface->total / $nonCustomCogs) * $remainingPrice, 2);
+                    if ($tier !== null) {
+                        $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                    } else {
+                        $surfaceCogs = (float) $surface->total;
+                    }
+                    $price = round(($surfaceCogs / $nonCustomCogs) * $remainingPrice, 2);
                     $prices[$surface->id] = $price;
                     $allocated += $price;
                 }
@@ -616,8 +668,9 @@ class EstimateArea extends Model
      * Uses proportional allocation: (included COGS / total COGS) × full area price.
      *
      * @param  array<int>  $includedSurfaceIds  Surface IDs to include in pricing
+     * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
      */
-    public function getPartialCustomerPrice(array $includedSurfaceIds): float
+    public function getPartialCustomerPrice(array $includedSurfaceIds, ?string $tier = null): float
     {
         if (empty($includedSurfaceIds)) {
             return 0.0;
@@ -628,24 +681,33 @@ class EstimateArea extends Model
         }
 
         $allSurfaces = $this->surfaces()->where('is_included', true)->get();
-        $totalCogs = (float) $allSurfaces->sum('total');
 
-        if ($totalCogs <= 0) {
-            return 0.0;
+        // For tier pricing, calculate COGS using tier-specific material costs
+        if ($tier !== null) {
+            $totalCogs = 0.0;
+            $includedCogs = 0.0;
+            foreach ($allSurfaces as $surface) {
+                $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                $totalCogs += $surfaceCogs;
+                if (in_array($surface->id, $includedSurfaceIds)) {
+                    $includedCogs += $surfaceCogs;
+                }
+            }
+        } else {
+            $totalCogs = (float) $allSurfaces->sum('total');
+            $includedCogs = (float) $allSurfaces->whereIn('id', $includedSurfaceIds)->sum('total');
         }
 
-        $includedCogs = (float) $allSurfaces->whereIn('id', $includedSurfaceIds)->sum('total');
-
-        if ($includedCogs <= 0) {
+        if ($totalCogs <= 0 || $includedCogs <= 0) {
             return 0.0;
         }
 
         // All surfaces included - return full price (avoids rounding drift)
         if ($includedCogs >= $totalCogs) {
-            return $this->getCustomerPrice();
+            return $this->getCustomerPrice($tier);
         }
 
-        return round(($includedCogs / $totalCogs) * $this->getCustomerPrice(), 2);
+        return round(($includedCogs / $totalCogs) * $this->getCustomerPrice($tier), 2);
     }
 
     /**

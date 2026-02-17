@@ -4,11 +4,13 @@ use App\Http\Controllers\ActivityCalendarController;
 use App\Http\Controllers\ActivityCalendarFeedController;
 use App\Http\Controllers\Api\VideoDataController;
 use App\Http\Controllers\CalendarFeedController;
+use App\Http\Controllers\ContractPdfController;
 use App\Http\Controllers\CrewDocumentPdfController;
 use App\Http\Controllers\EstimateBreakdownExportController;
 use App\Http\Controllers\EstimatePdfController;
 use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PainterBreakdownExportController;
+use App\Http\Controllers\ScheduleCalendarFeedController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\VideoCallPlaybackController;
 use App\Http\Controllers\VideoRecordingPlaybackController;
@@ -57,7 +59,7 @@ Route::livewire('/referral-terms', 'public.referral-terms')
     ->name('legal.referral-terms')
     ->middleware('throttle:60,1');
 
-Route::view('dashboard', 'dashboard')
+Route::livewire('dashboard', 'dashboard')
     ->middleware(['auth', 'verified', 'auth.internal'])
     ->name('dashboard');
 
@@ -86,6 +88,21 @@ Route::livewire('/roi/{token}', 'public.roi-viewer')
     ->name('roi.public')
     ->middleware('throttle:60,1');
 
+// Public careers routes
+Route::livewire('/careers', 'public.careers')
+    ->name('careers')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/careers/apply/{jobListing?}', 'public.apply')
+    ->name('careers.apply')
+    ->middleware('throttle:30,1');
+
+Route::get('/careers/qr/{token}', function (string $token) {
+    $listing = \App\Models\JobListing::where('qr_code_token', $token)->firstOrFail();
+
+    return redirect()->route('careers.apply', ['jobListing' => $listing, 'source' => 'qr_code']);
+})->name('careers.qr')->middleware('throttle:60,1');
+
 // Public video call recording playback (signed URL)
 Route::get('/recording/{videoCall:room_id}', [VideoCallPlaybackController::class, 'show'])
     ->name('video-call.recording.public')
@@ -99,6 +116,11 @@ Route::get('/calendar/{token}.ics', CalendarFeedController::class)
 // Public iCal calendar feed for activities (for Google Calendar / Apple Calendar subscription)
 Route::get('/calendar/{token}/activities.ics', ActivityCalendarFeedController::class)
     ->name('calendar.activities')
+    ->middleware('throttle:60,1');
+
+// Public iCal calendar feed for employee work schedule
+Route::get('/calendar/{token}/schedule.ics', ScheduleCalendarFeedController::class)
+    ->name('calendar.schedule-feed')
     ->middleware('throttle:60,1');
 
 // Invitation management routes (authenticated, internal only)
@@ -282,6 +304,98 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
             ->name('invoices.pdf');
     });
 
+    // Employee routes
+    Route::middleware(['permission:employees.view'])->group(function () {
+        Route::livewire('/employees', 'employees.index')->name('employees.index');
+        Route::livewire('/employees/{employeeProfile}', 'employees.show')->name('employees.show');
+        Route::livewire('/document-center', 'employees.document-center')->name('document-center');
+    });
+
+    // Contract template routes
+    Route::middleware(['permission:settings.contracts'])->group(function () {
+        Route::livewire('/contracts/templates', 'contracts.templates')->name('contracts.templates');
+        Route::livewire('/contracts/templates/{contractTemplate}/edit', 'contracts.template-editor')->name('contracts.templates.edit');
+        Route::get('/contracts/templates/{contractTemplate}/pdf-preview', [ContractPdfController::class, 'templatePdfPreview'])->name('contracts.templates.pdf-preview');
+    });
+
+    // Employee contract routes
+    Route::middleware(['permission:employees.view'])->group(function () {
+        Route::livewire('/contracts/{employeeContract}', 'contracts.show')->name('contracts.show');
+        Route::get('/contracts/{employeeContract}/pdf', [ContractPdfController::class, 'download'])->name('contracts.pdf');
+        Route::get('/contracts/{employeeContract}/document', [ContractPdfController::class, 'viewDocument'])->name('contracts.document');
+        Route::get('/contracts/templates/{contractTemplate}/assign-preview', [ContractPdfController::class, 'templatePdfForAssign'])->name('contracts.templates.assign-preview');
+    });
+
+    // Hiring routes
+    Route::middleware(['permission:hiring.view'])->group(function () {
+        Route::livewire('/hiring', 'hiring.index')->name('hiring.index');
+        Route::livewire('/hiring/listings', 'hiring.job-listings')->name('hiring.listings');
+        Route::livewire('/hiring/pipeline', 'hiring.applicant-pipeline')->name('hiring.pipeline');
+    });
+
+    // Time tracking routes
+    Route::middleware(['permission:time_tracking.view'])->group(function () {
+        Route::livewire('/time-tracking', 'time-tracking.dashboard')->name('time-tracking.index');
+        Route::livewire('/time-tracking/timesheet/{employeeProfile?}', 'time-tracking.employee-timesheet')->name('time-tracking.timesheet');
+    });
+
+    // Onboarding routes
+    Route::middleware(['permission:onboarding.view'])->group(function () {
+        Route::livewire('/onboarding', 'onboarding.checklist-manager')->name('onboarding.index');
+        Route::livewire('/employees/{employeeProfile}/onboarding', 'onboarding.employee-progress')->name('onboarding.progress');
+    });
+
+    // Scheduling routes
+    Route::middleware(['permission:scheduling.view'])->group(function () {
+        Route::livewire('/scheduling', 'scheduling.calendar')->name('scheduling.index');
+        Route::livewire('/scheduling/pto', 'scheduling.pto-requests')->name('scheduling.pto');
+        Route::livewire('/scheduling/employee/{employeeProfile?}', 'scheduling.employee-schedule')->name('scheduling.employee');
+        Route::livewire('/scheduling/availability/{employeeProfile}', 'scheduling.availability')->name('scheduling.availability');
+    });
+
+    // Payroll routes
+    Route::middleware(['permission:payroll.view'])->group(function () {
+        Route::livewire('/payroll', 'payroll.index')->name('payroll.index');
+        Route::livewire('/payroll/stubs/{payStub}', 'payroll.pay-stub')->name('payroll.stub');
+        Route::livewire('/payroll/deductions/{employeeProfile}', 'payroll.deductions')
+            ->middleware('permission:payroll.manage')
+            ->name('payroll.deductions');
+        Route::livewire('/payroll/commissions', 'payroll.commissions')
+            ->middleware('permission:payroll.manage')
+            ->name('payroll.commissions');
+        Route::livewire('/payroll/{period}', 'payroll.run')->name('payroll.run');
+
+        Route::get('/payroll/stubs/{payStub}/check', function (\App\Models\PayStub $payStub) {
+            abort_unless(auth()->user()->can('payroll.manage'), 403);
+
+            $payStub->load(['employeeProfile.user', 'payPeriod']);
+
+            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.payroll-check', [
+                'stub' => $payStub,
+                'employee' => $payStub->employeeProfile,
+                'period' => $payStub->payPeriod,
+                'company' => \App\Models\CompanySetting::getInstance(),
+            ]);
+
+            return $pdf->download("check-{$payStub->check_number}.pdf");
+        })->middleware('permission:payroll.manage')->name('payroll.check');
+    });
+
+    // Employee onboarding wizard
+    Route::livewire('/employee/onboarding', 'employees.employee-onboarding')->name('employee.onboarding');
+
+    // Employee self-service routes (any internal user with employee profile)
+    Route::livewire('/my/profile', 'employees.my-profile')->name('my.profile');
+    Route::livewire('/my/schedule', 'scheduling.employee-schedule')->name('my.schedule');
+    Route::livewire('/my/availability', 'scheduling.availability')->name('my.availability');
+    Route::livewire('/my/timesheet', 'time-tracking.employee-timesheet')->name('my.timesheet');
+    Route::livewire('/my/pay-stubs', 'payroll.my-pay-stubs')->name('my.pay-stubs');
+    Route::livewire('/my/contracts', 'contracts.my-contracts')->name('my.contracts');
+    Route::livewire('/my/documents', 'employees.my-documents')->name('my.documents');
+    Route::livewire('/my/onboarding', 'onboarding.my-progress')->name('my.onboarding');
+    Route::livewire('/my/pto', 'scheduling.my-pto')->name('my.pto');
+    Route::livewire('/my/commissions', 'payroll.my-commissions')->name('my.commissions');
+
     // Legacy redirects - keep old URLs working
     Route::get('/roadmap', fn () => redirect()->route('business-plan.index', ['tab' => 'roadmap']))
         ->name('roadmap.index');
@@ -289,6 +403,21 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         ->name('kpis.sales');
     Route::get('/kpis/production', fn () => redirect()->route('business-plan.index', ['tab' => 'production-plan']))
         ->name('kpis.production');
+});
+
+// Employee contract signing (authenticated, owner-only)
+Route::middleware(['auth:web,crew'])->group(function () {
+    Route::livewire('/sign/{token}', 'contracts.signing')
+        ->name('contracts.sign');
+
+    Route::get('/sign/{token}/pdf', [ContractPdfController::class, 'publicDownload'])
+        ->name('contracts.sign.pdf');
+
+    Route::get('/sign/{token}/document', [ContractPdfController::class, 'publicViewDocument'])
+        ->name('contracts.sign.document');
+
+    Route::get('/sign/{token}/template-pdf', [ContractPdfController::class, 'publicTemplatePdf'])
+        ->name('contracts.sign.template-pdf');
 });
 
 // Public invoice payment page

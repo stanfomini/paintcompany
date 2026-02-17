@@ -256,7 +256,7 @@ class ChatService
 
             foreach ($files as $file) {
                 $filename = Str::uuid().'.'.$file->getClientOriginalExtension();
-                $path = $file->storeAs('chat-attachments', $filename, 'local');
+                $path = $file->storeAs('chat-attachments', $filename);
 
                 $message->attachments()->create([
                     'path' => $path,
@@ -658,7 +658,7 @@ class ChatService
             return false;
         }
 
-        Storage::disk('local')->delete($attachment->path);
+        Storage::delete($attachment->path);
 
         return $attachment->delete();
     }

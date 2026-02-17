@@ -66,11 +66,85 @@
                     @endcan
                 </flux:sidebar.group>
 
-                @if (auth()->user() && app(\App\Services\InvitationService::class)->canSendInvitations(auth()->user()))
-                    <flux:sidebar.group :heading="__('Team')" class="grid">
+                <flux:sidebar.group :heading="__('Team')" class="grid">
+                    @can('employees.view')
+                        <flux:sidebar.item icon="users" :href="route('employees.index')" :current="request()->routeIs('employees.*')" wire:navigate>
+                            {{ __('Employees') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="folder-open" :href="route('document-center')" :current="request()->routeIs('document-center')" wire:navigate>
+                            {{ __('Documents') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('hiring.view')
+                        <flux:sidebar.item icon="user-plus" :href="route('hiring.index')" :current="request()->routeIs('hiring.*')" wire:navigate>
+                            {{ __('Hiring') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('time_tracking.view')
+                        <flux:sidebar.item icon="clock" :href="route('time-tracking.index')" :current="request()->routeIs('time-tracking.*')" wire:navigate>
+                            {{ __('Time Tracking') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('scheduling.view')
+                        <flux:sidebar.item icon="calendar-days" :href="route('scheduling.index')" :current="request()->routeIs('scheduling.*')" wire:navigate>
+                            {{ __('Scheduling') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('payroll.view')
+                        <flux:sidebar.item icon="banknotes" :href="route('payroll.index')" :current="request()->routeIs('payroll.index') || request()->routeIs('payroll.run') || request()->routeIs('payroll.stub') || request()->routeIs('payroll.deductions') || request()->routeIs('payroll.check')" wire:navigate>
+                            {{ __('Payroll') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('payroll.manage')
+                        <flux:sidebar.item icon="currency-dollar" :href="route('payroll.commissions')" :current="request()->routeIs('payroll.commissions')" wire:navigate>
+                            {{ __('Commissions') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('settings.contracts')
+                        <flux:sidebar.item icon="document-text" :href="route('contracts.templates')" :current="request()->routeIs('contracts.*')" wire:navigate>
+                            {{ __('Contracts') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('onboarding.view')
+                        <flux:sidebar.item icon="clipboard-document-list" :href="route('onboarding.index')" :current="request()->routeIs('onboarding.*')" wire:navigate>
+                            {{ __('Onboarding') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @if (auth()->user() && app(\App\Services\InvitationService::class)->canSendInvitations(auth()->user()))
                         <flux:sidebar.item icon="envelope" :href="route('invitations')" :current="request()->routeIs('invitations')" wire:navigate>
                             {{ __('Invitations') }}
                         </flux:sidebar.item>
+                    @endif
+                </flux:sidebar.group>
+
+                @if(auth()->user()?->employeeProfile)
+                    <flux:sidebar.group :heading="__('My Work')" class="grid">
+                        <flux:sidebar.item icon="user" :href="route('my.profile')" :current="request()->routeIs('my.profile')" wire:navigate>
+                            {{ __('My Profile') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="calendar" :href="route('my.schedule')" :current="request()->routeIs('my.schedule')" wire:navigate>
+                            {{ __('My Schedule') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="clock" :href="route('my.timesheet')" :current="request()->routeIs('my.timesheet')" wire:navigate>
+                            {{ __('My Timesheet') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="banknotes" :href="route('my.pay-stubs')" :current="request()->routeIs('my.pay-stubs')" wire:navigate>
+                            {{ __('My Pay Stubs') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="document-text" :href="route('my.contracts')" :current="request()->routeIs('my.contracts')" wire:navigate>
+                            {{ __('My Contracts') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="folder-open" :href="route('my.documents')" :current="request()->routeIs('my.documents')" wire:navigate>
+                            {{ __('My Documents') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="sun" :href="route('my.pto')" :current="request()->routeIs('my.pto')" wire:navigate>
+                            {{ __('My PTO') }}
+                        </flux:sidebar.item>
+                        @if(auth()->user()->employeeProfile->hasCommissionRules())
+                            <flux:sidebar.item icon="currency-dollar" :href="route('my.commissions')" :current="request()->routeIs('my.commissions')" wire:navigate>
+                                {{ __('My Commissions') }}
+                            </flux:sidebar.item>
+                        @endif
                     </flux:sidebar.group>
                 @endif
 
@@ -89,6 +163,12 @@
             <flux:spacer />
 
             <flux:sidebar.nav>
+                @if(auth()->user()?->employeeProfile)
+                    <div class="border-t border-zinc-200 dark:border-zinc-700 px-1 py-1">
+                        <livewire:employees.clock-button />
+                    </div>
+                @endif
+
                 <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
                     {{ __('Repository') }}
                 </flux:sidebar.item>

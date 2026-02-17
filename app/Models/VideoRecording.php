@@ -90,19 +90,22 @@ class VideoRecording extends Model
      */
     private function getSignedOrPublicUrl(string $path, string $variant): string
     {
-        $disk = Storage::disk($this->disk);
-        $adapter = $disk->getAdapter();
+        $diskName = $this->disk ?? config('filesystems.default');
+        $disk = Storage::disk($diskName);
 
-        if ($adapter instanceof \League\Flysystem\Local\LocalFilesystemAdapter) {
-            return $disk->url($path).'?v='.$this->updated_at?->timestamp;
+        if (method_exists($disk, 'temporaryUrl')) {
+            try {
+                $cacheKey = "video_url:{$this->id}:{$variant}:{$this->updated_at?->timestamp}";
+
+                return Cache::remember($cacheKey, now()->addMinutes(55), function () use ($disk, $path) {
+                    return $disk->temporaryUrl($path, now()->addMinutes(60));
+                });
+            } catch (\RuntimeException $e) {
+                // Local disk doesn't support temporaryUrl
+            }
         }
 
-        // S3/Wasabi: use cached signed URLs
-        $cacheKey = "video_url:{$this->id}:{$variant}:{$this->updated_at?->timestamp}";
-
-        return Cache::remember($cacheKey, now()->addMinutes(55), function () use ($disk, $path) {
-            return $disk->temporaryUrl($path, now()->addMinutes(60));
-        });
+        return $disk->url($path).'?v='.$this->updated_at?->timestamp;
     }
 
     public function getShareableUrl(): ?string

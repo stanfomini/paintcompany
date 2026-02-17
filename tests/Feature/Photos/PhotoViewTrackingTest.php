@@ -143,7 +143,7 @@ describe('PropertyPhoto hasUnviewedChanges', function () {
 
 describe('Photo activity logging', function () {
     beforeEach(function () {
-        Storage::fake('public');
+        Storage::fake();
         Queue::fake();
     });
 

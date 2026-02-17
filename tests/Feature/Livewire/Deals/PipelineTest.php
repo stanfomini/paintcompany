@@ -36,6 +36,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->assertSee('New Lead')
             ->assertSee('Quote Scheduled')
             ->assertSee('Quoted');
@@ -56,6 +57,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->assertSee('Lead Deal Test')
             ->assertSee('Quoted Deal Test');
     });
@@ -168,6 +170,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->set('assignedToFilter', $assignee1->id)
             ->assertSee('Johns Deal')
             ->assertDontSee('Janes Deal');
@@ -195,6 +198,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->set('customerFilter', $customer1->id)
             ->assertSee('Alices Project')
             ->assertDontSee('Bobs Project');
@@ -215,6 +219,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->set('search', 'Kitchen')
             ->assertSee('Kitchen Renovation')
             ->assertDontSee('Bathroom Remodel');
@@ -242,6 +247,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->set('search', 'Alice')
             ->assertSee('Project Alpha')
             ->assertDontSee('Project Beta');
@@ -259,6 +265,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->assertSee('$15,000');
     });
 
@@ -276,6 +283,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->assertSee('Test Customer');
     });
 
@@ -284,6 +292,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->assertSee('No deals');
     });
 
@@ -307,6 +316,7 @@ describe('Deal Pipeline component', function () {
 
         Livewire::actingAs($user)
             ->test('deals.pipeline')
+
             ->assertSee('3');
     });
 });

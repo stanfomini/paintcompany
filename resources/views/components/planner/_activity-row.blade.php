@@ -76,40 +76,55 @@
         {{-- Subject context --}}
         <div class="flex items-center gap-2 mt-0.5">
             @if ($isDeal && $activity->subject)
-                <a href="{{ route('deals.show', $activity->subject) }}" wire:navigate class="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate">
-                    {{ $activity->subject->customer?->user?->name ?? $activity->subject->title }}
-                </a>
+                @if ($activity->subject->customer_id)
+                    <a href="{{ route('customers.show', ['customer' => $activity->subject->customer_id, 'deal' => $activity->subject->id]) }}" wire:navigate class="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate" onclick="event.stopPropagation()">
+                        {{ $activity->subject->customer?->user?->name ?? $activity->subject->title }}
+                    </a>
+                @elseif ($activity->subject->agent_id)
+                    <a href="{{ route('agents.show', $activity->subject->agent_id) }}" wire:navigate class="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate" onclick="event.stopPropagation()">
+                        {{ $activity->subject->agent?->name ?? $activity->subject->title }}
+                    </a>
+                @endif
                 <flux:badge size="sm" :color="$this->dealStageColors[$activity->subject->stage] ?? 'zinc'">
                     {{ str_replace('_', ' ', ucfirst($activity->subject->stage)) }}
                 </flux:badge>
             @elseif ($isJob && $activity->subject)
-                <a href="{{ route('jobs.show', $activity->subject) }}" wire:navigate class="text-xs text-green-600 dark:text-green-400 hover:underline truncate">
-                    {{ $activity->subject->deal?->customer?->user?->name ?? $activity->subject->title }}
-                </a>
+                @if ($activity->subject->deal?->customer_id)
+                    <a href="{{ route('customers.show', ['customer' => $activity->subject->deal->customer_id, 'deal' => $activity->subject->deal_id]) }}" wire:navigate class="text-xs text-green-600 dark:text-green-400 hover:underline truncate" onclick="event.stopPropagation()">
+                        {{ $activity->subject->deal?->customer?->user?->name ?? $activity->subject->title }}
+                    </a>
+                @endif
                 <flux:badge size="sm" :color="$this->jobStageColors[$activity->subject->stage] ?? 'zinc'">
                     {{ str_replace('_', ' ', ucfirst($activity->subject->stage)) }}
                 </flux:badge>
             @elseif ($isEstimate && $activity->subject)
-                <a href="{{ route('estimates.show', $activity->subject) }}" wire:navigate class="text-xs text-orange-600 dark:text-orange-400 hover:underline truncate">
-                    {{ $activity->subject->title ?? $activity->subject->estimate_number ?? 'Estimate' }}
-                </a>
+                @if ($activity->subject->deal?->customer_id)
+                    <a href="{{ route('customers.show', ['customer' => $activity->subject->deal->customer_id, 'deal' => $activity->subject->deal_id]) }}" wire:navigate class="text-xs text-orange-600 dark:text-orange-400 hover:underline truncate" onclick="event.stopPropagation()">
+                        {{ $activity->subject->deal?->customer?->user?->name ?? $activity->subject->title ?? 'Estimate' }}
+                    </a>
+                @endif
                 <flux:badge size="sm" :color="match($activity->subject->status) { 'draft' => 'zinc', 'sent' => 'blue', 'accepted' => 'green', 'rejected' => 'red', default => 'zinc' }">
                     {{ ucfirst($activity->subject->status) }}
                 </flux:badge>
             @elseif ($isCustomer && $activity->subject)
-                <a href="{{ route('customers.show', $activity->subject) }}" wire:navigate class="text-xs text-purple-600 dark:text-purple-400 hover:underline truncate">
+                <a href="{{ route('customers.show', $activity->subject) }}" wire:navigate class="text-xs text-purple-600 dark:text-purple-400 hover:underline truncate" onclick="event.stopPropagation()">
                     {{ $activity->subject->user?->name ?? 'Customer' }}
                 </a>
             @elseif ($isUser && $activity->subject)
                 @if ($activity->subject->isAgent())
-                    <a href="{{ route('agents.show', $activity->subject) }}" wire:navigate class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline truncate">
+                    <a href="{{ route('agents.show', $activity->subject) }}" wire:navigate class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline truncate" onclick="event.stopPropagation()">
                         {{ $activity->subject->name }}
                         <span class="text-zinc-400">({{ ucfirst($activity->subject->type) }})</span>
                     </a>
                 @elseif ($activity->subject->isCrew())
-                    <a href="{{ route('crews.show', $activity->subject) }}" wire:navigate class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline truncate">
+                    <a href="{{ route('crews.show', $activity->subject) }}" wire:navigate class="text-xs text-indigo-600 dark:text-indigo-400 hover:underline truncate" onclick="event.stopPropagation()">
                         {{ $activity->subject->name }}
                         <span class="text-zinc-400">({{ ucfirst($activity->subject->type) }})</span>
+                    </a>
+                @elseif ($activity->subject->isCustomer() && $activity->subject->customerProfile)
+                    <a href="{{ route('customers.show', $activity->subject->customerProfile) }}" wire:navigate class="text-xs text-purple-600 dark:text-purple-400 hover:underline truncate" onclick="event.stopPropagation()">
+                        {{ $activity->subject->name }}
+                        <span class="text-zinc-400">(Customer)</span>
                     </a>
                 @else
                     <span class="text-xs text-indigo-600 dark:text-indigo-400 truncate">
@@ -220,5 +235,6 @@
         @if ($isJob && $activity->subject && ! $activity->is_completed)
             <flux:button variant="ghost" size="sm" icon="eye" class="!p-1" wire:click="viewJob({{ $activity->id }})" title="{{ __('View Job') }}" />
         @endif
+
     </div>
 </div>

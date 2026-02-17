@@ -15,8 +15,6 @@ return [
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
-    'photos_disk' => env('PHOTOS_DISK', 'public'),
-
     /*
     |--------------------------------------------------------------------------
     | Filesystem Disks

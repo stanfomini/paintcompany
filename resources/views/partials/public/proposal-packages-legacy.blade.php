@@ -1,8 +1,13 @@
 {{-- LEGACY PACKAGE SYSTEM - Simplified View --}}
 {{-- Package Selection Header --}}
 <div class="text-center">
-    <h2 class="text-2xl font-semibold text-gray-900">{{ __('Choose Your Package') }}</h2>
-    <p class="mt-2 text-gray-600">{{ __('Select the package that best fits your needs') }}</p>
+    @if (count($packages) === 1)
+        <h2 class="text-2xl font-semibold text-gray-900">{{ __('Your Proposal') }}</h2>
+        <p class="mt-2 text-gray-600">{{ __('Review the details of your custom proposal') }}</p>
+    @else
+        <h2 class="text-2xl font-semibold text-gray-900">{{ __('Choose Your Package') }}</h2>
+        <p class="mt-2 text-gray-600">{{ __('Select the package that best fits your needs') }}</p>
+    @endif
 </div>
 
 {{-- Package Comparison Cards --}}
@@ -36,6 +41,23 @@
                         <h3 class="mt-3 text-xl font-semibold text-gray-900">{{ $package['name'] }}</h3>
                         @if ($package['description'])
                             <p class="mt-2 text-sm text-gray-600">{{ $package['description'] }}</p>
+                        @endif
+
+                        @if (! empty($package['paint_products']))
+                            <div class="mt-3 space-y-1">
+                                @foreach ($package['paint_products'] as $paint)
+                                    <div class="flex items-center justify-center gap-1.5 text-xs">
+                                        <svg class="w-3.5 h-3.5 text-blue-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M3.5 2A1.5 1.5 0 002 3.5V5c0 .325.103.625.278.871L7 12.5V17a1 1 0 001.555.832l3-2A1 1 0 0012 15v-2.5l4.722-6.629A1.5 1.5 0 0017 5V3.5A1.5 1.5 0 0015.5 2h-12z"/>
+                                        </svg>
+                                        <span class="text-gray-700 font-medium">{{ $paint['name'] }}</span>
+                                        @if ($paint['sheen'])
+                                            <span class="text-gray-400">&middot;</span>
+                                            <span class="text-gray-500">{{ $paint['sheen'] }}</span>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
                         @endif
                     </div>
 
@@ -113,29 +135,40 @@
                     </div>
 
                     {{-- Select Button --}}
-                    <button
-                        wire:click="selectPackage({{ $package['id'] }})"
-                        wire:loading.attr="disabled"
-                        @if (!$this->canModify()) disabled @endif
-                        class="w-full py-3 px-4 rounded-lg font-medium transition-colors duration-200 {{ $selectedPackageId === $package['id']
-                            ? 'bg-blue-600 text-white cursor-default'
-                            : ($package['is_recommended']
-                                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                                : 'bg-gray-100 text-gray-900 hover:bg-gray-200')
-                        }} disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        @if ($selectedPackageId === $package['id'])
+                    @if (count($packages) === 1)
+                        <div class="w-full py-3 px-4 rounded-lg font-medium bg-blue-600 text-white text-center">
                             <span class="flex items-center justify-center gap-2">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                                 </svg>
-                                {{ __('Selected') }}
+                                {{ __('Your Package') }}
                             </span>
-                        @else
-                            <span wire:loading.remove wire:target="selectPackage({{ $package['id'] }})">{{ __('Select Package') }}</span>
-                            <span wire:loading wire:target="selectPackage({{ $package['id'] }})">{{ __('Selecting...') }}</span>
-                        @endif
-                    </button>
+                        </div>
+                    @else
+                        <button
+                            wire:click="selectPackage({{ $package['id'] }})"
+                            wire:loading.attr="disabled"
+                            @if (!$this->canModify()) disabled @endif
+                            class="w-full py-3 px-4 rounded-lg font-medium transition-colors duration-200 {{ $selectedPackageId === $package['id']
+                                ? 'bg-blue-600 text-white cursor-default'
+                                : ($package['is_recommended']
+                                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                                    : 'bg-gray-100 text-gray-900 hover:bg-gray-200')
+                            }} disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            @if ($selectedPackageId === $package['id'])
+                                <span class="flex items-center justify-center gap-2">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                                    </svg>
+                                    {{ __('Selected') }}
+                                </span>
+                            @else
+                                <span wire:loading.remove wire:target="selectPackage({{ $package['id'] }})">{{ __('Select Package') }}</span>
+                                <span wire:loading wire:target="selectPackage({{ $package['id'] }})">{{ __('Selecting...') }}</span>
+                            @endif
+                        </button>
+                    @endif
                 </div>
             </div>
         @endforeach

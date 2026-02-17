@@ -146,65 +146,7 @@ class EstimatePackageService
      */
     public function calculatePackageTotal(EstimatePackage $package): void
     {
-        $items = $package->items()
-            ->where('is_included', true)
-            ->where('customer_approved', true)
-            ->with('itemable')
-            ->get();
-
-        // Separate surface items from service items
-        $surfaceItems = $items->filter(
-            fn ($item) => $item->itemable_type === EstimateAreaSurface::class
-        );
-        $serviceItems = $items->filter(
-            fn ($item) => $item->itemable_type !== EstimateAreaSurface::class
-        );
-
-        // Group surfaces by area and track which surface IDs are included per area
-        // Uses proportional pricing: only included surfaces contribute to the total
-        $paintingTotal = 0.0;
-        $areaSurfaceIds = [];
-
-        foreach ($surfaceItems as $item) {
-            $surface = $item->itemable;
-            if ($surface && $surface->area_id) {
-                $areaSurfaceIds[$surface->area_id][] = $surface->id;
-            }
-        }
-
-        foreach ($areaSurfaceIds as $areaId => $surfaceIds) {
-            $area = EstimateArea::find($areaId);
-            if ($area) {
-                $paintingTotal += $area->getPartialCustomerPrice($surfaceIds);
-            }
-        }
-
-        // Add service items (already have correct prices)
-        $servicesTotal = $serviceItems->sum(fn ($item) => $item->effective_price);
-
-        $subtotal = $paintingTotal + $servicesTotal;
-        $package->subtotal = $subtotal;
-
-        // Add warranty price to base amount
-        $baseAmount = $subtotal + ($package->warranty_price ?? 0);
-
-        // Calculate discount
-        $discountAmount = $package->discount_amount ?? 0;
-        if ($package->discount_percent > 0) {
-            $discountAmount = $baseAmount * ($package->discount_percent / 100);
-        }
-        $package->discount_amount = $discountAmount;
-
-        // Calculate subtotal after discount (before tax)
-        $taxableAmount = $baseAmount - $discountAmount;
-
-        // Calculate tax
-        $taxRate = (float) ($package->tax_rate ?? 0);
-        $package->tax_amount = $taxableAmount * ($taxRate / 100);
-
-        // Calculate total
-        $package->total = $taxableAmount + $package->tax_amount;
-
+        $package->calculateTotals();
         $package->save();
     }
 

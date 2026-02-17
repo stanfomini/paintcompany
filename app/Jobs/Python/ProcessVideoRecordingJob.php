@@ -30,16 +30,21 @@ class ProcessVideoRecordingJob implements ShouldQueue
 
         $this->recording->update(['status' => 'processing']);
 
-        try {
-            $localDisk = Storage::disk('video-recordings');
-            $originalPath = $localDisk->path($this->recording->original_path);
+        $tempFile = null;
 
-            if (! file_exists($originalPath)) {
+        try {
+            $uploadDisk = Storage::disk($this->recording->disk);
+
+            if (! $uploadDisk->exists($this->recording->original_path)) {
                 throw new \RuntimeException('Original video file not found: '.$this->recording->original_path);
             }
 
+            // Download original to temp file (Python needs a filesystem path)
+            $tempFile = tempnam(sys_get_temp_dir(), 'video_proc_');
+            file_put_contents($tempFile, $uploadDisk->get($this->recording->original_path));
+
             // Send to Python for processing
-            $response = $python->processVideo($originalPath, (string) $this->recording->id);
+            $response = $python->processVideo($tempFile, (string) $this->recording->id);
 
             if (! $response->successful()) {
                 throw new \RuntimeException('Python processing failed: '.$response->body());
@@ -51,12 +56,12 @@ class ProcessVideoRecordingJob implements ShouldQueue
                 throw new \RuntimeException('Processing returned failure: '.($result['detail'] ?? 'Unknown error'));
             }
 
-            // Determine the final storage disk (cloud if configured, else local)
-            $finalDisk = Storage::disk('video-recordings-cloud');
-            $finalDiskName = 'video-recordings-cloud';
+            // Use the default disk for final storage
+            $finalDiskName = config('filesystems.default');
+            $finalDisk = Storage::disk();
 
             // Copy processed MP4 to final storage
-            $videoStoragePath = 'videos/'.$this->recording->id.'.mp4';
+            $videoStoragePath = 'video-recordings/videos/'.$this->recording->id.'.mp4';
             if (isset($result['video_path']) && file_exists($result['video_path'])) {
                 $finalDisk->put($videoStoragePath, file_get_contents($result['video_path']));
             }
@@ -64,7 +69,7 @@ class ProcessVideoRecordingJob implements ShouldQueue
             // Copy thumbnail to final storage
             $thumbnailStoragePath = null;
             if (isset($result['thumbnail_path']) && file_exists($result['thumbnail_path'])) {
-                $thumbnailStoragePath = 'thumbnails/'.$this->recording->id.'.jpg';
+                $thumbnailStoragePath = 'video-recordings/thumbnails/'.$this->recording->id.'.jpg';
                 $finalDisk->put($thumbnailStoragePath, file_get_contents($result['thumbnail_path']));
             }
 
@@ -82,9 +87,9 @@ class ProcessVideoRecordingJob implements ShouldQueue
                 'error_message' => null,
             ]);
 
-            // Clean up local originals now that files are on cloud
-            if ($localDisk->exists($this->recording->original_path)) {
-                $localDisk->delete($this->recording->original_path);
+            // Clean up original file now that processed versions are stored
+            if ($uploadDisk->exists($this->recording->original_path)) {
+                $uploadDisk->delete($this->recording->original_path);
             }
 
             // Clean up temp files on Python side
@@ -109,6 +114,11 @@ class ProcessVideoRecordingJob implements ShouldQueue
             ]);
 
             // Don't re-throw - the video is still usable without transcoding
+        } finally {
+            // Clean up local temp file
+            if ($tempFile && file_exists($tempFile)) {
+                @unlink($tempFile);
+            }
         }
     }
 

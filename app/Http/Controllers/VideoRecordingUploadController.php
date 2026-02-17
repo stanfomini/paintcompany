@@ -25,11 +25,11 @@ class VideoRecordingUploadController extends Controller
 
         $user = $request->user();
         $file = $request->file('file');
-        $disk = Storage::disk('video-recordings');
+        $diskName = config('filesystems.default');
 
-        // Store the original file
-        $originalPath = 'originals/'.$file->hashName();
-        $disk->put($originalPath, file_get_contents($file->getRealPath()));
+        // Store the original file on the default disk (could be S3)
+        $originalPath = 'video-recordings/originals/'.$file->hashName();
+        Storage::put($originalPath, file_get_contents($file->getRealPath()));
 
         // Create the recording record
         $recording = VideoRecording::create([
@@ -37,7 +37,7 @@ class VideoRecordingUploadController extends Controller
             'title' => $request->input('title'),
             'status' => 'uploading',
             'original_path' => $originalPath,
-            'disk' => 'video-recordings',
+            'disk' => $diskName,
             'recordable_type' => $request->input('recordable_type'),
             'recordable_id' => $request->input('recordable_id'),
         ]);
@@ -54,6 +54,9 @@ class VideoRecordingUploadController extends Controller
 
     /**
      * Start a chunked upload session.
+     *
+     * Creates a local temp file for accumulating chunks, then uploads to the
+     * default disk (which may be S3) on finalize.
      */
     public function startChunkedUpload(Request $request): JsonResponse
     {
@@ -65,22 +68,28 @@ class VideoRecordingUploadController extends Controller
         ]);
 
         $user = $request->user();
-        $disk = Storage::disk('video-recordings');
+        $diskName = config('filesystems.default');
         $extension = str_contains($request->input('mime_type'), 'mp4') ? 'mp4' : 'webm';
-        $originalPath = 'originals/'.Str::uuid().'.'.$extension;
+        $originalPath = 'video-recordings/originals/'.Str::uuid().'.'.$extension;
 
-        // Create empty file to append chunks to
-        $disk->put($originalPath, '');
+        // Create a local temp file for accumulating chunks
+        $tempDir = storage_path('app/tmp/video-chunks');
+        if (! is_dir($tempDir)) {
+            mkdir($tempDir, 0755, true);
+        }
+        $tempPath = $tempDir.'/'.Str::uuid().'.'.$extension;
+        file_put_contents($tempPath, '');
 
         $recording = VideoRecording::create([
             'user_id' => $user->id,
             'title' => $request->input('title'),
             'status' => 'uploading',
             'original_path' => $originalPath,
-            'disk' => 'video-recordings',
+            'disk' => $diskName,
             'mime_type' => $request->input('mime_type'),
             'recordable_type' => $request->input('recordable_type'),
             'recordable_id' => $request->input('recordable_id'),
+            'metadata' => ['temp_chunk_path' => $tempPath],
         ]);
 
         return response()->json([
@@ -92,6 +101,9 @@ class VideoRecordingUploadController extends Controller
 
     /**
      * Upload a single chunk to an existing recording.
+     *
+     * Chunks are appended to a local temp file (fast), then pushed to the
+     * default disk on finalize.
      */
     public function uploadChunk(Request $request, VideoRecording $recording): JsonResponse
     {
@@ -110,14 +122,25 @@ class VideoRecordingUploadController extends Controller
             abort(422, __('Recording is not accepting uploads.'));
         }
 
-        $disk = Storage::disk($recording->disk);
+        $tempPath = $recording->metadata['temp_chunk_path'] ?? null;
+
+        // Fallback for recordings started before this change
+        if (! $tempPath || ! file_exists($tempPath)) {
+            $tempDir = storage_path('app/tmp/video-chunks');
+            if (! is_dir($tempDir)) {
+                mkdir($tempDir, 0755, true);
+            }
+            $tempPath = $tempDir.'/'.Str::uuid().'.bin';
+            file_put_contents($tempPath, '');
+            $recording->update(['metadata' => array_merge($recording->metadata ?? [], ['temp_chunk_path' => $tempPath])]);
+        }
+
         $chunkData = file_get_contents($request->file('chunk')->getRealPath());
 
-        // Append binary chunk data to the existing file (no newline - binary safe)
-        $fullPath = $disk->path($recording->original_path);
-        file_put_contents($fullPath, $chunkData, FILE_APPEND);
+        // Append chunk to local temp file (fast, works regardless of storage driver)
+        file_put_contents($tempPath, $chunkData, FILE_APPEND);
 
-        $totalSize = filesize($fullPath);
+        $totalSize = filesize($tempPath);
 
         return response()->json([
             'received' => true,
@@ -128,6 +151,9 @@ class VideoRecordingUploadController extends Controller
 
     /**
      * Finalize a chunked upload and start processing.
+     *
+     * Uploads the accumulated local temp file to the default disk (S3),
+     * then cleans up the local file.
      */
     public function finalizeUpload(Request $request, VideoRecording $recording): JsonResponse
     {
@@ -141,15 +167,28 @@ class VideoRecordingUploadController extends Controller
             abort(422, __('Recording is not in uploading state.'));
         }
 
-        $disk = Storage::disk($recording->disk);
+        $tempPath = $recording->metadata['temp_chunk_path'] ?? null;
 
-        if (! $disk->exists($recording->original_path) || $disk->size($recording->original_path) === 0) {
+        if (! $tempPath || ! file_exists($tempPath) || filesize($tempPath) === 0) {
             abort(422, __('No data has been uploaded for this recording.'));
         }
 
+        // Upload the assembled file to the default disk (could be S3)
+        Storage::put($recording->original_path, file_get_contents($tempPath));
+
+        $fileSize = filesize($tempPath);
+
+        // Clean up local temp file
+        @unlink($tempPath);
+
+        // Remove temp path from metadata
+        $metadata = $recording->metadata ?? [];
+        unset($metadata['temp_chunk_path']);
+
         $recording->update([
             'status' => 'processing',
-            'file_size_bytes' => $disk->size($recording->original_path),
+            'file_size_bytes' => $fileSize,
+            'metadata' => $metadata ?: null,
         ]);
 
         ProcessVideoRecordingJob::dispatch($recording);

@@ -39,20 +39,32 @@ class AudioMessageService
     /**
      * Process an uploaded audio file for a chat message.
      *
+     * Transcribes locally first (for speed), then stores on the default disk (which may be S3).
+     *
      * @return array{audio_url: string, audio_path: string, audio_duration: float|null, transcription: string|null, transcription_status: string}
      */
     public function processAudioMessage(UploadedFile $audio): array
     {
-        // Store the audio file
         $filename = Str::uuid().'.'.$this->getExtension($audio);
-        $path = $audio->storeAs('chat-audio', $filename, 'public');
+        $storagePath = 'chat-audio/'.$filename;
 
-        // Get transcription from Python service
-        $transcription = $this->transcribe(Storage::disk('public')->path($path));
+        // Write to a local temp file for transcription (Python needs a filesystem path)
+        $tempFile = tempnam(sys_get_temp_dir(), 'audio_');
+        file_put_contents($tempFile, file_get_contents($audio->getRealPath()));
+
+        try {
+            // Transcribe from local temp file (same speed as before)
+            $transcription = $this->transcribe($tempFile);
+
+            // Upload to default disk (could be S3)
+            Storage::put($storagePath, file_get_contents($tempFile));
+        } finally {
+            @unlink($tempFile);
+        }
 
         return [
-            'audio_url' => Storage::disk('public')->url($path),
-            'audio_path' => $path,
+            'audio_url' => storage_url($storagePath),
+            'audio_path' => $storagePath,
             'audio_duration' => $transcription['duration'] ?? null,
             'transcription' => $transcription['text'] ?? null,
             'transcription_status' => ($transcription['success'] ?? false) ? 'completed' : 'failed',
@@ -61,6 +73,8 @@ class AudioMessageService
 
     /**
      * Process base64 encoded audio data.
+     *
+     * Transcribes locally first (for speed), then stores on the default disk (which may be S3).
      *
      * @return array{audio_url: string, audio_path: string, audio_duration: float|null, transcription: string|null, transcription_status: string}
      */
@@ -79,18 +93,26 @@ class AudioMessageService
         // Determine file extension from mime type
         $extension = $this->getExtensionFromMimeType($mimeType);
 
-        // Store the audio file
         $filename = Str::uuid().'.'.$extension;
-        $path = 'chat-audio/'.$filename;
+        $storagePath = 'chat-audio/'.$filename;
 
-        Storage::disk('public')->put($path, $audioData);
+        // Write to a local temp file for transcription (Python needs a filesystem path)
+        $tempFile = tempnam(sys_get_temp_dir(), 'audio_');
+        file_put_contents($tempFile, $audioData);
 
-        // Get transcription from Python service
-        $transcription = $this->transcribe(Storage::disk('public')->path($path));
+        try {
+            // Transcribe from local temp file (same speed as before)
+            $transcription = $this->transcribe($tempFile);
+
+            // Upload to default disk (could be S3)
+            Storage::put($storagePath, $audioData);
+        } finally {
+            @unlink($tempFile);
+        }
 
         return [
-            'audio_url' => Storage::disk('public')->url($path),
-            'audio_path' => $path,
+            'audio_url' => storage_url($storagePath),
+            'audio_path' => $storagePath,
             'audio_mime_type' => $mimeType,
             'audio_duration' => $transcription['duration'] ?? null,
             'transcription' => $transcription['text'] ?? null,
@@ -162,7 +184,7 @@ class AudioMessageService
      */
     public function deleteAudio(string $path): bool
     {
-        return Storage::disk('public')->delete($path);
+        return Storage::delete($path);
     }
 
     /**

@@ -188,7 +188,7 @@ class Registry
      */
     public function resolveDynamicValues(string $template, WorkflowRun $run): string
     {
-        return preg_replace_callback('/\{\{(\w+)\.(\w+)\}\}/', function (array $matches) use ($run): string {
+        return preg_replace_callback('/\{\{(\w+)\.([\w.]+)\}\}/', function (array $matches) use ($run): string {
             $prefix = $matches[1];
             $key = $matches[2];
             $resolver = $this->findDynamicValue($prefix);

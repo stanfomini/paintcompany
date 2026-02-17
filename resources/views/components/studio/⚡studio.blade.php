@@ -157,7 +157,7 @@ class extends Component {
     {
         $settings = CompanySetting::first();
         return $settings?->logo_path
-            ? \Illuminate\Support\Facades\Storage::url($settings->logo_path)
+            ? storage_url($settings->logo_path)
             : null;
     }
 

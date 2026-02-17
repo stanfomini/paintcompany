@@ -44,7 +44,7 @@ new class extends Component {
     {
         return [
             'uploadedPhotos' => ['required', 'array', 'min:1'],
-            'uploadedPhotos.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
+            'uploadedPhotos.*' => ['file', 'max:102400', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
             'photoCaption' => ['nullable', 'string', 'max:255'],
             'photoCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'photoShowOnProposal' => ['boolean'],
@@ -57,7 +57,7 @@ new class extends Component {
         return [
             'uploadedPhotos.required' => __('Please select at least one photo to upload.'),
             'uploadedPhotos.*.file' => __('Each file must be a valid file.'),
-            'uploadedPhotos.*.max' => __('Each file must be less than 20MB.'),
+            'uploadedPhotos.*.max' => __('Each file must be less than 100MB.'),
             'uploadedPhotos.*.mimes' => __('Only JPG, PNG, GIF, WebP, and PDF files are allowed.'),
         ];
     }
@@ -100,7 +100,7 @@ new class extends Component {
     {
         $this->validate([
             'uploadedPhotos' => ['required', 'array', 'min:1'],
-            'uploadedPhotos.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
+            'uploadedPhotos.*' => ['file', 'max:102400', 'mimes:jpg,jpeg,png,gif,webp,pdf'],
             'defaultCategory' => ['required', 'string', 'in:before,during,after,reference,general'],
             'defaultShowOnProposal' => ['boolean'],
         ]);
@@ -120,13 +120,13 @@ new class extends Component {
             }
         } else {
             // Fallback for estimates without a property
-            $disk = config('filesystems.photos_disk', 'public');
+            $disk = config('filesystems.default');
             $storagePath = "photos/estimates/{$this->estimate->id}";
             $maxSortOrder = $this->estimate->photos()->max('sort_order') ?? 0;
 
             foreach ($this->uploadedPhotos as $photo) {
                 $filename = $photo->hashName();
-                $path = $photo->storeAs($storagePath, $filename, $disk);
+                $path = $photo->storeAs($storagePath, $filename, config('filesystems.default'));
 
                 PropertyPhoto::create([
                     'property_id' => null,

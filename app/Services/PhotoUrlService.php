@@ -25,19 +25,22 @@ class PhotoUrlService
             return null;
         }
 
-        $disk = $photo->disk ?? 'public';
-        $adapter = Storage::disk($disk)->getAdapter();
+        $diskName = $photo->disk ?? config('filesystems.default');
+        $disk = Storage::disk($diskName);
 
-        if ($disk === 'public' || $adapter instanceof \League\Flysystem\Local\LocalFilesystemAdapter) {
-            return Storage::disk($disk)->url($path);
+        if (method_exists($disk, 'temporaryUrl')) {
+            try {
+                $cacheKey = "photo_url:{$photo->id}:{$variant}";
+
+                return Cache::remember($cacheKey, now()->addMinutes(55), function () use ($disk, $path) {
+                    return $disk->temporaryUrl($path, now()->addMinutes(60));
+                });
+            } catch (\RuntimeException $e) {
+                // Local disk doesn't support temporaryUrl
+            }
         }
 
-        // S3/Wasabi: cached signed URLs
-        $cacheKey = "photo_url:{$photo->id}:{$variant}";
-
-        return Cache::remember($cacheKey, now()->addMinutes(55), function () use ($disk, $path) {
-            return Storage::disk($disk)->temporaryUrl($path, now()->addMinutes(60));
-        });
+        return $disk->url($path);
     }
 
     /**

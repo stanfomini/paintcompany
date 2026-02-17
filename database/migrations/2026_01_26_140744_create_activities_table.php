@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('activities', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete();
             $table->nullableMorphs('subject');
             $table->enum('type', ['task', 'note', 'call', 'email', 'meeting', 'other'])->default('task');
             $table->string('title');

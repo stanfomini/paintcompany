@@ -37,6 +37,8 @@ new class extends Component {
             'crews.crewProfile',
             'acceptedCrew',
             'serviceRequirements.serviceCategory',
+            'salesPerson',
+            'productionManager',
         ]);
 
         $this->viewingStage = $this->job->stage;
@@ -119,6 +121,23 @@ new class extends Component {
             ->with('payments')
             ->latest()
             ->get();
+    }
+
+    #[Computed]
+    public function internalUsers()
+    {
+        return User::where('type', 'internal')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function assignProductionManager(?int $userId): void
+    {
+        abort_unless(auth()->user()->can('jobs.edit'), 403);
+
+        $this->job->update(['assigned_to' => $userId ?: null]);
+        $this->job->load('productionManager');
     }
 
     #[Computed]
@@ -210,6 +229,8 @@ new class extends Component {
             'crews.crewProfile',
             'acceptedCrew',
             'serviceRequirements.serviceCategory',
+            'salesPerson',
+            'productionManager',
         ]);
 
         unset($this->jobActivities, $this->invoices, $this->crewsByCategory);
@@ -499,6 +520,29 @@ new class extends Component {
                         <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Required Crew Size') }}</dt>
                         <dd class="mt-1">
                             <flux:text>{{ $job->required_crew_size }} {{ Str::plural('person', $job->required_crew_size) }}</flux:text>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Sales Person') }}</dt>
+                        <dd class="mt-1">
+                            <flux:text>{{ $job->salesPerson?->name ?? '-' }}</flux:text>
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Production Manager') }}</dt>
+                        <dd class="mt-1">
+                            @can('jobs.edit')
+                                <flux:select wire:change="assignProductionManager($event.target.value)" class="w-full">
+                                    <option value="">{{ __('Unassigned') }}</option>
+                                    @foreach ($this->internalUsers as $user)
+                                        <option value="{{ $user->id }}" @selected($job->assigned_to === $user->id)>
+                                            {{ $user->name }}
+                                        </option>
+                                    @endforeach
+                                </flux:select>
+                            @else
+                                <flux:text>{{ $job->productionManager?->name ?? __('Unassigned') }}</flux:text>
+                            @endcan
                         </dd>
                     </div>
                 </dl>

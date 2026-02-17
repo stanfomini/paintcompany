@@ -212,6 +212,35 @@
             </div>
         </div>
 
+        {{-- Paint Tier Comparison (if applicable) --}}
+        @if (!empty($tierComparison))
+        <div class="section">
+            <div class="section-title">{{ __('PAINT TIER COMPARISON (Good / Better / Best)') }}</div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>{{ __('Tier') }}</th>
+                        <th>{{ __('Paint') }}</th>
+                        <th class="right">{{ __('$/Gallon') }}</th>
+                        <th class="right">{{ __('Painting Total') }}</th>
+                        <th class="right">{{ __('Difference') }}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $tierLabel)
+                    <tr{{ $tierKey === 'better' ? ' class=row-bold' : '' }}>
+                        <td>{{ $tierLabel }}</td>
+                        <td>{{ $tierComparison[$tierKey]['paint_name'] ?? '—' }}</td>
+                        <td class="right">{{ $tierComparison[$tierKey]['paint_price_per_gallon'] ? '$' . number_format($tierComparison[$tierKey]['paint_price_per_gallon'], 2) : '—' }}</td>
+                        <td class="right">${{ number_format($tierComparison[$tierKey]['total'], 2) }}</td>
+                        <td class="right">{{ $tierKey === 'good' ? '—' : '+$' . number_format($tierComparison[$tierKey]['diff_from_good'], 2) }}</td>
+                    </tr>
+                    @endforeach
+                </tbody>
+            </table>
+        </div>
+        @endif
+
         {{-- Areas (from Estimate) --}}
         @if (count($breakdown['areas']) > 0)
         <div class="section">

@@ -1,6 +1,9 @@
 <?php
 
+use App\Automation\Actions\CreateCustomer;
 use App\Automation\Triggers\DealStageChanged;
+use App\Automation\Triggers\InboundWebhook;
+use App\Models\AutomationWebhook;
 use App\Models\User;
 use App\Models\Workflow;
 use App\Models\WorkflowEdge;
@@ -323,7 +326,7 @@ it('can delete a non-trigger node', function () {
     expect(WorkflowEdge::where('workflow_id', $workflow->id)->count())->toBe(0);
 });
 
-it('cannot delete a trigger node', function () {
+it('can delete a trigger node', function () {
     $workflow = Workflow::create([
         'name' => 'Protected Trigger',
         'is_active' => false,
@@ -346,7 +349,7 @@ it('cannot delete a trigger node', function () {
         ->call('editWorkflow', $workflow->id)
         ->call('deleteNode', $trigger->id);
 
-    expect(WorkflowNode::find($trigger->id))->not->toBeNull();
+    expect(WorkflowNode::find($trigger->id))->toBeNull();
 });
 
 it('can save workflow settings from builder', function () {
@@ -404,4 +407,176 @@ it('denies access to non-internal users', function () {
     $this->actingAs($customer)
         ->get('/settings/workflows')
         ->assertForbidden();
+});
+
+// === Webhook Config UX Tests ===
+
+it('auto-creates automation webhook when opening inbound webhook trigger config', function () {
+    $workflow = Workflow::create([
+        'name' => 'Webhook Test',
+        'is_active' => false,
+        'is_system' => false,
+        'version' => 1,
+        'created_by' => $this->user->id,
+    ]);
+
+    $node = WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'trigger',
+        'node_class' => InboundWebhook::class,
+        'config' => [],
+        'position_x' => 0,
+        'position_y' => 0,
+        'is_enabled' => true,
+    ]);
+
+    $component = Livewire::test('pages::settings.workflows')
+        ->call('editWorkflow', $workflow->id)
+        ->call('openNodeConfig', $node->id);
+
+    // Webhook should be auto-created
+    expect(AutomationWebhook::count())->toBe(1);
+
+    $webhook = AutomationWebhook::first();
+    $component
+        ->assertSet('webhookUrl', $webhook->getWebhookUrl())
+        ->assertSet('webhookModelId', $webhook->id)
+        ->assertSet('nodeConfig.webhook_token', $webhook->token);
+});
+
+it('loads existing webhook when trigger already has token', function () {
+    $webhook = AutomationWebhook::create([
+        'name' => 'Existing Webhook',
+        'is_active' => true,
+        'created_by' => $this->user->id,
+    ]);
+
+    $workflow = Workflow::create([
+        'name' => 'Existing Token Test',
+        'is_active' => false,
+        'is_system' => false,
+        'version' => 1,
+        'created_by' => $this->user->id,
+    ]);
+
+    $node = WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'trigger',
+        'node_class' => InboundWebhook::class,
+        'config' => ['webhook_token' => $webhook->token],
+        'position_x' => 0,
+        'position_y' => 0,
+        'is_enabled' => true,
+    ]);
+
+    Livewire::test('pages::settings.workflows')
+        ->call('editWorkflow', $workflow->id)
+        ->call('openNodeConfig', $node->id)
+        ->assertSet('webhookModelId', $webhook->id)
+        ->assertSet('webhookUrl', $webhook->getWebhookUrl());
+
+    // Should NOT create a second webhook
+    expect(AutomationWebhook::count())->toBe(1);
+});
+
+it('loads webhook sample payload fields for record-creation action config', function () {
+    $webhook = AutomationWebhook::create([
+        'name' => 'Payload Test Webhook',
+        'is_active' => true,
+        'last_payload' => [
+            'first_name' => 'John',
+            'last_name' => 'Doe',
+            'email' => 'john@test.com',
+            'phone' => '555-1234',
+        ],
+        'created_by' => $this->user->id,
+    ]);
+
+    $workflow = Workflow::create([
+        'name' => 'Field Mapping Test',
+        'is_active' => false,
+        'is_system' => false,
+        'version' => 1,
+        'created_by' => $this->user->id,
+    ]);
+
+    // Create trigger node with webhook token
+    WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'trigger',
+        'node_class' => InboundWebhook::class,
+        'config' => ['webhook_token' => $webhook->token],
+        'position_x' => 0,
+        'position_y' => 0,
+        'is_enabled' => true,
+    ]);
+
+    // Create action node
+    $actionNode = WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'action',
+        'node_class' => CreateCustomer::class,
+        'config' => [],
+        'position_x' => 0,
+        'position_y' => 120,
+        'is_enabled' => true,
+    ]);
+
+    $component = Livewire::test('pages::settings.workflows')
+        ->call('editWorkflow', $workflow->id)
+        ->call('openNodeConfig', $actionNode->id);
+
+    $fields = $component->get('webhookAvailableFields');
+    expect($fields)->toBeArray()
+        ->and(count($fields))->toBe(4)
+        ->and(collect($fields)->pluck('path')->toArray())
+        ->toContain('first_name', 'last_name', 'email', 'phone');
+});
+
+it('saves webhook field mapping as dynamic value placeholders', function () {
+    $webhook = AutomationWebhook::create([
+        'name' => 'Save Mapping Test',
+        'is_active' => true,
+        'last_payload' => ['first_name' => 'Jane', 'email' => 'jane@test.com'],
+        'created_by' => $this->user->id,
+    ]);
+
+    $workflow = Workflow::create([
+        'name' => 'Save Mapping Workflow',
+        'is_active' => false,
+        'is_system' => false,
+        'version' => 1,
+        'created_by' => $this->user->id,
+    ]);
+
+    WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'trigger',
+        'node_class' => InboundWebhook::class,
+        'config' => ['webhook_token' => $webhook->token],
+        'position_x' => 0,
+        'position_y' => 0,
+        'is_enabled' => true,
+    ]);
+
+    $actionNode = WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'action',
+        'node_class' => CreateCustomer::class,
+        'config' => [],
+        'position_x' => 0,
+        'position_y' => 120,
+        'is_enabled' => true,
+    ]);
+
+    Livewire::test('pages::settings.workflows')
+        ->call('editWorkflow', $workflow->id)
+        ->call('openNodeConfig', $actionNode->id)
+        ->set('nodeConfig.first_name', '{{webhook.first_name}}')
+        ->set('nodeConfig.email', '{{webhook.email}}')
+        ->call('saveNodeConfig');
+
+    $actionNode->refresh();
+    expect($actionNode->config['first_name'])->toBe('{{webhook.first_name}}')
+        ->and($actionNode->config['email'])->toBe('{{webhook.email}}');
 });

@@ -276,46 +276,48 @@ new class extends Component {
 
                     {{-- Thread List --}}
                     <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700">
-                        @forelse ($this->threads as $thread)
-                            <button
-                                wire:key="picker-thread-{{ $thread->id }}"
-                                wire:click="openThread({{ $thread->id }})"
-                                type="button"
-                                class="w-full text-left block px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
-                            >
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-sm font-semibold truncate {{ $thread->unread_count > 0 ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300' }}">
-                                                {{ $thread->display_name }}
-                                            </span>
-                                            @if ($thread->unread_count > 0)
-                                                <span class="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1 font-medium shrink-0">
-                                                    {{ $thread->unread_count }}
+                        @if ($this->threads->isNotEmpty())
+                            @foreach ($this->threads as $thread)
+                                <button
+                                    wire:key="picker-thread-{{ $thread->id }}"
+                                    wire:click="openThread({{ $thread->id }})"
+                                    type="button"
+                                    class="w-full text-left block px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
+                                >
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-sm font-semibold truncate {{ $thread->unread_count > 0 ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300' }}">
+                                                    {{ $thread->display_name }}
                                                 </span>
+                                                @if ($thread->unread_count > 0)
+                                                    <span class="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1 font-medium shrink-0">
+                                                        {{ $thread->unread_count }}
+                                                    </span>
+                                                @endif
+                                            </div>
+
+                                            @if ($thread->latestMessage)
+                                                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate {{ $thread->unread_count > 0 ? 'font-medium' : '' }}">
+                                                    {{ Str::limit($thread->latestMessage->content, 40) }}
+                                                </p>
                                             @endif
                                         </div>
 
-                                        @if ($thread->latestMessage)
-                                            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate {{ $thread->unread_count > 0 ? 'font-medium' : '' }}">
-                                                {{ Str::limit($thread->latestMessage->content, 40) }}
-                                            </p>
+                                        @if ($thread->last_message_at)
+                                            <span class="text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap shrink-0">
+                                                {{ $thread->last_message_at->diffForHumans(short: true) }}
+                                            </span>
                                         @endif
                                     </div>
-
-                                    @if ($thread->last_message_at)
-                                        <span class="text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap shrink-0">
-                                            {{ $thread->last_message_at->diffForHumans(short: true) }}
-                                        </span>
-                                    @endif
-                                </div>
-                            </button>
-                        @empty
+                                </button>
+                            @endforeach
+                        @else
                             <div class="px-4 py-8 text-center">
                                 <flux:icon name="chat-bubble-left-right" class="mx-auto size-8 text-zinc-300 dark:text-zinc-600" />
                                 <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('No conversations yet') }}</p>
                             </div>
-                        @endforelse
+                        @endif
                     </div>
 
                     {{-- Panel Footer --}}
@@ -372,46 +374,48 @@ new class extends Component {
 
                     {{-- Thread list (links to full-page chat) --}}
                     <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700">
-                        @forelse ($this->threads as $thread)
-                            <a
-                                wire:key="mobile-thread-{{ $thread->id }}"
-                                href="{{ route('chat.show', $thread) }}"
-                                wire:navigate
-                                class="block px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
-                            >
-                                <div class="flex items-start justify-between gap-2">
-                                    <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-sm font-semibold truncate {{ $thread->unread_count > 0 ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300' }}">
-                                                {{ $thread->display_name }}
-                                            </span>
-                                            @if ($thread->unread_count > 0)
-                                                <span class="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1 font-medium shrink-0">
-                                                    {{ $thread->unread_count }}
+                        @if ($this->threads->isNotEmpty())
+                            @foreach ($this->threads as $thread)
+                                <a
+                                    wire:key="mobile-thread-{{ $thread->id }}"
+                                    href="{{ route('chat.show', $thread) }}"
+                                    wire:navigate
+                                    class="block px-4 py-3 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
+                                >
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-sm font-semibold truncate {{ $thread->unread_count > 0 ? 'text-zinc-900 dark:text-white' : 'text-zinc-700 dark:text-zinc-300' }}">
+                                                    {{ $thread->display_name }}
                                                 </span>
+                                                @if ($thread->unread_count > 0)
+                                                    <span class="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1 font-medium shrink-0">
+                                                        {{ $thread->unread_count }}
+                                                    </span>
+                                                @endif
+                                            </div>
+
+                                            @if ($thread->latestMessage)
+                                                <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate {{ $thread->unread_count > 0 ? 'font-medium' : '' }}">
+                                                    {{ Str::limit($thread->latestMessage->content, 40) }}
+                                                </p>
                                             @endif
                                         </div>
 
-                                        @if ($thread->latestMessage)
-                                            <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400 truncate {{ $thread->unread_count > 0 ? 'font-medium' : '' }}">
-                                                {{ Str::limit($thread->latestMessage->content, 40) }}
-                                            </p>
+                                        @if ($thread->last_message_at)
+                                            <span class="text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap shrink-0">
+                                                {{ $thread->last_message_at->diffForHumans(short: true) }}
+                                            </span>
                                         @endif
                                     </div>
-
-                                    @if ($thread->last_message_at)
-                                        <span class="text-xs text-zinc-400 dark:text-zinc-500 whitespace-nowrap shrink-0">
-                                            {{ $thread->last_message_at->diffForHumans(short: true) }}
-                                        </span>
-                                    @endif
-                                </div>
-                            </a>
-                        @empty
+                                </a>
+                            @endforeach
+                        @else
                             <div class="px-4 py-8 text-center">
                                 <flux:icon name="chat-bubble-left-right" class="mx-auto size-8 text-zinc-300 dark:text-zinc-600" />
                                 <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('No conversations yet') }}</p>
                             </div>
-                        @endforelse
+                        @endif
                     </div>
 
                     {{-- Footer --}}

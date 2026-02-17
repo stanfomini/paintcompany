@@ -65,6 +65,17 @@ class PropertyFactory extends Factory
     }
 
     /**
+     * Set GPS coordinates for geofencing.
+     */
+    public function withCoordinates(float $lat = 39.7392, float $lng = -104.9903): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'latitude' => $lat,
+            'longitude' => $lng,
+        ]);
+    }
+
+    /**
      * Associate with a specific customer.
      */
     public function forCustomer(Customer $customer): static

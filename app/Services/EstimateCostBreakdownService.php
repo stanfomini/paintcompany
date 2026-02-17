@@ -553,7 +553,7 @@ class EstimateCostBreakdownService
             ->whereNotNull('sale_price')
             ->exists();
 
-        return [
+        $result = [
             'area_id' => $area->id,
             'name' => $area->name,
             'scope_type' => $scope,
@@ -564,6 +564,22 @@ class EstimateCostBreakdownService
             'margin_percent' => $marginPercent,
             'detail' => $detail,
         ];
+
+        // Add tier-specific pricing when the estimate uses paint tiers
+        if ($estimate && $estimate->hasPaintTiers() && ! $area->is_fixed_price) {
+            $tierPricing = [];
+            foreach (['good', 'better', 'best'] as $tier) {
+                $tierCogs = $area->getFullCOGS($tier);
+                $tierPrice = $area->getCustomerPrice($tier);
+                $tierPricing[$tier] = [
+                    'cogs' => round($tierCogs, 2),
+                    'customer_price' => round($tierPrice, 2),
+                ];
+            }
+            $result['tier_pricing'] = $tierPricing;
+        }
+
+        return $result;
     }
 
     /**
@@ -577,6 +593,12 @@ class EstimateCostBreakdownService
     protected function decomposeAreaCosts(EstimateArea $area, CompanySetting $settings): array
     {
         $scope = $area->scope_type ?? 'interior';
+
+        // Resolve effective hourly rate: estimate override → global setting
+        $estimate = $area->relationLoaded('estimate') ? $area->estimate : $area->estimate;
+        $effectiveRate = ($estimate && $estimate->hasHourlyRateOverride())
+            ? $estimate->getOverrideEffectiveHourlyRate($scope)
+            : $settings->getEffectiveHourlyRateForScope($scope);
 
         if ($area->is_fixed_price) {
             // Even fixed-price areas can have addons (e.g., closets within a closet area)
@@ -618,7 +640,7 @@ class EstimateCostBreakdownService
 
             if ($laborHours > 0) {
                 $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
-                $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+                $cleanupCost = $cleanupHours * $effectiveRate;
                 $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
                 $materialTax = $settings->calculateMaterialTax($materialCost);
                 $laborTax = $settings->calculateLaborTax($laborCost, $cleanupCost);
@@ -649,7 +671,7 @@ class EstimateCostBreakdownService
 
         // Calculate cleanup and sundries (same formulas as getFullCOGS uses)
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
-        $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scope);
+        $cleanupCost = $cleanupHours * $effectiveRate;
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
 
         // Addon costs and labor tracking
@@ -1122,7 +1144,14 @@ class EstimateCostBreakdownService
         $settings = CompanySetting::getInstance();
         $scope = $estimate->project_type ?? 'interior';
 
-        return $this->getSettingsForScope($settings, $scope);
+        $result = $this->getSettingsForScope($settings, $scope);
+
+        // Include hourly rate override if set on the estimate
+        $result['hourly_rate_override'] = $estimate->hasHourlyRateOverride()
+            ? (float) $estimate->hourly_rate_override
+            : null;
+
+        return $result;
     }
 
     /**
@@ -1195,7 +1224,13 @@ class EstimateCostBreakdownService
                 ];
             }
 
-            // Calculate COGS from package items
+            // Resolve paint tier for this package
+            $paintTier = null;
+            if ($estimate->hasPaintTiers()) {
+                $paintTier = $package->getPaintTier();
+            }
+
+            // Calculate COGS from package items (tier-aware)
             $packageCogs = 0;
             $packageItems = $package->items()->included()->with('itemable')->get();
 
@@ -1214,7 +1249,7 @@ class EstimateCostBreakdownService
                 } elseif ($itemable instanceof EstimateArea) {
                     if (! in_array($itemable->id, $areaIds)) {
                         $areaIds[] = $itemable->id;
-                        $packageCogs += $itemable->getFullCOGS();
+                        $packageCogs += $itemable->getFullCOGS($paintTier);
                     }
                 } elseif ($itemable instanceof EstimateItem) {
                     $packageCogs += $itemable->cost;
@@ -1227,7 +1262,7 @@ class EstimateCostBreakdownService
                 if ($area && ! ($area instanceof EstimateArea && in_array($areaId, array_column($breakdown[$categorySlug]['packages'], 'area_id', null) ?? []))) {
                     // Only add COGS for areas not already counted via direct EstimateArea items
                     if (! collect($packageItems)->contains(fn ($pi) => $pi->itemable instanceof EstimateArea && $pi->itemable->id === $areaId)) {
-                        $packageCogs += $area->getFullCOGS();
+                        $packageCogs += $area->getFullCOGS($paintTier);
                     }
                 }
             }
@@ -1254,6 +1289,38 @@ class EstimateCostBreakdownService
         }
 
         return $breakdown;
+    }
+
+    /**
+     * Get tier pricing comparison data for an estimate.
+     * Returns null if the estimate doesn't use tier pricing.
+     *
+     * @return array{good: array, better: array, best: array}|null
+     */
+    public function getTierComparison(Estimate $estimate): ?array
+    {
+        if (! $estimate->hasPaintTiers()) {
+            return null;
+        }
+
+        $tierService = app(EstimateTierPricingService::class);
+        $tierTotals = $tierService->calculateTierTotals($estimate);
+
+        $comparison = [];
+        foreach (['good', 'better', 'best'] as $tier) {
+            $tierConfig = $estimate->getPaintTierConfig($tier);
+            $defaultProductId = $tierConfig['default_paint_product_id'] ?? null;
+            $defaultProduct = $defaultProductId ? \App\Models\PaintProduct::with('brand')->find($defaultProductId) : null;
+
+            $comparison[$tier] = [
+                'total' => $tierTotals[$tier],
+                'paint_name' => $defaultProduct ? $defaultProduct->full_name : null,
+                'paint_price_per_gallon' => $defaultProduct ? (float) $defaultProduct->price_per_gallon : null,
+                'diff_from_good' => $tierTotals[$tier] - $tierTotals['good'],
+            ];
+        }
+
+        return $comparison;
     }
 
     /**

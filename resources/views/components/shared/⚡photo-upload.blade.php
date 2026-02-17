@@ -47,7 +47,7 @@ new class extends Component {
     {
         return [
             'photos' => ['required', 'array', 'min:1'],
-            'photos.*' => ['file', 'max:20480', 'mimes:jpg,jpeg,png,webp,pdf'],
+            'photos.*' => ['file', 'max:102400', 'mimes:jpg,jpeg,png,webp,pdf'],
             'category' => ['required', 'string', 'in:' . implode(',', array_keys(PropertyPhoto::CATEGORIES))],
             'caption' => ['nullable', 'string', 'max:255'],
             'showOnProposal' => ['boolean'],
@@ -59,7 +59,7 @@ new class extends Component {
         return [
             'photos.required' => __('Please select at least one file to upload.'),
             'photos.*.file' => __('Each file must be a valid file.'),
-            'photos.*.max' => __('Each file must be less than 20MB.'),
+            'photos.*.max' => __('Each file must be less than 100MB.'),
             'photos.*.mimes' => __('Only JPG, PNG, WebP, and PDF files are allowed.'),
         ];
     }

@@ -7,14 +7,14 @@ use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\SlaMetric;
 use App\Models\User;
-use Carbon\Carbon;
+use Carbon\CarbonInterface;
 
 class SlaMetricService
 {
     /**
      * Calculate all daily metrics for a given date.
      */
-    public function calculateDaily(Carbon $date): void
+    public function calculateDaily(CarbonInterface $date): void
     {
         $users = User::where('type', 'internal')
             ->where('is_active', true)
@@ -31,7 +31,7 @@ class SlaMetricService
     /**
      * Speed to Lead: Average time from deal creation to first activity (in minutes).
      */
-    public function calculateSpeedToLead(User $user, Carbon $date): ?SlaMetric
+    public function calculateSpeedToLead(User $user, CarbonInterface $date): ?SlaMetric
     {
         $deals = Deal::query()
             ->where(function ($q) use ($user) {
@@ -83,7 +83,7 @@ class SlaMetricService
     /**
      * Follow-Up Compliance: Percentage of tasks completed on or before their due date.
      */
-    public function calculateFollowUpCompliance(User $user, Carbon $date): ?SlaMetric
+    public function calculateFollowUpCompliance(User $user, CarbonInterface $date): ?SlaMetric
     {
         $activities = Activity::query()
             ->forUserOrAssignedTo($user)
@@ -122,7 +122,7 @@ class SlaMetricService
     /**
      * Response Time: Average time from activity creation to completion (in minutes).
      */
-    public function calculateResponseTime(User $user, Carbon $date): ?SlaMetric
+    public function calculateResponseTime(User $user, CarbonInterface $date): ?SlaMetric
     {
         $activities = Activity::query()
             ->forUserOrAssignedTo($user)
@@ -162,7 +162,7 @@ class SlaMetricService
     /**
      * Estimate Turnaround: Average hours from deal reaching "quote_scheduled" to estimate being sent.
      */
-    public function calculateEstimateTurnaround(User $user, Carbon $date): ?SlaMetric
+    public function calculateEstimateTurnaround(User $user, CarbonInterface $date): ?SlaMetric
     {
         $estimates = Estimate::query()
             ->whereNotNull('sent_at')

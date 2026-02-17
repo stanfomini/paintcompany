@@ -1,12 +1,10 @@
 <?php
 
-use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\User;
 use App\Services\DealStageService;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -219,38 +217,6 @@ new class extends Component {
         return array_intersect_key(Deal::STAGES, array_flip(Deal::KANBAN_STAGES));
     }
 
-    /**
-     * Get incomplete activities for agent-type users.
-     */
-    #[Computed]
-    public function agentLeads(): Collection
-    {
-        return Activity::query()
-            ->where('subject_type', User::class)
-            ->whereHas('subject', fn ($q) => $q->where('type', 'agent'))
-            ->incomplete()
-            ->with(['subject', 'assignee'])
-            ->latest()
-            ->get();
-    }
-
-    /**
-     * Assign an agent lead activity to the current user.
-     */
-    public function claimAgentLead(int $activityId): void
-    {
-        $activity = Activity::findOrFail($activityId);
-        $activity->update(['assigned_to' => auth()->id()]);
-    }
-
-    /**
-     * Mark an agent lead activity as completed.
-     */
-    public function completeAgentLead(int $activityId): void
-    {
-        $activity = Activity::findOrFail($activityId);
-        $activity->markAsCompleted();
-    }
 }; ?>
 
 <div>
@@ -299,56 +265,6 @@ new class extends Component {
                 </flux:select>
             </div>
         </div>
-
-        {{-- Agent Leads Section --}}
-        @if ($this->agentLeads->count() > 0)
-            <div class="mb-6">
-                <div class="flex items-center gap-2 mb-3">
-                    <flux:icon name="user-group" class="w-5 h-5 text-indigo-500" />
-                    <flux:heading size="lg">{{ __('Agent Leads') }}</flux:heading>
-                    <flux:badge color="indigo" size="sm">{{ $this->agentLeads->count() }}</flux:badge>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    @foreach ($this->agentLeads as $lead)
-                        <div wire:key="agent-lead-{{ $lead->id }}" class="bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-lg p-4">
-                            <div class="flex items-start justify-between">
-                                <div class="min-w-0 flex-1">
-                                    <p class="font-semibold text-indigo-900 dark:text-indigo-100">{{ $lead->subject?->name ?? __('Unknown Agent') }}</p>
-                                    <p class="text-sm text-indigo-700 dark:text-indigo-300 mt-0.5">{{ $lead->title }}</p>
-                                    @if ($lead->description)
-                                        <p class="text-sm text-indigo-600 dark:text-indigo-400 mt-1 truncate">{{ $lead->description }}</p>
-                                    @endif
-                                    @if ($lead->due_at)
-                                        <p class="text-xs text-indigo-500 mt-2 flex items-center gap-1">
-                                            <flux:icon name="calendar" class="w-3 h-3" />
-                                            {{ __('Meeting:') }} {{ $lead->due_at->format('M j, Y') }}
-                                        </p>
-                                    @endif
-                                </div>
-                                <flux:badge color="{{ $lead->type === 'meeting' ? 'purple' : 'blue' }}" size="sm" class="ml-2 shrink-0">
-                                    {{ ucfirst($lead->type) }}
-                                </flux:badge>
-                            </div>
-                            <div class="mt-3 flex items-center justify-between pt-2 border-t border-indigo-200 dark:border-indigo-700">
-                                @if ($lead->assignee)
-                                    <flux:text class="text-sm text-indigo-500">
-                                        {{ __('Assigned:') }} {{ $lead->assignee->name }}
-                                    </flux:text>
-                                    <flux:button size="sm" variant="ghost" wire:click="completeAgentLead({{ $lead->id }})">
-                                        {{ __('Mark Done') }}
-                                    </flux:button>
-                                @else
-                                    <flux:text class="text-sm text-indigo-400">{{ __('Unassigned') }}</flux:text>
-                                    <flux:button size="sm" variant="primary" wire:click="claimAgentLead({{ $lead->id }})">
-                                        {{ __('Assign to Me') }}
-                                    </flux:button>
-                                @endif
-                            </div>
-                        </div>
-                    @endforeach
-                </div>
-            </div>
-        @endif
 
         <div class="overflow-x-auto pb-4">
             <div class="flex gap-4 min-w-max" id="kanban-board">

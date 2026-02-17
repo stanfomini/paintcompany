@@ -26,10 +26,10 @@ class PhotoService
     {
         $uuid = Str::uuid();
         $ext = $file->getClientOriginalExtension() ?: 'jpg';
-        $disk = config('filesystems.photos_disk', 'public');
+        $disk = config('filesystems.default');
         $basePath = "photos/properties/{$property->id}/originals";
         $filename = "{$uuid}.{$ext}";
-        $storagePath = $file->storeAs($basePath, $filename, $disk);
+        $storagePath = $file->storeAs($basePath, $filename);
 
         $photo = PropertyPhoto::create([
             'property_id' => $property->id,
@@ -123,11 +123,11 @@ class PhotoService
         $photoId = $photo->id;
         $actorId = auth()->id();
 
-        $disk = $photo->disk ?? 'public';
+        $diskName = $photo->disk ?? config('filesystems.default');
 
         foreach (['path', 'original_path', 'thumbnail_path', 'medium_path', 'annotated_path'] as $field) {
-            if ($photo->$field && Storage::disk($disk)->exists($photo->$field)) {
-                Storage::disk($disk)->delete($photo->$field);
+            if ($photo->$field && Storage::disk($diskName)->exists($photo->$field)) {
+                Storage::disk($diskName)->delete($photo->$field);
             }
         }
 

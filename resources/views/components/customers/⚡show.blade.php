@@ -180,6 +180,13 @@ new class extends Component
                                 ->whereNull('left_at');
                         });
                 });
+                $q->orWhere(function ($q2) {
+                    $q2->where('type', ChatThread::TYPE_SUPPORT)
+                        ->whereHas('participants', function ($pq) {
+                            $pq->where('user_id', $this->customer->user_id)
+                                ->whereNull('left_at');
+                        });
+                });
             }
         });
 
@@ -189,6 +196,36 @@ new class extends Component
 
                 return $thread;
             });
+    }
+
+    /**
+     * Open tasks linked to this customer (direct + via deals).
+     */
+    #[Computed]
+    public function customerOpenTasks()
+    {
+        $dealIds = $this->customer->deals->pluck('id');
+
+        return Activity::query()
+            ->with(['user', 'assignee'])
+            ->incomplete()
+            ->where(function ($q) use ($dealIds) {
+                $q->where(function ($q2) {
+                    $q2->where('subject_type', Customer::class)
+                        ->where('subject_id', $this->customer->id);
+                });
+                if ($dealIds->isNotEmpty()) {
+                    $q->orWhere(function ($q2) use ($dealIds) {
+                        $q2->where('subject_type', Deal::class)
+                            ->whereIn('subject_id', $dealIds);
+                    });
+                }
+            })
+            ->orderByRaw('CASE WHEN due_at IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('due_at')
+            ->orderBy('created_at', 'desc')
+            ->limit(20)
+            ->get();
     }
 
     /**
@@ -460,7 +497,7 @@ new class extends Component
         ]);
 
         // Reset computed caches
-        unset($this->activeDeal, $this->activeDeals, $this->pastDeals, $this->activeDealEstimates, $this->unifiedActivityFeed, $this->activeJobs, $this->customerThreads);
+        unset($this->activeDeal, $this->activeDeals, $this->pastDeals, $this->activeDealEstimates, $this->unifiedActivityFeed, $this->customerOpenTasks, $this->activeJobs, $this->customerThreads);
     }
 
     public function toggleStatus(): void
@@ -887,6 +924,52 @@ new class extends Component
                             </dd>
                         </div>
                     @endif
+                </div>
+            @endif
+
+            {{-- Open Tasks --}}
+            @if ($this->customerOpenTasks->isNotEmpty())
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 mb-6">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-2">
+                            <flux:heading size="sm">{{ __('Open Tasks') }}</flux:heading>
+                            <flux:badge size="sm" color="amber">{{ $this->customerOpenTasks->count() }}</flux:badge>
+                        </div>
+                        @can('people.edit')
+                            <flux:button size="xs" icon="plus" wire:click="openAddActivity">{{ __('Add') }}</flux:button>
+                        @endcan
+                    </div>
+                    <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        @foreach ($this->customerOpenTasks as $task)
+                            <div wire:key="open-task-{{ $task->id }}" class="flex items-center gap-3 py-2 {{ $task->isOverdue() ? 'bg-red-50/50 dark:bg-red-900/10 -mx-2 px-2 rounded' : '' }}">
+                                <button
+                                    wire:click="toggleActivityComplete({{ $task->id }})"
+                                    class="w-5 h-5 shrink-0 rounded border-2 flex items-center justify-center border-zinc-300 dark:border-zinc-600 hover:border-green-500 transition-colors"
+                                >
+                                </button>
+                                <div class="flex-1 min-w-0">
+                                    <flux:text class="text-sm {{ $task->isOverdue() ? 'text-red-600 dark:text-red-400' : '' }}">{{ $task->title }}</flux:text>
+                                    @if ($task->description)
+                                        <flux:text size="xs" class="text-zinc-500 truncate">{{ Str::limit($task->description, 80) }}</flux:text>
+                                    @endif
+                                </div>
+                                <div class="shrink-0 flex items-center gap-2">
+                                    <flux:badge size="sm" color="zinc">{{ $task->type_label }}</flux:badge>
+                                    @if ($task->due_at)
+                                        <flux:text size="xs" class="{{ $task->isOverdue() ? 'text-red-500 font-medium' : 'text-zinc-500' }}">
+                                            @if ($task->isOverdue())
+                                                {{ __('Overdue') }} {{ $task->due_at->diffForHumans() }}
+                                            @elseif ($task->due_at->isToday())
+                                                {{ __('Today') }} {{ $task->due_at->format('g:ia') }}
+                                            @else
+                                                {{ $task->due_at->format('M j') }}
+                                            @endif
+                                        </flux:text>
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
                 </div>
             @endif
 

@@ -7,8 +7,19 @@
 
 {{-- Package Selection Header --}}
 <div class="text-center">
-    <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">Select Your Package</h2>
-    <p class="mt-2 text-gray-600 dark:text-gray-400">All packages include the same high-quality painting work. Choose based on warranty and services.</p>
+    @if (count($packageTemplates) === 1)
+        <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Your Proposal') }}</h2>
+        <p class="mt-2 text-gray-600 dark:text-gray-400">{{ __('Review the details of your custom proposal') }}</p>
+    @else
+        <h2 class="text-2xl font-semibold text-gray-900 dark:text-gray-100">{{ __('Select Your Package') }}</h2>
+        <p class="mt-2 text-gray-600 dark:text-gray-400">
+            @if ($estimate->hasPaintTiers())
+                {{ __('Choose your paint quality tier and warranty level') }}
+            @else
+                {{ __('All packages include the same high-quality painting work. Choose based on warranty and services.') }}
+            @endif
+        </p>
+    @endif
 </div>
 
 {{-- Painting Total Callout --}}
@@ -23,7 +34,13 @@
             </div>
             <span class="text-xl font-bold text-blue-900 dark:text-blue-100">${{ number_format($paintingTotal, 0) }}</span>
         </div>
-        <p class="mt-1 text-sm text-blue-700 dark:text-blue-300">Professional painting of all specified areas. Same quality across all packages.</p>
+        <p class="mt-1 text-sm text-blue-700 dark:text-blue-300">
+            @if ($estimate->hasPaintTiers())
+                {{ __('Professional painting of all specified areas with :tier-grade materials', ['tier' => $selectedTemplate['name'] ?? 'selected']) }}
+            @else
+                {{ __('Professional painting of all specified areas. Same quality across all packages.') }}
+            @endif
+        </p>
     </div>
 @endif
 
@@ -102,6 +119,24 @@
                     {{-- Description --}}
                     @if ($template['description'])
                         <p class="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">{{ $template['description'] }}</p>
+                    @endif
+
+                    {{-- Paint Products --}}
+                    @if (! empty($template['paint_products']))
+                        <div class="space-y-1 mb-4">
+                            @foreach ($template['paint_products'] as $paint)
+                                <div class="flex items-center justify-center gap-1.5 text-xs">
+                                    <svg class="w-3.5 h-3.5 text-blue-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path d="M3.5 2A1.5 1.5 0 002 3.5V5c0 .325.103.625.278.871L7 12.5V17a1 1 0 001.555.832l3-2A1 1 0 0012 15v-2.5l4.722-6.629A1.5 1.5 0 0017 5V3.5A1.5 1.5 0 0015.5 2h-12z"/>
+                                    </svg>
+                                    <span class="text-gray-700 dark:text-gray-300 font-medium">{{ $paint['name'] }}</span>
+                                    @if ($paint['sheen'])
+                                        <span class="text-gray-400">&middot;</span>
+                                        <span class="text-gray-500 dark:text-gray-400">{{ $paint['sheen'] }}</span>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
                     @endif
 
                     {{-- Included Service Items Preview --}}

@@ -71,17 +71,18 @@ class VideoCall extends Model
             return null;
         }
 
-        $disk = $this->recording_disk ?? 'video-recordings';
+        $diskName = $this->recording_disk ?? config('filesystems.default');
+        $disk = Storage::disk($diskName);
 
-        // For local disk, return the storage path directly
-        if (Storage::disk($disk)->getConfig()['driver'] === 'local') {
-            return Storage::disk($disk)->url($this->recording_path);
+        if (method_exists($disk, 'temporaryUrl')) {
+            try {
+                return $disk->temporaryUrl($this->recording_path, now()->addHours(4));
+            } catch (\RuntimeException $e) {
+                // Local disk doesn't support temporaryUrl
+            }
         }
 
-        return Storage::disk($disk)->temporaryUrl(
-            $this->recording_path,
-            now()->addHours(4)
-        );
+        return $disk->url($this->recording_path);
     }
 
     public function isActive(): bool

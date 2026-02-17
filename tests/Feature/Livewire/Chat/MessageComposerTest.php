@@ -180,7 +180,7 @@ describe('MessageComposer component', function () {
     });
 
     it('can upload and send attachments', function () {
-        Storage::fake('local');
+        Storage::fake();
 
         $user = User::factory()->internal()->withFullAccess()->create();
         $otherUser = User::factory()->internal()->withFullAccess()->create();

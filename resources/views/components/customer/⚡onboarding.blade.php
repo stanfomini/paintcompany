@@ -1,10 +1,13 @@
 <?php
 
+use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Models\Property;
 use App\Models\User;
+use App\Notifications\NewContactWelcome;
+use App\Services\ChatService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -315,10 +318,14 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
                 }
             }
 
-            if ($this->isNewProject) {
-                $this->createNewProjectDealAndEstimate($customer, $property);
+            if ($property) {
+                if ($this->isNewProject) {
+                    $this->createNewProjectDealAndEstimate($customer, $property);
+                } else {
+                    $this->createDealAndEstimate($customer, $property);
+                }
             } else {
-                $this->createDealAndEstimate($customer, $property);
+                $this->createWelcomeChatThread($customer);
             }
         }
 
@@ -410,6 +417,44 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
                 'tax_amount' => 0,
                 'total' => 0,
             ]);
+        }
+    }
+
+    private function createWelcomeChatThread(Customer $customer): void
+    {
+        $customerUser = $customer->user;
+
+        if (! $customerUser) {
+            return;
+        }
+
+        $chatService = app(ChatService::class);
+
+        // Create a support chat thread
+        $thread = ChatThread::create([
+            'type' => ChatThread::TYPE_SUPPORT,
+            'subject' => $customer->full_name,
+            'last_message_at' => now(),
+        ]);
+
+        // Add the customer as a participant
+        $thread->addParticipant($customerUser);
+
+        // Add all internal users as participants
+        $internalUsers = User::where('type', 'internal')->where('is_active', true)->get();
+        foreach ($internalUsers as $internalUser) {
+            $thread->addParticipant($internalUser);
+        }
+
+        // Send a welcome system message
+        $chatService->sendSystemMessage(
+            $thread,
+            __('Welcome! We\'d love to help with your painting project. Tell us about what you\'re looking for and we\'ll get you a personalized estimate.')
+        );
+
+        // Notify internal users about the new contact
+        foreach ($internalUsers as $internalUser) {
+            $internalUser->notify(new NewContactWelcome($customer));
         }
     }
 }; ?>

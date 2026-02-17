@@ -81,7 +81,7 @@ class CreateTask implements ActionInterface
         $title = $registry->resolveDynamicValues($config['title'] ?? 'Automated Task', $run);
         $type = $config['type'] ?? 'task';
         $priority = $config['priority'] ?? 'normal';
-        $dueInHours = $config['due_in_hours'] ?? null;
+        $dueInHours = isset($config['due_in_hours']) && $config['due_in_hours'] !== '' ? (int) $config['due_in_hours'] : null;
         $assignedTo = $config['assigned_to'] ?? null;
 
         $subject = $run->subject;

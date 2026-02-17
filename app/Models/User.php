@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Storage;
@@ -38,6 +40,7 @@ class User extends Authenticatable
         'referral_terms_accepted_at',
         'referral_terms_ip_address',
         'referral_terms_initials',
+        'follow_up_status',
     ];
 
     /**
@@ -78,6 +81,9 @@ class User extends Authenticatable
                 'crew' => $user->crewProfile()->create(),
                 default => null,
             };
+
+            // Fire automation event for workflow triggers
+            event(new \App\Events\Automation\ContactCreated($user, $user->type ?? ''));
         });
     }
 
@@ -99,6 +105,11 @@ class User extends Authenticatable
     public function crewProfile(): HasOne
     {
         return $this->hasOne(CrewProfile::class);
+    }
+
+    public function employeeProfile(): HasOne
+    {
+        return $this->hasOne(EmployeeProfile::class);
     }
 
     /**
@@ -200,6 +211,11 @@ class User extends Authenticatable
         return $this->is_active;
     }
 
+    public function chatParticipants(): HasMany
+    {
+        return $this->hasMany(ChatParticipant::class);
+    }
+
     /**
      * Determine if user can access the internal dashboard.
      * Requires internal type + appropriate role/permission.
@@ -280,13 +296,13 @@ class User extends Authenticatable
             return null;
         }
 
-        return Storage::disk('public')->url($this->avatar_path);
+        return storage_url($this->avatar_path);
     }
 
     public function deleteAvatar(): void
     {
         if ($this->avatar_path) {
-            Storage::disk('public')->delete($this->avatar_path);
+            Storage::delete($this->avatar_path);
             $this->update(['avatar_path' => null]);
         }
     }
@@ -301,5 +317,30 @@ class User extends Authenticatable
             ->take(2)
             ->map(fn ($word) => Str::substr($word, 0, 1))
             ->implode('');
+    }
+
+    /**
+     * Get the current incomplete daily follow-up activity for this user.
+     */
+    public function currentFollowUp(): MorphOne
+    {
+        return $this->morphOne(Activity::class, 'subject')
+            ->where('automation_key', 'daily_followup')
+            ->where('is_completed', false)
+            ->orderBy('due_at');
+    }
+
+    /**
+     * Get all daily follow-up activities for this user.
+     */
+    public function followUpActivities(): MorphMany
+    {
+        return $this->morphMany(Activity::class, 'subject')
+            ->where('automation_key', 'daily_followup');
+    }
+
+    public function isLost(): bool
+    {
+        return $this->follow_up_status === 'lost';
     }
 }

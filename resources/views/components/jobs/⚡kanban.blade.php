@@ -103,7 +103,7 @@ new class extends Component {
     public function jobsByStage(): array
     {
         $query = Job::query()
-            ->with(['deal.customer', 'estimate', 'acceptedCrew'])
+            ->with(['deal.customer', 'estimate', 'acceptedCrew', 'salesPerson', 'productionManager'])
             ->when($this->search, function ($query) {
                 return $query->where(function ($q) {
                     $q->where('title', 'like', '%' . $this->search . '%')
@@ -235,9 +235,26 @@ new class extends Component {
                                                 </flux:text>
 
                                                 @if ($job->deal?->customer)
-                                                    <div class="flex items-center text-xs text-zinc-500 dark:text-zinc-400 mb-2">
+                                                    <div class="flex items-center text-xs text-zinc-500 dark:text-zinc-400 mb-1">
                                                         <flux:icon name="user" class="h-3 w-3 mr-1" />
                                                         {{ $job->deal->customer->full_name }}
+                                                    </div>
+                                                @endif
+
+                                                @if ($job->salesPerson || $job->productionManager)
+                                                    <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-400 dark:text-zinc-500 mb-2">
+                                                        @if ($job->salesPerson)
+                                                            <span class="flex items-center" title="{{ __('Sales') }}: {{ $job->salesPerson->name }}">
+                                                                <flux:icon name="currency-dollar" class="h-3 w-3 mr-0.5" />
+                                                                {{ Str::before($job->salesPerson->name, ' ') }}
+                                                            </span>
+                                                        @endif
+                                                        @if ($job->productionManager)
+                                                            <span class="flex items-center" title="{{ __('PM') }}: {{ $job->productionManager->name }}">
+                                                                <flux:icon name="wrench-screwdriver" class="h-3 w-3 mr-0.5" />
+                                                                {{ Str::before($job->productionManager->name, ' ') }}
+                                                            </span>
+                                                        @endif
                                                     </div>
                                                 @endif
 

@@ -2,6 +2,9 @@
 
 use App\Models\CompanySetting;
 use App\Models\Estimate;
+use App\Models\EstimatePackage;
+use App\Models\PaintProduct;
+use App\Services\EstimateTierPricingService;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -38,6 +41,12 @@ new class extends Component
 
     public float $burdenMultiplier = 1.35;
 
+    /** Paint tier currently being viewed in financials (null = default/aggregate) */
+    public ?string $viewingTier = null;
+
+    /** Package ID being viewed - filters labor hours and materials to this package's included items */
+    public ?int $viewingPackageId = null;
+
     public function mount(Estimate $estimate): void
     {
         $this->estimate = $estimate->load([
@@ -61,6 +70,26 @@ new class extends Component
 
         $settings = CompanySetting::getInstance();
         $this->burdenMultiplier = (float) $settings->payroll_burden_multiplier;
+
+        // Auto-select viewing tier/package based on selected package or default to 'better'
+        if ($this->estimate->hasPaintTiers()) {
+            $selectedPackage = $this->estimate->packages()->where('is_selected', true)->first();
+            if ($selectedPackage) {
+                $this->viewingTier = $selectedPackage->getPaintTier();
+                $this->viewingPackageId = $selectedPackage->id;
+            } else {
+                $this->viewingTier = 'better';
+                // Find the package matching 'standard' tier (maps to 'better')
+                $betterPackage = $this->estimate->packages()->where('tier', 'standard')->first();
+                $this->viewingPackageId = $betterPackage?->id;
+            }
+        } elseif ($this->estimate->packages()->exists()) {
+            // No tiers but packages exist - default to selected or recommended package
+            $selectedPackage = $this->estimate->packages()->where('is_selected', true)->first()
+                ?? $this->estimate->packages()->where('is_recommended', true)->first()
+                ?? $this->estimate->packages()->orderBy('sort_order')->first();
+            $this->viewingPackageId = $selectedPackage?->id;
+        }
     }
 
     public function setTab(string $tab): void
@@ -76,6 +105,72 @@ new class extends Component
     public function setHoursPerDay(float $hours): void
     {
         $this->hoursPerDay = max(4, min(12, $hours));
+    }
+
+    public function selectViewingTier(string $tier): void
+    {
+        if (in_array($tier, ['good', 'better', 'best'])) {
+            $this->viewingTier = $tier;
+
+            // Find the package matching this tier
+            $packageTier = match ($tier) {
+                'good' => 'basic',
+                'better' => 'standard',
+                'best' => 'premium',
+            };
+            $package = $this->estimate->packages()->where('tier', $packageTier)->first();
+            $this->viewingPackageId = $package?->id;
+
+            // Clear computed caches so tier-aware values are recalculated
+            unset(
+                $this->profitSummary,
+                $this->jobTotals,
+                $this->materialsNeeded,
+                $this->materialsWithCosts,
+                $this->materialsProfit,
+                $this->areaBreakdowns,
+                $this->sundriesBreakdown,
+                $this->painterPayBreakdown,
+            );
+        }
+    }
+
+    /**
+     * Get the set of included surface IDs and area IDs for the viewing package.
+     * Returns null if no package is selected (show everything).
+     *
+     * @return array{surface_ids: array<int>, area_ids: array<int>}|null
+     */
+    protected function getViewingPackageFilter(): ?array
+    {
+        if (! $this->viewingPackageId) {
+            return null;
+        }
+
+        $package = EstimatePackage::find($this->viewingPackageId);
+        if (! $package) {
+            return null;
+        }
+
+        $items = $package->items()
+            ->where('is_included', true)
+            ->where('customer_approved', true)
+            ->get();
+
+        $surfaceIds = $items
+            ->where('itemable_type', \App\Models\EstimateAreaSurface::class)
+            ->pluck('itemable_id')
+            ->toArray();
+
+        $areaIds = $items
+            ->where('itemable_type', \App\Models\EstimateArea::class)
+            ->pluck('itemable_id')
+            ->toArray();
+
+        return [
+            'surface_ids' => $surfaceIds,
+            'area_ids' => $areaIds,
+        ];
     }
 
     public function toggleArea(int $areaId): void
@@ -97,12 +192,11 @@ new class extends Component
 
     public function addPainter(): void
     {
-        $settings = CompanySetting::getInstance();
         $scope = $this->estimate->project_type ?? 'interior';
 
         $this->painters[] = [
             'name' => '',
-            'hourly_rate' => $settings->getHourlyWageForScope($scope),
+            'hourly_rate' => $this->estimate->getOverrideBaseWage($scope),
             'hours' => 0,
             'notes' => '',
         ];
@@ -119,6 +213,42 @@ new class extends Component
         $this->estimate->actual_paint_costs = $this->actualPaintCosts;
         $this->estimate->actual_painters = $this->painters;
         $this->estimate->save();
+    }
+
+    /**
+     * Get tier paint details if the estimate uses paint tiers.
+     *
+     * @return array{tiers: array<string, array{label: string, product: ?PaintProduct, total: float}>, totals: array{good: float, better: float, best: float}}|null
+     */
+    #[Computed]
+    public function tierPaintDetails(): ?array
+    {
+        if (! $this->estimate->hasPaintTiers()) {
+            return null;
+        }
+
+        $tierService = app(EstimateTierPricingService::class);
+        $totals = $tierService->calculateTierTotals($this->estimate);
+
+        $tiers = [];
+        foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $label) {
+            $config = $this->estimate->getPaintTierConfig($tierKey);
+            $product = null;
+            if ($config && isset($config['default_paint_product_id'])) {
+                $product = PaintProduct::with('brand')->find($config['default_paint_product_id']);
+            }
+
+            $tiers[$tierKey] = [
+                'label' => $label,
+                'product' => $product,
+                'total' => $totals[$tierKey] ?? 0,
+            ];
+        }
+
+        return [
+            'tiers' => $tiers,
+            'totals' => $totals,
+        ];
     }
 
     public function saveSnapshot(): void
@@ -144,12 +274,27 @@ new class extends Component
 
         $settings = CompanySetting::getInstance();
         $scope = $this->estimate->project_type ?? 'interior';
+        $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($this->estimate->areas as $area) {
             if ($area->is_fixed_price) {
+                // Skip fixed-price areas not in the viewing package
+                if ($packageFilter && ! in_array($area->id, $packageFilter['area_ids'])) {
+                    continue;
+                }
                 $areaLaborHours = (float) ($area->estimated_labor_hours ?? 0);
             } else {
-                $areaLaborHours = (float) $area->surfaces()->where('is_included', true)->sum('labor_hours');
+                // Filter surfaces by package inclusion
+                $surfaceQuery = $area->surfaces()->where('is_included', true);
+                if ($packageFilter) {
+                    $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                }
+                $areaLaborHours = (float) $surfaceQuery->sum('labor_hours');
+
+                // Skip areas with no included surfaces in this package
+                if ($areaLaborHours === 0.0 && $packageFilter) {
+                    continue;
+                }
             }
             $laborHours += $areaLaborHours;
 
@@ -174,9 +319,15 @@ new class extends Component
     {
         $materials = [];
         $customMaterials = [];
+        $packageFilter = $this->getViewingPackageFilter();
+        $activeTier = ($this->viewingTier && $this->estimate->hasPaintTiers()) ? $this->viewingTier : null;
 
         foreach ($this->estimate->areas as $area) {
-            foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+            $surfaceQuery = $area->surfaces()->where('is_included', true);
+            if ($packageFilter) {
+                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+            }
+            foreach ($surfaceQuery->get() as $surface) {
                 // Custom surfaces with material cost show as separate "budget" line items
                 if ($surface->is_custom && (float) ($surface->material_cost ?? 0) > 0) {
                     $customMaterials[] = [
@@ -186,14 +337,17 @@ new class extends Component
                         'name' => $surface->name,
                         'sheen' => null,
                         'gallons' => null,
-                        'material_cost' => (float) $surface->material_cost,
+                        'material_cost' => (float) $surface->getMaterialCostForTier($activeTier),
                         'surfaces' => ["{$area->name} - {$surface->name}"],
                     ];
 
                     continue;
                 }
 
-                $paintProduct = $surface->getEffectivePaintProduct();
+                // Use tier-specific paint product when viewing a tier
+                $paintProduct = $activeTier
+                    ? $surface->getPaintProductForTier($activeTier)
+                    : $surface->getEffectivePaintProduct();
 
                 if ($paintProduct) {
                     $key = $paintProduct->id;
@@ -259,22 +413,31 @@ new class extends Component
         $totalGallons = 0;
         $totalPaintCost = 0;
         $totalRecycleFee = 0;
+        $packageFilter = $this->getViewingPackageFilter();
+        $activeTier = ($this->viewingTier && $this->estimate->hasPaintTiers()) ? $this->viewingTier : null;
 
         foreach ($this->estimate->areas as $area) {
-            foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+            $surfaceQuery = $area->surfaces()->where('is_included', true);
+            if ($packageFilter) {
+                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+            }
+            foreach ($surfaceQuery->get() as $surface) {
                 // Custom surfaces: material_cost is a lump sum entered by user (no paint product)
                 if ($surface->is_custom && (float) ($surface->material_cost ?? 0) > 0) {
                     $customMaterials[] = [
                         'surface_id' => $surface->id,
                         'area_name' => $area->name,
                         'surface_name' => $surface->name,
-                        'material_cost' => (float) $surface->material_cost,
+                        'material_cost' => (float) $surface->getMaterialCostForTier($activeTier),
                     ];
 
                     continue;
                 }
 
-                $paintProduct = $surface->getEffectivePaintProduct();
+                // Use tier-specific paint product when viewing a tier
+                $paintProduct = $activeTier
+                    ? $surface->getPaintProductForTier($activeTier)
+                    : $surface->getEffectivePaintProduct();
 
                 if ($paintProduct) {
                     $key = $paintProduct->id;
@@ -349,6 +512,10 @@ new class extends Component
         // Add fixed-price area material costs (no individual paint products, just a lump sum)
         $fixedPriceMaterialCost = 0;
         foreach ($this->estimate->areas->where('is_fixed_price', true) as $area) {
+            // Skip fixed-price areas not in the viewing package
+            if ($packageFilter && ! in_array($area->id, $packageFilter['area_ids'])) {
+                continue;
+            }
             $fixedPriceMaterialCost += (float) ($area->estimated_material_cost ?? 0);
         }
         $totalPaintCost += $fixedPriceMaterialCost;
@@ -399,7 +566,7 @@ new class extends Component
         $scope = $this->estimate->project_type ?? 'interior';
         $jobTotals = $this->jobTotals;
 
-        $baseHourlyWage = $settings->getHourlyWageForScope($scope);
+        $baseHourlyWage = $this->estimate->getOverrideBaseWage($scope);
         $payrollBurdenMultiplier = (float) ($settings->payroll_burden_multiplier);
         $payrollBurdenPercent = ($payrollBurdenMultiplier - 1) * 100;
         $effectiveHourlyRate = $baseHourlyWage * $payrollBurdenMultiplier;
@@ -554,12 +721,28 @@ new class extends Component
         $recycleFeeCost = $this->materialsWithCosts['total_recycle_fee'];
         $materialTax = $this->materialsWithCosts['material_tax_amount'];
 
-        // Job price = company pays (loaded labor) + materials (catalog paint + sundries + recycle + tax)
-        $jobPrice = $painterPay['company_pays_loaded']
-            + $materialsProfit['total_catalog_cost']
-            + $sundriesCost
-            + $recycleFeeCost
-            + $materialTax;
+        $useTier = $this->viewingTier && $this->estimate->hasPaintTiers();
+        $activeTier = $useTier ? $this->viewingTier : null;
+
+        // Calculate tier-specific material COGS from surfaces (the stored material_cost_* columns)
+        $packageFilter = $this->getViewingPackageFilter();
+        $materialCOGS = 0.0;
+        foreach ($this->estimate->areas as $area) {
+            if ($area->is_fixed_price) {
+                if ($packageFilter && ! in_array($area->id, $packageFilter['area_ids'])) {
+                    continue;
+                }
+                $materialCOGS += (float) ($area->estimated_material_cost ?? 0);
+            } else {
+                $surfaceQuery = $area->surfaces()->where('is_included', true);
+                if ($packageFilter) {
+                    $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                }
+                foreach ($surfaceQuery->get() as $surface) {
+                    $materialCOGS += $surface->getMaterialCostForTier($activeTier);
+                }
+            }
+        }
 
         // Crew wages: actual painters if entered, otherwise company-wide calc
         $crewWages = count($this->painters) > 0
@@ -571,10 +754,17 @@ new class extends Component
             ? $paintersData['total_burden_cost']
             : $painterPay['burden_amount'];
 
-        // Paint cost: actual if entered, otherwise catalog
+        // Paint cost: actual if entered, otherwise COGS material cost (tier-specific)
         $paintCost = $materialsProfit['has_actuals']
             ? $materialsProfit['total_actual_cost']
-            : $materialsProfit['total_catalog_cost'];
+            : $materialCOGS;
+
+        // Job price = total COGS (what the company actually spends on this job)
+        $jobPrice = $painterPay['company_pays_loaded']
+            + $materialCOGS
+            + $sundriesCost
+            + $recycleFeeCost
+            + $materialTax;
 
         $totalCosts = $crewWages + $burdenCost + $paintCost + $sundriesCost + $recycleFeeCost + $materialTax;
         $grossProfit = $jobPrice - $totalCosts;
@@ -592,6 +782,7 @@ new class extends Component
             'gross_profit' => round($grossProfit, 2),
             'gross_margin_percent' => round($grossMarginPercent, 1),
             'has_actuals' => count($this->painters) > 0 || $materialsProfit['has_actuals'],
+            'viewing_tier' => $useTier ? $this->viewingTier : null,
         ];
     }
 
@@ -677,6 +868,8 @@ new class extends Component
         $areas = [];
         $settings = CompanySetting::getInstance();
         $scope = $this->estimate->project_type ?? 'interior';
+        $packageFilter = $this->getViewingPackageFilter();
+        $activeTier = ($this->viewingTier && $this->estimate->hasPaintTiers()) ? $this->viewingTier : null;
 
         foreach ($this->estimate->areas as $area) {
             // Get addons (nested area templates like closets) - shared for both types
@@ -690,6 +883,10 @@ new class extends Component
             }
 
             if ($area->is_fixed_price) {
+                // Skip fixed-price areas not in the viewing package
+                if ($packageFilter && ! in_array($area->id, $packageFilter['area_ids'])) {
+                    continue;
+                }
                 // Fixed-price areas store labor/materials directly, no surfaces
                 $laborHours = (float) ($area->estimated_labor_hours ?? 0);
                 $materialCost = (float) ($area->estimated_material_cost ?? 0);
@@ -719,8 +916,14 @@ new class extends Component
                 $surfaces = [];
                 $totalLaborHours = 0;
 
-                foreach ($area->surfaces()->where('is_included', true)->orderBy('sort_order')->get() as $surface) {
-                    $paintProduct = $surface->getEffectivePaintProduct();
+                $surfaceQuery = $area->surfaces()->where('is_included', true);
+                if ($packageFilter) {
+                    $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                }
+                foreach ($surfaceQuery->orderBy('sort_order')->get() as $surface) {
+                    $paintProduct = $activeTier
+                        ? $surface->getPaintProductForTier($activeTier)
+                        : $surface->getEffectivePaintProduct();
                     $substrate = $area->substrate;
 
                     $prepNotes = [];
@@ -747,7 +950,7 @@ new class extends Component
                         'unit' => $surface->unit ?? 'sqft',
                         'coats' => $surface->coats ?? 1,
                         'labor_hours' => (float) $surface->labor_hours,
-                        'material_cost' => (float) ($surface->material_cost ?? 0),
+                        'material_cost' => (float) $surface->getMaterialCostForTier($activeTier),
                         'crew_payment' => $surface->getCrewPayment(),
                         'crew_rate' => $surface->getEffectiveCrewRate(),
                         'has_custom_crew_rate' => $surface->is_custom && $surface->crew_price !== null,
@@ -764,6 +967,11 @@ new class extends Component
                     ];
 
                     $totalLaborHours += (float) $surface->labor_hours;
+                }
+
+                // Skip area if package filter resulted in no surfaces
+                if ($packageFilter && empty($surfaces)) {
+                    continue;
                 }
 
                 $addonHours = collect($addons)->sum('labor_hours');
@@ -1260,6 +1468,54 @@ new class extends Component
                 </div>
             </flux:callout>
 
+            {{-- Tier Selector & Paint Details --}}
+            @if ($this->tierPaintDetails)
+                {{-- Tier Selector Tabs --}}
+                <div class="flex items-center gap-2 mb-4">
+                    <flux:text size="sm" class="text-zinc-500 font-medium mr-2">{{ __('Viewing Tier:') }}</flux:text>
+                    @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $tierLabel)
+                        <button
+                            wire:click="selectViewingTier('{{ $tierKey }}')"
+                            type="button"
+                            class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {{ $viewingTier === $tierKey
+                                ? 'bg-blue-600 text-white shadow-sm'
+                                : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600'
+                            }}"
+                        >
+                            {{ __($tierLabel) }}
+                        </button>
+                    @endforeach
+                </div>
+
+                <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+                    <h3 class="text-lg font-bold text-zinc-900 dark:text-white mb-4">{{ __('Paint Tier Pricing') }}</h3>
+                    <div class="grid grid-cols-3 gap-4">
+                        @foreach ($this->tierPaintDetails['tiers'] as $tierKey => $tier)
+                            <div class="rounded-lg border p-4 cursor-pointer transition-all {{ $viewingTier === $tierKey
+                                ? 'border-blue-500 dark:border-blue-400 ring-2 ring-blue-500/20 bg-blue-50 dark:bg-blue-900/20'
+                                : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                            }}" wire:click="selectViewingTier('{{ $tierKey }}')">
+                                <div class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ $tier['label'] }}</div>
+                                <div class="mt-1 text-lg font-bold text-zinc-900 dark:text-white">${{ number_format($tier['total'], 2) }}</div>
+                                @if ($tier['product'])
+                                    <div class="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                                        {{ $tier['product']->full_name }}
+                                        <span class="text-zinc-400">${{ number_format($tier['product']->price_per_gallon, 2) }}/gal</span>
+                                    </div>
+                                @else
+                                    <div class="mt-2 text-xs text-zinc-400">{{ __('No default paint set') }}</div>
+                                @endif
+                                @if ($tierKey !== 'good')
+                                    <div class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                        +${{ number_format($tier['total'] - $this->tierPaintDetails['totals']['good'], 2) }} {{ __('vs Good') }}
+                                    </div>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
+
             {{-- Materials & Paint Profit Section --}}
             <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
                 <h3 class="text-lg font-bold text-zinc-900 dark:text-white mb-4">
@@ -1657,6 +1913,9 @@ new class extends Component
                     <h3 class="text-lg font-bold">
                         <flux:icon name="chart-bar" class="w-5 h-5 inline mr-1 text-white" />
                         {{ __('Job Profit Summary') }}
+                        @if ($this->profitSummary['viewing_tier'] ?? false)
+                            <span class="text-xs px-2 py-1 bg-blue-700 rounded text-blue-100 ml-2">{{ ucfirst($this->profitSummary['viewing_tier']) }} {{ __('Tier') }}</span>
+                        @endif
                     </h3>
                     @if (! $this->profitSummary['has_actuals'])
                         <span class="text-xs px-2 py-1 bg-zinc-700 rounded text-zinc-400">{{ __('Using estimated costs') }}</span>

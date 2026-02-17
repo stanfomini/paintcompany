@@ -71,11 +71,9 @@ describe('TemplateBuilder component', function () {
         $roomCategory = EstimateTemplateCategory::factory()->room()->create(['name' => 'Rooms']);
         $surfaceCategory = EstimateTemplateCategory::factory()->surface()->create(['name' => 'Surfaces']);
 
-        $component = Livewire::actingAs($user)
-            ->test('estimates.template-builder', ['deal' => $deal]);
-
-        // Verify categories are loaded via computed property (used for template filtering)
-        $categories = $component->instance()->categories;
+        // Categories are loaded by the template-picker child component now
+        // Verify they exist in the database
+        $categories = EstimateTemplateCategory::active()->orderBy('sort_order')->get();
         expect($categories)->toHaveCount(2);
         expect($categories->pluck('name')->toArray())->toContain('Rooms', 'Surfaces');
     });
@@ -573,26 +571,24 @@ describe('TemplateBuilder scope filtering', function () {
         $category = EstimateTemplateCategory::factory()->room()->create();
 
         // Create templates with different scopes
-        $interiorTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $interiorTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Interior Only',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_INTERIOR,
         ]);
-        $exteriorTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $exteriorTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Exterior Only',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_EXTERIOR,
         ]);
-        $bothTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $bothTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Both Scopes',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_BOTH,
         ]);
 
+        // Template filtering now lives in the template-picker child component
         $component = Livewire::actingAs($user)
-            ->test('estimates.template-builder', ['deal' => $deal])
-            ->set('scopeFilter', 'interior');
+            ->test('estimates.template-picker', ['projectScope' => 'interior']);
 
-        $templates = $component->instance()->getTemplatesByCategoryProperty();
-        $roomTemplates = $templates->get('room', collect());
-        $templateNames = $roomTemplates->pluck('name')->toArray();
+        $templateNames = $component->invade()->pickerTemplates->pluck('name')->toArray();
 
         expect($templateNames)->toContain('Interior Only');
         expect($templateNames)->toContain('Both Scopes');
@@ -605,26 +601,24 @@ describe('TemplateBuilder scope filtering', function () {
 
         $category = EstimateTemplateCategory::factory()->room()->create();
 
-        $interiorTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $interiorTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Interior Only',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_INTERIOR,
         ]);
-        $exteriorTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $exteriorTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Exterior Only',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_EXTERIOR,
         ]);
-        $bothTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $bothTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Both Scopes',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_BOTH,
         ]);
 
+        // Template filtering now lives in the template-picker child component
         $component = Livewire::actingAs($user)
-            ->test('estimates.template-builder', ['deal' => $deal])
-            ->set('scopeFilter', 'exterior');
+            ->test('estimates.template-picker', ['projectScope' => 'exterior']);
 
-        $templates = $component->instance()->getTemplatesByCategoryProperty();
-        $roomTemplates = $templates->get('room', collect());
-        $templateNames = $roomTemplates->pluck('name')->toArray();
+        $templateNames = $component->invade()->pickerTemplates->pluck('name')->toArray();
 
         expect($templateNames)->toContain('Exterior Only');
         expect($templateNames)->toContain('Both Scopes');
@@ -637,28 +631,27 @@ describe('TemplateBuilder scope filtering', function () {
 
         $category = EstimateTemplateCategory::factory()->room()->create();
 
-        $interiorTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $interiorTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Interior Only',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_INTERIOR,
         ]);
-        $exteriorTemplate = EstimateTemplate::factory()->forCategory($category)->fixedPricing(500)->create([
+        $exteriorTemplate = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
             'name' => 'Exterior Only',
             'scope_type' => EstimateTemplate::SCOPE_TYPE_EXTERIOR,
         ]);
 
-        // scopeFilter now defaults to 'interior' (synced with projectScope)
-        // Change to 'all' to test that both scope types are shown
-        $component = Livewire::actingAs($user)
-            ->test('estimates.template-builder', ['deal' => $deal])
-            ->assertSet('scopeFilter', 'interior')
-            ->set('scopeFilter', 'all');
+        // The template-picker child filters by projectScope.
+        // Interior scope gets interior + both, exterior scope gets exterior + both.
+        // Verify both templates are accessible across their respective scopes.
+        $interiorPicker = Livewire::actingAs($user)
+            ->test('estimates.template-picker', ['projectScope' => 'interior']);
+        $interiorNames = $interiorPicker->invade()->pickerTemplates->pluck('name')->toArray();
+        expect($interiorNames)->toContain('Interior Only');
 
-        $templates = $component->instance()->getTemplatesByCategoryProperty();
-        $roomTemplates = $templates->get('room', collect());
-        $templateNames = $roomTemplates->pluck('name')->toArray();
-
-        expect($templateNames)->toContain('Interior Only');
-        expect($templateNames)->toContain('Exterior Only');
+        $exteriorPicker = Livewire::actingAs($user)
+            ->test('estimates.template-picker', ['projectScope' => 'exterior']);
+        $exteriorNames = $exteriorPicker->invade()->pickerTemplates->pluck('name')->toArray();
+        expect($exteriorNames)->toContain('Exterior Only');
     });
 });
 
@@ -1586,20 +1579,19 @@ describe('TemplateBuilder fixed price templates', function () {
             'is_active' => true,
         ]);
 
-        // Test with interior scope (default)
-        $component = Livewire::actingAs($user)
-            ->test('estimates.template-builder', ['deal' => $deal]);
+        // Fixed price template filtering now lives in the template-picker child component
+        $interiorPicker = Livewire::actingAs($user)
+            ->test('estimates.template-picker', ['projectScope' => 'interior']);
 
-        // Get computed property via invocable
-        $interiorTemplates = $component->invade()->fixedPriceTemplates;
+        $interiorTemplates = $interiorPicker->invade()->fixedPriceTemplates;
         expect($interiorTemplates->pluck('name')->toArray())->toContain('Interior Closet');
         expect($interiorTemplates->pluck('name')->toArray())->not->toContain('Exterior Door');
 
-        // Switch to exterior scope
-        $component->set('projectScope', 'exterior');
+        // Test exterior scope
+        $exteriorPicker = Livewire::actingAs($user)
+            ->test('estimates.template-picker', ['projectScope' => 'exterior']);
 
-        // Re-fetch after scope change
-        $exteriorTemplates = $component->invade()->fixedPriceTemplates;
+        $exteriorTemplates = $exteriorPicker->invade()->fixedPriceTemplates;
         expect($exteriorTemplates->pluck('name')->toArray())->toContain('Exterior Door');
         expect($exteriorTemplates->pluck('name')->toArray())->not->toContain('Interior Closet');
     });

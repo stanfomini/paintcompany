@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Notifications\EstimateAccepted;
+use App\Services\CommissionService;
 use App\Services\InvoiceService;
 use App\Services\JobService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -91,6 +92,9 @@ class EstimateSignature extends Model
 
                 // Advance referral status if this estimate was referred
                 app(\App\Services\ReferralService::class)->onEstimateSigned($signature->estimate);
+
+                // Auto-create commission entry for the estimator/salesperson
+                app(CommissionService::class)->createFromEstimate($signature->estimate);
 
                 // Auto-create projected job cost card and deposit invoice
                 $signature->estimate->load('areas.surfaces');

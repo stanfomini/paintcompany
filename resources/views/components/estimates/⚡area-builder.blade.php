@@ -79,6 +79,9 @@ new class extends Component
     // Margin discount from parent estimate (commercial discount)
     public float $marginDiscountPercent = 0;
 
+    // Hourly rate override from parent estimate
+    public ?float $hourlyRateOverride = null;
+
     // Service category
     public ?int $serviceCategoryId = null;
 
@@ -130,8 +133,10 @@ new class extends Component
         ?int $paintProductId = null,
         array $paintByCategory = [],
         float $marginDiscountPercent = 0,
+        ?float $hourlyRateOverride = null,
     ): void {
         $this->marginDiscountPercent = $marginDiscountPercent;
+        $this->hourlyRateOverride = $hourlyRateOverride;
         $template = EstimateTemplate::with(['surfaces.productionRate', 'nestedOptions.nestedAreaTemplate'])
             ->find($templateId);
 
@@ -185,8 +190,10 @@ new class extends Component
         ?int $paintProductId = null,
         array $paintByCategory = [],
         float $marginDiscountPercent = 0,
+        ?float $hourlyRateOverride = null,
     ): void {
         $this->marginDiscountPercent = $marginDiscountPercent;
+        $this->hourlyRateOverride = $hourlyRateOverride;
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = null;
@@ -225,8 +232,10 @@ new class extends Component
         ?int $paintProductId = null,
         array $paintByCategory = [],
         float $marginDiscountPercent = 0,
+        ?float $hourlyRateOverride = null,
     ): void {
         $this->marginDiscountPercent = $marginDiscountPercent;
+        $this->hourlyRateOverride = $hourlyRateOverride;
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = $editingIndex;
@@ -838,7 +847,7 @@ new class extends Component
 
             $settings = CompanySetting::getInstance();
             // Use effective hourly rate (base wage × payroll burden) for COGS
-            $hourlyWage = $settings->getEffectiveHourlyRateForScope($this->scopeType);
+            $hourlyWage = $this->getEffectiveRateForScope($this->scopeType);
 
             foreach ($this->surfaces as $index => $surface) {
                 if (! $surface['is_required'] && ! $surface['is_default_enabled']) {
@@ -1050,12 +1059,26 @@ new class extends Component
     }
 
     /**
-     * Get effective hourly rate for scope.
+     * Get effective hourly rate for scope, using estimate override if set.
      */
     #[Computed]
     public function effectiveRate(): float
     {
-        return CompanySetting::getInstance()->getEffectiveHourlyRateForScope($this->scopeType);
+        return $this->getEffectiveRateForScope($this->scopeType);
+    }
+
+    /**
+     * Get the effective hourly rate for a scope, using estimate override if set.
+     */
+    protected function getEffectiveRateForScope(string $scopeType): float
+    {
+        $settings = CompanySetting::getInstance();
+
+        if ($this->hourlyRateOverride !== null && $this->hourlyRateOverride > 0) {
+            return $this->hourlyRateOverride * (float) $settings->payroll_burden_multiplier;
+        }
+
+        return $settings->getEffectiveHourlyRateForScope($scopeType);
     }
 
     /**

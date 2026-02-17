@@ -73,7 +73,7 @@
     {{-- Pay Button --}}
     @if ($invoice->canAcceptPayments() && config('stripe.secret'))
         <div class="border-t border-zinc-200 p-6 dark:border-zinc-700">
-            <flux:button variant="primary" class="w-full" size="lg" wire:click="payWithStripe" wire:loading.attr="disabled">
+            <flux:button variant="primary" class="w-full" wire:click="payWithStripe" wire:loading.attr="disabled">
                 <span wire:loading.remove>{{ __('Pay') }} ${{ number_format((float) $invoice->balance_due, 2) }} {{ __('Now') }}</span>
                 <span wire:loading>{{ __('Redirecting to payment...') }}</span>
             </flux:button>

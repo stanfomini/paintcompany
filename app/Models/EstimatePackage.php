@@ -46,6 +46,7 @@ class EstimatePackage extends Model
         'warranty_type',
         'is_recommended',
         'is_selected',
+        'is_visible',
         'sort_order',
         'service_category_id',
         'signature_id',
@@ -65,6 +66,7 @@ class EstimatePackage extends Model
             'warranty_years' => 'integer',
             'is_recommended' => 'boolean',
             'is_selected' => 'boolean',
+            'is_visible' => 'boolean',
             'sort_order' => 'integer',
             'signed_at' => 'datetime',
         ];
@@ -103,9 +105,24 @@ class EstimatePackage extends Model
     }
 
     /**
+     * Get the paint quality tier for this package tier.
+     * Maps package tier to paint quality tier.
+     */
+    public function getPaintTier(): ?string
+    {
+        return match ($this->tier) {
+            self::TIER_BASIC => 'good',
+            self::TIER_STANDARD => 'better',
+            self::TIER_PREMIUM => 'best',
+            default => null,
+        };
+    }
+
+    /**
      * Calculate totals using area-level margin (not per-surface margin).
      * Groups surface items by area and uses EstimateArea::getCustomerPrice().
      * Service items (EstimateItem) use their stored total (user-priced).
+     * When the estimate has paint tiers, uses tier-specific material costs.
      */
     public function calculateTotals(): void
     {
@@ -118,6 +135,13 @@ class EstimatePackage extends Model
         $subtotal = 0.0;
         $areaSurfaceIds = []; // areaId => [surfaceId, ...]
         $areaFullIds = []; // areas added via direct EstimateArea items
+
+        // Determine paint tier for this package
+        $paintTier = null;
+        $estimate = $this->estimate;
+        if ($estimate && $estimate->hasPaintTiers()) {
+            $paintTier = $this->getPaintTier();
+        }
 
         foreach ($items as $item) {
             $itemable = $item->itemable;
@@ -138,7 +162,7 @@ class EstimatePackage extends Model
             } elseif ($itemable instanceof EstimateArea) {
                 if (! isset($areaFullIds[$itemable->id])) {
                     $areaFullIds[$itemable->id] = true;
-                    $subtotal += $itemable->getCustomerPrice();
+                    $subtotal += $itemable->getCustomerPrice($paintTier);
                 }
             }
         }
@@ -150,7 +174,7 @@ class EstimatePackage extends Model
             }
             $area = EstimateArea::find($areaId);
             if ($area) {
-                $subtotal += $area->getPartialCustomerPrice($surfaceIds);
+                $subtotal += $area->getPartialCustomerPrice($surfaceIds, $paintTier);
             }
         }
 
@@ -208,6 +232,14 @@ class EstimatePackage extends Model
     public function scopeSelected(Builder $query): Builder
     {
         return $query->where('is_selected', true);
+    }
+
+    /**
+     * Scope to filter visible packages.
+     */
+    public function scopeVisible(Builder $query): Builder
+    {
+        return $query->where('is_visible', true);
     }
 
     /**

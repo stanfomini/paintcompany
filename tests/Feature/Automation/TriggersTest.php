@@ -1,5 +1,6 @@
 <?php
 
+use App\Automation\Triggers\ApplicationReceived;
 use App\Automation\Triggers\ContactCreated;
 use App\Automation\Triggers\DealStageChanged;
 use App\Automation\Triggers\EstimateSent;
@@ -10,7 +11,9 @@ use App\Automation\Triggers\JobStageChanged;
 use App\Automation\Triggers\ScheduledCron;
 use App\Automation\Triggers\TaskCompleted;
 use App\Automation\Triggers\TaskOverdue;
+use App\Models\Applicant;
 use App\Models\Deal;
+use Illuminate\Support\Facades\Event;
 
 // --- DealStageChanged ---
 
@@ -225,4 +228,58 @@ it('has correct metadata for ContactCreated', function () {
     expect(ContactCreated::getName())->toBe('Contact Created')
         ->and(ContactCreated::getCategory())->toBe('Contacts')
         ->and(ContactCreated::getConfigSchema())->toHaveKey('user_type');
+});
+
+// --- ApplicationReceived ---
+
+it('matches application.received for any source when no filter', function () {
+    $trigger = new ApplicationReceived;
+    $subject = Applicant::factory()->make();
+
+    expect($trigger->matches('application.received', $subject, ['source' => 'web'], []))
+        ->toBeTrue();
+});
+
+it('matches application.received when source filter matches', function () {
+    $trigger = new ApplicationReceived;
+    $subject = Applicant::factory()->make();
+
+    expect($trigger->matches('application.received', $subject, ['source' => 'qr_code'], ['source' => 'qr_code']))
+        ->toBeTrue();
+});
+
+it('does not match application.received when source filter differs', function () {
+    $trigger = new ApplicationReceived;
+    $subject = Applicant::factory()->make();
+
+    expect($trigger->matches('application.received', $subject, ['source' => 'web'], ['source' => 'referral']))
+        ->toBeFalse();
+});
+
+it('does not match wrong event for application received', function () {
+    $trigger = new ApplicationReceived;
+    $subject = Applicant::factory()->make();
+
+    expect($trigger->matches('contact.created', $subject, ['source' => 'web'], []))
+        ->toBeFalse();
+});
+
+it('has correct metadata for ApplicationReceived', function () {
+    expect(ApplicationReceived::getName())->toBe('Application Received')
+        ->and(ApplicationReceived::getCategory())->toBe('Hiring')
+        ->and(ApplicationReceived::getDescription())->toBeString()
+        ->and(ApplicationReceived::getConfigSchema())->toHaveKey('source');
+});
+
+it('dispatches ApplicationReceived event when applicant is created', function () {
+    Event::fake([\App\Events\Automation\ApplicationReceived::class]);
+
+    $applicant = Applicant::factory()->create();
+
+    Event::assertDispatched(\App\Events\Automation\ApplicationReceived::class, function ($event) use ($applicant) {
+        return $event->applicant->is($applicant)
+            && $event->getEventName() === 'application.received'
+            && $event->getSubject()->is($applicant)
+            && $event->getContext()['source'] === 'web';
+    });
 });

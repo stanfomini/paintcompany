@@ -15,7 +15,7 @@ use Livewire\Livewire;
 uses()->group('chat', 'audio');
 
 beforeEach(function () {
-    Storage::fake('public');
+    Storage::fake();
 });
 
 describe('ChatMessage audio type', function () {
@@ -61,7 +61,7 @@ describe('AudioMessageService', function () {
             ->and($result['audio_duration'])->toBe(5.5);
 
         // Verify file was stored
-        Storage::disk('public')->assertExists($result['audio_path']);
+        Storage::assertExists($result['audio_path']);
     });
 
     it('handles transcription failure gracefully', function () {
@@ -83,7 +83,7 @@ describe('AudioMessageService', function () {
             ->and($result['transcription'])->toBeNull();
 
         // File should still be stored even if transcription fails
-        Storage::disk('public')->assertExists($result['audio_path']);
+        Storage::assertExists($result['audio_path']);
     });
 
     it('handles disabled python service', function () {

@@ -11,8 +11,7 @@ use Livewire\Livewire;
 
 describe('PhotoManager component', function () {
     beforeEach(function () {
-        Storage::fake('local');
-        Storage::fake('public');
+        Storage::fake();
         $this->internalUser = User::factory()->internal()->withFullAccess()->create();
         $this->property = Property::factory()->create();
         $this->deal = Deal::factory()->forProperty($this->property)->create();
@@ -156,15 +155,15 @@ describe('PhotoManager component', function () {
     });
 
     it('validates photo file size limit', function () {
-        // Create a large image file that exceeds 20MB limit
-        $file = UploadedFile::fake()->image('large-photo.jpg')->size(21000);
+        // Create a large image file that exceeds 100MB limit
+        $file = UploadedFile::fake()->image('large-photo.jpg')->size(103000);
 
         Livewire::actingAs($this->internalUser)
             ->test('estimates.photo-manager', ['estimate' => $this->estimate])
             ->call('openUploadModal')
             ->set('uploadedPhotos', [$file])
             ->call('uploadPhotos')
-            ->assertHasErrors(['uploadedPhotos.0']);
+            ->assertHasErrors('uploadedPhotos');
     });
 
     it('validates photo category is required', function () {

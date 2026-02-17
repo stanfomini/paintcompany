@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EmployeeProfile;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -80,10 +81,17 @@ new class extends Component
             'Vendors' => ['vendors.view', 'vendors.manage'],
             'Accounting' => ['accounting.view', 'accounting.manage'],
             'Photos' => ['photos.upload', 'photos.delete', 'photos.annotate', 'photos.comment'],
+            'Employees' => ['employees.view', 'employees.create', 'employees.edit', 'employees.delete', 'employees.view_sensitive'],
+            'Hiring' => ['hiring.view', 'hiring.manage'],
+            'Onboarding' => ['onboarding.view', 'onboarding.manage'],
+            'Time Tracking' => ['time_tracking.view', 'time_tracking.view_all', 'time_tracking.manage', 'time_tracking.clock'],
+            'Scheduling' => ['scheduling.view', 'scheduling.view_all', 'scheduling.manage'],
+            'Payroll' => ['payroll.view', 'payroll.manage'],
             'Settings' => [
                 'settings.company', 'settings.packages', 'settings.allocations',
                 'settings.payment_integrations', 'settings.service_categories',
                 'settings.budget_mappings', 'settings.referral', 'settings.contracts',
+                'settings.lead_sources', 'settings.workflows',
             ],
             'Administration' => ['team.manage_users', 'team.manage_invitations', 'team.manage_roles', 'admin.access_settings'],
         ];
@@ -128,7 +136,7 @@ new class extends Component
     {
         return User::query()
             ->where('type', 'internal')
-            ->with('roles')
+            ->with(['roles', 'employeeProfile'])
             ->orderBy('name')
             ->get();
     }
@@ -308,6 +316,18 @@ new class extends Component
 
         if ($this->selectedRole) {
             $user->syncRoles([$this->selectedRole]);
+
+            // Auto-create EmployeeProfile if missing
+            if (! $user->employeeProfile) {
+                EmployeeProfile::create([
+                    'user_id' => $user->id,
+                    'employee_number' => EmployeeProfile::generateEmployeeNumber(),
+                    'hire_date' => now()->format('Y-m-d'),
+                    'employment_status' => 'active',
+                    'pay_rate' => 0,
+                    'pay_type' => 'hourly',
+                ]);
+            }
         } else {
             $user->syncRoles([]);
         }
@@ -524,6 +544,11 @@ new class extends Component
                                         <flux:text class="font-medium">{{ $user->name }}</flux:text>
                                         @if ($user->id === Auth::id())
                                             <flux:badge size="sm" color="blue">{{ __('You') }}</flux:badge>
+                                        @endif
+                                        @if ($user->employeeProfile?->onboarding_completed_at)
+                                            <flux:badge size="sm" color="green">{{ __('Onboarded') }}</flux:badge>
+                                        @elseif ($user->employeeProfile)
+                                            <flux:badge size="sm" color="amber">{{ __('Pending Onboarding') }}</flux:badge>
                                         @endif
                                     </div>
                                     <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">

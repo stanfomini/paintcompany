@@ -36,9 +36,12 @@ class ProcessPhotoJob implements ShouldQueue
             return;
         }
 
+        // Download to temp file for local processing (GD/EXIF need filesystem paths)
+        $tempFile = tempnam(sys_get_temp_dir(), 'photo_proc_');
+        file_put_contents($tempFile, Storage::disk($disk)->get($originalPath));
+
         try {
-            $fullPath = Storage::disk($disk)->path($originalPath);
-            $imageInfo = @getimagesize($fullPath);
+            $imageInfo = @getimagesize($tempFile);
 
             if (! $imageInfo) {
                 $photo->update(['processing_status' => 'complete']);
@@ -52,19 +55,19 @@ class ProcessPhotoJob implements ShouldQueue
             ];
 
             // Extract EXIF data
-            $exif = $this->extractExif($fullPath, $photo->mime_type);
+            $exif = $this->extractExif($tempFile, $photo->mime_type);
             if ($exif) {
                 $updates = array_merge($updates, $exif);
             }
 
             // Generate thumbnail (400x400 center crop)
-            $thumbnailPath = $this->generateVariant($fullPath, $disk, $photo, 'thumbnail', 400, 400, true);
+            $thumbnailPath = $this->generateVariant($tempFile, $disk, $photo, 'thumbnail', 400, 400, true);
             if ($thumbnailPath) {
                 $updates['thumbnail_path'] = $thumbnailPath;
             }
 
             // Generate medium (1200px wide, proportional height)
-            $mediumPath = $this->generateVariant($fullPath, $disk, $photo, 'medium', 1200, null, false);
+            $mediumPath = $this->generateVariant($tempFile, $disk, $photo, 'medium', 1200, null, false);
             if ($mediumPath) {
                 $updates['medium_path'] = $mediumPath;
             }
@@ -78,6 +81,8 @@ class ProcessPhotoJob implements ShouldQueue
             ]);
 
             $photo->update(['processing_status' => 'failed']);
+        } finally {
+            @unlink($tempFile);
         }
     }
 
@@ -213,7 +218,7 @@ class ProcessPhotoJob implements ShouldQueue
         $variantDir = str_replace('/originals', "/{$variant}s", $directory);
         $variantPath = "{$variantDir}/{$photo->filename}";
 
-        // Write to a temp file then store
+        // Write to a temp file then store on the target disk
         $tmpFile = tempnam(sys_get_temp_dir(), 'photo_');
         imagejpeg($resized, $tmpFile, 85);
 

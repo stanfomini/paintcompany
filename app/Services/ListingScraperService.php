@@ -254,7 +254,7 @@ class ListingScraperService
                 $filename = Str::uuid().'.'.$extension;
                 $path = $storagePath.'/'.$filename;
 
-                \Illuminate\Support\Facades\Storage::disk('public')->put($path, $contents);
+                \Illuminate\Support\Facades\Storage::put($path, $contents);
                 $downloadedPaths[] = $path;
 
                 // Limit to 10 photos

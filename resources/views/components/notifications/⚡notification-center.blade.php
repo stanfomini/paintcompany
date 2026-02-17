@@ -366,78 +366,82 @@ new class extends Component {
             @if ($showHistory)
                 {{-- History List: Last 15 read notifications --}}
                 <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                    @forelse ($this->historyNotifications as $notification)
-                        <button
-                            wire:key="history-{{ $notification['id'] }}"
-                            wire:click="markAsReadAndNavigate('{{ $notification['id'] }}', '{{ $notification['url'] }}')"
-                            class="w-full text-left px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors flex items-start gap-3"
-                        >
-                            <div class="shrink-0 mt-0.5 p-1.5 rounded-full bg-zinc-100 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500">
-                                <flux:icon :name="$notification['icon']" class="size-3.5" />
-                            </div>
-                            <div class="min-w-0 flex-1">
-                                <span class="text-sm font-medium text-zinc-500 dark:text-zinc-400 truncate block">
-                                    {{ $notification['title'] }}
-                                </span>
-                                <p class="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
-                                    {{ $notification['description'] }}
-                                </p>
-                                <p class="text-xs text-zinc-300 dark:text-zinc-600 mt-0.5">
-                                    {{ $notification['time'] }}
-                                </p>
-                            </div>
-                        </button>
-                    @empty
-                        <div class="px-4 py-8 text-center">
-                            <flux:icon name="clock" class="mx-auto size-8 text-zinc-300 dark:text-zinc-600" />
-                            <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('No history yet') }}</p>
-                        </div>
-                    @endforelse
-                </div>
-            @else
-                {{-- Unread Notification List --}}
-                <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
-                    @forelse ($this->unreadNotifications as $notification)
-                        <div
-                            wire:key="notification-{{ $notification['id'] }}"
-                            class="flex items-start gap-3 px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                        >
-                            {{-- Clickable notification body --}}
+                    @if ($this->historyNotifications->isNotEmpty())
+                        @foreach ($this->historyNotifications as $notification)
                             <button
+                                wire:key="history-{{ $notification['id'] }}"
                                 wire:click="markAsReadAndNavigate('{{ $notification['id'] }}', '{{ $notification['url'] }}')"
-                                class="flex items-start gap-3 min-w-0 flex-1 text-left"
+                                class="w-full text-left px-4 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors flex items-start gap-3"
                             >
-                                <div class="shrink-0 mt-0.5 p-1.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                                    <flux:icon :name="$notification['icon']" class="size-4" />
+                                <div class="shrink-0 mt-0.5 p-1.5 rounded-full bg-zinc-100 text-zinc-400 dark:bg-zinc-700 dark:text-zinc-500">
+                                    <flux:icon :name="$notification['icon']" class="size-3.5" />
                                 </div>
                                 <div class="min-w-0 flex-1">
-                                    <span class="text-sm font-semibold text-zinc-900 dark:text-white truncate block">
+                                    <span class="text-sm font-medium text-zinc-500 dark:text-zinc-400 truncate block">
                                         {{ $notification['title'] }}
                                     </span>
-                                    <p class="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                                    <p class="text-xs text-zinc-400 dark:text-zinc-500 truncate mt-0.5">
                                         {{ $notification['description'] }}
                                     </p>
-                                    <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                    <p class="text-xs text-zinc-300 dark:text-zinc-600 mt-0.5">
                                         {{ $notification['time'] }}
                                     </p>
                                 </div>
                             </button>
-
-                            {{-- Mark Read button --}}
-                            <button
-                                wire:click="markAsRead('{{ $notification['id'] }}')"
-                                class="shrink-0 mt-1 p-1 rounded-full text-zinc-300 hover:text-blue-600 hover:bg-blue-100 dark:text-zinc-600 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
-                                title="{{ __('Mark as read') }}"
-                            >
-                                <flux:icon name="check" class="size-4" />
-                            </button>
+                        @endforeach
+                    @else
+                        <div class="px-4 py-8 text-center">
+                            <flux:icon name="clock" class="mx-auto size-8 text-zinc-300 dark:text-zinc-600" />
+                            <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('No history yet') }}</p>
                         </div>
-                    @empty
+                    @endif
+                </div>
+            @else
+                {{-- Unread Notification List --}}
+                <div class="flex-1 overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
+                    @if ($this->unreadNotifications->isNotEmpty())
+                        @foreach ($this->unreadNotifications as $notification)
+                            <div
+                                wire:key="notification-{{ $notification['id'] }}"
+                                class="flex items-start gap-3 px-4 py-3 bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                            >
+                                {{-- Clickable notification body --}}
+                                <button
+                                    wire:click="markAsReadAndNavigate('{{ $notification['id'] }}', '{{ $notification['url'] }}')"
+                                    class="flex items-start gap-3 min-w-0 flex-1 text-left"
+                                >
+                                    <div class="shrink-0 mt-0.5 p-1.5 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+                                        <flux:icon :name="$notification['icon']" class="size-4" />
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <span class="text-sm font-semibold text-zinc-900 dark:text-white truncate block">
+                                            {{ $notification['title'] }}
+                                        </span>
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">
+                                            {{ $notification['description'] }}
+                                        </p>
+                                        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                            {{ $notification['time'] }}
+                                        </p>
+                                    </div>
+                                </button>
+
+                                {{-- Mark Read button --}}
+                                <button
+                                    wire:click="markAsRead('{{ $notification['id'] }}')"
+                                    class="shrink-0 mt-1 p-1 rounded-full text-zinc-300 hover:text-blue-600 hover:bg-blue-100 dark:text-zinc-600 dark:hover:text-blue-400 dark:hover:bg-blue-900/30 transition-colors"
+                                    title="{{ __('Mark as read') }}"
+                                >
+                                    <flux:icon name="check" class="size-4" />
+                                </button>
+                            </div>
+                        @endforeach
+                    @else
                         <div class="px-4 py-8 text-center">
                             <flux:icon name="check-circle" class="mx-auto size-8 text-green-300 dark:text-green-700" />
                             <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{{ __('All caught up!') }}</p>
                         </div>
-                    @endforelse
+                    @endif
                 </div>
 
                 {{-- Footer: Mark all as read --}}

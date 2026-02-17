@@ -270,7 +270,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
             'insuranceExpirationDate' => 'required|date|after:insuranceStartDate',
         ]);
 
-        $path = $this->insuranceFile->store('crew-documents/insurance', 'public');
+        $path = $this->insuranceFile->store('crew-documents/insurance', config('filesystems.default'));
         $this->profile->update([
             'insurance_photo' => $path,
             'insurance_photo_type' => 'file',
@@ -292,7 +292,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
             'workersCompExpirationDate' => 'required|date|after:workersCompStartDate',
         ]);
 
-        $path = $this->workersCompFile->store('crew-documents/workers-comp', 'public');
+        $path = $this->workersCompFile->store('crew-documents/workers-comp', config('filesystems.default'));
         $this->profile->update([
             'workers_comp_document' => $path,
             'workers_comp_document_type' => 'file',
@@ -311,8 +311,8 @@ new #[Layout('components.layouts.crew')] class extends Component {
             'driversLicenseBack' => 'nullable|file|mimes:jpg,jpeg,png|max:10240',
         ]);
 
-        $frontPath = $this->driversLicenseFront->store('crew-documents/license', 'public');
-        $backPath = $this->driversLicenseBack?->store('crew-documents/license', 'public');
+        $frontPath = $this->driversLicenseFront->store('crew-documents/license', config('filesystems.default'));
+        $backPath = $this->driversLicenseBack?->store('crew-documents/license', config('filesystems.default'));
 
         $this->profile->update([
             'drivers_license_front' => $frontPath,

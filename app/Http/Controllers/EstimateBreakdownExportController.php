@@ -21,10 +21,12 @@ class EstimateBreakdownExportController extends Controller
         $estimate->load(['areas.surfaces.productionRate', 'areas.addons', 'items']);
 
         $breakdown = $this->service->calculateBreakdown($estimate);
+        $tierComparison = $this->service->getTierComparison($estimate);
 
         $pdf = Pdf::loadView('pdf.estimate-breakdown', [
             'estimate' => $estimate,
             'breakdown' => $breakdown,
+            'tierComparison' => $tierComparison,
         ]);
 
         $filename = 'breakdown-'.$estimate->estimate_number.'.pdf';
@@ -106,17 +108,32 @@ class EstimateBreakdownExportController extends Controller
 
             // Per-Area Breakdown
             if (count($breakdown['areas']) > 0) {
+                $hasTiers = ! empty($breakdown['areas'][0]['tier_pricing'] ?? null);
                 fputcsv($handle, ['PER-AREA BREAKDOWN']);
-                fputcsv($handle, ['Area', 'Hours', 'COGS', 'Margin', 'Customer Price']);
+
+                if ($hasTiers) {
+                    fputcsv($handle, ['Area', 'Hours', 'COGS', 'Margin', 'Good Price', 'Better Price', 'Best Price']);
+                } else {
+                    fputcsv($handle, ['Area', 'Hours', 'COGS', 'Margin', 'Customer Price']);
+                }
 
                 foreach ($breakdown['areas'] as $area) {
-                    fputcsv($handle, [
+                    $row = [
                         $area['name'],
                         number_format($area['detail']['labor_hours'] + $area['detail']['cleanup_hours'], 2),
                         '$'.number_format($area['cogs'], 2),
                         number_format($area['margin_percent'], 0).'%',
-                        '$'.number_format($area['customer_price'], 2),
-                    ]);
+                    ];
+
+                    if ($hasTiers && isset($area['tier_pricing'])) {
+                        $row[] = '$'.number_format($area['tier_pricing']['good']['customer_price'], 2);
+                        $row[] = '$'.number_format($area['tier_pricing']['better']['customer_price'], 2);
+                        $row[] = '$'.number_format($area['tier_pricing']['best']['customer_price'], 2);
+                    } else {
+                        $row[] = '$'.number_format($area['customer_price'], 2);
+                    }
+
+                    fputcsv($handle, $row);
                 }
             }
 

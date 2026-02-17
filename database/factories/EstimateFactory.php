@@ -119,6 +119,14 @@ class EstimateFactory extends Factory
     }
 
     /**
+     * Set a per-estimate hourly rate override.
+     */
+    public function withHourlyRateOverride(float $rate = 18.00): static
+    {
+        return $this->state(fn () => ['hourly_rate_override' => $rate]);
+    }
+
+    /**
      * Set high value estimate.
      */
     public function highValue(): static

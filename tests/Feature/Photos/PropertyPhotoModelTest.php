@@ -142,23 +142,23 @@ describe('PropertyPhoto model', function () {
     });
 
     it('deletes storage files when model is deleted', function () {
-        \Illuminate\Support\Facades\Storage::fake('public');
+        \Illuminate\Support\Facades\Storage::fake();
 
         $path = 'property-photos/test.jpg';
         $thumbPath = 'property-photos/thumbs/test.jpg';
 
-        \Illuminate\Support\Facades\Storage::disk('public')->put($path, 'image-data');
-        \Illuminate\Support\Facades\Storage::disk('public')->put($thumbPath, 'thumb-data');
+        \Illuminate\Support\Facades\Storage::put($path, 'image-data');
+        \Illuminate\Support\Facades\Storage::put($thumbPath, 'thumb-data');
 
         $photo = PropertyPhoto::factory()->create([
             'path' => $path,
             'thumbnail_path' => $thumbPath,
-            'disk' => 'public',
+            'disk' => config('filesystems.default'),
         ]);
 
         $photo->delete();
 
-        \Illuminate\Support\Facades\Storage::disk('public')->assertMissing($path);
-        \Illuminate\Support\Facades\Storage::disk('public')->assertMissing($thumbPath);
+        \Illuminate\Support\Facades\Storage::assertMissing($path);
+        \Illuminate\Support\Facades\Storage::assertMissing($thumbPath);
     });
 });

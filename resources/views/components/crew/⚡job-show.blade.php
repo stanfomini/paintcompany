@@ -217,12 +217,12 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
     public function addPainter(): void
     {
-        $settings = CompanySetting::getInstance();
-        $scope = $this->job->estimate?->project_type ?? 'interior';
+        $estimate = $this->job->estimate;
+        $scope = $estimate?->project_type ?? 'interior';
 
         $this->painters[] = [
             'name' => '',
-            'hourly_rate' => $settings->getHourlyWageForScope($scope),
+            'hourly_rate' => $estimate ? $estimate->getOverrideBaseWage($scope) : CompanySetting::getInstance()->getHourlyWageForScope($scope),
             'hours' => 0,
             'notes' => '',
         ];
@@ -631,7 +631,8 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         $scope = $this->job->estimate?->project_type ?? 'interior';
         $jobTotals = $this->jobTotals;
 
-        $baseHourlyWage = $settings->getHourlyWageForScope($scope);
+        $estimate = $this->job->estimate;
+        $baseHourlyWage = $estimate ? $estimate->getOverrideBaseWage($scope) : $settings->getHourlyWageForScope($scope);
         $payrollBurdenMultiplier = (float) ($settings->payroll_burden_multiplier ?? 1.35);
         $payrollBurdenPercent = ($payrollBurdenMultiplier - 1) * 100;
         $effectiveHourlyRate = $baseHourlyWage * $payrollBurdenMultiplier;

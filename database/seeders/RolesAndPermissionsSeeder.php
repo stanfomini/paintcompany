@@ -137,6 +137,36 @@ class RolesAndPermissionsSeeder extends Seeder
             // Referrals
             'referrals.view',
             'referrals.manage',
+
+            // Employees
+            'employees.view',
+            'employees.create',
+            'employees.edit',
+            'employees.delete',
+            'employees.view_sensitive',
+
+            // Hiring / ATS
+            'hiring.view',
+            'hiring.manage',
+
+            // Onboarding
+            'onboarding.view',
+            'onboarding.manage',
+
+            // Time Tracking
+            'time_tracking.view',
+            'time_tracking.view_all',
+            'time_tracking.manage',
+            'time_tracking.clock',
+
+            // Scheduling
+            'scheduling.view',
+            'scheduling.view_all',
+            'scheduling.manage',
+
+            // Payroll
+            'payroll.view',
+            'payroll.manage',
         ];
 
         foreach ($permissions as $permission) {
@@ -200,6 +230,18 @@ class RolesAndPermissionsSeeder extends Seeder
             'photos.upload', 'photos.delete', 'photos.annotate', 'photos.comment',
             // Referrals
             'referrals.view', 'referrals.manage',
+            // Employees
+            'employees.view', 'employees.create', 'employees.edit', 'employees.delete', 'employees.view_sensitive',
+            // Hiring
+            'hiring.view', 'hiring.manage',
+            // Onboarding
+            'onboarding.view', 'onboarding.manage',
+            // Time Tracking
+            'time_tracking.view', 'time_tracking.view_all', 'time_tracking.manage', 'time_tracking.clock',
+            // Scheduling
+            'scheduling.view', 'scheduling.view_all', 'scheduling.manage',
+            // Payroll (view only)
+            'payroll.view',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -246,6 +288,16 @@ class RolesAndPermissionsSeeder extends Seeder
             'photos.upload', 'photos.annotate', 'photos.comment',
             // Referrals
             'referrals.view',
+            // Employees
+            'employees.view', 'employees.create', 'employees.edit', 'employees.view_sensitive',
+            // Hiring
+            'hiring.view', 'hiring.manage',
+            // Onboarding
+            'onboarding.view', 'onboarding.manage',
+            // Time Tracking
+            'time_tracking.view', 'time_tracking.view_all', 'time_tracking.manage',
+            // Scheduling
+            'scheduling.view', 'scheduling.view_all', 'scheduling.manage',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -280,6 +332,41 @@ class RolesAndPermissionsSeeder extends Seeder
             'photos.upload', 'photos.comment',
             // Referrals
             'referrals.view',
+        ]);
+
+        // HR Manager - focused on employee management, hiring, onboarding, payroll
+        $hrManager = Role::firstOrCreate(['name' => 'hr_manager', 'guard_name' => 'web']);
+        $hrManager->syncPermissions([
+            // People
+            'people.view', 'people.create', 'people.edit',
+            // Properties (view only)
+            'properties.view',
+            // Deals (view only)
+            'deals.view', 'deals.create', 'deals.edit',
+            // Jobs (view only)
+            'jobs.view',
+            // Planner
+            'planner.view', 'planner.manage',
+            // Communication
+            'chat.access', 'chat.with_internal', 'chat.with_crew',
+            // Settings (contracts only)
+            'settings.contracts',
+            // Employees (full access)
+            'employees.view', 'employees.create', 'employees.edit', 'employees.delete', 'employees.view_sensitive',
+            // Hiring
+            'hiring.view', 'hiring.manage',
+            // Onboarding
+            'onboarding.view', 'onboarding.manage',
+            // Time Tracking
+            'time_tracking.view', 'time_tracking.view_all', 'time_tracking.manage', 'time_tracking.clock',
+            // Scheduling
+            'scheduling.view', 'scheduling.view_all', 'scheduling.manage',
+            // Payroll
+            'payroll.view', 'payroll.manage',
+            // Team
+            'team.manage_users', 'team.manage_invitations',
+            // Photos
+            'photos.upload', 'photos.comment',
         ]);
 
         // Crew Lead - minimal internal access

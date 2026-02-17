@@ -9,9 +9,11 @@ Artisan::command('inspire', function () {
 })->purpose('Display an inspiring quote');
 
 Schedule::command('crew:check-compliance')->dailyAt('07:00');
+Schedule::command('followups:generate-daily')->dailyAt('07:00');
 Schedule::command('meetings:send-reminders')->everyFiveMinutes();
 Schedule::command('priority-scores:recalculate')->everyFifteenMinutes();
 Schedule::command('workflows:process-waiting')->everyFiveMinutes();
 Schedule::command('workflows:run-scheduled')->everyFifteenMinutes();
 Schedule::command('workflows:cleanup-stale')->daily();
 Schedule::command('sla:calculate-metrics')->dailyAt('06:00');
+Schedule::command('documents:check-expiration')->dailyAt('08:00');
