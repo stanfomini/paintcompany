@@ -63,12 +63,12 @@ new class extends Component {
 <div
     x-data="quickRecorder({ csrfToken: @js(csrf_token()) })"
 >
-    {{-- Floating record button (next to notification bell, bottom-left) --}}
+    {{-- Record button (sits next to notification bell in shared bottom bar) --}}
     <button
         type="button"
         x-show="stage === 'idle'"
         @click="startCamera()"
-        class="fixed bottom-4 left-16 lg:left-80 z-50 w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
+        class="pointer-events-auto w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
         title="{{ __('Quick Record') }}"
     >
         <flux:icon name="video-camera" class="size-4" />
@@ -243,14 +243,22 @@ new class extends Component {
                 </div>
                 <div class="p-4 space-y-2">
                     {{-- Copy link --}}
+                    @php $shareUrl = route('video-recording.public', $lastShareToken); @endphp
                     <button
-                        x-data="{ copied: false }"
-                        @click="navigator.clipboard.writeText(@js(url('/v/' . $lastShareToken))).then(() => { copied = true; setTimeout(() => copied = false, 2000) })"
+                        x-data="{ copied: false, shareUrl: @js($shareUrl) }"
+                        @click="
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(shareUrl).then(() => { copied = true; setTimeout(() => copied = false, 2000) }).catch(() => { window.prompt('Copy this link:', shareUrl); });
+                            } else {
+                                window.prompt('Copy this link:', shareUrl);
+                            }
+                        "
                         class="w-full flex items-center gap-3 rounded-lg border border-zinc-200 dark:border-zinc-600 px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors"
                     >
                         <flux:icon name="link" class="size-5 text-zinc-500" />
                         <span class="text-zinc-700 dark:text-zinc-300" x-text="copied ? '{{ __('Copied!') }}' : '{{ __('Copy Share Link') }}'"></span>
                     </button>
+                    <p class="text-xs text-zinc-400 dark:text-zinc-500 px-1">{{ $shareUrl }}</p>
 
                     {{-- Add to channel --}}
                     @if($this->channels->isNotEmpty())

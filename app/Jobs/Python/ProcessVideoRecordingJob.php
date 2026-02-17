@@ -28,6 +28,14 @@ class ProcessVideoRecordingJob implements ShouldQueue
 
     public function handle(PythonBridgeService $python): void
     {
+        // Guard: skip if already processed with a video file
+        $this->recording->refresh();
+        if ($this->recording->status === 'ready' && $this->recording->video_path) {
+            Log::info('Video recording already processed, skipping', ['id' => $this->recording->id]);
+
+            return;
+        }
+
         Log::info('Processing video recording', ['id' => $this->recording->id]);
 
         $this->recording->update(['status' => 'processing']);

@@ -25,7 +25,9 @@ class VideoEmailTrackingController extends Controller
         $videoEmail->markClicked();
 
         $video = $videoEmail->video;
+        $url = $video->getShareableUrl() ?? '/';
+        $separator = str_contains($url, '?') ? '&' : '?';
 
-        return redirect($video->getShareableUrl() ?? '/');
+        return redirect($url.$separator.'ref=email&eid='.$videoEmail->id);
     }
 }
