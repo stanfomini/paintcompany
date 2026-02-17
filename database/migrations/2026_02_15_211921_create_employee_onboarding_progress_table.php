@@ -15,7 +15,7 @@ return new class extends Migration
         Schema::create('employee_onboarding_progress', function (Blueprint $table) {
             $table->id();
             $table->foreignId('employee_profile_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('onboarding_checklist_item_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('onboarding_checklist_item_id')->constrained(indexName: 'emp_onboard_checklist_item_foreign')->cascadeOnDelete();
             $table->string('status')->default('pending'); // pending, in_progress, completed, skipped
             $table->timestamp('completed_at')->nullable();
             $table->foreignId('completed_by')->nullable()->constrained('users')->nullOnDelete();
