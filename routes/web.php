@@ -322,6 +322,9 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::livewire('/media/channels/{channel}', 'media.channel-manage')
             ->middleware('permission:media.manage_channels')
             ->name('media.channel.manage');
+        Route::livewire('/media/training/dashboard', 'media.training-dashboard')
+            ->middleware('permission:media.manage_training')
+            ->name('media.training.dashboard');
         Route::livewire('/media/training/{trainingPath}', 'media.training-manage')
             ->middleware('permission:media.manage_training')
             ->name('media.training.manage');
