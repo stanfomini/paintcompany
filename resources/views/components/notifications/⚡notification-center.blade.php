@@ -183,6 +183,9 @@ new class extends Component {
             // Collaborator access → deal
             'CollaboratorAccessGranted' => isset($data['deal_id']) ? route('deals.show', $data['deal_id']) : null,
 
+            // Invitation viewed → invitations list
+            'InvitationViewed' => route('invitations'),
+
             default => null,
         };
 
@@ -238,6 +241,7 @@ new class extends Component {
             'VideoCallInvitation' => 'video-camera',
             'AgentListingSubmitted' => 'home',
             'CollaboratorAccessGranted' => 'user-plus',
+            'InvitationViewed' => 'envelope-open',
             'UnreadChatMessage' => 'chat-bubble-left',
             default => 'bell',
         };
@@ -280,6 +284,7 @@ new class extends Component {
             'VideoCallInvitation' => __('Video Call'),
             'AgentListingSubmitted' => __('Listing Submitted'),
             'CollaboratorAccessGranted' => __('Collaborator Added'),
+            'InvitationViewed' => __('Invitation Opened'),
             'UnreadChatMessage' => __('New Message'),
             default => __('Notification'),
         };
@@ -310,13 +315,13 @@ new class extends Component {
             'VideoCallInvitation' => ($data['initiator_name'] ?? '') . ' ' . __('started a call'),
             'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => $data['title'] ?? '',
             'NewAccountCreated' => ucfirst($data['account_type'] ?? 'user') . ' — ' . ($data['user_name'] ?? ''),
+            'InvitationViewed' => ($data['agent_email'] ?? '') . ' ' . __('clicked your invite'),
             default => $data['customer_name'] ?? $data['estimate_number'] ?? $data['title'] ?? $data['message'] ?? '',
         };
     }
 }; ?>
 
-<div class="fixed bottom-4 inset-x-0 z-50 pointer-events-none lg:pl-64">
-    <div class="pl-4 flex flex-col items-start gap-2 w-fit">
+<div class="flex flex-col items-start gap-2 w-fit">
     {{-- Notifications Panel (above the FAB button) --}}
     @if ($open)
         <div
@@ -493,5 +498,4 @@ new class extends Component {
         });
     </script>
     @endscript
-    </div>
 </div>

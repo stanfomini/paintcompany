@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Invitation;
+use App\Notifications\InvitationViewed;
 use App\Services\InvitationService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Layout;
@@ -30,6 +31,10 @@ new #[Layout('components.layouts.guest')] class extends Component {
 
         if ($this->invitation) {
             $this->isValid = true;
+
+            if ($this->invitation->markAsViewed()) {
+                $this->invitation->inviter?->notify(new InvitationViewed($this->invitation));
+            }
         } else {
             $this->isValid = false;
             $invitation = $invitationService->findByToken($token);

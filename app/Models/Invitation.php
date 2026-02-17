@@ -21,6 +21,7 @@ class Invitation extends Model
         'inviter_id',
         'expires_at',
         'accepted_at',
+        'first_viewed_at',
     ];
 
     protected function casts(): array
@@ -28,6 +29,7 @@ class Invitation extends Model
         return [
             'expires_at' => 'datetime',
             'accepted_at' => 'datetime',
+            'first_viewed_at' => 'datetime',
         ];
     }
 
@@ -66,6 +68,20 @@ class Invitation extends Model
     public function markAsAccepted(): void
     {
         $this->update(['accepted_at' => now()]);
+    }
+
+    /**
+     * Mark as viewed (first time only). Returns true on first view, false on subsequent.
+     */
+    public function markAsViewed(): bool
+    {
+        if ($this->first_viewed_at !== null) {
+            return false;
+        }
+
+        $this->update(['first_viewed_at' => now()]);
+
+        return true;
     }
 
     public function scopePending($query)
