@@ -20,6 +20,10 @@
 
         <flux:brand href="{{ route('agent.dashboard') }}" logo="{{ asset('images/logo.svg') }}" name="{{ config('app.name') }}" class="px-2" />
 
+        <div class="flex justify-center px-4 pb-2">
+            <x-language-switcher compact />
+        </div>
+
         <div class="px-3 mb-2">
             <flux:button href="{{ route('agent.dashboard') }}" variant="primary" icon="plus" class="w-full justify-center"
                 onclick="window.dispatchEvent(new CustomEvent('open-create-modal'))">
@@ -40,10 +44,6 @@
         </flux:navlist>
 
         <flux:spacer />
-
-        <div class="flex justify-center px-4 pb-1">
-            <x-language-switcher compact />
-        </div>
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile

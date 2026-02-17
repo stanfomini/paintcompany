@@ -20,6 +20,10 @@
 
         <flux:brand href="{{ route('crew.dashboard') }}" logo="{{ asset('images/logo.svg') }}" name="{{ config('app.name') }}" class="px-2" />
 
+        <div class="flex justify-center px-4 pb-2">
+            <x-language-switcher compact />
+        </div>
+
         <flux:navlist variant="outline">
             <flux:navlist.item icon="home" href="{{ route('crew.dashboard') }}" :current="request()->routeIs('crew.dashboard')">
                 {{ __('Dashboard') }}
@@ -42,10 +46,6 @@
         </flux:navlist>
 
         <flux:spacer />
-
-        <div class="flex justify-center px-4 pb-1">
-            <x-language-switcher compact />
-        </div>
 
         <flux:dropdown position="top" align="start" class="max-lg:hidden">
             <flux:profile

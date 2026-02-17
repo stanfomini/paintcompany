@@ -10,6 +10,10 @@
                 <flux:sidebar.collapse class="lg:hidden" />
             </flux:sidebar.header>
 
+            <div class="flex justify-center px-4 pb-2">
+                <x-language-switcher compact />
+            </div>
+
             <flux:sidebar.nav>
                 <flux:sidebar.group :heading="__('Platform')" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
@@ -162,25 +166,11 @@
 
             <flux:spacer />
 
-            <flux:sidebar.nav>
-                @if(auth()->user()?->employeeProfile)
-                    <div class="border-t border-zinc-200 dark:border-zinc-700 px-1 py-1">
-                        <livewire:employees.clock-button />
-                    </div>
-                @endif
-
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
-                <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                    {{ __('Documentation') }}
-                </flux:sidebar.item>
-            </flux:sidebar.nav>
-
-            <div class="flex justify-center px-4 pb-1">
-                <x-language-switcher compact />
-            </div>
+            @if(auth()->user()?->employeeProfile)
+                <div class="border-t border-zinc-200 dark:border-zinc-700 px-1 py-1">
+                    <livewire:employees.clock-button />
+                </div>
+            @endif
 
             @auth
                 <x-desktop-user-menu class="hidden lg:block" :name="auth()->user()->name" />
