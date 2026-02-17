@@ -18,21 +18,21 @@ class SendAgentInvitations extends Command
      * @var array<string>
      */
     protected array $agentEmails = [
-        'casey.v.carlson@gmail.com',
-        'katie.loveco@gmail.com',
-        'veracase@comcast.net',
-        'a_j_cardinal@yahoo.com',
-        'MulderRealEstate@gmail.com',
-        'sellwithbrittanie@gmail.com',
-        'stephanie@iannonegroup.com',
-        'brennangroup@livsothebysrealty.com',
-        'ak@theakrileygroup.com',
-        'megpitkin@gmail.com',
-        'david@schlichterteam.com',
-        'Sean@denverrealestatemoguls.com',
-        'denver.evolve@gmail.com',
-        'hello@divinehometoday.com',
-        'contact@pennyandpiperinteriors.com',
+        'ContactUs@CamberRealty.com',
+        'info@luxdenver.com',
+        'jeff@harmesteam.com',
+        'ks.staging@gmail.com',
+        'tom@snyderteam.com',
+        'sales@whiteorchidinteriors.com',
+        'info@refreshdenverstaging.com',
+        'allaboutstagingdenver@gmail.com',
+        'info@onenesthomestaging.com',
+        'mindy@florainteriors.net',
+        'ColoradoRealtorPaige@gmail.com',
+        'nicole.e.coufal@gmail.com',
+        'janjuarealty@gmail.com',
+        'keyandcostaging@gmail.com',
+        'NicoleARockett@gmail.com',
     ];
 
     public function handle(InvitationService $invitationService): int
