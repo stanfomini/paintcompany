@@ -2,9 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
@@ -33,6 +36,9 @@ class VideoRecording extends Model
         'share_token',
         'show_on_proposal',
         'error_message',
+        'visibility',
+        'description',
+        'metadata',
     ];
 
     protected function casts(): array
@@ -43,6 +49,7 @@ class VideoRecording extends Model
             'width' => 'integer',
             'height' => 'integer',
             'show_on_proposal' => 'boolean',
+            'metadata' => 'array',
         ];
     }
 
@@ -63,6 +70,38 @@ class VideoRecording extends Model
     public function recordable(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function channels(): BelongsToMany
+    {
+        return $this->belongsToMany(VideoChannel::class, 'video_channel_items')
+            ->withPivot(['sort_order', 'published_at'])
+            ->withTimestamps();
+    }
+
+    public function views(): HasMany
+    {
+        return $this->hasMany(VideoView::class);
+    }
+
+    public function emails(): HasMany
+    {
+        return $this->hasMany(VideoEmail::class);
+    }
+
+    public function scopePublicVisible(Builder $query): Builder
+    {
+        return $query->where('visibility', 'public');
+    }
+
+    public function scopeInternal(Builder $query): Builder
+    {
+        return $query->where('visibility', 'internal');
+    }
+
+    public function scopeUnlisted(Builder $query): Builder
+    {
+        return $query->where('visibility', 'unlisted');
     }
 
     public function getVideoUrl(): ?string

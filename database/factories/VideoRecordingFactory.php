@@ -68,4 +68,25 @@ class VideoRecordingFactory extends Factory
             'recordable_id' => $estimate->id,
         ]);
     }
+
+    public function public(): static
+    {
+        return $this->ready()->state(fn () => [
+            'visibility' => 'public',
+        ]);
+    }
+
+    public function internal(): static
+    {
+        return $this->ready()->state(fn () => [
+            'visibility' => 'internal',
+        ]);
+    }
+
+    public function withDescription(): static
+    {
+        return $this->state(fn () => [
+            'description' => fake()->paragraph(),
+        ]);
+    }
 }
