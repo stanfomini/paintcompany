@@ -101,11 +101,11 @@ class ProductionRate extends Model
      * @var array<string, string>
      */
     public const INTERIOR_CATEGORIES = [
-        self::CATEGORY_PREP => 'Prep Work',
         self::CATEGORY_WALLS => 'Walls',
         self::CATEGORY_CEILING => 'Ceiling',
         self::CATEGORY_BASEBOARD => 'Baseboard',
         self::CATEGORY_DOORS => 'Doors',
+        self::CATEGORY_PREP => 'Prep Work',
     ];
 
     /**
@@ -114,7 +114,6 @@ class ProductionRate extends Model
      * @var array<string, string>
      */
     public const EXTERIOR_CATEGORIES = [
-        self::CATEGORY_PREP => 'Prep Work',
         self::CATEGORY_BODY => 'Body Application',
         self::CATEGORY_EAVES => 'Eaves',
         self::CATEGORY_FASCIA => 'Fascia',
@@ -122,6 +121,7 @@ class ProductionRate extends Model
         self::CATEGORY_TRIM => 'Other Trim',
         self::CATEGORY_EXT_DOORS => 'Doors',
         self::CATEGORY_WOOD_REPLACEMENT => 'Wood Replacement',
+        self::CATEGORY_PREP => 'Prep Work',
     ];
 
     protected $fillable = [

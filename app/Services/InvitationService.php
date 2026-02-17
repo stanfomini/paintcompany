@@ -8,6 +8,7 @@ use App\Models\Deal;
 use App\Models\DealCollaborator;
 use App\Models\Invitation;
 use App\Models\User;
+use App\Notifications\AgentInvitationNotification;
 use App\Notifications\InvitationNotification;
 use Illuminate\Support\Facades\URL;
 
@@ -74,7 +75,10 @@ class InvitationService
 
         if ($existingInvitation) {
             // Resend the existing invitation to the invitee's email
-            $existingInvitation->notify(new InvitationNotification($existingInvitation));
+            $notification = $invitedUserType === 'agent'
+                ? new AgentInvitationNotification($existingInvitation)
+                : new InvitationNotification($existingInvitation);
+            $existingInvitation->notify($notification);
 
             return $existingInvitation;
         }
@@ -111,8 +115,11 @@ class InvitationService
 
         $invitation = Invitation::create($invitationData);
 
-        // Send the notification
-        $invitation->notify(new InvitationNotification($invitation));
+        // Send the notification (agent invitations get the enhanced email)
+        $notification = $invitedUserType === 'agent'
+            ? new AgentInvitationNotification($invitation)
+            : new InvitationNotification($invitation);
+        $invitation->notify($notification);
 
         return $invitation;
     }

@@ -6,9 +6,11 @@ use App\Models\NestedAreaTemplate;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Reactive;
 use Livewire\Component;
 
 new class extends Component {
+    #[Reactive]
     public string $projectScope = 'interior';
 
     public bool $showTemplatePicker = false;
@@ -27,6 +29,13 @@ new class extends Component {
     public function handleOpen(): void
     {
         $this->showTemplatePicker = true;
+    }
+
+    #[On('scope-changed')]
+    public function handleScopeChanged(string $scope): void
+    {
+        $this->projectScope = $scope;
+        unset($this->pickerTemplates, $this->fixedPriceTemplates, $this->fixedPriceTemplatesByCategory);
     }
 
     public function selectTemplate(int $templateId): void

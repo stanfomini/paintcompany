@@ -5,10 +5,12 @@ use App\Models\PaintProduct;
 use App\Services\EstimateTierPricingService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
+use Livewire\Attributes\Reactive;
 use Livewire\Component;
 
 new class extends Component
 {
+    #[Reactive]
     public string $projectScope = 'interior';
 
     public ?\App\Models\Estimate $estimate = null;
@@ -153,6 +155,9 @@ new class extends Component
     public function handleScopeChanged(string $scope): void
     {
         $this->projectScope = $scope;
+
+        // Clear computed caches so they reload for the new scope
+        unset($this->availablePaintProducts, $this->surfaceCategoriesForScope, $this->paintSummaryByCategory, $this->paintOverrideCount);
 
         $settings = CompanySetting::getInstance();
 

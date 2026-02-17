@@ -707,6 +707,9 @@ new class extends Component
      */
     public function updatedProjectScope(): void
     {
+        // Clear computed caches that depend on scope
+        unset($this->maxAllowableDiscount, $this->estimatedNetProfitPercent);
+
         // Sync the template filter with project scope
         $this->scopeFilter = $this->projectScope;
 
@@ -732,7 +735,7 @@ new class extends Component
         // Recalculate all prices with new scope's settings
         $this->recalculateAllPrices();
 
-        $this->dispatch('scope-changed');
+        $this->dispatch('scope-changed', scope: $this->projectScope);
     }
 
     /**
@@ -2543,14 +2546,14 @@ new class extends Component
                                                         <svg x-show="expanded" class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
                                                     </button>
                                                     <flux:button
-                                                        wire:click="editArea({{ $index }})"
+                                                        wire:click="editSelectedTemplate({{ $index }})"
                                                         variant="ghost"
                                                         size="sm"
                                                         icon="pencil"
                                                         class="opacity-60 group-hover:opacity-100"
                                                     />
                                                     <flux:button
-                                                        wire:click="removeArea({{ $index }})"
+                                                        wire:click="removeTemplate({{ $index }})"
                                                         variant="ghost"
                                                         size="sm"
                                                         icon="trash"

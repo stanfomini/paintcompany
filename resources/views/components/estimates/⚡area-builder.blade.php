@@ -327,14 +327,9 @@ new class extends Component
         foreach ($defaultSurfaces as $surfaceName) {
             $normalized = strtolower($surfaceName);
 
-            [$surfaceType, $surfaceCategory, $quantitySource] = match ($normalized) {
-                'walls', 'wall' => [AreaTemplateSurface::SURFACE_TYPE_WALLS, 'walls', 'wall_sqft'],
-                'ceiling', 'ceilings' => [AreaTemplateSurface::SURFACE_TYPE_CEILING, 'ceiling', 'ceiling_sqft'],
-                'trim', 'baseboards', 'baseboard' => [AreaTemplateSurface::SURFACE_TYPE_TRIM, 'baseboard', 'perimeter_lnft'],
-                'doors', 'door' => [AreaTemplateSurface::SURFACE_TYPE_DOORS, 'doors', 'door_count'],
-                'windows', 'window' => [AreaTemplateSurface::SURFACE_TYPE_WINDOWS, 'windows', 'window_count'],
-                default => [AreaTemplateSurface::SURFACE_TYPE_OTHER, 'walls', 'wall_sqft'],
-            };
+            // Map surface name to type, category, and quantity source
+            // Handles both interior (walls, ceiling, baseboard) and exterior (siding, fascia, soffit, etc.)
+            [$surfaceType, $surfaceCategory, $quantitySource] = $this->mapSurfaceNameToAttributes($normalized);
 
             $this->surfaces[] = [
                 'id' => null,
@@ -389,6 +384,17 @@ new class extends Component
      */
     protected function mapSurfaceTypeToCategory(string $surfaceType): string
     {
+        if ($this->scopeType === 'exterior') {
+            return match ($surfaceType) {
+                AreaTemplateSurface::SURFACE_TYPE_WALLS => 'body',
+                AreaTemplateSurface::SURFACE_TYPE_CEILING => 'eaves',
+                AreaTemplateSurface::SURFACE_TYPE_TRIM => 'trim',
+                AreaTemplateSurface::SURFACE_TYPE_DOORS => 'exterior_doors',
+                AreaTemplateSurface::SURFACE_TYPE_WINDOWS => 'windows',
+                default => 'body',
+            };
+        }
+
         return match ($surfaceType) {
             AreaTemplateSurface::SURFACE_TYPE_WALLS => 'walls',
             AreaTemplateSurface::SURFACE_TYPE_CEILING => 'ceiling',
@@ -397,6 +403,50 @@ new class extends Component
             AreaTemplateSurface::SURFACE_TYPE_WINDOWS => 'windows',
             default => 'walls',
         };
+    }
+
+    /**
+     * Map a surface name (from template default_surfaces JSON) to its type, category, and quantity source.
+     *
+     * @return array{0: string, 1: string, 2: string} [surfaceType, surfaceCategory, quantitySource]
+     */
+    protected function mapSurfaceNameToAttributes(string $normalized): array
+    {
+        // Determine surface type from name
+        $surfaceType = match ($normalized) {
+            'walls', 'wall', 'siding' => AreaTemplateSurface::SURFACE_TYPE_WALLS,
+            'ceiling', 'ceilings', 'soffit' => AreaTemplateSurface::SURFACE_TYPE_CEILING,
+            'trim', 'baseboards', 'baseboard', 'fascia', 'columns', 'railing',
+            'shutters', 'lattice' => AreaTemplateSurface::SURFACE_TYPE_TRIM,
+            'doors', 'door', 'entry_door', 'patio_door', 'garage_door',
+            'service_door' => AreaTemplateSurface::SURFACE_TYPE_DOORS,
+            'windows', 'window' => AreaTemplateSurface::SURFACE_TYPE_WINDOWS,
+            default => AreaTemplateSurface::SURFACE_TYPE_OTHER,
+        };
+
+        // Determine category - use specific exterior categories when applicable
+        $surfaceCategory = match ($normalized) {
+            'fascia' => 'fascia',
+            'soffit', 'eaves' => 'eaves',
+            'siding' => 'body',
+            'columns', 'railing', 'shutters', 'lattice' => 'trim',
+            'entry_door', 'patio_door', 'garage_door', 'service_door' => 'exterior_doors',
+            default => $this->mapSurfaceTypeToCategory($surfaceType),
+        };
+
+        // Determine quantity source
+        $quantitySource = match ($normalized) {
+            'walls', 'wall', 'siding' => 'wall_sqft',
+            'ceiling', 'ceilings', 'soffit' => 'ceiling_sqft',
+            'trim', 'baseboards', 'baseboard', 'fascia', 'columns',
+            'railing', 'shutters', 'lattice' => 'perimeter_lnft',
+            'doors', 'door', 'entry_door', 'patio_door', 'garage_door',
+            'service_door' => 'door_count',
+            'windows', 'window' => 'window_count',
+            default => 'wall_sqft',
+        };
+
+        return [$surfaceType, $surfaceCategory, $quantitySource];
     }
 
     /**
@@ -428,17 +478,18 @@ new class extends Component
     protected function addDefaultSurfaces(): void
     {
         $this->surfaces = [];
+        $isExterior = $this->scopeType === 'exterior';
 
-        // Add walls surface
+        // Add walls/body surface
         $this->surfaces[] = [
             'id' => null,
-            'name' => 'Walls',
+            'name' => $isExterior ? 'Body' : 'Walls',
             'surface_type' => AreaTemplateSurface::SURFACE_TYPE_WALLS,
-            'surface_category' => 'walls',
+            'surface_category' => $isExterior ? 'body' : 'walls',
             'production_rate_id' => null,
             'quantity_source' => 'wall_sqft',
             'quantity_override' => null,
-            'default_coats' => 2,
+            'default_coats' => $this->defaultCoats,
             'is_required' => true,
             'is_default_enabled' => true,
             'fixed_price' => null,
@@ -449,16 +500,16 @@ new class extends Component
             'crew_price' => null,
         ];
 
-        // Add ceiling surface
+        // Add ceiling/eaves surface
         $this->surfaces[] = [
             'id' => null,
-            'name' => 'Ceiling',
+            'name' => $isExterior ? 'Eaves' : 'Ceiling',
             'surface_type' => AreaTemplateSurface::SURFACE_TYPE_CEILING,
-            'surface_category' => 'ceiling',
+            'surface_category' => $isExterior ? 'eaves' : 'ceiling',
             'production_rate_id' => null,
             'quantity_source' => 'ceiling_sqft',
             'quantity_override' => null,
-            'default_coats' => 2,
+            'default_coats' => $this->defaultCoats,
             'is_required' => false,
             'is_default_enabled' => true,
             'fixed_price' => null,
@@ -469,16 +520,16 @@ new class extends Component
             'crew_price' => null,
         ];
 
-        // Add baseboards surface
+        // Add trim surface
         $this->surfaces[] = [
             'id' => null,
-            'name' => 'Baseboards',
+            'name' => $isExterior ? 'Trim' : 'Baseboards',
             'surface_type' => AreaTemplateSurface::SURFACE_TYPE_TRIM,
-            'surface_category' => 'baseboard',
+            'surface_category' => $isExterior ? 'trim' : 'baseboard',
             'production_rate_id' => null,
             'quantity_source' => 'perimeter_lnft',
             'quantity_override' => null,
-            'default_coats' => 2,
+            'default_coats' => $this->defaultCoats,
             'is_required' => false,
             'is_default_enabled' => true,
             'fixed_price' => null,
@@ -612,7 +663,7 @@ new class extends Component
             'production_rate_id' => null,
             'quantity_source' => 'wall_sqft',
             'quantity_override' => null,
-            'default_coats' => 2,
+            'default_coats' => $this->defaultCoats,
             'is_required' => false,
             'is_default_enabled' => true,
             'fixed_price' => null,
@@ -1131,17 +1182,18 @@ new class extends Component
         unset($this->availableNestedTemplates, $this->productionRatesByCategory, $this->surfaceCategories);
 
         $validCategories = ProductionRate::getCategoriesForScope($this->scopeType);
-        $defaultCategory = array_key_first($validCategories) ?? 'walls';
 
         foreach ($this->surfaces as $index => $surface) {
             $this->surfaces[$index]['production_rate_id'] = null;
 
             if (! isset($validCategories[$surface['surface_category']])) {
-                $this->surfaces[$index]['surface_category'] = $defaultCategory;
-                $this->surfaces[$index]['quantity_source'] = match ($defaultCategory) {
+                // Map surface type to correct category for the new scope
+                $newCategory = $this->mapSurfaceTypeToCategory($surface['surface_type']);
+                $this->surfaces[$index]['surface_category'] = $newCategory;
+                $this->surfaces[$index]['quantity_source'] = match ($newCategory) {
                     'walls', 'body' => 'wall_sqft',
-                    'ceiling' => 'ceiling_sqft',
-                    'baseboard', 'trim', 'fascia', 'eaves' => 'perimeter_lnft',
+                    'ceiling', 'eaves' => 'ceiling_sqft',
+                    'baseboard', 'trim', 'fascia' => 'perimeter_lnft',
                     'doors', 'exterior_doors' => 'door_count',
                     'windows' => 'window_count',
                     default => 'wall_sqft',
