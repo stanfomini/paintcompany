@@ -149,6 +149,9 @@
                         <flux:sidebar.item icon="sun" :href="route('my.pto')" :current="request()->routeIs('my.pto')" wire:navigate>
                             {{ __('My PTO') }}
                         </flux:sidebar.item>
+                        <flux:sidebar.item icon="academic-cap" :href="route('my.training')" :current="request()->routeIs('my.training')" wire:navigate>
+                            {{ __('My Training') }}
+                        </flux:sidebar.item>
                         @if(auth()->user()->employeeProfile->hasCommissionRules())
                             <flux:sidebar.item icon="currency-dollar" :href="route('my.commissions')" :current="request()->routeIs('my.commissions')" wire:navigate>
                                 {{ __('My Commissions') }}

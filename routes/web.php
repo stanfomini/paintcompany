@@ -186,9 +186,11 @@ Route::post('/api/video-views', [\App\Http\Controllers\VideoViewController::clas
 
 // Media Hub API (email tracking pixel/click)
 Route::get('/api/video-emails/{videoEmail}/pixel', [\App\Http\Controllers\VideoEmailTrackingController::class, 'pixel'])
-    ->name('api.video-emails.pixel');
+    ->name('api.video-emails.pixel')
+    ->middleware('throttle:120,1');
 Route::get('/api/video-emails/{videoEmail}/click', [\App\Http\Controllers\VideoEmailTrackingController::class, 'click'])
-    ->name('api.video-emails.click');
+    ->name('api.video-emails.click')
+    ->middleware('throttle:120,1');
 
 // Internal user routes - grouped by permission
 Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
@@ -429,6 +431,7 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/my/onboarding', 'onboarding.my-progress')->name('my.onboarding');
     Route::livewire('/my/pto', 'scheduling.my-pto')->name('my.pto');
     Route::livewire('/my/commissions', 'payroll.my-commissions')->name('my.commissions');
+    Route::livewire('/my/training', 'media.training-center')->name('my.training');
 
     // Legacy redirects - keep old URLs working
     Route::get('/roadmap', fn () => redirect()->route('business-plan.index', ['tab' => 'roadmap']))
