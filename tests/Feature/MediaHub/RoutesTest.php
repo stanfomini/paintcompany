@@ -3,6 +3,7 @@
 use App\Models\TrainingPath;
 use App\Models\User;
 use App\Models\VideoChannel;
+use App\Models\VideoChannelItem;
 use App\Models\VideoEmail;
 use App\Models\VideoRecording;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -129,6 +130,11 @@ it('returns 404 for nonexistent channel slug', function () {
 it('shows a video player at /watch/{slug}/{recording}', function () {
     $channel = VideoChannel::factory()->public()->create();
     $video = VideoRecording::factory()->ready()->create();
+
+    VideoChannelItem::factory()->published()->create([
+        'video_channel_id' => $channel->id,
+        'video_recording_id' => $video->id,
+    ]);
 
     $this->get("/watch/{$channel->slug}/{$video->id}")
         ->assertSuccessful();
