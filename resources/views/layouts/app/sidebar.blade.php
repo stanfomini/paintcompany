@@ -63,6 +63,11 @@
                             {{ __('Business Plan') }}
                         </flux:sidebar.item>
                     @endcan
+                    @can('media.view')
+                        <flux:sidebar.item icon="film" :href="route('media.index')" :current="request()->routeIs('media.*')" wire:navigate>
+                            {{ __('Media Hub') }}
+                        </flux:sidebar.item>
+                    @endcan
                     @can('referrals.view')
                         <flux:sidebar.item icon="gift" :href="route('referrals.index')" :current="request()->routeIs('referrals.*')" wire:navigate>
                             {{ __('Referrals') }}

@@ -168,6 +168,28 @@ Route::get('/v/{shareToken}', [VideoRecordingPlaybackController::class, 'show'])
     ->name('video-recording.public')
     ->middleware('throttle:60,1');
 
+// Public watch hub (no auth)
+Route::livewire('/watch', 'public.watch-hub')
+    ->name('watch.index')
+    ->middleware('throttle:60,1');
+Route::livewire('/watch/{channel:slug}', 'public.watch-channel')
+    ->name('watch.channel')
+    ->middleware('throttle:60,1');
+Route::livewire('/watch/{channel:slug}/{recording}', 'public.watch-player')
+    ->name('watch.player')
+    ->middleware('throttle:60,1');
+
+// Media Hub API (view tracking - public, rate limited)
+Route::post('/api/video-views', [\App\Http\Controllers\VideoViewController::class, 'store'])
+    ->name('api.video-views.store')
+    ->middleware('throttle:120,1');
+
+// Media Hub API (email tracking pixel/click)
+Route::get('/api/video-emails/{videoEmail}/pixel', [\App\Http\Controllers\VideoEmailTrackingController::class, 'pixel'])
+    ->name('api.video-emails.pixel');
+Route::get('/api/video-emails/{videoEmail}/click', [\App\Http\Controllers\VideoEmailTrackingController::class, 'click'])
+    ->name('api.video-emails.click');
+
 // Internal user routes - grouped by permission
 Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
 
@@ -290,6 +312,18 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/business-plan', 'business-plan.index')
         ->name('business-plan.index')
         ->middleware('permission:business_plan.view');
+
+    // Media Hub routes
+    Route::middleware(['permission:media.view'])->group(function () {
+        Route::livewire('/media', 'media.hub')->name('media.index');
+        Route::livewire('/media/videos/{recording}', 'media.video-show')->name('media.video.show');
+        Route::livewire('/media/channels/{channel}', 'media.channel-manage')
+            ->middleware('permission:media.manage_channels')
+            ->name('media.channel.manage');
+        Route::livewire('/media/training/{trainingPath}', 'media.training-manage')
+            ->middleware('permission:media.manage_training')
+            ->name('media.training.manage');
+    });
 
     // Referrals admin
     Route::middleware(['permission:referrals.view'])->group(function () {

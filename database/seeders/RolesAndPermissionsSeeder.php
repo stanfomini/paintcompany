@@ -167,6 +167,13 @@ class RolesAndPermissionsSeeder extends Seeder
             // Payroll
             'payroll.view',
             'payroll.manage',
+
+            // Media Hub
+            'media.view',
+            'media.record',
+            'media.manage_channels',
+            'media.manage_training',
+            'media.send_emails',
         ];
 
         foreach ($permissions as $permission) {
@@ -242,6 +249,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'scheduling.view', 'scheduling.view_all', 'scheduling.manage',
             // Payroll (view only)
             'payroll.view',
+            // Media Hub
+            'media.view', 'media.record', 'media.send_emails',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -298,6 +307,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'time_tracking.view', 'time_tracking.view_all', 'time_tracking.manage',
             // Scheduling
             'scheduling.view', 'scheduling.view_all', 'scheduling.manage',
+            // Media Hub
+            'media.view', 'media.record', 'media.send_emails',
         ]);
 
         // Estimator - focused on estimates, properties, deals
