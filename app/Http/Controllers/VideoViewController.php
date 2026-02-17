@@ -11,26 +11,37 @@ class VideoViewController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'video_id' => ['required', 'exists:video_recordings,id'],
+            'video_id' => ['required', 'integer', 'exists:video_recordings,id'],
             'duration' => ['required', 'integer', 'min:0'],
             'percentage' => ['required', 'integer', 'min:0', 'max:100'],
             'source' => ['required', 'string', 'in:link,channel,email,embed'],
             'session_id' => ['required', 'string', 'max:64'],
         ]);
 
-        VideoView::updateOrCreate(
-            [
+        // Find existing view for same video + IP within the last 30 minutes
+        $existingView = VideoView::query()
+            ->where('video_recording_id', $validated['video_id'])
+            ->where('ip_address', $request->ip())
+            ->where('created_at', '>=', now()->subMinutes(30))
+            ->first();
+
+        if ($existingView) {
+            $existingView->update([
+                'watch_duration_seconds' => max($validated['duration'], $existingView->watch_duration_seconds),
+                'watch_percentage' => max($validated['percentage'], $existingView->watch_percentage),
+                'user_agent' => substr($request->userAgent() ?? '', 0, 255),
+            ]);
+        } else {
+            VideoView::create([
                 'video_recording_id' => $validated['video_id'],
-                'ip_address' => $request->ip(),
-            ],
-            [
                 'viewer_id' => auth()->id(),
-                'watch_duration_seconds' => $validated['duration'],
-                'watch_percentage' => $validated['percentage'],
+                'ip_address' => $request->ip(),
+                'watch_duration_seconds' => max($validated['duration'], 0),
+                'watch_percentage' => min($validated['percentage'], 100),
                 'source' => $validated['source'],
-                'user_agent' => $request->userAgent(),
-            ]
-        );
+                'user_agent' => substr($request->userAgent() ?? '', 0, 255),
+            ]);
+        }
 
         return response()->json(['ok' => true]);
     }

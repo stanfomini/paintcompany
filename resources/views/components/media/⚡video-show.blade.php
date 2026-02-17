@@ -5,11 +5,69 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 new #[Layout('layouts.app', ['title' => 'Video Detail'])]
-class extends Component {
+class extends Component
+{
     public VideoRecording $recording;
+
+    public string $activeSection = 'edit';
+
+    public function setSection(string $section): void
+    {
+        $this->activeSection = $section;
+    }
 };
 ?>
 
 <div class="py-6 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-    <flux:heading size="xl">{{ $recording->title ?? __('Video Detail') }}</flux:heading>
+    {{-- Back Link --}}
+    <div class="mb-4">
+        <flux:button variant="ghost" size="sm" icon="arrow-left" :href="route('media.index')" wire:navigate>
+            {{ __('Back to Media Hub') }}
+        </flux:button>
+    </div>
+
+    {{-- Video Player --}}
+    @if($recording->getVideoUrl())
+        <div class="aspect-video bg-black rounded-lg overflow-hidden mb-6">
+            <video
+                controls
+                preload="metadata"
+                class="w-full h-full"
+                src="{{ $recording->getVideoUrl() }}"
+                @if($recording->getThumbnailUrl()) poster="{{ $recording->getThumbnailUrl() }}" @endif
+            ></video>
+        </div>
+    @endif
+
+    {{-- Title & Meta --}}
+    <div class="mb-6">
+        <flux:heading size="xl">{{ $recording->title ?? __('Untitled Video') }}</flux:heading>
+        @if($recording->description)
+            <flux:text class="mt-2 text-zinc-500">{{ $recording->description }}</flux:text>
+        @endif
+    </div>
+
+    {{-- Section Tabs --}}
+    <div class="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-700 pb-3">
+        <flux:button size="sm" :variant="$activeSection === 'edit' ? 'filled' : 'ghost'" icon="pencil" wire:click="setSection('edit')">
+            {{ __('Edit') }}
+        </flux:button>
+        <flux:button size="sm" :variant="$activeSection === 'analytics' ? 'filled' : 'ghost'" icon="chart-bar" wire:click="setSection('analytics')">
+            {{ __('Analytics') }}
+        </flux:button>
+        @can('media.send_emails')
+            <flux:button size="sm" :variant="$activeSection === 'email' ? 'filled' : 'ghost'" icon="envelope" wire:click="setSection('email')">
+                {{ __('Send Email') }}
+            </flux:button>
+        @endcan
+    </div>
+
+    {{-- Section Content --}}
+    @if($activeSection === 'edit')
+        @livewire('media.video-edit-form', ['recordingId' => $recording->id], key('edit-' . $recording->id))
+    @elseif($activeSection === 'analytics')
+        @livewire('media.video-analytics', ['recordingId' => $recording->id], key('analytics-' . $recording->id))
+    @elseif($activeSection === 'email')
+        @livewire('media.video-send-email', ['recordingId' => $recording->id], key('email-' . $recording->id))
+    @endif
 </div>
