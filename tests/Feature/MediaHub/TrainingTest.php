@@ -299,6 +299,27 @@ it('can filter dashboard by training path', function () {
         ->assertSee('Step Beta');
 });
 
+it('shows summary stats on training dashboard', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $employee1 = User::factory()->internal()->create();
+    $employee2 = User::factory()->internal()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'is_required' => true]);
+
+    TrainingProgress::factory()->completed()->create([
+        'user_id' => $employee1->id,
+        'training_path_step_id' => $step->id,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-dashboard')
+        ->assertSeeHtml('data-summary-stats')
+        ->assertSee('Active Paths')
+        ->assertSee('Employees')
+        ->assertSee('Avg. Completion')
+        ->assertOk();
+});
+
 // =========================================================
 // Training Center (Employee View)
 // =========================================================
@@ -407,12 +428,24 @@ it('can access my training route', function () {
         ->assertOk();
 });
 
+it('can access training player route', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    $this->actingAs($user)
+        ->get(route('my.training.play', [$path, $step]))
+        ->assertOk();
+});
+
 it('redirects unauthenticated users from training routes', function () {
     $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
 
     $this->get(route('media.training.dashboard'))->assertRedirect();
     $this->get(route('media.training.manage', $path))->assertRedirect();
     $this->get(route('my.training'))->assertRedirect();
+    $this->get(route('my.training.play', [$path, $step]))->assertRedirect();
 });
 
 // =========================================================
@@ -439,6 +472,148 @@ it('correctly calculates completion for path with mixed required and optional st
     ]);
 
     expect($path->getCompletionPercentageForUser($user))->toBe(50.0);
+});
+
+// =========================================================
+// Training Player
+// =========================================================
+
+it('loads training player for a step', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $video = VideoRecording::factory()->ready()->create(['user_id' => $user->id, 'title' => 'Paint Like a Pro']);
+    $step = TrainingPathStep::factory()->create([
+        'training_path_id' => $path->id,
+        'video_recording_id' => $video->id,
+        'title' => 'Learn Painting',
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->assertSee('Learn Painting')
+        ->assertOk();
+});
+
+it('returns 404 if step does not belong to path', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path1 = TrainingPath::factory()->create();
+    $path2 = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path2->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path1, 'step' => $step])
+        ->assertNotFound();
+});
+
+it('updates progress when watch percentage reported', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->call('updateProgress', 50);
+
+    $progress = TrainingProgress::where('user_id', $user->id)
+        ->where('training_path_step_id', $step->id)
+        ->first();
+
+    expect($progress)
+        ->not->toBeNull()
+        ->watch_percentage->toBe(50)
+        ->completed_at->toBeNull();
+});
+
+it('auto-completes at 90% watch percentage', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->call('updateProgress', 90)
+        ->assertSet('isCompleted', true);
+
+    $progress = TrainingProgress::where('user_id', $user->id)
+        ->where('training_path_step_id', $step->id)
+        ->first();
+
+    expect($progress)
+        ->watch_percentage->toBe(100)
+        ->completed_at->not->toBeNull();
+});
+
+it('auto-completes at 100% watch percentage', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->call('updateProgress', 100)
+        ->assertSet('isCompleted', true);
+
+    expect(TrainingProgress::where('user_id', $user->id)
+        ->where('training_path_step_id', $step->id)
+        ->first()
+        ->completed_at)->not->toBeNull();
+});
+
+it('does not decrease progress when lower percentage reported', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step = TrainingPathStep::factory()->create(['training_path_id' => $path->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step])
+        ->call('updateProgress', 60)
+        ->call('updateProgress', 30);
+
+    $progress = TrainingProgress::where('user_id', $user->id)
+        ->where('training_path_step_id', $step->id)
+        ->first();
+
+    expect($progress->watch_percentage)->toBe(60);
+});
+
+it('shows next and previous step navigation', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step1 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 0, 'title' => 'Step One']);
+    $step2 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 1, 'title' => 'Step Two']);
+    $step3 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 2, 'title' => 'Step Three']);
+
+    $component = Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step2]);
+
+    expect($component->get('previousStep')->id)->toBe($step1->id);
+    expect($component->get('nextStep')->id)->toBe($step3->id);
+});
+
+it('has no previous step on first step', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step1 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 0]);
+    $step2 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 1]);
+
+    $component = Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step1]);
+
+    expect($component->get('previousStep'))->toBeNull();
+    expect($component->get('nextStep')->id)->toBe($step2->id);
+});
+
+it('has no next step on last step', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $path = TrainingPath::factory()->create();
+    $step1 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 0]);
+    $step2 = TrainingPathStep::factory()->create(['training_path_id' => $path->id, 'sort_order' => 1]);
+
+    $component = Livewire::actingAs($user)
+        ->test('media.training-player', ['trainingPath' => $path, 'step' => $step2]);
+
+    expect($component->get('previousStep')->id)->toBe($step1->id);
+    expect($component->get('nextStep'))->toBeNull();
 });
 
 it('returns 100% completion for path with no required steps', function () {

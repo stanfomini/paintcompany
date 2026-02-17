@@ -86,6 +86,22 @@ class extends Component {
             ->all();
     }
 
+    #[Computed]
+    public function summaryStats(): array
+    {
+        $totalPaths = $this->paths->count();
+        $totalEmployees = $this->employees->count();
+        $avgCompletion = $totalEmployees > 0
+            ? round($this->employees->avg('completion'), 1)
+            : 0;
+
+        return [
+            'total_paths' => $totalPaths,
+            'total_employees' => $totalEmployees,
+            'avg_completion' => $avgCompletion,
+        ];
+    }
+
     public function getProgressForCell(int $userId, int $stepId): ?TrainingProgress
     {
         return $this->progressMap[$userId.'-'.$stepId] ?? null;
@@ -100,6 +116,22 @@ class extends Component {
     </div>
 
     @if($this->paths->count() > 0)
+        {{-- Summary Stats --}}
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6" data-summary-stats>
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 p-4">
+                <flux:text class="text-sm text-zinc-500">{{ __('Active Paths') }}</flux:text>
+                <flux:heading size="xl" class="mt-1">{{ $this->summaryStats['total_paths'] }}</flux:heading>
+            </div>
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 p-4">
+                <flux:text class="text-sm text-zinc-500">{{ __('Employees') }}</flux:text>
+                <flux:heading size="xl" class="mt-1">{{ $this->summaryStats['total_employees'] }}</flux:heading>
+            </div>
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 p-4">
+                <flux:text class="text-sm text-zinc-500">{{ __('Avg. Completion') }}</flux:text>
+                <flux:heading size="xl" class="mt-1">{{ $this->summaryStats['avg_completion'] }}%</flux:heading>
+            </div>
+        </div>
+
         {{-- Path Filter --}}
         <div class="mb-6">
             <flux:select wire:model.live="pathFilter" class="max-w-xs">

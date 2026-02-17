@@ -435,6 +435,7 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/my/pto', 'scheduling.my-pto')->name('my.pto');
     Route::livewire('/my/commissions', 'payroll.my-commissions')->name('my.commissions');
     Route::livewire('/my/training', 'media.training-center')->name('my.training');
+    Route::livewire('/my/training/{trainingPath}/{step}', 'media.training-player')->name('my.training.play');
 
     // Legacy redirects - keep old URLs working
     Route::get('/roadmap', fn () => redirect()->route('business-plan.index', ['tab' => 'roadmap']))

@@ -78,7 +78,7 @@ class extends Component {
                                 $watchPct = $progress?->watch_percentage ?? 0;
                             @endphp
                             <a
-                                href="{{ route('media.index', ['tab' => 'training']) }}"
+                                href="{{ route('my.training.play', [$path, $step]) }}"
                                 wire:navigate
                                 class="flex items-center gap-3 py-2 px-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition"
                             >
