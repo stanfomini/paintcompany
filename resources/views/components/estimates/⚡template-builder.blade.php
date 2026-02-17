@@ -105,11 +105,11 @@ new class extends Component
 
         $rules = [
             'title' => ['required', 'string', 'max:255'],
-            'taxRate' => ['required', 'numeric', 'min:0', 'max:100'],
-            'discountAmount' => ['required', 'numeric', 'min:0'],
-            'marginDiscountPercent' => ['required', 'numeric', 'min:0', 'max:15'],
+            'taxRate' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'discountAmount' => ['nullable', 'numeric', 'min:0'],
+            'marginDiscountPercent' => ['nullable', 'numeric', 'min:0', 'max:15'],
             'hourlyRateOverride' => ['nullable', 'numeric', 'min:10', 'max:100'],
-            'depositPercent' => ['required', 'numeric', 'min:0', 'max:100'],
+            'depositPercent' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:5000'],
             'validUntil' => ['nullable', 'date', ...($this->isEditing ? [] : ['after_or_equal:today'])],
         ];
@@ -3028,7 +3028,7 @@ new class extends Component
                             <flux:field>
                                 <flux:label>{{ __('Tax Rate') }}</flux:label>
                                 <div class="flex items-center gap-2">
-                                    <flux:input wire:model.live="taxRate" type="number" step="0.01" min="0" max="100" placeholder="0" class="flex-1" />
+                                    <flux:input wire:model.blur="taxRate" type="number" step="0.01" min="0" max="100" placeholder="0" class="flex-1" />
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">%</span>
                                 </div>
                             </flux:field>
@@ -3036,13 +3036,13 @@ new class extends Component
                                 <flux:label>{{ __('Discount') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">$</span>
-                                    <flux:input wire:model.live="discountAmount" type="number" step="0.01" min="0" placeholder="0" class="flex-1" />
+                                    <flux:input wire:model.blur="discountAmount" type="number" step="0.01" min="0" placeholder="0" class="flex-1" />
                                 </div>
                             </flux:field>
                             <flux:field>
                                 <flux:label>{{ __('Margin Discount') }}</flux:label>
                                 <div class="flex items-center gap-2">
-                                    <flux:input wire:model.live.debounce.300ms="marginDiscountPercent" type="number" step="0.5" min="0" max="{{ $this->maxAllowableDiscount }}" placeholder="0" class="flex-1" />
+                                    <flux:input wire:model.blur="marginDiscountPercent" type="number" step="0.5" min="0" max="{{ $this->maxAllowableDiscount }}" placeholder="0" class="flex-1" />
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">%</span>
                                 </div>
                                 @if ($marginDiscountPercent > 0)
@@ -3071,7 +3071,7 @@ new class extends Component
                                 <flux:label>{{ __('Hourly Rate Override') }}</flux:label>
                                 <div class="flex items-center gap-2">
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">$</span>
-                                    <flux:input wire:model.live.debounce.300ms="hourlyRateOverride" type="number" step="0.50" min="10" max="100" placeholder="{{ number_format(\App\Models\CompanySetting::getInstance()->getHourlyWageForScope($projectScope), 2) }}" class="flex-1" />
+                                    <flux:input wire:model.blur="hourlyRateOverride" type="number" step="0.50" min="10" max="100" placeholder="{{ number_format(\App\Models\CompanySetting::getInstance()->getHourlyWageForScope($projectScope), 2) }}" class="flex-1" />
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">/hr</span>
                                 </div>
                                 @if ($hourlyRateOverride !== null && $hourlyRateOverride > 0)
@@ -3101,7 +3101,7 @@ new class extends Component
                             <flux:field>
                                 <flux:label>{{ __('Deposit Required') }}</flux:label>
                                 <div class="flex items-center gap-2">
-                                    <flux:input wire:model.live="depositPercent" type="number" step="1" min="0" max="100" placeholder="30" class="flex-1" />
+                                    <flux:input wire:model.blur="depositPercent" type="number" step="1" min="0" max="100" placeholder="30" class="flex-1" />
                                     <span class="text-zinc-500 dark:text-zinc-400 text-sm font-medium">%</span>
                                 </div>
                             </flux:field>
