@@ -33,6 +33,47 @@ class VideoProcessor:
         video_path = os.path.join(output_dir, "output.mp4")
         thumbnail_path = os.path.join(output_dir, "thumbnail.jpg")
 
+        # 1. Probe input dimensions to build a safe scale filter
+        logger.info(f"Probing input dimensions for {input_path}")
+        probe_input_cmd = [
+            "ffprobe", "-v", "quiet",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=width,height",
+            "-of", "json",
+            input_path,
+        ]
+        probe_proc = await asyncio.create_subprocess_exec(
+            *probe_input_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        probe_stdout, _ = await probe_proc.communicate()
+
+        # Default: just ensure even dimensions
+        vf_filter = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
+
+        if probe_proc.returncode == 0 and probe_stdout:
+            try:
+                probe_info = json.loads(probe_stdout.decode())
+                streams = probe_info.get("streams", [])
+                if streams:
+                    iw = streams[0].get("width", 0)
+                    ih = streams[0].get("height", 0)
+                    # Calculate target dimensions: fit within 1280x720, preserve aspect ratio
+                    if iw > 0 and ih > 0:
+                        scale_w = min(1280 / iw, 1.0)
+                        scale_h = min(720 / ih, 1.0)
+                        scale_factor = min(scale_w, scale_h)
+                        tw = int(iw * scale_factor)
+                        th = int(ih * scale_factor)
+                        # Ensure even dimensions (libx264 requirement)
+                        tw = tw - (tw % 2)
+                        th = th - (th % 2)
+                        vf_filter = f"scale={tw}:{th}"
+                        logger.info(f"Input {iw}x{ih} -> target {tw}x{th}")
+            except (json.JSONDecodeError, ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse input probe, using safe filter: {e}")
+
         # 1. Transcode to MP4
         logger.info(f"Transcoding {input_path} to {video_path}")
         transcode_cmd = [
@@ -40,9 +81,7 @@ class VideoProcessor:
             "-c:v", "libx264", "-preset", "medium", "-crf", "23",
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
-            "-vf",
-            "scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,"
-            "scale=trunc(iw/2)*2:trunc(ih/2)*2",
+            "-vf", vf_filter,
             "-y", video_path,
         ]
 
