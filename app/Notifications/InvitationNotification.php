@@ -47,6 +47,7 @@ class InvitationNotification extends Notification implements ShouldQueue
         $inviterName = $this->invitation->inviter->name;
 
         return (new MailMessage)
+            ->from('hello@paintingmadeeasydenver.com', 'Painting Made Easy Denver')
             ->subject(__("You've been invited to join :appName", ['appName' => $appName]))
             ->greeting(__('Hello!'))
             ->line(__(':inviterName has invited you to join :appName as a :typeLabel.', ['inviterName' => $inviterName, 'appName' => $appName, 'typeLabel' => $typeLabel]))

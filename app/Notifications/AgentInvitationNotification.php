@@ -33,6 +33,7 @@ class AgentInvitationNotification extends Notification implements ShouldQueue
         $inviterName = $this->invitation->inviter->name;
 
         return (new MailMessage)
+            ->from('hello@paintingmadeeasydenver.com', 'Painting Made Easy Denver')
             ->subject('Free Virtual Painting Estimates for Every Home You List')
             ->markdown('mail.agent-invitation', [
                 'acceptUrl' => $acceptUrl,
