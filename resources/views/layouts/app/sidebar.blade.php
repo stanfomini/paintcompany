@@ -261,6 +261,9 @@
                         @livewire('chat.chat-dock')
                     @endpersist
                 @endcan
+                @can('media.record')
+                    @livewire('media.quick-recorder')
+                @endcan
             @endif
         @endauth
 

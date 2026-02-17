@@ -166,14 +166,10 @@ it('video picker excludes already-added videos', function () {
         'video_recording_id' => $addedVideo->id,
     ]);
 
-    $component = Livewire::actingAs($user)
-        ->test('media.channel-video-picker', ['channelId' => $channel->id]);
-
-    $available = $component->viewData('__instance')->availableVideos;
-    $availableIds = $available->pluck('id')->toArray();
-
-    expect($availableIds)->toContain($availableVideo->id)
-        ->and($availableIds)->not->toContain($addedVideo->id);
+    Livewire::actingAs($user)
+        ->test('media.channel-video-picker', ['channelId' => $channel->id])
+        ->assertSee('Available Video')
+        ->assertDontSee('Already Added');
 });
 
 it('toggles published status on a channel item', function () {
