@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\Agent\LoginController;
-use App\Http\Controllers\Agent\RegisterController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -17,9 +16,7 @@ use Illuminate\Support\Facades\Route;
 // Guest routes
 Route::middleware('guest:agent')->group(function () {
     Route::get('login', [LoginController::class, 'showLoginForm'])->name('login');
-    Route::post('login', [LoginController::class, 'login']);
-    Route::get('register', [RegisterController::class, 'showRegistrationForm'])->name('register');
-    Route::post('register', [RegisterController::class, 'register']);
+    Route::post('login', [LoginController::class, 'login'])->middleware('throttle:5,1');
 });
 
 // Authenticated routes (no onboarding check - accessible during onboarding)

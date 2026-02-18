@@ -1,21 +1,7 @@
 <?php
 
-test('registration screen can be rendered', function () {
-    $response = $this->get(route('register'));
-
-    $response->assertOk();
-});
-
-test('new users can register', function () {
-    $response = $this->post(route('register.store'), [
-        'name' => 'John Doe',
-        'email' => 'test@example.com',
-        'password' => 'password',
-        'password_confirmation' => 'password',
-    ]);
-
-    $response->assertSessionHasNoErrors()
-        ->assertRedirect(route('dashboard', absolute: false));
-
-    $this->assertAuthenticated();
+test('registration is disabled (invitation-only system)', function () {
+    // Registration was intentionally disabled in config/fortify.php
+    // New users must be invited via the InvitationService
+    expect(Illuminate\Support\Facades\Route::has('register'))->toBeFalse();
 });

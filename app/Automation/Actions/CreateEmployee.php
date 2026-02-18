@@ -151,7 +151,6 @@ class CreateEmployee implements ActionInterface
             $attributes = [
                 'name' => $name ?: 'New Employee',
                 'password' => bcrypt(Str::random(32)),
-                'type' => 'internal',
             ];
 
             if ($email) {
@@ -161,6 +160,8 @@ class CreateEmployee implements ActionInterface
             }
 
             $user = User::create($attributes);
+            $user->type = 'internal';
+            $user->save();
             $created = true;
         }
 

@@ -317,6 +317,7 @@ class EmployeeProfile extends Model
             'notes' => $notes ? ($this->notes ? $this->notes."\n\n".$notes : $notes) : $this->notes,
         ]);
 
-        $this->user->update(['is_active' => false]);
+        $this->user->is_active = false;
+        $this->user->save();
     }
 }

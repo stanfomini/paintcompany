@@ -486,12 +486,15 @@ Route::post('/webhooks/leads/{token}', \App\Http\Controllers\WebhookLeadControll
     ->middleware('throttle:60,1')
     ->name('webhook.lead');
 
-// AI Build webhooks (no auth - verified by API secret header)
+// AI Build webhooks (verified by API secret header)
 Route::post('/webhooks/ai-build', [\App\Http\Controllers\Api\AiBuildWebhookController::class, 'trigger'])
+    ->middleware('throttle:30,1')
     ->name('webhooks.ai-build');
 Route::get('/webhooks/ai-build/{requestId}', [\App\Http\Controllers\Api\AiBuildWebhookController::class, 'status'])
+    ->middleware('throttle:30,1')
     ->name('webhooks.ai-build.status');
 Route::post('/webhooks/ai-build-callback', [\App\Http\Controllers\Api\AiBuildCallbackController::class, 'handle'])
+    ->middleware('throttle:30,1')
     ->name('webhooks.ai-build-callback');
 
 // Automation webhook (public - authenticated by token + optional auth header)

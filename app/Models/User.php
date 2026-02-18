@@ -30,8 +30,7 @@ class User extends Authenticatable
         'email',
         'avatar_path',
         'password',
-        'type',
-        'is_active',
+        // 'type' and 'is_active' intentionally excluded - set explicitly in code to prevent privilege escalation
         'needs_onboarding',
         'calendar_token',
         'referral_code',

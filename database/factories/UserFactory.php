@@ -28,13 +28,27 @@ class UserFactory extends Factory
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
-            'type' => 'internal',
-            'is_active' => true,
             'remember_token' => Str::random(10),
             'two_factor_secret' => null,
             'two_factor_recovery_codes' => null,
             'two_factor_confirmed_at' => null,
         ];
+    }
+
+    /**
+     * Configure the model factory.
+     * Sets non-fillable defaults (type, is_active) via afterMaking.
+     */
+    public function configure(): static
+    {
+        return $this->afterMaking(function (\App\Models\User $user) {
+            if (! $user->type) {
+                $user->type = 'internal';
+            }
+            if (is_null($user->is_active)) {
+                $user->is_active = true;
+            }
+        });
     }
 
     /**
@@ -52,9 +66,7 @@ class UserFactory extends Factory
      */
     public function internal(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'type' => 'internal',
-        ]);
+        return $this->afterMaking(fn (\App\Models\User $user) => $user->type = 'internal');
     }
 
     /**
@@ -62,9 +74,7 @@ class UserFactory extends Factory
      */
     public function agent(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'type' => 'agent',
-        ]);
+        return $this->afterMaking(fn (\App\Models\User $user) => $user->type = 'agent');
     }
 
     /**
@@ -72,9 +82,7 @@ class UserFactory extends Factory
      */
     public function customer(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'type' => 'customer',
-        ]);
+        return $this->afterMaking(fn (\App\Models\User $user) => $user->type = 'customer');
     }
 
     /**
@@ -82,9 +90,7 @@ class UserFactory extends Factory
      */
     public function crew(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'type' => 'crew',
-        ]);
+        return $this->afterMaking(fn (\App\Models\User $user) => $user->type = 'crew');
     }
 
     /**
@@ -92,9 +98,7 @@ class UserFactory extends Factory
      */
     public function inactive(): static
     {
-        return $this->state(fn (array $attributes) => [
-            'is_active' => false,
-        ]);
+        return $this->afterMaking(fn (\App\Models\User $user) => $user->is_active = false);
     }
 
     /**

@@ -189,10 +189,11 @@ class InvitationService
             'name' => $userData['name'],
             'email' => $invitation->email,
             'password' => bcrypt($userData['password']),
-            'type' => $invitation->invited_user_type,
-            'is_active' => true,
             'needs_onboarding' => in_array($invitation->invited_user_type, ['customer', 'agent'], true),
         ]);
+        $user->type = $invitation->invited_user_type;
+        $user->is_active = true;
+        $user->save();
 
         // Link or create Customer record for this user (for customer invitations)
         if ($invitation->invited_user_type === 'customer') {

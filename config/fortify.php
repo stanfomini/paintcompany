@@ -144,7 +144,7 @@ return [
     */
 
     'features' => [
-        Features::registration(),
+        // Features::registration(), // Disabled - invitation-only registration
         Features::resetPasswords(),
         Features::emailVerification(),
         // Features::updateProfileInformation(),

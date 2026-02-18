@@ -24,9 +24,10 @@ class EmployeeService
                 'name' => $data['name'],
                 'email' => $data['email'],
                 'password' => bcrypt($data['password'] ?? str()->random(32)),
-                'type' => 'internal',
-                'is_active' => true,
             ]);
+            $user->type = 'internal';
+            $user->is_active = true;
+            $user->save();
 
             $profile = $user->employeeProfile()->create([
                 'employee_number' => EmployeeProfile::generateEmployeeNumber(),
