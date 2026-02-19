@@ -64,4 +64,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/workflows', 'pages::settings.workflows')
         ->middleware('permission:settings.workflows')
         ->name('workflows.edit');
+
+    Route::livewire('settings/workflows/{workflow}/builder', 'pages::settings.workflow-builder')
+        ->middleware('permission:settings.workflows')
+        ->name('workflows.builder');
 });
