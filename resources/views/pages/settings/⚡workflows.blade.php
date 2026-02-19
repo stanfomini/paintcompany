@@ -189,7 +189,7 @@ new class extends Component {
 
         <div class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">
             @forelse ($workflows as $workflow)
-                <div wire:key="wf-{{ $workflow->id }}" class="flex items-center justify-between gap-4 px-4 py-3">
+                <div wire:key="wf-{{ $workflow->id }}" x-data="{ optimisticActive: @js($workflow->is_active) }" class="flex items-center justify-between gap-4 px-4 py-3">
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2">
                             <button wire:click="editWorkflow({{ $workflow->id }})" class="truncate font-medium text-zinc-900 hover:text-blue-600 dark:text-zinc-100 dark:hover:text-blue-400">
@@ -198,11 +198,12 @@ new class extends Component {
                             @if ($workflow->is_system)
                                 <flux:badge size="sm" color="amber">System</flux:badge>
                             @endif
-                            @if ($workflow->is_active)
-                                <flux:badge size="sm" color="green">Active</flux:badge>
-                            @else
-                                <flux:badge size="sm" color="zinc">Inactive</flux:badge>
-                            @endif
+                            <template x-if="optimisticActive">
+                                <span><flux:badge size="sm" color="green">Active</flux:badge></span>
+                            </template>
+                            <template x-if="!optimisticActive">
+                                <span><flux:badge size="sm" color="zinc">Inactive</flux:badge></span>
+                            </template>
                         </div>
                         @if ($workflow->description)
                             <p class="mt-0.5 truncate text-sm text-zinc-500">{{ $workflow->description }}</p>
@@ -213,8 +214,8 @@ new class extends Component {
                         </div>
                     </div>
                     <div class="flex items-center gap-2">
-                        <flux:button size="sm" variant="ghost" wire:click="toggleActive({{ $workflow->id }})" wire:loading.attr="disabled" wire:target="toggleActive({{ $workflow->id }})">
-                            <span wire:loading.remove wire:target="toggleActive({{ $workflow->id }})">{{ $workflow->is_active ? 'Disable' : 'Enable' }}</span>
+                        <flux:button size="sm" variant="ghost" x-on:click="optimisticActive = !optimisticActive" wire:click="toggleActive({{ $workflow->id }})" wire:loading.attr="disabled" wire:target="toggleActive({{ $workflow->id }})">
+                            <span wire:loading.remove wire:target="toggleActive({{ $workflow->id }})" x-text="optimisticActive ? 'Disable' : 'Enable'"></span>
                             <span wire:loading wire:target="toggleActive({{ $workflow->id }})">
                                 <flux:icon.loading class="size-4" />
                             </span>
