@@ -1,14 +1,15 @@
 <?php
 
 use App\Models\Workflow;
-use App\Models\WorkflowEdge;
-use App\Models\WorkflowNode;
 use App\Models\WorkflowRun;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 new class extends Component {
+    use WithPagination;
+
     // Create workflow modal
     public bool $showCreateModal = false;
     public string $newName = '';
@@ -30,14 +31,14 @@ new class extends Component {
         }
     }
 
-    #[Computed]
-    public function workflows(): \Illuminate\Database\Eloquent\Collection
+    public function rendering(\Illuminate\View\View $view): void
     {
-        return Workflow::query()
+        $view->with('workflows', Workflow::query()
             ->withCount(['nodes', 'runs'])
             ->orderBy('is_system', 'desc')
             ->orderBy('name')
-            ->get();
+            ->paginate(20)
+        );
     }
 
     #[Computed]
@@ -111,7 +112,7 @@ new class extends Component {
 
         $this->showDeleteModal = false;
         $this->deletingWorkflowId = null;
-        unset($this->workflows);
+        $this->resetPage();
     }
 
     public function toggleActive(int $id): void
@@ -126,7 +127,7 @@ new class extends Component {
             'published_at' => ! $workflow->is_active ? now() : $workflow->published_at,
         ]);
 
-        unset($this->workflows);
+        $this->resetPage();
     }
 
     public function duplicateWorkflow(int $id): void
@@ -162,7 +163,7 @@ new class extends Component {
             }
         }
 
-        unset($this->workflows);
+        $this->resetPage();
     }
 
     public function viewRunHistory(int $id): void
@@ -179,7 +180,7 @@ new class extends Component {
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <div class="text-sm text-zinc-500">
-                {{ $this->workflows->count() }} {{ Str::plural('workflow', $this->workflows->count()) }}
+                {{ $workflows->total() }} {{ Str::plural('workflow', $workflows->total()) }}
             </div>
             <flux:button variant="primary" size="sm" wire:click="openCreateModal" wire:loading.attr="disabled">
                 New Workflow
@@ -187,7 +188,7 @@ new class extends Component {
         </div>
 
         <div class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">
-            @forelse ($this->workflows as $workflow)
+            @forelse ($workflows as $workflow)
                 <div wire:key="wf-{{ $workflow->id }}" class="flex items-center justify-between gap-4 px-4 py-3">
                     <div class="min-w-0 flex-1">
                         <div class="flex items-center gap-2">
@@ -241,6 +242,8 @@ new class extends Component {
                 </div>
             @endforelse
         </div>
+
+        {{ $workflows->links() }}
     </div>
 
     {{-- Create Modal --}}

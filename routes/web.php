@@ -12,6 +12,7 @@ use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PainterBreakdownExportController;
 use App\Http\Controllers\ScheduleCalendarFeedController;
 use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\SubcontractorExportController;
 use App\Http\Controllers\VideoCallPlaybackController;
 use App\Http\Controllers\VideoRecordingPlaybackController;
 use App\Http\Controllers\VideoRecordingUploadController;
@@ -436,6 +437,52 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/my/commissions', 'payroll.my-commissions')->name('my.commissions');
     Route::livewire('/my/training', 'media.training-center')->name('my.training');
     Route::livewire('/my/training/{trainingPath}/{step}', 'media.training-player')->name('my.training.play');
+
+    // Sales Territory routes
+    Route::middleware(['permission:sales_territories.view'])->group(function () {
+        Route::livewire('/territories', 'sales.territory-manager')->name('territories.index');
+        Route::livewire('/territories/{territory}', 'sales.territory-manager')->name('territories.show');
+    });
+
+    Route::livewire('/door-knocks', 'sales.door-knock-map')
+        ->middleware('permission:door_knocks.record')
+        ->name('door-knocks.index');
+
+    Route::livewire('/territory-queue', 'sales.territory-queue')
+        ->middleware('permission:territory_dispatch.claim')
+        ->name('territory-queue');
+
+    Route::livewire('/territory-dashboard', 'sales.territory-dashboard')
+        ->middleware('permission:sales_territories.view')
+        ->name('territory-dashboard');
+
+    Route::livewire('/territory-analytics', 'sales.territory-analytics')
+        ->middleware('permission:sales_territories.view')
+        ->name('territory-analytics');
+
+    // AR Portal routes
+    Route::middleware(['permission:ar.view'])->group(function () {
+        Route::livewire('/ar', 'accounting.ar-index')->name('ar.index');
+        Route::livewire('/ar/{deal}', 'accounting.ar-deal')->name('ar.show');
+    });
+
+    // Payments Hub routes
+    Route::livewire('/payments', 'accounting.payments-hub')
+        ->middleware('permission:ar.view')
+        ->name('payments.index');
+
+    Route::get('/payments/1099-export/{year}', [SubcontractorExportController::class, 'export'])
+        ->middleware('permission:ar.manage')
+        ->name('payments.1099-export');
+
+    // Financial summary routes
+    Route::livewire('/team/{user}/financial-summary', 'team.financial-summary')
+        ->middleware('permission:team.view_financials')
+        ->name('team.financial-summary');
+
+    Route::livewire('/crew/{user}/financial-summary', 'crew.financial-summary')
+        ->middleware('permission:crew.view_financials')
+        ->name('crew.financial-summary');
 
     // Legacy redirects - keep old URLs working
     Route::get('/roadmap', fn () => redirect()->route('business-plan.index', ['tab' => 'roadmap']))
