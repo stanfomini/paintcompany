@@ -4,8 +4,10 @@ use App\Automation\Actions\CreateCustomer;
 use App\Automation\Actions\CreateDeal;
 use App\Automation\Actions\CreateProperty;
 use App\Automation\Registry;
+use App\Automation\Triggers\ExternalApiPoll;
 use App\Automation\Triggers\InboundWebhook;
 use App\Models\AutomationWebhook;
+use App\Models\ExternalApiSource;
 use App\Models\Workflow;
 use App\Models\WorkflowEdge;
 use App\Models\WorkflowNode;
@@ -50,11 +52,20 @@ new class extends Component {
     // Add node panel
     public string $addNodeType = '';
 
+    // Dynamic field mapping for all triggers
+    public ?array $availableDynamicFields = null;
+
     // Webhook config state
     public ?string $webhookUrl = null;
     public ?int $webhookModelId = null;
     public ?array $webhookSamplePayload = null;
     public ?array $webhookAvailableFields = null;
+
+    // API source config state
+    public ?int $apiSourceModelId = null;
+    public ?string $apiSourceUrl = null;
+    public ?array $apiSourceSamplePayload = null;
+    public ?array $apiSourceAvailableFields = null;
 
     public function mount(): void
     {
@@ -370,20 +381,31 @@ new class extends Component {
         $this->nodeClass = $node->node_class;
         $this->nodeConfig = $node->config ?? [];
 
-        // Reset webhook state
+        // Reset all field mapping state
+        $this->availableDynamicFields = null;
         $this->webhookUrl = null;
         $this->webhookModelId = null;
         $this->webhookSamplePayload = null;
         $this->webhookAvailableFields = null;
+        $this->apiSourceModelId = null;
+        $this->apiSourceUrl = null;
+        $this->apiSourceSamplePayload = null;
+        $this->apiSourceAvailableFields = null;
 
         // Special handling for InboundWebhook trigger
         if ($this->nodeClass === InboundWebhook::class) {
             $this->ensureWebhookExists();
         }
 
-        // Special handling for record-creation actions
-        if (in_array($this->nodeClass, [CreateCustomer::class, CreateDeal::class, CreateProperty::class])) {
-            $this->loadWebhookFieldsFromTrigger();
+        // Special handling for ExternalApiPoll trigger
+        if ($this->nodeClass === ExternalApiPoll::class) {
+            $this->ensureApiSourceExists();
+        }
+
+        // Load dynamic fields for action and condition nodes
+        if (in_array($node->type, ['action', 'if_else'])) {
+            $this->loadDynamicFieldsFromTrigger();
+            $this->autoMapFields();
         }
 
         $this->showNodeConfig = true;
@@ -401,11 +423,21 @@ new class extends Component {
             'config' => $this->nodeConfig,
         ]);
 
+        // Save API source config if applicable
+        if ($this->nodeClass === ExternalApiPoll::class && $this->apiSourceModelId) {
+            $this->saveApiSourceConfig();
+        }
+
         $this->showNodeConfig = false;
+        $this->availableDynamicFields = null;
         $this->webhookUrl = null;
         $this->webhookModelId = null;
         $this->webhookSamplePayload = null;
         $this->webhookAvailableFields = null;
+        $this->apiSourceModelId = null;
+        $this->apiSourceUrl = null;
+        $this->apiSourceSamplePayload = null;
+        $this->apiSourceAvailableFields = null;
         $this->dispatchWorkflowData();
     }
 
@@ -569,6 +601,266 @@ new class extends Component {
         }
     }
 
+    // === API Source Config Methods ===
+
+    public function ensureApiSourceExists(): void
+    {
+        $token = $this->nodeConfig['api_source_token'] ?? null;
+
+        if ($token) {
+            $source = ExternalApiSource::where('token', $token)->first();
+        } else {
+            $source = null;
+        }
+
+        if (! $source) {
+            $workflow = $this->editingWorkflow;
+            $source = ExternalApiSource::create([
+                'name' => ($workflow?->name ?? 'Workflow') . ' API Source',
+                'url' => '',
+                'is_active' => true,
+                'created_by' => auth()->id(),
+            ]);
+            $this->nodeConfig['api_source_token'] = $source->token;
+        }
+
+        $this->apiSourceModelId = $source->id;
+        $this->apiSourceUrl = $source->url ?: '';
+        $this->nodeConfig['http_method'] = $source->http_method ?? 'GET';
+        $this->nodeConfig['poll_interval'] = $source->poll_interval ?? 'every_5_min';
+        $this->nodeConfig['auth_type'] = $source->auth_type ?? 'none';
+        $this->nodeConfig['auth_header'] = $source->auth_header ?? '';
+        $this->nodeConfig['auth_value'] = $source->auth_value ?? '';
+        $this->nodeConfig['data_path'] = $source->data_path ?? '';
+        $this->nodeConfig['dedup_field'] = $source->dedup_field ?? '';
+        $this->loadApiSourcePayloadFromModel($source);
+    }
+
+    public function saveApiSourceConfig(): void
+    {
+        $source = ExternalApiSource::find($this->apiSourceModelId);
+        if (! $source) {
+            return;
+        }
+
+        $source->update([
+            'url' => $this->apiSourceUrl ?? '',
+            'http_method' => $this->nodeConfig['http_method'] ?? 'GET',
+            'poll_interval' => $this->nodeConfig['poll_interval'] ?? 'every_5_min',
+            'auth_type' => $this->nodeConfig['auth_type'] ?? 'none',
+            'auth_header' => $this->nodeConfig['auth_header'] ?? null,
+            'auth_value' => $this->nodeConfig['auth_value'] ?? null,
+            'data_path' => $this->nodeConfig['data_path'] ?? null,
+            'dedup_field' => $this->nodeConfig['dedup_field'] ?? null,
+        ]);
+    }
+
+    public function testApiSource(): void
+    {
+        if (! $this->apiSourceModelId) {
+            return;
+        }
+
+        $source = ExternalApiSource::find($this->apiSourceModelId);
+        if (! $source) {
+            return;
+        }
+
+        // Save current config first
+        $this->saveApiSourceConfig();
+        $source->refresh();
+
+        if (! $source->url) {
+            return;
+        }
+
+        try {
+            $request = $source->buildHttpRequest();
+            $method = strtolower($source->http_method ?? 'get');
+            $response = $request->{$method}($source->url);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                $source->update([
+                    'last_response' => $data,
+                    'last_success_at' => now(),
+                    'last_error' => null,
+                ]);
+                $this->loadApiSourcePayloadFromModel($source);
+            } else {
+                $source->update([
+                    'last_error' => "HTTP {$response->status()}: {$response->body()}",
+                    'error_count' => $source->error_count + 1,
+                ]);
+            }
+        } catch (\Exception $e) {
+            $source->update([
+                'last_error' => $e->getMessage(),
+                'error_count' => $source->error_count + 1,
+            ]);
+        }
+    }
+
+    public function clearApiSourcePayload(): void
+    {
+        if (! $this->apiSourceModelId) {
+            return;
+        }
+
+        $source = ExternalApiSource::find($this->apiSourceModelId);
+        if ($source) {
+            $source->update(['last_response' => null]);
+        }
+
+        $this->apiSourceSamplePayload = null;
+        $this->apiSourceAvailableFields = null;
+    }
+
+    public function loadApiSourceFieldsFromTrigger(): void
+    {
+        $workflow = $this->editingWorkflow;
+        if (! $workflow) {
+            return;
+        }
+
+        $triggerNode = $workflow->nodes
+            ->where('node_class', ExternalApiPoll::class)
+            ->first();
+
+        if (! $triggerNode) {
+            return;
+        }
+
+        $token = $triggerNode->config['api_source_token'] ?? null;
+        if (! $token) {
+            return;
+        }
+
+        $source = ExternalApiSource::where('token', $token)->first();
+        if (! $source || ! $source->last_response) {
+            return;
+        }
+
+        $this->loadApiSourcePayloadFromModel($source);
+    }
+
+    protected function loadApiSourcePayloadFromModel(ExternalApiSource $source): void
+    {
+        $payload = $source->last_response;
+
+        // Extract records using data_path if set
+        if ($source->data_path && $payload) {
+            $records = data_get($payload, $source->data_path);
+            if (is_array($records) && ! empty($records)) {
+                // Use first record as sample
+                $sample = is_array($records[0] ?? null) ? $records[0] : $records;
+                $this->apiSourceSamplePayload = $sample;
+            } else {
+                $this->apiSourceSamplePayload = $payload;
+            }
+        } else {
+            $this->apiSourceSamplePayload = $payload;
+        }
+
+        if ($this->apiSourceSamplePayload) {
+            $this->apiSourceAvailableFields = collect(Arr::dot($this->apiSourceSamplePayload))
+                ->map(fn ($value, $key) => [
+                    'path' => $key,
+                    'sample' => $value,
+                ])
+                ->values()
+                ->toArray();
+
+            // Make webhook fields available too so the schema fields dropdown works
+            if (! $this->webhookAvailableFields) {
+                $this->webhookAvailableFields = $this->apiSourceAvailableFields;
+            }
+        } else {
+            $this->apiSourceAvailableFields = null;
+        }
+    }
+
+    // === Dynamic Field Mapping ===
+
+    public function loadDynamicFieldsFromTrigger(): void
+    {
+        $workflow = $this->editingWorkflow;
+        if (! $workflow) {
+            return;
+        }
+
+        $registry = app(Registry::class);
+        $triggerNode = $workflow->nodes->where('type', 'trigger')->first();
+
+        if ($triggerNode && class_exists($triggerNode->node_class)) {
+            $triggerClass = $triggerNode->node_class;
+            $this->availableDynamicFields = $registry->getAvailableFieldsForTrigger($triggerClass);
+
+            // Also load webhook/API payload fields for backward compatibility
+            if ($triggerClass === InboundWebhook::class) {
+                $this->loadWebhookFieldsFromTrigger();
+            } elseif ($triggerClass === ExternalApiPoll::class) {
+                $this->loadApiSourceFieldsFromTrigger();
+            }
+        } else {
+            // No trigger node yet — show all available dynamic values as fallback
+            $fields = [];
+            foreach ($registry->dynamicValues() as $resolverClass) {
+                $prefix = $resolverClass::getPrefix();
+                foreach ($resolverClass::getAvailableKeys() as $key) {
+                    $fields[] = [
+                        'prefix' => $prefix,
+                        'key' => $key,
+                        'path' => "{$prefix}.{$key}",
+                        'label' => \Illuminate\Support\Str::title(str_replace('_', ' ', $prefix)).': '.\Illuminate\Support\Str::title(str_replace('_', ' ', $key)),
+                    ];
+                }
+            }
+            $this->availableDynamicFields = $fields;
+        }
+    }
+
+    public function autoMapFields(): void
+    {
+        if (empty($this->availableDynamicFields)) {
+            return;
+        }
+
+        if (! $this->nodeClass || ! class_exists($this->nodeClass) || ! method_exists($this->nodeClass, 'getConfigSchema')) {
+            return;
+        }
+
+        $schema = $this->nodeClass::getConfigSchema();
+        $dynamicFieldsByKey = collect($this->availableDynamicFields)->keyBy('key');
+
+        foreach ($schema as $configKey => $fieldSchema) {
+            // Skip if already configured
+            if (! empty($this->nodeConfig[$configKey])) {
+                continue;
+            }
+
+            // Skip non-string fields (booleans, integers, dropdowns with options)
+            $type = $fieldSchema['type'] ?? 'string';
+            if (! in_array($type, ['string', 'text'])) {
+                continue;
+            }
+
+            // Skip fields with fixed options (dropdowns)
+            if (isset($fieldSchema['options']) && is_array($fieldSchema['options'])) {
+                continue;
+            }
+
+            // Try to find a matching dynamic field by key name (case-insensitive)
+            $match = $dynamicFieldsByKey->first(function ($field) use ($configKey) {
+                return strcasecmp($field['key'], $configKey) === 0;
+            });
+
+            if ($match) {
+                $this->nodeConfig[$configKey] = '{{' . $match['path'] . '}}';
+            }
+        }
+    }
+
     // === Helpers ===
 
     protected function dispatchWorkflowData(): void
@@ -635,7 +927,7 @@ new class extends Component {
                 <div class="text-sm text-zinc-500">
                     {{ $this->workflows->count() }} {{ Str::plural('workflow', $this->workflows->count()) }}
                 </div>
-                <flux:button variant="primary" size="sm" wire:click="openCreateModal">
+                <flux:button variant="primary" size="sm" wire:click="openCreateModal" wire:loading.attr="disabled">
                     New Workflow
                 </flux:button>
             </div>
@@ -666,14 +958,20 @@ new class extends Component {
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
-                            <flux:button size="sm" variant="ghost" wire:click="toggleActive({{ $workflow->id }})">
-                                {{ $workflow->is_active ? 'Disable' : 'Enable' }}
+                            <flux:button size="sm" variant="ghost" wire:click="toggleActive({{ $workflow->id }})" wire:loading.attr="disabled" wire:target="toggleActive({{ $workflow->id }})">
+                                <span wire:loading.remove wire:target="toggleActive({{ $workflow->id }})">{{ $workflow->is_active ? 'Disable' : 'Enable' }}</span>
+                                <span wire:loading wire:target="toggleActive({{ $workflow->id }})">
+                                    <flux:icon.loading class="size-4" />
+                                </span>
                             </flux:button>
+                            @unless ($workflow->is_system)
+                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $workflow->id }}, '{{ addslashes($workflow->name) }}')" class="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300" title="Delete workflow" />
+                            @endunless
                             <flux:dropdown>
                                 <flux:button size="sm" variant="ghost" icon="ellipsis-horizontal" />
                                 <flux:menu>
                                     <flux:menu.item wire:click="editWorkflow({{ $workflow->id }})">Edit</flux:menu.item>
-                                    <flux:menu.item wire:click="duplicateWorkflow({{ $workflow->id }})">Duplicate</flux:menu.item>
+                                    <flux:menu.item wire:click="duplicateWorkflow({{ $workflow->id }})" wire:loading.attr="disabled" wire:target="duplicateWorkflow({{ $workflow->id }})">Duplicate</flux:menu.item>
                                     <flux:menu.item wire:click="viewRunHistory({{ $workflow->id }})">Run History</flux:menu.item>
                                     @unless ($workflow->is_system)
                                         <flux:menu.separator />
@@ -722,7 +1020,10 @@ new class extends Component {
                 </p>
                 <div class="flex justify-end gap-2">
                     <flux:button wire:click="$set('showDeleteModal', false)">Cancel</flux:button>
-                    <flux:button variant="danger" wire:click="deleteWorkflow">Delete</flux:button>
+                    <flux:button variant="danger" wire:click="deleteWorkflow" wire:loading.attr="disabled" wire:target="deleteWorkflow">
+                        <span wire:loading.remove wire:target="deleteWorkflow">Delete</span>
+                        <span wire:loading wire:target="deleteWorkflow">Deleting...</span>
+                    </flux:button>
                 </div>
             </div>
         </flux:modal>
@@ -929,80 +1230,141 @@ new class extends Component {
                     {{-- Nodes --}}
                     <template x-for="node in nodes" :key="node.id">
                         <div
-                            class="absolute left-0 top-0 select-none overflow-hidden rounded-lg bg-white shadow-md will-change-transform touch-none dark:bg-zinc-800"
+                            class="group/node absolute left-0 top-0 select-none rounded-xl border bg-white shadow-sm will-change-transform touch-none dark:bg-zinc-800"
                             :class="{
-                                'opacity-50': !node.is_enabled,
-                                'ring-2 ring-blue-400 ring-offset-1 dark:ring-offset-zinc-900': connecting && connectFromId !== node.id,
-                                'shadow-xl z-50': dragging && dragging.id === node.id,
-                                'cursor-move': !connecting,
+                                'opacity-40': !node.is_enabled,
+                                'ring-2 ring-blue-400 ring-offset-2 dark:ring-offset-zinc-900': connecting && connectFromId !== node.id,
+                                'shadow-lg z-50 scale-[1.02]': dragging && dragging.id === node.id,
+                                'cursor-grab': !connecting && !(dragging && dragging.id === node.id),
+                                'cursor-grabbing': dragging && dragging.id === node.id,
                                 'cursor-crosshair': connecting,
+                                'border-amber-300 dark:border-amber-700': node.type === 'trigger',
+                                'border-blue-300 dark:border-blue-700': node.type === 'action',
+                                'border-purple-300 dark:border-purple-700': node.type === 'if_else',
+                                'border-orange-300 dark:border-orange-700': node.type === 'wait',
+                                'border-green-300 dark:border-green-700': node.type === 'goal',
+                                'border-zinc-300 dark:border-zinc-600': node.type === 'goto',
                             }"
-                            :style="`transform: translate(${node.position_x}px, ${node.position_y}px); width: 240px`"
+                            :style="`transform: translate(${node.position_x}px, ${node.position_y}px); width: ${NODE_W}px`"
                             x-on:pointerdown.prevent="startDrag($event, node)"
                             x-on:dblclick.stop="$wire.openNodeConfig(node.id)"
                         >
-                            {{-- Colored header bar --}}
-                            <div class="flex items-center justify-between px-3 py-1.5"
+                            {{-- Input port (always visible) --}}
+                            <div class="absolute -top-2.5 left-1/2 -translate-x-1/2">
+                                <div class="h-2.5 w-2.5 rounded-full border-2 bg-white transition-all dark:bg-zinc-800"
+                                    :class="{
+                                        'border-blue-400 scale-150 bg-blue-50 dark:bg-blue-900/50': connecting && connectFromId !== node.id,
+                                        'border-zinc-300 dark:border-zinc-600': !(connecting && connectFromId !== node.id),
+                                    }"
+                                ></div>
+                            </div>
+
+                            {{-- Colored header --}}
+                            <div class="flex items-center justify-between rounded-t-xl px-3 py-2"
                                 :class="{
-                                    'bg-amber-50 dark:bg-amber-900/30': node.type === 'trigger',
-                                    'bg-blue-50 dark:bg-blue-900/30': node.type === 'action',
-                                    'bg-purple-50 dark:bg-purple-900/30': node.type === 'if_else',
-                                    'bg-orange-50 dark:bg-orange-900/30': node.type === 'wait',
-                                    'bg-green-50 dark:bg-green-900/30': node.type === 'goal',
-                                    'bg-zinc-50 dark:bg-zinc-700': node.type === 'goto',
+                                    'bg-amber-50 dark:bg-amber-900/20': node.type === 'trigger',
+                                    'bg-blue-50 dark:bg-blue-900/20': node.type === 'action',
+                                    'bg-purple-50 dark:bg-purple-900/20': node.type === 'if_else',
+                                    'bg-orange-50 dark:bg-orange-900/20': node.type === 'wait',
+                                    'bg-green-50 dark:bg-green-900/20': node.type === 'goal',
+                                    'bg-zinc-50 dark:bg-zinc-700/50': node.type === 'goto',
                                 }"
                             >
-                                <span class="truncate text-[10px] font-bold uppercase tracking-wider"
-                                    :class="{
-                                        'text-amber-700 dark:text-amber-300': node.type === 'trigger',
-                                        'text-blue-700 dark:text-blue-300': node.type === 'action',
-                                        'text-purple-700 dark:text-purple-300': node.type === 'if_else',
-                                        'text-orange-700 dark:text-orange-300': node.type === 'wait',
-                                        'text-green-700 dark:text-green-300': node.type === 'goal',
-                                        'text-zinc-500 dark:text-zinc-400': node.type === 'goto',
-                                    }"
-                                    x-text="node.type.replace('_', '/')"
-                                ></span>
-                                <div class="flex items-center gap-1.5">
-                                    <span x-show="needsConfig(node)" class="flex h-2 w-2" title="Needs configuration">
-                                        <span class="absolute inline-flex h-2 w-2 animate-ping rounded-full bg-orange-400 opacity-75"></span>
-                                        <span class="relative inline-flex h-2 w-2 rounded-full bg-orange-500"></span>
+                                <div class="flex items-center gap-2 min-w-0">
+                                    {{-- Type icon --}}
+                                    <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-xs"
+                                        :class="{
+                                            'bg-amber-200 text-amber-800 dark:bg-amber-800 dark:text-amber-200': node.type === 'trigger',
+                                            'bg-blue-200 text-blue-800 dark:bg-blue-800 dark:text-blue-200': node.type === 'action',
+                                            'bg-purple-200 text-purple-800 dark:bg-purple-800 dark:text-purple-200': node.type === 'if_else',
+                                            'bg-orange-200 text-orange-800 dark:bg-orange-800 dark:text-orange-200': node.type === 'wait',
+                                            'bg-green-200 text-green-800 dark:bg-green-800 dark:text-green-200': node.type === 'goal',
+                                            'bg-zinc-200 text-zinc-600 dark:bg-zinc-600 dark:text-zinc-300': node.type === 'goto',
+                                        }"
+                                    >
+                                        <template x-if="node.type === 'trigger'">
+                                            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                                        </template>
+                                        <template x-if="node.type === 'action'">
+                                            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/></svg>
+                                        </template>
+                                        <template x-if="node.type === 'if_else'">
+                                            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        </template>
+                                        <template x-if="node.type === 'wait'">
+                                            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                        </template>
+                                        <template x-if="node.type === 'goal'">
+                                            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+                                        </template>
+                                        <template x-if="node.type === 'goto'">
+                                            <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 7l5 5m0 0l-5 5m5-5H6"/></svg>
+                                        </template>
                                     </span>
-                                    <span x-show="!node.is_enabled" class="text-[10px] font-medium text-zinc-400">OFF</span>
+                                    <span class="truncate text-[10px] font-bold uppercase tracking-wider"
+                                        :class="{
+                                            'text-amber-700 dark:text-amber-300': node.type === 'trigger',
+                                            'text-blue-700 dark:text-blue-300': node.type === 'action',
+                                            'text-purple-700 dark:text-purple-300': node.type === 'if_else',
+                                            'text-orange-700 dark:text-orange-300': node.type === 'wait',
+                                            'text-green-700 dark:text-green-300': node.type === 'goal',
+                                            'text-zinc-500 dark:text-zinc-400': node.type === 'goto',
+                                        }"
+                                        x-text="node.type === 'if_else' ? 'IF / ELSE' : node.type"
+                                    ></span>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <span x-show="needsConfig(node)" class="relative flex h-2.5 w-2.5" title="Needs configuration">
+                                        <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75"></span>
+                                        <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-orange-500"></span>
+                                    </span>
+                                    <span x-show="!node.is_enabled" class="rounded bg-zinc-200 px-1 py-0.5 text-[9px] font-bold text-zinc-500 dark:bg-zinc-700">OFF</span>
                                 </div>
                             </div>
 
                             {{-- Node body --}}
-                            <div class="px-3 py-2">
-                                <p class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100" x-text="node.label"></p>
-                                <p class="mt-0.5 truncate text-xs text-zinc-400" x-text="getConfigSummary(node) || 'Double-click to configure'"></p>
+                            <div class="px-3 py-2.5">
+                                <p class="truncate text-[13px] font-semibold text-zinc-900 dark:text-zinc-100" x-text="node.label"></p>
+                                <p class="mt-1 truncate text-xs text-zinc-400" x-text="getConfigSummary(node) || 'Double-click to configure'"></p>
                             </div>
 
-                            {{-- Always-visible action buttons --}}
-                            <div class="flex border-t border-zinc-100 dark:border-zinc-700">
-                                <button @click.stop="$wire.openNodeConfig(node.id)"
-                                    class="flex flex-1 items-center justify-center gap-1 py-1.5 text-[11px] text-zinc-500 hover:bg-zinc-50 hover:text-zinc-800 dark:hover:bg-zinc-700/50 dark:hover:text-zinc-200">
-                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
-                                    Edit
+                            {{-- Action buttons - use pointerdown.stop so drag doesn't fire --}}
+                            <div class="flex border-t border-zinc-100 dark:border-zinc-700/50">
+                                <button @pointerdown.stop @click.stop="$wire.openNodeConfig(node.id)"
+                                    class="flex flex-1 items-center justify-center gap-1.5 py-1.5 text-[11px] text-zinc-400 hover:bg-zinc-50 hover:text-zinc-700 dark:hover:bg-zinc-700/50 dark:hover:text-zinc-200">
+                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    Config
                                 </button>
-                                    <button @click.stop="$wire.deleteNode(node.id)"
-                                        class="flex flex-1 items-center justify-center gap-1 border-l border-zinc-100 py-1.5 text-[11px] text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:border-zinc-700 dark:hover:bg-red-900/20 dark:hover:text-red-400">
-                                        <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
-                                        Delete
-                                    </button>
+                                <button @pointerdown.stop @click.stop="$wire.deleteNode(node.id)"
+                                    class="flex flex-1 items-center justify-center gap-1.5 border-l border-zinc-100 py-1.5 text-[11px] text-zinc-400 hover:bg-red-50 hover:text-red-600 dark:border-zinc-700/50 dark:hover:bg-red-900/20 dark:hover:text-red-400">
+                                    <svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                    Delete
+                                </button>
                             </div>
 
-                            {{-- Connection output handle (bottom) --}}
-                            <div class="absolute -bottom-3 left-1/2 flex h-6 w-6 -translate-x-1/2 cursor-crosshair items-center justify-center"
-                                @pointerdown.stop.prevent="startConnect($event, node)" title="Drag to connect">
-                                <div class="h-3 w-3 rounded-full border-2 border-zinc-400 bg-white transition-transform hover:scale-150 dark:bg-zinc-800"></div>
-                            </div>
-
-                            {{-- Connection input indicator (top) --}}
-                            <div class="absolute -top-3 left-1/2 flex h-6 w-6 -translate-x-1/2 items-center justify-center"
-                                x-show="connecting && connectFromId !== node.id">
-                                <div class="h-3 w-3 animate-pulse rounded-full border-2 border-blue-400 bg-blue-100 dark:bg-blue-900/50"></div>
-                            </div>
+                            {{-- Output handle: single port for non-condition, dual ports for if/else --}}
+                            <template x-if="node.type !== 'if_else'">
+                                <div class="absolute -bottom-4 left-1/2 flex h-8 w-8 -translate-x-1/2 cursor-crosshair items-center justify-center"
+                                    @pointerdown.stop.prevent="startConnect($event, node, null)" title="Drag to connect">
+                                    <div class="h-4 w-4 rounded-full border-2 border-zinc-400 bg-white shadow-sm transition-all hover:scale-125 hover:border-blue-500 hover:shadow-md dark:bg-zinc-800"></div>
+                                </div>
+                            </template>
+                            <template x-if="node.type === 'if_else'">
+                                <div class="absolute -bottom-6 left-0 flex w-full justify-between px-8">
+                                    {{-- True (Yes) port --}}
+                                    <div class="flex cursor-crosshair flex-col items-center gap-0.5"
+                                        @pointerdown.stop.prevent="startConnect($event, node, 'true')" title="Yes branch">
+                                        <div class="h-4 w-4 rounded-full border-2 border-green-500 bg-white shadow-sm transition-all hover:scale-125 hover:shadow-md dark:bg-zinc-800"></div>
+                                        <span class="text-[9px] font-bold text-green-600 dark:text-green-400">YES</span>
+                                    </div>
+                                    {{-- False (No) port --}}
+                                    <div class="flex cursor-crosshair flex-col items-center gap-0.5"
+                                        @pointerdown.stop.prevent="startConnect($event, node, 'false')" title="No branch">
+                                        <div class="h-4 w-4 rounded-full border-2 border-red-500 bg-white shadow-sm transition-all hover:scale-125 hover:shadow-md dark:bg-zinc-800"></div>
+                                        <span class="text-[9px] font-bold text-red-600 dark:text-red-400">NO</span>
+                                    </div>
+                                </div>
+                            </template>
                         </div>
                     </template>
 
@@ -1029,6 +1391,8 @@ new class extends Component {
 
                 @if ($nodeClass === \App\Automation\Triggers\InboundWebhook::class)
                     @include('components.settings._webhook-trigger-config')
+                @elseif ($nodeClass === \App\Automation\Triggers\ExternalApiPoll::class)
+                    @include('components.settings._api-poll-trigger-config')
                 @elseif ($nodeClass && class_exists($nodeClass) && method_exists($nodeClass, 'getConfigSchema'))
                     @include('components.settings._workflow-schema-fields')
                 @endif
@@ -1063,6 +1427,7 @@ new class extends Component {
         // Connection state
         connecting: false,
         connectFromId: null,
+        connectBranch: null,
         connectFrom: { x: 0, y: 0 },
         connectTo: { x: 0, y: 0 },
 
@@ -1081,8 +1446,8 @@ new class extends Component {
         _onKeyDown: null,
 
         // Node dimensions (keep in sync with template)
-        NODE_W: 240,
-        NODE_H: 96,
+        NODE_W: 280,
+        NODE_H: 120,
 
         // Dynamic canvas bounds based on actual node positions
         get canvasWidth() {
@@ -1124,6 +1489,7 @@ new class extends Component {
                     if (this.connecting) {
                         this.connecting = false;
                         this.connectFromId = null;
+                        this.connectBranch = null;
                     }
                     if (this.dragging) {
                         this.dragging = null;
@@ -1266,9 +1632,18 @@ new class extends Component {
                 const toNode = this._nodeMap.get(edge.to_node_id);
                 if (!fromNode || !toNode) continue;
 
-                // Source: bottom center of from node
-                const sx = fromNode.position_x + this.NODE_W / 2;
-                const sy = fromNode.position_y + this.NODE_H;
+                // Source: branch-aware position for if/else, bottom center otherwise
+                let sx, sy;
+                if (fromNode.type === 'if_else' && edge.branch === 'true') {
+                    sx = fromNode.position_x + this.NODE_W * 0.25;
+                    sy = fromNode.position_y + this.NODE_H + 8;
+                } else if (fromNode.type === 'if_else' && edge.branch === 'false') {
+                    sx = fromNode.position_x + this.NODE_W * 0.75;
+                    sy = fromNode.position_y + this.NODE_H + 8;
+                } else {
+                    sx = fromNode.position_x + this.NODE_W / 2;
+                    sy = fromNode.position_y + this.NODE_H;
+                }
                 // Target: top center of to node
                 const tx = toNode.position_x + this.NODE_W / 2;
                 const ty = toNode.position_y;
@@ -1295,10 +1670,15 @@ new class extends Component {
                     const g = document.createElementNS(svgNS, 'g');
                     g.style.pointerEvents = 'auto';
 
+                    // Branch-colored edges for if/else
+                    const edgeColor = edge.branch === 'true' ? '#22c55e'
+                        : edge.branch === 'false' ? '#ef4444'
+                        : strokeColor;
+
                     const path = document.createElementNS(svgNS, 'path');
                     path.setAttribute('d', d);
                     path.setAttribute('fill', 'none');
-                    path.setAttribute('stroke', strokeColor);
+                    path.setAttribute('stroke', edgeColor);
                     path.setAttribute('stroke-width', '2');
                     path.setAttribute('marker-end', 'url(#arrowhead)');
                     g.appendChild(path);
@@ -1345,7 +1725,7 @@ new class extends Component {
                     g.appendChild(xMark);
 
                     const showDelete = () => { circle.setAttribute('opacity', '1'); xMark.setAttribute('opacity', '1'); path.setAttribute('stroke', '#ef4444'); path.setAttribute('stroke-width', '3'); };
-                    const hideDelete = () => { circle.setAttribute('opacity', '0'); xMark.setAttribute('opacity', '0'); path.setAttribute('stroke', strokeColor); path.setAttribute('stroke-width', '2'); };
+                    const hideDelete = () => { circle.setAttribute('opacity', '0'); xMark.setAttribute('opacity', '0'); path.setAttribute('stroke', edgeColor); path.setAttribute('stroke-width', '2'); };
                     hitPath.addEventListener('pointerenter', showDelete);
                     hitPath.addEventListener('pointerleave', hideDelete);
                     circle.addEventListener('pointerenter', showDelete);
@@ -1367,7 +1747,6 @@ new class extends Component {
 
         startDrag(e, node) {
             if (this.connecting) return;
-            if (e.target.closest('button')) return;
 
             const canvas = this.$refs.canvas;
             this._cachedRect = canvas.getBoundingClientRect();
@@ -1439,11 +1818,12 @@ new class extends Component {
 
                 const nearest = this.findNearestNode(px, py, 80);
                 if (nearest && nearest.id !== this.connectFromId) {
-                    this.$wire.connectNodes(this.connectFromId, nearest.id);
+                    this.$wire.connectNodes(this.connectFromId, nearest.id, this.connectBranch);
                 }
 
                 this.connecting = false;
                 this.connectFromId = null;
+                this.connectBranch = null;
                 this._releaseCapture();
                 this._unlockScroll();
             }
@@ -1466,15 +1846,27 @@ new class extends Component {
 
         // === Node connections ===
 
-        startConnect(e, node) {
+        startConnect(e, node, branch = null) {
             const canvas = this.$refs.canvas;
             const rect = canvas.getBoundingClientRect();
             this.connecting = true;
             this.connectFromId = node.id;
-            this.connectFrom = {
-                x: node.position_x + this.NODE_W / 2,
-                y: node.position_y + this.NODE_H,
-            };
+            this.connectBranch = branch;
+
+            // Branch-aware source position
+            let sx, sy;
+            if (branch === 'true') {
+                sx = node.position_x + this.NODE_W * 0.25;
+                sy = node.position_y + this.NODE_H + 8;
+            } else if (branch === 'false') {
+                sx = node.position_x + this.NODE_W * 0.75;
+                sy = node.position_y + this.NODE_H + 8;
+            } else {
+                sx = node.position_x + this.NODE_W / 2;
+                sy = node.position_y + this.NODE_H;
+            }
+
+            this.connectFrom = { x: sx, y: sy };
             this.connectTo = {
                 x: e.clientX - rect.left + canvas.scrollLeft,
                 y: e.clientY - rect.top + canvas.scrollTop,
