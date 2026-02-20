@@ -312,8 +312,8 @@
         @auth
             @if (auth()->user()->isInternal())
                 {{-- Floating bottom-left button bar (bell + record) --}}
-                <div class="fixed bottom-4 left-4 z-10 lg:z-50 lg:left-auto lg:inset-x-0 pointer-events-none lg:pl-64">
-                    <div class="lg:pl-4 flex items-end gap-2">
+                <div class="fixed bottom-4 inset-x-0 z-50 pointer-events-none lg:pl-64">
+                    <div class="pl-4 flex items-end gap-2">
                         @livewire('notifications.notification-center')
                         @can('media.record')
                             @livewire('media.quick-recorder')
