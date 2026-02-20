@@ -29,7 +29,7 @@ it('hides quick recorder without media.record permission', function () {
 
 it('can add recording to a channel', function () {
     $user = User::factory()->internal()->create();
-    $user->givePermissionTo('media.record');
+    $user->givePermissionTo(['media.record', 'media.manage_channels']);
 
     $recording = VideoRecording::factory()->ready()->create(['user_id' => $user->id]);
     $channel = VideoChannel::factory()->create(['user_id' => $user->id]);
@@ -47,7 +47,7 @@ it('can add recording to a channel', function () {
 
 it('does not duplicate when adding to same channel twice', function () {
     $user = User::factory()->internal()->create();
-    $user->givePermissionTo('media.record');
+    $user->givePermissionTo(['media.record', 'media.manage_channels']);
 
     $recording = VideoRecording::factory()->ready()->create(['user_id' => $user->id]);
     $channel = VideoChannel::factory()->create(['user_id' => $user->id]);
@@ -62,6 +62,20 @@ it('does not duplicate when adding to same channel twice', function () {
         ->where('video_recording_id', $recording->id)
         ->count()
     )->toBe(1);
+});
+
+it('blocks add to channel without media.manage_channels permission', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('media.record');
+
+    $recording = VideoRecording::factory()->ready()->create(['user_id' => $user->id]);
+    $channel = VideoChannel::factory()->create(['user_id' => $user->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.quick-recorder')
+        ->set('lastRecordingId', $recording->id)
+        ->call('addToChannel', $channel->id)
+        ->assertForbidden();
 });
 
 it('can dismiss post-save actions', function () {
@@ -79,19 +93,35 @@ it('can dismiss post-save actions', function () {
         ->assertSet('lastShareToken', null);
 });
 
-it('shows channels list for authenticated user', function () {
+it('shows channels list for user with manage_channels permission', function () {
     $user = User::factory()->internal()->create();
-    $user->givePermissionTo('media.record');
+    $user->givePermissionTo(['media.record', 'media.manage_channels']);
 
     VideoChannel::factory()->create(['user_id' => $user->id, 'name' => 'My Channel']);
 
-    // Channel shows when post-actions are visible
+    // Channel shows when post-actions are visible and user can manage channels
     Livewire::actingAs($user)
         ->test('media.quick-recorder')
         ->set('lastRecordingId', 1)
         ->set('lastShareToken', 'test-token')
         ->set('showPostActions', true)
         ->assertSee('My Channel');
+});
+
+it('hides channels list for user without manage_channels permission', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('media.record');
+
+    VideoChannel::factory()->create(['user_id' => $user->id, 'name' => 'My Channel']);
+
+    // Channel section hidden when user lacks media.manage_channels
+    Livewire::actingAs($user)
+        ->test('media.quick-recorder')
+        ->set('lastRecordingId', 1)
+        ->set('lastShareToken', 'test-token')
+        ->set('showPostActions', true)
+        ->assertDontSee('My Channel')
+        ->assertDontSee('Add to Channel');
 });
 
 it('renders the component without errors', function () {

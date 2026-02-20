@@ -181,6 +181,19 @@ class ChatThread extends Model
     }
 
     /**
+     * Scope to filter threads based on user's view permissions.
+     * Internal users with roles who lack chat.view_deal_chats won't see deal threads.
+     */
+    public function scopeVisibleTo(Builder $query, User $user): Builder
+    {
+        if ($user->isInternal() && $user->roles->isNotEmpty() && ! $user->can('chat.view_deal_chats')) {
+            return $query->where('type', '!=', self::TYPE_DEAL);
+        }
+
+        return $query;
+    }
+
+    /**
      * Scope to filter active (not archived) threads.
      */
     public function scopeActive(Builder $query): Builder

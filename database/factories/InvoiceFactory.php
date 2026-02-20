@@ -67,6 +67,15 @@ class InvoiceFactory extends Factory
         ]);
     }
 
+    public function overdue(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'status' => 'overdue',
+            'sent_at' => now()->subDays(45),
+            'due_date' => now()->subDays(15),
+        ]);
+    }
+
     public function void(): static
     {
         return $this->state(fn (array $attributes) => [

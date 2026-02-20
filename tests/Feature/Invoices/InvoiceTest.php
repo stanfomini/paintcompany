@@ -314,6 +314,49 @@ it('creates custom invoice', function () {
         ->and($invoice->customer_id)->toBe($customer->id);
 });
 
+// --- Resend Tests ---
+
+it('resends a sent invoice', function () {
+    $invoice = Invoice::factory()->sent()->create([
+        'sent_at' => now()->subDays(5),
+    ]);
+    $originalToken = $invoice->generatePublicToken(30);
+
+    $service = new InvoiceService;
+    $service->resendInvoice($invoice);
+
+    $invoice->refresh();
+    expect($invoice->status)->toBe('sent')
+        ->and($invoice->public_token)->not->toBe($originalToken)
+        ->and($invoice->sent_at->isToday())->toBeTrue();
+});
+
+it('resends an overdue invoice', function () {
+    $invoice = Invoice::factory()->overdue()->create();
+
+    $service = new InvoiceService;
+    $service->resendInvoice($invoice);
+
+    $invoice->refresh();
+    expect($invoice->status)->toBe('overdue')
+        ->and($invoice->public_token)->not->toBeNull()
+        ->and($invoice->sent_at->isToday())->toBeTrue();
+});
+
+it('resends a partially paid invoice', function () {
+    $invoice = Invoice::factory()->create([
+        'status' => 'partially_paid',
+        'sent_at' => now()->subDays(10),
+    ]);
+
+    $service = new InvoiceService;
+    $service->resendInvoice($invoice);
+
+    $invoice->refresh();
+    expect($invoice->status)->toBe('partially_paid')
+        ->and($invoice->public_token)->not->toBeNull();
+});
+
 // --- Livewire Component Tests ---
 
 it('renders invoice index', function () {
@@ -424,6 +467,65 @@ it('can record payment from show page', function () {
 
     expect(Payment::count())->toBe(1)
         ->and($invoice->fresh()->status)->toBe('partially_paid');
+});
+
+it('can resend overdue invoice from index page', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $invoice = Invoice::factory()->overdue()->create();
+
+    Livewire::actingAs($user)
+        ->test('invoices.index')
+        ->call('resendInvoice', $invoice->id);
+
+    expect($invoice->fresh()->public_token)->not->toBeNull()
+        ->and($invoice->fresh()->sent_at->isToday())->toBeTrue();
+});
+
+it('can resend sent invoice from show page', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $invoice = Invoice::factory()->sent()->create();
+
+    Livewire::actingAs($user)
+        ->test('invoices.show', ['invoice' => $invoice])
+        ->call('resendInvoice');
+
+    expect($invoice->fresh()->public_token)->not->toBeNull()
+        ->and($invoice->fresh()->sent_at->isToday())->toBeTrue();
+});
+
+it('cannot resend a draft invoice', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $invoice = Invoice::factory()->create(['status' => 'draft']);
+
+    Livewire::actingAs($user)
+        ->test('invoices.show', ['invoice' => $invoice])
+        ->call('resendInvoice');
+
+    expect($invoice->fresh()->public_token)->toBeNull()
+        ->and($invoice->fresh()->sent_at)->toBeNull();
+});
+
+it('cannot resend a paid invoice', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $invoice = Invoice::factory()->paid()->create();
+
+    Livewire::actingAs($user)
+        ->test('invoices.show', ['invoice' => $invoice])
+        ->call('resendInvoice');
+
+    // Should not have generated a new token
+    expect($invoice->fresh()->public_token)->toBeNull();
+});
+
+it('cannot resend a void invoice', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $invoice = Invoice::factory()->void()->create();
+
+    Livewire::actingAs($user)
+        ->test('invoices.show', ['invoice' => $invoice])
+        ->call('resendInvoice');
+
+    expect($invoice->fresh()->public_token)->toBeNull();
 });
 
 it('can void invoice from show page', function () {

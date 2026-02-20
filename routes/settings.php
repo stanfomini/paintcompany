@@ -25,6 +25,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/roles', 'pages::settings.roles')
         ->middleware('permission:team.manage_roles')
         ->name('roles.edit');
+    Route::livewire('settings/roles/{roleName}', 'pages::settings.role-detail')
+        ->middleware('permission:team.manage_roles')
+        ->name('roles.detail');
 
     Route::livewire('settings/two-factor', 'pages::settings.two-factor')
         ->middleware(
@@ -68,4 +71,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/workflows/{workflow}/builder', 'pages::settings.workflow-builder')
         ->middleware('permission:settings.workflows')
         ->name('workflows.builder');
+
+    Route::livewire('settings/vendors', 'pages::settings.vendors')
+        ->middleware('permission:vendors.view')
+        ->name('vendors.edit');
 });

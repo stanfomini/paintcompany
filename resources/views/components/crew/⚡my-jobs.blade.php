@@ -34,7 +34,12 @@ new #[Layout('components.layouts.crew')] class extends Component {
 ?>
 
 <div>
-    <flux:heading size="xl" class="mb-6">{{ __('My Jobs') }}</flux:heading>
+    <div class="flex items-center gap-3 mb-6">
+        <flux:button variant="ghost" :href="route('crew.dashboard')" icon="arrow-left" class="shrink-0">
+            <span class="hidden sm:inline">{{ __('Back') }}</span>
+        </flux:button>
+        <flux:heading size="xl" class="truncate">{{ __('My Jobs') }}</flux:heading>
+    </div>
 
     {{-- Active Jobs --}}
     <div class="mb-8">
@@ -44,8 +49,8 @@ new #[Layout('components.layouts.crew')] class extends Component {
                 @foreach ($this->activeJobs as $job)
                     <a href="{{ route('crew.jobs.show', $job) }}" class="block" wire:key="my-job-{{ $job->id }}">
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 hover:shadow-md transition-shadow">
-                            <div class="flex items-center justify-between mb-2">
-                                <flux:heading size="sm">{{ $job->title }}</flux:heading>
+                            <div class="flex items-center justify-between gap-2 mb-2">
+                                <flux:heading size="sm" class="truncate min-w-0">{{ $job->title }}</flux:heading>
                                 @php
                                     $color = match ($job->stage) {
                                         'estimate_accepted' => 'blue',
@@ -55,7 +60,7 @@ new #[Layout('components.layouts.crew')] class extends Component {
                                         default => 'zinc',
                                     };
                                 @endphp
-                                <flux:badge size="sm" color="{{ $color }}">{{ $job->stage_label }}</flux:badge>
+                                <flux:badge size="sm" color="{{ $color }}" class="shrink-0 whitespace-nowrap">{{ $job->stage_label }}</flux:badge>
                             </div>
                             <flux:text class="text-sm text-zinc-500">{{ $job->job_number }}</flux:text>
 
@@ -101,12 +106,12 @@ new #[Layout('components.layouts.crew')] class extends Component {
                 @foreach ($this->completedJobs as $job)
                     <a href="{{ route('crew.jobs.show', $job) }}" class="block" wire:key="completed-{{ $job->id }}">
                         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 hover:shadow-md transition-shadow opacity-75">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <flux:text class="font-medium">{{ $job->title }}</flux:text>
+                            <div class="flex items-center justify-between gap-2">
+                                <div class="min-w-0">
+                                    <flux:text class="font-medium truncate">{{ $job->title }}</flux:text>
                                     <flux:text class="text-sm text-zinc-500">{{ $job->job_number }}</flux:text>
                                 </div>
-                                <flux:badge size="sm" color="green">{{ __('Completed') }}</flux:badge>
+                                <flux:badge size="sm" color="green" class="shrink-0">{{ __('Completed') }}</flux:badge>
                             </div>
                         </div>
                     </a>

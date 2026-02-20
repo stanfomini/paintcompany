@@ -71,6 +71,7 @@
             });
         </script>
 
+        @livewire('shared.toast-container')
         @fluxScripts
     </body>
 </html>

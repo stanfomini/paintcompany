@@ -23,6 +23,14 @@ class ScheduledCron implements TriggerInterface
     }
 
     /**
+     * @return array<int, string>
+     */
+    public static function getAvailableDynamicPrefixes(): array
+    {
+        return ['workflow', 'datetime'];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function getConfigSchema(): array

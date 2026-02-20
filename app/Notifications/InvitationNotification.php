@@ -43,7 +43,7 @@ class InvitationNotification extends Notification implements ShouldQueue
         ];
 
         $typeLabel = $typeLabels[$this->invitation->invited_user_type] ?? __('user');
-        $appName = config('app.name', 'Apex Negotiations');
+        $appName = config('app.name');
         $inviterName = $this->invitation->inviter->name;
 
         return (new MailMessage)

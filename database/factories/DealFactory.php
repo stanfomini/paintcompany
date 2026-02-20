@@ -183,6 +183,16 @@ class DealFactory extends Factory
     }
 
     /**
+     * Set the lead generator.
+     */
+    public function withLeadGenerator(User $user): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'lead_generator_id' => $user->id,
+        ]);
+    }
+
+    /**
      * Create with high value.
      */
     public function highValue(): static

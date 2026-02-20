@@ -46,6 +46,10 @@ class JobPrepTask extends Model
         'completed_at',
         'completion_notes',
         'sort_order',
+        'added_by',
+        'removal_requested_by',
+        'removal_requested_at',
+        'removal_reason',
     ];
 
     protected function casts(): array
@@ -56,6 +60,7 @@ class JobPrepTask extends Model
             'estimated_hours' => 'float',
             'sort_order' => 'integer',
             'completed_at' => 'datetime',
+            'removal_requested_at' => 'datetime',
         ];
     }
 
@@ -147,5 +152,38 @@ class JobPrepTask extends Model
     public function serviceCategory(): BelongsTo
     {
         return $this->belongsTo(ServiceCategory::class);
+    }
+
+    public function addedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'added_by');
+    }
+
+    public function removalRequestedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'removal_requested_by');
+    }
+
+    public function hasRemovalRequest(): bool
+    {
+        return $this->removal_requested_by !== null;
+    }
+
+    public function requestRemoval(User $requester, ?string $reason = null): void
+    {
+        $this->update([
+            'removal_requested_by' => $requester->id,
+            'removal_requested_at' => now(),
+            'removal_reason' => $reason,
+        ]);
+    }
+
+    public function dismissRemovalRequest(): void
+    {
+        $this->update([
+            'removal_requested_by' => null,
+            'removal_requested_at' => null,
+            'removal_reason' => null,
+        ]);
     }
 }

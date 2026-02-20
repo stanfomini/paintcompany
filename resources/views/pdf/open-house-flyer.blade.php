@@ -224,7 +224,7 @@
 <body>
     <div class="container">
         <div class="header">
-            <div class="company-name">{{ __('Apex Negotiations') }}</div>
+            <div class="company-name">{{ config('app.name') }}</div>
             <div class="company-tagline">{{ __('Property Tax Savings Specialists') }}</div>
         </div>
 
@@ -277,7 +277,7 @@
         </div>
 
         <div class="footer">
-            <p>{{ __('Apex Negotiations - Helping homeowners save on property taxes') }}</p>
+            <p>{{ config('app.name') }} - {{ __('Helping homeowners save on property taxes') }}</p>
         </div>
     </div>
 </body>

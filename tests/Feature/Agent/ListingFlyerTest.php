@@ -169,7 +169,7 @@ describe('Listing Flyer PDF Content', function () {
         expect($view)->not->toContain('Date &amp; Time');
     });
 
-    it('contains Apex Negotiations branding', function () {
+    it('contains company branding', function () {
         $agent = User::factory()->agent()->create();
         $property = Property::factory()->agentListing()->forAgent($agent)->create();
 
@@ -180,7 +180,7 @@ describe('Listing Flyer PDF Content', function () {
             'signupUrl' => url("/open-house/{$property->id}"),
         ])->render();
 
-        expect($view)->toContain('Apex Negotiations');
+        expect($view)->toContain(config('app.name'));
         expect($view)->toContain('Property Tax Savings');
     });
 

@@ -58,4 +58,55 @@ class VendorFactory extends Factory
             'is_active' => false,
         ]);
     }
+
+    /**
+     * Vendor with full compliance (W9, insurance, workers comp, hold harmless).
+     */
+    public function compliant(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'w9_on_file' => true,
+            'hold_harmless' => true,
+            'certificate_of_insurance' => true,
+            'insurance_expiration' => now()->addYear(),
+            'additional_insured' => true,
+            'workers_comp' => true,
+            'workers_comp_expiration' => now()->addYear(),
+        ]);
+    }
+
+    /**
+     * Vendor with expired insurance.
+     */
+    public function expiredInsurance(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'certificate_of_insurance' => true,
+            'insurance_expiration' => now()->subMonth(),
+        ]);
+    }
+
+    /**
+     * Vendor with expired workers comp.
+     */
+    public function expiredWorkersComp(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'workers_comp' => true,
+            'workers_comp_expiration' => now()->subMonth(),
+        ]);
+    }
+
+    /**
+     * Vendor with full address.
+     */
+    public function withAddress(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'address_line_1' => fake()->streetAddress(),
+            'city' => fake()->city(),
+            'state' => fake()->stateAbbr(),
+            'zip' => fake()->postcode(),
+        ]);
+    }
 }

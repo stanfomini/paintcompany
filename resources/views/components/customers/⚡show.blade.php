@@ -671,68 +671,55 @@ new class extends Component
 <div>
     <div class="max-w-6xl mx-auto">
         {{-- Header --}}
-        <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center gap-4">
-                <flux:button variant="ghost" :href="route('customers.index')" icon="arrow-left" wire:navigate>
-                    {{ __('Back') }}
-                </flux:button>
-                <div>
-                    <div class="flex items-center gap-3">
-                        <flux:heading size="xl">{{ $customer->full_name }}</flux:heading>
-                        @if ($customer->status === 'active')
-                            <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
-                        @else
-                            <flux:badge size="sm" color="yellow">{{ __('Inactive') }}</flux:badge>
-                        @endif
-                    </div>
-                </div>
-            </div>
-            <div class="flex items-center gap-2">
-                @can('people.edit')
-                    @if (!$customer->hasPortalAccess())
-                        <flux:button size="sm" icon="envelope" wire:click="sendPortalInvite" wire:confirm="{{ __('Send portal invitation to') }} {{ $customer->email }}?">
-                            {{ __('Send Invite') }}
-                        </flux:button>
-                    @endif
-                    @livewire('customers.edit-modal', ['customerId' => $customer->id])
-                @endcan
-            </div>
+        <div class="flex items-center gap-2 sm:gap-3 mb-2 min-w-0">
+            <flux:button variant="ghost" :href="route('customers.index')" icon="arrow-left" wire:navigate class="shrink-0" size="sm">
+                <span class="hidden sm:inline">{{ __('Back') }}</span>
+            </flux:button>
+            <flux:heading size="xl" class="truncate min-w-0">{{ $customer->full_name }}</flux:heading>
+            @if ($customer->status === 'active')
+                <flux:badge size="sm" color="green" class="shrink-0">{{ __('Active') }}</flux:badge>
+            @else
+                <flux:badge size="sm" color="yellow" class="shrink-0">{{ __('Inactive') }}</flux:badge>
+            @endif
         </div>
 
         {{-- Customer Meta Bar --}}
-        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400 mb-4 pl-14">
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400 mb-3 sm:pl-12">
             @if ($this->activeDeal?->lead_source)
-                <span>{{ __('Lead Source:') }} <strong class="text-zinc-700 dark:text-zinc-300">{{ Deal::LEAD_SOURCES[$this->activeDeal->lead_source] ?? $this->activeDeal->lead_source }}</strong></span>
+                <span>{{ Deal::LEAD_SOURCES[$this->activeDeal->lead_source] ?? $this->activeDeal->lead_source }}</span>
             @elseif ($this->sourceLabel)
-                <span>{{ __('Source:') }} <strong class="text-zinc-700 dark:text-zinc-300">{{ $this->sourceLabel }}</strong></span>
+                <span>{{ $this->sourceLabel }}</span>
             @endif
             @if ($this->estimatePreferenceLabel)
-                <flux:badge size="sm" color="purple">{{ $this->estimatePreferenceLabel }} {{ __('Estimate') }}</flux:badge>
+                <span class="text-zinc-300 dark:text-zinc-600">&middot;</span>
+                <flux:badge size="sm" color="purple">{{ $this->estimatePreferenceLabel }} {{ __('Est') }}</flux:badge>
             @endif
-            <span>{{ __('Customer since') }} <strong class="text-zinc-700 dark:text-zinc-300">{{ $customer->created_at->format('M j, Y') }}</strong></span>
+            <span class="text-zinc-300 dark:text-zinc-600">&middot;</span>
+            <span>{{ __('Since') }} {{ $customer->created_at->format('M j, Y') }}</span>
             @if ($customer->hasPortalAccess())
-                <flux:badge size="sm" color="green">{{ __('Portal Enabled') }}</flux:badge>
+                <span class="text-zinc-300 dark:text-zinc-600">&middot;</span>
+                <flux:badge size="sm" color="green">{{ __('Portal') }}</flux:badge>
             @endif
         </div>
 
         {{-- Contact & Quick Actions Bar --}}
-        <div class="flex flex-wrap items-center justify-between gap-3 mb-6 pl-14">
-            {{-- Contact Buttons --}}
-            <div class="flex items-center gap-2">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-6 sm:pl-12">
+            {{-- Contact Buttons: icon-only on mobile --}}
+            <div class="flex items-center gap-1.5 sm:gap-2">
                 @if ($customer->phone)
                     <flux:button size="sm" icon="phone" :href="'tel:' . $customer->phone">
-                        {{ $customer->phone }}
+                        <span class="hidden sm:inline">{{ $customer->phone }}</span>
                     </flux:button>
                 @endif
                 @if ($customer->email)
                     <flux:button size="sm" icon="envelope" :href="'mailto:' . $customer->email" variant="ghost">
-                        {{ $customer->email }}
+                        <span class="hidden sm:inline">{{ $customer->email }}</span>
                     </flux:button>
                 @endif
                 @if ($this->customerThreads->isNotEmpty())
                     @php $totalUnread = $this->customerThreads->sum('unread_count'); @endphp
                     <flux:button size="sm" icon="chat-bubble-left-right" :href="route('chat.show', $this->customerThreads->first())" variant="ghost" wire:navigate>
-                        {{ __('Messages') }}
+                        <span class="hidden sm:inline">{{ __('Messages') }}</span>
                         @if ($totalUnread > 0)
                             <flux:badge size="sm" color="blue" class="ml-1">{{ $totalUnread }}</flux:badge>
                         @endif
@@ -741,23 +728,67 @@ new class extends Component
             </div>
 
             {{-- Quick Actions --}}
-            <div class="flex items-center gap-2">
-                @can('people.create')
-                    <flux:button size="sm" variant="ghost" icon="plus" wire:click="openAddDeal">
-                        {{ __('New Deal') }}
-                    </flux:button>
-                    <flux:button size="sm" variant="ghost" icon="home" wire:click="openAddProperty">
-                        {{ __('Add Property') }}
-                    </flux:button>
-                @endcan
+            <div class="flex items-center gap-1.5 sm:gap-2">
+                {{-- Edit: always visible (icon-only on mobile via component) --}}
                 @can('people.edit')
-                    <flux:button size="sm" variant="ghost" icon="check-circle" wire:click="openAddActivity">
-                        {{ __('Add Activity') }}
-                    </flux:button>
-                    <flux:button size="sm" variant="ghost" wire:click="toggleStatus" wire:confirm="{{ __('Change customer status to') }} {{ $customer->status === 'active' ? __('inactive') : __('active') }}?">
-                        {{ $customer->status === 'active' ? __('Deactivate') : __('Reactivate') }}
+                    @livewire('customers.edit-modal', ['customerId' => $customer->id])
+                @endcan
+
+                {{-- Primary CTA: always visible --}}
+                @can('people.create')
+                    <flux:button size="sm" variant="primary" icon="plus" wire:click="openAddDeal">
+                        <span class="hidden sm:inline">{{ __('New Deal') }}</span>
                     </flux:button>
                 @endcan
+
+                {{-- Secondary actions: visible on lg+, hidden on smaller --}}
+                <div class="hidden lg:flex items-center gap-2">
+                    @can('people.create')
+                        <flux:button size="sm" variant="ghost" icon="home" wire:click="openAddProperty">
+                            {{ __('Add Property') }}
+                        </flux:button>
+                    @endcan
+                    @can('people.edit')
+                        <flux:button size="sm" variant="ghost" icon="check-circle" wire:click="openAddActivity">
+                            {{ __('Add Activity') }}
+                        </flux:button>
+                        @if (!$customer->hasPortalAccess())
+                            <flux:button size="sm" variant="ghost" icon="envelope" wire:click="sendPortalInvite" wire:confirm="{{ __('Send portal invitation to') }} {{ $customer->email }}?">
+                                {{ __('Send Invite') }}
+                            </flux:button>
+                        @endif
+                        <flux:button size="sm" variant="ghost" wire:click="toggleStatus" wire:confirm="{{ __('Change customer status to') }} {{ $customer->status === 'active' ? __('inactive') : __('active') }}?">
+                            {{ $customer->status === 'active' ? __('Deactivate') : __('Reactivate') }}
+                        </flux:button>
+                    @endcan
+                </div>
+
+                {{-- Overflow menu for smaller screens --}}
+                <div class="lg:hidden">
+                    <flux:dropdown>
+                        <flux:button icon="ellipsis-vertical" variant="ghost" size="sm" />
+                        <flux:menu>
+                            @can('people.create')
+                                <flux:menu.item icon="home" wire:click="openAddProperty">
+                                    {{ __('Add Property') }}
+                                </flux:menu.item>
+                            @endcan
+                            @can('people.edit')
+                                <flux:menu.item icon="check-circle" wire:click="openAddActivity">
+                                    {{ __('Add Activity') }}
+                                </flux:menu.item>
+                                @if (!$customer->hasPortalAccess())
+                                    <flux:menu.item icon="envelope" wire:click="sendPortalInvite" wire:confirm="{{ __('Send portal invitation to') }} {{ $customer->email }}?">
+                                        {{ __('Send Invite') }}
+                                    </flux:menu.item>
+                                @endif
+                                <flux:menu.item wire:click="toggleStatus" wire:confirm="{{ __('Change customer status to') }} {{ $customer->status === 'active' ? __('inactive') : __('active') }}?">
+                                    {{ $customer->status === 'active' ? __('Deactivate') : __('Reactivate') }}
+                                </flux:menu.item>
+                            @endcan
+                        </flux:menu>
+                    </flux:dropdown>
+                </div>
             </div>
         </div>
 
@@ -805,40 +836,42 @@ new class extends Component
 
             {{-- Active Deal Banner --}}
             @if ($this->activeDeal)
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-5 mb-6 bg-white dark:bg-zinc-900">
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-5 mb-6 bg-white dark:bg-zinc-900">
                     <div class="flex items-start justify-between mb-3">
                         <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-3 mb-1">
+                            <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-3 mb-1">
                                 <flux:heading size="lg">{{ $this->activeDeal->title }}</flux:heading>
-                                @can('deals.edit')
-                                    <flux:select
-                                        wire:change="changeActiveDealStage($event.target.value)"
-                                        class="!w-auto !text-sm"
-                                    >
-                                        @foreach (Deal::STAGES as $stageKey => $stageLabel)
-                                            <option value="{{ $stageKey }}" @selected($this->activeDeal->stage === $stageKey)>{{ $stageLabel }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                @else
-                                    <flux:badge :color="$this->stageColors[$this->activeDeal->stage] ?? 'zinc'">
-                                        {{ $this->activeDeal->stage_label }}
-                                    </flux:badge>
-                                @endcan
-                                @can('people.edit')
-                                    <flux:select
-                                        wire:change="updateAssignment($event.target.value)"
-                                        class="!w-auto !text-sm"
-                                    >
-                                        <option value="">{{ __('Unassigned') }}</option>
-                                        @foreach ($this->internalUsers as $member)
-                                            <option value="{{ $member->id }}" @selected($customer->assigned_to === $member->id)>{{ $member->name }}</option>
-                                        @endforeach
-                                    </flux:select>
-                                @else
-                                    @if ($customer->assignedTo)
-                                        <flux:text class="text-sm text-zinc-500">{{ $customer->assignedTo->name }}</flux:text>
-                                    @endif
-                                @endcan
+                                <div class="flex flex-wrap items-center gap-2">
+                                    @can('deals.edit')
+                                        <flux:select
+                                            wire:change="changeActiveDealStage($event.target.value)"
+                                            class="!w-auto !text-sm"
+                                        >
+                                            @foreach (Deal::STAGES as $stageKey => $stageLabel)
+                                                <option value="{{ $stageKey }}" @selected($this->activeDeal->stage === $stageKey)>{{ $stageLabel }}</option>
+                                            @endforeach
+                                        </flux:select>
+                                    @else
+                                        <flux:badge :color="$this->stageColors[$this->activeDeal->stage] ?? 'zinc'">
+                                            {{ $this->activeDeal->stage_label }}
+                                        </flux:badge>
+                                    @endcan
+                                    @can('people.edit')
+                                        <flux:select
+                                            wire:change="updateAssignment($event.target.value)"
+                                            class="!w-auto !text-sm"
+                                        >
+                                            <option value="">{{ __('Unassigned') }}</option>
+                                            @foreach ($this->internalUsers as $member)
+                                                <option value="{{ $member->id }}" @selected($customer->assigned_to === $member->id)>{{ $member->name }}</option>
+                                            @endforeach
+                                        </flux:select>
+                                    @else
+                                        @if ($customer->assignedTo)
+                                            <flux:text class="text-sm text-zinc-500">{{ $customer->assignedTo->name }}</flux:text>
+                                        @endif
+                                    @endcan
+                                </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400">
                                 @if ($this->activeDeal->lead_source)
@@ -861,7 +894,7 @@ new class extends Component
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         @can('estimates.create')
-                            <flux:button :href="route('estimates.create', $this->activeDeal)" size="sm" icon="document-text" wire:navigate>
+                            <flux:button :href="route('estimates.create', $this->activeDeal)" size="sm" variant="primary" icon="document-text" wire:navigate>
                                 {{ __('Create Estimate') }}
                             </flux:button>
                         @endcan

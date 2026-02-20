@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -45,6 +46,16 @@ class LeadSourceFactory extends Factory
     {
         return $this->state(fn () => [
             'is_active' => false,
+        ]);
+    }
+
+    public function forUser(User $user): static
+    {
+        return $this->state(fn () => [
+            'user_id' => $user->id,
+            'name' => $user->name.' (Door Knock)',
+            'slug' => 'user-'.$user->id,
+            'type' => 'employee',
         ]);
     }
 }

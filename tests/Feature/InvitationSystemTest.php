@@ -275,6 +275,45 @@ describe('InvitationService acceptance', function () {
         $customer->refresh();
         expect($customer->user_id)->toBeNull();
     });
+
+    it('sets needs_onboarding to true for crew invitations', function () {
+        $service = app(InvitationService::class);
+        $invitation = Invitation::factory()->forCrew()->create();
+
+        $user = $service->acceptInvitation($invitation, [
+            'name' => 'New Crew Member',
+            'password' => 'password123',
+        ]);
+
+        expect($user->type)->toBe('crew');
+        expect($user->needs_onboarding)->toBeTrue();
+    });
+
+    it('sets needs_onboarding to true for customer invitations', function () {
+        $service = app(InvitationService::class);
+        $invitation = Invitation::factory()->forCustomer()->create();
+
+        $user = $service->acceptInvitation($invitation, [
+            'name' => 'New Customer',
+            'password' => 'password123',
+        ]);
+
+        expect($user->type)->toBe('customer');
+        expect($user->needs_onboarding)->toBeTrue();
+    });
+
+    it('sets needs_onboarding to true for agent invitations', function () {
+        $service = app(InvitationService::class);
+        $invitation = Invitation::factory()->forAgent()->create();
+
+        $user = $service->acceptInvitation($invitation, [
+            'name' => 'New Agent',
+            'password' => 'password123',
+        ]);
+
+        expect($user->type)->toBe('agent');
+        expect($user->needs_onboarding)->toBeTrue();
+    });
 });
 
 describe('InvitationService URL generation', function () {

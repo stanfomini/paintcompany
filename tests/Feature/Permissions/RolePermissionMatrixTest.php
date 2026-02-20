@@ -2,64 +2,20 @@
 
 use App\Models\User;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
-use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     (new \Database\Seeders\RolesAndPermissionsSeeder)->run();
     $this->user = User::factory()->internal()->withFullAccess()->create();
 });
 
-it('renders the permission matrix tab', function () {
+it('renders the roles card grid', function () {
     Livewire::actingAs($this->user)
         ->test('pages::settings.roles')
-        ->set('activeTab', 'matrix')
-        ->assertSee('Permission Matrix')
-        ->assertSee('Toggle permissions for each role');
-});
-
-it('toggles a permission on for a role', function () {
-    $adminRole = Role::findByName('admin', 'web');
-    $adminRole->revokePermissionTo('estimates.delete');
-    app(PermissionRegistrar::class)->forgetCachedPermissions();
-
-    expect($adminRole->fresh()->hasPermissionTo('estimates.delete'))->toBeFalse();
-
-    Livewire::actingAs($this->user)
-        ->test('pages::settings.roles')
-        ->call('togglePermission', 'admin', 'estimates.delete');
-
-    app(PermissionRegistrar::class)->forgetCachedPermissions();
-
-    expect(Role::findByName('admin', 'web')->hasPermissionTo('estimates.delete'))->toBeTrue();
-});
-
-it('toggles a permission off for a role', function () {
-    $adminRole = Role::findByName('admin', 'web');
-
-    expect($adminRole->hasPermissionTo('people.view'))->toBeTrue();
-
-    Livewire::actingAs($this->user)
-        ->test('pages::settings.roles')
-        ->call('togglePermission', 'admin', 'people.view');
-
-    app(PermissionRegistrar::class)->forgetCachedPermissions();
-
-    expect(Role::findByName('admin', 'web')->hasPermissionTo('people.view'))->toBeFalse();
-});
-
-it('protects owner role from permission toggling', function () {
-    Livewire::actingAs($this->user)
-        ->test('pages::settings.roles')
-        ->call('togglePermission', 'owner', 'people.view');
-
-    app(PermissionRegistrar::class)->forgetCachedPermissions();
-
-    $ownerRole = Role::findByName('owner', 'web');
-
-    expect($ownerRole->hasPermissionTo('people.view'))->toBeTrue();
-    expect($ownerRole->permissions->count())->toBe(Permission::count());
+        ->assertSee('Roles')
+        ->assertSee('Owner')
+        ->assertSee('Admin')
+        ->assertSee('Manager');
 });
 
 it('creates a custom role', function () {
@@ -105,7 +61,6 @@ it('prevents deleting default roles', function (string $roleName) {
     'admin',
     'manager',
     'estimator',
-    'crew_lead',
 ]);
 
 it('validates custom role name is required', function () {

@@ -420,6 +420,7 @@ class ChatService
     {
         return ChatThread::query()
             ->forUser($user)
+            ->visibleTo($user)
             ->active()
             ->with(['latestMessage.user', 'deal', 'activeParticipants.user'])
             ->latestActivity()
@@ -439,6 +440,7 @@ class ChatService
     {
         return ChatThread::query()
             ->forUser($user)
+            ->visibleTo($user)
             ->active()
             ->get()
             ->sum(fn (ChatThread $thread) => $thread->getUnreadCountFor($user));

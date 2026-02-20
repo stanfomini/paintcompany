@@ -223,3 +223,20 @@ Broadcast::channel('estimate.{estimateId}', function (User $user, int $estimateI
 
     return false;
 }, ['guards' => ['web', 'agent', 'customer']]);
+
+/**
+ * Personal dispatch channel - user receives territory offers.
+ * Only the user themselves can listen (internal users only).
+ */
+Broadcast::channel('territory-dispatch.user.{userId}', function (User $user, int $userId) {
+    return $user->id === $userId && $user->isInternal();
+}, ['guards' => ['web']]);
+
+/**
+ * Offer-specific channel - all eligible users listen for claim/expire.
+ */
+Broadcast::channel('territory-dispatch.offer.{offerId}', function (User $user, int $offerId) {
+    return $user->isInternal() && \App\Models\TerritoryOffer::where('id', $offerId)
+        ->whereHas('eligibleUsers', fn ($q) => $q->where('user_id', $user->id))
+        ->exists();
+}, ['guards' => ['web']]);

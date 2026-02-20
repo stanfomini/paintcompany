@@ -16,6 +16,7 @@ class EstimateAreaSurface extends Model
         'production_rate_id',
         'name',
         'surface_type',
+        'surface_category',
         'description',
         'quantity',
         'unit',

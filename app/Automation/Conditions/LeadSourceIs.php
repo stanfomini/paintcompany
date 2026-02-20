@@ -4,6 +4,7 @@ namespace App\Automation\Conditions;
 
 use App\Automation\Contracts\ConditionInterface;
 use App\Models\Deal;
+use App\Models\LeadSource;
 use App\Models\WorkflowRun;
 
 class LeadSourceIs implements ConditionInterface
@@ -31,9 +32,10 @@ class LeadSourceIs implements ConditionInterface
         return [
             'lead_source_slugs' => [
                 'type' => 'string',
-                'label' => 'Lead Source Slugs',
-                'description' => 'Comma-separated list of lead source slugs to match (e.g., facebook,google_ads).',
+                'label' => 'Lead Source',
+                'description' => 'The lead source to match against the deal.',
                 'required' => true,
+                'options' => LeadSource::where('is_active', true)->pluck('name', 'slug')->toArray(),
             ],
         ];
     }

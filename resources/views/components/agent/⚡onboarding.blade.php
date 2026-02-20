@@ -156,7 +156,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Welcome'])] class extends 
 
 <div class="max-w-2xl mx-auto py-8 px-4">
     <div class="text-center mb-8">
-        <flux:heading size="xl" class="mb-2">{{ __('Welcome to Apex Negotiations') }}</flux:heading>
+        <flux:heading size="xl" class="mb-2">{{ __('Welcome to') }} {{ config('app.name') }}</flux:heading>
         <flux:text class="text-zinc-500">{{ __('Let\'s get your agent account set up in just a few steps.') }}</flux:text>
     </div>
 
@@ -275,7 +275,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Welcome'])] class extends 
         {{-- Step 3: How It Works --}}
         @if ($step === 3)
             <flux:heading size="lg" class="mb-1">{{ __('How It Works') }}</flux:heading>
-            <flux:text size="sm" class="text-zinc-500 mb-6">{{ __('Here\'s how Apex Negotiations helps you close more deals.') }}</flux:text>
+            <flux:text size="sm" class="text-zinc-500 mb-6">{{ __('Here\'s how :app helps you close more deals.', ['app' => config('app.name')]) }}</flux:text>
 
             <div class="space-y-4">
                 <div class="flex items-start gap-4 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-800/50">

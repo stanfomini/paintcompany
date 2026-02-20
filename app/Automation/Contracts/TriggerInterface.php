@@ -20,6 +20,13 @@ interface TriggerInterface
     public static function getConfigSchema(): array;
 
     /**
+     * The dynamic value prefixes this trigger makes available.
+     *
+     * @return array<int, string>
+     */
+    public static function getAvailableDynamicPrefixes(): array;
+
+    /**
      * Determine if this trigger matches the given event and context.
      *
      * @param  array<string, mixed>  $context

@@ -49,6 +49,8 @@ class FieldValue implements ConditionInterface
                     '<=' => 'Less Than or Equal',
                     'contains' => 'Contains',
                     'starts_with' => 'Starts With',
+                    'is_empty' => 'Is Empty',
+                    'is_not_empty' => 'Is Not Empty',
                 ],
             ],
             'value' => [
@@ -90,6 +92,8 @@ class FieldValue implements ConditionInterface
             '<=' => $fieldValue <= $value,
             'contains' => is_string($fieldValue) && Str::contains($fieldValue, (string) $value),
             'starts_with' => is_string($fieldValue) && Str::startsWith($fieldValue, (string) $value),
+            'is_empty' => $fieldValue === null || $fieldValue === '',
+            'is_not_empty' => $fieldValue !== null && $fieldValue !== '',
             default => false,
         };
     }

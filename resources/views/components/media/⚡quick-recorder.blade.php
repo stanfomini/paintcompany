@@ -13,6 +13,8 @@ new class extends Component {
 
     public function addToChannel(int $channelId): void
     {
+        abort_unless(auth()->user()?->can('media.manage_channels'), 403);
+
         if (! $this->lastRecordingId) {
             return;
         }
@@ -46,6 +48,7 @@ new class extends Component {
         $this->showPostActions = false;
         $this->lastRecordingId = null;
         $this->lastShareToken = null;
+        $this->dispatch('restore-body-scroll');
     }
 
     #[Computed]
@@ -62,6 +65,11 @@ new class extends Component {
 
 <div
     x-data="quickRecorder({ csrfToken: @js(csrf_token()) })"
+    x-on:restore-body-scroll.window="
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.width = '';
+    "
 >
     {{-- Record button (sits next to notification bell in shared bottom bar) --}}
     <button
@@ -260,21 +268,23 @@ new class extends Component {
                     </button>
                     <p class="text-xs text-zinc-400 dark:text-zinc-500 px-1">{{ $shareUrl }}</p>
 
-                    {{-- Add to channel --}}
-                    @if($this->channels->isNotEmpty())
-                        <div class="border border-zinc-200 dark:border-zinc-600 rounded-lg">
-                            <p class="px-4 py-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{{ __('Add to Channel') }}</p>
-                            @foreach($this->channels as $channel)
-                                <button
-                                    wire:click="addToChannel({{ $channel->id }})"
-                                    class="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors border-t border-zinc-100 dark:border-zinc-700"
-                                >
-                                    <flux:icon name="plus" class="size-4 text-zinc-400" />
-                                    <span class="text-zinc-700 dark:text-zinc-300">{{ $channel->name }}</span>
-                                </button>
-                            @endforeach
-                        </div>
-                    @endif
+                    {{-- Add to channel (only for users who can manage channels) --}}
+                    @can('media.manage_channels')
+                        @if($this->channels->isNotEmpty())
+                            <div class="border border-zinc-200 dark:border-zinc-600 rounded-lg">
+                                <p class="px-4 py-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">{{ __('Add to Channel') }}</p>
+                                @foreach($this->channels as $channel)
+                                    <button
+                                        wire:click="addToChannel({{ $channel->id }})"
+                                        class="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors border-t border-zinc-100 dark:border-zinc-700"
+                                    >
+                                        <flux:icon name="plus" class="size-4 text-zinc-400" />
+                                        <span class="text-zinc-700 dark:text-zinc-300">{{ $channel->name }}</span>
+                                    </button>
+                                @endforeach
+                            </div>
+                        @endif
+                    @endcan
 
                     {{-- Done --}}
                     <button
@@ -644,6 +654,9 @@ Alpine.data('quickRecorder', (config) => ({
 
             setTimeout(async () => {
                 this.stage = 'idle';
+                document.body.style.overflow = '';
+                document.body.style.position = '';
+                document.body.style.width = '';
                 await this.exitFullscreen();
             }, 1500);
         } catch (e) {
@@ -702,6 +715,9 @@ Alpine.data('quickRecorder', (config) => ({
 
             setTimeout(async () => {
                 this.stage = 'idle';
+                document.body.style.overflow = '';
+                document.body.style.position = '';
+                document.body.style.width = '';
                 await this.exitFullscreen();
             }, 1500);
         } catch (e) {

@@ -28,7 +28,7 @@ class CrewJobDispatched extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $appName = config('app.name', 'Apex Negotiations');
+        $appName = config('app.name');
         $categoryLabel = $this->serviceCategory ? $this->serviceCategory->name : 'General';
 
         $message = (new MailMessage)

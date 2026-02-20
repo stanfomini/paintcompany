@@ -3,7 +3,7 @@
     <head>
         @include('partials.head')
     </head>
-    <body class="min-h-screen bg-white dark:bg-zinc-800">
+    <body class="min-h-screen bg-white dark:bg-zinc-800 overflow-x-hidden">
         <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:sidebar.header>
                 <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
@@ -74,6 +74,36 @@
                         </flux:sidebar.item>
                     @endcan
                 </flux:sidebar.group>
+
+                @canany(['sales_territories.view', 'door_knocks.record', 'territory_dispatch.claim'])
+                    <flux:sidebar.group :heading="__('Sales')" class="grid">
+                        @can('territory_dispatch.claim')
+                            <flux:sidebar.item icon="signal" :href="route('territory-queue')" :current="request()->routeIs('territory-queue')" wire:navigate>
+                                {{ __('Territory Queue') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('door_knocks.record')
+                            <flux:sidebar.item icon="map-pin" :href="route('door-knocks.index')" :current="request()->routeIs('door-knocks.*')" wire:navigate>
+                                {{ __('Door Knocks') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('sales_territories.manage')
+                            <flux:sidebar.item icon="map" :href="route('territories.index')" :current="request()->routeIs('territories.*')" wire:navigate>
+                                {{ __('Territories') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('sales_territories.view')
+                            <flux:sidebar.item icon="chart-bar-square" :href="route('territory-dashboard')" :current="request()->routeIs('territory-dashboard')" wire:navigate>
+                                {{ __('Sales Dashboard') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('sales_territories.view')
+                            <flux:sidebar.item icon="presentation-chart-line" :href="route('territory-analytics')" :current="request()->routeIs('territory-analytics')" wire:navigate>
+                                {{ __('Territory Analytics') }}
+                            </flux:sidebar.item>
+                        @endcan
+                    </flux:sidebar.group>
+                @endcanany
 
                 <flux:sidebar.group :heading="__('Team')" class="grid">
                     @can('employees.view')
@@ -160,14 +190,41 @@
                     </flux:sidebar.group>
                 @endif
 
+                @canany(['ar.view', 'invoices.view'])
+                    <flux:sidebar.group :heading="__('Accounting')" class="grid">
+                        @can('ar.view')
+                            <flux:sidebar.item icon="banknotes" :href="route('ar.index')" :current="request()->routeIs('ar.*')" wire:navigate>
+                                {{ __('AR Portal') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('invoices.view')
+                            <flux:sidebar.item icon="document-text" :href="route('invoices.index')" :current="request()->routeIs('invoices.*')" wire:navigate>
+                                {{ __('Invoices') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('ar.view')
+                            <flux:sidebar.item icon="credit-card" :href="route('payments.index')" :current="request()->routeIs('payments.*')" wire:navigate>
+                                {{ __('Payments') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('vendors.view')
+                            <flux:sidebar.item icon="building-storefront" :href="route('vendors.edit')" :current="request()->routeIs('vendors.*')" wire:navigate>
+                                {{ __('Vendors') }}
+                            </flux:sidebar.item>
+                        @endcan
+                    </flux:sidebar.group>
+                @endcanany
+
                 @can('settings.company')
                     <flux:sidebar.group :heading="__('Settings')" class="grid">
-                        <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
-                            {{ __('Company') }}
-                        </flux:sidebar.item>
-                        <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio')">
-                            {{ __('Studio') }}
-                        </flux:sidebar.item>
+                        @can('settings.company')
+                            <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
+                                {{ __('Company') }}
+                            </flux:sidebar.item>
+                            <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio')">
+                                {{ __('Studio') }}
+                            </flux:sidebar.item>
+                        @endcan
                     </flux:sidebar.group>
                 @endcan
             </flux:sidebar.nav>
@@ -255,8 +312,8 @@
         @auth
             @if (auth()->user()->isInternal())
                 {{-- Floating bottom-left button bar (bell + record) --}}
-                <div class="fixed bottom-4 inset-x-0 z-50 pointer-events-none lg:pl-64">
-                    <div class="pl-4 flex items-end gap-2">
+                <div class="fixed bottom-4 left-4 z-10 lg:z-50 lg:left-auto lg:inset-x-0 pointer-events-none lg:pl-64">
+                    <div class="lg:pl-4 flex items-end gap-2">
                         @livewire('notifications.notification-center')
                         @can('media.record')
                             @livewire('media.quick-recorder')
@@ -285,6 +342,7 @@
             });
         </script>
 
+        @livewire('shared.toast-container')
         @fluxScripts
     </body>
 </html>

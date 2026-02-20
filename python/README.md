@@ -1,6 +1,6 @@
 # Apex Python Service
 
-FastAPI-based ML and processing service for Apex Negotiations CRM.
+FastAPI-based ML and processing service for Painting Made Easy Denver CRM.
 
 ## Features
 

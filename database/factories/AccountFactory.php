@@ -96,6 +96,18 @@ class AccountFactory extends Factory
     }
 
     /**
+     * Bank account.
+     */
+    public function bankAccount(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => Account::TYPE_ASSET,
+            'normal_balance' => Account::NORMAL_DEBIT,
+            'is_bank_account' => true,
+        ]);
+    }
+
+    /**
      * Inactive account.
      */
     public function inactive(): static

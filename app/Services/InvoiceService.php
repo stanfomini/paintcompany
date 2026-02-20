@@ -113,6 +113,21 @@ class InvoiceService
     }
 
     /**
+     * Resend an already-sent invoice to the customer.
+     * Refreshes the public token and re-sends the notification email.
+     */
+    public function resendInvoice(Invoice $invoice): void
+    {
+        $invoice->generatePublicToken(30);
+        $invoice->update(['sent_at' => now()]);
+
+        $customer = $invoice->customer;
+        if ($customer) {
+            $customer->notify(new InvoiceSent($invoice));
+        }
+    }
+
+    /**
      * Generate a unique invoice number.
      */
     public function generateInvoiceNumber(): string

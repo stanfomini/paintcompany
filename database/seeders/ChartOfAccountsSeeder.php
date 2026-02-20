@@ -17,9 +17,9 @@ class ChartOfAccountsSeeder extends Seeder
 
         $accounts = [
             // === ASSETS (1000s) ===
-            ['code' => '1000', 'name' => 'Cash & Bank', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 10],
-            ['code' => '1010', 'name' => 'Business Checking', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 11, 'parent_code' => '1000'],
-            ['code' => '1020', 'name' => 'Business Savings', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 12, 'parent_code' => '1000'],
+            ['code' => '1000', 'name' => 'Cash & Bank', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 10, 'is_bank_account' => true],
+            ['code' => '1010', 'name' => 'Business Checking', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 11, 'parent_code' => '1000', 'is_bank_account' => true],
+            ['code' => '1020', 'name' => 'Business Savings', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 12, 'parent_code' => '1000', 'is_bank_account' => true],
             ['code' => '1100', 'name' => 'Accounts Receivable', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 20],
             ['code' => '1200', 'name' => 'Undeposited Funds', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 25],
             ['code' => '1300', 'name' => 'Inventory - Paint & Materials', 'type' => 'asset', 'normal_balance' => 'debit', 'sort_order' => 30],
@@ -130,5 +130,14 @@ class ChartOfAccountsSeeder extends Seeder
                     ->update(['parent_id' => $accountMap[$data['parent_code']]['id']]);
             }
         }
+
+        // Third pass: update is_bank_account for existing accounts
+        $bankAccountCodes = collect($accounts)
+            ->filter(fn (array $a) => ($a['is_bank_account'] ?? false) === true)
+            ->pluck('code');
+
+        Account::where('company_setting_id', $settings->id)
+            ->whereIn('code', $bankAccountCodes)
+            ->update(['is_bank_account' => true]);
     }
 }

@@ -189,7 +189,7 @@ class InvitationService
             'name' => $userData['name'],
             'email' => $invitation->email,
             'password' => bcrypt($userData['password']),
-            'needs_onboarding' => in_array($invitation->invited_user_type, ['customer', 'agent'], true),
+            'needs_onboarding' => in_array($invitation->invited_user_type, ['customer', 'agent', 'crew'], true),
         ]);
         $user->type = $invitation->invited_user_type;
         $user->is_active = true;

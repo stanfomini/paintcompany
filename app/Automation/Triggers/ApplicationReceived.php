@@ -23,6 +23,14 @@ class ApplicationReceived implements TriggerInterface
     }
 
     /**
+     * @return array<int, string>
+     */
+    public static function getAvailableDynamicPrefixes(): array
+    {
+        return ['contact', 'workflow', 'datetime'];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function getConfigSchema(): array

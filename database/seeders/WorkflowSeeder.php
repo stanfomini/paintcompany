@@ -2,9 +2,12 @@
 
 namespace Database\Seeders;
 
+use App\Models\ServiceCategory;
 use App\Models\Workflow;
+use App\Models\WorkflowAction;
 use App\Models\WorkflowEdge;
 use App\Models\WorkflowNode;
+use App\Models\WorkflowTrigger;
 use Illuminate\Database\Seeder;
 
 class WorkflowSeeder extends Seeder
@@ -15,6 +18,10 @@ class WorkflowSeeder extends Seeder
         $this->createEstimateSentFollowUp();
         $this->createStaleDealAlert();
         $this->createJobCompletionFollowUp();
+        $this->createDoorKnockCustomerPipeline();
+
+        // Phase 4a engine-based workflows (trigger/action model)
+        $this->seedEngineWorkflows();
     }
 
     /**
@@ -648,6 +655,400 @@ class WorkflowSeeder extends Seeder
             'from_node_id' => $wait30d->id,
             'to_node_id' => $referral->id,
             'sort_order' => 0,
+        ]);
+    }
+
+    /**
+     * Workflow 5: Door Knock → Customer Pipeline
+     *
+     * [Trigger: DoorKnockRecorded]
+     *   → [Action: CreateCustomer]        from {{doorknock.*}} values
+     *   → [Action: CreateProperty]        from {{doorknock.*}} address fields
+     *   → [Action: CreateDeal]            title="Door Knock - {{doorknock.address}}"
+     *   → [Action: CreateEstimate]        blank draft estimate
+     *   → [IF/ELSE: Has Email?]
+     *       Yes → [Action: InviteToPortal]
+     *       No  → [End]
+     */
+    protected function createDoorKnockCustomerPipeline(): void
+    {
+        $workflow = Workflow::create([
+            'name' => 'Door Knock → Customer Pipeline',
+            'description' => 'Automatically converts door knocks with contact info into full CRM records: customer, property, deal, and estimate. Sends portal invitation if email is available.',
+            'is_active' => true,
+            'is_system' => true,
+            'version' => 1,
+            'published_at' => now(),
+        ]);
+
+        // Trigger
+        $trigger = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'trigger',
+            'node_class' => \App\Automation\Triggers\DoorKnockRecorded::class,
+            'config' => [],
+            'label' => 'Door Knock Recorded',
+            'position_x' => 400,
+            'position_y' => 50,
+        ]);
+
+        // Action: Create Customer
+        $createCustomer = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'action',
+            'node_class' => \App\Automation\Actions\CreateCustomer::class,
+            'config' => [
+                'first_name' => '{{doorknock.first_name}}',
+                'last_name' => '{{doorknock.last_name}}',
+                'email' => '{{doorknock.email}}',
+                'phone' => '{{doorknock.phone}}',
+                'address' => '{{doorknock.address}}',
+                'city' => '{{doorknock.city}}',
+                'state' => '{{doorknock.state}}',
+                'zip' => '{{doorknock.zip}}',
+                'source' => 'door_knock',
+                'deduplicate_by_email' => true,
+            ],
+            'label' => 'Create Customer',
+            'position_x' => 400,
+            'position_y' => 150,
+        ]);
+
+        // Action: Create Property
+        $createProperty = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'action',
+            'node_class' => \App\Automation\Actions\CreateProperty::class,
+            'config' => [
+                'address' => '{{doorknock.address}}',
+                'city' => '{{doorknock.city}}',
+                'state' => '{{doorknock.state}}',
+                'zip' => '{{doorknock.zip}}',
+            ],
+            'label' => 'Create Property',
+            'position_x' => 400,
+            'position_y' => 250,
+        ]);
+
+        // Action: Create Deal
+        $createDeal = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'action',
+            'node_class' => \App\Automation\Actions\CreateDeal::class,
+            'config' => [
+                'title' => 'Door Knock - {{doorknock.address}}',
+                'stage' => 'lead',
+                'lead_source' => 'door_knock',
+            ],
+            'label' => 'Create Deal',
+            'position_x' => 400,
+            'position_y' => 350,
+        ]);
+
+        // Action: Create Estimate
+        $createEstimate = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'action',
+            'node_class' => \App\Automation\Actions\CreateEstimate::class,
+            'config' => [
+                'title' => 'Estimate - {{doorknock.address}}',
+                'project_type' => 'interior',
+                'estimator_mode' => 'template',
+            ],
+            'label' => 'Create Estimate',
+            'position_x' => 400,
+            'position_y' => 450,
+        ]);
+
+        // IF/ELSE: Has Email?
+        $ifElse = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'if_else',
+            'node_class' => 'if_else',
+            'config' => [],
+            'label' => 'Has Email?',
+            'position_x' => 400,
+            'position_y' => 550,
+        ]);
+
+        // Action: Invite to Portal (yes branch)
+        $inviteToPortal = WorkflowNode::create([
+            'workflow_id' => $workflow->id,
+            'type' => 'action',
+            'node_class' => \App\Automation\Actions\InviteToPortal::class,
+            'config' => [
+                'email' => '{{doorknock.email}}',
+            ],
+            'label' => 'Invite to Portal',
+            'position_x' => 250,
+            'position_y' => 700,
+        ]);
+
+        // Edges - linear flow through create steps
+        WorkflowEdge::create([
+            'workflow_id' => $workflow->id,
+            'from_node_id' => $trigger->id,
+            'to_node_id' => $createCustomer->id,
+            'sort_order' => 0,
+        ]);
+
+        WorkflowEdge::create([
+            'workflow_id' => $workflow->id,
+            'from_node_id' => $createCustomer->id,
+            'to_node_id' => $createProperty->id,
+            'sort_order' => 0,
+        ]);
+
+        WorkflowEdge::create([
+            'workflow_id' => $workflow->id,
+            'from_node_id' => $createProperty->id,
+            'to_node_id' => $createDeal->id,
+            'sort_order' => 0,
+        ]);
+
+        WorkflowEdge::create([
+            'workflow_id' => $workflow->id,
+            'from_node_id' => $createDeal->id,
+            'to_node_id' => $createEstimate->id,
+            'sort_order' => 0,
+        ]);
+
+        WorkflowEdge::create([
+            'workflow_id' => $workflow->id,
+            'from_node_id' => $createEstimate->id,
+            'to_node_id' => $ifElse->id,
+            'sort_order' => 0,
+        ]);
+
+        // IF/ELSE: "yes" branch - has email → invite to portal
+        WorkflowEdge::create([
+            'workflow_id' => $workflow->id,
+            'from_node_id' => $ifElse->id,
+            'to_node_id' => $inviteToPortal->id,
+            'branch' => 'yes',
+            'condition_config' => [
+                'logic' => 'and',
+                'conditions' => [
+                    [
+                        'class' => \App\Automation\Conditions\FieldValue::class,
+                        'config' => [
+                            'field' => 'email',
+                            'operator' => 'is_not_empty',
+                        ],
+                    ],
+                ],
+            ],
+            'sort_order' => 0,
+        ]);
+
+        // "else" branch (no email) - workflow ends naturally
+    }
+
+    // =========================================================================
+    // Phase 4a Engine-Based Workflows (Trigger/Action model)
+    // =========================================================================
+
+    protected function seedEngineWorkflows(): void
+    {
+        $this->seedDoorKnockFlatRate();
+        $this->seedSalesCommissionOnSignedEstimate();
+        $this->seedPaintingCrewDeposit();
+        $this->seedPaintingCrewFinal();
+    }
+
+    /**
+     * Engine Workflow 1: Door Knock Flat Rate
+     *
+     * When a Deal stage changes to "quoted" and the deal came from a door knock
+     * with a lead generator, pay the lead generator a $50 flat rate.
+     */
+    protected function seedDoorKnockFlatRate(): void
+    {
+        $workflow = Workflow::create([
+            'name' => 'Door Knock Flat Rate',
+            'description' => 'Pay lead generator $50 flat rate when a door knock deal reaches the quoted stage.',
+            'is_active' => true,
+            'is_system' => true,
+            'version' => 1,
+            'priority' => 10,
+            'user_scope_type' => Workflow::USER_SCOPE_ANY,
+            'published_at' => now(),
+        ]);
+
+        WorkflowTrigger::create([
+            'workflow_id' => $workflow->id,
+            'trigger_model' => 'deal',
+            'trigger_event' => 'status_changed',
+            'trigger_field' => 'stage',
+            'trigger_conditions' => [
+                'logic' => 'all',
+                'conditions' => [
+                    ['field' => 'stage', 'operator' => 'changed_to', 'value' => 'quoted'],
+                    ['field' => 'lead_source', 'operator' => 'equals', 'value' => 'door_knock'],
+                    ['field' => 'lead_generator_id', 'operator' => 'is_not_null'],
+                ],
+            ],
+            'order' => 1,
+        ]);
+
+        WorkflowAction::create([
+            'workflow_id' => $workflow->id,
+            'action_type' => WorkflowAction::ACTION_CREATE_FLAT_RATE,
+            'action_config' => [
+                'amount' => 50.00,
+                'description' => 'Door knock flat rate',
+            ],
+            'target_user_field' => 'lead_generator_id',
+            'order' => 1,
+        ]);
+    }
+
+    /**
+     * Engine Workflow 2: Sales Commission on Signed Estimate
+     *
+     * When an Estimate status changes to "accepted", create a commission
+     * for the assigned sales person (resolved through the deal).
+     */
+    protected function seedSalesCommissionOnSignedEstimate(): void
+    {
+        $workflow = Workflow::create([
+            'name' => 'Sales Commission on Signed Estimate',
+            'description' => 'Create a 10% sales commission when a customer accepts an estimate.',
+            'is_active' => true,
+            'is_system' => true,
+            'version' => 1,
+            'priority' => 20,
+            'user_scope_type' => Workflow::USER_SCOPE_ANY,
+            'published_at' => now(),
+        ]);
+
+        WorkflowTrigger::create([
+            'workflow_id' => $workflow->id,
+            'trigger_model' => 'estimate',
+            'trigger_event' => 'status_changed',
+            'trigger_field' => 'status',
+            'trigger_conditions' => [
+                'logic' => 'all',
+                'conditions' => [
+                    ['field' => 'status', 'operator' => 'changed_to', 'value' => 'accepted'],
+                ],
+            ],
+            'order' => 1,
+        ]);
+
+        WorkflowAction::create([
+            'workflow_id' => $workflow->id,
+            'action_type' => WorkflowAction::ACTION_CREATE_COMMISSION,
+            'action_config' => [
+                'type' => 'percent',
+                'rate' => 0.10,
+                'basis' => 'estimate_total',
+                'description' => 'Sales commission',
+            ],
+            'target_user_field' => 'assigned_to',
+            'order' => 1,
+        ]);
+    }
+
+    /**
+     * Engine Workflow 3: Painting Crew Deposit
+     *
+     * When a Job stage changes to "in_progress" and the job is in the
+     * painting service category, create a crew deposit payable.
+     */
+    protected function seedPaintingCrewDeposit(): void
+    {
+        $painting = ServiceCategory::firstOrCreate(
+            ['slug' => 'painting'],
+            ['name' => 'Painting', 'is_active' => true, 'sort_order' => 1]
+        );
+
+        $workflow = Workflow::create([
+            'name' => 'Painting Crew Deposit',
+            'description' => 'Create crew deposit payable when a painting job starts.',
+            'is_active' => true,
+            'is_system' => true,
+            'version' => 1,
+            'priority' => 30,
+            'user_scope_type' => Workflow::USER_SCOPE_ANY,
+            'service_category_id' => $painting->id,
+            'published_at' => now(),
+        ]);
+
+        WorkflowTrigger::create([
+            'workflow_id' => $workflow->id,
+            'trigger_model' => 'job',
+            'trigger_event' => 'status_changed',
+            'trigger_field' => 'stage',
+            'trigger_conditions' => [
+                'logic' => 'all',
+                'conditions' => [
+                    ['field' => 'stage', 'operator' => 'changed_to', 'value' => 'in_progress'],
+                ],
+            ],
+            'order' => 1,
+        ]);
+
+        WorkflowAction::create([
+            'workflow_id' => $workflow->id,
+            'action_type' => WorkflowAction::ACTION_CREATE_PAYABLE,
+            'action_config' => [
+                'formula' => 'crew_deposit',
+                'description' => 'Crew deposit payment',
+            ],
+            'target_user_field' => 'crew_lead_id',
+            'order' => 1,
+        ]);
+    }
+
+    /**
+     * Engine Workflow 4: Painting Crew Final
+     *
+     * When a Job stage changes to "completed" and the job is in the
+     * painting service category, create a crew final payable.
+     */
+    protected function seedPaintingCrewFinal(): void
+    {
+        $painting = ServiceCategory::firstOrCreate(
+            ['slug' => 'painting'],
+            ['name' => 'Painting', 'is_active' => true, 'sort_order' => 1]
+        );
+
+        $workflow = Workflow::create([
+            'name' => 'Painting Crew Final',
+            'description' => 'Create crew final payable when a painting job is completed.',
+            'is_active' => true,
+            'is_system' => true,
+            'version' => 1,
+            'priority' => 40,
+            'user_scope_type' => Workflow::USER_SCOPE_ANY,
+            'service_category_id' => $painting->id,
+            'published_at' => now(),
+        ]);
+
+        WorkflowTrigger::create([
+            'workflow_id' => $workflow->id,
+            'trigger_model' => 'job',
+            'trigger_event' => 'status_changed',
+            'trigger_field' => 'stage',
+            'trigger_conditions' => [
+                'logic' => 'all',
+                'conditions' => [
+                    ['field' => 'stage', 'operator' => 'changed_to', 'value' => 'completed'],
+                ],
+            ],
+            'order' => 1,
+        ]);
+
+        WorkflowAction::create([
+            'workflow_id' => $workflow->id,
+            'action_type' => WorkflowAction::ACTION_CREATE_PAYABLE,
+            'action_config' => [
+                'formula' => 'crew_final',
+                'description' => 'Crew final payment',
+            ],
+            'target_user_field' => 'crew_lead_id',
+            'order' => 1,
         ]);
     }
 }

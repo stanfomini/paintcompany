@@ -7,10 +7,10 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 
 uses(RefreshDatabase::class);
 
-it('creates four default workflows', function () {
+it('creates nine default workflows', function () {
     $this->seed(WorkflowSeeder::class);
 
-    expect(Workflow::count())->toBe(4);
+    expect(Workflow::count())->toBe(9);
 });
 
 it('creates new lead follow-up workflow with correct structure', function () {
@@ -103,5 +103,5 @@ it('can run seeder multiple times without constraint errors', function () {
     $this->seed(WorkflowSeeder::class);
     $this->seed(WorkflowSeeder::class);
 
-    expect(Workflow::count())->toBe(8);
+    expect(Workflow::count())->toBe(18);
 });

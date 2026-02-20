@@ -70,6 +70,7 @@ class Deal extends Model
         'property_id',
         'agent_id',
         'assigned_to',
+        'lead_generator_id',
         'created_by',
         'lead_source_id',
         'title',
@@ -153,6 +154,14 @@ class Deal extends Model
     public function assignedTo(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * Get the lead generator (door knocker, referrer) for this deal.
+     */
+    public function leadGenerator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'lead_generator_id');
     }
 
     /**

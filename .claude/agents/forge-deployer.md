@@ -33,9 +33,6 @@ $FORGE_PHP artisan storage:link
 # Restart queue workers
 $FORGE_PHP artisan queue:restart
 
-# Clear and rebuild Livewire cached components
-$FORGE_PHP artisan livewire:discover
-
 echo "Deployment completed successfully!"
 ```
 

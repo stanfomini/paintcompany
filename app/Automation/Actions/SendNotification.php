@@ -33,11 +33,12 @@ class SendNotification implements ActionInterface
     {
         return [
             'user_id' => [
-                'type' => 'integer',
+                'type' => 'string',
                 'label' => 'Notify User',
                 'description' => 'The user to notify. Leave empty to notify the user who triggered the workflow.',
                 'required' => false,
                 'default' => null,
+                'options' => array_replace(['' => '-- Triggering User --'], User::where('type', 'internal')->pluck('name', 'id')->toArray()),
             ],
             'message' => [
                 'type' => 'string',

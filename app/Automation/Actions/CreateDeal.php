@@ -90,6 +90,15 @@ class CreateDeal implements ActionInterface
         $context['deal_id'] = $deal->id;
         $run->update(['context' => $context]);
 
+        // Link DoorKnock back if this was triggered by one
+        if ($knockId = $run->context['doorknock_id'] ?? null) {
+            \App\Models\DoorKnock::where('id', $knockId)->update([
+                'deal_id' => $deal->id,
+                'customer_id' => $run->context['customer_id'] ?? null,
+                'property_id' => $run->context['property_id'] ?? null,
+            ]);
+        }
+
         return ['deal_id' => $deal->id];
     }
 

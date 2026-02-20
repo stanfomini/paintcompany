@@ -15,6 +15,7 @@ return [
 
     'component_locations' => [
         resource_path('views/components'),
+        resource_path('views/livewire'),
     ],
 
     /*
@@ -128,16 +129,16 @@ return [
     */
 
     'temporary_file_upload' => [
-        'disk' => null, // null = use default filesystem disk
-        'rules' => ['required', 'file', 'max:102400'],          // 100MB temp limit; components enforce their own lower limits
+        'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK'), // Example: 'local', 's3'             | Default: 'default'
+        'rules' => null,                                      // Example: ['file', 'mimes:png,jpg'] | Default: ['required', 'file', 'max:12288'] (12MB)
         'directory' => null,                                  // Example: 'tmp'                     | Default: 'livewire-tmp'
         'middleware' => null,                                 // Example: 'throttle:5,1'            | Default: 'throttle:60,1'
         'preview_mimes' => [                                  // Supported file types for temporary pre-signed file URLs...
             'png', 'gif', 'bmp', 'svg', 'wav', 'mp4',
             'mov', 'avi', 'wmv', 'mp3', 'm4a',
-            'jpg', 'jpeg', 'mpga', 'webp', 'wma', 'pdf',
+            'jpg', 'jpeg', 'mpga', 'webp', 'wma',
         ],
-        'max_upload_time' => 10, // Max duration (in minutes) before an upload is invalidated...
+        'max_upload_time' => 5, // Max duration (in minutes) before an upload is invalidated...
         'cleanup' => true, // Should cleanup temporary uploads older than 24 hrs...
     ],
 
@@ -246,9 +247,7 @@ return [
     |
     */
 
-    'release_token' => file_exists(public_path('build/manifest.json'))
-        ? md5((string) filemtime(public_path('build/manifest.json')))
-        : 'dev',
+    'release_token' => 'a',
 
     /*
     |---------------------------------------------------------------------------

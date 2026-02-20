@@ -53,14 +53,16 @@ class extends Component {
             </flux:button>
         @endcan
 
-        <flux:button
-            size="sm"
-            :variant="$tab === 'analytics' ? 'filled' : 'ghost'"
-            icon="chart-bar"
-            wire:click="setTab('analytics')"
-        >
-            {{ __('Analytics') }}
-        </flux:button>
+        @canany(['media.manage', 'media.view_own_analytics'])
+            <flux:button
+                size="sm"
+                :variant="$tab === 'analytics' ? 'filled' : 'ghost'"
+                icon="chart-bar"
+                wire:click="setTab('analytics')"
+            >
+                {{ __('Analytics') }}
+            </flux:button>
+        @endcanany
     </div>
 
     @if($tab === 'videos')

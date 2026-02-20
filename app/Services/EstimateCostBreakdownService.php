@@ -168,8 +168,9 @@ class EstimateCostBreakdownService
             ->with('itemable')
             ->get();
 
-        // Collect area IDs and item IDs from package
-        $areaIds = [];
+        // Track which specific surfaces are included per area (for partial COGS)
+        $areaSurfaceIds = []; // areaId => [surfaceId, ...]
+        $areaFullIds = []; // areas added as whole-area items (fixed-price)
         $itemIds = [];
 
         foreach ($packageItems as $packageItem) {
@@ -179,26 +180,22 @@ class EstimateCostBreakdownService
             }
 
             if ($itemable instanceof EstimateAreaSurface) {
-                // Surface belongs to an area - track the area
-                if ($itemable->area_id && ! in_array($itemable->area_id, $areaIds)) {
-                    $areaIds[] = $itemable->area_id;
-                }
+                $areaSurfaceIds[$itemable->area_id][] = $itemable->id;
             } elseif ($itemable instanceof EstimateArea) {
-                // Direct area reference
-                if (! in_array($itemable->id, $areaIds)) {
-                    $areaIds[] = $itemable->id;
-                }
+                $areaFullIds[$itemable->id] = true;
             } elseif ($itemable instanceof EstimateItem) {
-                // Line item
                 if (! in_array($itemable->id, $itemIds)) {
                     $itemIds[] = $itemable->id;
                 }
             }
         }
 
+        // Merge all area IDs
+        $allAreaIds = array_unique(array_merge(array_keys($areaSurfaceIds), array_keys($areaFullIds)));
+
         // Load only the areas and items from this package
         $areas = $estimate->areas()
-            ->whereIn('id', $areaIds)
+            ->whereIn('id', $allAreaIds)
             ->with(['surfaces.productionRate', 'addons'])
             ->get();
 
@@ -207,11 +204,22 @@ class EstimateCostBreakdownService
             ->orderBy('sort_order')
             ->get();
 
+        // Resolve paint tier from the package (basic→good, standard→better, premium→best)
+        $paintTier = null;
+        if ($estimate->hasPaintTiers()) {
+            $paintTier = $package->getPaintTier();
+        }
+
+        // Build a surface inclusion map for ALL packages (for tier_pricing per-area table)
+        $tierSurfaceMap = $this->buildTierSurfaceMap($estimate);
+
         $areaBreakdowns = [];
         $totals = $this->initializeTotals();
 
         foreach ($areas as $area) {
-            $areaBreakdown = $this->calculateAreaBreakdown($area);
+            // Determine which surfaces are included for this area in this package
+            $surfaceFilter = isset($areaFullIds[$area->id]) ? null : ($areaSurfaceIds[$area->id] ?? null);
+            $areaBreakdown = $this->calculateAreaBreakdown($area, $surfaceFilter, $paintTier, $tierSurfaceMap);
             $areaBreakdowns[] = $areaBreakdown;
 
             // Accumulate totals from area model methods
@@ -522,15 +530,23 @@ class EstimateCostBreakdownService
      * Customer price comes from $area->getCustomerPrice() (margin applied once here).
      * Detail components are decomposed for visibility but don't override the totals.
      *
+     * @param  array<int>|null  $includedSurfaceIds  If set, only include these surfaces (package-level filtering)
+     * @param  string|null  $paintTier  Paint quality tier (good/better/best) from the package
+     * @param  array<string, array<int, array<int>>>|null  $tierSurfaceMap  Surface inclusions for ALL packages: {tier => {areaId => [surfaceIds]}}
      * @return array<string, mixed>
      */
-    public function calculateAreaBreakdown(EstimateArea $area): array
+    public function calculateAreaBreakdown(EstimateArea $area, ?array $includedSurfaceIds = null, ?string $paintTier = null, ?array $tierSurfaceMap = null): array
     {
         $scope = $area->scope_type ?? 'interior';
 
-        // AUTHORITATIVE numbers from the model (same as estimate page)
-        $cogs = $area->getFullCOGS();
-        $customerPrice = $area->getCustomerPrice();
+        // Use partial or full COGS/price depending on surface filter, with tier-specific materials
+        if ($includedSurfaceIds !== null) {
+            $cogs = $area->getPartialCOGS($includedSurfaceIds, $paintTier);
+            $customerPrice = $area->getPartialCustomerPrice($includedSurfaceIds, $paintTier);
+        } else {
+            $cogs = $area->getFullCOGS($paintTier);
+            $customerPrice = $area->getCustomerPrice($paintTier);
+        }
 
         // Get settings for display of component detail
         $settings = CompanySetting::getInstance();
@@ -544,14 +560,19 @@ class EstimateCostBreakdownService
         }
 
         // Decompose COGS into components for visibility (informational detail)
-        $detail = $this->decomposeAreaCosts($area, $settings);
+        $detail = $this->decomposeAreaCosts($area, $settings, $includedSurfaceIds, $paintTier);
 
         // Check for custom pricing on surfaces
-        $hasCustomPricing = $area->surfaces()
+        $surfaceQuery = $area->surfaces()
             ->where('is_included', true)
             ->where('is_custom', true)
-            ->whereNotNull('sale_price')
-            ->exists();
+            ->whereNotNull('sale_price');
+
+        if ($includedSurfaceIds !== null) {
+            $surfaceQuery->whereIn('id', $includedSurfaceIds);
+        }
+
+        $hasCustomPricing = $surfaceQuery->exists();
 
         $result = [
             'area_id' => $area->id,
@@ -566,11 +587,23 @@ class EstimateCostBreakdownService
         ];
 
         // Add tier-specific pricing when the estimate uses paint tiers
+        // Uses per-package surface inclusions so each tier shows the correct price
         if ($estimate && $estimate->hasPaintTiers() && ! $area->is_fixed_price) {
             $tierPricing = [];
             foreach (['good', 'better', 'best'] as $tier) {
-                $tierCogs = $area->getFullCOGS($tier);
-                $tierPrice = $area->getCustomerPrice($tier);
+                // Check if this tier has a surface filter from its package
+                $tierSurfaces = $tierSurfaceMap[$tier][$area->id] ?? null;
+
+                if ($tierSurfaces !== null) {
+                    // Package exists for this tier with specific surface selections
+                    $tierCogs = $area->getPartialCOGS($tierSurfaces, $tier);
+                    $tierPrice = $area->getPartialCustomerPrice($tierSurfaces, $tier);
+                } else {
+                    // No package filter for this tier - use full area pricing
+                    $tierCogs = $area->getFullCOGS($tier);
+                    $tierPrice = $area->getCustomerPrice($tier);
+                }
+
                 $tierPricing[$tier] = [
                     'cogs' => round($tierCogs, 2),
                     'customer_price' => round($tierPrice, 2),
@@ -588,9 +621,11 @@ class EstimateCostBreakdownService
      * These are informational - the authoritative total comes from getFullCOGS().
      * We read stored surface values and calculate cleanup/sundries for display.
      *
+     * @param  array<int>|null  $includedSurfaceIds  If set, only include these surfaces
+     * @param  string|null  $paintTier  Paint quality tier for material cost resolution
      * @return array<string, float>
      */
-    protected function decomposeAreaCosts(EstimateArea $area, CompanySetting $settings): array
+    protected function decomposeAreaCosts(EstimateArea $area, CompanySetting $settings, ?array $includedSurfaceIds = null, ?string $paintTier = null): array
     {
         $scope = $area->scope_type ?? 'interior';
 
@@ -665,9 +700,24 @@ class EstimateCostBreakdownService
         }
 
         // Read stored values from surfaces (these were set when the area was saved)
-        $laborHours = (float) $area->surfaces()->where('is_included', true)->sum('labor_hours');
-        $laborCost = (float) $area->surfaces()->where('is_included', true)->sum('labor_cost');
-        $materialCost = (float) $area->surfaces()->where('is_included', true)->sum('material_cost');
+        // When filtering by package, only include surfaces that are part of this package
+        $surfaceQuery = $area->surfaces()->where('is_included', true);
+        if ($includedSurfaceIds !== null) {
+            $surfaceQuery->whereIn('id', $includedSurfaceIds);
+        }
+        $surfaces = $surfaceQuery->get();
+        $laborHours = (float) $surfaces->sum('labor_hours');
+        $laborCost = (float) $surfaces->sum('labor_cost');
+
+        // Material cost: use tier-specific costs when a paint tier is specified
+        if ($paintTier !== null) {
+            $materialCost = 0.0;
+            foreach ($surfaces as $surface) {
+                $materialCost += $surface->getMaterialCostForTier($paintTier);
+            }
+        } else {
+            $materialCost = (float) $surfaces->sum('material_cost');
+        }
 
         // Calculate cleanup and sundries (same formulas as getFullCOGS uses)
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
@@ -1321,6 +1371,64 @@ class EstimateCostBreakdownService
         }
 
         return $comparison;
+    }
+
+    /**
+     * Build a map of surface inclusions for ALL packages on an estimate, keyed by paint tier.
+     *
+     * Returns: {paintTier => {areaId => [surfaceId, ...]}}
+     * For fixed-price areas added as whole-area items, the value is null (meaning all surfaces).
+     * Only includes packages that map to a known paint tier (basic/standard/premium).
+     *
+     * @return array<string, array<int, array<int>|null>>
+     */
+    protected function buildTierSurfaceMap(Estimate $estimate): array
+    {
+        $map = [];
+
+        // Load ALL package items (not just included) so we know which areas exist per tier
+        $packages = $estimate->packages()
+            ->with(['items.itemable'])
+            ->get();
+
+        foreach ($packages as $pkg) {
+            $tier = $pkg->getPaintTier();
+            if ($tier === null) {
+                continue;
+            }
+
+            if (! isset($map[$tier])) {
+                $map[$tier] = [];
+            }
+
+            foreach ($pkg->items as $item) {
+                $itemable = $item->itemable;
+                if (! $itemable) {
+                    continue;
+                }
+
+                if ($itemable instanceof EstimateAreaSurface) {
+                    // Ensure the area has an entry (even if empty)
+                    if (! isset($map[$tier][$itemable->area_id])) {
+                        $map[$tier][$itemable->area_id] = [];
+                    }
+                    // Only add the surface ID if it's included in this package
+                    if ($item->is_included) {
+                        $map[$tier][$itemable->area_id][] = $itemable->id;
+                    }
+                } elseif ($itemable instanceof EstimateArea) {
+                    // Fixed-price area - null means no surface filter (use full area)
+                    if ($item->is_included) {
+                        $map[$tier][$itemable->id] = null;
+                    } else {
+                        // Excluded fixed-price area - empty array means zero price
+                        $map[$tier][$itemable->id] = [];
+                    }
+                }
+            }
+        }
+
+        return $map;
     }
 
     /**

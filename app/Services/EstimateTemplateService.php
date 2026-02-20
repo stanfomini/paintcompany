@@ -189,6 +189,9 @@ class EstimateTemplateService
         // Get effective paint product ID (cascade: template → estimate)
         $areaPaintProductId = $template->default_paint_product_id ?? $estimate->default_paint_product_id;
 
+        // PRICING_FIXED templates without production rates create fixed-price areas
+        $isFixedPrice = $template->pricing_method === EstimateTemplate::PRICING_FIXED && ! $template->productionRate;
+
         $area = EstimateArea::create([
             'estimate_id' => $estimate->id,
             'substrate_id' => $substrateId,
@@ -200,6 +203,8 @@ class EstimateTemplateService
             'height' => $dimensions['height'],
             'notes' => $template->description,
             'sort_order' => 0,
+            'is_fixed_price' => $isFixedPrice,
+            'fixed_price_amount' => $isFixedPrice ? $template->calculatePrice($sqft, $coats) : null,
         ]);
 
         // Refresh to get auto-calculated values (wall_sqft, ceiling_sqft, etc.)

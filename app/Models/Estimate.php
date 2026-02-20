@@ -245,6 +245,21 @@ class Estimate extends Model
     }
 
     /**
+     * Get items NOT linked to any package (standalone items only).
+     * Package-linked items are shown within their respective packages.
+     */
+    public function standaloneItems(): HasMany
+    {
+        $packageLinkedItemIds = EstimatePackageItem::whereIn(
+            'package_id', $this->packages()->pluck('id')
+        )->where('itemable_type', EstimateItem::class)->pluck('itemable_id');
+
+        return $this->hasMany(EstimateItem::class)
+            ->whereNotIn('id', $packageLinkedItemIds)
+            ->orderBy('sort_order');
+    }
+
+    /**
      * Get the areas for this estimate.
      */
     public function areas(): HasMany
@@ -628,7 +643,16 @@ class Estimate extends Model
      */
     public function calculateTotals(): void
     {
-        $this->items_subtotal = $this->items()->sum('total');
+        // Exclude items linked to packages — they're accounted for in package totals,
+        // not the estimate-level total. Only standalone items count here.
+        $packageLinkedItemIds = EstimatePackageItem::whereIn(
+            'package_id', $this->packages()->pluck('id')
+        )->where('itemable_type', EstimateItem::class)->pluck('itemable_id');
+
+        $this->items_subtotal = $this->items()
+            ->whereNotIn('id', $packageLinkedItemIds)
+            ->sum('total');
+
         $this->areas_subtotal = $this->calculateAreasSubtotal();
         $this->options_subtotal = $this->getSelectedOptionsTotal();
 
@@ -720,9 +744,13 @@ class Estimate extends Model
      */
     public function calculateAreasSubtotal(): float
     {
+        // When tier pricing is active, the "good" tier is the baseline
+        // (includes paint materials for the lowest tier)
+        $tier = $this->hasPaintTiers() ? 'good' : null;
+
         $total = 0.0;
         foreach ($this->areas as $area) {
-            $total += $area->getCustomerPrice();
+            $total += $area->getCustomerPrice($tier);
         }
 
         return round($total, 2);

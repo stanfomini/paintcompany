@@ -23,6 +23,24 @@ new class extends Component {
 
     public string $dealSearch = '';
 
+    #[Computed]
+    public function canViewDealChats(): bool
+    {
+        $user = auth()->user();
+
+        // Internal users with roles need chat.view_deal_chats permission
+        if ($user->isInternal() && $user->roles->isNotEmpty()) {
+            return $user->can('chat.view_deal_chats');
+        }
+
+        // Internal users without roles (legacy) can view deal chats
+        if ($user->isInternal()) {
+            return true;
+        }
+
+        return false;
+    }
+
     public function openModal(): void
     {
         $this->reset(['type', 'selectedUserId', 'selectedDealId', 'subject', 'userSearch', 'dealSearch']);
@@ -60,17 +78,16 @@ new class extends Component {
     #[Computed]
     public function availableDeals(): Collection
     {
+        if (! $this->canViewDealChats) {
+            return collect();
+        }
+
         $user = auth()->user();
 
         $query = Deal::query()
             ->with(['customer', 'property'])
             ->whereDoesntHave('chatThread') // Only deals without a chat thread
             ->orderByDesc('created_at');
-
-        // Internal users can see all deals, agents only their referred deals
-        if (! $user->can('chat.access')) {
-            $query->where('agent_id', $user->id);
-        }
 
         if ($this->dealSearch) {
             $query->where(function ($q) {
@@ -89,6 +106,13 @@ new class extends Component {
         $chatService = app(ChatService::class);
 
         if ($this->type === 'deal' && $this->selectedDealId) {
+            // Verify deal chat permission
+            if (! $this->canViewDealChats) {
+                $this->addError('general', __('You do not have permission to create deal chats.'));
+
+                return;
+            }
+
             $deal = Deal::findOrFail($this->selectedDealId);
 
             // Create deal thread
@@ -168,22 +192,24 @@ new class extends Component {
             @enderror
 
             {{-- Type Selection --}}
-            <div class="flex gap-2">
-                <flux:button
-                    wire:click="$set('type', 'direct')"
-                    :variant="$type === 'direct' ? 'primary' : 'ghost'"
-                    size="sm"
-                >
-                    {{ __('Direct Message') }}
-                </flux:button>
-                <flux:button
-                    wire:click="$set('type', 'deal')"
-                    :variant="$type === 'deal' ? 'primary' : 'ghost'"
-                    size="sm"
-                >
-                    {{ __('Deal Chat') }}
-                </flux:button>
-            </div>
+            @if ($this->canViewDealChats)
+                <div class="flex gap-2">
+                    <flux:button
+                        wire:click="$set('type', 'direct')"
+                        :variant="$type === 'direct' ? 'primary' : 'ghost'"
+                        size="sm"
+                    >
+                        {{ __('Direct Message') }}
+                    </flux:button>
+                    <flux:button
+                        wire:click="$set('type', 'deal')"
+                        :variant="$type === 'deal' ? 'primary' : 'ghost'"
+                        size="sm"
+                    >
+                        {{ __('Deal Chat') }}
+                    </flux:button>
+                </div>
+            @endif
 
             @if ($type === 'direct')
                 {{-- User Selection --}}

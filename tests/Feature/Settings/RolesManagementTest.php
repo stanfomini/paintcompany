@@ -25,8 +25,6 @@ beforeEach(function () {
     $estimatorRole = Role::firstOrCreate(['name' => 'estimator', 'guard_name' => 'web']);
     $estimatorRole->syncPermissions(['roadmap.view']);
 
-    $crewLeadRole = Role::firstOrCreate(['name' => 'crew_lead', 'guard_name' => 'web']);
-    $crewLeadRole->syncPermissions(['roadmap.view']);
 });
 
 it('requires authentication to access roles page', function () {
@@ -81,12 +79,11 @@ it('displays available roles with descriptions', function () {
 
     Livewire::actingAs($owner)
         ->test('pages::settings.roles')
-        ->assertSee('Available Roles')
+        ->assertSee('Roles')
         ->assertSee('Owner')
         ->assertSee('Admin')
         ->assertSee('Manager')
-        ->assertSee('Estimator')
-        ->assertSee('Crew lead');
+        ->assertSee('Estimator');
 });
 
 it('shows current role for users', function () {

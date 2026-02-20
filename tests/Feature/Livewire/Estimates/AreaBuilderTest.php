@@ -504,3 +504,287 @@ it('preserves production rate when value is a string (from form submission)', fu
         return $surfaceRateId == $rate->id;
     });
 });
+
+it('loads exterior surface categories and production rates correctly from dispatched edit data', function () {
+    // Create exterior production rates
+    $bodyRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Siding Spray',
+        'scope' => 'exterior',
+        'surface_category' => 'body',
+        'production_rate' => 250,
+        'rate_type' => 'sqft_hr',
+        'is_active' => true,
+    ]);
+    $eavesRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Eaves Body Color',
+        'scope' => 'exterior',
+        'surface_category' => 'eaves',
+        'production_rate' => 40,
+        'rate_type' => 'lnft_hr',
+        'is_active' => true,
+    ]);
+    $fasciaRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Fascia 1 story',
+        'scope' => 'exterior',
+        'surface_category' => 'fascia',
+        'production_rate' => 30,
+        'rate_type' => 'lnft_hr',
+        'is_active' => true,
+    ]);
+    $windowRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Windows Wood',
+        'scope' => 'exterior',
+        'surface_category' => 'windows',
+        'production_rate' => 2,
+        'rate_type' => 'units_hr',
+        'is_active' => true,
+    ]);
+
+    // Simulate area data from template builder (as it would come from buildSurfaceArrayFromArea)
+    $areaData = [
+        'name' => 'Back of House',
+        'scope_type' => 'exterior',
+        'source_template_id' => null,
+        'default_coats' => 1,
+        'length' => 50.0,
+        'width' => 12.0,
+        'height' => 10.0,
+        'surfaces' => [
+            [
+                'id' => null,
+                'name' => 'Siding',
+                'surface_type' => 'walls',
+                'surface_category' => 'body',
+                'production_rate_id' => (string) $bodyRate->id,
+                'quantity_source' => 'custom',
+                'quantity' => 850,
+                'quantity_override' => 850,
+                'default_coats' => 1,
+                'is_required' => false,
+                'is_default_enabled' => true,
+                'is_custom' => false,
+                'fixed_price' => null,
+                'labor_hours' => 3.4,
+                'labor_cost' => 136.0,
+                'material_cost' => 50.0,
+            ],
+            [
+                'id' => null,
+                'name' => 'Soffit',
+                'surface_type' => 'ceiling',
+                'surface_category' => 'eaves',
+                'production_rate_id' => (string) $eavesRate->id,
+                'quantity_source' => 'ceiling_sqft',
+                'quantity' => 0,
+                'quantity_override' => null,
+                'default_coats' => 1,
+                'is_required' => false,
+                'is_default_enabled' => true,
+                'is_custom' => false,
+                'fixed_price' => null,
+                'labor_hours' => 0,
+                'labor_cost' => 0,
+                'material_cost' => 0,
+            ],
+            [
+                'id' => null,
+                'name' => 'Fascia',
+                'surface_type' => 'trim',
+                'surface_category' => 'fascia',
+                'production_rate_id' => (string) $fasciaRate->id,
+                'quantity_source' => 'custom',
+                'quantity' => 50,
+                'quantity_override' => 50,
+                'default_coats' => 1,
+                'is_required' => false,
+                'is_default_enabled' => true,
+                'is_custom' => false,
+                'fixed_price' => null,
+                'labor_hours' => 1.67,
+                'labor_cost' => 66.8,
+                'material_cost' => 10.0,
+            ],
+            [
+                'id' => null,
+                'name' => 'Windows',
+                'surface_type' => 'windows',
+                'surface_category' => 'windows',
+                'production_rate_id' => (string) $windowRate->id,
+                'quantity_source' => 'window_count',
+                'quantity' => 8,
+                'quantity_override' => 8,
+                'default_coats' => 1,
+                'is_required' => false,
+                'is_default_enabled' => true,
+                'is_custom' => false,
+                'fixed_price' => null,
+                'labor_hours' => 4.0,
+                'labor_cost' => 160.0,
+                'material_cost' => 0,
+            ],
+        ],
+        'addons' => [],
+    ];
+
+    $component = Livewire::test('estimates.area-builder')
+        ->dispatch('open-area-builder-edit', areaData: $areaData, editingIndex: 0);
+
+    // Verify scope is exterior
+    expect($component->get('scopeType'))->toBe('exterior');
+
+    // Verify ALL surface categories loaded correctly
+    expect($component->get('surfaces.0.surface_category'))->toBe('body');
+    expect($component->get('surfaces.1.surface_category'))->toBe('eaves');
+    expect($component->get('surfaces.2.surface_category'))->toBe('fascia');
+    expect($component->get('surfaces.3.surface_category'))->toBe('windows');
+
+    // Verify ALL production rate IDs loaded correctly
+    expect($component->get('surfaces.0.production_rate_id'))->toBe((string) $bodyRate->id);
+    expect($component->get('surfaces.1.production_rate_id'))->toBe((string) $eavesRate->id);
+    expect($component->get('surfaces.2.production_rate_id'))->toBe((string) $fasciaRate->id);
+    expect($component->get('surfaces.3.production_rate_id'))->toBe((string) $windowRate->id);
+
+    // Verify the surface categories dropdown shows exterior categories
+    $component->assertSee('Body Application')
+        ->assertSee('Eaves')
+        ->assertSee('Fascia')
+        ->assertSee('Windows');
+
+    // Verify production rate names are visible for surfaces with set rates
+    $component->assertSee('Siding Spray')
+        ->assertSee('Windows Wood');
+
+    // Check actual HTML rendering - verify the correct options are selected
+    $html = $component->html();
+
+    // The surface_category select for Siding should have 'body' selected
+    // The surface_category select for Windows should have 'windows' selected
+    // Check that 'body' appears as a selected value in the rendered HTML
+    expect($html)->toContain('Body Application');
+    expect($html)->toContain('Eaves');
+
+    // Save the area and verify data roundtrips correctly
+    $component->set('name', 'Back of House')
+        ->call('saveArea');
+
+    $component->assertDispatched('area-saved', function ($event, $params) use ($bodyRate, $eavesRate, $fasciaRate, $windowRate) {
+        $surfaces = $params['areaData']['surfaces'] ?? [];
+
+        // Verify all 4 surfaces preserved their category and rate
+        $siding = collect($surfaces)->firstWhere('name', 'Siding');
+        $soffit = collect($surfaces)->firstWhere('name', 'Soffit');
+        $fascia = collect($surfaces)->firstWhere('name', 'Fascia');
+        $windows = collect($surfaces)->firstWhere('name', 'Windows');
+
+        return $siding['surface_category'] === 'body'
+            && $siding['production_rate_id'] == $bodyRate->id
+            && $soffit['surface_category'] === 'eaves'
+            && $soffit['production_rate_id'] == $eavesRate->id
+            && $fascia['surface_category'] === 'fascia'
+            && $fascia['production_rate_id'] == $fasciaRate->id
+            && $windows['surface_category'] === 'windows'
+            && $windows['production_rate_id'] == $windowRate->id;
+    });
+});
+
+it('preserves surface categories when reopening area builder with different scope data', function () {
+    // Create rates for both scopes
+    $interiorWallRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Interior Walls Brush',
+        'scope' => 'interior',
+        'surface_category' => 'walls',
+        'production_rate' => 200,
+        'rate_type' => 'sqft_hr',
+        'is_active' => true,
+    ]);
+    $bodyRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Siding Spray',
+        'scope' => 'exterior',
+        'surface_category' => 'body',
+        'production_rate' => 250,
+        'rate_type' => 'sqft_hr',
+        'is_active' => true,
+    ]);
+    $eavesRate = \App\Models\ProductionRate::factory()->create([
+        'name' => 'Eaves Body Color',
+        'scope' => 'exterior',
+        'surface_category' => 'eaves',
+        'production_rate' => 40,
+        'rate_type' => 'lnft_hr',
+        'is_active' => true,
+    ]);
+
+    $component = Livewire::test('estimates.area-builder');
+
+    // FIRST: Open for an interior area
+    $component->dispatch('open-area-builder-edit', areaData: [
+        'name' => 'Living Room',
+        'scope_type' => 'interior',
+        'source_template_id' => null,
+        'default_coats' => 2,
+        'length' => 12.0, 'width' => 12.0, 'height' => 9.0,
+        'surfaces' => [
+            [
+                'id' => null, 'name' => 'Walls', 'surface_type' => 'walls',
+                'surface_category' => 'walls',
+                'production_rate_id' => (string) $interiorWallRate->id,
+                'quantity_source' => 'wall_sqft', 'quantity' => 432,
+                'quantity_override' => null, 'default_coats' => 2,
+                'is_required' => true, 'is_default_enabled' => true,
+                'is_custom' => false, 'fixed_price' => null,
+                'labor_hours' => 2.16, 'labor_cost' => 86.4, 'material_cost' => 20.0,
+            ],
+        ],
+        'addons' => [],
+    ], editingIndex: 0);
+
+    // Verify interior data loaded
+    expect($component->get('scopeType'))->toBe('interior');
+    expect($component->get('surfaces.0.surface_category'))->toBe('walls');
+    expect($component->get('surfaces.0.production_rate_id'))->toBe((string) $interiorWallRate->id);
+
+    // Close the builder
+    $component->call('closeBuilder');
+
+    // SECOND: Open for an exterior area - THIS is where the bug might occur
+    $component->dispatch('open-area-builder-edit', areaData: [
+        'name' => 'Back of House',
+        'scope_type' => 'exterior',
+        'source_template_id' => null,
+        'default_coats' => 1,
+        'length' => 50.0, 'width' => 12.0, 'height' => 10.0,
+        'surfaces' => [
+            [
+                'id' => null, 'name' => 'Siding', 'surface_type' => 'walls',
+                'surface_category' => 'body',
+                'production_rate_id' => (string) $bodyRate->id,
+                'quantity_source' => 'custom', 'quantity' => 850,
+                'quantity_override' => 850, 'default_coats' => 1,
+                'is_required' => false, 'is_default_enabled' => true,
+                'is_custom' => false, 'fixed_price' => null,
+                'labor_hours' => 3.4, 'labor_cost' => 136.0, 'material_cost' => 50.0,
+            ],
+            [
+                'id' => null, 'name' => 'Soffit', 'surface_type' => 'ceiling',
+                'surface_category' => 'eaves',
+                'production_rate_id' => (string) $eavesRate->id,
+                'quantity_source' => 'ceiling_sqft', 'quantity' => 0,
+                'quantity_override' => null, 'default_coats' => 1,
+                'is_required' => false, 'is_default_enabled' => true,
+                'is_custom' => false, 'fixed_price' => null,
+                'labor_hours' => 0, 'labor_cost' => 0, 'material_cost' => 0,
+            ],
+        ],
+        'addons' => [],
+    ], editingIndex: 0);
+
+    // Verify exterior data loaded correctly (this is where the bug manifests)
+    expect($component->get('scopeType'))->toBe('exterior');
+
+    // These are the critical assertions - the categories should NOT have been
+    // overwritten by updatedSurfaces() during the morph
+    expect($component->get('surfaces.0.surface_category'))->toBe('body');
+    expect($component->get('surfaces.0.production_rate_id'))->toBe((string) $bodyRate->id);
+    expect($component->get('surfaces.1.surface_category'))->toBe('eaves');
+    expect($component->get('surfaces.1.production_rate_id'))->toBe((string) $eavesRate->id);
+});

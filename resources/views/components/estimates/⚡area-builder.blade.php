@@ -692,6 +692,8 @@ new class extends Component
 
     /**
      * When surface category changes, reset production rate.
+     * Guards against spurious fires during Livewire DOM morphing by checking
+     * if the existing production rate already belongs to the new category.
      */
     public function updatedSurfaces($value, $key): void
     {
@@ -701,6 +703,16 @@ new class extends Component
 
         $index = (int) $matches[1];
         $category = $this->surfaces[$index]['surface_category'];
+
+        // If the current production rate already matches this category, skip reset.
+        // This prevents data loss when Livewire morphing triggers spurious updates.
+        $currentRateId = $this->surfaces[$index]['production_rate_id'] ?? null;
+        if ($currentRateId) {
+            $rate = ProductionRate::find($currentRateId);
+            if ($rate && $rate->surface_category === $category) {
+                return;
+            }
+        }
 
         $this->surfaces[$index]['production_rate_id'] = null;
 
@@ -1046,12 +1058,14 @@ new class extends Component
 
     /**
      * Calculate material cost for a surface using paint product.
+     * Uses PaintProduct::calculateCost() to match the save flow exactly,
+     * ensuring preview prices = saved prices = reloaded prices.
      *
      * @param  float  $quantity  The surface quantity (sqft, lnft, etc.)
      * @param  int  $coats  Number of coats
      * @param  string  $surfaceCategory  Surface category for paint-by-category lookup
      * @param  float|null  $fallbackCostPerUnit  Fallback cost per unit if no paint product
-     * @param  float  $coatMultiplier  Pre-calculated coat multiplier
+     * @param  float  $coatMultiplier  Pre-calculated coat multiplier (only used for fallback)
      * @return float Material cost
      */
     protected function calculateMaterialCostForSurface(
@@ -1065,28 +1079,25 @@ new class extends Component
         $paintProductId = null;
 
         if ($this->paintMode === 'category') {
-            // Look up by surface category
             $paintProductId = $this->paintByCategory[$surfaceCategory] ?? null;
         }
 
-        // Fall back to default paint product
         if (! $paintProductId && $this->defaultPaintProductId) {
             $paintProductId = $this->defaultPaintProductId;
         }
 
-        // If we have a paint product, calculate from coverage and price
         if ($paintProductId) {
             $paintProduct = PaintProduct::find($paintProductId);
             if ($paintProduct) {
-                $coverage = $paintProduct->getCoverage('brush_roll');
-                if ($coverage <= 0) {
-                    $coverage = 400; // Fallback coverage
-                }
+                $settings = CompanySetting::getInstance();
+                $costCalc = $paintProduct->calculateCost(
+                    $quantity,
+                    $coats,
+                    'brush_roll',
+                    (float) ($settings->recycle_fee_per_gallon ?? 0.54)
+                );
 
-                $pricePerGallon = (float) ($paintProduct->price_per_gallon ?? 50);
-                $gallonsNeeded = ($quantity / $coverage) * $coatMultiplier;
-
-                return $gallonsNeeded * $pricePerGallon;
+                return $costCalc['total_cost'];
             }
         }
 
@@ -1217,6 +1228,56 @@ new class extends Component
     // ===== ACTIONS =====
 
     /**
+     * Annotate surfaces with computed labor/material values for save consistency.
+     * Ensures the template-builder save uses exact values from the area-builder calculation.
+     */
+    protected function annotateComputedSurfaceValues(): array
+    {
+        $annotated = $this->surfaces;
+        $settings = CompanySetting::getInstance();
+        $hourlyWage = $this->getEffectiveRateForScope($this->scopeType);
+
+        foreach ($annotated as $index => $surface) {
+            if ($surface['is_custom'] ?? false) {
+                continue; // Custom surfaces already have user-entered values
+            }
+
+            if (($surface['fixed_price'] ?? null) !== null && $surface['fixed_price'] > 0) {
+                $annotated[$index]['labor_hours'] = 0;
+                $annotated[$index]['labor_cost'] = 0;
+                $annotated[$index]['material_cost'] = round((float) $surface['fixed_price'], 2);
+
+                continue;
+            }
+
+            $quantity = $this->getSurfaceQuantity($surface);
+            $coats = $surface['default_coats'] ?? $this->defaultCoats;
+            $rate = $surface['production_rate_id']
+                ? ProductionRate::find($surface['production_rate_id'])
+                : null;
+
+            if ($rate) {
+                $hours = $rate->calculateHoursForQuantity($quantity, $coats);
+            } else {
+                $coatMultiplier = $this->getCoatMultiplier($coats);
+                $hours = ($quantity / 100) * $coatMultiplier;
+            }
+
+            $surfaceCategory = $surface['surface_category'] ?? 'walls';
+            $fallbackCostPerUnit = $rate ? (float) ($rate->material_cost_per_unit ?? 0.15) : 0.15;
+            $materialCost = $this->calculateMaterialCostForSurface(
+                $quantity, $coats, $surfaceCategory, $fallbackCostPerUnit, $this->getCoatMultiplier($coats)
+            );
+
+            $annotated[$index]['labor_hours'] = round($hours, 4);
+            $annotated[$index]['labor_cost'] = round($hours * $hourlyWage, 2);
+            $annotated[$index]['material_cost'] = round($materialCost, 2);
+        }
+
+        return $annotated;
+    }
+
+    /**
      * Save the area and dispatch to parent.
      */
     public function saveArea(): void
@@ -1242,6 +1303,10 @@ new class extends Component
 
         $preview = $this->previewCalculation;
 
+        // Annotate surfaces with per-surface computed values so template-builder
+        // save uses exact same numbers as the area-builder calculated
+        $annotatedSurfaces = $this->annotateComputedSurfaceValues();
+
         $areaData = [
             'name' => $this->name,
             'scope_type' => $this->scopeType,
@@ -1259,7 +1324,7 @@ new class extends Component
             'direct_lnft' => $this->directLnft,
             'direct_ceiling_sqft' => $this->directCeilingSqft,
             'service_category_id' => $this->serviceCategoryId,
-            'surfaces' => $this->surfaces,
+            'surfaces' => $annotatedSurfaces,
             'addons' => $this->addons,
             'labor_hours' => $preview['totals']['labor_hours'] ?? 0,
             'labor_cost' => $preview['totals']['labor_cost'] ?? 0,
@@ -1567,7 +1632,7 @@ new class extends Component
                                                             <flux:label class="text-xs">{{ __('Surface Category') }}</flux:label>
                                                             <flux:select wire:model.live="surfaces.{{ $index }}.surface_category" size="sm">
                                                                 @foreach ($this->surfaceCategories as $catKey => $catLabel)
-                                                                    <option value="{{ $catKey }}">{{ $catLabel }}</option>
+                                                                    <option value="{{ $catKey }}" @selected(($surface['surface_category'] ?? '') === $catKey)>{{ $catLabel }}</option>
                                                                 @endforeach
                                                             </flux:select>
                                                         </flux:field>
@@ -1636,7 +1701,7 @@ new class extends Component
                                                                 <flux:select wire:model.live="surfaces.{{ $index }}.production_rate_id" size="sm">
                                                                     <option value="">{{ __('-- Select Type --') }}</option>
                                                                     @foreach ($this->getProductionRatesForCategory($surface['surface_category']) as $rate)
-                                                                        <option value="{{ $rate->id }}">
+                                                                        <option value="{{ $rate->id }}" @selected(($surface['production_rate_id'] ?? '') == $rate->id)>
                                                                             {{ __($rate->name) }} ({{ number_format($rate->production_rate, 0) }} {{ $rate->rate_type_label }})
                                                                         </option>
                                                                     @endforeach
@@ -1650,7 +1715,7 @@ new class extends Component
                                                                 <flux:label class="text-xs">{{ __('Quantity Source') }}</flux:label>
                                                                 <flux:select wire:model.live="surfaces.{{ $index }}.quantity_source" size="sm">
                                                                     @foreach ($this->quantitySources as $srcKey => $srcLabel)
-                                                                        <option value="{{ $srcKey }}">{{ $srcLabel }}</option>
+                                                                        <option value="{{ $srcKey }}" @selected(($surface['quantity_source'] ?? '') === $srcKey)>{{ $srcLabel }}</option>
                                                                     @endforeach
                                                                 </flux:select>
                                                             </flux:field>
@@ -1676,7 +1741,7 @@ new class extends Component
                                                                 <flux:label class="text-xs">{{ __('Coats') }}</flux:label>
                                                                 <flux:select wire:model.live="surfaces.{{ $index }}.default_coats" size="sm">
                                                                     @for ($i = 1; $i <= 5; $i++)
-                                                                        <option value="{{ $i }}">{{ $i }} {{ $i > 1 ? __('coats') : __('coat') }}</option>
+                                                                        <option value="{{ $i }}" @selected(($surface['default_coats'] ?? 1) == $i)>{{ $i }} {{ $i > 1 ? __('coats') : __('coat') }}</option>
                                                                     @endfor
                                                                 </flux:select>
                                                             </flux:field>

@@ -201,6 +201,12 @@ class JobDispatchService
                 'service_category_id' => $crewServiceCategoryId,
             ]);
 
+            // Auto-create crew payables from cost card
+            $serviceCategory = $crewServiceCategoryId
+                ? ServiceCategory::find($crewServiceCategoryId)
+                : null;
+            app(JobPayableService::class)->createCrewPayables($job, $crew, $serviceCategory);
+
             if ($otherDispatched->isNotEmpty()) {
                 JobActivity::log($job, 'crew_auto_rejected', $otherDispatched->count().' other crew(s) auto-rejected', [
                     'rejected_crew_ids' => $otherDispatched->pluck('crew_user_id')->toArray(),

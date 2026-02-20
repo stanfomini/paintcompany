@@ -23,6 +23,14 @@ class EstimateSent implements TriggerInterface
     }
 
     /**
+     * @return array<int, string>
+     */
+    public static function getAvailableDynamicPrefixes(): array
+    {
+        return ['deal', 'contact', 'workflow', 'datetime'];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function getConfigSchema(): array

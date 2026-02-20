@@ -178,48 +178,6 @@ describe('estimator role', function () {
 });
 
 // ──────────────────────────────────────────────────
-// Crew lead role - tightened permissions
-// ──────────────────────────────────────────────────
-
-describe('crew_lead role', function () {
-    it('does not have time_tracking.view permission', function () {
-        $role = Role::findByName('crew_lead', 'web');
-
-        expect($role->hasPermissionTo('time_tracking.view'))->toBeFalse();
-    });
-
-    it('does not have time_tracking.clock permission', function () {
-        $role = Role::findByName('crew_lead', 'web');
-
-        expect($role->hasPermissionTo('time_tracking.clock'))->toBeFalse();
-    });
-
-    it('does not have scheduling.view permission', function () {
-        $role = Role::findByName('crew_lead', 'web');
-
-        expect($role->hasPermissionTo('scheduling.view'))->toBeFalse();
-    });
-
-    it('cannot access time tracking dashboard', function () {
-        $user = User::factory()->internal()->create();
-        $user->assignRole('crew_lead');
-
-        $this->actingAs($user)
-            ->get(route('time-tracking.index'))
-            ->assertForbidden();
-    });
-
-    it('cannot access scheduling page', function () {
-        $user = User::factory()->internal()->create();
-        $user->assignRole('crew_lead');
-
-        $this->actingAs($user)
-            ->get(route('scheduling.index'))
-            ->assertForbidden();
-    });
-});
-
-// ──────────────────────────────────────────────────
 // Self-service routes (no permission required, just auth)
 // ──────────────────────────────────────────────────
 
@@ -244,9 +202,9 @@ describe('self-service routes', function () {
             ->assertOk();
     });
 
-    it('allows crew_lead to access /my/timesheet', function () {
+    it('allows manager to access /my/timesheet', function () {
         $user = User::factory()->internal()->create();
-        $user->assignRole('crew_lead');
+        $user->assignRole('manager');
         EmployeeProfile::factory()->create(['user_id' => $user->id]);
 
         $this->actingAs($user)
@@ -254,9 +212,9 @@ describe('self-service routes', function () {
             ->assertOk();
     });
 
-    it('allows crew_lead to access /my/schedule', function () {
+    it('allows manager to access /my/schedule', function () {
         $user = User::factory()->internal()->create();
-        $user->assignRole('crew_lead');
+        $user->assignRole('manager');
         EmployeeProfile::factory()->create(['user_id' => $user->id]);
 
         $this->actingAs($user)

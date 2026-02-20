@@ -64,3 +64,12 @@ select:focus[data-flux-control] {
 /* \[:where(&)\]:size-4 {
     @apply size-4;
 } */
+
+/* Fix: On mobile, the Flux sidebar is position:fixed but still assigned to
+   grid-area:sidebar. The min-content column resolves to 32px (sidebar padding),
+   pushing all content 32px right. Force the sidebar column to 0 on mobile. */
+@media (max-width: 1023px) {
+    *:has(> [data-flux-main]) {
+        grid-template-columns: 0px minmax(0, 1fr) 0px !important;
+    }
+}

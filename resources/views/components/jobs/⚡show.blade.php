@@ -356,36 +356,41 @@ new class extends Component {
 <div>
     <div class="max-w-5xl mx-auto">
         {{-- Header --}}
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-            <div class="flex items-center gap-3 min-w-0">
-                <flux:button variant="ghost" :href="route('jobs.index')" icon="arrow-left" wire:navigate class="shrink-0">
-                    {{ __('Back') }}
+        <div class="flex items-center gap-2 sm:gap-3 mb-2 min-w-0">
+            <flux:button variant="ghost" :href="route('jobs.index')" icon="arrow-left" wire:navigate class="shrink-0" size="sm">
+                <span class="hidden sm:inline">{{ __('Back') }}</span>
+            </flux:button>
+            <div class="min-w-0">
+                <flux:heading size="xl" class="truncate">{{ $job->title }}</flux:heading>
+                <flux:text class="text-zinc-500 text-sm">{{ $job->job_number }}</flux:text>
+            </div>
+            <flux:badge size="sm" color="{{ $this->stageColors[$job->stage] ?? 'zinc' }}" class="shrink-0 whitespace-nowrap">
+                {{ $job->stage_label }}
+            </flux:badge>
+        </div>
+
+        {{-- Actions Bar --}}
+        <div class="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-6 sm:pl-12">
+            @if (! $job->isCompleted())
+                <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
+            @endif
+            @can('financials.view_cost_breakdown')
+                <flux:button variant="ghost" :href="route('jobs.cost-card', $job)" icon="calculator" size="sm" wire:navigate>
+                    <span class="hidden sm:inline">{{ __('Cost Card') }}</span>
                 </flux:button>
-                <div class="min-w-0">
-                    <flux:heading size="xl" class="truncate">{{ $job->title }}</flux:heading>
-                    <flux:text class="text-zinc-500">{{ $job->job_number }}</flux:text>
-                </div>
-                <flux:badge size="sm" color="{{ $this->stageColors[$job->stage] ?? 'zinc' }}" class="shrink-0 whitespace-nowrap">
-                    {{ $job->stage_label }}
-                </flux:badge>
-            </div>
-            <div class="flex items-center gap-2 shrink-0">
+            @endcan
+            @can('financials.view_painter_breakdown')
+                <flux:button variant="ghost" :href="route('jobs.painter-breakdown', $job)" icon="clipboard-document-list" size="sm" wire:navigate>
+                    <span class="hidden sm:inline">{{ __("Painter's Breakdown") }}</span>
+                </flux:button>
+            @endcan
+            @can('jobs.edit')
                 @if (! $job->isCompleted())
-                    <livewire:video-call.job-call :job="$job" :key="'video-call-'.$job->id" />
-                @endif
-                @can('financials.view_cost_breakdown')
-                    <flux:button variant="ghost" :href="route('jobs.cost-card', $job)" icon="calculator" size="sm" wire:navigate>
-                        {{ __('Cost Card') }}
+                    <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
+                        <span class="hidden sm:inline">{{ __('Advance Stage') }}</span>
                     </flux:button>
-                @endcan
-                @can('jobs.edit')
-                    @if (! $job->isCompleted())
-                        <flux:button wire:click="advanceStage" variant="primary" size="sm" icon="arrow-right">
-                            {{ __('Advance Stage') }}
-                        </flux:button>
-                    @endif
-                @endcan
-            </div>
+                @endif
+            @endcan
         </div>
 
         @if (session('success'))
@@ -456,16 +461,16 @@ new class extends Component {
 
         {{-- Viewing past stage banner --}}
         @if ($viewingStage !== $job->stage)
-            <div class="flex items-center justify-between p-3 mb-6 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
-                <div class="flex items-center gap-2">
-                    <flux:icon name="eye" class="w-4 h-4 text-blue-500" />
+            <div class="flex flex-wrap items-center justify-between gap-2 p-3 mb-6 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                <div class="flex items-center gap-2 min-w-0">
+                    <flux:icon name="eye" class="w-4 h-4 text-blue-500 shrink-0" />
                     <flux:text class="text-sm text-blue-700 dark:text-blue-300">
                         {{ __('Viewing:') }} <span class="font-semibold">{{ App\Models\Job::STAGES[$viewingStage] ?? $viewingStage }}</span>
                         <span class="text-blue-500 dark:text-blue-400 mx-1">&middot;</span>
-                        {{ __('Job is currently at:') }} <span class="font-semibold">{{ $job->stage_label }}</span>
+                        {{ __('Current:') }} <span class="font-semibold">{{ $job->stage_label }}</span>
                     </flux:text>
                 </div>
-                <flux:button wire:click="viewStage('{{ $job->stage }}')" size="sm" variant="ghost">
+                <flux:button wire:click="viewStage('{{ $job->stage }}')" size="sm" variant="ghost" class="shrink-0">
                     {{ __('Back to current') }}
                 </flux:button>
             </div>
@@ -750,17 +755,8 @@ new class extends Component {
             </div>
         @endif
 
-        {{-- Photos Section --}}
-        @if ($job->deal?->property)
-            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
-                <livewire:shared.photo-gallery
-                    :property="$job->deal->property"
-                    :job="$job"
-                    context="job-internal"
-                    :key="'photos-'.$job->id"
-                />
-            </div>
-        @endif
+        {{-- Media Section (Photos & Videos) --}}
+        <livewire:shared.media-section :property="$job->deal?->property" :job="$job" context="job-internal" :key="'media-'.$job->id" />
 
         {{-- Invoices Section --}}
         <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
@@ -843,14 +839,6 @@ new class extends Component {
                     @endforeach
                 </div>
             @endif
-        </div>
-
-        {{-- Video Walkarounds --}}
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6 print:hidden">
-            <livewire:estimates.video-walkarounds
-                :recordable="$job"
-                :key="'walkarounds-'.$job->id"
-            />
         </div>
 
         {{-- Activity History --}}

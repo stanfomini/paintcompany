@@ -3,6 +3,7 @@
 namespace App\Automation\Triggers;
 
 use App\Automation\Contracts\TriggerInterface;
+use App\Models\Job;
 use Illuminate\Database\Eloquent\Model;
 
 class JobStageChanged implements TriggerInterface
@@ -23,6 +24,14 @@ class JobStageChanged implements TriggerInterface
     }
 
     /**
+     * @return array<int, string>
+     */
+    public static function getAvailableDynamicPrefixes(): array
+    {
+        return ['job', 'deal', 'contact', 'workflow', 'datetime'];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function getConfigSchema(): array
@@ -33,6 +42,7 @@ class JobStageChanged implements TriggerInterface
                 'label' => 'Target Stage',
                 'description' => 'The job stage that must be reached for this trigger to fire.',
                 'required' => true,
+                'options' => Job::STAGES,
             ],
         ];
     }

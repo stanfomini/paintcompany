@@ -12,7 +12,7 @@ export const IntroScene: React.FC<IntroSceneProps> = ({
   address,
   city,
   state,
-  companyName = 'Apex Negotiations',
+  companyName = 'Painting Made Easy Denver',
   primaryColor = '#1e3a5f',
 }) => {
   const frame = useCurrentFrame();

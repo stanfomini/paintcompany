@@ -3,14 +3,14 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ config('app.name', 'Apex Negotiations') }}</title>
+    <title>{{ config('app.name') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @fluxAppearance
 </head>
 <body class="min-h-screen bg-zinc-50 dark:bg-zinc-900 flex items-center justify-center p-6">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
-            <flux:heading size="2xl" class="mb-2">{{ config('app.name', 'Apex Negotiations') }}</flux:heading>
+            <flux:heading size="2xl" class="mb-2">{{ config('app.name') }}</flux:heading>
             <flux:text class="text-zinc-600 dark:text-zinc-400">
                 {{ __('Professional Painting CRM') }}
             </flux:text>

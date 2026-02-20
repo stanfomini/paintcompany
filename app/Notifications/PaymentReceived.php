@@ -26,7 +26,7 @@ class PaymentReceived extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $appName = config('app.name', 'Apex Negotiations');
+        $appName = config('app.name');
         $invoice = $this->payment->invoice;
 
         return (new MailMessage)

@@ -36,8 +36,8 @@ class Account extends Model
 
     protected $fillable = [
         'company_setting_id', 'code', 'name', 'type', 'parent_id',
-        'is_system', 'normal_balance', 'is_active', 'sort_order',
-        'budget_category_id',
+        'is_system', 'normal_balance', 'is_active', 'is_bank_account',
+        'sort_order', 'budget_category_id',
     ];
 
     protected function casts(): array
@@ -45,6 +45,7 @@ class Account extends Model
         return [
             'is_system' => 'boolean',
             'is_active' => 'boolean',
+            'is_bank_account' => 'boolean',
             'sort_order' => 'integer',
         ];
     }
@@ -82,6 +83,11 @@ class Account extends Model
     public function scopeByType(Builder $query, string $type): Builder
     {
         return $query->where('type', $type);
+    }
+
+    public function scopeBankAccounts(Builder $query): Builder
+    {
+        return $query->where('is_bank_account', true)->where('is_active', true);
     }
 
     public static function defaultNormalBalance(string $type): string

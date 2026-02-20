@@ -10,7 +10,7 @@ interface PhotoSlideshowProps {
 
 export const PhotoSlideshow: React.FC<PhotoSlideshowProps> = ({
   photos,
-  companyName = 'Apex Negotiations',
+  companyName = 'Painting Made Easy Denver',
   primaryColor = '#1e3a5f',
   secondsPerPhoto = 3,
 }) => {

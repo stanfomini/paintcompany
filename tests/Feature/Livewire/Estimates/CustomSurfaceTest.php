@@ -349,7 +349,7 @@ it('reports hasCustomPricing correctly', function () {
     expect($s3->hasCustomPricing())->toBeFalse();
 });
 
-it('uses sale_price in area customer price calculation', function () {
+it('uses uniform COGS pricing for areas with custom sale_price surfaces', function () {
     $estimate = Estimate::factory()->create();
     $area = EstimateArea::factory()->create([
         'estimate_id' => $estimate->id,
@@ -366,19 +366,22 @@ it('uses sale_price in area customer price calculation', function () {
         'is_included' => true,
     ]);
 
-    // Custom surface with explicit sale_price
+    // Custom surface with explicit sale_price (ignored in uniform pricing)
     EstimateAreaSurface::factory()->forArea($area)
         ->custom(3.0, 40.0, 50.0)
         ->withCustomPricing(salePrice: 500.0)
         ->create(['is_included' => true]);
 
     $customerPrice = $area->getCustomerPrice();
+    $cogs = $area->getFullCOGS();
 
-    // Should include the $500 sale_price plus margin-calculated price for the auto surface
-    expect($customerPrice)->toBeGreaterThan(500.0); // At minimum the $500 custom + some for auto surface
+    // Uniform COGS → margin: customer price should exceed total COGS
+    expect($customerPrice)->toBeGreaterThan($cogs);
+    // sale_price is not used directly — price comes from COGS/margin formula
+    expect($customerPrice)->not->toBe(500.0);
 });
 
-it('getSurfaceCustomerPrices returns sale_price for custom surfaces', function () {
+it('getSurfaceCustomerPrices uses proportional allocation for custom surfaces', function () {
     $estimate = Estimate::factory()->create();
     $area = EstimateArea::factory()->create([
         'estimate_id' => $estimate->id,
@@ -395,16 +398,20 @@ it('getSurfaceCustomerPrices returns sale_price for custom surfaces', function (
         'is_included' => true,
     ]);
 
-    // Custom with sale_price
+    // Custom with sale_price (ignored in proportional allocation now)
     $custom = EstimateAreaSurface::factory()->forArea($area)
         ->custom(3.0, 40.0, 50.0)
         ->withCustomPricing(salePrice: 500.0)
         ->create(['is_included' => true]);
 
     $prices = $area->getSurfaceCustomerPrices();
+    $customerPrice = $area->getCustomerPrice();
 
-    expect($prices[$custom->id])->toBe(500.0);
+    // Both surfaces get proportional allocation
+    expect($prices[$custom->id])->toBeGreaterThan(0.0);
     expect($prices[$auto->id])->toBeGreaterThan(0.0);
+    // Sum of proportional prices should equal area customer price
+    expect(round($prices[$custom->id] + $prices[$auto->id], 2))->toBe(round($customerPrice, 2));
 });
 
 it('withCustomPricing factory state works', function () {

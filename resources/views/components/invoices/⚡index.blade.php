@@ -161,6 +161,21 @@ new class extends Component
         unset($this->invoices, $this->stats);
     }
 
+    public function resendInvoice(int $invoiceId): void
+    {
+        $this->authorize('invoices.send');
+
+        $invoice = Invoice::findOrFail($invoiceId);
+        if (! in_array($invoice->status, [Invoice::STATUS_SENT, Invoice::STATUS_OVERDUE, Invoice::STATUS_PARTIALLY_PAID])) {
+            return;
+        }
+
+        $service = new InvoiceService;
+        $service->resendInvoice($invoice);
+
+        unset($this->invoices, $this->stats);
+    }
+
     public function voidInvoice(int $invoiceId): void
     {
         $this->authorize('invoices.manage');
@@ -306,6 +321,10 @@ new class extends Component
                                     <flux:button variant="ghost" size="sm" icon="eye" href="{{ route('invoices.show', $invoice) }}" />
                                     @if ($this->canSend && $invoice->status === 'draft')
                                         <flux:button variant="ghost" size="sm" icon="paper-airplane" wire:click="sendInvoice({{ $invoice->id }})" :wire:confirm="__('Send this invoice to the customer?')" />
+                                    @elseif ($this->canSend && in_array($invoice->status, ['sent', 'overdue', 'partially_paid']))
+                                        <flux:tooltip content="{{ __('Resend invoice email') }}">
+                                            <flux:button variant="ghost" size="sm" icon="arrow-path" wire:click="resendInvoice({{ $invoice->id }})" :wire:confirm="__('Resend this invoice to the customer?')" />
+                                        </flux:tooltip>
                                     @endif
                                     <flux:button variant="ghost" size="sm" icon="arrow-down-tray" href="{{ route('invoices.pdf', $invoice) }}" />
                                     @if ($this->canManage && ! $invoice->isPaid() && ! $invoice->isVoid())

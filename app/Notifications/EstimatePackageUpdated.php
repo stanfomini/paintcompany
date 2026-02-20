@@ -35,7 +35,7 @@ class EstimatePackageUpdated extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $appName = config('app.name', 'Apex Negotiations');
+        $appName = config('app.name');
         $publicUrl = $this->estimate->getPublicUrl();
 
         $message = (new MailMessage)

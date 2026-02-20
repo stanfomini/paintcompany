@@ -10,6 +10,7 @@ use App\Automation\Contracts\WaitInterface;
 use App\Models\WorkflowRun;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 use ReflectionClass;
 
 class Registry
@@ -181,6 +182,41 @@ class Registry
         }
 
         return app($class);
+    }
+
+    /**
+     * Get all available dynamic fields for a given trigger class.
+     *
+     * @param  class-string<TriggerInterface>  $triggerClass
+     * @return array<int, array{prefix: string, key: string, path: string, label: string}>
+     */
+    public function getAvailableFieldsForTrigger(string $triggerClass): array
+    {
+        if (! is_a($triggerClass, TriggerInterface::class, true)) {
+            return [];
+        }
+
+        $prefixes = $triggerClass::getAvailableDynamicPrefixes();
+        $fields = [];
+
+        foreach ($prefixes as $prefix) {
+            $resolver = $this->findDynamicValue($prefix);
+
+            if (! $resolver) {
+                continue;
+            }
+
+            foreach ($resolver::getAvailableKeys() as $key) {
+                $fields[] = [
+                    'prefix' => $prefix,
+                    'key' => $key,
+                    'path' => "{$prefix}.{$key}",
+                    'label' => Str::title(str_replace('_', ' ', $prefix)).': '.Str::title(str_replace('_', ' ', $key)),
+                ];
+            }
+        }
+
+        return $fields;
     }
 
     /**

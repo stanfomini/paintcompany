@@ -39,4 +39,13 @@ class VideoView extends Model
     {
         return $this->belongsTo(User::class, 'viewer_id');
     }
+
+    public static function markContentViewed(VideoRecording $recording, User $user): self
+    {
+        return static::create([
+            'video_recording_id' => $recording->id,
+            'viewer_id' => $user->id,
+            'source' => 'content_view',
+        ]);
+    }
 }

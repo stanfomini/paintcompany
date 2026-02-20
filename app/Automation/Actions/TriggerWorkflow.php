@@ -30,10 +30,11 @@ class TriggerWorkflow implements ActionInterface
     {
         return [
             'workflow_id' => [
-                'type' => 'integer',
+                'type' => 'string',
                 'label' => 'Target Workflow',
-                'description' => 'The ID of the workflow to trigger.',
+                'description' => 'The workflow to trigger.',
                 'required' => true,
+                'options' => Workflow::active()->published()->pluck('name', 'id')->toArray(),
             ],
         ];
     }

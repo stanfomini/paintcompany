@@ -21,24 +21,28 @@ class RolesAndPermissionsSeeder extends Seeder
         $permissions = [
             // People
             'people.view',
+            'people.view_all',
             'people.create',
             'people.edit',
             'people.delete',
 
             // Properties
             'properties.view',
+            'properties.view_all',
             'properties.create',
             'properties.edit',
             'properties.delete',
 
             // Deals
             'deals.view',
+            'deals.view_all',
             'deals.create',
             'deals.edit',
             'deals.delete',
 
             // Estimates
             'estimates.view',
+            'estimates.view_all',
             'estimates.create',
             'estimates.edit',
             'estimates.delete',
@@ -51,6 +55,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Jobs
             'jobs.view',
+            'jobs.view_all',
             'jobs.edit',
 
             // Planner / Activities
@@ -68,6 +73,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Communication
             'chat.access',
+            'chat.view_deal_chats',
             'chat.with_customers',
             'chat.with_agents',
             'chat.with_crew',
@@ -112,6 +118,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Invoices
             'invoices.view',
+            'invoices.view_all',
             'invoices.create',
             'invoices.send',
             'invoices.manage',
@@ -175,6 +182,39 @@ class RolesAndPermissionsSeeder extends Seeder
             'media.manage_channels',
             'media.manage_training',
             'media.send_emails',
+            'media.view_own_analytics',
+
+            // Sales Territories
+            'sales_territories.view',
+            'sales_territories.manage',
+
+            // Door Knocks
+            'door_knocks.view',
+            'door_knocks.record',
+            'door_knocks.view_all',
+
+            // Territory Dispatch
+            'territory_dispatch.view',
+            'territory_dispatch.manage',
+            'territory_dispatch.claim',
+
+            // AR Portal
+            'ar.view',
+            'ar.manage',
+            'ar.approve_payables',
+            'ar.create_journal_entries',
+
+            // Workflows
+            'workflows.view',
+            'workflows.manage',
+
+            // Financial Summaries
+            'team.view_financials',
+            'crew.view_financials',
+
+            // Reports
+            'reports.view',
+            'reports.own',
         ];
 
         foreach ($permissions as $permission) {
@@ -191,17 +231,17 @@ class RolesAndPermissionsSeeder extends Seeder
         $admin = Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
         $admin->syncPermissions([
             // People
-            'people.view', 'people.create', 'people.edit', 'people.delete',
+            'people.view', 'people.view_all', 'people.create', 'people.edit', 'people.delete',
             // Properties
-            'properties.view', 'properties.create', 'properties.edit', 'properties.delete',
+            'properties.view', 'properties.view_all', 'properties.create', 'properties.edit', 'properties.delete',
             // Deals
-            'deals.view', 'deals.create', 'deals.edit', 'deals.delete',
+            'deals.view', 'deals.view_all', 'deals.create', 'deals.edit', 'deals.delete',
             // Estimates
-            'estimates.view', 'estimates.create', 'estimates.edit', 'estimates.delete', 'estimates.send',
+            'estimates.view', 'estimates.view_all', 'estimates.create', 'estimates.edit', 'estimates.delete', 'estimates.send',
             // Financials
             'financials.view_cost_breakdown', 'financials.view_painter_breakdown', 'financials.manage_pricing',
             // Jobs
-            'jobs.view', 'jobs.edit',
+            'jobs.view', 'jobs.view_all', 'jobs.edit',
             // Planner
             'planner.view', 'planner.view_all', 'planner.manage',
             // Agent Listings
@@ -209,7 +249,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates
             'production_rates.view', 'production_rates.manage',
             // Communication
-            'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+            'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
             // Settings
             'settings.company', 'settings.packages', 'settings.allocations',
@@ -227,7 +267,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Business Plan
             'business_plan.view', 'business_plan.manage',
             // Invoices
-            'invoices.view', 'invoices.create', 'invoices.send', 'invoices.manage',
+            'invoices.view', 'invoices.view_all', 'invoices.create', 'invoices.send', 'invoices.manage',
             // Payments
             'payments.view', 'payments.record',
             // Vendors
@@ -252,23 +292,37 @@ class RolesAndPermissionsSeeder extends Seeder
             'payroll.view',
             // Media Hub
             'media.view', 'media.record', 'media.manage', 'media.send_emails',
+            // Sales Territories
+            'sales_territories.view', 'sales_territories.manage',
+            // Door Knocks
+            'door_knocks.view', 'door_knocks.record', 'door_knocks.view_all',
+            // Territory Dispatch
+            'territory_dispatch.view', 'territory_dispatch.manage', 'territory_dispatch.claim',
+            // AR Portal
+            'ar.view', 'ar.manage', 'ar.approve_payables', 'ar.create_journal_entries',
+            // Workflows
+            'workflows.view', 'workflows.manage',
+            // Financial Summaries
+            'team.view_financials', 'crew.view_financials',
+            // Reports
+            'reports.view', 'reports.own',
         ]);
 
         // Manager - view + edit, no management or deletion
         $manager = Role::firstOrCreate(['name' => 'manager', 'guard_name' => 'web']);
         $manager->syncPermissions([
             // People
-            'people.view', 'people.create', 'people.edit',
+            'people.view', 'people.view_all', 'people.create', 'people.edit',
             // Properties
-            'properties.view', 'properties.create', 'properties.edit',
+            'properties.view', 'properties.view_all', 'properties.create', 'properties.edit',
             // Deals
-            'deals.view', 'deals.create', 'deals.edit',
+            'deals.view', 'deals.view_all', 'deals.create', 'deals.edit',
             // Estimates
-            'estimates.view', 'estimates.create', 'estimates.edit', 'estimates.send',
+            'estimates.view', 'estimates.view_all', 'estimates.create', 'estimates.edit', 'estimates.send',
             // Financials (view only)
             'financials.view_cost_breakdown', 'financials.view_painter_breakdown',
             // Jobs
-            'jobs.view', 'jobs.edit',
+            'jobs.view', 'jobs.view_all', 'jobs.edit',
             // Planner
             'planner.view', 'planner.view_all', 'planner.manage',
             // Agent Listings (view only)
@@ -276,7 +330,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates (view only)
             'production_rates.view',
             // Communication
-            'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+            'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
             // Roadmap
             'roadmap.view', 'roadmap.edit',
@@ -287,7 +341,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Business Plan
             'business_plan.view', 'business_plan.manage',
             // Invoices
-            'invoices.view', 'invoices.create', 'invoices.send',
+            'invoices.view', 'invoices.view_all', 'invoices.create', 'invoices.send',
             // Payments
             'payments.view', 'payments.record',
             // Vendors
@@ -309,7 +363,19 @@ class RolesAndPermissionsSeeder extends Seeder
             // Scheduling
             'scheduling.view', 'scheduling.view_all', 'scheduling.manage',
             // Media Hub
-            'media.view', 'media.record', 'media.send_emails',
+            'media.view', 'media.record', 'media.send_emails', 'media.view_own_analytics',
+            // Sales Territories
+            'sales_territories.view',
+            // Door Knocks
+            'door_knocks.view', 'door_knocks.record', 'door_knocks.view_all',
+            // Territory Dispatch
+            'territory_dispatch.view', 'territory_dispatch.claim',
+            // AR Portal (view only)
+            'ar.view',
+            // Financial Summaries
+            'team.view_financials', 'crew.view_financials',
+            // Reports
+            'reports.view', 'reports.own',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -344,6 +410,16 @@ class RolesAndPermissionsSeeder extends Seeder
             'photos.upload', 'photos.comment',
             // Referrals
             'referrals.view',
+            // Sales Territories
+            'sales_territories.view',
+            // Door Knocks
+            'door_knocks.view', 'door_knocks.record',
+            // Territory Dispatch
+            'territory_dispatch.view', 'territory_dispatch.claim',
+            // Media Hub
+            'media.view', 'media.record', 'media.send_emails', 'media.view_own_analytics',
+            // Reports
+            'reports.own',
         ]);
 
         // HR Manager - focused on employee management, hiring, onboarding, payroll
@@ -381,20 +457,40 @@ class RolesAndPermissionsSeeder extends Seeder
             'photos.upload', 'photos.comment',
         ]);
 
-        // Crew Lead - minimal internal access
-        $crewLead = Role::firstOrCreate(['name' => 'crew_lead', 'guard_name' => 'web']);
-        $crewLead->syncPermissions([
-            // Jobs (view only)
-            'jobs.view',
-            // Planner (own activities)
+        // Door-to-Door Sales Rep - focused on door knocking, territory claiming, and quick customer outreach
+        $doorToDoor = Role::firstOrCreate(['name' => 'door_to_door', 'guard_name' => 'web']);
+        $doorToDoor->syncPermissions([
+            // People (view + create for new contacts from knocks)
+            'people.view', 'people.create',
+            // Properties (view only)
+            'properties.view',
+            // Deals (view only - workflow auto-creates from knocks)
+            'deals.view',
+            // Estimates (view only - see estimates from their knocks)
+            'estimates.view',
+            // Planner (own schedule)
             'planner.view',
-            // Communication
-            'chat.access', 'chat.with_crew', 'chat.with_internal',
-            'walkie_talkie.access', 'video_call.access',
-            // Roadmap
-            'roadmap.view',
+            // Communication (chat with internal team + customers for follow-ups)
+            'chat.access', 'chat.with_internal', 'chat.with_customers',
+            'video_call.access',
+            // Sales Territories
+            'sales_territories.view',
+            // Door Knocks
+            'door_knocks.view', 'door_knocks.record',
+            // Territory Dispatch
+            'territory_dispatch.view', 'territory_dispatch.claim',
+            // Media Hub (record custom videos, email to customers, see own analytics)
+            'media.view', 'media.record', 'media.send_emails', 'media.view_own_analytics',
             // Photos
-            'photos.upload', 'photos.annotate', 'photos.comment',
+            'photos.upload', 'photos.comment',
+            // Employees (view team directory)
+            'employees.view',
+            // Time Tracking (clock in/out)
+            'time_tracking.view', 'time_tracking.clock',
+            // Scheduling (view own schedule)
+            'scheduling.view',
+            // Reports (own performance stats)
+            'reports.own',
         ]);
     }
 }

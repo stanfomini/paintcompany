@@ -127,7 +127,12 @@ new #[Layout('components.layouts.crew')] class extends Component
 ?>
 
 <div wire:poll.120s>
-    <flux:heading size="xl" class="mb-6">{{ __('Available Jobs') }}</flux:heading>
+    <div class="flex items-center gap-3 mb-6">
+        <flux:button variant="ghost" :href="route('crew.dashboard')" icon="arrow-left" class="shrink-0">
+            <span class="hidden sm:inline">{{ __('Back') }}</span>
+        </flux:button>
+        <flux:heading size="xl" class="truncate">{{ __('Available Jobs') }}</flux:heading>
+    </div>
 
     @if (session('success'))
         <flux:callout variant="success" class="mb-4">
@@ -162,12 +167,12 @@ new #[Layout('components.layouts.crew')] class extends Component
             @foreach ($this->availableJobs as $job)
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden {{ isset($this->takenJobs[$job->id]) ? 'opacity-60' : '' }}" wire:key="available-{{ $job->id }}">
                     <div class="p-6">
-                        <div class="flex items-start justify-between mb-4">
-                            <div>
-                                <flux:heading size="lg">{{ $job->title }}</flux:heading>
+                        <div class="flex items-start justify-between gap-2 mb-4">
+                            <div class="min-w-0">
+                                <flux:heading size="lg" class="truncate">{{ $job->title }}</flux:heading>
                                 <flux:text class="text-sm text-zinc-500">{{ $job->job_number }}</flux:text>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-1 sm:gap-2 shrink-0">
                                 @if ($this->crewServiceCategoryName)
                                     <flux:badge size="sm" color="purple">{{ $this->crewServiceCategoryName }}</flux:badge>
                                 @endif
@@ -222,27 +227,27 @@ new #[Layout('components.layouts.crew')] class extends Component
 
                         @php $jobBonus = $this->getBonusForJob($job); @endphp
                         @if ($jobBonus)
-                            <div class="bg-gradient-to-r from-amber-50 to-green-50 dark:from-amber-900/20 dark:to-green-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mt-4">
-                                <div class="flex items-center justify-between">
-                                    <div>
-                                        <span class="text-sm font-bold text-amber-800 dark:text-amber-300">
+                            <div class="bg-gradient-to-r from-amber-50 to-green-50 dark:from-amber-900/20 dark:to-green-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 sm:p-4 mt-4">
+                                <div class="flex items-center justify-between gap-2">
+                                    <div class="min-w-0">
+                                        <span class="text-xs sm:text-sm font-bold text-amber-800 dark:text-amber-300">
                                             <flux:icon name="gift" class="w-4 h-4 inline mr-1" />
                                             {{ __('Crew Lead Bonus') }} ({{ number_format($jobBonus['bonus_percent'], 1) }}%)
                                         </span>
-                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{{ __('Performance bonus available on this job') }}</p>
+                                        <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 hidden sm:block">{{ __('Performance bonus available on this job') }}</p>
                                     </div>
-                                    <span class="text-xl font-bold text-green-600 dark:text-green-400">${{ number_format($jobBonus['bonus_amount'], 2) }}</span>
+                                    <span class="text-lg sm:text-xl font-bold text-green-600 dark:text-green-400 shrink-0">${{ number_format($jobBonus['bonus_amount'], 2) }}</span>
                                 </div>
                             </div>
                         @endif
 
-                        <div class="flex items-center justify-between mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
+                        <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-700">
                             @if (isset($this->takenJobs[$job->id]))
                                 <flux:text class="text-sm text-red-600 dark:text-red-400">
                                     {{ __('Accepted by :name', ['name' => $this->takenJobs[$job->id]]) }}
                                 </flux:text>
                             @else
-                                <flux:button href="{{ route('crew.jobs.show', $job) }}" size="sm" variant="ghost" icon="eye">
+                                <flux:button href="{{ route('crew.jobs.show', $job) }}" size="sm" variant="ghost" icon="eye" class="justify-center sm:justify-start">
                                     {{ __('View Details') }}
                                 </flux:button>
                                 <div class="flex items-center gap-2">
@@ -251,6 +256,7 @@ new #[Layout('components.layouts.crew')] class extends Component
                                         wire:confirm="{{ __('Are you sure you want to decline this job?') }}"
                                         size="sm"
                                         variant="ghost"
+                                        class="flex-1 sm:flex-none"
                                     >
                                         {{ __('Decline') }}
                                     </flux:button>
@@ -259,6 +265,7 @@ new #[Layout('components.layouts.crew')] class extends Component
                                         size="sm"
                                         variant="primary"
                                         icon="check"
+                                        class="flex-1 sm:flex-none"
                                     >
                                         {{ __('Accept Job') }}
                                     </flux:button>

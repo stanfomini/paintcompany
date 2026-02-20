@@ -360,24 +360,23 @@ class TemplatePricingService
             return 0.0;
         }
 
-        $coverage = $paintProduct->getCoverage('brush_roll');
-        if ($coverage <= 0) {
-            $coverage = 400;
-        }
-        $totalSqft = $quantity * $coats;
-        $gallonsNeeded = $totalSqft / $coverage;
+        // Use PaintProduct::calculateCost() for consistency with the save flow
+        $costCalc = $paintProduct->calculateCost(
+            $quantity,
+            $coats,
+            'brush_roll',
+            (float) ($settings->recycle_fee_per_gallon ?? 0.54)
+        );
 
+        $materialCost = $costCalc['total_cost'];
+
+        // Apply substrate material multiplier if present
         $materialMultiplier = $substrate ? (float) ($substrate->material_multiplier ?? 1.0) : 1.0;
-        $gallonsNeeded = $gallonsNeeded * $materialMultiplier;
+        if ($materialMultiplier !== 1.0) {
+            $materialCost *= $materialMultiplier;
+        }
 
-        $gallonsRounded = (int) ceil($gallonsNeeded);
-
-        $pricePerGallon = (float) ($paintProduct->price_per_gallon ?? 50.00);
-        $paintCost = $gallonsRounded * $pricePerGallon;
-
-        $recycleFee = $gallonsRounded * (float) ($settings->recycle_fee_per_gallon ?? 0.54);
-
-        return $paintCost + $recycleFee;
+        return $materialCost;
     }
 
     /**

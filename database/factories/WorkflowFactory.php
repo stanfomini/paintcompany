@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\ServiceCategory;
 use App\Models\User;
 use App\Models\Workflow;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -26,7 +27,11 @@ class WorkflowFactory extends Factory
             'is_active' => true,
             'is_system' => false,
             'version' => 1,
-            'created_by' => User::factory(),
+            'priority' => 0,
+            'user_scope_type' => Workflow::USER_SCOPE_ANY,
+            'user_scope_value' => null,
+            'service_category_id' => null,
+            'created_by' => User::factory()->internal(),
             'published_at' => null,
         ];
     }
@@ -58,6 +63,49 @@ class WorkflowFactory extends Factory
     {
         return $this->state(fn () => [
             'is_system' => true,
+        ]);
+    }
+
+    /**
+     * Scope the workflow to a specific user.
+     */
+    public function forUser(User $user): static
+    {
+        return $this->state(fn () => [
+            'user_scope_type' => Workflow::USER_SCOPE_SPECIFIC_USER,
+            'user_scope_value' => (string) $user->id,
+        ]);
+    }
+
+    /**
+     * Scope the workflow to a specific role.
+     */
+    public function forRole(string $role): static
+    {
+        return $this->state(fn () => [
+            'user_scope_type' => Workflow::USER_SCOPE_ROLE,
+            'user_scope_value' => $role,
+        ]);
+    }
+
+    /**
+     * Scope the workflow to a specific user type.
+     */
+    public function forUserType(string $userType): static
+    {
+        return $this->state(fn () => [
+            'user_scope_type' => Workflow::USER_SCOPE_USER_TYPE,
+            'user_scope_value' => $userType,
+        ]);
+    }
+
+    /**
+     * Scope the workflow to a specific service category.
+     */
+    public function withServiceCategory(ServiceCategory $category): static
+    {
+        return $this->state(fn () => [
+            'service_category_id' => $category->id,
         ]);
     }
 }

@@ -66,7 +66,7 @@ new class extends Component {
     #[Computed]
     public function plan(): ?JobPrepPlan
     {
-        return $this->job->prepPlan?->load(['days.tasks.completedByUser', 'days.tasks.serviceCategory', 'approvals.approver', 'approvals.serviceCategory', 'serviceSettings.serviceCategory']);
+        return $this->job->prepPlan?->load(['days.tasks.completedByUser', 'days.tasks.serviceCategory', 'days.tasks.removalRequestedByUser', 'days.tasks.addedByUser', 'approvals.approver', 'approvals.serviceCategory', 'serviceSettings.serviceCategory']);
     }
 
     #[Computed]
@@ -176,6 +176,51 @@ new class extends Component {
         unset($this->plan, $this->days, $this->progress, $this->approvals);
     }
 
+    public function addDay(): void
+    {
+        if (! $this->plan) {
+            return;
+        }
+
+        $newDay = app(JobPrepService::class)->addDay($this->plan);
+        unset($this->plan, $this->days, $this->progress, $this->totalEstimatedHours, $this->approvals);
+        $this->activeDay = $newDay->day_number;
+    }
+
+    public function deleteDay(int $dayId): void
+    {
+        $day = JobPrepDay::findOrFail($dayId);
+        $result = app(JobPrepService::class)->deleteDay($day);
+
+        if ($result) {
+            unset($this->plan, $this->days, $this->progress, $this->totalEstimatedHours, $this->approvals);
+            if ($this->activeDay > ($this->days->count() ?: 1)) {
+                $this->activeDay = 1;
+            }
+        }
+    }
+
+    public function requestTaskRemoval(int $taskId): void
+    {
+        $task = JobPrepTask::findOrFail($taskId);
+        app(JobPrepService::class)->requestTaskRemoval($task, auth()->user());
+        unset($this->plan, $this->days, $this->progress, $this->approvals);
+    }
+
+    public function approveTaskRemoval(int $taskId): void
+    {
+        $task = JobPrepTask::findOrFail($taskId);
+        app(JobPrepService::class)->approveTaskRemoval($task);
+        unset($this->plan, $this->days, $this->progress, $this->approvals);
+    }
+
+    public function dismissTaskRemoval(int $taskId): void
+    {
+        $task = JobPrepTask::findOrFail($taskId);
+        app(JobPrepService::class)->dismissTaskRemoval($task);
+        unset($this->plan, $this->days, $this->progress, $this->approvals);
+    }
+
     public function addCustomTask(): void
     {
         if (empty(trim($this->customTaskTitle))) {
@@ -191,7 +236,8 @@ new class extends Component {
             $day,
             $this->customTaskTitle,
             $this->customTaskServiceCategoryId,
-            $this->customTaskDescription
+            $this->customTaskDescription,
+            auth()->user()
         );
 
         $this->reset('customTaskTitle', 'customTaskDescription', 'customTaskServiceCategoryId', 'showCustomTaskForm');
@@ -416,6 +462,9 @@ new class extends Component {
                         @endif
                     </button>
                 @endforeach
+                <button wire:click="addDay" class="px-3 py-3 text-sm text-zinc-400 hover:text-blue-600 border-b-2 border-transparent" title="{{ __('Add Day') }}">
+                    <flux:icon name="plus" class="w-4 h-4" />
+                </button>
             </div>
 
             {{-- Active Day Content --}}
@@ -436,6 +485,11 @@ new class extends Component {
                                     {{ $serviceFilter !== null ? __('No tasks for this service on this day.') : __('No tasks assigned to this day yet.') }}
                                 </flux:text>
                                 <flux:text class="text-xs text-zinc-400">{{ __('Use the day dropdown on tasks to assign them here, or add custom tasks.') }}</flux:text>
+                                @if ($day->tasks->isEmpty() && $this->days->count() > 1)
+                                    <flux:button wire:click="deleteDay({{ $day->id }})" wire:confirm="{{ __('Delete this empty day?') }}" size="sm" variant="ghost" icon="trash" class="mt-2 text-red-500">
+                                        {{ __('Delete Day') }}
+                                    </flux:button>
+                                @endif
                             </div>
                         @else
                             <div class="space-y-2">
@@ -508,15 +562,49 @@ new class extends Component {
                                             </div>
                                         @endif
 
-                                        {{-- Delete (custom only) --}}
+                                        {{-- Task removal actions (custom only) --}}
                                         @if ($task->isCustom())
-                                            <button
-                                                wire:click="removeTask({{ $task->id }})"
-                                                wire:confirm="{{ __('Remove this custom task?') }}"
-                                                class="text-red-400 hover:text-red-600 shrink-0"
-                                            >
-                                                <flux:icon name="trash" class="w-4 h-4" />
-                                            </button>
+                                            @if ($task->hasRemovalRequest() && $task->removalRequestedByUser?->type !== 'internal')
+                                                {{-- Removal request from crew — team can approve/dismiss --}}
+                                                <div class="flex flex-col items-end gap-1 shrink-0">
+                                                    <div class="text-xs text-amber-600 dark:text-amber-400 max-w-48 text-right">
+                                                        {{ $task->removalRequestedByUser?->name ?? __('Crew') }} {{ __('requests removal') }}
+                                                        @if ($task->removal_reason)
+                                                            — {{ $task->removal_reason }}
+                                                        @endif
+                                                    </div>
+                                                    <div class="flex gap-1">
+                                                        <button wire:click="approveTaskRemoval({{ $task->id }})" class="text-xs px-2 py-1 bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 rounded">
+                                                            {{ __('Approve') }}
+                                                        </button>
+                                                        <button wire:click="dismissTaskRemoval({{ $task->id }})" class="text-xs px-2 py-1 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-400 rounded">
+                                                            {{ __('Dismiss') }}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            @elseif ($task->hasRemovalRequest())
+                                                {{-- Removal request from self (team) — show pending badge --}}
+                                                <flux:badge size="sm" color="yellow" class="shrink-0">{{ __('Removal Pending') }}</flux:badge>
+                                            @elseif ($task->added_by && $task->addedByUser?->type === 'crew')
+                                                {{-- Crew-created task, no request — team can request removal --}}
+                                                <button
+                                                    wire:click="requestTaskRemoval({{ $task->id }})"
+                                                    wire:confirm="{{ __('Request crew to remove this task?') }}"
+                                                    class="text-amber-500 hover:text-amber-700 shrink-0"
+                                                    title="{{ __('Request Removal') }}"
+                                                >
+                                                    <flux:icon name="hand-raised" class="w-4 h-4" />
+                                                </button>
+                                            @else
+                                                {{-- Team's own task or no added_by — direct delete --}}
+                                                <button
+                                                    wire:click="removeTask({{ $task->id }})"
+                                                    wire:confirm="{{ __('Remove this custom task?') }}"
+                                                    class="text-red-400 hover:text-red-600 shrink-0"
+                                                >
+                                                    <flux:icon name="trash" class="w-4 h-4" />
+                                                </button>
+                                            @endif
                                         @endif
                                     </div>
                                 @endforeach

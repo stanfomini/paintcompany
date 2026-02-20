@@ -79,6 +79,11 @@ Route::livewire('/proposal/{token}', 'public.estimate-proposal')
     ->name('estimates.public')
     ->middleware('throttle:60,1');
 
+// Public vendor onboarding route
+Route::livewire('/vendor/onboarding/{token}', 'public.vendor-onboarding')
+    ->name('vendor.onboarding')
+    ->middleware('throttle:60,1');
+
 // Public calculator showcase page (marketing landing page for agents)
 Route::livewire('/calculator', 'public.calculator')
     ->name('calculator')
@@ -274,6 +279,9 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::livewire('/jobs/{job}/cost-card', 'jobs.cost-card')
             ->middleware('permission:financials.view_cost_breakdown')
             ->name('jobs.cost-card');
+        Route::livewire('/jobs/{job}/painter-breakdown', 'jobs.painter-breakdown')
+            ->middleware('permission:financials.view_painter_breakdown')
+            ->name('jobs.painter-breakdown');
     });
 
     // Activity calendar JSON API

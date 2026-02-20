@@ -5,6 +5,7 @@ namespace App\Automation\Actions;
 use App\Automation\Contracts\ActionInterface;
 use App\Automation\Registry;
 use App\Models\Activity;
+use App\Models\User;
 use App\Models\WorkflowRun;
 use App\Services\PriorityScoreService;
 
@@ -61,11 +62,12 @@ class CreateTask implements ActionInterface
                 'default' => null,
             ],
             'assigned_to' => [
-                'type' => 'integer',
+                'type' => 'string',
                 'label' => 'Assign To User',
-                'description' => 'The user ID to assign this task to. Leave empty for unassigned.',
+                'description' => 'The user to assign this task to. Leave empty for unassigned.',
                 'required' => false,
                 'default' => null,
+                'options' => array_replace(['' => '-- Unassigned --'], User::where('type', 'internal')->pluck('name', 'id')->toArray()),
             ],
         ];
     }

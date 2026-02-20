@@ -35,6 +35,15 @@ new class extends Component {
         // Verify user is a participant in this thread
         abort_unless($thread->hasParticipant(auth()->user()), 403);
 
+        // Block deal threads for internal users without permission
+        if ($thread->type === ChatThread::TYPE_DEAL
+            && auth()->user()->isInternal()
+            && auth()->user()->roles->isNotEmpty()
+            && ! auth()->user()->can('chat.view_deal_chats')
+        ) {
+            abort(403);
+        }
+
         $this->thread = $thread->load(['deal', 'activeParticipants.user']);
 
         // Mark thread as read on view

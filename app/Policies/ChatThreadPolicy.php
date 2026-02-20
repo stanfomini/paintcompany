@@ -20,6 +20,14 @@ class ChatThreadPolicy
      */
     public function view(User $user, ChatThread $chatThread): bool
     {
+        if ($chatThread->type === ChatThread::TYPE_DEAL
+            && $user->isInternal()
+            && $user->roles->isNotEmpty()
+            && ! $user->can('chat.view_deal_chats')
+        ) {
+            return false;
+        }
+
         return $chatThread->hasParticipant($user);
     }
 

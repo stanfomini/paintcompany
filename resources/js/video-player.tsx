@@ -131,7 +131,7 @@ const IntroScene: React.FC<{ data: VideoData }> = ({ data }) => {
             fontWeight: 600,
             color: data.primaryColor || '#1e3a5f',
           }}>
-            {data.companyName || 'Apex Negotiations'}
+            {data.companyName || 'Painting Made Easy Denver'}
           </span>
         </div>
       </AbsoluteFill>
@@ -205,7 +205,7 @@ const PhotoSlide: React.FC<{ photo: Photo; companyName?: string }> = ({ photo, c
         fontWeight: 600,
         color: '#333',
       }}>
-        {companyName || 'Apex Negotiations'}
+        {companyName || 'Painting Made Easy Denver'}
       </div>
     </AbsoluteFill>
   );
@@ -301,7 +301,7 @@ const BeforeAfterSlide: React.FC<{ before: Photo; after: Photo; companyName?: st
         fontWeight: 600,
         color: '#666',
       }}>
-        {companyName || 'Apex Negotiations'}
+        {companyName || 'Painting Made Easy Denver'}
       </div>
     </AbsoluteFill>
   );
@@ -548,7 +548,7 @@ const ContactScene: React.FC<{ data: VideoData }> = ({ data }) => {
           marginBottom: 20,
         }}>
           <h1 style={{ fontSize: 64, fontWeight: 800, color: '#111', margin: 0 }}>
-            {data.companyName || 'Apex Negotiations'}
+            {data.companyName || 'Painting Made Easy Denver'}
           </h1>
         </div>
 
@@ -632,7 +632,7 @@ const ContactScene: React.FC<{ data: VideoData }> = ({ data }) => {
             {data.companyName?.charAt(0) || 'A'}
           </div>
           <span style={{ fontSize: 18, fontWeight: 500, color: '#888' }}>
-            {data.companyName || 'Apex Negotiations'}
+            {data.companyName || 'Painting Made Easy Denver'}
           </span>
         </div>
       </div>

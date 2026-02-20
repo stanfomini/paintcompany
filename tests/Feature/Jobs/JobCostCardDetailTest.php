@@ -426,3 +426,159 @@ it('shows export csv and pdf links when estimate is linked', function () {
         ->assertSee('Export PDF')
         ->assertSee('Print');
 });
+
+// ─── New Features: Comparison, What-If, Tier ───
+
+it('shows settings comparison tab when estimate has snapshot', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    // Save a settings snapshot on the estimate with different values
+    $data['estimate']->update([
+        'settings_snapshot' => [
+            'scope' => 'interior',
+            'hourly_wage' => 22.00,
+            'payroll_burden_multiplier' => 1.30,
+            'margin_percent' => 45.0,
+            'cleanup_hours_ratio' => 6.67,
+            'sundries_cost_per_hour' => 1.50,
+            'material_tax_rate' => 7.5,
+            'net_profit_margin_percent' => 20.0,
+            'hourly_rate_override' => null,
+        ],
+    ]);
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertStatus(200)
+        ->assertSee('Settings Comparison')
+        ->call('setActiveTab', 'comparison')
+        ->assertSet('activeTab', 'comparison')
+        ->assertSee('Setting');
+});
+
+it('does not show comparison tab when estimate has no snapshot', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    // Ensure no snapshot
+    $data['estimate']->update(['settings_snapshot' => null]);
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertStatus(200)
+        ->assertDontSee('Settings Comparison');
+});
+
+it('what-if margin slider is present in projected tab', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertStatus(200)
+        ->assertSee('What-If: Margin Rate');
+});
+
+it('what-if margin can be updated', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertStatus(200)
+        ->call('updateWhatIfMargin', 40.0)
+        ->assertSet('whatIfMargin', 40.0);
+});
+
+it('what-if margin is clamped between 0 and 100', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    $component = Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']]);
+
+    $component->call('updateWhatIfMargin', 150.0)
+        ->assertSet('whatIfMargin', 100.0);
+
+    $component->call('updateWhatIfMargin', -10.0)
+        ->assertSet('whatIfMargin', 0.0);
+});
+
+it('toggleWhatIf toggles the showWhatIf state', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertSet('showWhatIf', false)
+        ->call('toggleWhatIf')
+        ->assertSet('showWhatIf', true)
+        ->call('toggleWhatIf')
+        ->assertSet('showWhatIf', false);
+});
+
+it('setActiveTab method works for all tabs', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertSet('activeTab', 'projected')
+        ->call('setActiveTab', 'actuals')
+        ->assertSet('activeTab', 'actuals')
+        ->call('setActiveTab', 'payments')
+        ->assertSet('activeTab', 'payments')
+        ->call('setActiveTab', 'projected')
+        ->assertSet('activeTab', 'projected');
+});
+
+it('shows estimate number in header', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $data = createJobWithEstimateData();
+
+    JobCostCard::factory()->forJob($data['job'])->create([
+        'price' => 5000,
+        'total_cogs' => 2000,
+    ]);
+
+    Livewire::actingAs($user)
+        ->test('jobs.cost-card', ['job' => $data['job']])
+        ->assertStatus(200)
+        ->assertSee($data['estimate']->estimate_number);
+});

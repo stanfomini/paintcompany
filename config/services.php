@@ -46,4 +46,8 @@ return [
         'token' => env('FORGE_API_TOKEN'),
     ],
 
+    'locationiq' => [
+        'key' => env('LOCATIONIQ_API_KEY'),
+    ],
+
 ];

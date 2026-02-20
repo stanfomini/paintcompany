@@ -19,10 +19,12 @@ class ActivityCalendarFeedService
      */
     public function generateFeed(User $user): string
     {
-        $calendar = Calendar::create('Apex Negotiations - Calendar')
-            ->description('Activities, jobs, and commitments from Apex Negotiations')
+        $appName = config('app.name');
+
+        $calendar = Calendar::create($appName.' - Calendar')
+            ->description('Activities, jobs, and commitments from '.$appName)
             ->refreshInterval(60)
-            ->productIdentifier('-//Apex Negotiations//Calendar//EN');
+            ->productIdentifier('-//'.$appName.'//Calendar//EN');
 
         $this->addActivityEvents($calendar, $user);
         $this->addJobEvents($calendar, $user);

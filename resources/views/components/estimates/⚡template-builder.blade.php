@@ -202,6 +202,11 @@ new class extends Component
 
                 // Detect project scope from existing templates
                 $this->detectProjectScopeFromTemplates();
+
+                // Compute tier prices for all loaded templates (Good = card price, Better/Best from tier paints)
+                if ($this->useTierPricing) {
+                    $this->computeInitialTierPrices();
+                }
             }
         } else {
             $this->deal = $deal?->load('property');
@@ -309,60 +314,8 @@ new class extends Component
             // Handle AI-built areas (template_id is null, resultable is a regular EstimateArea)
             if (! $template && $usage->resultable instanceof EstimateArea && ! $usage->resultable->is_fixed_price) {
                 $area = $usage->resultable;
-                $surfaces = [];
-                $totalLaborHours = 0;
-                $totalLaborCost = 0;
-                $totalMaterialCost = 0;
-
-                foreach ($area->surfaces as $surface) {
-                    $surfaceCategory = $surface->productionRate?->surface_category
-                        ?? $this->inferSurfaceCategory($surface->surface_type, $area->scope_type ?? 'interior');
-
-                    $surfaces[] = [
-                        'id' => $surface->id,
-                        'name' => $surface->name,
-                        'surface_type' => $surface->surface_type,
-                        'surface_category' => $surfaceCategory,
-                        'production_rate_id' => $surface->production_rate_id ? (string) $surface->production_rate_id : null,
-                        'quantity_source' => match (true) {
-                            $surface->surface_type === 'doors' => 'door_count',
-                            $surface->surface_type === 'windows' => 'window_count',
-                            $surface->surface_type === 'ceiling' && $surface->unit === 'sqft' => 'ceiling_sqft',
-                            $surface->unit === 'sqft' => 'wall_sqft',
-                            $surface->unit === 'lnft' => 'perimeter_lnft',
-                            default => 'custom',
-                        },
-                        'quantity' => (float) $surface->quantity,
-                        'quantity_override' => $surface->unit === 'units' ? (float) $surface->quantity : null,
-                        'default_coats' => $surface->coats,
-                        'is_required' => false,
-                        'is_default_enabled' => $surface->is_included,
-                        'is_custom' => (bool) $surface->is_custom,
-                        'fixed_price' => null,
-                        'labor_hours' => (float) ($surface->labor_hours ?? 0),
-                        'labor_cost' => (float) ($surface->labor_cost ?? 0),
-                        'material_cost' => (float) ($surface->material_cost ?? 0),
-                    ];
-
-                    if ($surface->is_included) {
-                        $totalLaborHours += (float) ($surface->labor_hours ?? 0);
-                        $totalLaborCost += (float) ($surface->labor_cost ?? 0);
-                        $totalMaterialCost += (float) ($surface->material_cost ?? 0);
-                    }
-                }
-
-                $addons = [];
-                $addonTotal = 0;
-                foreach ($area->addons ?? [] as $addon) {
-                    $addons[] = [
-                        'nested_area_template_id' => $addon->nested_area_template_id,
-                        'name' => $addon->nestedAreaTemplate?->name ?? 'Add-on',
-                        'quantity' => $addon->quantity,
-                        'unit_price' => (float) $addon->unit_price,
-                        'total_price' => (float) $addon->total_price,
-                    ];
-                    $addonTotal += (float) $addon->total_price;
-                }
+                [$surfaces, $totalLaborHours, $totalLaborCost, $totalMaterialCost] = $this->buildSurfaceArrayFromArea($area);
+                [$addons, $addonTotal] = $this->buildAddonArrayFromArea($area);
 
                 $settings = CompanySetting::getInstance();
                 $scopeType = $area->scope_type ?? 'interior';
@@ -376,6 +329,14 @@ new class extends Component
                 $cogs = $cogsResult['cogs'];
                 $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
                 $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+                // Use cached values from previous save if available (avoids rounding divergence)
+                if ($area->cached_customer_price !== null) {
+                    $withMargins = (float) $area->cached_customer_price;
+                }
+                if ($area->cached_cogs !== null) {
+                    $cogs = (float) $area->cached_cogs;
+                }
 
                 $this->selectedTemplates[] = [
                     'template_id' => null,
@@ -418,6 +379,7 @@ new class extends Component
                         'surfaces' => $surfaces,
                         'addons' => $addons,
                     ],
+                    ...$this->restoreTierDataFromArea($area),
                 ];
 
                 continue;
@@ -468,57 +430,8 @@ new class extends Component
                 $totalLaborCost = 0;
                 $totalMaterialCost = 0;
 
-                foreach ($area->surfaces as $surface) {
-                    $surfaceCategory = $surface->productionRate?->surface_category
-                        ?? $this->inferSurfaceCategory($surface->surface_type, $area->scope_type ?? 'interior');
-
-                    $surfaces[] = [
-                        'id' => $surface->id,
-                        'name' => $surface->name,
-                        'surface_type' => $surface->surface_type,
-                        'surface_category' => $surfaceCategory,
-                        'production_rate_id' => $surface->production_rate_id ? (string) $surface->production_rate_id : null,
-                        'quantity_source' => match (true) {
-                            $surface->surface_type === 'doors' => 'door_count',
-                            $surface->surface_type === 'windows' => 'window_count',
-                            $surface->surface_type === 'ceiling' && $surface->unit === 'sqft' => 'ceiling_sqft',
-                            $surface->unit === 'sqft' => 'wall_sqft',
-                            $surface->unit === 'lnft' => 'perimeter_lnft',
-                            default => 'custom',
-                        },
-                        'quantity' => (float) $surface->quantity,
-                        'quantity_override' => $surface->unit === 'units' ? (float) $surface->quantity : null,
-                        'default_coats' => $surface->coats,
-                        'is_required' => false,
-                        'is_default_enabled' => $surface->is_included,
-                        'is_custom' => (bool) $surface->is_custom,
-                        'fixed_price' => null,
-                        'labor_hours' => (float) ($surface->labor_hours ?? 0),
-                        'labor_cost' => (float) ($surface->labor_cost ?? 0),
-                        'material_cost' => (float) ($surface->material_cost ?? 0),
-                    ];
-
-                    // Sum up totals from surfaces
-                    if ($surface->is_included) {
-                        $totalLaborHours += (float) ($surface->labor_hours ?? 0);
-                        $totalLaborCost += (float) ($surface->labor_cost ?? 0);
-                        $totalMaterialCost += (float) ($surface->material_cost ?? 0);
-                    }
-                }
-
-                // Build addons array and sum addon costs
-                $addons = [];
-                $addonTotal = 0;
-                foreach ($area->addons ?? [] as $addon) {
-                    $addons[] = [
-                        'nested_area_template_id' => $addon->nested_area_template_id,
-                        'name' => $addon->nestedAreaTemplate?->name ?? 'Add-on',
-                        'quantity' => $addon->quantity,
-                        'unit_price' => (float) $addon->unit_price,
-                        'total_price' => (float) $addon->total_price,
-                    ];
-                    $addonTotal += (float) $addon->total_price;
-                }
+                [$surfaces, $totalLaborHours, $totalLaborCost, $totalMaterialCost] = $this->buildSurfaceArrayFromArea($area);
+                [$addons, $addonTotal] = $this->buildAddonArrayFromArea($area);
 
                 // Recalculate the breakdown using PBP formula with actual surface data
                 $settings = CompanySetting::getInstance();
@@ -534,6 +447,14 @@ new class extends Component
                 $cogs = $cogsResult['cogs'];
                 $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
                 $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+                // Use cached values from previous save if available (avoids rounding divergence)
+                if ($area->cached_customer_price !== null) {
+                    $withMargins = (float) $area->cached_customer_price;
+                }
+                if ($area->cached_cogs !== null) {
+                    $cogs = (float) $area->cached_cogs;
+                }
 
                 // Update template entry with calculated values from surfaces
                 $templateEntry['labor_hours'] = round($totalLaborHours, 2);
@@ -564,6 +485,13 @@ new class extends Component
                     'surfaces' => $surfaces,
                     'addons' => $addons,
                 ];
+
+                // Restore cached tier prices from previous save
+                $tierData = $this->restoreTierDataFromArea($area);
+                if ($tierData['tier_prices']) {
+                    $templateEntry['tier_prices'] = $tierData['tier_prices'];
+                    $templateEntry['tier_cogs'] = $tierData['tier_cogs'];
+                }
             }
 
             $this->selectedTemplates[] = $templateEntry;
@@ -587,60 +515,8 @@ new class extends Component
             ->get();
 
         foreach ($orphanAreas as $area) {
-            $surfaces = [];
-            $totalLaborHours = 0;
-            $totalLaborCost = 0;
-            $totalMaterialCost = 0;
-
-            foreach ($area->surfaces as $surface) {
-                $surfaceCategory = $surface->productionRate?->surface_category
-                    ?? $this->inferSurfaceCategory($surface->surface_type, $area->scope_type ?? 'interior');
-
-                $surfaces[] = [
-                    'id' => $surface->id,
-                    'name' => $surface->name,
-                    'surface_type' => $surface->surface_type,
-                    'surface_category' => $surfaceCategory,
-                    'production_rate_id' => $surface->production_rate_id ? (string) $surface->production_rate_id : null,
-                    'quantity_source' => match (true) {
-                        $surface->surface_type === 'doors' => 'door_count',
-                        $surface->surface_type === 'windows' => 'window_count',
-                        $surface->surface_type === 'ceiling' && $surface->unit === 'sqft' => 'ceiling_sqft',
-                        $surface->unit === 'sqft' => 'wall_sqft',
-                        $surface->unit === 'lnft' => 'perimeter_lnft',
-                        default => 'custom',
-                    },
-                    'quantity' => (float) $surface->quantity,
-                    'quantity_override' => $surface->unit === 'units' ? (float) $surface->quantity : null,
-                    'default_coats' => $surface->coats,
-                    'is_required' => false,
-                    'is_default_enabled' => $surface->is_included,
-                    'is_custom' => (bool) $surface->is_custom,
-                    'fixed_price' => null,
-                    'labor_hours' => (float) ($surface->labor_hours ?? 0),
-                    'labor_cost' => (float) ($surface->labor_cost ?? 0),
-                    'material_cost' => (float) ($surface->material_cost ?? 0),
-                ];
-
-                if ($surface->is_included) {
-                    $totalLaborHours += (float) ($surface->labor_hours ?? 0);
-                    $totalLaborCost += (float) ($surface->labor_cost ?? 0);
-                    $totalMaterialCost += (float) ($surface->material_cost ?? 0);
-                }
-            }
-
-            $addons = [];
-            $addonTotal = 0;
-            foreach ($area->addons ?? [] as $addon) {
-                $addons[] = [
-                    'nested_area_template_id' => $addon->nested_area_template_id,
-                    'name' => $addon->nestedAreaTemplate?->name ?? 'Add-on',
-                    'quantity' => $addon->quantity,
-                    'unit_price' => (float) $addon->unit_price,
-                    'total_price' => (float) $addon->total_price,
-                ];
-                $addonTotal += (float) $addon->total_price;
-            }
+            [$surfaces, $totalLaborHours, $totalLaborCost, $totalMaterialCost] = $this->buildSurfaceArrayFromArea($area);
+            [$addons, $addonTotal] = $this->buildAddonArrayFromArea($area);
 
             $settings = CompanySetting::getInstance();
             $scopeType = $area->scope_type ?? 'interior';
@@ -654,6 +530,14 @@ new class extends Component
             $cogs = $cogsResult['cogs'];
             $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
             $withMargins = round($cogs / ($effectiveMargin / 100), 2);
+
+            // Use cached values from previous save if available (avoids rounding divergence)
+            if ($area->cached_customer_price !== null) {
+                $withMargins = (float) $area->cached_customer_price;
+            }
+            if ($area->cached_cogs !== null) {
+                $cogs = (float) $area->cached_cogs;
+            }
 
             $this->selectedTemplates[] = [
                 'template_id' => null,
@@ -696,7 +580,23 @@ new class extends Component
                     'surfaces' => $surfaces,
                     'addons' => $addons,
                 ],
+                ...$this->restoreTierDataFromArea($area),
             ];
+        }
+    }
+
+    /**
+     * Compute tier prices for all loaded templates during initial mount.
+     * Good tier = card price (guaranteed sync). Better/Best computed from tier paints.
+     */
+    protected function computeInitialTierPrices(): void
+    {
+        foreach ($this->selectedTemplates as $index => $templateData) {
+            // Skip if tier prices were already restored from cached data
+            if (! empty($templateData['tier_prices'])) {
+                continue;
+            }
+            $this->computeTierPricesForTemplate($index);
         }
     }
 
@@ -773,7 +673,7 @@ new class extends Component
     {
         return app(TemplatePricingService::class)->withConfig([
             'paintMode' => $this->paintMode,
-            'defaultPaintProductId' => $this->defaultPaintProductId,
+            'defaultPaintProductId' => $this->getEffectivePaintProductId(),
             'paintByCategory' => $this->paintByCategory,
             'projectScope' => $this->projectScope,
             'marginDiscountPercent' => $this->marginDiscountPercent,
@@ -784,6 +684,132 @@ new class extends Component
     protected function inferSurfaceCategory(string $surfaceType, string $scopeType): string
     {
         return $this->pricingService()->inferSurfaceCategory($surfaceType, $scopeType);
+    }
+
+    /**
+     * Infer the unit for a surface when quantity_source is 'custom'.
+     * Uses the production rate's rate_type or falls back to surface_category conventions.
+     */
+    protected function inferUnitFromSurface(array $surfaceData): string
+    {
+        if (! empty($surfaceData['production_rate_id'])) {
+            $rate = ProductionRate::find($surfaceData['production_rate_id']);
+            if ($rate) {
+                return match ($rate->rate_type) {
+                    'sqft_hr' => 'sqft',
+                    'lnft_hr', 'cost_per_lnft' => 'lnft',
+                    'units_hr', 'hours_per_unit' => 'units',
+                    default => 'sqft',
+                };
+            }
+        }
+
+        return match ($surfaceData['surface_category'] ?? '') {
+            'walls', 'ceiling', 'body', 'eaves' => 'sqft',
+            'baseboard', 'fascia', 'trim', 'wood_replacement' => 'lnft',
+            'doors', 'windows', 'exterior_doors' => 'units',
+            default => 'sqft',
+        };
+    }
+
+    /**
+     * Build surface array from an EstimateArea model for loading into selectedTemplates.
+     * Uses 'custom' quantity_source when saved quantity differs from dimension-derived value
+     * to prevent recalculation from overwriting saved quantities.
+     *
+     * @return array{0: array, 1: float, 2: float, 3: float} [surfaces, totalLaborHours, totalLaborCost, totalMaterialCost]
+     */
+    protected function buildSurfaceArrayFromArea(EstimateArea $area): array
+    {
+        $surfaces = [];
+        $totalLaborHours = 0;
+        $totalLaborCost = 0;
+        $totalMaterialCost = 0;
+
+        foreach ($area->surfaces as $surface) {
+            $surfaceCategory = $surface->surface_category
+                ?? $surface->productionRate?->surface_category
+                ?? $this->inferSurfaceCategory($surface->surface_type, $area->scope_type ?? 'interior');
+
+            // Determine the natural quantity_source based on surface type/unit
+            $naturalSource = match (true) {
+                $surface->surface_type === 'doors' => 'door_count',
+                $surface->surface_type === 'windows' => 'window_count',
+                $surface->surface_type === 'ceiling' && $surface->unit === 'sqft' => 'ceiling_sqft',
+                $surface->unit === 'sqft' => 'wall_sqft',
+                $surface->unit === 'lnft' => 'perimeter_lnft',
+                default => 'custom',
+            };
+
+            // Check if saved quantity matches what the dimension-derived source would give.
+            // If not, use 'custom' source to preserve the actual saved quantity during recalculation.
+            $savedQty = (float) $surface->quantity;
+            $dimensionQty = match ($naturalSource) {
+                'wall_sqft' => (float) $area->wall_sqft,
+                'ceiling_sqft' => (float) $area->ceiling_sqft,
+                'perimeter_lnft' => (float) $area->perimeter_lnft,
+                default => null,
+            };
+
+            // If quantity doesn't match the dimension value, force custom source
+            $quantitySource = $naturalSource;
+            $quantityOverride = $surface->unit === 'units' ? $savedQty : null;
+            if ($dimensionQty !== null && abs($savedQty - $dimensionQty) > 0.01) {
+                $quantitySource = 'custom';
+                $quantityOverride = $savedQty;
+            }
+
+            $surfaces[] = [
+                'id' => $surface->id,
+                'name' => $surface->name,
+                'surface_type' => $surface->surface_type,
+                'surface_category' => $surfaceCategory,
+                'production_rate_id' => $surface->production_rate_id ? (string) $surface->production_rate_id : null,
+                'quantity_source' => $quantitySource,
+                'quantity' => $savedQty,
+                'quantity_override' => $quantityOverride,
+                'default_coats' => $surface->coats,
+                'is_required' => false,
+                'is_default_enabled' => $surface->is_included,
+                'is_custom' => (bool) $surface->is_custom,
+                'fixed_price' => null,
+                'labor_hours' => (float) ($surface->labor_hours ?? 0),
+                'labor_cost' => (float) ($surface->labor_cost ?? 0),
+                'material_cost' => (float) ($surface->material_cost ?? 0),
+            ];
+
+            if ($surface->is_included) {
+                $totalLaborHours += (float) ($surface->labor_hours ?? 0);
+                $totalLaborCost += (float) ($surface->labor_cost ?? 0);
+                $totalMaterialCost += (float) ($surface->material_cost ?? 0);
+            }
+        }
+
+        return [$surfaces, $totalLaborHours, $totalLaborCost, $totalMaterialCost];
+    }
+
+    /**
+     * Build addon array from an EstimateArea model.
+     *
+     * @return array{0: array, 1: float} [addons, addonTotal]
+     */
+    protected function buildAddonArrayFromArea(EstimateArea $area): array
+    {
+        $addons = [];
+        $addonTotal = 0;
+
+        foreach ($area->addons ?? [] as $addon) {
+            $addons[] = [
+                'nested_area_template_id' => $addon->nested_area_template_id,
+                'name' => $addon->nestedAreaTemplate?->name ?? 'Add-on',
+                'quantity' => $addon->quantity,
+                'unit_price' => (float) $addon->unit_price,
+                'total_price' => (float) $addon->total_price,
+            ];
+            $addonTotal += (float) $addon->total_price;
+        }
+
+        return [$addons, $addonTotal];
     }
 
     public function getTemplateCostBreakdown(int $templateId, float $quantity, int $coats, array $options = []): array
@@ -919,6 +945,7 @@ new class extends Component
         if (isset($this->selectedTemplates[$index])) {
             unset($this->selectedTemplates[$index]);
             $this->selectedTemplates = array_values($this->selectedTemplates);
+            $this->dispatchLiveTierTotals();
         }
     }
 
@@ -1192,6 +1219,23 @@ new class extends Component
     }
 
     /**
+     * Resolve the effective paint product ID for pricing.
+     * When tier pricing is active and no default paint is set, uses the "good" tier paint.
+     */
+    protected function getEffectivePaintProductId(): ?int
+    {
+        if ($this->defaultPaintProductId) {
+            return $this->defaultPaintProductId;
+        }
+
+        if ($this->useTierPricing) {
+            return $this->tierPaintConfig['good']['default_paint_product_id'] ?? null;
+        }
+
+        return null;
+    }
+
+    /**
      * Handle hourly rate override changes - recalculate all COGS and prices.
      */
     public function updatedHourlyRateOverride(): void
@@ -1270,8 +1314,9 @@ new class extends Component
             $cleanupCost = $cleanupHours * $effectiveRate;
             $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
             $materialCost = (float) ($templateData['material_cost'] ?? 0);
+            $addonCost = array_sum(array_column($templateData['area_data']['addons'] ?? [], 'total_price'));
 
-            $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+            $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost + $addonCost);
             $cogs = $cogsResult['cogs'];
 
             $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
@@ -1284,7 +1329,13 @@ new class extends Component
             $this->selectedTemplates[$index]['base_total'] = round($cogs, 2);
             $this->selectedTemplates[$index]['with_margins'] = $withMargins;
             $this->selectedTemplates[$index]['price'] = $withMargins;
+
+            // Recompute tier prices with updated COGS components
+            $this->computeTierPricesForTemplate($index);
         }
+
+        // Dispatch updated tier totals to paint-selector
+        $this->dispatchLiveTierTotals();
     }
 
     /**
@@ -1321,7 +1372,13 @@ new class extends Component
 
             $this->selectedTemplates[$index]['with_margins'] = $withMargins;
             $this->selectedTemplates[$index]['price'] = $withMargins;
+
+            // Recompute tier prices with updated margin
+            $this->computeTierPricesForTemplate($index);
         }
+
+        // Dispatch updated tier totals to paint-selector
+        $this->dispatchLiveTierTotals();
     }
 
     /**
@@ -1385,7 +1442,7 @@ new class extends Component
             paintByCategory: $this->paintByCategory,
             marginDiscountPercent: $this->marginDiscountPercent ?? 0,
             hourlyRateOverride: $this->hourlyRateOverride,
-        );
+        )->to(ref: 'area-builder');
     }
 
     /**
@@ -1426,7 +1483,8 @@ new class extends Component
                 paintProductId: $this->defaultPaintProductId,
                 paintByCategory: $this->paintByCategory,
                 marginDiscountPercent: $this->marginDiscountPercent ?? 0,
-            );
+                hourlyRateOverride: $this->hourlyRateOverride,
+            )->to(ref: 'area-builder');
         } elseif ($templateData['template_id']) {
             // Open AreaBuilder with the original template, passing index for update
             $this->dispatch(
@@ -1437,7 +1495,8 @@ new class extends Component
                 paintProductId: $this->defaultPaintProductId,
                 paintByCategory: $this->paintByCategory,
                 marginDiscountPercent: $this->marginDiscountPercent ?? 0,
-            );
+                hourlyRateOverride: $this->hourlyRateOverride,
+            )->to(ref: 'area-builder');
         }
     }
 
@@ -1491,14 +1550,18 @@ new class extends Component
         ];
 
         if ($editingIndex !== null && isset($this->selectedTemplates[$editingIndex])) {
-            // Update existing template entry
             $this->selectedTemplates[$editingIndex] = $templateEntry;
+            $targetIndex = $editingIndex;
         } else {
-            // Add new template entry
             $this->selectedTemplates[] = $templateEntry;
+            $targetIndex = array_key_last($this->selectedTemplates);
         }
 
+        // Compute tier prices using the stored COGS components (don't recalculate base price)
+        $this->computeTierPricesForTemplate($targetIndex);
+
         $this->dispatch('template-added');
+        $this->dispatchLiveTierTotals();
     }
 
     /**
@@ -1553,6 +1616,7 @@ new class extends Component
 
         // Recalculate the area's price
         $this->recalculateSelectedTemplatePrice($index);
+        $this->dispatchLiveTierTotals();
     }
 
     /**
@@ -1568,18 +1632,20 @@ new class extends Component
         $areaData = $templateData['area_data'];
         $settings = CompanySetting::getInstance();
         $scopeType = $templateData['scope_type'] ?? 'interior';
-        // Use base hourly wage (payroll burden is factored into markup, not COGS)
         $hourlyWage = $this->getEffectiveRateForScope($scopeType);
 
         $totalLaborHours = 0;
         $totalMaterialCost = 0;
 
-        foreach ($areaData['surfaces'] ?? [] as $surface) {
+        // Track per-tier material costs alongside the base calculation
+        $tierMaterialCosts = ['good' => 0.0, 'better' => 0.0, 'best' => 0.0];
+        $computeTiers = $this->useTierPricing;
+
+        foreach ($areaData['surfaces'] ?? [] as $sIdx => $surface) {
             if (! ($surface['is_required'] ?? false) && ! ($surface['is_default_enabled'] ?? true)) {
                 continue;
             }
 
-            // Get quantity based on source
             $quantity = match ($surface['quantity_source'] ?? 'wall_sqft') {
                 'wall_sqft' => $areaData['wall_sqft'],
                 'ceiling_sqft' => $areaData['ceiling_sqft'],
@@ -1594,7 +1660,18 @@ new class extends Component
                 : null;
 
             if (($surface['fixed_price'] ?? null) !== null && $surface['fixed_price'] > 0) {
-                $totalMaterialCost += (float) $surface['fixed_price'];
+                $fixedPrice = (float) $surface['fixed_price'];
+                $totalMaterialCost += $fixedPrice;
+                // Fixed price surfaces are the same across all tiers
+                if ($computeTiers) {
+                    foreach (['good', 'better', 'best'] as $tier) {
+                        $tierMaterialCosts[$tier] += $fixedPrice;
+                    }
+                }
+                // Annotate fixed-price surface for save consistency
+                $this->selectedTemplates[$index]['area_data']['surfaces'][$sIdx]['labor_hours'] = 0;
+                $this->selectedTemplates[$index]['area_data']['surfaces'][$sIdx]['labor_cost'] = 0;
+                $this->selectedTemplates[$index]['area_data']['surfaces'][$sIdx]['material_cost'] = round($fixedPrice, 2);
             } else {
                 $productionRate = $rate?->production_rate ?? 100;
                 $coatMultiplier = match ($coats) {
@@ -1608,18 +1685,26 @@ new class extends Component
                 $hours = ($quantity / $productionRate) * $coatMultiplier;
                 $totalLaborHours += $hours;
 
-                // Calculate material cost from paint product if available
-                // No fallback - material_cost_per_unit was removed from ProductionRate
                 $materialCost = $this->calculateMaterialCostForSurface(
-                    $quantity,
-                    $coats,
-                    $this->defaultPaintProductId,
-                    null, // substrate
-                    $settings,
-                    null, // No fallback material cost
-                    $coatMultiplier
+                    $quantity, $coats, $this->getEffectivePaintProductId(),
+                    null, $settings, null, $coatMultiplier
                 );
                 $totalMaterialCost += $materialCost;
+
+                // Compute material cost for each tier using that tier's paint product
+                if ($computeTiers) {
+                    foreach (['good', 'better', 'best'] as $tier) {
+                        $tierPaintId = $this->tierPaintConfig[$tier]['default_paint_product_id'] ?? null;
+                        $tierMaterialCosts[$tier] += $this->calculateMaterialCostForSurface(
+                            $quantity, $coats, $tierPaintId, null, $settings, null, $coatMultiplier
+                        );
+                    }
+                }
+
+                // Annotate surface with computed values so save() uses exact same numbers
+                $this->selectedTemplates[$index]['area_data']['surfaces'][$sIdx]['labor_hours'] = round($hours, 4);
+                $this->selectedTemplates[$index]['area_data']['surfaces'][$sIdx]['labor_cost'] = round($hours * $hourlyWage, 2);
+                $this->selectedTemplates[$index]['area_data']['surfaces'][$sIdx]['material_cost'] = round($materialCost, 2);
             }
         }
 
@@ -1629,7 +1714,6 @@ new class extends Component
         $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scopeType);
         $addonCost = array_sum(array_column($areaData['addons'] ?? [], 'total_price'));
 
-        // Calculate COGS with taxes
         $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonCost);
         $cogs = $cogsResult['cogs'];
         $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
@@ -1646,6 +1730,169 @@ new class extends Component
         $this->selectedTemplates[$index]['base_total'] = $cogs;
         $this->selectedTemplates[$index]['with_margins'] = round($withMargins, 2);
         $this->selectedTemplates[$index]['price'] = round($withMargins, 2);
+
+        // Compute per-tier OTD prices using the SAME labor/cleanup/sundries
+        if ($computeTiers) {
+            $tierPrices = [];
+            $tierCogsMap = [];
+            foreach (['good', 'better', 'best'] as $tier) {
+                $tierCogsResult = $settings->calculateCOGS(
+                    $laborCost, $cleanupCost, $sundriesCost,
+                    $tierMaterialCosts[$tier] + $addonCost
+                );
+                $tierCogsVal = $tierCogsResult['cogs'];
+                $tierCogsMap[$tier] = round($tierCogsVal, 2);
+                $tierPrices[$tier] = $tierCogsVal > 0
+                    ? round($tierCogsVal / ($effectiveMargin / 100), 2)
+                    : 0.0;
+            }
+            $this->selectedTemplates[$index]['tier_prices'] = $tierPrices;
+            $this->selectedTemplates[$index]['tier_cogs'] = $tierCogsMap;
+        }
+    }
+
+    /**
+     * Compute tier prices for a template using its ALREADY STORED COGS components.
+     * Unlike recalculateSelectedTemplatePrice() which recomputes everything from scratch,
+     * this method preserves the existing card price and only varies material costs per tier.
+     * Good tier price = current card price (guaranteed match).
+     */
+    protected function computeTierPricesForTemplate(int $index): void
+    {
+        if (! $this->useTierPricing) {
+            return;
+        }
+
+        $templateData = $this->selectedTemplates[$index];
+        $cardPrice = (float) ($templateData['price'] ?? 0);
+
+        // Fixed price items: same price across all tiers
+        if (($templateData['is_fixed_price'] ?? false) || ($templateData['pricing_method'] ?? '') === 'fixed_price') {
+            $this->selectedTemplates[$index]['tier_prices'] = [
+                'good' => $cardPrice, 'better' => $cardPrice, 'best' => $cardPrice,
+            ];
+
+            return;
+        }
+
+        $areaData = $templateData['area_data'] ?? null;
+        if (! $areaData || empty($areaData['surfaces'])) {
+            // No surface data: use card price for all tiers
+            $this->selectedTemplates[$index]['tier_prices'] = [
+                'good' => $cardPrice, 'better' => $cardPrice, 'best' => $cardPrice,
+            ];
+
+            return;
+        }
+
+        $settings = CompanySetting::getInstance();
+        $scopeType = $templateData['scope_type'] ?? 'interior';
+        $effectiveMargin = min(99, $settings->getMarginPercentForScope($scopeType) + ($this->marginDiscountPercent ?? 0));
+
+        // Use the stored non-material COGS components from the area-builder's calculation
+        $laborCost = (float) ($templateData['labor_cost'] ?? 0);
+        $cleanupCost = (float) ($templateData['cleanup_cost'] ?? 0);
+        $sundriesCost = (float) ($templateData['sundries_cost'] ?? 0);
+        $addonCost = array_sum(array_column($areaData['addons'] ?? [], 'total_price'));
+
+        // Good tier always = card price (guaranteed sync, no recalculation divergence)
+        $tierPrices = ['good' => $cardPrice];
+        $tierCogsMap = ['good' => round((float) ($templateData['base_total'] ?? 0), 2)];
+
+        // Compute only better and best tier prices (different paint products → different material costs)
+        foreach (['better', 'best'] as $tier) {
+            $tierPaintId = $this->tierPaintConfig[$tier]['default_paint_product_id'] ?? null;
+
+            // Compute material cost for this tier's paint product
+            $tierMaterialCost = 0.0;
+            foreach ($areaData['surfaces'] as $surface) {
+                if (! ($surface['is_required'] ?? false) && ! ($surface['is_default_enabled'] ?? true)) {
+                    continue;
+                }
+                if (($surface['fixed_price'] ?? null) !== null && $surface['fixed_price'] > 0) {
+                    $tierMaterialCost += (float) $surface['fixed_price'];
+
+                    continue;
+                }
+
+                $quantity = match ($surface['quantity_source'] ?? 'wall_sqft') {
+                    'wall_sqft' => $areaData['wall_sqft'] ?? 0,
+                    'ceiling_sqft' => $areaData['ceiling_sqft'] ?? 0,
+                    'perimeter_lnft' => $areaData['perimeter_lnft'] ?? 0,
+                    default => $surface['quantity_override'] ?? 1,
+                };
+                $coats = $surface['default_coats'] ?? $templateData['coats'] ?? 2;
+                $coatMultiplier = match ($coats) {
+                    1 => 1.0, 2 => 1.8, 3 => 2.5, 4 => 3.1,
+                    default => 1.0 + (($coats - 1) * 0.7),
+                };
+
+                $tierMaterialCost += $this->calculateMaterialCostForSurface(
+                    $quantity, $coats, $tierPaintId, null, $settings, null, $coatMultiplier
+                );
+            }
+
+            $tierCogsResult = $settings->calculateCOGS(
+                $laborCost, $cleanupCost, $sundriesCost,
+                $tierMaterialCost + $addonCost
+            );
+            $tierCogsVal = $tierCogsResult['cogs'];
+            $tierCogsMap[$tier] = round($tierCogsVal, 2);
+            $tierPrices[$tier] = $tierCogsVal > 0
+                ? round($tierCogsVal / ($effectiveMargin / 100), 2)
+                : 0.0;
+        }
+
+        $this->selectedTemplates[$index]['tier_prices'] = $tierPrices;
+        $this->selectedTemplates[$index]['tier_cogs'] = $tierCogsMap;
+    }
+
+    /**
+     * Calculate live tier totals by summing pre-computed tier_prices from each template.
+     * Tier prices are computed inline within recalculateSelectedTemplatePrice() to
+     * guarantee consistency with the card price (same code path, same inputs).
+     *
+     * @return array{good: float, better: float, best: float}
+     */
+    protected function calculateLiveTierTotals(): array
+    {
+        if (! $this->useTierPricing || empty($this->selectedTemplates)) {
+            $baseTotal = $this->subtotal;
+
+            return ['good' => $baseTotal, 'better' => $baseTotal, 'best' => $baseTotal];
+        }
+
+        $totals = ['good' => 0.0, 'better' => 0.0, 'best' => 0.0];
+
+        foreach ($this->selectedTemplates as $templateData) {
+            if (isset($templateData['tier_prices'])) {
+                // Use pre-computed tier prices (from recalculateSelectedTemplatePrice)
+                foreach (['good', 'better', 'best'] as $tier) {
+                    $totals[$tier] += (float) ($templateData['tier_prices'][$tier] ?? 0);
+                }
+            } else {
+                // No tier prices computed — use card price for all tiers
+                $price = (float) ($templateData['price'] ?? 0);
+                $totals['good'] += $price;
+                $totals['better'] += $price;
+                $totals['best'] += $price;
+            }
+        }
+
+        return $totals;
+    }
+
+    /**
+     * Dispatch live tier totals to the paint-selector component.
+     * Called when areas change so Good/Better/Best prices update in real-time.
+     */
+    protected function dispatchLiveTierTotals(): void
+    {
+        if (! $this->useTierPricing) {
+            return;
+        }
+
+        $this->dispatch('live-tier-totals', totals: $this->calculateLiveTierTotals());
     }
 
     /**
@@ -1675,6 +1922,8 @@ new class extends Component
                 $this->recalculatePrice($index);
             }
         }
+
+        $this->dispatchLiveTierTotals();
     }
 
     /**
@@ -1761,6 +2010,9 @@ new class extends Component
         if ($this->isEditing) {
             $this->estimate->update($estimateData);
 
+            // Snapshot package selections while old areas/surfaces still exist
+            $packageSnapshot = $packageGenerator->snapshotPackageSelections($this->estimate);
+
             // Remove existing template usages
             $this->estimate->templateUsages()->delete();
 
@@ -1772,14 +2024,14 @@ new class extends Component
             // Apply templates (which may include area_data from AreaBuilder)
             $this->applySelectedTemplatesToEstimate($templateService);
 
-            // Note: Estimate totals are already set from $this->subtotal which includes margins
-            // calculated by the template system. Surfaces store COGS (labor + material).
-            // We don't call calculateTotals() here because the template-based calculation
-            // is the source of truth for template-mode estimates.
+            $this->estimate->refresh();
+            $this->estimate->calculateTotals();
+            $this->estimate->save();
 
-            // Regenerate packages with new areas/surfaces
+            // Regenerate packages with new areas/surfaces, then restore selections
             $packageGenerator->clearGeneratedPackages($this->estimate);
             $packageGenerator->generateFromTemplates($this->estimate);
+            $packageGenerator->restorePackageSelections($this->estimate, $packageSnapshot);
 
             if ($markAsSent && $this->estimate->status === 'draft') {
                 $this->estimate->markAsSent();
@@ -1816,10 +2068,9 @@ new class extends Component
             // Apply templates (which may include area_data from AreaBuilder)
             $this->applySelectedTemplatesToEstimate($templateService);
 
-            // Note: Estimate totals are already set from $this->subtotal which includes margins
-            // calculated by the template system. Surfaces store COGS (labor + material).
-            // We don't call calculateTotals() here because the template-based calculation
-            // is the source of truth for template-mode estimates.
+            $this->estimate->refresh();
+            $this->estimate->calculateTotals();
+            $this->estimate->save();
 
             // Generate packages from templates
             $packageGenerator->generateFromTemplates($this->estimate);
@@ -1841,6 +2092,11 @@ new class extends Component
             $this->estimate->save();
             app(EstimateTierPricingService::class)->recalculateTierCosts($this->estimate);
 
+            // Recalculate totals now that tier material costs are populated
+            $this->estimate->refresh();
+            $this->estimate->calculateTotals();
+            $this->estimate->save();
+
             // Recalculate packages with tier pricing
             foreach ($this->estimate->packages as $package) {
                 $package->calculateTotals();
@@ -1860,7 +2116,7 @@ new class extends Component
 
         foreach ($this->areas as $sortOrder => $areaData) {
             // Create the EstimateArea with default paint product if set
-            $areaPaintProductId = $areaData['default_paint_product_id'] ?? $this->defaultPaintProductId;
+            $areaPaintProductId = $areaData['default_paint_product_id'] ?? $this->getEffectivePaintProductId();
 
             $area = EstimateArea::create([
                 'estimate_id' => $this->estimate->id,
@@ -1879,6 +2135,9 @@ new class extends Component
                 'direct_ceiling_sqft' => $areaData['direct_ceiling_sqft'] ?? null,
                 'service_category_id' => $areaData['service_category_id'] ?? null,
                 'default_paint_product_id' => $areaPaintProductId,
+                'cached_cogs' => $areaData['base_total'] ?? null,
+                'cached_customer_price' => $areaData['price'] ?? null,
+                'cached_tier_prices' => $this->buildCachedTierPrices($areaData),
                 'sort_order' => $sortOrder,
             ]);
 
@@ -1965,6 +2224,7 @@ new class extends Component
                     'production_rate_id' => $isCustom ? null : ($surfaceData['production_rate_id'] ?? null),
                     'name' => $surfaceData['name'],
                     'surface_type' => $surfaceData['surface_type'] ?? 'other',
+                    'surface_category' => $surfaceData['surface_category'] ?? null,
                     'quantity' => $quantity,
                     'unit' => match ($surfaceData['quantity_source'] ?? 'wall_sqft') {
                         'wall_sqft', 'ceiling_sqft' => 'sqft',
@@ -2050,6 +2310,61 @@ new class extends Component
     }
 
     /**
+     * Restore tier_prices and tier_cogs arrays from an area's cached_tier_prices JSON.
+     *
+     * @return array{tier_prices: array|null, tier_cogs: array|null}
+     */
+    protected function restoreTierDataFromArea(EstimateArea $area): array
+    {
+        $cached = $area->cached_tier_prices;
+        if (! $cached || ! is_array($cached)) {
+            return ['tier_prices' => null, 'tier_cogs' => null];
+        }
+
+        $tierPrices = [];
+        $tierCogs = [];
+        foreach (['good', 'better', 'best'] as $tier) {
+            if (isset($cached[$tier])) {
+                $tierPrices[$tier] = (float) ($cached[$tier]['price'] ?? 0);
+                $tierCogs[$tier] = (float) ($cached[$tier]['cogs'] ?? 0);
+            }
+        }
+
+        return [
+            'tier_prices' => ! empty($tierPrices) ? $tierPrices : null,
+            'tier_cogs' => ! empty($tierCogs) ? $tierCogs : null,
+        ];
+    }
+
+    /**
+     * Build cached tier prices JSON from template/area data.
+     * Combines tier_prices (OTD) and tier_cogs into a structure for EstimateArea.
+     *
+     * @return array<string, array{cogs: float, price: float}>|null
+     */
+    protected function buildCachedTierPrices(array $data): ?array
+    {
+        $tierPrices = $data['tier_prices'] ?? null;
+        $tierCogs = $data['tier_cogs'] ?? null;
+
+        if (! $tierPrices) {
+            return null;
+        }
+
+        $cached = [];
+        foreach (['good', 'better', 'best'] as $tier) {
+            if (isset($tierPrices[$tier])) {
+                $cached[$tier] = [
+                    'cogs' => (float) ($tierCogs[$tier] ?? 0),
+                    'price' => (float) $tierPrices[$tier],
+                ];
+            }
+        }
+
+        return ! empty($cached) ? $cached : null;
+    }
+
+    /**
      * Create fixed-price EstimateArea records from a fixed-price template entry.
      * Creates one area per unit of quantity (e.g., 2 closets = 2 separate areas).
      */
@@ -2109,6 +2424,9 @@ new class extends Component
             'direct_lnft' => $areaData['direct_lnft'] ?? null,
             'direct_ceiling_sqft' => $areaData['direct_ceiling_sqft'] ?? null,
             'service_category_id' => $templateData['service_category_id'] ?? null,
+            'cached_cogs' => $templateData['base_total'] ?? null,
+            'cached_customer_price' => $templateData['price'] ?? null,
+            'cached_tier_prices' => $this->buildCachedTierPrices($templateData),
             'sort_order' => $sortOrder,
         ]);
 
@@ -2146,29 +2464,44 @@ new class extends Component
                     default => $surfaceData['quantity_override'] ?? 1,
                 };
 
-                // Calculate labor hours and costs for this surface
                 $coats = $surfaceData['default_coats'] ?? $templateData['coats'] ?? 2;
                 $productionRateValue = $rate?->production_rate ?? 100;
-                $coatMultiplier = $rate ? $rate->getCoatMultiplier($coats) : ($coats === 1 ? 1.0 : ($coats === 2 ? 1.8 : 2.5));
-                $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
-
                 $settings = CompanySetting::getInstance();
                 $scopeType = $templateData['scope_type'] ?? 'interior';
                 $hourlyWage = $this->getEffectiveRateForScope($scopeType);
-                $laborCost = $laborHours * $hourlyWage;
+                $applicationMethod = $surfaceData['application_method'] ?? $areaData['application_method'] ?? 'brush_roll';
 
-                // Get effective paint product ID (cascade: surface → area → template → estimate)
+                // Use pre-computed values from template-builder/area-builder live calculation
+                // when available. This ensures saved data matches exactly what was displayed.
+                if (isset($surfaceData['labor_hours']) && $surfaceData['labor_hours'] !== null) {
+                    $laborHours = (float) $surfaceData['labor_hours'];
+                    $laborCost = (float) ($surfaceData['labor_cost'] ?? ($laborHours * $hourlyWage));
+                    $materialCost = (float) ($surfaceData['material_cost'] ?? 0);
+                } else {
+                    // Fallback: recalculate using consistent coat multiplier
+                    $coatMultiplier = match ($coats) {
+                        1 => 1.0,
+                        2 => 1.8,
+                        3 => 2.5,
+                        4 => 3.1,
+                        default => 1.0 + (($coats - 1) * 0.7),
+                    };
+                    $laborHours = ($quantity / $productionRateValue) * $coatMultiplier;
+                    $laborCost = $laborHours * $hourlyWage;
+                    $materialCost = 0.0;
+                }
+
+                // Get effective paint product ID (cascade: surface → area → template → estimate → good tier)
                 $paintProductId = $surfaceData['paint_product_id']
                     ?? $areaData['default_paint_product_id']
                     ?? $templateData['paint_product_id']
-                    ?? $this->defaultPaintProductId;
+                    ?? $this->getEffectivePaintProductId();
 
                 $materialCostPerUnit = 0.0;
                 $paintGallons = null;
                 $paintCost = null;
-                $materialCost = 0.0;
-                $applicationMethod = $surfaceData['application_method'] ?? $areaData['application_method'] ?? 'brush_roll';
 
+                // Compute paint product details (gallons, cost) for ordering/audit fields
                 if ($paintProductId) {
                     $paintProduct = PaintProduct::find($paintProductId);
                     if ($paintProduct) {
@@ -2181,9 +2514,17 @@ new class extends Component
                         );
                         $paintGallons = $costCalc['gallons_rounded'];
                         $paintCost = $costCalc['paint_cost'];
-                        $materialCost = $costCalc['total_cost'];
 
-                        if ($quantity > 0) {
+                        // If no pre-computed material cost, use PaintProduct calculation
+                        if (! isset($surfaceData['material_cost']) || $surfaceData['material_cost'] === null) {
+                            $materialCost = $costCalc['total_cost'];
+                        }
+
+                        $coatMultiplier = match ($coats) {
+                            1 => 1.0, 2 => 1.8, 3 => 2.5, 4 => 3.1,
+                            default => 1.0 + (($coats - 1) * 0.7),
+                        };
+                        if ($quantity > 0 && $coatMultiplier > 0) {
                             $materialCostPerUnit = $materialCost / ($quantity * $coatMultiplier);
                         }
                     }
@@ -2195,10 +2536,13 @@ new class extends Component
                 'production_rate_id' => $isCustom ? null : ($surfaceData['production_rate_id'] ?: null),
                 'name' => $surfaceData['name'],
                 'surface_type' => $surfaceData['surface_type'] ?? 'other',
+                'surface_category' => $surfaceData['surface_category'] ?? null,
                 'quantity' => $quantity,
                 'unit' => match ($surfaceData['quantity_source'] ?? 'wall_sqft') {
                     'wall_sqft', 'ceiling_sqft' => 'sqft',
                     'perimeter_lnft' => 'lnft',
+                    'door_count', 'window_count' => 'units',
+                    'custom' => $this->inferUnitFromSurface($surfaceData),
                     default => 'units',
                 },
                 'coats' => $coats,
@@ -2415,7 +2759,7 @@ new class extends Component
                     </div>
                 </div>
 
-                <livewire:estimates.paint-selector :project-scope="$projectScope" :estimate="$estimate" />
+                <livewire:estimates.paint-selector :project-scope="$projectScope" :estimate="$estimate" :initial-tier-totals="$this->useTierPricing ? $this->calculateLiveTierTotals() : null" />
 
                 {{-- ADD AREAS Section (New Design) --}}
                 <div class="border-2 border-green-200 dark:border-green-800 rounded-lg p-4 bg-gradient-to-r from-green-50 to-white dark:from-green-950/30 dark:to-zinc-900">
@@ -3189,5 +3533,5 @@ new class extends Component
 
 
     {{-- Area Builder Component (Flyout) --}}
-    <livewire:estimates.area-builder />
+    <livewire:estimates.area-builder wire:key="area-builder" wire:ref="area-builder" />
 </div>

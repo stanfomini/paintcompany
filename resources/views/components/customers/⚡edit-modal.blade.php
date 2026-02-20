@@ -155,8 +155,8 @@ new class extends Component {
 }; ?>
 
 <div>
-    <flux:button wire:click="openModal({{ $customerId ?? 'null' }})" icon="pencil" variant="ghost">
-        {{ __('Edit') }}
+    <flux:button wire:click="openModal({{ $customerId ?? 'null' }})" icon="pencil" variant="ghost" size="sm">
+        <span class="hidden sm:inline">{{ __('Edit') }}</span>
     </flux:button>
 
     <flux:modal wire:model="showModal" variant="flyout" class="max-w-lg">

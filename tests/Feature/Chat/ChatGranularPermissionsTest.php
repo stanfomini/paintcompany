@@ -176,26 +176,26 @@ describe('Seeder creates new permissions correctly', function () {
         }
     });
 
-    it('assigns chat.with_customers to admin but not crew_lead', function () {
+    it('assigns chat.with_customers to admin but not door_to_door', function () {
         $admin = Role::where('name', 'admin')->first();
-        $crewLead = Role::where('name', 'crew_lead')->first();
+        $doorToDoor = Role::where('name', 'door_to_door')->first();
 
         expect($admin->hasPermissionTo('chat.with_customers'))->toBeTrue();
-        expect($crewLead->hasPermissionTo('chat.with_customers'))->toBeFalse();
+        expect($doorToDoor->hasPermissionTo('chat.with_customers'))->toBeFalse();
     });
 
-    it('assigns chat.with_crew to admin and crew_lead but not estimator', function () {
+    it('assigns chat.with_crew to admin and manager but not estimator', function () {
         $admin = Role::where('name', 'admin')->first();
-        $crewLead = Role::where('name', 'crew_lead')->first();
+        $manager = Role::where('name', 'manager')->first();
         $estimator = Role::where('name', 'estimator')->first();
 
         expect($admin->hasPermissionTo('chat.with_crew'))->toBeTrue();
-        expect($crewLead->hasPermissionTo('chat.with_crew'))->toBeTrue();
+        expect($manager->hasPermissionTo('chat.with_crew'))->toBeTrue();
         expect($estimator->hasPermissionTo('chat.with_crew'))->toBeFalse();
     });
 
     it('assigns chat.with_internal to all roles', function () {
-        $roles = ['admin', 'manager', 'estimator', 'crew_lead'];
+        $roles = ['admin', 'manager', 'estimator'];
 
         foreach ($roles as $roleName) {
             $role = Role::where('name', $roleName)->first();

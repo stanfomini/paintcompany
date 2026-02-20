@@ -38,12 +38,6 @@ return new class extends Migration
             $estimator->revokePermissionTo(['employees.view', 'time_tracking.view', 'time_tracking.clock', 'scheduling.view']);
         }
 
-        // Tighten crew_lead
-        $crewLead = Role::where('name', 'crew_lead')->where('guard_name', 'web')->first();
-        if ($crewLead) {
-            $crewLead->revokePermissionTo(['time_tracking.view', 'time_tracking.clock', 'scheduling.view']);
-        }
-
         app()[PermissionRegistrar::class]->forgetCachedPermissions();
     }
 
@@ -55,11 +49,6 @@ return new class extends Migration
         $estimator = Role::where('name', 'estimator')->where('guard_name', 'web')->first();
         if ($estimator) {
             $estimator->givePermissionTo(['employees.view', 'time_tracking.view', 'time_tracking.clock', 'scheduling.view']);
-        }
-
-        $crewLead = Role::where('name', 'crew_lead')->where('guard_name', 'web')->first();
-        if ($crewLead) {
-            $crewLead->givePermissionTo(['time_tracking.view', 'time_tracking.clock', 'scheduling.view']);
         }
 
         // Remove onboarding permissions

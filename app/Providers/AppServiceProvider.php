@@ -2,7 +2,11 @@
 
 namespace App\Providers;
 
+use App\Models\Deal;
+use App\Models\DoorKnock;
+use App\Models\Estimate;
 use App\Models\Invoice;
+use App\Models\Job;
 use App\Models\OverheadEntry;
 use App\Models\Payment;
 use App\Models\User;
@@ -10,6 +14,7 @@ use App\Observers\InvoiceObserver;
 use App\Observers\OverheadEntryObserver;
 use App\Observers\PaymentObserver;
 use App\Observers\UserObserver;
+use App\Observers\WorkflowModelObserver;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +43,12 @@ class AppServiceProvider extends ServiceProvider
         OverheadEntry::observe(OverheadEntryObserver::class);
         Invoice::observe(InvoiceObserver::class);
         User::observe(UserObserver::class);
+
+        // Workflow engine observer — fires on model lifecycle events
+        $workflowModels = [Deal::class, Job::class, Estimate::class, Invoice::class, DoorKnock::class, Payment::class];
+        foreach ($workflowModels as $model) {
+            $model::observe(WorkflowModelObserver::class);
+        }
 
         Event::listen(
             \Illuminate\Auth\Events\Login::class,

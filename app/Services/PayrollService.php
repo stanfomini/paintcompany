@@ -16,7 +16,10 @@ class PayrollService
     public function __construct(
         private TaxCalculationService $taxService,
         private CommissionService $commissionService,
-    ) {}
+        private ?JournalEntryService $journalEntryService = null,
+    ) {
+        $this->journalEntryService ??= new JournalEntryService;
+    }
 
     /**
      * Create a new pay period.
@@ -269,7 +272,7 @@ class PayrollService
             $checkNumber = (string) ((int) $checkNumber + 1);
         }
 
-        // Notify employees their pay stubs are available
+        // Notify employees and create journal entries for finalized stubs
         $finalizedStubs = $period->payStubs()
             ->where('status', 'finalized')
             ->with('employeeProfile.user')
@@ -278,6 +281,13 @@ class PayrollService
         foreach ($finalizedStubs as $stub) {
             if ($stub->employeeProfile?->user) {
                 $stub->employeeProfile->user->notify(new PayStubAvailable($stub));
+            }
+
+            // Create GL journal entry for each pay stub
+            try {
+                $this->journalEntryService->createFromPayStub($stub);
+            } catch (\Throwable $e) {
+                report($e);
             }
         }
 

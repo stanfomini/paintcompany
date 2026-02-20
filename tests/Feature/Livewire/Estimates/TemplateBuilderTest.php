@@ -1188,15 +1188,10 @@ describe('TemplateBuilder area saving flow', function () {
             ->call('saveAsDraft');
 
         // Verify the estimate was created
-        // Note: In template mode, the subtotal comes from the pre-calculated template price
-        // (with_margins) from the areaData. The template system calculates the price,
-        // and it's saved directly to the estimate. We don't recalculate from surfaces.
         $estimate = \App\Models\Estimate::where('title', 'Test Estimate')->first();
         expect($estimate)->not->toBeNull();
-        expect((float) $estimate->subtotal)->toBe(589.68);
-        expect((float) $estimate->total)->toBe(589.68); // No tax, no discount
 
-        // The template usage stores the calculated price from the template system
+        // The template usage stores the pre-calculated price from the template system
         $usage = $estimate->templateUsages()->first();
         expect($usage)->not->toBeNull();
         expect((float) $usage->calculated_price)->toBe(589.68);
@@ -1207,6 +1202,12 @@ describe('TemplateBuilder area saving flow', function () {
         expect($area->name)->toBe('Living Room');
         expect((float) $area->length)->toBe(14.0);
         expect((float) $area->width)->toBe(12.0);
+
+        // Subtotal is recalculated from actual surfaces via calculateTotals()
+        // and should match what getCustomerPrice() produces from saved surfaces
+        $expectedSubtotal = $area->getCustomerPrice();
+        expect((float) $estimate->subtotal)->toBe(round($expectedSubtotal, 2));
+        expect((float) $estimate->total)->toBe(round($expectedSubtotal, 2)); // No tax, no discount
     });
 
     it('loads saved area data correctly when editing estimate', function () {
@@ -2195,5 +2196,116 @@ describe('TemplateBuilder fixed price templates', function () {
 
         // Customer price stays fixed regardless of COGS
         expect((float) $area->getCustomerPrice())->toBe(95.00);
+    });
+
+    it('persists surface_category through save and reload', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $deal = Deal::factory()->create();
+
+        $category = EstimateTemplateCategory::factory()->room()->create();
+        $template = EstimateTemplate::factory()->forCategory($category)->configurable()->create([
+            'name' => 'Exterior House',
+            'scope_type' => 'exterior',
+        ]);
+
+        $estimate = Estimate::factory()->forDeal($deal)->draft()->create([
+            'title' => 'Surface Category Persistence Test',
+            'estimator_mode' => Estimate::MODE_TEMPLATE,
+            'created_by' => $user->id,
+        ]);
+
+        // Create area with explicit surface categories
+        $area = \App\Models\EstimateArea::create([
+            'estimate_id' => $estimate->id,
+            'name' => 'House Exterior',
+            'scope_type' => 'exterior',
+            'length' => 0,
+            'width' => 50,
+            'height' => 10,
+            'wall_sqft' => 500,
+            'ceiling_sqft' => 0,
+            'perimeter_lnft' => 50,
+            'sort_order' => 0,
+        ]);
+
+        // Body surface (surface_type=walls, but category=body for exterior)
+        \App\Models\EstimateAreaSurface::create([
+            'area_id' => $area->id,
+            'name' => 'Siding',
+            'surface_type' => 'walls',
+            'surface_category' => 'body',
+            'quantity' => 500,
+            'unit' => 'sqft',
+            'coats' => 2,
+            'production_rate_value' => 100,
+            'labor_hours' => 9,
+            'labor_cost' => 360,
+            'material_cost' => 0,
+            'total' => 360,
+            'is_included' => true,
+            'sort_order' => 0,
+        ]);
+
+        // Eaves surface (surface_type=ceiling, but category=eaves for exterior)
+        \App\Models\EstimateAreaSurface::create([
+            'area_id' => $area->id,
+            'name' => 'Eaves',
+            'surface_type' => 'ceiling',
+            'surface_category' => 'eaves',
+            'quantity' => 50,
+            'unit' => 'sqft',
+            'coats' => 2,
+            'production_rate_value' => 80,
+            'labor_hours' => 1.25,
+            'labor_cost' => 50,
+            'material_cost' => 0,
+            'total' => 50,
+            'is_included' => true,
+            'sort_order' => 1,
+        ]);
+
+        // Fascia (surface_type=trim, but category=fascia)
+        \App\Models\EstimateAreaSurface::create([
+            'area_id' => $area->id,
+            'name' => 'Fascia',
+            'surface_type' => 'trim',
+            'surface_category' => 'fascia',
+            'quantity' => 50,
+            'unit' => 'lnft',
+            'coats' => 2,
+            'production_rate_value' => 30,
+            'labor_hours' => 3.33,
+            'labor_cost' => 133.33,
+            'material_cost' => 0,
+            'total' => 133.33,
+            'is_included' => true,
+            'sort_order' => 2,
+        ]);
+
+        $estimate->templateUsages()->create([
+            'template_id' => $template->id,
+            'quantity' => 500,
+            'coats' => 2,
+            'calculated_price' => 500,
+            'resultable_type' => \App\Models\EstimateArea::class,
+            'resultable_id' => $area->id,
+        ]);
+
+        // Load the component (simulates going back to edit)
+        $component = Livewire::actingAs($user)
+            ->test('estimates.template-builder', ['estimate' => $estimate]);
+
+        $selectedTemplates = $component->get('selectedTemplates');
+        $surfaces = $selectedTemplates[0]['area_data']['surfaces'];
+
+        // Verify surface categories persisted from DB column, not inferred
+        $siding = collect($surfaces)->firstWhere('name', 'Siding');
+        $eaves = collect($surfaces)->firstWhere('name', 'Eaves');
+        $fascia = collect($surfaces)->firstWhere('name', 'Fascia');
+
+        expect($siding['surface_category'])->toBe('body');
+        expect($eaves['surface_category'])->toBe('eaves');
+        // Fascia is key: without DB column, inferSurfaceCategory maps trim→trim (not fascia)
+        expect($fascia['surface_category'])->toBe('fascia');
     });
 });

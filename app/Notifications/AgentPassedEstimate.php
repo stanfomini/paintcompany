@@ -30,7 +30,7 @@ class AgentPassedEstimate extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $appName = config('app.name', 'Apex Negotiations');
+        $appName = config('app.name');
         $address = $this->deal->property?->address ?? $this->deal->title;
 
         $message = (new MailMessage)

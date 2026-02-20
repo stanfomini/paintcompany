@@ -300,6 +300,9 @@ class JobService
         // Auto-create commission entries for job completion
         app(CommissionService::class)->createFromJob($job);
 
+        // Auto-create crew bonus commissions
+        app(CommissionService::class)->createCrewBonusFromJob($job);
+
         $this->plannerAutomation->onJobCompleted($job);
 
         // Also complete the deal

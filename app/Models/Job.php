@@ -39,6 +39,7 @@ class Job extends Model
         'estimate_id',
         'sales_person_id',
         'assigned_to',
+        'production_manager_id',
         'job_number',
         'stage',
         'title',
@@ -91,7 +92,7 @@ class Job extends Model
 
     public function productionManager(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'assigned_to');
+        return $this->belongsTo(User::class, 'production_manager_id');
     }
 
     public function colors(): HasMany
@@ -119,6 +120,11 @@ class Job extends Model
     public function costCards(): HasMany
     {
         return $this->hasMany(JobCostCard::class);
+    }
+
+    public function payables(): HasMany
+    {
+        return $this->hasMany(JobPayable::class);
     }
 
     public function prepPlan(): HasOne

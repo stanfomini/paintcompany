@@ -1,4 +1,4 @@
-<x-layouts.guest :title="($recording->title ?? __('Video Recording')) . ' - ' . ($company->company_name ?? 'Apex Negotiations')">
+<x-layouts.guest :title="($recording->title ?? __('Video Recording')) . ' - ' . ($company->company_name ?? config('app.name'))">
     <div class="min-h-screen bg-zinc-900 flex flex-col items-center p-4 sm:p-8">
         <div class="w-full max-w-5xl">
             {{-- Company Branding --}}
@@ -54,7 +54,7 @@
                     <div></div>
                 @endif
                 <p class="text-zinc-500 text-xs">
-                    {{ __('Shared via') }} <span class="text-zinc-400 font-medium">{{ $company->company_name ?? 'Apex Negotiations' }}</span>
+                    {{ __('Shared via') }} <span class="text-zinc-400 font-medium">{{ $company->company_name ?? config('app.name') }}</span>
                 </p>
             </div>
         </div>

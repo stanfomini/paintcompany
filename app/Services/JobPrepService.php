@@ -237,7 +237,7 @@ class JobPrepService
      * Supports both new signature: addCustomTask($day, $title, $serviceCategoryId, $description)
      * and legacy signature: addCustomTask($day, $title, $description, $estimatedHours)
      */
-    public function addCustomTask(JobPrepDay $day, string $title, string|int|null $serviceCategoryIdOrDescription = null, string|float|null $descriptionOrHours = null): JobPrepTask
+    public function addCustomTask(JobPrepDay $day, string $title, string|int|null $serviceCategoryIdOrDescription = null, string|float|null $descriptionOrHours = null, ?User $addedBy = null): JobPrepTask
     {
         // Detect legacy call: 3rd arg is a string (description) or null, 4th is float (hours)
         if (is_string($serviceCategoryIdOrDescription) || ($serviceCategoryIdOrDescription === null && is_float($descriptionOrHours))) {
@@ -258,6 +258,7 @@ class JobPrepService
             'title' => $title,
             'description' => $description,
             'sort_order' => $day->tasks()->count(),
+            'added_by' => $addedBy?->id,
         ]);
 
         $this->revokeApprovals($plan);
@@ -613,5 +614,113 @@ class JobPrepService
         JobActivity::log($plan->job, 'prep_plan_changed', 'Tasks auto-distributed across days');
 
         PrepPlanUpdated::dispatch($plan->job, 'tasks_distributed', 'Tasks auto-distributed across days');
+    }
+
+    /**
+     * Add a new day to the end of the plan.
+     */
+    public function addDay(JobPrepPlan $plan): JobPrepDay
+    {
+        $maxDayNumber = $plan->days()->max('day_number') ?? 0;
+        $newDayNumber = $maxDayNumber + 1;
+
+        $day = JobPrepDay::create([
+            'job_prep_plan_id' => $plan->id,
+            'day_number' => $newDayNumber,
+            'label' => "Day {$newDayNumber}",
+            'sort_order' => $newDayNumber - 1,
+        ]);
+
+        $plan->update(['total_days' => $newDayNumber]);
+        $this->revokeApprovals($plan);
+
+        JobActivity::log($plan->job, 'prep_day_added', "Day {$newDayNumber} added to prep plan");
+        PrepPlanUpdated::dispatch($plan->job, 'day_added', "Day {$newDayNumber} added");
+
+        return $day;
+    }
+
+    /**
+     * Delete an empty day and renumber remaining days.
+     */
+    public function deleteDay(JobPrepDay $day): bool
+    {
+        $plan = $day->plan;
+
+        // Guard: day must be empty and not the last day
+        if ($day->tasks()->count() > 0 || $plan->days()->count() <= 1) {
+            return false;
+        }
+
+        $dayNumber = $day->day_number;
+        $day->delete();
+
+        // Renumber remaining days (two-pass to avoid unique constraint)
+        $remainingDays = $plan->days()->orderBy('day_number')->get();
+
+        // Pass 1: set to negative values
+        foreach ($remainingDays as $i => $remainingDay) {
+            $remainingDay->update(['day_number' => -($i + 1)]);
+        }
+
+        // Pass 2: set to correct sequential values
+        foreach ($remainingDays as $i => $remainingDay) {
+            $remainingDay->update([
+                'day_number' => $i + 1,
+                'label' => 'Day '.($i + 1),
+                'sort_order' => $i,
+            ]);
+        }
+
+        $plan->update(['total_days' => $remainingDays->count()]);
+        $this->revokeApprovals($plan);
+
+        JobActivity::log($plan->job, 'prep_day_deleted', "Day {$dayNumber} deleted from prep plan");
+        PrepPlanUpdated::dispatch($plan->job, 'day_deleted', "Day {$dayNumber} deleted");
+
+        return true;
+    }
+
+    /**
+     * Request removal of a custom task.
+     */
+    public function requestTaskRemoval(JobPrepTask $task, User $requester, ?string $reason = null): void
+    {
+        if (! $task->isCustom()) {
+            return;
+        }
+
+        $task->requestRemoval($requester, $reason);
+        $this->revokeApprovals($task->plan);
+
+        JobActivity::log($task->plan->job, 'prep_task_removal_requested', "Removal requested for: \"{$task->title}\"", [
+            'task_id' => $task->id,
+            'requested_by' => $requester->id,
+            'reason' => $reason,
+        ]);
+
+        PrepPlanUpdated::dispatch($task->plan->job, 'task_removal_requested', "Task removal requested: \"{$task->title}\"");
+    }
+
+    /**
+     * Approve a task removal request (deletes the task).
+     */
+    public function approveTaskRemoval(JobPrepTask $task): bool
+    {
+        return $this->removeTask($task);
+    }
+
+    /**
+     * Dismiss a task removal request.
+     */
+    public function dismissTaskRemoval(JobPrepTask $task): void
+    {
+        $task->dismissRemovalRequest();
+
+        JobActivity::log($task->plan->job, 'prep_task_removal_dismissed', "Removal request dismissed for: \"{$task->title}\"", [
+            'task_id' => $task->id,
+        ]);
+
+        PrepPlanUpdated::dispatch($task->plan->job, 'task_removal_dismissed', "Task removal dismissed: \"{$task->title}\"");
     }
 }

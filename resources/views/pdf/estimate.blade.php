@@ -477,7 +477,7 @@
         <table style="width: 100%; margin-bottom: 40px; border-bottom: 2px solid #3b82f6; padding-bottom: 20px;">
             <tr>
                 <td style="vertical-align: top;">
-                    <div class="company-name">{{ __('Apex Negotiations') }}</div>
+                    <div class="company-name">{{ config('app.name') }}</div>
                     <div style="color: #6b7280;">{{ __('Professional Painting Services') }}</div>
                 </td>
                 <td style="text-align: right; vertical-align: top;">

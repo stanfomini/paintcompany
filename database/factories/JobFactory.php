@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\Deal;
 use App\Models\Job;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -86,6 +87,16 @@ class JobFactory extends Factory
             'customer_date_confirmed' => true,
             'company_colors_confirmed' => true,
             'customer_colors_confirmed' => true,
+        ]);
+    }
+
+    /**
+     * Set the production manager.
+     */
+    public function withProductionManager(User $user): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'production_manager_id' => $user->id,
         ]);
     }
 

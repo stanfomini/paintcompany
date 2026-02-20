@@ -197,6 +197,7 @@ new class extends Component {
         $this->autoConnectNode($workflow, $node);
 
         $this->dispatchWorkflowData();
+        $this->skipRender();
     }
 
     #[Renderless]
@@ -299,6 +300,7 @@ new class extends Component {
         if ($node) {
             $node->update(['is_enabled' => ! $node->is_enabled]);
             $this->dispatchWorkflowData();
+            $this->skipRender();
         }
     }
 
@@ -316,6 +318,7 @@ new class extends Component {
 
         $node->delete();
         $this->dispatchWorkflowData();
+        $this->skipRender();
     }
 
     public function connectNodes(int $fromId, int $toId, ?string $branch = null): void
@@ -344,12 +347,14 @@ new class extends Component {
         ]);
 
         $this->dispatchWorkflowData();
+        $this->skipRender();
     }
 
     public function deleteEdge(int $edgeId): void
     {
         WorkflowEdge::where('id', $edgeId)->delete();
         $this->dispatchWorkflowData();
+        $this->skipRender();
     }
 
     public function viewRunHistory(int $id): void

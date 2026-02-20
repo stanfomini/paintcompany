@@ -17,3 +17,5 @@ Schedule::command('workflows:run-scheduled')->everyFifteenMinutes();
 Schedule::command('workflows:cleanup-stale')->daily();
 Schedule::command('sla:calculate-metrics')->dailyAt('06:00');
 Schedule::command('documents:check-expiration')->dailyAt('08:00');
+Schedule::command('territory:expire-offers')->everyMinute();
+Schedule::command('api-sources:poll')->everyMinute();

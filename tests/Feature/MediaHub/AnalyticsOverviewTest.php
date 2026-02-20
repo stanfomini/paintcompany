@@ -172,3 +172,56 @@ it('shows no views message when no data exists', function () {
         ->test('media.analytics-overview')
         ->assertSee('No views recorded yet.');
 });
+
+it('allows users with media.view_own_analytics permission', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo(['media.view', 'media.view_own_analytics']);
+
+    Livewire::actingAs($user)
+        ->test('media.analytics-overview')
+        ->assertSuccessful()
+        ->assertSee('Your Video Analytics');
+});
+
+it('scopes analytics to own videos for view_own_analytics users', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo(['media.view', 'media.view_own_analytics']);
+
+    $otherUser = User::factory()->internal()->create();
+
+    // Own video with views
+    $ownVideo = VideoRecording::factory()->ready()->create(['user_id' => $user->id, 'title' => 'My Video']);
+    VideoView::factory()->count(3)->create(['video_recording_id' => $ownVideo->id]);
+
+    // Other user's video with views (should NOT appear)
+    $otherVideo = VideoRecording::factory()->ready()->create(['user_id' => $otherUser->id, 'title' => 'Other Video']);
+    VideoView::factory()->count(7)->create(['video_recording_id' => $otherVideo->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.analytics-overview')
+        ->assertSee('My Video')
+        ->assertDontSee('Other Video')
+        ->assertSee('3'); // only own video's views
+});
+
+it('shows all videos for media.manage users without scoping callout', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo(['media.view', 'media.manage']);
+
+    $otherVideo = VideoRecording::factory()->ready()->create(['title' => 'Other Video']);
+    VideoView::factory()->count(5)->create(['video_recording_id' => $otherVideo->id]);
+
+    Livewire::actingAs($user)
+        ->test('media.analytics-overview')
+        ->assertDontSee('Your Video Analytics')
+        ->assertSee('Other Video');
+});
+
+it('denies access without either analytics permission', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('media.view');
+
+    Livewire::actingAs($user)
+        ->test('media.analytics-overview')
+        ->assertForbidden();
+});

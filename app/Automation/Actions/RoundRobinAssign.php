@@ -33,9 +33,11 @@ class RoundRobinAssign implements ActionInterface
         return [
             'user_ids' => [
                 'type' => 'string',
-                'label' => 'User IDs',
-                'description' => 'Comma-separated list of internal user IDs to rotate through.',
+                'label' => 'Team Members',
+                'description' => 'Select the team members to rotate through.',
                 'required' => true,
+                'multiple' => true,
+                'options' => User::where('type', 'internal')->pluck('name', 'id')->toArray(),
             ],
             'assignment_field' => [
                 'type' => 'string',

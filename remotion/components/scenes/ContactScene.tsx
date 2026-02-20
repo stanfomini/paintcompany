@@ -13,7 +13,7 @@ interface ContactSceneProps {
 export const ContactScene: React.FC<ContactSceneProps> = ({
   address,
   city,
-  companyName = 'Apex Negotiations',
+  companyName = 'Painting Made Easy Denver',
   companyPhone = '(555) 123-4567',
   companyTagline = 'Professional Painting Services',
   qrCodeUrl,

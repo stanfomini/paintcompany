@@ -33,9 +33,10 @@ class SetLeadSource implements ActionInterface
         return [
             'lead_source_slug' => [
                 'type' => 'string',
-                'label' => 'Lead Source Slug',
-                'description' => 'The slug of the lead source (e.g., facebook, google_ads).',
+                'label' => 'Lead Source',
+                'description' => 'The lead source to set on the deal.',
                 'required' => true,
+                'options' => LeadSource::where('is_active', true)->pluck('name', 'slug')->toArray(),
             ],
         ];
     }

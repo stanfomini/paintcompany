@@ -69,6 +69,19 @@ new class extends Component
         $this->invoice->refresh();
     }
 
+    public function resendInvoice(): void
+    {
+        $this->authorize('invoices.send');
+
+        if (! in_array($this->invoice->status, [Invoice::STATUS_SENT, Invoice::STATUS_OVERDUE, Invoice::STATUS_PARTIALLY_PAID])) {
+            return;
+        }
+
+        $service = new InvoiceService;
+        $service->resendInvoice($this->invoice);
+        $this->invoice->refresh();
+    }
+
     public function openPaymentModal(): void
     {
         $this->authorize('payments.record');
@@ -156,6 +169,10 @@ new class extends Component
             @if ($this->canSend && $invoice->status === 'draft')
                 <flux:button variant="primary" icon="paper-airplane" wire:click="sendInvoice" :wire:confirm="__('Send this invoice to the customer?')" size="sm">
                     {{ __('Send') }}
+                </flux:button>
+            @elseif ($this->canSend && in_array($invoice->status, ['sent', 'overdue', 'partially_paid']))
+                <flux:button variant="primary" icon="arrow-path" wire:click="resendInvoice" :wire:confirm="__('Resend this invoice to the customer?')" size="sm">
+                    {{ __('Resend') }}
                 </flux:button>
             @endif
 

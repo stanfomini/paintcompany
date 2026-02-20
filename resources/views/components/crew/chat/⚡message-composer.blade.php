@@ -41,7 +41,7 @@ new class extends Component {
         $user = auth('crew')->user();
 
         if (! $this->thread->hasParticipant($user)) {
-            $this->addError('message', 'You are not authorized to send messages in this thread.');
+            $this->addError('message', __('You are not authorized to send messages in this thread.'));
 
             return;
         }
@@ -86,7 +86,7 @@ new class extends Component {
         $user = auth('crew')->user();
 
         if (! $this->thread->hasParticipant($user)) {
-            $this->addError('audio', 'You are not authorized to send messages in this thread.');
+            $this->addError('audio', __('You are not authorized to send messages in this thread.'));
             $this->isProcessingAudio = false;
 
             return;
@@ -98,7 +98,7 @@ new class extends Component {
 
             $this->sendAudioMessage($audioData);
         } catch (\Exception $e) {
-            $this->addError('audio', 'Failed to process audio recording: '.$e->getMessage());
+            $this->addError('audio', __('Failed to process audio recording: :error', ['error' => $e->getMessage()]));
         } finally {
             $this->isProcessingAudio = false;
             $this->isRecording = false;
@@ -858,7 +858,7 @@ new class extends Component {
                             'bg-zinc-200 dark:bg-zinc-700 hover:bg-zinc-300 dark:hover:bg-zinc-600': !recording && !requestingPermission
                         }"
                         class="p-2.5 rounded-full text-zinc-700 dark:text-zinc-200 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        x-bind:title="recording ? 'Click to stop recording' : (requestingPermission ? 'Requesting microphone access...' : 'Click to record voice message')"
+                        x-bind:title="recording ? '{{ __('Click to stop recording') }}' : (requestingPermission ? '{{ __('Requesting microphone access...') }}' : '{{ __('Click to record voice message') }}')"
                     >
                         <svg x-show="!recording && !requestingPermission" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>

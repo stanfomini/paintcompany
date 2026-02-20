@@ -343,66 +343,82 @@ new class extends Component {
 
 <div>
     <div class="max-w-5xl mx-auto">
-        <div class="flex items-center justify-between mb-6">
-            <div class="flex items-center gap-4">
-                <flux:button variant="ghost" :href="route('estimates.index')" icon="arrow-left" wire:navigate>
-                    {{ __('Back') }}
-                </flux:button>
-                <flux:heading size="xl">{{ $estimate->estimate_number }}</flux:heading>
-                @php
-                    $modeColor = match($estimate->estimator_mode) {
-                        'simple' => 'emerald',
-                        'template' => 'blue',
-                        'detailed' => 'purple',
-                        default => 'zinc',
-                    };
-                    $modeLabel = match($estimate->estimator_mode) {
-                        'simple' => __('Quick'),
-                        'template' => __('Template'),
-                        'detailed' => __('Detailed'),
-                        default => __('Standard'),
-                    };
-                @endphp
-                <flux:badge size="sm" color="{{ $modeColor }}">{{ $modeLabel }}</flux:badge>
-                <flux:badge size="sm" color="{{ $this->statusColor }}">{{ $estimate->status_label }}</flux:badge>
+        @php
+            $editRoute = null;
+            if ($estimate->isEditable()) {
+                $editRoute = match($estimate->estimator_mode) {
+                    'simple' => route('estimates.edit.simple', $estimate),
+                    'template' => route('estimates.edit.template', $estimate),
+                    default => route('estimates.edit', $estimate),
+                };
+            }
+            $modeColor = match($estimate->estimator_mode) {
+                'simple' => 'emerald',
+                'template' => 'blue',
+                'detailed' => 'purple',
+                default => 'zinc',
+            };
+            $modeLabel = match($estimate->estimator_mode) {
+                'simple' => __('Quick'),
+                'template' => __('Template'),
+                'detailed' => __('Detailed'),
+                default => __('Standard'),
+            };
+        @endphp
+        <div class="flex items-center justify-between gap-2 mb-6 min-w-0">
+            {{-- Left: Back + title + badges --}}
+            <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+                <flux:button variant="ghost" :href="route('estimates.index')" icon="arrow-left" wire:navigate class="shrink-0" />
+                <flux:heading size="xl" class="truncate">{{ $estimate->estimate_number }}</flux:heading>
+                <flux:badge size="sm" color="{{ $modeColor }}" class="shrink-0">{{ $modeLabel }}</flux:badge>
+                <flux:badge size="sm" color="{{ $this->statusColor }}" class="shrink-0">{{ $estimate->status_label }}</flux:badge>
             </div>
-            <div class="flex items-center gap-2">
+
+            {{-- Right: Actions --}}
+            <div class="flex items-center gap-1 sm:gap-2 shrink-0">
                 @can('estimates.edit')
                     @if ($estimate->isEditable())
-                        @php
-                            $editRoute = match($estimate->estimator_mode) {
-                                'simple' => route('estimates.edit.simple', $estimate),
-                                'template' => route('estimates.edit.template', $estimate),
-                                default => route('estimates.edit', $estimate),
-                            };
-                        @endphp
-                        @if ($estimate->status === 'sent')
-                            <flux:button :href="$editRoute" icon="pencil" variant="filled" class="!bg-amber-600 hover:!bg-amber-700 !text-white" wire:navigate>
-                                {{ __('Edit (Sent)') }}
-                            </flux:button>
-                        @else
-                            <flux:button :href="$editRoute" icon="pencil" wire:navigate>
-                                {{ __('Edit') }}
-                            </flux:button>
-                        @endif
+                        {{-- Mobile: icon-only edit button --}}
+                        <div class="lg:hidden">
+                            @if ($estimate->status === 'sent')
+                                <flux:button :href="$editRoute" icon="pencil" variant="filled" class="!bg-amber-600 hover:!bg-amber-700 !text-white" wire:navigate />
+                            @else
+                                <flux:button :href="$editRoute" icon="pencil" wire:navigate />
+                            @endif
+                        </div>
+                        {{-- Desktop: edit button with label --}}
+                        <div class="hidden lg:block">
+                            @if ($estimate->status === 'sent')
+                                <flux:button :href="$editRoute" icon="pencil" variant="filled" class="!bg-amber-600 hover:!bg-amber-700 !text-white" wire:navigate>
+                                    {{ __('Edit (Sent)') }}
+                                </flux:button>
+                            @else
+                                <flux:button :href="$editRoute" icon="pencil" wire:navigate>
+                                    {{ __('Edit') }}
+                                </flux:button>
+                            @endif
+                        </div>
                     @endif
                 @endcan
                 @can('estimates.send')
                     @if ($estimate->status === 'draft')
-                        <flux:button wire:click="openSendModal" icon="paper-airplane" variant="primary">
-                            {{ __('Send Proposal') }}
-                        </flux:button>
+                        {{-- Mobile: icon-only send button --}}
+                        <div class="lg:hidden">
+                            <flux:button wire:click="openSendModal" icon="paper-airplane" variant="primary" />
+                        </div>
+                        {{-- Desktop: send button with label --}}
+                        <div class="hidden lg:block">
+                            <flux:button wire:click="openSendModal" icon="paper-airplane" variant="primary">
+                                {{ __('Send Proposal') }}
+                            </flux:button>
+                        </div>
                     @endif
                 @endcan
-                <flux:button :href="route('estimates.breakdown', $estimate)" icon="calculator" variant="ghost" wire:navigate>
-                    {{ __('Cost Breakdown') }}
-                </flux:button>
-                <flux:button :href="route('estimates.pdf', $estimate)" target="_blank" icon="document-arrow-down" variant="ghost">
-                    {{ __('Download PDF') }}
-                </flux:button>
                 <flux:dropdown>
                     <flux:button variant="ghost" icon="ellipsis-horizontal" />
                     <flux:menu>
+                        <flux:menu.item :href="route('estimates.breakdown', $estimate)" icon="calculator" wire:navigate>{{ __('Cost Breakdown') }}</flux:menu.item>
+                        <flux:menu.item :href="route('estimates.pdf', $estimate)" target="_blank" icon="document-arrow-down">{{ __('Download PDF') }}</flux:menu.item>
                         @can('estimates.send')
                             @if ($estimate->status === 'draft')
                                 <flux:menu.item wire:click="markAsSent" icon="paper-airplane">{{ __('Mark as Sent (No Email)') }}</flux:menu.item>
@@ -791,6 +807,25 @@ new class extends Component {
                                 </div>
                             @endforeach
                         </div>
+                        @if ($estimate->standaloneItems->count() > 0)
+                            <div class="mt-6 pt-6 border-t border-zinc-200 dark:border-zinc-700">
+                                <div class="text-xs font-medium text-zinc-500 uppercase mb-3">{{ __('Additional Items') }}</div>
+                                <div class="space-y-2">
+                                    @foreach ($estimate->standaloneItems as $item)
+                                        <div wire:key="tmpl-item-{{ $item->id }}" class="flex justify-between items-center py-2 px-3 bg-zinc-50 dark:bg-zinc-800/30 rounded">
+                                            <div>
+                                                <span class="font-medium text-sm">{{ $item->description }}</span>
+                                                @if ($item->details)
+                                                    <span class="text-xs text-zinc-500 ml-2">{{ $item->details }}</span>
+                                                @endif
+                                                <span class="text-xs text-zinc-400 ml-2">{{ number_format($item->quantity, 0) }} × ${{ number_format($item->unit_price, 2) }}</span>
+                                            </div>
+                                            <span class="font-medium text-sm">${{ number_format($item->total, 2) }}</span>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
                     @elseif ($estimate->templateUsages->count() > 0)
                         {{-- Fallback to template usages table if no areas --}}
                         <div class="overflow-x-auto">
@@ -896,7 +931,7 @@ new class extends Component {
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
-                                @forelse ($estimate->items as $item)
+                                @forelse ($estimate->standaloneItems as $item)
                                     <tr wire:key="item-{{ $item->id }}">
                                         <td class="py-4">
                                             <flux:text class="font-medium">{{ $item->description }}</flux:text>
@@ -931,12 +966,59 @@ new class extends Component {
 
             </div>
 
-            {{-- Video Walkarounds --}}
-            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden">
-                <livewire:estimates.video-walkarounds
-                    :recordable="$estimate"
-                    :key="'walkarounds-'.$estimate->id"
-                />
+            {{-- Media: Photos & Videos --}}
+            @php
+                $hasProperty = (bool) $estimate->deal?->property;
+                $videoCount = $estimate->videoRecordings->count();
+                $defaultTab = $hasProperty ? 'photos' : 'videos';
+            @endphp
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden" x-data="{ mediaTab: '{{ $defaultTab }}' }">
+                <div class="flex items-center gap-6 mb-4 border-b border-zinc-200 dark:border-zinc-700">
+                    @if ($hasProperty)
+                        <button
+                            type="button"
+                            @click="mediaTab = 'photos'"
+                            :class="mediaTab === 'photos' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                            class="flex items-center gap-1.5 pb-2 -mb-px border-b-2 text-sm font-medium transition-colors"
+                        >
+                            <flux:icon name="camera" variant="micro" />
+                            {{ __('Photos') }}
+                            @if ($estimate->deal->property->photos->count() > 0)
+                                <span class="text-xs bg-zinc-100 dark:bg-zinc-800 rounded-full px-1.5 py-0.5">{{ $estimate->deal->property->photos->count() }}</span>
+                            @endif
+                        </button>
+                    @endif
+                    <button
+                        type="button"
+                        @click="mediaTab = 'videos'"
+                        :class="mediaTab === 'videos' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                        class="flex items-center gap-1.5 pb-2 -mb-px border-b-2 text-sm font-medium transition-colors"
+                    >
+                        <flux:icon name="video-camera" variant="micro" />
+                        {{ __('Videos') }}
+                        @if ($videoCount > 0)
+                            <span class="text-xs bg-zinc-100 dark:bg-zinc-800 rounded-full px-1.5 py-0.5">{{ $videoCount }}</span>
+                        @endif
+                    </button>
+                </div>
+
+                @if ($hasProperty)
+                    <div x-show="mediaTab === 'photos'" x-cloak>
+                        <livewire:shared.photo-gallery
+                            :property="$estimate->deal->property"
+                            :estimate="$estimate"
+                            context="estimate"
+                            :key="'photos-'.$estimate->id"
+                        />
+                    </div>
+                @endif
+
+                <div x-show="mediaTab === 'videos'" x-cloak>
+                    <livewire:estimates.video-walkarounds
+                        :recordable="$estimate"
+                        :key="'walkarounds-'.$estimate->id"
+                    />
+                </div>
             </div>
 
             {{-- Listing Link --}}
@@ -1438,18 +1520,6 @@ new class extends Component {
                             @endforeach
                         </div>
                     </details>
-                </div>
-            @endif
-
-            {{-- Photos --}}
-            @if ($estimate->deal?->property)
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden">
-                    <livewire:shared.photo-gallery
-                        :property="$estimate->deal->property"
-                        :estimate="$estimate"
-                        context="estimate"
-                        :key="'photos-'.$estimate->id"
-                    />
                 </div>
             @endif
 

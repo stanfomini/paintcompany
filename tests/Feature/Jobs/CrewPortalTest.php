@@ -136,7 +136,7 @@ describe('Crew Job Show', function () {
             ->test('crew.job-show', ['job' => $job])
             ->assertSee('Review')
             ->assertSee('Accept This Job')
-            ->assertSee('Accept Job');
+            ->assertSee('Accept');
     });
 
     it('shows accepted status after accepting', function () {
@@ -411,7 +411,8 @@ describe('Crew Painter Breakdown', function () {
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-breakdown', ['job' => $job])
             ->assertStatus(200)
-            ->assertSee('Pay Breakdown');
+            ->assertSee('Painter')
+            ->assertSee('Breakdown');
     });
 
     it('denies breakdown access to crew not dispatched to this job', function () {
@@ -704,5 +705,172 @@ describe('Crew Audio Messaging', function () {
         Livewire::actingAs($crew, 'crew')
             ->test('crew.job-show', ['job' => $job])
             ->assertSee('Transcribed audio text');
+    });
+});
+
+describe('Crew Prep Day Assignment', function () {
+    it('can move task to different day', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create(['stage' => 'job_prep']);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+        app(JobDispatchService::class)->acceptJob($job, $crew);
+
+        // Create a prep plan with 2 days
+        $plan = app(\App\Services\JobPrepService::class)->createPlan($job, crewSize: 2, hoursPerDay: 4);
+
+        // Add an extra day manually if there's only 1
+        if ($plan->days->count() < 2) {
+            \App\Models\JobPrepDay::create([
+                'job_prep_plan_id' => $plan->id,
+                'day_number' => 2,
+                'label' => 'Day 2',
+                'sort_order' => 1,
+            ]);
+            $plan->refresh();
+            $plan->load('days');
+        }
+
+        $day1 = $plan->days->where('day_number', 1)->first();
+        $day2 = $plan->days->where('day_number', 2)->first();
+
+        // Create a task on day 1
+        $task = \App\Models\JobPrepTask::create([
+            'job_prep_day_id' => $day1->id,
+            'job_prep_plan_id' => $plan->id,
+            'task_type' => 'custom',
+            'title' => 'Test Task',
+            'sort_order' => 0,
+        ]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->call('moveTaskToDay', $task->id, $day2->id);
+
+        expect($task->fresh()->job_prep_day_id)->toBe($day2->id);
+    });
+
+    it('cannot move task when not in job_prep stage', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create(['stage' => 'in_progress']);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+        app(JobDispatchService::class)->acceptJob($job, $crew);
+
+        $plan = app(\App\Services\JobPrepService::class)->createPlan($job, crewSize: 2, hoursPerDay: 4);
+
+        if ($plan->days->count() < 2) {
+            \App\Models\JobPrepDay::create([
+                'job_prep_plan_id' => $plan->id,
+                'day_number' => 2,
+                'label' => 'Day 2',
+                'sort_order' => 1,
+            ]);
+            $plan->refresh();
+            $plan->load('days');
+        }
+
+        $day1 = $plan->days->where('day_number', 1)->first();
+        $day2 = $plan->days->where('day_number', 2)->first();
+
+        $task = \App\Models\JobPrepTask::create([
+            'job_prep_day_id' => $day1->id,
+            'job_prep_plan_id' => $plan->id,
+            'task_type' => 'custom',
+            'title' => 'Test Task',
+            'sort_order' => 0,
+        ]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->call('moveTaskToDay', $task->id, $day2->id);
+
+        // Task should NOT have moved (still on day 1)
+        expect($task->fresh()->job_prep_day_id)->toBe($day1->id);
+    });
+
+    it('can auto-distribute tasks across days', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create(['stage' => 'job_prep']);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+        app(JobDispatchService::class)->acceptJob($job, $crew);
+
+        $plan = app(\App\Services\JobPrepService::class)->createPlan($job, crewSize: 2, hoursPerDay: 4);
+
+        if ($plan->days->count() < 2) {
+            \App\Models\JobPrepDay::create([
+                'job_prep_plan_id' => $plan->id,
+                'day_number' => 2,
+                'label' => 'Day 2',
+                'sort_order' => 1,
+            ]);
+            $plan->refresh();
+            $plan->load('days');
+        }
+
+        $day1 = $plan->days->where('day_number', 1)->first();
+
+        // Create tasks all on day 1
+        \App\Models\JobPrepTask::create([
+            'job_prep_day_id' => $day1->id,
+            'job_prep_plan_id' => $plan->id,
+            'task_type' => 'custom',
+            'title' => 'Task A',
+            'estimated_hours' => 4,
+            'sort_order' => 0,
+        ]);
+        \App\Models\JobPrepTask::create([
+            'job_prep_day_id' => $day1->id,
+            'job_prep_plan_id' => $plan->id,
+            'task_type' => 'custom',
+            'title' => 'Task B',
+            'estimated_hours' => 3,
+            'sort_order' => 1,
+        ]);
+
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->call('autoDistributeTasks');
+
+        // After auto-distribute, tasks should be spread across days
+        $plan->refresh();
+        $plan->load('days.tasks');
+        $day1Tasks = $plan->days->where('day_number', 1)->first()->tasks->count();
+        $day2Tasks = $plan->days->where('day_number', 2)->first()->tasks->count();
+
+        // Both days should have at least one task
+        expect($day1Tasks + $day2Tasks)->toBe(2);
+        expect($day1Tasks)->toBeGreaterThanOrEqual(1);
+        expect($day2Tasks)->toBeGreaterThanOrEqual(1);
+    });
+
+    it('cannot auto-distribute with only one day', function () {
+        $crew = User::factory()->crew()->create();
+        $job = Job::factory()->create(['stage' => 'job_prep']);
+
+        app(JobDispatchService::class)->dispatchToCrews($job, [$crew->id]);
+        app(JobDispatchService::class)->acceptJob($job, $crew);
+
+        // Create a plan that only has 1 day
+        $plan = app(\App\Services\JobPrepService::class)->createPlan($job, crewSize: 2, hoursPerDay: 100);
+        $day1 = $plan->days->first();
+
+        $task = \App\Models\JobPrepTask::create([
+            'job_prep_day_id' => $day1->id,
+            'job_prep_plan_id' => $plan->id,
+            'task_type' => 'custom',
+            'title' => 'Task A',
+            'estimated_hours' => 4,
+            'sort_order' => 0,
+        ]);
+
+        // This should be a no-op since there's only 1 day
+        Livewire::actingAs($crew, 'crew')
+            ->test('crew.job-show', ['job' => $job])
+            ->call('autoDistributeTasks');
+
+        // Task should still be on day 1
+        expect($task->fresh()->job_prep_day_id)->toBe($day1->id);
     });
 });

@@ -3,9 +3,11 @@
 namespace App\Providers;
 
 use App\Automation\Registry;
+use App\Events\Automation\ApiPollReceived;
 use App\Events\Automation\ApplicationReceived;
 use App\Events\Automation\ContactCreated;
 use App\Events\Automation\DealStageChanged;
+use App\Events\Automation\DoorKnockRecorded;
 use App\Events\Automation\EstimateStatusChanged;
 use App\Events\Automation\JobStageChanged;
 use App\Events\Automation\TaskStatusChanged;
@@ -32,9 +34,11 @@ class AutomationServiceProvider extends ServiceProvider
         // Laravel's Event::listen does not match parent classes for child events,
         // so each concrete event must be registered explicitly.
         $events = [
+            ApiPollReceived::class,
             ApplicationReceived::class,
             ContactCreated::class,
             DealStageChanged::class,
+            DoorKnockRecorded::class,
             EstimateStatusChanged::class,
             JobStageChanged::class,
             TaskStatusChanged::class,

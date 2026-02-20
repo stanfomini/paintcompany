@@ -3,6 +3,7 @@
 namespace App\Automation\Actions;
 
 use App\Automation\Contracts\ActionInterface;
+use App\Models\User;
 use App\Models\WorkflowRun;
 
 class AssignToUser implements ActionInterface
@@ -29,10 +30,11 @@ class AssignToUser implements ActionInterface
     {
         return [
             'user_id' => [
-                'type' => 'integer',
+                'type' => 'string',
                 'label' => 'Assign To User',
-                'description' => 'The user ID to assign the subject to.',
+                'description' => 'The user to assign the subject to.',
                 'required' => true,
+                'options' => User::where('type', 'internal')->pluck('name', 'id')->toArray(),
             ],
         ];
     }

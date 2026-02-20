@@ -52,6 +52,7 @@ new class extends Component {
 
         $query = ChatThread::query()
             ->forUser($user)
+            ->visibleTo($user)
             ->with(['latestMessage.user', 'deal', 'activeParticipants.user'])
             ->latestActivity();
 
@@ -92,7 +93,14 @@ new class extends Component {
     #[Computed]
     public function totalUnreadCount(): int
     {
-        return app(ChatService::class)->getUnreadCountForUser(auth()->user());
+        $user = auth()->user();
+
+        return ChatThread::query()
+            ->forUser($user)
+            ->visibleTo($user)
+            ->active()
+            ->get()
+            ->sum(fn (ChatThread $thread) => $thread->getUnreadCountFor($user));
     }
 
     public function archiveThread(int $threadId): void

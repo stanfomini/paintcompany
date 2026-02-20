@@ -335,6 +335,122 @@ class EstimatePackageGeneratorService
     }
 
     /**
+     * Snapshot package item selections before clearing packages.
+     * Keys by "{tier}:{area_name}:{surface_name}" for surfaces,
+     * "{tier}:area:{area_name}" for fixed-price areas,
+     * "{tier}:service:{item_description}" for service items.
+     *
+     * @return array<string, array{is_included: bool, customer_approved?: bool}>
+     */
+    public function snapshotPackageSelections(Estimate $estimate): array
+    {
+        $packages = $estimate->packages()->with(['items.itemable'])->get();
+        $snapshot = [];
+
+        foreach ($packages as $package) {
+            foreach ($package->items as $item) {
+                $key = $this->buildSnapshotKey($package, $item);
+                if ($key === null) {
+                    continue;
+                }
+
+                $data = ['is_included' => (bool) $item->is_included];
+
+                if ($item->itemable instanceof EstimateItem) {
+                    $data['customer_approved'] = (bool) $item->customer_approved;
+                }
+
+                $snapshot[$key] = $data;
+            }
+        }
+
+        return $snapshot;
+    }
+
+    /**
+     * Restore package item selections from a snapshot.
+     * Matches newly generated items by the same composite key.
+     *
+     * @param  array<string, array{is_included: bool, customer_approved?: bool}>  $snapshot
+     */
+    public function restorePackageSelections(Estimate $estimate, array $snapshot): void
+    {
+        if (empty($snapshot)) {
+            return;
+        }
+
+        $packages = $estimate->packages()->with(['items.itemable'])->get();
+
+        foreach ($packages as $package) {
+            $needsRecalc = false;
+
+            foreach ($package->items as $item) {
+                $key = $this->buildSnapshotKey($package, $item);
+                if ($key === null || ! isset($snapshot[$key])) {
+                    continue;
+                }
+
+                $saved = $snapshot[$key];
+                $updates = [];
+
+                if ((bool) $item->is_included !== $saved['is_included']) {
+                    $updates['is_included'] = $saved['is_included'];
+                }
+
+                if (isset($saved['customer_approved']) && (bool) $item->customer_approved !== $saved['customer_approved']) {
+                    $updates['customer_approved'] = $saved['customer_approved'];
+                    $updates['customer_approved_at'] = $saved['customer_approved'] ? now() : null;
+                }
+
+                if (! empty($updates)) {
+                    // Bypass model events to avoid cascading recalculations per item
+                    EstimatePackageItem::withoutEvents(function () use ($item, $updates) {
+                        $item->update($updates);
+                    });
+                    $needsRecalc = true;
+                }
+            }
+
+            if ($needsRecalc) {
+                $package->calculateTotals();
+                $package->save();
+            }
+        }
+    }
+
+    /**
+     * Build a composite key for a package item to match across regeneration.
+     */
+    protected function buildSnapshotKey(EstimatePackage $package, EstimatePackageItem $item): ?string
+    {
+        $itemable = $item->itemable;
+        if (! $itemable) {
+            return null;
+        }
+
+        $tier = $package->tier;
+
+        if ($itemable instanceof EstimateAreaSurface) {
+            $area = $itemable->area;
+            if (! $area) {
+                return null;
+            }
+
+            return "{$tier}:{$area->name}:{$itemable->name}";
+        }
+
+        if ($itemable instanceof EstimateArea) {
+            return "{$tier}:area:{$itemable->name}";
+        }
+
+        if ($itemable instanceof EstimateItem) {
+            return "{$tier}:service:{$itemable->description}";
+        }
+
+        return null;
+    }
+
+    /**
      * Remove all generated packages from an estimate.
      * Useful for regenerating packages after template changes.
      */

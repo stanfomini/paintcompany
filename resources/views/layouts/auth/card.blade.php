@@ -22,6 +22,7 @@
                 </div>
             </div>
         </div>
+        @livewire('shared.toast-container')
         @fluxScripts
     </body>
 </html>

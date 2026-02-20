@@ -101,7 +101,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
 <div class="min-h-screen flex items-center justify-center p-6">
     <div class="w-full max-w-md">
         <div class="text-center mb-8">
-            <flux:heading size="2xl" class="mb-2">{{ config('app.name', 'Apex Negotiations') }}</flux:heading>
+            <flux:heading size="2xl" class="mb-2">{{ config('app.name') }}</flux:heading>
             <flux:text class="text-zinc-600 dark:text-zinc-400">
                 {{ __('Accept Your Invitation') }}
             </flux:text>

@@ -53,18 +53,27 @@ it('hides stats cards for users without deals.view permission', function () {
     $profile = EmployeeProfile::factory()->onboarded()->create();
     $user = $profile->user;
 
-    // crew_lead role does not have deals.view permission
-    $user->assignRole('crew_lead');
-
+    // User with no role has no deals.view permission
     Livewire::actingAs($user)
         ->test('dashboard')
         ->assertDontSee('My Active Leads')
         ->assertDontSee('Closing Ratio');
 });
 
-it('shows welcome message for user without employee profile', function () {
+it('shows owner command center for admin without employee profile', function () {
     $user = User::factory()->internal()->create();
     $user->assignRole('admin');
+
+    Livewire::actingAs($user)
+        ->test('dashboard')
+        ->assertSee('Cash Flow')
+        ->assertSee('Active Jobs')
+        ->assertSee('Sales Pipeline')
+        ->assertDontSee('Time Clock');
+});
+
+it('shows welcome message for non-admin user without employee profile', function () {
+    $user = User::factory()->internal()->create();
 
     Livewire::actingAs($user)
         ->test('dashboard')

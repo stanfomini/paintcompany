@@ -15,10 +15,12 @@ class ScheduleCalendarFeedService
      */
     public function generateFeed(User $user): string
     {
-        $calendar = Calendar::create('Apex Negotiations - Work Schedule')
-            ->description('Employee work schedule from Apex Negotiations')
+        $appName = config('app.name');
+
+        $calendar = Calendar::create($appName.' - Work Schedule')
+            ->description('Employee work schedule from '.$appName)
             ->refreshInterval(60)
-            ->productIdentifier('-//Apex Negotiations//Schedule//EN');
+            ->productIdentifier('-//'.$appName.'//Schedule//EN');
 
         $profile = $user->employeeProfile;
 

@@ -14,7 +14,7 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @fluxAppearance
 </head>
-<body class="min-h-screen bg-white dark:bg-zinc-800">
+<body class="min-h-screen bg-white dark:bg-zinc-800 overflow-x-hidden">
     <flux:sidebar sticky collapsible="mobile" class="border-e bg-zinc-50 border-zinc-200 dark:border-zinc-700 dark:bg-zinc-900">
         <flux:sidebar.toggle class="lg:hidden" icon="x-mark" />
 
@@ -143,6 +143,7 @@
         });
     </script>
 
+    @livewire('shared.toast-container')
     @fluxScripts
 </body>
 </html>

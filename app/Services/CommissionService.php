@@ -2,15 +2,19 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\CommissionEntry;
+use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\EmployeeProfile;
 use App\Models\Estimate;
 use App\Models\Job;
+use App\Models\JobPayable;
 use App\Models\PayPeriod;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 
 class CommissionService
 {
@@ -108,6 +112,90 @@ class CommissionService
                     $entries,
                     $this->applyRulesForSource($employee, 'job', $job, $revenue, $profit, autoOnly: true)
                 );
+            }
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Create a crew bonus commission when a job is completed.
+     * Uses CrewProfile.bonus_percent to calculate the bonus.
+     *
+     * @return array<int, CommissionEntry>
+     */
+    public function createCrewBonusFromJob(Job $job): array
+    {
+        $entries = [];
+        $estimate = $job->estimate;
+        $revenue = $estimate ? (float) $estimate->total : 0;
+
+        if ($revenue <= 0) {
+            return $entries;
+        }
+
+        $crews = $job->crews()->wherePivot('status', 'accepted')->get();
+
+        foreach ($crews as $crewUser) {
+            $crewProfile = $crewUser->crewProfile;
+            if (! $crewProfile || ! $crewProfile->bonus_percent || $crewProfile->bonus_percent <= 0) {
+                continue;
+            }
+
+            $bonusAmount = $crewProfile->calculateBonusAmount($revenue);
+            if (! $bonusAmount || $bonusAmount <= 0) {
+                continue;
+            }
+
+            // Duplicate guard: check if crew bonus already exists for this job
+            $exists = CommissionEntry::query()
+                ->where('source_type', Job::class)
+                ->where('source_id', $job->id)
+                ->where('source_label', 'like', 'Crew Bonus:%')
+                ->whereHas('employeeProfile', fn ($q) => $q->where('user_id', $crewUser->id))
+                ->whereNotIn('status', ['reversed'])
+                ->exists();
+
+            if ($exists) {
+                continue;
+            }
+
+            $employeeProfile = EmployeeProfile::where('user_id', $crewUser->id)
+                ->where('employment_status', 'active')
+                ->first();
+
+            if ($employeeProfile) {
+                $entries[] = CommissionEntry::create([
+                    'employee_profile_id' => $employeeProfile->id,
+                    'source_type' => Job::class,
+                    'source_id' => $job->id,
+                    'source_label' => "Crew Bonus: {$job->title}",
+                    'commission_type' => 'flat',
+                    'basis_amount' => $revenue,
+                    'rate' => round($crewProfile->bonus_percent / 100, 4),
+                    'amount' => $bonusAmount,
+                    'status' => 'pending',
+                    'earned_date' => now()->toDateString(),
+                ]);
+            } else {
+                $cogsAccount = Account::where('company_setting_id', CompanySetting::getInstance()->id)
+                    ->where('code', '5010')->first();
+                $apAccount = Account::where('company_setting_id', CompanySetting::getInstance()->id)
+                    ->where('code', '2000')->first();
+
+                JobPayable::create([
+                    'job_id' => $job->id,
+                    'payee_type' => JobPayable::PAYEE_TYPE_CREW,
+                    'payee_user_id' => $crewUser->id,
+                    'payee_name' => $crewUser->name,
+                    'category' => JobPayable::CATEGORY_BONUS,
+                    'description' => "Crew Bonus: {$crewProfile->bonus_percent}% of \${$revenue}",
+                    'amount' => $bonusAmount,
+                    'status' => JobPayable::STATUS_PENDING,
+                    'debit_account_id' => $cogsAccount?->id,
+                    'credit_account_id' => $apAccount?->id,
+                    'created_by' => Auth::id() ?? $crewUser->id,
+                ]);
             }
         }
 

@@ -29,10 +29,12 @@ class CalendarFeedService
             ->ordered()
             ->get();
 
-        $calendar = Calendar::create('Apex Negotiations - Life Commitments')
+        $appName = config('app.name');
+
+        $calendar = Calendar::create($appName.' - Life Commitments')
             ->description('Life commitments and goals from your business plan')
             ->refreshInterval(720)
-            ->productIdentifier('-//Apex Negotiations//Life Commitments//EN');
+            ->productIdentifier('-//'.$appName.'//Life Commitments//EN');
 
         foreach ($commitments as $commitment) {
             $event = $this->buildEvent($commitment);

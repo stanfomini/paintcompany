@@ -10,41 +10,71 @@ new class extends Component
 {
     public function boot(): void
     {
-        abort_unless(auth()->user()?->can('media.manage'), 403);
+        abort_unless(
+            auth()->user()?->canAny(['media.manage', 'media.view_own_analytics']),
+            403
+        );
+    }
+
+    protected function hasFullAccess(): bool
+    {
+        return auth()->user()?->can('media.manage') ?? false;
+    }
+
+    protected function ownVideoIds()
+    {
+        return VideoRecording::where('user_id', auth()->id())->select('id');
+    }
+
+    protected function scopedViews()
+    {
+        $query = VideoView::query();
+
+        if (! $this->hasFullAccess()) {
+            $query->whereIn('video_recording_id', $this->ownVideoIds());
+        }
+
+        return $query;
     }
 
     #[Computed]
     public function totalViews(): int
     {
-        return VideoView::count();
+        return $this->scopedViews()->count();
     }
 
     #[Computed]
     public function viewsLast7Days(): int
     {
-        return VideoView::where('created_at', '>=', now()->subDays(7))->count();
+        return $this->scopedViews()->where('created_at', '>=', now()->subDays(7))->count();
     }
 
     #[Computed]
     public function viewsLast30Days(): int
     {
-        return VideoView::where('created_at', '>=', now()->subDays(30))->count();
+        return $this->scopedViews()->where('created_at', '>=', now()->subDays(30))->count();
     }
 
     #[Computed]
     public function averageWatchPercentage(): float
     {
-        return round((float) (VideoView::avg('watch_percentage') ?? 0), 1);
+        return round((float) ($this->scopedViews()->avg('watch_percentage') ?? 0), 1);
     }
 
     #[Computed]
     public function topVideos()
     {
-        return VideoView::query()
+        $query = VideoView::query()
             ->select('video_recording_id')
             ->selectRaw('COUNT(*) as views_count')
             ->selectRaw('ROUND(AVG(watch_percentage), 1) as avg_watch')
-            ->selectRaw('MAX(created_at) as last_viewed_at')
+            ->selectRaw('MAX(created_at) as last_viewed_at');
+
+        if (! $this->hasFullAccess()) {
+            $query->whereIn('video_recording_id', $this->ownVideoIds());
+        }
+
+        return $query
             ->groupBy('video_recording_id')
             ->orderByDesc('views_count')
             ->limit(5)
@@ -55,35 +85,51 @@ new class extends Component
     #[Computed]
     public function recentViews()
     {
-        return VideoView::query()
+        $query = VideoView::query()
             ->with(['video:id,title', 'viewer:id,name'])
             ->orderByDesc('created_at')
-            ->limit(20)
-            ->get();
+            ->limit(20);
+
+        if (! $this->hasFullAccess()) {
+            $query->whereIn('video_recording_id', $this->ownVideoIds());
+        }
+
+        return $query->get();
     }
 
     #[Computed]
     public function unwatchedVideos()
     {
-        return VideoRecording::query()
+        $query = VideoRecording::query()
             ->where('status', 'ready')
             ->whereDoesntHave('views')
             ->orderByDesc('created_at')
-            ->limit(10)
-            ->get(['id', 'title', 'share_token', 'created_at']);
+            ->limit(10);
+
+        if (! $this->hasFullAccess()) {
+            $query->where('user_id', auth()->id());
+        }
+
+        return $query->get(['id', 'title', 'share_token', 'created_at']);
     }
 
     #[Computed]
     public function emailStats(): ?array
     {
-        $total = VideoEmail::count();
+        $query = VideoEmail::query();
+
+        if (! $this->hasFullAccess()) {
+            $query->whereIn('video_recording_id', $this->ownVideoIds());
+        }
+
+        $total = $query->count();
 
         if ($total === 0) {
             return null;
         }
 
-        $opened = VideoEmail::whereNotNull('opened_at')->count();
-        $clicked = VideoEmail::whereNotNull('clicked_at')->count();
+        $opened = (clone $query)->whereNotNull('opened_at')->count();
+        $clicked = (clone $query)->whereNotNull('clicked_at')->count();
 
         return [
             'total' => $total,
@@ -97,6 +143,13 @@ new class extends Component
 ?>
 
 <div class="space-y-8">
+    @unless($this->hasFullAccess())
+        <flux:callout icon="information-circle">
+            <flux:callout.heading>{{ __('Your Video Analytics') }}</flux:callout.heading>
+            <flux:callout.text>{{ __('Showing stats for your own videos only.') }}</flux:callout.text>
+        </flux:callout>
+    @endunless
+
     {{-- Stats Cards --}}
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         @foreach([

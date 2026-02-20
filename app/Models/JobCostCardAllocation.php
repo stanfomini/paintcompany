@@ -20,6 +20,7 @@ class JobCostCardAllocation extends Model
         'value',
         'amount',
         'actual_amount',
+        'account_id',
         'conditions_snapshot',
         'applied_tier',
     ];
@@ -60,5 +61,13 @@ class JobCostCardAllocation extends Model
     public function companyAllocation(): BelongsTo
     {
         return $this->belongsTo(CompanyAllocation::class);
+    }
+
+    /**
+     * Get the GL account linked to this allocation.
+     */
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(Account::class);
     }
 }

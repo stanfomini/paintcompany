@@ -54,6 +54,11 @@ class JobPrepDay extends Model
         return $this->tasks()->where('service_category_id', $serviceCategoryId)->get();
     }
 
+    public function isEmpty(): bool
+    {
+        return $this->tasks()->count() === 0;
+    }
+
     /**
      * Get total estimated hours for tasks in this day.
      */

@@ -3,6 +3,7 @@
 namespace App\Automation\Triggers;
 
 use App\Automation\Contracts\TriggerInterface;
+use App\Models\AutomationWebhook;
 use Illuminate\Database\Eloquent\Model;
 
 class InboundWebhook implements TriggerInterface
@@ -23,6 +24,14 @@ class InboundWebhook implements TriggerInterface
     }
 
     /**
+     * @return array<int, string>
+     */
+    public static function getAvailableDynamicPrefixes(): array
+    {
+        return ['webhook', 'workflow', 'datetime'];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public static function getConfigSchema(): array
@@ -30,9 +39,10 @@ class InboundWebhook implements TriggerInterface
         return [
             'webhook_token' => [
                 'type' => 'string',
-                'label' => 'Webhook Token',
-                'description' => 'The specific webhook token to listen for. Leave empty to match all webhooks.',
+                'label' => 'Webhook',
+                'description' => 'The specific webhook to listen for. Leave empty to match all webhooks.',
                 'required' => false,
+                'options' => array_replace(['' => '-- All Webhooks --'], AutomationWebhook::pluck('name', 'token')->toArray()),
             ],
         ];
     }

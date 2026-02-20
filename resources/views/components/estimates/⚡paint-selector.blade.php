@@ -33,10 +33,11 @@ new class extends Component
 
     public string $activeTier = 'better';
 
-    public function mount(string $projectScope = 'interior', ?\App\Models\Estimate $estimate = null): void
+    public function mount(string $projectScope = 'interior', ?\App\Models\Estimate $estimate = null, ?array $initialTierTotals = null): void
     {
         $this->projectScope = $projectScope;
         $this->estimate = $estimate;
+        $this->liveTierTotals = $initialTierTotals;
 
         $settings = CompanySetting::getInstance();
 
@@ -149,6 +150,15 @@ new class extends Component
     {
         $this->saveTierPaintConfig();
         $this->dispatchPaintConfig();
+    }
+
+    /** @var array{good: float, better: float, best: float}|null Live tier totals from template-builder */
+    public ?array $liveTierTotals = null;
+
+    #[On('live-tier-totals')]
+    public function handleLiveTierTotals(array $totals): void
+    {
+        $this->liveTierTotals = $totals;
     }
 
     #[On('scope-changed')]
@@ -459,10 +469,14 @@ new class extends Component
                         </div>
 
                         {{-- Tier Totals Preview --}}
-                        @if ($this->estimate?->hasPaintTiers())
-                            @php
+                        @php
+                            // Use live totals from template-builder when available, fall back to DB
+                            $tierTotals = $this->liveTierTotals;
+                            if (! $tierTotals && $this->estimate?->hasPaintTiers()) {
                                 $tierTotals = app(EstimateTierPricingService::class)->calculateTierTotals($this->estimate);
-                            @endphp
+                            }
+                        @endphp
+                        @if ($tierTotals)
                             <div class="mt-3 grid grid-cols-3 gap-2 text-center">
                                 @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $tierLabel)
                                     <div class="rounded-md p-2 {{ $activeTier === $tierKey ? 'bg-blue-50 ring-2 ring-blue-500 dark:bg-blue-900/20' : 'bg-zinc-50 dark:bg-zinc-800/50' }}">

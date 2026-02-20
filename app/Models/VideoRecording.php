@@ -39,6 +39,7 @@ class VideoRecording extends Model
         'visibility',
         'description',
         'metadata',
+        'content_updated_at',
     ];
 
     protected function casts(): array
@@ -50,6 +51,7 @@ class VideoRecording extends Model
             'height' => 'integer',
             'show_on_proposal' => 'boolean',
             'metadata' => 'array',
+            'content_updated_at' => 'datetime',
         ];
     }
 
@@ -58,6 +60,13 @@ class VideoRecording extends Model
         static::creating(function (VideoRecording $recording) {
             if (empty($recording->share_token)) {
                 $recording->share_token = Str::random(32);
+            }
+            $recording->content_updated_at = now();
+        });
+
+        static::updating(function (VideoRecording $recording) {
+            if ($recording->isDirty('status') && $recording->status === 'ready') {
+                $recording->content_updated_at = now();
             }
         });
     }
@@ -169,6 +178,24 @@ class VideoRecording extends Model
     public function isFailed(): bool
     {
         return $this->status === 'failed';
+    }
+
+    public function hasUnviewedContent(User $user): bool
+    {
+        if (! $this->content_updated_at) {
+            return false;
+        }
+
+        $latestView = $this->views()
+            ->where('viewer_id', $user->id)
+            ->latest()
+            ->first();
+
+        if (! $latestView) {
+            return true;
+        }
+
+        return $this->content_updated_at->isAfter($latestView->created_at);
     }
 
     public function scopeForProposal($query)

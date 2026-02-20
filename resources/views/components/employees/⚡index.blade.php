@@ -192,7 +192,7 @@ class extends Component {
                                             <flux:menu.item icon="eye" :href="route('employees.show', $employee)" wire:navigate>
                                                 {{ __('View') }}
                                             </flux:menu.item>
-                                            @can('employees.update')
+                                            @can('employees.edit')
                                                 @if ($employee->employment_status === 'active')
                                                     <flux:menu.item icon="pause-circle" wire:click="$dispatch('open-edit-status-modal', { employeeId: {{ $employee->id }}, status: 'on_leave' })">
                                                         {{ __('Set On Leave') }}

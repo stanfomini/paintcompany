@@ -75,10 +75,12 @@ new #[Layout('components.layouts.crew')] class extends Component
     @if ($this->availableJobCount > 0)
         <div class="mt-8">
             <flux:callout variant="info">
-                {{ __('You have :count :jobs waiting for your response.', ['count' => $this->availableJobCount, 'jobs' => Str::plural('job', $this->availableJobCount)]) }}
-                <flux:button :href="route('crew.jobs.available')" size="sm" variant="primary" class="ml-2">
-                    {{ __('Review Jobs') }}
-                </flux:button>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 w-full">
+                    <span class="flex-1">{{ __('You have :count :jobs waiting for your response.', ['count' => $this->availableJobCount, 'jobs' => Str::plural('job', $this->availableJobCount)]) }}</span>
+                    <flux:button :href="route('crew.jobs.available')" size="sm" variant="primary" class="shrink-0 self-start sm:self-auto">
+                        {{ __('Review Jobs') }}
+                    </flux:button>
+                </div>
             </flux:callout>
         </div>
     @endif

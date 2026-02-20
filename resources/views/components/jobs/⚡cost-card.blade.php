@@ -4,6 +4,7 @@ use App\Models\Job;
 use App\Models\JobCostCard;
 use App\Services\AllocationEvaluationService;
 use App\Services\EstimateCostBreakdownService;
+use App\Services\EstimateTierPricingService;
 use App\Services\JobCostCardService;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -15,6 +16,10 @@ new class extends Component {
     public string $activeTab = 'projected';
 
     public ?int $selectedPackageId = null;
+
+    public float $whatIfMargin = 50;
+
+    public bool $showWhatIf = false;
 
     // Actuals form fields
     public ?string $actualMaterialCost = null;
@@ -36,7 +41,14 @@ new class extends Component {
 
     public function mount(Job $job): void
     {
-        $this->job = $job->load(['deal.customer', 'estimate', 'invoices.payments']);
+        $this->job = $job->load([
+            'deal.customer',
+            'estimate.areas.surfaces.productionRate',
+            'estimate.areas.addons',
+            'estimate.items',
+            'estimate.job.crews.crewProfile',
+            'invoices.payments',
+        ]);
 
         $this->card = JobCostCard::where('job_id', $job->id)
             ->where('is_manual', false)
@@ -56,6 +68,10 @@ new class extends Component {
             if ($activePackage) {
                 $this->selectedPackageId = $activePackage->id;
             }
+
+            // Set initial what-if margin to current settings
+            $currentSettings = $this->service->getCurrentSettings($this->job->estimate);
+            $this->whatIfMargin = $currentSettings['margin_percent'];
         }
     }
 
@@ -75,7 +91,7 @@ new class extends Component {
         if ($this->selectedPackageId) {
             $package = $this->job->estimate->packages()->where('id', $this->selectedPackageId)->first();
             if ($package) {
-                return $this->service->calculatePackageBreakdown($this->job->estimate, $package);
+                return $this->service->calculatePackageBreakdown($this->job->estimate, $package, $allocationContext);
             }
         }
 
@@ -92,6 +108,65 @@ new class extends Component {
         return $this->job->estimate->packages()->orderBy('sort_order')->get();
     }
 
+    #[Computed]
+    public function comparison(): ?array
+    {
+        if (! $this->job->estimate) {
+            return null;
+        }
+
+        $snapshot = $this->job->estimate->settings_snapshot;
+
+        if (empty($snapshot)) {
+            return null;
+        }
+
+        $current = $this->service->getCurrentSettings($this->job->estimate);
+
+        return $this->service->compareSnapshots($snapshot, $current);
+    }
+
+    #[Computed]
+    public function whatIfBreakdown(): ?array
+    {
+        if (! $this->job->estimate) {
+            return null;
+        }
+
+        return $this->service->calculateWhatIfScenario($this->job->estimate, $this->whatIfMargin);
+    }
+
+    #[Computed]
+    public function requiredMarginForTarget(): ?array
+    {
+        if (! $this->job->estimate) {
+            return null;
+        }
+
+        $breakdown = $this->breakdown;
+        if (! $breakdown) {
+            return null;
+        }
+
+        $currentSettings = $this->service->getCurrentSettings($this->job->estimate);
+
+        return $this->service->calculateRequiredMarginForTarget(
+            $currentSettings['net_profit_margin_percent'],
+            ['cogs' => $breakdown['cogs']['total']],
+            $currentSettings
+        );
+    }
+
+    #[Computed]
+    public function tierComparison(): ?array
+    {
+        if (! $this->job->estimate || ! $this->job->estimate->hasPaintTiers()) {
+            return null;
+        }
+
+        return app(EstimateTierPricingService::class)->calculateTierTotals($this->job->estimate);
+    }
+
     public function selectPackage(int $packageId): void
     {
         if ($this->job->estimate) {
@@ -101,6 +176,21 @@ new class extends Component {
                 unset($this->breakdown);
             }
         }
+    }
+
+    public function setActiveTab(string $tab): void
+    {
+        $this->activeTab = $tab;
+    }
+
+    public function toggleWhatIf(): void
+    {
+        $this->showWhatIf = ! $this->showWhatIf;
+    }
+
+    public function updateWhatIfMargin(float $margin): void
+    {
+        $this->whatIfMargin = max(0, min(100, $margin));
     }
 
     public function saveActuals(): void
@@ -195,35 +285,47 @@ new class extends Component {
 
 <div>
     <div class="max-w-6xl mx-auto">
-        {{-- Header --}}
-        <div class="flex items-center justify-between mb-6">
-            <div class="flex items-center gap-4">
-                <flux:button variant="ghost" :href="route('jobs.show', $job)" icon="arrow-left" wire:navigate>
-                    {{ __('Back to Job') }}
+        {{-- Header (mobile-responsive) --}}
+        <div class="flex flex-col gap-3 mb-6 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex items-center gap-3 min-w-0">
+                <flux:button variant="ghost" :href="route('jobs.show', $job)" icon="arrow-left" wire:navigate class="shrink-0">
+                    <span class="hidden sm:inline">{{ __('Back to Job') }}</span>
                 </flux:button>
-                <div>
-                    <flux:heading size="xl">{{ __('Cost Card') }}</flux:heading>
-                    <flux:text class="text-zinc-500">{{ $job->title }} &mdash; {{ $job->job_number }}</flux:text>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <flux:heading size="xl">{{ __('Cost Card') }}</flux:heading>
+                        @if ($card && $card->scope_type)
+                            <flux:badge size="sm" color="{{ $card->scope_type === 'interior' ? 'blue' : 'amber' }}">
+                                {{ ucfirst($card->scope_type) }}
+                            </flux:badge>
+                        @endif
+                    </div>
+                    <flux:text class="text-zinc-500 truncate">
+                        {{ $job->job_number }}
+                        @if ($this->job->estimate)
+                            &mdash; {{ $this->job->estimate->estimate_number }}
+                        @endif
+                    </flux:text>
                 </div>
             </div>
-            <div class="flex items-center gap-3">
-                @if ($card && $card->scope_type)
-                    <flux:badge size="sm" color="{{ $card->scope_type === 'interior' ? 'blue' : 'amber' }}">
-                        {{ ucfirst($card->scope_type) }}
-                    </flux:badge>
-                @endif
-                @if ($this->job->estimate)
-                    <flux:button :href="route('estimates.breakdown.csv', $this->job->estimate)" icon="table-cells" variant="ghost">
-                        {{ __('Export CSV') }}
+            @if ($this->job->estimate)
+                <div class="flex items-center gap-2 shrink-0">
+                    @can('financials.view_painter_breakdown')
+                        <flux:button :href="route('jobs.painter-breakdown', $job)" icon="clipboard-document-list" variant="ghost" size="sm" wire:navigate>
+                            <span class="hidden sm:inline">{{ __("Painter's Breakdown") }}</span>
+                        </flux:button>
+                    @endcan
+                    <flux:button :href="route('estimates.breakdown.csv', $this->job->estimate)" icon="table-cells" variant="ghost" size="sm">
+                        <span class="hidden sm:inline">{{ __('Export CSV') }}</span>
                     </flux:button>
-                    <flux:button :href="route('estimates.breakdown.pdf', $this->job->estimate)" target="_blank" icon="document-arrow-down" variant="ghost">
-                        {{ __('Export PDF') }}
+                    <flux:button :href="route('estimates.breakdown.pdf', $this->job->estimate)" target="_blank" icon="document-arrow-down" variant="ghost" size="sm">
+                        <span class="hidden sm:inline">{{ __('Export PDF') }}</span>
                     </flux:button>
-                    <flux:button icon="printer" variant="ghost" onclick="window.print()">
-                        {{ __('Print') }}
+                    <flux:button icon="printer" variant="ghost" size="sm" onclick="window.print()">
+                        <span class="hidden sm:inline">{{ __('Print') }}</span>
                     </flux:button>
-                @endif
-            </div>
+                </div>
+            @endif
         </div>
 
         @if (session('success'))
@@ -247,11 +349,19 @@ new class extends Component {
         </flux:callout>
 
         {{-- Tab Buttons --}}
-        <div class="mb-6 inline-flex rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
-            @foreach (['projected' => __('Projected Costs'), 'actuals' => __('Actuals & Variance'), 'payments' => __('Payments')] as $tabKey => $tabLabel)
+        @php
+            $tabs = ['projected' => __('Projected Costs')];
+            if ($this->comparison) {
+                $tabs['comparison'] = __('Settings Comparison');
+            }
+            $tabs['actuals'] = __('Actuals & Variance');
+            $tabs['payments'] = __('Payments');
+        @endphp
+        <div class="mb-6 inline-flex flex-wrap rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-800">
+            @foreach ($tabs as $tabKey => $tabLabel)
                 <button
-                    wire:click="$set('activeTab', '{{ $tabKey }}')"
-                    class="rounded-md px-4 py-2 text-sm font-medium transition-colors {{ $activeTab === $tabKey ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
+                    wire:click="setActiveTab('{{ $tabKey }}')"
+                    class="rounded-md px-3 py-2 text-sm font-medium transition-colors sm:px-4 {{ $activeTab === $tabKey ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100' : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200' }}"
                 >
                     {{ $tabLabel }}
                 </button>
@@ -270,6 +380,26 @@ new class extends Component {
                     </flux:callout.text>
                 </flux:callout>
             @else
+                {{-- Tier Comparison (Good/Better/Best) --}}
+                @if ($this->tierComparison)
+                    <div class="mb-6 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                        <h3 class="mb-3 text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Good / Better / Best Comparison') }}</h3>
+                        <div class="grid grid-cols-3 gap-4">
+                            @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tierKey => $tierLabel)
+                                <div class="rounded-lg border border-zinc-200 p-3 text-center dark:border-zinc-700 {{ $tierKey === 'better' ? 'ring-2 ring-blue-500' : '' }}">
+                                    <div class="text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __($tierLabel) }}</div>
+                                    <div class="mt-1 text-lg font-bold text-zinc-900 dark:text-white">${{ number_format($this->tierComparison[$tierKey], 2) }}</div>
+                                    @if ($tierKey !== 'good')
+                                        <div class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                                            +${{ number_format($this->tierComparison[$tierKey] - $this->tierComparison['good'], 2) }}
+                                        </div>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 {{-- Package Switcher --}}
                 @if ($this->packages->count() > 0)
                     <div class="mb-6">
@@ -447,7 +577,8 @@ new class extends Component {
                                     </div>
                                 </div>
                                 @php
-                                    $effectiveRate = $breakdown['settings_used']['hourly_wage'] * $breakdown['settings_used']['payroll_burden_multiplier'];
+                                    $baseWage = $breakdown['settings_used']['hourly_rate_override'] ?? $breakdown['settings_used']['hourly_wage'];
+                                    $effectiveRate = $baseWage * $breakdown['settings_used']['payroll_burden_multiplier'];
                                 @endphp
                                 <div class="space-y-2 pl-4 border-l-2 border-zinc-200 dark:border-zinc-700">
                                     <div class="flex justify-between text-sm">
@@ -714,6 +845,7 @@ new class extends Component {
                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400 mb-3">
                             {{ __('Numbers from each area\'s model - the same source as the estimate page.') }}
                         </flux:text>
+                        @php $hasTierPricing = !empty($breakdown['areas'][0]['tier_pricing'] ?? null); @endphp
                         <div class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
                                 <thead class="bg-zinc-50 dark:bg-zinc-800">
@@ -722,7 +854,13 @@ new class extends Component {
                                         <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('Hours') }}</th>
                                         <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('COGS') }}</th>
                                         <th class="px-4 py-3 text-center text-xs font-medium text-zinc-500 uppercase">{{ __('Margin') }}</th>
-                                        <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('Customer Price') }}</th>
+                                        @if ($hasTierPricing)
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-green-600 uppercase">{{ __('Good') }}</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-blue-600 uppercase">{{ __('Better') }}</th>
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-purple-600 uppercase">{{ __('Best') }}</th>
+                                        @else
+                                            <th class="px-4 py-3 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('Customer Price') }}</th>
+                                        @endif
                                     </tr>
                                 </thead>
                                 <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -734,11 +872,22 @@ new class extends Component {
                                                 @if ($area['is_fixed_price'])
                                                     <span class="ml-1 px-1.5 py-0.5 text-xs bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300 rounded">{{ __('Fixed') }}</span>
                                                 @endif
+                                                @if ($area['has_custom_pricing'] ?? false)
+                                                    <span class="ml-1 px-1.5 py-0.5 text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded">{{ __('Custom') }}</span>
+                                                @endif
                                             </td>
                                             <td class="px-4 py-3 text-sm text-right">{{ number_format($area['detail']['labor_hours'] + $area['detail']['cleanup_hours'] + ($area['detail']['addon_labor_hours'] ?? 0), 1) }}</td>
                                             <td class="px-4 py-3 text-sm text-right">${{ number_format($area['cogs'], 2) }}</td>
                                             <td class="px-4 py-3 text-sm text-center">{{ number_format($area['margin_percent'], 0) }}%</td>
-                                            <td class="px-4 py-3 text-sm text-right font-medium">${{ number_format($area['customer_price'], 2) }}</td>
+                                            @if ($hasTierPricing && isset($area['tier_pricing']))
+                                                <td class="px-4 py-3 text-sm text-right text-green-700 dark:text-green-400">${{ number_format($area['tier_pricing']['good']['customer_price'], 2) }}</td>
+                                                <td class="px-4 py-3 text-sm text-right font-medium text-blue-700 dark:text-blue-400">${{ number_format($area['tier_pricing']['better']['customer_price'], 2) }}</td>
+                                                <td class="px-4 py-3 text-sm text-right text-purple-700 dark:text-purple-400">${{ number_format($area['tier_pricing']['best']['customer_price'], 2) }}</td>
+                                            @elseif ($hasTierPricing)
+                                                <td class="px-4 py-3 text-sm text-right" colspan="3">${{ number_format($area['customer_price'], 2) }}</td>
+                                            @else
+                                                <td class="px-4 py-3 text-sm text-right font-medium">${{ number_format($area['customer_price'], 2) }}</td>
+                                            @endif
                                         </tr>
                                     @endforeach
                                     @if (($breakdown['items_total'] ?? 0) > 0)
@@ -757,12 +906,55 @@ new class extends Component {
                                         <td class="px-4 py-3 text-sm text-right">{{ number_format($breakdown['totals']['total_hours'], 1) }}</td>
                                         <td class="px-4 py-3 text-sm text-right">${{ number_format($breakdown['cogs']['total'], 2) }}</td>
                                         <td class="px-4 py-3 text-sm text-center">{{ number_format($breakdown['pricing']['margin_percent'], 0) }}%</td>
-                                        <td class="px-4 py-3 text-sm text-right">${{ number_format($breakdown['pricing']['customer_price'], 2) }}</td>
+                                        @if ($hasTierPricing && $this->tierComparison)
+                                            <td class="px-4 py-3 text-sm text-right text-green-700 dark:text-green-400">${{ number_format($this->tierComparison['good'], 2) }}</td>
+                                            <td class="px-4 py-3 text-sm text-right text-blue-700 dark:text-blue-400">${{ number_format($this->tierComparison['better'], 2) }}</td>
+                                            <td class="px-4 py-3 text-sm text-right text-purple-700 dark:text-purple-400">${{ number_format($this->tierComparison['best'], 2) }}</td>
+                                        @else
+                                            <td class="px-4 py-3 text-sm text-right">${{ number_format($breakdown['pricing']['customer_price'], 2) }}</td>
+                                        @endif
                                     </tr>
                                 </tfoot>
                             </table>
                         </div>
                     </div>
+
+                    {{-- Per Service Breakdown --}}
+                    @php
+                        $perService = $this->service->getPerServiceBreakdown($this->job->estimate);
+                    @endphp
+
+                    @if (count($perService) > 1)
+                        <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                            <flux:heading size="sm" class="mb-4">{{ __('Breakdown by Service') }}</flux:heading>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                @foreach ($perService as $slug => $svc)
+                                    <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4" wire:key="service-{{ $slug }}">
+                                        <div class="flex items-center gap-2 mb-3">
+                                            <flux:badge size="sm" color="{{ $svc['category_color'] }}">
+                                                {{ $svc['category_name'] }}
+                                            </flux:badge>
+                                            <span class="text-sm text-zinc-500">{{ $svc['margin_percent'] }}% {{ __('margin') }}</span>
+                                        </div>
+                                        <div class="space-y-1 text-sm">
+                                            <div class="flex justify-between">
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('COGS') }}</span>
+                                                <span class="font-medium font-mono">${{ number_format($svc['cogs'], 2) }}</span>
+                                            </div>
+                                            <div class="flex justify-between">
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Price') }}</span>
+                                                <span class="font-medium font-mono">${{ number_format($svc['price'], 2) }}</span>
+                                            </div>
+                                            <div class="flex justify-between border-t border-zinc-100 dark:border-zinc-800 pt-1 mt-1">
+                                                <span class="text-zinc-600 dark:text-zinc-400">{{ __('Gross Profit') }}</span>
+                                                <span class="font-medium font-mono text-green-600">${{ number_format($svc['price'] - $svc['cogs'], 2) }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
 
                     {{-- Reconciliation --}}
                     @if (isset($breakdown['reconciliation']) && abs($breakdown['reconciliation']['difference']) > 1)
@@ -807,7 +999,10 @@ new class extends Component {
                                 </div>
                                 <div>
                                     <span class="text-zinc-500">{{ __('Hourly Wage:') }}</span>
-                                    <span class="font-medium ml-1">${{ number_format($breakdown['settings_used']['hourly_wage'], 2) }}</span>
+                                    <span class="font-medium ml-1">${{ number_format($breakdown['settings_used']['hourly_rate_override'] ?? $breakdown['settings_used']['hourly_wage'], 2) }}</span>
+                                    @if ($breakdown['settings_used']['hourly_rate_override'] ?? null)
+                                        <span class="text-xs text-amber-600 dark:text-amber-400">({{ __('override') }})</span>
+                                    @endif
                                 </div>
                                 <div>
                                     <span class="text-zinc-500">{{ __('Payroll Burden:') }}</span>
@@ -838,6 +1033,82 @@ new class extends Component {
                     </div>
                 </div>
 
+                {{-- What-If Margin Slider --}}
+                <div class="mt-6 print:hidden" x-data="{ showWhatIf: @entangle('showWhatIf') }">
+                    <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                        <div class="flex items-center justify-between p-4 cursor-pointer bg-zinc-50 dark:bg-zinc-800/50" @click="showWhatIf = !showWhatIf">
+                            <flux:heading size="sm">{{ __('What-If: Margin Rate') }}</flux:heading>
+                            <svg x-show="!showWhatIf" class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            <svg x-show="showWhatIf" class="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        </div>
+                        <div x-show="showWhatIf" x-collapse class="border-t border-zinc-200 dark:border-zinc-700 p-4">
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                                        {{ __('Margin Rate:') }} {{ number_format($whatIfMargin, 1) }}%
+                                    </label>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="70"
+                                        step="1"
+                                        wire:model.live.debounce.300ms="whatIfMargin"
+                                        class="w-full h-2 bg-zinc-200 rounded-lg appearance-none cursor-pointer dark:bg-zinc-700"
+                                    >
+                                    <div class="flex justify-between text-xs text-zinc-500 mt-1">
+                                        <span>0%</span>
+                                        <span>35%</span>
+                                        <span>70%</span>
+                                    </div>
+                                </div>
+
+                                @if ($this->whatIfBreakdown)
+                                    @php $whatIf = $this->whatIfBreakdown; @endphp
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
+                                        <div>
+                                            <div class="text-xs text-zinc-500">{{ __('Customer Price') }}</div>
+                                            <div class="text-lg font-bold">${{ number_format($whatIf['pricing']['customer_price'], 2) }}</div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-zinc-500">{{ __('Gross Profit') }}</div>
+                                            <div class="text-lg font-bold {{ $whatIf['gross_profit']['amount'] >= 0 ? 'text-green-600' : 'text-red-600' }}">
+                                                ${{ number_format($whatIf['gross_profit']['amount'], 2) }}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-zinc-500">{{ __('Net Profit') }}</div>
+                                            <div class="text-lg font-bold {{ $whatIf['net_profit']['amount'] >= 0 ? 'text-green-600' : 'text-red-600' }}">
+                                                ${{ number_format($whatIf['net_profit']['amount'], 2) }}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <div class="text-xs text-zinc-500">{{ __('Net Margin') }}</div>
+                                            <div class="text-lg font-bold {{ $whatIf['net_profit']['meets_target'] ? 'text-green-600' : 'text-amber-600' }}">
+                                                {{ number_format($whatIf['net_profit']['percent'], 1) }}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endif
+
+                                @if ($this->requiredMarginForTarget)
+                                    @php $required = $this->requiredMarginForTarget; @endphp
+                                    @if ($required['is_achievable'])
+                                        <div class="text-sm text-zinc-600 dark:text-zinc-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                                            <strong>{{ __('To achieve') }} {{ number_format($breakdown['net_profit']['target_percent'], 1) }}% {{ __('net margin:') }}</strong>
+                                            {{ __('Set margin rate to') }} <strong>{{ number_format($required['required_margin_percent'], 1) }}%</strong>
+                                            ({{ __('Customer price:') }} ${{ number_format($required['required_customer_price'], 2) }})
+                                        </div>
+                                    @else
+                                        <div class="text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg">
+                                            {{ $required['message'] }}
+                                        </div>
+                                    @endif
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 {{-- Settings Drift Warning (from stored cost card snapshot) --}}
                 @if (count($this->settingsDrift) > 0)
                     <flux:callout variant="warning" icon="exclamation-triangle" class="mt-6">
@@ -858,7 +1129,78 @@ new class extends Component {
                 @endif
             @endif
 
-        {{-- Tab 2: Actuals & Variance --}}
+        {{-- Tab 2: Settings Comparison --}}
+        @elseif ($activeTab === 'comparison' && $this->comparison)
+            @php $comp = $this->comparison; @endphp
+            <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 mb-6">
+                <flux:heading size="sm" class="mb-4">{{ __('Settings Comparison') }}</flux:heading>
+
+                @if ($comp['has_changes'])
+                    <div class="mb-4 text-sm text-amber-600 dark:text-amber-400">
+                        {{ __('Settings have changed since this estimate was created.') }}
+                        @if ($comp['original_captured_at'])
+                            <span class="text-zinc-500">({{ __('Captured:') }} {{ \Carbon\Carbon::parse($comp['original_captured_at'])->format('M j, Y g:i A') }})</span>
+                        @endif
+                    </div>
+                @else
+                    <div class="mb-4 text-sm text-green-600 dark:text-green-400">
+                        {{ __('No significant changes in settings since estimate creation.') }}
+                    </div>
+                @endif
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
+                        <thead>
+                            <tr>
+                                <th class="py-2 text-left text-xs font-medium text-zinc-500 uppercase">{{ __('Setting') }}</th>
+                                <th class="py-2 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('Original') }}</th>
+                                <th class="py-2 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('Current') }}</th>
+                                <th class="py-2 text-right text-xs font-medium text-zinc-500 uppercase">{{ __('Change') }}</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                            @foreach ($comp['comparisons'] as $key => $item)
+                                <tr class="{{ $item['changed'] ? 'bg-amber-50 dark:bg-amber-900/20' : '' }}">
+                                    <td class="py-2 text-sm">{{ $item['label'] }}</td>
+                                    <td class="py-2 text-sm text-right">
+                                        @if (is_numeric($item['original']))
+                                            @if (str_contains($key, 'percent') || str_contains($key, 'rate') || str_contains($key, 'ratio'))
+                                                {{ number_format($item['original'], 2) }}{{ str_contains($key, 'ratio') ? '' : '%' }}
+                                            @else
+                                                ${{ number_format($item['original'], 2) }}
+                                            @endif
+                                        @else
+                                            {{ $item['original'] ?? '-' }}
+                                        @endif
+                                    </td>
+                                    <td class="py-2 text-sm text-right">
+                                        @if (is_numeric($item['current']))
+                                            @if (str_contains($key, 'percent') || str_contains($key, 'rate') || str_contains($key, 'ratio'))
+                                                {{ number_format($item['current'], 2) }}{{ str_contains($key, 'ratio') ? '' : '%' }}
+                                            @else
+                                                ${{ number_format($item['current'], 2) }}
+                                            @endif
+                                        @else
+                                            {{ $item['current'] ?? '-' }}
+                                        @endif
+                                    </td>
+                                    <td class="py-2 text-sm text-right">
+                                        @if ($item['changed'] && isset($item['delta']))
+                                            <span class="{{ $item['delta'] > 0 ? 'text-green-600' : 'text-red-600' }}">
+                                                {{ $item['delta'] > 0 ? '+' : '' }}{{ number_format($item['delta'], 2) }}
+                                            </span>
+                                        @else
+                                            -
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        {{-- Tab 3: Actuals & Variance --}}
         @elseif ($activeTab === 'actuals')
             @if (! $card)
                 <flux:callout variant="outline" icon="calculator">
@@ -976,7 +1318,7 @@ new class extends Component {
                 @endif
             @endif
 
-        {{-- Tab 3: Payments --}}
+        {{-- Tab 4: Payments --}}
         @elseif ($activeTab === 'payments')
             @if (! $card)
                 <flux:callout variant="outline" icon="calculator">

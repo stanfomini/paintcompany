@@ -1327,44 +1327,8 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
             </div>
         @endif
 
-        {{-- Project Photos --}}
-        @if ($job->deal?->property)
-            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" x-data="{ open: false }">
-                <button
-                    x-on:click="open = !open"
-                    type="button"
-                    class="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-colors text-left"
-                >
-                    <div class="flex items-center gap-2">
-                        <flux:icon name="photo" class="w-5 h-5 text-zinc-500" />
-                        <flux:heading size="sm">{{ __('Project Photos') }}</flux:heading>
-                    </div>
-                    <flux:icon name="chevron-down" class="w-5 h-5 text-zinc-400 transition-transform" x-bind:class="open && 'rotate-180'" />
-                </button>
-                <div x-show="open" x-collapse x-cloak class="p-4 border-t border-zinc-200 dark:border-zinc-700">
-                    <livewire:shared.photo-gallery
-                        :property="$job->deal->property"
-                        :job="$job"
-                        context="job-customer"
-                        :key="'customer-photos-'.$job->id"
-                    />
-                </div>
-            </div>
-        @endif
-
-        {{-- Video Walkarounds --}}
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden print:hidden">
-            <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 flex items-center gap-2">
-                <flux:icon name="video-camera" class="w-5 h-5 text-zinc-500" />
-                <flux:heading size="sm">{{ __('Video Walkarounds') }}</flux:heading>
-            </div>
-            <div class="p-4">
-                <livewire:estimates.video-walkarounds
-                    :recordable="$job"
-                    :key="'walkarounds-'.$job->id"
-                />
-            </div>
-        </div>
+        {{-- Media (Photos & Videos) --}}
+        <livewire:shared.media-section :property="$job->deal?->property" :job="$job" context="job-customer" :readOnly="true" :key="'media-'.$job->id" />
 
         {{-- Project Conversation (visible on all stages) --}}
         @if ($this->chatThread)
@@ -1418,9 +1382,44 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
                                                     <flux:text class="text-xs italic mt-1 {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
                                                         "{{ $message->metadata['transcription'] }}"
                                                     </flux:text>
+                                                    {{-- Audio transcription translation toggle --}}
+                                                    @if ($message->needsTranslationFor(app()->getLocale()))
+                                                        <div x-data="{ showTranslation: false }" class="mt-1">
+                                                            <button
+                                                                @@click="showTranslation = !showTranslation"
+                                                                class="text-xs underline opacity-70 hover:opacity-100 transition-opacity {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}"
+                                                            >
+                                                                <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                                                <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                            </button>
+                                                            <div x-show="showTranslation" x-cloak class="mt-1">
+                                                                <flux:text class="text-xs italic {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500' }}">
+                                                                    "{{ $message->getTranslation(app()->getLocale()) }}"
+                                                                </flux:text>
+                                                                <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                                            </div>
+                                                        </div>
+                                                    @endif
                                                 @endif
                                             @else
                                                 <flux:text class="whitespace-pre-wrap break-words">{{ $message->content }}</flux:text>
+
+                                                {{-- Translation toggle --}}
+                                                @if ($message->needsTranslationFor(app()->getLocale()))
+                                                    <div x-data="{ showTranslation: false }" class="mt-1">
+                                                        <button
+                                                            @@click="showTranslation = !showTranslation"
+                                                            class="text-xs underline opacity-70 hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                                            <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                        </button>
+                                                        <div x-show="showTranslation" x-cloak class="mt-1">
+                                                            <flux:text class="whitespace-pre-wrap break-words">{{ $message->getTranslation(app()->getLocale()) }}</flux:text>
+                                                            <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                                        </div>
+                                                    </div>
+                                                @endif
                                             @endif
                                         </div>
 

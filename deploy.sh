@@ -1,5 +1,5 @@
 #!/bin/bash
-# Apex Negotiations - Forge Deploy Script
+# Painting Made Easy Denver - Forge Deploy Script
 # Copy this into your Forge site's deployment script, or reference it directly.
 #
 # Usage in Forge: bash deploy.sh

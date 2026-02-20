@@ -71,6 +71,34 @@ class PaymentSplitService
             'split_status' => $allSucceeded ? 'completed' : 'failed',
             'split_executed_at' => now(),
         ]);
+
+        // Create journal entries for completed splits
+        if ($allSucceeded) {
+            $this->createSplitJournalEntries($payment, $splits);
+        }
+    }
+
+    /**
+     * Create journal entries for completed payment splits.
+     */
+    protected function createSplitJournalEntries(Payment $payment, array $splits): void
+    {
+        $journalService = app(JournalEntryService::class);
+
+        foreach ($splits as $split) {
+            if ($split->status !== PaymentSplit::STATUS_COMPLETED) {
+                continue;
+            }
+
+            try {
+                $journalService->createFromPaymentSplit($payment, $split);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to create JE for payment split', [
+                    'split_id' => $split->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**

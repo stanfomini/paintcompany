@@ -112,6 +112,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Deals assigned to this user as salesperson.
+     */
+    public function assignedDeals(): HasMany
+    {
+        return $this->hasMany(Deal::class, 'assigned_to');
+    }
+
+    /**
      * Get the signed contracts for this crew member.
      */
     public function crewSignedContracts(): HasMany
@@ -125,6 +133,22 @@ class User extends Authenticatable
     public function crewW9Form(): HasOne
     {
         return $this->hasOne(CrewW9Form::class);
+    }
+
+    /**
+     * Get territory offers claimed by this user.
+     */
+    public function claimedTerritoryOffers(): HasMany
+    {
+        return $this->hasMany(TerritoryOffer::class, 'claimed_by');
+    }
+
+    /**
+     * Get the door knocks recorded by this user.
+     */
+    public function doorKnocks(): HasMany
+    {
+        return $this->hasMany(DoorKnock::class);
     }
 
     /**
@@ -221,7 +245,7 @@ class User extends Authenticatable
      */
     public function canAccessInternalDashboard(): bool
     {
-        return $this->isInternal() && $this->hasAnyRole(['owner', 'admin', 'manager', 'estimator', 'crew_lead']);
+        return $this->isInternal() && $this->hasAnyRole(['owner', 'admin', 'manager', 'estimator']);
     }
 
     /**
@@ -253,7 +277,7 @@ class User extends Authenticatable
      */
     public function canViewFinancials(): bool
     {
-        return $this->isInternal() && $this->hasPermissionTo('view financials');
+        return $this->isInternal() && $this->hasPermissionTo('financials.view_cost_breakdown');
     }
 
     /**

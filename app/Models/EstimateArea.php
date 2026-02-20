@@ -48,6 +48,9 @@ class EstimateArea extends Model
         'estimated_labor_hours',
         'estimated_material_cost',
         'estimated_labor_cost',
+        'cached_cogs',
+        'cached_customer_price',
+        'cached_tier_prices',
         'notes',
         'customer_notes',
         'customer_checklist',
@@ -80,6 +83,9 @@ class EstimateArea extends Model
             'estimated_labor_hours' => 'decimal:2',
             'estimated_material_cost' => 'decimal:2',
             'estimated_labor_cost' => 'decimal:2',
+            'cached_cogs' => 'float',
+            'cached_customer_price' => 'float',
+            'cached_tier_prices' => 'array',
             'customer_checklist' => 'array',
             'agent_checklist' => 'array',
             'sort_order' => 'integer',
@@ -357,6 +363,18 @@ class EstimateArea extends Model
      */
     public function getFullCOGS(?string $tier = null): float
     {
+        // Use cached COGS when available (snapshot from template/area builder)
+        if ($tier === null || $tier === 'good') {
+            if ($this->cached_cogs !== null) {
+                return (float) $this->cached_cogs;
+            }
+        } elseif ($this->cached_tier_prices !== null) {
+            $tierCogs = $this->cached_tier_prices[$tier]['cogs'] ?? null;
+            if ($tierCogs !== null) {
+                return (float) $tierCogs;
+            }
+        }
+
         $settings = CompanySetting::getInstance();
         $scope = $this->scope_type ?? 'interior';
         $estimate = $this->getEstimateForPricing();
@@ -488,6 +506,18 @@ class EstimateArea extends Model
         // Fixed price areas already include everything
         if ($this->is_fixed_price) {
             return (float) $this->fixed_price_amount;
+        }
+
+        // Use cached customer price when available (snapshot from template/area builder)
+        if ($tier === null || $tier === 'good') {
+            if ($this->cached_customer_price !== null) {
+                return (float) $this->cached_customer_price;
+            }
+        } elseif ($this->cached_tier_prices !== null) {
+            $tierPrice = $this->cached_tier_prices[$tier]['price'] ?? null;
+            if ($tierPrice !== null) {
+                return (float) $tierPrice;
+            }
         }
 
         $settings = CompanySetting::getInstance();
@@ -708,6 +738,51 @@ class EstimateArea extends Model
         }
 
         return round(($includedCogs / $totalCogs) * $this->getCustomerPrice($tier), 2);
+    }
+
+    /**
+     * Get the COGS for a subset of surfaces in this area.
+     * Uses proportional allocation: (included surface costs / total surface costs) × full COGS.
+     *
+     * @param  array<int>  $includedSurfaceIds  Surface IDs to include
+     * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
+     */
+    public function getPartialCOGS(array $includedSurfaceIds, ?string $tier = null): float
+    {
+        if (empty($includedSurfaceIds)) {
+            return 0.0;
+        }
+
+        if ($this->is_fixed_price) {
+            return $this->getFullCOGS($tier);
+        }
+
+        $allSurfaces = $this->surfaces()->where('is_included', true)->get();
+
+        if ($tier !== null) {
+            $totalCogs = 0.0;
+            $includedCogs = 0.0;
+            foreach ($allSurfaces as $surface) {
+                $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                $totalCogs += $surfaceCogs;
+                if (in_array($surface->id, $includedSurfaceIds)) {
+                    $includedCogs += $surfaceCogs;
+                }
+            }
+        } else {
+            $totalCogs = (float) $allSurfaces->sum('total');
+            $includedCogs = (float) $allSurfaces->whereIn('id', $includedSurfaceIds)->sum('total');
+        }
+
+        if ($totalCogs <= 0 || $includedCogs <= 0) {
+            return 0.0;
+        }
+
+        if ($includedCogs >= $totalCogs) {
+            return $this->getFullCOGS($tier);
+        }
+
+        return round(($includedCogs / $totalCogs) * $this->getFullCOGS($tier), 2);
     }
 
     /**

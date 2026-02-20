@@ -26,7 +26,7 @@ class InvoiceSent extends Notification implements ShouldQueue
 
     public function toMail(object $notifiable): MailMessage
     {
-        $appName = config('app.name', 'Apex Negotiations');
+        $appName = config('app.name');
         $paymentUrl = $this->invoice->getPublicUrl();
 
         $message = (new MailMessage)

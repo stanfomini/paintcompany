@@ -5,6 +5,7 @@ namespace Database\Factories;
 use App\Models\JobPrepDay;
 use App\Models\JobPrepPlan;
 use App\Models\JobPrepTask;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
@@ -72,6 +73,16 @@ class JobPrepTaskFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'status' => JobPrepTask::STATUS_COMPLETED,
             'completed_at' => now(),
+        ]);
+    }
+
+    /**
+     * Task added by a specific user.
+     */
+    public function addedBy(User $user): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'added_by' => $user->id,
         ]);
     }
 }

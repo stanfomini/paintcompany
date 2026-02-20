@@ -1,5 +1,5 @@
 """
-Apex Negotiations Python Service
+Painting Made Easy Denver Python Service
 
 FastAPI application for ML processing, web scraping, and media handling.
 """
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Apex Python Service",
-    description="ML processing, web scraping, and media handling for Apex Negotiations CRM",
+    description="ML processing, web scraping, and media handling for Painting Made Easy Denver CRM",
     version="0.1.0",
     lifespan=lifespan,
 )

@@ -2,7 +2,9 @@
 
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
+use App\Models\EstimatePackage;
 use App\Models\Job;
+use App\Models\JobPrepDay;
 use App\Models\JobPrepPlan;
 use App\Models\JobPrepServiceSetting;
 use App\Models\JobPrepTask;
@@ -48,6 +50,9 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     public string $takenByName = '';
 
     public ?int $crewServiceCategoryId = null;
+
+    /** Package ID — auto-detected from selected/signed package */
+    public ?int $viewingPackageId = null;
 
     public int $proposedCrewSize = 2;
 
@@ -134,6 +139,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             'estimate.areas.surfaces.paintProduct.brand',
             'estimate.areas.addons.nestedAreaTemplate',
             'estimate.areas.substrate',
+            'estimate.packages.items',
             'colors',
             'prepPlan.days.tasks',
             'prepPlan.serviceSettings.serviceCategory',
@@ -141,6 +147,14 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
         $crewUser = Auth::guard('crew')->user();
         $this->crewServiceCategoryId = $crewUser->crewProfile?->service_category_id;
+
+        // Auto-detect the selected/signed package
+        if ($this->job->estimate) {
+            $selectedPackage = $this->job->estimate->packages()->where('is_selected', true)->first()
+                ?? $this->job->estimate->packages()->where('is_recommended', true)->first()
+                ?? $this->job->estimate->packages()->orderBy('sort_order')->first();
+            $this->viewingPackageId = $selectedPackage?->id;
+        }
 
         // Expand all areas by default
         if ($this->job->estimate) {
@@ -173,6 +187,44 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         if (! $hasAccess) {
             abort(404);
         }
+    }
+
+    /**
+     * Get the set of included surface IDs and area IDs for the selected package.
+     * Returns null if no package is selected (show everything).
+     *
+     * @return array{surface_ids: array<int>, area_ids: array<int>}|null
+     */
+    protected function getViewingPackageFilter(): ?array
+    {
+        if (! $this->viewingPackageId) {
+            return null;
+        }
+
+        $package = EstimatePackage::find($this->viewingPackageId);
+        if (! $package) {
+            return null;
+        }
+
+        $items = $package->items()
+            ->where('is_included', true)
+            ->where('customer_approved', true)
+            ->get();
+
+        $surfaceIds = $items
+            ->where('itemable_type', \App\Models\EstimateAreaSurface::class)
+            ->pluck('itemable_id')
+            ->toArray();
+
+        $areaIds = $items
+            ->where('itemable_type', \App\Models\EstimateArea::class)
+            ->pluck('itemable_id')
+            ->toArray();
+
+        return [
+            'surface_ids' => $surfaceIds,
+            'area_ids' => $areaIds,
+        ];
     }
 
     public function setTab(string $tab): void
@@ -310,7 +362,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     #[Computed]
     public function prepPlan(): ?JobPrepPlan
     {
-        return $this->job->prepPlan?->load(['days.tasks.completedByUser']);
+        return $this->job->prepPlan?->load(['days.tasks.completedByUser', 'days.tasks.removalRequestedByUser', 'days.tasks.addedByUser']);
     }
 
     #[Computed]
@@ -421,8 +473,147 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             return;
         }
 
-        app(JobPrepService::class)->addCustomTask($day, $this->crewCustomTaskTitle, $this->crewServiceCategoryId);
+        app(JobPrepService::class)->addCustomTask($day, $this->crewCustomTaskTitle, $this->crewServiceCategoryId, null, Auth::guard('crew')->user());
         $this->reset('crewCustomTaskTitle', 'crewCustomTaskHours', 'showCrewTaskForm');
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function moveTaskToDay(int $taskId, int $dayId): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+        $task = JobPrepTask::findOrFail($taskId);
+        $day = JobPrepDay::findOrFail($dayId);
+        // Verify task and target day belong to this job's prep plan
+        if ($task->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+        if ($day->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+        app(JobPrepService::class)->moveTaskToDay($task, $day);
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function autoDistributeTasks(): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+        $plan = $this->prepPlan;
+        if (! $plan || $plan->days->count() <= 1) {
+            return;
+        }
+        app(JobPrepService::class)->autoDistributeTasks($plan);
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function addDay(): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+
+        $plan = $this->prepPlan;
+        if (! $plan) {
+            return;
+        }
+
+        $newDay = app(JobPrepService::class)->addDay($plan);
+        unset($this->prepPlan, $this->prepProgress);
+        $this->activePrepDay = $newDay->day_number;
+    }
+
+    public function deleteDay(int $dayId): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+
+        $day = JobPrepDay::findOrFail($dayId);
+
+        if ($day->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+
+        $deletedDayNumber = $day->day_number;
+        $result = app(JobPrepService::class)->deleteDay($day);
+
+        if ($result) {
+            unset($this->prepPlan, $this->prepProgress);
+            if ($this->activePrepDay >= $deletedDayNumber) {
+                $this->activePrepDay = max(1, $this->activePrepDay - 1);
+            }
+        }
+    }
+
+    public function removeTask(int $taskId): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+
+        $task = JobPrepTask::findOrFail($taskId);
+
+        if ($task->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+
+        // Crew can only delete custom tasks they created
+        if (! $task->isCustom() || $task->added_by !== Auth::guard('crew')->user()->id) {
+            return;
+        }
+
+        app(JobPrepService::class)->removeTask($task);
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function requestTaskRemoval(int $taskId): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+
+        $task = JobPrepTask::findOrFail($taskId);
+
+        if ($task->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+
+        app(JobPrepService::class)->requestTaskRemoval($task, Auth::guard('crew')->user());
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function approveTaskRemoval(int $taskId): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+
+        $task = JobPrepTask::findOrFail($taskId);
+
+        if ($task->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+
+        app(JobPrepService::class)->approveTaskRemoval($task);
+        unset($this->prepPlan, $this->prepProgress);
+    }
+
+    public function dismissTaskRemoval(int $taskId): void
+    {
+        if (! $this->hasAccepted || $this->job->stage !== 'job_prep') {
+            return;
+        }
+
+        $task = JobPrepTask::findOrFail($taskId);
+
+        if ($task->job_prep_plan_id !== $this->prepPlan?->id) {
+            return;
+        }
+
+        app(JobPrepService::class)->dismissTaskRemoval($task);
         unset($this->prepPlan, $this->prepProgress);
     }
 
@@ -457,18 +648,41 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         $scope = $this->job->estimate->project_type ?? 'interior';
         $laborHours = 0;
         $cleanupHours = 0;
+        $areaCount = 0;
+        $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($this->job->estimate->areas as $area) {
-            $areaLaborHours = (float) $area->surfaces()->where('is_included', true)->sum('labor_hours');
+            if ($area->is_fixed_price) {
+                if ($packageFilter && ! in_array($area->id, $packageFilter['area_ids'])) {
+                    continue;
+                }
+                $areaLaborHours = (float) ($area->estimated_labor_hours ?? 0);
+            } else {
+                $surfaceQuery = $area->surfaces()->where('is_included', true);
+                if ($packageFilter) {
+                    $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                }
+                $areaLaborHours = (float) $surfaceQuery->sum('labor_hours');
+
+                if ($areaLaborHours === 0.0 && $packageFilter) {
+                    continue;
+                }
+            }
+
             $laborHours += $areaLaborHours;
-            $cleanupHours += $settings->calculateCleanupHours($areaLaborHours, $scope);
+
+            $addonHours = (float) $area->addons->sum('labor_hours');
+            $laborHours += $addonHours;
+
+            $cleanupHours += $settings->calculateCleanupHours($areaLaborHours + $addonHours, $scope);
+            $areaCount++;
         }
 
         return [
             'labor_hours' => $laborHours,
             'cleanup_hours' => $cleanupHours,
             'total_hours' => $laborHours + $cleanupHours,
-            'area_count' => $this->job->estimate->areas->count(),
+            'area_count' => $areaCount,
         ];
     }
 
@@ -498,9 +712,14 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         }
 
         $materials = [];
+        $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($this->job->estimate->areas as $area) {
-            foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+            $surfaceQuery = $area->surfaces()->where('is_included', true);
+            if ($packageFilter) {
+                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+            }
+            foreach ($surfaceQuery->get() as $surface) {
                 $paintProduct = $surface->getEffectivePaintProduct();
 
                 if ($paintProduct) {
@@ -547,9 +766,14 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         $materials = [];
         $totalGallons = 0;
         $totalPaintCost = 0;
+        $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($this->job->estimate->areas as $area) {
-            foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+            $surfaceQuery = $area->surfaces()->where('is_included', true);
+            if ($packageFilter) {
+                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+            }
+            foreach ($surfaceQuery->get() as $surface) {
                 $paintProduct = $surface->getEffectivePaintProduct();
 
                 if ($paintProduct) {
@@ -873,12 +1097,18 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         $areas = [];
         $settings = CompanySetting::getInstance();
         $scope = $this->job->estimate->project_type ?? 'interior';
+        $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($this->job->estimate->areas as $area) {
             $surfaces = [];
             $totalLaborHours = 0;
 
-            foreach ($area->surfaces()->where('is_included', true)->orderBy('sort_order')->get() as $surface) {
+            $surfaceQuery = $area->surfaces()->where('is_included', true)->orderBy('sort_order');
+            if ($packageFilter) {
+                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+            }
+
+            foreach ($surfaceQuery->get() as $surface) {
                 $paintProduct = $surface->getEffectivePaintProduct();
                 $substrate = $area->substrate;
 
@@ -914,6 +1144,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                 ];
 
                 $totalLaborHours += (float) $surface->labor_hours;
+            }
+
+            // Skip areas with no surfaces in this package
+            if (empty($surfaces) && $packageFilter) {
+                continue;
             }
 
             $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scope);
@@ -1020,6 +1255,15 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     }
 
     #[Computed]
+    public function crewPayables(): \Illuminate\Database\Eloquent\Collection
+    {
+        return \App\Models\JobPayable::forJob($this->job->id)
+            ->forUser(Auth::guard('crew')->id())
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
+    #[Computed]
     public function referenceTabs(): array
     {
         return [
@@ -1027,7 +1271,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             ['key' => 'financials', 'label' => __('Financials'), 'icon' => 'calculator'],
             ['key' => 'colors', 'label' => __('Colors'), 'icon' => 'paint-brush'],
             ['key' => 'materials', 'label' => __('Materials'), 'icon' => 'shopping-cart'],
-            ['key' => 'photos', 'label' => __('Photos'), 'icon' => 'photo'],
+            ['key' => 'media', 'label' => __('Media'), 'icon' => 'photo'],
         ];
     }
 }; ?>
@@ -1079,10 +1323,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 {{ __("Review the job details below. Once accepted, you'll have access to the full work order, address, and group chat.") }}
                             </flux:text>
                         </div>
-                        <div class="flex gap-2 sm:gap-3 shrink-0">
+                        <div class="flex flex-wrap gap-2 sm:gap-3 shrink-0">
                             @if ($job->estimate)
                                 <flux:button :href="route('crew.jobs.breakdown', $job)" variant="ghost" icon="document-text" class="flex-1 sm:flex-none">
-                                    {{ __('View Pay Breakdown') }}
+                                    <span class="hidden sm:inline">{{ __('View Pay Breakdown') }}</span>
+                                    <span class="sm:hidden">{{ __('Pay') }}</span>
                                 </flux:button>
                             @endif
                             <flux:button wire:click="rejectJob" variant="ghost" class="flex-1 sm:flex-none"
@@ -1090,7 +1335,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                 {{ __('Decline') }}
                             </flux:button>
                             <flux:button wire:click="acceptJob" variant="primary" icon="check" class="flex-1 sm:flex-none">
-                                {{ __('Accept Job') }}
+                                {{ __('Accept') }}
                             </flux:button>
                         </div>
                     </div>
@@ -1112,7 +1357,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
         @endif
 
         {{-- 4. Progress Timeline --}}
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-3 sm:p-6 mb-6">
             <flux:heading size="sm" class="mb-4">{{ __('Progress') }}</flux:heading>
             <div class="flex items-center justify-between">
                 @foreach (App\Models\Job::STAGES as $stageKey => $stageLabel)
@@ -1125,22 +1370,22 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     @endphp
                     <div class="flex-1 flex flex-col items-center relative" wire:key="stage-{{ $stageKey }}">
                         @if (! $loop->first)
-                            <div class="absolute top-4 -left-1/2 w-full h-0.5 {{ $isCompleted || $isActive ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600' }}"></div>
+                            <div class="absolute top-3 sm:top-4 -left-1/2 w-full h-0.5 {{ $isCompleted || $isActive ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600' }}"></div>
                         @endif
 
-                        <div class="relative z-10 flex items-center justify-center w-8 h-8 rounded-full border-2
+                        <div class="relative z-10 flex items-center justify-center w-6 h-6 sm:w-8 sm:h-8 rounded-full border-2
                             {{ $isCompleted ? 'bg-green-500 border-green-500 text-white' : '' }}
                             {{ $isActive ? 'bg-blue-500 border-blue-500 text-white' : '' }}
                             {{ $isFuture ? 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400' : '' }}
                         ">
                             @if ($isCompleted)
-                                <flux:icon name="check" class="w-4 h-4" />
+                                <flux:icon name="check" class="w-3 h-3 sm:w-4 sm:h-4" />
                             @else
-                                <span class="text-xs font-bold">{{ $stageNum }}</span>
+                                <span class="text-[10px] sm:text-xs font-bold">{{ $stageNum }}</span>
                             @endif
                         </div>
 
-                        <flux:text class="mt-2 text-xs text-center leading-tight {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
+                        <flux:text class="mt-1.5 sm:mt-2 text-[10px] sm:text-xs text-center leading-tight {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
                             {{ $stageLabel }}
                         </flux:text>
                     </div>
@@ -1347,6 +1592,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                             @if ($this->crewServiceCategoryName)
                                 <flux:badge size="sm" color="purple">{{ $this->crewServiceCategoryName }}</flux:badge>
                             @endif
+                            @if ($job->stage === 'job_prep' && $plan->days->count() > 1)
+                                <flux:button wire:click="autoDistributeTasks" size="xs" variant="ghost" icon="arrows-right-left">
+                                    {{ __('Auto-Distribute') }}
+                                </flux:button>
+                            @endif
                         </div>
                         <div class="flex items-center gap-2">
                             @if ($plan->crew_approved)
@@ -1502,6 +1752,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                             @endif
                         </flux:button>
                     @endforeach
+                    @if ($job->stage === 'job_prep')
+                        <flux:button wire:click="addDay" size="sm" variant="ghost" icon="plus" class="whitespace-nowrap shrink-0">
+                            {{ __('Add Day') }}
+                        </flux:button>
+                    @endif
                 </div>
 
                 {{-- Task List for Active Day --}}
@@ -1605,10 +1860,84 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                             <flux:badge size="sm" color="zinc">{{ number_format($task->estimated_hours, 1) }}h</flux:badge>
                                         </div>
                                     @endif
+
+                                    {{-- Day Assignment Dropdown --}}
+                                    @if ($job->stage === 'job_prep' && $plan->days->count() > 1)
+                                        <div class="shrink-0">
+                                            <select
+                                                wire:change="moveTaskToDay({{ $task->id }}, $event.target.value)"
+                                                class="text-xs border-zinc-200 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 px-2 py-1"
+                                            >
+                                                @foreach ($plan->days as $targetDay)
+                                                    <option
+                                                        value="{{ $targetDay->id }}"
+                                                        {{ $task->job_prep_day_id === $targetDay->id ? 'selected' : '' }}
+                                                    >
+                                                        {{ __('Day') }} {{ $targetDay->day_number }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                    @endif
+
+                                    {{-- Task removal actions (custom tasks only, job_prep stage) --}}
+                                    @if ($task->isCustom() && $job->stage === 'job_prep')
+                                        @php
+                                            $crewUser = Auth::guard('crew')->user();
+                                        @endphp
+                                        @if ($task->hasRemovalRequest() && $task->removalRequestedByUser?->type === 'internal')
+                                            {{-- Removal request from team — crew can approve/dismiss --}}
+                                            <div class="flex flex-col items-end gap-1 shrink-0">
+                                                <div class="text-xs text-amber-600 dark:text-amber-400 max-w-48 text-right">
+                                                    {{ $task->removalRequestedByUser?->name ?? __('Team') }} {{ __('requests removal') }}
+                                                    @if ($task->removal_reason)
+                                                        — {{ $task->removal_reason }}
+                                                    @endif
+                                                </div>
+                                                <div class="flex gap-1">
+                                                    <button wire:click="approveTaskRemoval({{ $task->id }})" class="text-xs px-2 py-1 bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900/30 dark:text-green-400 rounded">
+                                                        {{ __('Approve') }}
+                                                    </button>
+                                                    <button wire:click="dismissTaskRemoval({{ $task->id }})" class="text-xs px-2 py-1 bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-400 rounded">
+                                                        {{ __('Dismiss') }}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        @elseif ($task->hasRemovalRequest())
+                                            {{-- Removal request from self (crew) — show pending badge --}}
+                                            <flux:badge size="sm" color="yellow" class="shrink-0">{{ __('Removal Pending') }}</flux:badge>
+                                        @elseif ($task->added_by === $crewUser->id)
+                                            {{-- Crew's own task — direct delete --}}
+                                            <button
+                                                wire:click="removeTask({{ $task->id }})"
+                                                wire:confirm="{{ __('Remove this custom task?') }}"
+                                                class="text-red-400 hover:text-red-600 shrink-0"
+                                            >
+                                                <flux:icon name="trash" class="w-4 h-4" />
+                                            </button>
+                                        @elseif (! $task->added_by || $task->addedByUser?->type === 'internal')
+                                            {{-- Team-created task — request removal --}}
+                                            <button
+                                                wire:click="requestTaskRemoval({{ $task->id }})"
+                                                wire:confirm="{{ __('Request team to remove this task?') }}"
+                                                class="text-amber-500 hover:text-amber-700 shrink-0"
+                                                title="{{ __('Request Removal') }}"
+                                            >
+                                                <flux:icon name="hand-raised" class="w-4 h-4" />
+                                            </button>
+                                        @endif
+                                    @endif
                                 </div>
                             @empty
                                 <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
                                     {{ __('No tasks assigned to this day.') }}
+                                    @if ($plan->days->count() > 1 && $job->stage === 'job_prep')
+                                        <div class="mt-2">
+                                            <flux:button wire:click="deleteDay({{ $day->id }})" wire:confirm="{{ __('Delete this empty day?') }}" size="sm" variant="ghost" icon="trash" class="text-red-500">
+                                                {{ __('Delete Day') }}
+                                            </flux:button>
+                                        </div>
+                                    @endif
                                 </div>
                             @endforelse
 
@@ -2541,6 +2870,102 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                     </div>
                 </div>
             </div>
+
+            {{-- Crew Payables for This Job --}}
+            <div class="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-4 sm:p-6 mb-6">
+                <h3 class="text-lg font-bold text-zinc-900 dark:text-white mb-4">
+                    <flux:icon name="banknotes" class="w-5 h-5 inline mr-1" />
+                    {{ __('Your Payables') }}
+                </h3>
+
+                @if ($this->crewPayables->isEmpty())
+                    <div class="text-center py-8 text-zinc-500 dark:text-zinc-400">
+                        {{ __('No payables recorded for this job yet.') }}
+                    </div>
+                @else
+                    {{-- Mobile Cards --}}
+                    <div class="sm:hidden space-y-3">
+                        @foreach ($this->crewPayables as $payable)
+                            @php
+                                $payableColor = match ($payable->status) {
+                                    'pending' => 'amber',
+                                    'approved' => 'blue',
+                                    'paid' => 'green',
+                                    'void' => 'red',
+                                    default => 'zinc',
+                                };
+                            @endphp
+                            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-3" wire:key="crew-payable-m-{{ $payable->id }}">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="font-medium text-zinc-900 dark:text-white">{{ $payable->description }}</span>
+                                    <flux:badge variant="pill" :color="$payableColor" size="sm">{{ ucfirst($payable->status) }}</flux:badge>
+                                </div>
+                                <div class="grid grid-cols-2 gap-2 text-sm">
+                                    <div>
+                                        <span class="text-zinc-500">{{ __('Amount:') }}</span>
+                                        <span class="font-medium">${{ number_format($payable->amount, 2) }}</span>
+                                    </div>
+                                    <div>
+                                        <span class="text-zinc-500">{{ __('Paid:') }}</span>
+                                        <span>{{ $payable->paid_at?->format('M j, Y') ?? '-' }}</span>
+                                    </div>
+                                    @if ($payable->reference_number)
+                                        <div>
+                                            <span class="text-zinc-500">{{ __('Ref:') }}</span>
+                                            <span>{{ $payable->reference_number }}</span>
+                                        </div>
+                                    @endif
+                                    @if ($payable->paid_via)
+                                        <div>
+                                            <span class="text-zinc-500">{{ __('Method:') }}</span>
+                                            <span>{{ \App\Models\JobPayable::PAYMENT_METHODS[$payable->paid_via] ?? $payable->paid_via }}</span>
+                                        </div>
+                                    @endif
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+
+                    {{-- Desktop Table --}}
+                    <div class="hidden sm:block overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-zinc-200 dark:border-zinc-700">
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Description') }}</th>
+                                    <th class="text-right py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Amount') }}</th>
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Status') }}</th>
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Paid Date') }}</th>
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Reference') }}</th>
+                                    <th class="text-left py-2 px-3 font-semibold text-zinc-600 dark:text-zinc-400">{{ __('Method') }}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach ($this->crewPayables as $payable)
+                                    @php
+                                        $payableColor = match ($payable->status) {
+                                            'pending' => 'amber',
+                                            'approved' => 'blue',
+                                            'paid' => 'green',
+                                            'void' => 'red',
+                                            default => 'zinc',
+                                        };
+                                    @endphp
+                                    <tr class="border-b border-zinc-100 dark:border-zinc-700/50" wire:key="crew-payable-{{ $payable->id }}">
+                                        <td class="py-2 px-3 text-zinc-900 dark:text-white">{{ $payable->description }}</td>
+                                        <td class="py-2 px-3 text-right font-medium text-zinc-900 dark:text-white">${{ number_format($payable->amount, 2) }}</td>
+                                        <td class="py-2 px-3">
+                                            <flux:badge variant="pill" :color="$payableColor">{{ ucfirst($payable->status) }}</flux:badge>
+                                        </td>
+                                        <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">{{ $payable->paid_at?->format('M j, Y') ?? '-' }}</td>
+                                        <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">{{ $payable->reference_number ?? '-' }}</td>
+                                        <td class="py-2 px-3 text-zinc-700 dark:text-zinc-300">{{ $payable->paid_via ? (\App\Models\JobPayable::PAYMENT_METHODS[$payable->paid_via] ?? $payable->paid_via) : '-' }}</td>
+                                    </tr>
+                                @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @endif
+            </div>
         @endif
 
         {{-- COLORS STAGE --}}
@@ -2614,39 +3039,11 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             @endif
         @endif
 
-        @if ($activeTab === 'photos')
-            @if ($job->deal?->property)
-                <livewire:shared.photo-gallery
-                    :property="$job->deal->property"
-                    :job="$job"
-                    context="job-crew"
-                    :key="'crew-photos-'.$job->id"
-                />
-            @else
-                <div class="text-center py-12 border border-zinc-200 dark:border-zinc-700 rounded-lg">
-                    <flux:icon name="photo" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-                    <flux:heading>{{ __('No Photos') }}</flux:heading>
-                    <flux:text class="text-zinc-500 mt-2">{{ __('No property is linked to this job.') }}</flux:text>
-                </div>
-            @endif
+        @if ($activeTab === 'media')
+            <livewire:shared.media-section :property="$job->deal?->property" :job="$job" context="job-crew" :readOnly="! $this->hasAccepted" :key="'media-'.$job->id" />
         @endif
             </div>
         @endif {{-- end hasAccepted reference tabs --}}
-
-        {{-- Video Walkarounds --}}
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden print:hidden">
-            <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 flex items-center gap-2">
-                <flux:icon name="video-camera" class="w-5 h-5 text-zinc-500" />
-                <flux:heading size="sm">{{ __('Video Walkarounds') }}</flux:heading>
-            </div>
-            <div class="p-4">
-                <livewire:estimates.video-walkarounds
-                    :recordable="$job"
-                    :readOnly="! $this->hasAccepted"
-                    :key="'walkarounds-'.$job->id"
-                />
-            </div>
-        </div>
 
         {{-- 8. Embedded Chat --}}
         @if ($this->hasAccepted && $this->chatThread)
@@ -2698,10 +3095,45 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                                                 "{{ $message->metadata['transcription'] }}"
                                                             </flux:text>
                                                         </div>
+                                                        {{-- Audio transcription translation toggle --}}
+                                                        @if ($message->needsTranslationFor(app()->getLocale()))
+                                                            <div x-data="{ showTranslation: false }" class="mt-1">
+                                                                <button
+                                                                    @@click="showTranslation = !showTranslation"
+                                                                    class="text-xs underline opacity-70 hover:opacity-100 transition-opacity {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-500 dark:text-zinc-400' }}"
+                                                                >
+                                                                    <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                                                    <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                                </button>
+                                                                <div x-show="showTranslation" x-cloak class="mt-1">
+                                                                    <flux:text class="text-sm italic {{ $isOwnMessage ? 'text-blue-500 dark:text-blue-200' : 'text-zinc-600 dark:text-zinc-400' }}">
+                                                                        "{{ $message->getTranslation(app()->getLocale()) }}"
+                                                                    </flux:text>
+                                                                    <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                                                </div>
+                                                            </div>
+                                                        @endif
                                                     @endif
                                                 </div>
                                             @else
                                                 <flux:text class="whitespace-pre-wrap break-words">{{ $message->content }}</flux:text>
+
+                                                {{-- Translation toggle --}}
+                                                @if ($message->needsTranslationFor(app()->getLocale()))
+                                                    <div x-data="{ showTranslation: false }" class="mt-1">
+                                                        <button
+                                                            @@click="showTranslation = !showTranslation"
+                                                            class="text-xs underline opacity-70 hover:opacity-100 transition-opacity"
+                                                        >
+                                                            <span x-show="!showTranslation">{{ __('See translation') }}</span>
+                                                            <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                        </button>
+                                                        <div x-show="showTranslation" x-cloak class="mt-1">
+                                                            <flux:text class="whitespace-pre-wrap break-words">{{ $message->getTranslation(app()->getLocale()) }}</flux:text>
+                                                            <span class="text-xs opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($message->getDetectedLanguage())]) }}</span>
+                                                        </div>
+                                                    </div>
+                                                @endif
                                             @endif
                                         </div>
                                     </div>
