@@ -174,6 +174,7 @@ document.addEventListener('alpine:init', () => {
         map: null,
         markers: {},
         polygonLayers: [],
+        contextLayers: [],
         drawnItems: null,
         drawControl: null,
         pinMarker: null,
@@ -230,6 +231,11 @@ document.addEventListener('alpine:init', () => {
                 attribution: '&copy; OpenStreetMap contributors',
                 maxZoom: 19,
             }).addTo(this.map);
+
+            // Fit to user's territory bounds if provided (instead of GPS centering)
+            if (config.bounds) {
+                this.map.fitBounds(config.bounds, { padding: [30, 30] });
+            }
 
             // Draw tool for territory boundary creation
             if (config.draw) {
@@ -300,6 +306,16 @@ document.addEventListener('alpine:init', () => {
                 const payload = Array.isArray(data) ? data[0] : data;
                 if (payload?.address) {
                     this.detectedAddress = payload.address;
+                }
+            });
+
+            // Listen for parent context overlay
+            this.$wire?.on('show-parent-context', (data) => {
+                const payload = Array.isArray(data) ? data[0] : data;
+                if (payload?.boundary) {
+                    this.showParentContext(payload);
+                } else {
+                    this.clearParentContext();
                 }
             });
 
@@ -632,22 +648,35 @@ document.addEventListener('alpine:init', () => {
             this.polygonLayers.forEach(l => this.map.removeLayer(l));
             this.polygonLayers = [];
 
+            // Also clear drawn items (user's in-progress drawing) since saved polygons come from DB now
+            if (this.drawnItems) {
+                this.drawnItems.clearLayers();
+            }
+
             const items = polygonData?.polygons || [];
             if (!Array.isArray(items) || items.length === 0) return;
 
-            const bounds = [];
+            // Sort: regions first (bottom), zones middle, blocks last (top) for proper z-layering
+            const levelOrder = { region: 0, zone: 1, block: 2 };
+            const sorted = [...items].sort((a, b) => (levelOrder[a.level] ?? 1) - (levelOrder[b.level] ?? 1));
 
-            items.forEach(p => {
+            const bounds = [];
+            const levelLabels = { region: 'Region', zone: 'Zone', block: 'Block' };
+
+            sorted.forEach(p => {
                 if (p.boundary?.coordinates?.[0]) {
                     const coords = p.boundary.coordinates[0].map(c => [c[1], c[0]]);
 
-                    // Style by territory level
+                    // Lightweight styling so all 3 levels are visible simultaneously without blocking each other
+                    // Regions: bold border, barely-there fill (large area, just shows the outline)
+                    // Zones: medium border, subtle fill
+                    // Blocks: thin dashed border, visible fill (small area, needs to stand out)
                     const levelStyles = {
-                        region: { weight: 4, dashArray: null, opacity: 0.8, fillOpacity: 0.08 },
-                        zone: { weight: 2.5, dashArray: null, opacity: 0.6, fillOpacity: 0.12 },
-                        block: { weight: 1.5, dashArray: '5, 5', opacity: 0.5, fillOpacity: 0.15 },
+                        region: { weight: 4, dashArray: null, opacity: 0.7, fillOpacity: 0.03 },
+                        zone: { weight: 2.5, dashArray: null, opacity: 0.6, fillOpacity: 0.06 },
+                        block: { weight: 1.5, dashArray: '5, 5', opacity: 0.6, fillOpacity: 0.15 },
                     };
-                    const style = levelStyles[p.level] || levelStyles.zone;
+                    const style = levelStyles[p.level] || levelStyles.block;
 
                     const polygon = L.polygon(coords, {
                         color: p.color || '#3B82F6',
@@ -656,11 +685,11 @@ document.addEventListener('alpine:init', () => {
                         dashArray: style.dashArray,
                         opacity: style.opacity,
                         fillOpacity: style.fillOpacity,
-                        interactive: false,
                     }).addTo(this.map);
 
+                    const label = levelLabels[p.level] || '';
                     if (p.name) {
-                        polygon.bindTooltip(p.name, {
+                        polygon.bindTooltip(`${p.name}${label ? ' (' + label + ')' : ''}`, {
                             permanent: false,
                             direction: 'center',
                             className: 'territory-label',
@@ -678,8 +707,43 @@ document.addEventListener('alpine:init', () => {
             }
         },
 
+        showParentContext(parentData) {
+            this.clearParentContext();
+            if (!this.map || !parentData?.boundary?.coordinates?.[0]) return;
+
+            const coords = parentData.boundary.coordinates[0].map(c => [c[1], c[0]]);
+            const color = parentData.color || '#6B7280';
+
+            const polygon = L.polygon(coords, {
+                color: color,
+                fillColor: color,
+                weight: 3,
+                dashArray: '8, 6',
+                opacity: 0.7,
+                fillOpacity: 0.05,
+                interactive: false,
+            }).addTo(this.map);
+
+            if (parentData.name) {
+                polygon.bindTooltip(parentData.name + ' (parent)', {
+                    permanent: true,
+                    direction: 'center',
+                    className: 'territory-parent-label',
+                });
+            }
+
+            this.contextLayers.push(polygon);
+            this.map.fitBounds(L.latLngBounds(coords).pad(0.1));
+        },
+
+        clearParentContext() {
+            this.contextLayers.forEach(l => this.map?.removeLayer(l));
+            this.contextLayers = [];
+        },
+
         destroy() {
             this.stopTracking();
+            this.clearParentContext();
             if (this.userAccuracyCircle) {
                 this.map?.removeLayer(this.userAccuracyCircle);
                 this.userAccuracyCircle = null;

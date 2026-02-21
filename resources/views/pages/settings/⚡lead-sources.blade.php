@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\LeadSource;
+use App\Models\Vendor;
+use App\Services\LeadSourceWorkflowService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -20,10 +22,11 @@ new class extends Component {
     public ?int $editingId = null;
     public string $name = '';
     public string $slug = '';
-    public string $type = 'custom';
+    public string $type = 'webhook';
     public string $icon = 'globe-alt';
     public string $color = 'blue';
     public bool $is_active = true;
+    public ?int $vendor_id = null;
 
     // Track if editing a system source
     public bool $editingSystem = false;
@@ -47,7 +50,10 @@ new class extends Component {
     #[Computed]
     public function sources(): \Illuminate\Database\Eloquent\Collection
     {
-        return LeadSource::query()->ordered()->get();
+        return LeadSource::query()
+            ->with(['webhookEndpoint', 'workflow', 'vendor'])
+            ->ordered()
+            ->get();
     }
 
     #[Computed]
@@ -55,9 +61,14 @@ new class extends Component {
     {
         return [
             'built_in' => 'System',
-            'custom' => 'Custom',
             'webhook' => 'Webhook',
         ];
+    }
+
+    #[Computed]
+    public function vendorOptions(): \Illuminate\Support\Collection
+    {
+        return Vendor::query()->active()->orderBy('name')->pluck('name', 'id');
     }
 
     #[Computed]
@@ -102,6 +113,11 @@ new class extends Component {
         ];
     }
 
+    public function updatedVendorId(mixed $value): void
+    {
+        $this->vendor_id = $value ? (int) $value : null;
+    }
+
     public function openAddModal(): void
     {
         $this->resetForm();
@@ -115,10 +131,11 @@ new class extends Component {
         $this->editingId = $source->id;
         $this->name = $source->name;
         $this->slug = $source->slug ?? '';
-        $this->type = $source->type ?? 'custom';
+        $this->type = $source->type ?? 'webhook';
         $this->icon = $source->icon ?? 'globe-alt';
         $this->color = $source->color ?? 'blue';
         $this->is_active = $source->is_active;
+        $this->vendor_id = $source->vendor_id;
         $this->editingSystem = $source->is_system;
         $this->showModal = true;
     }
@@ -150,6 +167,7 @@ new class extends Component {
             'icon' => ['required', 'string', "in:{$iconKeys}"],
             'color' => ['required', 'string', "in:{$colorKeys}"],
             'is_active' => ['boolean'],
+            'vendor_id' => ['nullable', 'exists:vendors,id'],
         ]);
 
         $slug = ! empty($validated['slug'])
@@ -165,6 +183,7 @@ new class extends Component {
                 'icon' => $validated['icon'],
                 'color' => $validated['color'],
                 'is_active' => $validated['is_active'],
+                'vendor_id' => $validated['vendor_id'],
             ];
 
             // Don't allow type change on system sources
@@ -176,7 +195,7 @@ new class extends Component {
         } else {
             $maxOrder = LeadSource::max('sort_order') ?? 0;
 
-            LeadSource::create([
+            $source = LeadSource::create([
                 'name' => $validated['name'],
                 'slug' => $slug,
                 'type' => $validated['type'],
@@ -185,7 +204,16 @@ new class extends Component {
                 'is_active' => $validated['is_active'],
                 'is_system' => false,
                 'sort_order' => $maxOrder + 1,
+                'vendor_id' => $validated['vendor_id'],
             ]);
+
+            $workflowService = app(LeadSourceWorkflowService::class);
+
+            if ($source->vendor_id) {
+                $workflowService->createDefaultWorkflowWithCommission($source);
+            } else {
+                $workflowService->createDefaultWorkflow($source);
+            }
         }
 
         $this->closeModal();
@@ -323,10 +351,11 @@ new class extends Component {
         $this->editingId = null;
         $this->name = '';
         $this->slug = '';
-        $this->type = 'custom';
+        $this->type = 'webhook';
         $this->icon = 'globe-alt';
         $this->color = 'blue';
         $this->is_active = true;
+        $this->vendor_id = null;
         $this->editingSystem = false;
     }
 
@@ -400,7 +429,7 @@ new class extends Component {
                                     </div>
 
                                     <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2">
+                                        <div class="flex items-center gap-2 flex-wrap">
                                             <span class="font-medium truncate">{{ __($source->name) }}</span>
                                             @if ($source->is_system)
                                                 <flux:icon name="lock-closed" variant="micro" class="text-zinc-400" />
@@ -408,11 +437,27 @@ new class extends Component {
                                             <flux:badge size="sm" :color="$this->getTypeBadgeColor($source->type)">
                                                 {{ $this->typeOptions[$source->type] ?? $source->type }}
                                             </flux:badge>
+                                            @if ($source->vendor)
+                                                <flux:badge size="sm" color="green">{{ $source->vendor->name }}</flux:badge>
+                                            @endif
                                             @if (! $source->is_active)
                                                 <flux:badge size="sm" color="amber">{{ __('Inactive') }}</flux:badge>
                                             @endif
                                         </div>
                                         <div class="text-xs text-zinc-400 mt-0.5">{{ $source->slug }}</div>
+                                        @if ($source->webhookEndpoint)
+                                            <div class="flex items-center gap-1 mt-1" x-data>
+                                                <code class="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[300px]">{{ $source->webhookEndpoint->getWebhookUrl() }}</code>
+                                                <button
+                                                    type="button"
+                                                    class="shrink-0 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                                                    x-on:click="navigator.clipboard.writeText('{{ $source->webhookEndpoint->getWebhookUrl() }}'); $dispatch('notify', {message: 'Copied!'})"
+                                                    title="{{ __('Copy URL') }}"
+                                                >
+                                                    <flux:icon name="clipboard-document" variant="micro" />
+                                                </button>
+                                            </div>
+                                        @endif
                                     </div>
                                 </div>
 
@@ -421,8 +466,13 @@ new class extends Component {
                                     <flux:button size="sm" variant="ghost" icon="chevron-up" wire:click="moveUp({{ $source->id }})" :title="__('Move up')" />
                                     <flux:button size="sm" variant="ghost" icon="chevron-down" wire:click="moveDown({{ $source->id }})" :title="__('Move down')" />
 
+                                    {{-- Edit Workflow --}}
+                                    @if ($source->workflow_id)
+                                        <flux:button size="sm" variant="ghost" icon="bolt" :href="route('workflows.builder', ['workflow' => $source->workflow_id])" :title="__('Edit Workflow')" />
+                                    @endif
+
                                     {{-- Configure Webhook --}}
-                                    @if ($source->type === 'webhook')
+                                    @if ($source->webhookEndpoint)
                                         <flux:button size="sm" variant="ghost" icon="cog-6-tooth" wire:click="openWebhookConfig({{ $source->id }})" :title="__('Configure webhook')" />
                                     @endif
 
@@ -489,7 +539,7 @@ new class extends Component {
             />
 
             @if (! $editingSystem)
-                <flux:select wire:model="type" :label="__('Type')">
+                <flux:select wire:model.live="type" :label="__('Type')">
                     @foreach ($this->typeOptions as $typeValue => $typeLabel)
                         <flux:select.option value="{{ $typeValue }}">{{ $typeLabel }}</flux:select.option>
                     @endforeach
@@ -512,6 +562,15 @@ new class extends Component {
                     <flux:select.option value="{{ $colorValue }}">{{ $colorLabel }}</flux:select.option>
                 @endforeach
             </flux:select>
+
+            @if ($type === 'webhook')
+                <flux:select wire:model="vendor_id" :label="__('Vendor (optional)')" :placeholder="__('None')">
+                    <flux:select.option value="">{{ __('None') }}</flux:select.option>
+                    @foreach ($this->vendorOptions as $vendorId => $vendorName)
+                        <flux:select.option value="{{ $vendorId }}">{{ $vendorName }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            @endif
 
             <flux:switch wire:model="is_active" :label="__('Active')" :description="__('Inactive sources are hidden from lead forms')" />
 

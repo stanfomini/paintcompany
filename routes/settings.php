@@ -1,5 +1,10 @@
 <?php
 
+use BaconQrCode\Renderer\Image\ImagickImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -75,4 +80,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/vendors', 'pages::settings.vendors')
         ->middleware('permission:vendors.view')
         ->name('vendors.edit');
+
+    Route::get('settings/marketing-flyer', function () {
+        $renderer = new ImageRenderer(new RendererStyle(300), new ImagickImageBackEnd);
+        $qrPng = (new Writer($renderer))->writeString('https://paintingmadeeasydenver.com');
+        $qrCodeDataUri = 'data:image/png;base64,'.base64_encode($qrPng);
+
+        $pdf = Pdf::loadView('pdf.marketing-flyer', [
+            'qrCodeDataUri' => $qrCodeDataUri,
+        ])->setPaper('letter');
+
+        return $pdf->download('painting-made-easy-flyer.pdf');
+    })
+        ->middleware('permission:settings.company')
+        ->name('marketing-flyer.show');
 });

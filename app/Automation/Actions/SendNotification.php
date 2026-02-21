@@ -6,8 +6,8 @@ use App\Automation\Contracts\ActionInterface;
 use App\Automation\Registry;
 use App\Models\User;
 use App\Models\WorkflowRun;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification as BaseNotification;
-use Illuminate\Support\Facades\Notification;
 
 class SendNotification implements ActionInterface
 {
@@ -32,6 +32,18 @@ class SendNotification implements ActionInterface
     public static function getConfigSchema(): array
     {
         return [
+            'notify_type' => [
+                'type' => 'string',
+                'label' => 'Notify',
+                'description' => 'Who to notify: a specific user, the assigned user from context, or all users with a role.',
+                'required' => false,
+                'default' => 'specific_user',
+                'options' => [
+                    'specific_user' => 'Specific User',
+                    'assigned_user' => 'Assigned User',
+                    'role' => 'User Role',
+                ],
+            ],
             'user_id' => [
                 'type' => 'string',
                 'label' => 'Notify User',
@@ -39,6 +51,26 @@ class SendNotification implements ActionInterface
                 'required' => false,
                 'default' => null,
                 'options' => array_replace(['' => '-- Triggering User --'], User::where('type', 'internal')->pluck('name', 'id')->toArray()),
+            ],
+            'notify_role' => [
+                'type' => 'string',
+                'label' => 'User Role',
+                'description' => 'Notify all active users with this role. Only used when Notify is set to "User Role".',
+                'required' => false,
+                'default' => 'internal',
+                'options' => [
+                    'internal' => 'Internal',
+                    'agent' => 'Agent',
+                    'customer' => 'Customer',
+                    'crew' => 'Crew',
+                ],
+            ],
+            'subject' => [
+                'type' => 'string',
+                'label' => 'Email Subject',
+                'description' => 'Subject line for email channel notifications.',
+                'required' => false,
+                'default' => 'Workflow Notification',
             ],
             'message' => [
                 'type' => 'string',
@@ -65,19 +97,39 @@ class SendNotification implements ActionInterface
     {
         $registry = app(Registry::class);
 
-        $userId = $config['user_id'] ?? $run->triggered_by;
         $message = $registry->resolveDynamicValues($config['message'] ?? '', $run);
         $channels = $config['channels'] ?? ['database'];
+        $subject = $config['subject'] ?? 'Workflow Notification';
+        $notifyType = $config['notify_type'] ?? 'specific_user';
 
-        $user = User::find($userId);
+        $users = $this->resolveRecipients($run, $config, $notifyType);
 
-        if (! $user) {
+        if ($users->isEmpty()) {
             return ['notified' => false];
         }
 
-        $user->notify(new WorkflowNotification($message, $channels, $run));
+        $notification = new WorkflowNotification($message, $channels, $run, $subject);
 
-        return ['notified' => true];
+        foreach ($users as $user) {
+            $user->notify(clone $notification);
+        }
+
+        return ['notified' => true, 'recipient_count' => $users->count()];
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return \Illuminate\Support\Collection<int, User>
+     */
+    private function resolveRecipients(WorkflowRun $run, array $config, string $notifyType): \Illuminate\Support\Collection
+    {
+        return match ($notifyType) {
+            'assigned_user' => collect([User::find($run->context['assigned_to'] ?? null)])->filter(),
+            'role' => User::where('type', $config['notify_role'] ?? 'internal')
+                ->where('is_active', true)
+                ->get(),
+            default => collect([User::find($config['user_id'] ?? $run->triggered_by)])->filter(),
+        };
     }
 }
 
@@ -93,6 +145,7 @@ class WorkflowNotification extends BaseNotification
         protected string $message,
         protected array $channels,
         protected WorkflowRun $run,
+        protected string $subject = 'Workflow Notification',
     ) {}
 
     /**
@@ -101,6 +154,14 @@ class WorkflowNotification extends BaseNotification
     public function via(object $notifiable): array
     {
         return $this->channels;
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject($this->subject ?: 'Workflow Notification')
+            ->line($this->message)
+            ->line('This notification was sent by an automated workflow.');
     }
 
     /**

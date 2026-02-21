@@ -1,4 +1,25 @@
 <x-layouts.guest :title="($recording->title ?? __('Video Recording')) . ' - ' . ($company->company_name ?? config('app.name'))">
+    @push('meta')
+    <meta property="og:title" content="{{ $recording->title ?? __('Video Recording') }}">
+    <meta property="og:description" content="{{ $recording->description ?? __('Watch this video from :company', ['company' => $company->company_name ?? config('app.name')]) }}">
+    <meta property="og:type" content="video.other">
+    <meta property="og:url" content="{{ $recording->getShareableUrl() }}">
+    @if($recording->getThumbnailUrl())
+    <meta property="og:image" content="{{ $recording->getThumbnailUrl() }}">
+    <meta property="og:image:width" content="{{ $recording->width ?? 1280 }}">
+    <meta property="og:image:height" content="{{ $recording->height ?? 720 }}">
+    @endif
+    <meta property="og:video" content="{{ $recording->getVideoUrl() }}">
+    <meta property="og:video:type" content="{{ $recording->mime_type ?? 'video/mp4' }}">
+    <meta property="og:site_name" content="{{ $company->company_name ?? config('app.name') }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ $recording->title ?? __('Video Recording') }}">
+    <meta name="twitter:description" content="{{ $recording->description ?? __('Watch this video from :company', ['company' => $company->company_name ?? config('app.name')]) }}">
+    @if($recording->getThumbnailUrl())
+    <meta name="twitter:image" content="{{ $recording->getThumbnailUrl() }}">
+    @endif
+    @endpush
+
     <div class="min-h-screen bg-zinc-900 flex flex-col items-center p-4 sm:p-8">
         <div class="w-full max-w-5xl">
             {{-- Company Branding --}}

@@ -9,7 +9,9 @@ use App\Models\SalesTerritory;
 use App\Models\User;
 use App\Notifications\InvitationNotification;
 use App\Services\DoorKnockService;
+use App\Services\LocationIQService;
 use Illuminate\Support\Facades\Notification;
+use Livewire\Livewire;
 
 it('records a door knock', function () {
     $user = User::factory()->internal()->create();
@@ -275,4 +277,46 @@ it('does not send duplicate invitation if user already exists', function () {
         'inviter_id' => $user->id,
     ]);
     Notification::assertNothingSent();
+});
+
+it('detects address without dropping a pin', function () {
+    $user = User::factory()->internal()->create();
+
+    $mockService = Mockery::mock(LocationIQService::class);
+    $mockService->shouldReceive('getCachedOrFetch')
+        ->once()
+        ->with(39.7817, -89.6501)
+        ->andReturn([
+            'address' => '123 Main St',
+            'city' => 'Springfield',
+            'state' => 'IL',
+            'zip' => '62701',
+        ]);
+
+    app()->instance(LocationIQService::class, $mockService);
+
+    Livewire::actingAs($user)
+        ->test('sales.door-knock-map')
+        ->call('detectAddress', 39.7817, -89.6501)
+        ->assertDispatched('address-detected', fn ($name, $params) => $params['address'] === '123 Main St')
+        ->assertSet('pinDropped', false)
+        ->assertSet('showForm', false);
+});
+
+it('detects address gracefully when geocoding fails', function () {
+    $user = User::factory()->internal()->create();
+
+    $mockService = Mockery::mock(LocationIQService::class);
+    $mockService->shouldReceive('getCachedOrFetch')
+        ->once()
+        ->andThrow(new \Exception('API timeout'));
+
+    app()->instance(LocationIQService::class, $mockService);
+
+    Livewire::actingAs($user)
+        ->test('sales.door-knock-map')
+        ->call('detectAddress', 39.7817, -89.6501)
+        ->assertDispatched('address-detected')
+        ->assertSet('pinDropped', false)
+        ->assertSet('showForm', false);
 });

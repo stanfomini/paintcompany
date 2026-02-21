@@ -41,6 +41,7 @@ class UnifiedCalendarService
         $events = $events->merge($this->getActivityEvents($user, $from, $to));
         $events = $events->merge($this->getJobEvents($user, $from, $to));
         $events = $events->merge($this->getLifeCommitmentEvents($from, $to));
+        $events = $events->merge($this->getTerritoryScheduleEvents($user, $from, $to));
 
         return $events->sortBy('start')->values();
     }
@@ -269,6 +270,54 @@ class UnifiedCalendarService
         }
 
         return $events;
+    }
+
+    /**
+     * Get territory schedule events.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    protected function getTerritoryScheduleEvents(User $user, CarbonInterface $from, CarbonInterface $to): Collection
+    {
+        if (! $user->employeeProfile) {
+            return collect();
+        }
+
+        $schedules = \App\Models\Schedule::query()
+            ->where('schedule_type', 'territory')
+            ->where('employee_profile_id', $user->employeeProfile->id)
+            ->whereDate('date', '>=', $from)
+            ->whereDate('date', '<=', $to)
+            ->whereNotIn('status', ['cancelled'])
+            ->with('territory')
+            ->get();
+
+        return $schedules->map(function (\App\Models\Schedule $schedule) {
+            $start = Carbon::parse($schedule->date->format('Y-m-d').' '.$schedule->start_time);
+            $end = Carbon::parse($schedule->date->format('Y-m-d').' '.$schedule->end_time);
+            $territory = $schedule->territory;
+
+            return [
+                'id' => "territory-schedule-{$schedule->id}",
+                'title' => $territory?->name ?? 'Territory Shift',
+                'start' => $start,
+                'end' => $end,
+                'type' => 'territory_shift',
+                'source' => 'territory',
+                'color' => $territory?->color ?? '#f97316',
+                'subject_type' => null,
+                'subject_id' => null,
+                'url' => $schedule->getMeetUpUrl(),
+                'meta' => [
+                    'schedule_id' => $schedule->id,
+                    'territory_id' => $territory?->id,
+                    'meet_address' => $schedule->meet_address,
+                    'meet_lat' => $schedule->meet_lat,
+                    'meet_lng' => $schedule->meet_lng,
+                    'status' => $schedule->status,
+                ],
+            ];
+        });
     }
 
     /**

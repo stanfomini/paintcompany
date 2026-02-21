@@ -122,6 +122,11 @@ class SalesTerritory extends Model
         return $ancestors;
     }
 
+    public function schedules(): HasMany
+    {
+        return $this->hasMany(Schedule::class, 'territory_id');
+    }
+
     public function budgets(): HasMany
     {
         return $this->hasMany(TerritoryBudget::class, 'territory_id');

@@ -21,6 +21,11 @@ new #[Layout('layouts.app')] class extends Component
     #[Validate('required|string|max:7')]
     public string $color = '#3B82F6';
 
+    #[Validate('required|in:region,zone,block')]
+    public string $level = 'block';
+
+    public ?int $parentId = null;
+
     public ?array $boundary = null;
 
     public ?int $assignedUserId = null;
@@ -32,6 +37,7 @@ new #[Layout('layouts.app')] class extends Component
     // UI state
     public string $activeTab = 'map';
     public string $pnlPeriod = 'month';
+    public array $visibleLevels = ['region', 'zone', 'block'];
 
     public ?int $editingId = null;
 
@@ -82,6 +88,10 @@ new #[Layout('layouts.app')] class extends Component
         $query = SalesTerritory::query()
             ->whereNotNull('boundary')
             ->where('status', 'active');
+
+        if (count($this->visibleLevels) < 3) {
+            $query->whereIn('level', $this->visibleLevels);
+        }
 
         if (! $scopeService->hasPermission($user, 'territories.view_all')) {
             $visibleIds = $scopeService->getVisibleTerritoryIds($user);
@@ -165,6 +175,124 @@ new #[Layout('layouts.app')] class extends Component
         return [39.8283, -98.5795];
     }
 
+    #[Computed]
+    public function mapBounds(): ?array
+    {
+        $user = auth()->user();
+        $scopeService = app(PermissionScopeService::class);
+        $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+
+        $territories = SalesTerritory::whereIn('id', $visibleIds)
+            ->whereNotNull('boundary')
+            ->where('status', 'active')
+            ->get(['boundary']);
+
+        if ($territories->isEmpty()) {
+            return null;
+        }
+
+        $allLats = [];
+        $allLngs = [];
+        foreach ($territories as $t) {
+            if (isset($t->boundary['coordinates'][0])) {
+                foreach ($t->boundary['coordinates'][0] as $coord) {
+                    $allLngs[] = $coord[0];
+                    $allLats[] = $coord[1];
+                }
+            }
+        }
+
+        if (empty($allLats)) {
+            return null;
+        }
+
+        return [
+            [min($allLats), min($allLngs)],
+            [max($allLats), max($allLngs)],
+        ];
+    }
+
+    #[Computed]
+    public function availableParents(): \Illuminate\Support\Collection
+    {
+        $parentLevel = match ($this->level) {
+            'zone' => 'region',
+            'block' => 'zone',
+            default => null,
+        };
+
+        if (! $parentLevel) {
+            return collect();
+        }
+
+        return SalesTerritory::where('level', $parentLevel)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name', 'level']);
+    }
+
+    #[Computed]
+    public function hierarchicalTerritories(): \Illuminate\Support\Collection
+    {
+        return SalesTerritory::where('level', 'region')
+            ->where('status', 'active')
+            ->withCount('doorKnocks')
+            ->with(['children' => function ($q) {
+                $q->where('status', 'active')
+                    ->withCount('doorKnocks')
+                    ->with(['children' => function ($q2) {
+                        $q2->where('status', 'active')
+                            ->withCount('doorKnocks')
+                            ->with('assignedUser')
+                            ->orderBy('name');
+                    }, 'assignedUser'])
+                    ->orderBy('name');
+            }, 'assignedUser'])
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function parentBoundary(): ?array
+    {
+        if (! $this->parentId) {
+            return null;
+        }
+
+        $parent = SalesTerritory::find($this->parentId);
+        if (! $parent || ! $parent->boundary) {
+            return null;
+        }
+
+        return [
+            'name' => $parent->name,
+            'color' => $parent->color ?? '#6B7280',
+            'boundary' => $parent->boundary,
+        ];
+    }
+
+    public function updatedLevel(): void
+    {
+        $this->parentId = null;
+        unset($this->availableParents);
+        $this->dispatch('show-parent-context', boundary: null);
+    }
+
+    public function toggleLevel(string $level): void
+    {
+        if (in_array($level, $this->visibleLevels)) {
+            $this->visibleLevels = array_values(array_diff($this->visibleLevels, [$level]));
+        } else {
+            $this->visibleLevels[] = $level;
+        }
+        unset($this->territoryPolygons);
+        $this->dispatch('territory-polygons', polygons: $this->territoryPolygons);
+    }
+
+    public function updatedParentId(): void
+    {
+        $this->dispatch('show-parent-context', boundary: $this->parentBoundary());
+    }
+
     public function createTerritory(): void
     {
         $this->resetForm();
@@ -178,21 +306,47 @@ new #[Layout('layouts.app')] class extends Component
         $this->name = $territory->name;
         $this->description = $territory->description;
         $this->color = $territory->color;
+        $this->level = $territory->level ?? 'block';
+        $this->parentId = $territory->parent_id;
         $this->boundary = $territory->boundary;
         $this->assignedUserId = $territory->assigned_user_id;
         $this->centerLat = $territory->center_lat;
         $this->centerLng = $territory->center_lng;
         $this->showForm = true;
+
+        unset($this->availableParents);
+
+        if ($this->parentId) {
+            $this->dispatch('show-parent-context', boundary: $this->parentBoundary());
+        }
     }
 
     public function saveTerritory(): void
     {
         $this->validate();
 
+        // Validate parent requirement based on level
+        if (in_array($this->level, ['zone', 'block'])) {
+            $this->validate(['parentId' => 'required|exists:sales_territories,id'], [
+                'parentId.required' => __('A parent territory is required for :level level.', ['level' => $this->level]),
+            ]);
+
+            // Validate parent is the correct level
+            $parent = SalesTerritory::find($this->parentId);
+            $expectedParentLevel = $this->level === 'zone' ? 'region' : 'zone';
+            if ($parent && $parent->level !== $expectedParentLevel) {
+                $this->addError('parentId', __('Parent must be a :level.', ['level' => $expectedParentLevel]));
+
+                return;
+            }
+        }
+
         $data = [
             'name' => $this->name,
             'description' => $this->description,
             'color' => $this->color,
+            'level' => $this->level,
+            'parent_id' => in_array($this->level, ['zone', 'block']) ? $this->parentId : null,
             'boundary' => $this->boundary,
             'assigned_user_id' => $this->assignedUserId,
             'center_lat' => $this->centerLat,
@@ -208,21 +362,24 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         $this->resetForm();
-        unset($this->territories, $this->territoryPolygons);
+        unset($this->territories, $this->territoryPolygons, $this->hierarchicalTerritories);
+        $this->dispatch('territory-polygons', polygons: $this->territoryPolygons);
     }
 
     public function deleteTerritory(int $id): void
     {
         SalesTerritory::findOrFail($id)->delete();
         session()->flash('success', __('Territory deleted.'));
-        unset($this->territories, $this->territoryPolygons);
+        unset($this->territories, $this->territoryPolygons, $this->hierarchicalTerritories);
+        $this->dispatch('territory-polygons', polygons: $this->territoryPolygons);
     }
 
     public function archiveTerritory(int $id): void
     {
         SalesTerritory::findOrFail($id)->update(['status' => 'archived']);
         session()->flash('success', __('Territory archived.'));
-        unset($this->territories);
+        unset($this->territories, $this->hierarchicalTerritories, $this->territoryPolygons);
+        $this->dispatch('territory-polygons', polygons: $this->territoryPolygons);
     }
 
     public function openDispatch(int $territoryId): void
@@ -268,8 +425,10 @@ new #[Layout('layouts.app')] class extends Component
 
     private function resetForm(): void
     {
-        $this->reset(['name', 'description', 'color', 'boundary', 'assignedUserId', 'centerLat', 'centerLng', 'editingId', 'showForm']);
+        $this->reset(['name', 'description', 'color', 'level', 'parentId', 'boundary', 'assignedUserId', 'centerLat', 'centerLng', 'editingId', 'showForm']);
         $this->color = '#3B82F6';
+        $this->level = 'block';
+        $this->dispatch('show-parent-context', boundary: null);
     }
 };
 
@@ -308,6 +467,12 @@ new #[Layout('layouts.app')] class extends Component
                     Dispatch
                 </button>
                 @endcan
+                @can('territories.manage_zones')
+                <button wire:click="$set('activeTab', 'schedule')"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'schedule' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                    Schedule
+                </button>
+                @endcan
                 @can('analytics.territory_pnl')
                 <button wire:click="$set('activeTab', 'analytics')"
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'analytics' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
@@ -322,13 +487,30 @@ new #[Layout('layouts.app')] class extends Component
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {{-- Map Column --}}
             <div class="lg:col-span-2">
+                {{-- Level Filter Checkboxes --}}
+                <div class="flex items-center gap-3 mb-3">
+                    <flux:text size="sm" class="text-zinc-500 mr-1">{{ __('Show:') }}</flux:text>
+                    @foreach(['region' => __('Regions'), 'zone' => __('Zones'), 'block' => __('Blocks')] as $value => $label)
+                        <label class="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                                type="checkbox"
+                                wire:click="toggleLevel('{{ $value }}')"
+                                {{ in_array($value, $visibleLevels) ? 'checked' : '' }}
+                                class="rounded border-zinc-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span class="text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ $label }}</span>
+                        </label>
+                    @endforeach
+                </div>
+
                 <div
                     wire:ignore
                     x-data="territoryMap({
                         draw: {{ Auth::user()->can('sales_territories.manage') ? 'true' : 'false' }},
-                        geolocate: true,
-                        zoom: {{ count($this->territoryPolygons) > 0 ? 10 : 5 }},
+                        geolocate: {{ $this->mapBounds ? 'false' : 'true' }},
+                        zoom: {{ $this->mapBounds ? 12 : 5 }},
                         center: {{ json_encode($this->mapCenter) }},
+                        bounds: {{ json_encode($this->mapBounds) }},
                         polygons: {{ json_encode($this->territoryPolygons) }}
                     })"
                     x-on:polygon-created.window="$wire.setBoundary($event.detail.boundary)"
@@ -386,6 +568,31 @@ new #[Layout('layouts.app')] class extends Component
                             @error('name') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                         </flux:field>
 
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:field>
+                                <flux:label>{{ __('Level') }}</flux:label>
+                                <flux:select wire:model.live="level">
+                                    <option value="region">{{ __('Region') }}</option>
+                                    <option value="zone">{{ __('Zone') }}</option>
+                                    <option value="block">{{ __('Block') }}</option>
+                                </flux:select>
+                                @error('level') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
+                            </flux:field>
+
+                            @if($level !== 'region')
+                                <flux:field>
+                                    <flux:label>{{ $level === 'zone' ? __('Parent Region') : __('Parent Zone') }}</flux:label>
+                                    <flux:select wire:model.live="parentId">
+                                        <option value="">{{ __('Select...') }}</option>
+                                        @foreach($this->availableParents as $parent)
+                                            <option value="{{ $parent->id }}">{{ $parent->name }}</option>
+                                        @endforeach
+                                    </flux:select>
+                                    @error('parentId') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
+                                </flux:field>
+                            @endif
+                        </div>
+
                         <flux:field>
                             <flux:label>{{ __('Description') }}</flux:label>
                             <flux:textarea wire:model="description" rows="2" placeholder="{{ __('Optional notes...') }}" />
@@ -408,16 +615,25 @@ new #[Layout('layouts.app')] class extends Component
                             </flux:field>
                         </div>
 
-                        @if($boundary)
-                            <flux:badge color="green" size="sm">
-                                <flux:icon name="check" class="size-3 mr-1" />
-                                {{ __('Boundary drawn on map') }}
-                            </flux:badge>
-                        @else
-                            <flux:callout variant="outline" icon="information-circle">
-                                <flux:callout.text>{{ __('Use the polygon draw tool (top-left of map) to draw the territory boundary.') }}</flux:callout.text>
-                            </flux:callout>
-                        @endif
+                        <div class="flex items-center gap-2">
+                            @if($boundary)
+                                <flux:badge color="green" size="sm">
+                                    <flux:icon name="check" class="size-3 mr-1" />
+                                    {{ __('Boundary drawn on map') }}
+                                </flux:badge>
+                            @else
+                                <flux:callout variant="outline" icon="information-circle">
+                                    <flux:callout.text>{{ __('Use the polygon draw tool (top-left of map) to draw the territory boundary.') }}</flux:callout.text>
+                                </flux:callout>
+                            @endif
+
+                            @if($parentId && $this->parentBoundary())
+                                <flux:badge color="sky" size="sm">
+                                    <flux:icon name="map" class="size-3 mr-1" />
+                                    {{ __('Parent shown on map') }}
+                                </flux:badge>
+                            @endif
+                        </div>
 
                         <div class="flex gap-2">
                             <flux:button variant="primary" wire:click="saveTerritory" class="grow">
@@ -430,58 +646,142 @@ new #[Layout('layouts.app')] class extends Component
                     </div>
                 @endif
 
-                {{-- Territory List --}}
-                <div class="space-y-2">
-                    @foreach($this->territories as $territory)
-                        <div wire:key="territory-{{ $territory->id }}" class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-4">
-                            <div class="flex items-start justify-between gap-2">
-                                <div class="flex items-center gap-2">
-                                    <div class="h-4 w-4 rounded-full shrink-0" style="background-color: {{ $territory->color }}"></div>
-                                    <div>
-                                        <flux:heading size="sm">{{ $territory->name }}</flux:heading>
-                                        <flux:text size="sm">
-                                            {{ $territory->door_knocks_count }} {{ __('knocks') }}
-                                            @if($territory->assignedUser)
-                                                &middot; {{ $territory->assignedUser->name }}
-                                            @endif
-                                            @if($territory->status === 'archived')
-                                                &middot; <span class="text-amber-500">{{ __('Archived') }}</span>
-                                            @endif
-                                        </flux:text>
+                {{-- Territory Hierarchy Tree --}}
+                <div class="space-y-1">
+                    @forelse($this->hierarchicalTerritories as $region)
+                        <div wire:key="region-{{ $region->id }}" x-data="{ open: true }">
+                            {{-- Region --}}
+                            <div class="rounded-lg border border-purple-200 dark:border-purple-800/50 bg-purple-50/50 dark:bg-purple-900/10 p-3">
+                                <div class="flex items-start justify-between gap-2">
+                                    <div class="flex items-center gap-2 cursor-pointer" x-on:click="open = !open">
+                                        <svg class="size-4 text-zinc-400 transition-transform" :class="open && 'rotate-90'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                        <div class="h-3 w-3 rounded-full shrink-0" style="background-color: {{ $region->color }}"></div>
+                                        <div>
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="text-sm font-semibold">{{ $region->name }}</span>
+                                                <flux:badge size="sm" color="purple">{{ __('Region') }}</flux:badge>
+                                            </div>
+                                            <flux:text size="xs">{{ $region->door_knocks_count }} {{ __('knocks') }}@if($region->assignedUser) &middot; {{ $region->assignedUser->name }}@endif</flux:text>
+                                        </div>
                                     </div>
+                                    @can('sales_territories.manage')
+                                        <flux:dropdown>
+                                            <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
+                                            <flux:menu>
+                                                <flux:menu.item wire:click="editTerritory({{ $region->id }})" icon="pencil">{{ __('Edit') }}</flux:menu.item>
+                                                <flux:menu.separator />
+                                                <flux:menu.item wire:click="archiveTerritory({{ $region->id }})" icon="archive-box" wire:confirm="{{ __('Archive this territory?') }}">{{ __('Archive') }}</flux:menu.item>
+                                                <flux:menu.item wire:click="deleteTerritory({{ $region->id }})" icon="trash" variant="danger" wire:confirm="{{ __('Permanently delete this territory and all related data?') }}">{{ __('Delete') }}</flux:menu.item>
+                                            </flux:menu>
+                                        </flux:dropdown>
+                                    @endcan
                                 </div>
+                            </div>
 
-                                @can('sales_territories.manage')
-                                    <flux:dropdown>
-                                        <flux:button variant="ghost" size="sm" icon="ellipsis-vertical" />
-                                        <flux:menu>
-                                            <flux:menu.item wire:click="editTerritory({{ $territory->id }})" icon="pencil">
-                                                {{ __('Edit') }}
-                                            </flux:menu.item>
-                                            @can('territory_dispatch.manage')
-                                                <flux:menu.item wire:click="openDispatch({{ $territory->id }})" icon="paper-airplane">
-                                                    {{ __('Dispatch') }}
-                                                </flux:menu.item>
-                                            @endcan
-                                            <flux:menu.separator />
-                                            <flux:menu.item wire:click="archiveTerritory({{ $territory->id }})" icon="archive-box" wire:confirm="{{ __('Archive this territory?') }}">
-                                                {{ __('Archive') }}
-                                            </flux:menu.item>
-                                            <flux:menu.item wire:click="deleteTerritory({{ $territory->id }})" icon="trash" variant="danger" wire:confirm="{{ __('Permanently delete this territory and all related data?') }}">
-                                                {{ __('Delete') }}
-                                            </flux:menu.item>
-                                        </flux:menu>
-                                    </flux:dropdown>
-                                @endcan
+                            {{-- Zones --}}
+                            <div x-show="open" x-collapse class="ml-4 mt-1 space-y-1">
+                                @foreach($region->children as $zone)
+                                    <div wire:key="zone-{{ $zone->id }}" x-data="{ zoneOpen: true }">
+                                        <div class="rounded-lg border border-sky-200 dark:border-sky-800/50 bg-sky-50/50 dark:bg-sky-900/10 p-2.5">
+                                            <div class="flex items-start justify-between gap-2">
+                                                <div class="flex items-center gap-2 cursor-pointer" x-on:click="zoneOpen = !zoneOpen">
+                                                    <svg class="size-3.5 text-zinc-400 transition-transform" :class="zoneOpen && 'rotate-90'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+                                                    <div class="h-3 w-3 rounded-full shrink-0" style="background-color: {{ $zone->color }}"></div>
+                                                    <div>
+                                                        <div class="flex items-center gap-1.5">
+                                                            <span class="text-sm font-medium">{{ $zone->name }}</span>
+                                                            <flux:badge size="sm" color="sky">{{ __('Zone') }}</flux:badge>
+                                                        </div>
+                                                        <flux:text size="xs">{{ $zone->door_knocks_count }} {{ __('knocks') }}@if($zone->assignedUser) &middot; {{ $zone->assignedUser->name }}@endif</flux:text>
+                                                    </div>
+                                                </div>
+                                                @can('sales_territories.manage')
+                                                    <flux:dropdown>
+                                                        <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
+                                                        <flux:menu>
+                                                            <flux:menu.item wire:click="editTerritory({{ $zone->id }})" icon="pencil">{{ __('Edit') }}</flux:menu.item>
+                                                            @can('territory_dispatch.manage')
+                                                                <flux:menu.item wire:click="openDispatch({{ $zone->id }})" icon="paper-airplane">{{ __('Dispatch') }}</flux:menu.item>
+                                                            @endcan
+                                                            <flux:menu.separator />
+                                                            <flux:menu.item wire:click="archiveTerritory({{ $zone->id }})" icon="archive-box" wire:confirm="{{ __('Archive this territory?') }}">{{ __('Archive') }}</flux:menu.item>
+                                                            <flux:menu.item wire:click="deleteTerritory({{ $zone->id }})" icon="trash" variant="danger" wire:confirm="{{ __('Permanently delete this territory and all related data?') }}">{{ __('Delete') }}</flux:menu.item>
+                                                        </flux:menu>
+                                                    </flux:dropdown>
+                                                @endcan
+                                            </div>
+                                        </div>
+
+                                        {{-- Blocks --}}
+                                        <div x-show="zoneOpen" x-collapse class="ml-4 mt-1 space-y-1">
+                                            @foreach($zone->children as $block)
+                                                <div wire:key="block-{{ $block->id }}" class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2.5">
+                                                    <div class="flex items-start justify-between gap-2">
+                                                        <div class="flex items-center gap-2">
+                                                            <div class="h-3 w-3 rounded-full shrink-0" style="background-color: {{ $block->color }}"></div>
+                                                            <div>
+                                                                <div class="flex items-center gap-1.5">
+                                                                    <span class="text-sm">{{ $block->name }}</span>
+                                                                    <flux:badge size="sm">{{ __('Block') }}</flux:badge>
+                                                                </div>
+                                                                <flux:text size="xs">{{ $block->door_knocks_count }} {{ __('knocks') }}@if($block->assignedUser) &middot; {{ $block->assignedUser->name }}@endif</flux:text>
+                                                            </div>
+                                                        </div>
+                                                        @can('sales_territories.manage')
+                                                            <flux:dropdown>
+                                                                <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
+                                                                <flux:menu>
+                                                                    <flux:menu.item wire:click="editTerritory({{ $block->id }})" icon="pencil">{{ __('Edit') }}</flux:menu.item>
+                                                                    @can('territory_dispatch.manage')
+                                                                        <flux:menu.item wire:click="openDispatch({{ $block->id }})" icon="paper-airplane">{{ __('Dispatch') }}</flux:menu.item>
+                                                                    @endcan
+                                                                    <flux:menu.separator />
+                                                                    <flux:menu.item wire:click="archiveTerritory({{ $block->id }})" icon="archive-box" wire:confirm="{{ __('Archive this territory?') }}">{{ __('Archive') }}</flux:menu.item>
+                                                                    <flux:menu.item wire:click="deleteTerritory({{ $block->id }})" icon="trash" variant="danger" wire:confirm="{{ __('Permanently delete this territory and all related data?') }}">{{ __('Delete') }}</flux:menu.item>
+                                                                </flux:menu>
+                                                            </flux:dropdown>
+                                                        @endcan
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endforeach
                             </div>
                         </div>
-                    @endforeach
+                    @empty
+                        @if($this->territories->isEmpty())
+                            <flux:callout icon="map" variant="outline">
+                                <flux:callout.heading>{{ __('No Territories') }}</flux:callout.heading>
+                                <flux:callout.text>{{ __('Create your first territory to start managing sales areas.') }}</flux:callout.text>
+                            </flux:callout>
+                        @endif
+                    @endforelse
 
-                    @if($this->territories->isEmpty())
-                        <flux:callout icon="map" variant="outline">
-                            <flux:callout.heading>{{ __('No Territories') }}</flux:callout.heading>
-                            <flux:callout.text>{{ __('Create your first territory to start managing sales areas.') }}</flux:callout.text>
-                        </flux:callout>
+                    {{-- Orphan territories (no parent, not regions) --}}
+                    @php
+                        $orphans = $this->territories->filter(fn($t) => $t->level !== 'region' && !$t->parent_id);
+                    @endphp
+                    @if($orphans->isNotEmpty())
+                        <div class="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+                            <flux:text size="xs" class="text-zinc-400 mb-2">{{ __('Unassigned Territories') }}</flux:text>
+                            @foreach($orphans as $orphan)
+                                <div wire:key="orphan-{{ $orphan->id }}" class="rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 p-2.5 mb-1">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="flex items-center gap-2">
+                                            <div class="h-3 w-3 rounded-full shrink-0" style="background-color: {{ $orphan->color }}"></div>
+                                            <div>
+                                                <span class="text-sm">{{ $orphan->name }}</span>
+                                                <flux:text size="xs">{{ $orphan->door_knocks_count }} {{ __('knocks') }}</flux:text>
+                                            </div>
+                                        </div>
+                                        @can('sales_territories.manage')
+                                            <flux:button variant="ghost" size="xs" icon="pencil" wire:click="editTerritory({{ $orphan->id }})" />
+                                        @endcan
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
                     @endif
                 </div>
             </div>
@@ -515,6 +815,8 @@ new #[Layout('layouts.app')] class extends Component
                     @endforelse
                 </div>
             </div>
+        @elseif($activeTab === 'schedule')
+            <livewire:sales.territory-schedule />
         @elseif($activeTab === 'analytics')
             <div class="space-y-4">
                 <div class="flex items-center justify-between">

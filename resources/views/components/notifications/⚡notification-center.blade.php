@@ -186,6 +186,9 @@ new class extends Component {
             // Invitation viewed → invitations list
             'InvitationViewed' => route('invitations'),
 
+            // Workflow notification → workflow builder
+            'WorkflowNotification' => isset($data['workflow_id']) ? route('workflows.builder', ['workflow' => $data['workflow_id']]) : null,
+
             default => null,
         };
 
@@ -243,6 +246,7 @@ new class extends Component {
             'CollaboratorAccessGranted' => 'user-plus',
             'InvitationViewed' => 'envelope-open',
             'UnreadChatMessage' => 'chat-bubble-left',
+            'WorkflowNotification' => 'bolt',
             default => 'bell',
         };
     }
@@ -286,6 +290,7 @@ new class extends Component {
             'CollaboratorAccessGranted' => __('Collaborator Added'),
             'InvitationViewed' => __('Invitation Opened'),
             'UnreadChatMessage' => __('New Message'),
+            'WorkflowNotification' => __('Workflow Notification'),
             default => __('Notification'),
         };
     }
@@ -316,6 +321,7 @@ new class extends Component {
             'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => $data['title'] ?? '',
             'NewAccountCreated' => ucfirst($data['account_type'] ?? 'user') . ' — ' . ($data['user_name'] ?? ''),
             'InvitationViewed' => ($data['agent_email'] ?? '') . ' ' . __('clicked your invite'),
+            'WorkflowNotification' => $data['message'] ?? '',
             default => $data['customer_name'] ?? $data['estimate_number'] ?? $data['title'] ?? $data['message'] ?? '',
         };
     }

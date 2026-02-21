@@ -275,9 +275,17 @@ new class extends Component
                             <flux:text class="text-xs text-zinc-500">{{ __('Created') }} {{ $video->created_at->diffForHumans() }}</flux:text>
                         </div>
                         @if($video->share_token)
-                            <flux:button size="xs" variant="ghost" icon="link" onclick="navigator.clipboard.writeText('{{ route('video-recording.public', $video->share_token) }}')">
-                                {{ __('Copy Link') }}
-                            </flux:button>
+                            <flux:button
+                                size="xs"
+                                variant="ghost"
+                                icon="link"
+                                x-data="{ copied: false }"
+                                x-on:click="
+                                    navigator.clipboard.writeText(@js(route('video-recording.public', $video->share_token)))
+                                        .then(() => { copied = true; setTimeout(() => copied = false, 2000) })
+                                "
+                                x-text="copied ? '{{ __('Copied!') }}' : '{{ __('Copy Link') }}'"
+                            >{{ __('Copy Link') }}</flux:button>
                         @endif
                     </div>
                 @endforeach

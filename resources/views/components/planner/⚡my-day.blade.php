@@ -350,11 +350,25 @@ new class extends Component
 
     // ============ Actions ============
 
+    /**
+     * Base query for action methods. If the user has planner.view_all,
+     * they can act on any activity (matches CommandCenterService viewing logic).
+     * Otherwise, restrict to activities they created or are assigned to.
+     */
+    private function activityQueryForAction(): \Illuminate\Database\Eloquent\Builder
+    {
+        $user = auth()->user();
+
+        if ($user->can('planner.view_all')) {
+            return Activity::query();
+        }
+
+        return Activity::query()->forUserOrAssignedTo($user);
+    }
+
     public function toggleComplete(int $activityId): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
-            ->findOrFail($activityId);
+        $activity = $this->activityQueryForAction()->findOrFail($activityId);
 
         if ($activity->is_completed) {
             $activity->markAsIncomplete();
@@ -366,9 +380,7 @@ new class extends Component
 
     public function setPriority(int $activityId, string $priority): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
-            ->findOrFail($activityId);
+        $activity = $this->activityQueryForAction()->findOrFail($activityId);
 
         $activity->update(['priority' => $priority]);
         app(PriorityScoreService::class)->updateScore($activity->fresh());
@@ -384,9 +396,7 @@ new class extends Component
 
     public function snoozeQuick(int $activityId, string $duration): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
-            ->findOrFail($activityId);
+        $activity = $this->activityQueryForAction()->findOrFail($activityId);
 
         $until = match ($duration) {
             '1h' => now()->addHour(),
@@ -405,9 +415,7 @@ new class extends Component
             return;
         }
 
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
-            ->findOrFail($this->snoozeActivityId);
+        $activity = $this->activityQueryForAction()->findOrFail($this->snoozeActivityId);
 
         $activity->snoozeUntil(\Carbon\Carbon::parse($this->snoozeUntil));
         $this->showSnoozeModal = false;
@@ -526,8 +534,7 @@ new class extends Component
 
     public function advanceDealStage(int $activityId, string $newStage): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
+        $activity = $this->activityQueryForAction()
             ->where('subject_type', Deal::class)
             ->findOrFail($activityId);
 
@@ -557,8 +564,7 @@ new class extends Component
             return;
         }
 
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
+        $activity = $this->activityQueryForAction()
             ->where('subject_type', Deal::class)
             ->findOrFail($this->advancingActivityId);
 
@@ -586,8 +592,7 @@ new class extends Component
 
     public function viewJob(int $activityId): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
+        $activity = $this->activityQueryForAction()
             ->where('subject_type', Job::class)
             ->findOrFail($activityId);
 
@@ -596,8 +601,7 @@ new class extends Component
 
     public function confirmJobDate(int $activityId): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
+        $activity = $this->activityQueryForAction()
             ->where('subject_type', Job::class)
             ->findOrFail($activityId);
 
@@ -611,8 +615,7 @@ new class extends Component
 
     public function goToDispatch(int $activityId): void
     {
-        $activity = Activity::query()
-            ->forUserOrAssignedTo(auth()->user())
+        $activity = $this->activityQueryForAction()
             ->where('subject_type', Job::class)
             ->findOrFail($activityId);
 
@@ -896,6 +899,15 @@ new class extends Component
                                         <div class="font-medium truncate" style="color: {{ $event['color'] }};">{{ $event['start_time'] }} - {{ $event['end_time'] }}</div>
                                         <div class="truncate text-zinc-700 dark:text-zinc-300">{{ $event['title'] }}</div>
                                         <div class="text-zinc-500 dark:text-zinc-400 capitalize">{{ $event['source'] }}</div>
+                                        @if ($event['source'] === 'territory' && ($event['meta']['meet_address'] ?? null))
+                                            <div class="truncate text-zinc-500 text-[10px]">
+                                                @if ($event['url'])
+                                                    <a href="{{ $event['url'] }}" target="_blank" class="underline" onclick="event.stopPropagation()">{{ Str::limit($event['meta']['meet_address'], 25) }}</a>
+                                                @else
+                                                    {{ Str::limit($event['meta']['meet_address'], 25) }}
+                                                @endif
+                                            </div>
+                                        @endif
                                     </div>
                                 @endforeach
                                 @if ($dayEvents->isEmpty())
@@ -941,6 +953,16 @@ new class extends Component
                                                 <span class="text-xs text-red-600">{{ __('Overdue') }}</span>
                                             @endif
                                         </div>
+                                        @if ($event['source'] === 'territory' && ($event['meta']['meet_address'] ?? null))
+                                            <div class="mt-1 flex items-center gap-1 text-xs text-zinc-500">
+                                                <flux:icon name="map-pin" class="w-3 h-3 shrink-0" />
+                                                @if ($event['url'])
+                                                    <a href="{{ $event['url'] }}" target="_blank" class="underline hover:text-zinc-700 dark:hover:text-zinc-300" onclick="event.stopPropagation()">{{ $event['meta']['meet_address'] }}</a>
+                                                @else
+                                                    {{ $event['meta']['meet_address'] }}
+                                                @endif
+                                            </div>
+                                        @endif
                                     </div>
                                 </div>
                             @endforeach
@@ -956,6 +978,7 @@ new class extends Component
                 <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span> {{ __('Calls') }}</div>
                 <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> {{ __('Emails / Jobs') }}</div>
                 <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-violet-500"></span> {{ __('Commitments') }}</div>
+                <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> {{ __('Territory') }}</div>
                 <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span> {{ __('Overdue') }}</div>
                 <div class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span> {{ __('Completed') }}</div>
             </div>

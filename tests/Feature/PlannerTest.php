@@ -244,7 +244,26 @@ describe('Planner task completion', function () {
         expect($activity->completed_at)->not->toBeNull();
     });
 
-    it('cannot toggle tasks not assigned to or created by user', function () {
+    it('cannot toggle tasks not assigned to or created by user without planner.view_all', function () {
+        $user = User::factory()->internal()->withRole('estimator')->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
+
+        $activity = Activity::factory()->create([
+            'user_id' => $otherUser->id,
+            'assigned_to' => $otherUser->id,
+            'is_completed' => false,
+        ]);
+
+        // Expect 404 because user lacks planner.view_all and the query filters by user
+        Livewire::actingAs($user)
+            ->test('planner.my-day')
+            ->call('toggleComplete', $activity->id);
+
+        $activity->refresh();
+        expect($activity->is_completed)->toBeFalse();
+    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+    it('can toggle complete on another users activity with planner.view_all', function () {
         $user = User::factory()->internal()->withFullAccess()->create();
         $otherUser = User::factory()->internal()->withFullAccess()->create();
 
@@ -254,14 +273,47 @@ describe('Planner task completion', function () {
             'is_completed' => false,
         ]);
 
-        // Expect 404 because the query filters by user
         Livewire::actingAs($user)
             ->test('planner.my-day')
             ->call('toggleComplete', $activity->id);
 
         $activity->refresh();
-        expect($activity->is_completed)->toBeFalse();
-    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+        expect($activity->is_completed)->toBeTrue();
+    });
+
+    it('can set priority on another users activity with planner.view_all', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
+
+        $activity = Activity::factory()->create([
+            'user_id' => $otherUser->id,
+            'assigned_to' => $otherUser->id,
+            'priority' => 'normal',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('planner.my-day')
+            ->call('setPriority', $activity->id, 'high');
+
+        expect($activity->fresh()->priority)->toBe('high');
+    });
+
+    it('can snooze another users activity with planner.view_all', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $otherUser = User::factory()->internal()->withFullAccess()->create();
+
+        $activity = Activity::factory()->create([
+            'user_id' => $otherUser->id,
+            'assigned_to' => $otherUser->id,
+            'is_completed' => false,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('planner.my-day')
+            ->call('snoozeQuick', $activity->id, 'tomorrow');
+
+        expect($activity->fresh()->snoozed_until)->not->toBeNull();
+    });
 });
 
 describe('Planner filters', function () {

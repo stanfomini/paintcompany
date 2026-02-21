@@ -11,6 +11,7 @@
                 <flux:navlist.item :href="route('signature.edit')" wire:navigate>{{ __('Signature') }}</flux:navlist.item>
                 @can('settings.company')
                     <flux:navlist.item :href="route('company.edit')" wire:navigate>{{ __('Company') }}</flux:navlist.item>
+                    <a href="{{ route('marketing-flyer.show') }}" onclick="event.preventDefault(); window.location.href=this.href;" class="flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-700/50">{{ __('Marketing Flyer') }}</a>
                 @endcan
                 @can('settings.packages')
                     <flux:navlist.item :href="route('packages.edit')" wire:navigate>{{ __('Packages') }}</flux:navlist.item>

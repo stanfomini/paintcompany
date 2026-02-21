@@ -9,7 +9,11 @@ new class extends Component {
     public function copyLink(): void
     {
         $url = $this->video->getShareableUrl();
-        $this->dispatch('copy-to-clipboard', url: $url);
+        $this->js("
+            navigator.clipboard.writeText('{$url}')
+                .then(() => { \$wire.dispatch('notify', { message: 'Link copied to clipboard!' }) })
+                .catch(() => { window.prompt('Copy this link:', '{$url}') })
+        ");
     }
 
     public function delete(): void

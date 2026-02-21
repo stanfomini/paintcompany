@@ -8,12 +8,21 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property string $schedule_type
+ * @property int|null $territory_id
+ * @property string|null $meet_address
+ * @property string|null $meet_lat
+ * @property string|null $meet_lng
+ */
 class Schedule extends Model
 {
     use HasFactory;
 
     protected $fillable = [
         'employee_profile_id',
+        'schedule_type',
+        'territory_id',
         'job_id',
         'date',
         'start_time',
@@ -21,6 +30,9 @@ class Schedule extends Model
         'break_duration',
         'status',
         'notes',
+        'meet_address',
+        'meet_lat',
+        'meet_lng',
         'created_by',
     ];
 
@@ -29,6 +41,8 @@ class Schedule extends Model
         return [
             'date' => 'date',
             'break_duration' => 'integer',
+            'meet_lat' => 'decimal:7',
+            'meet_lng' => 'decimal:7',
         ];
     }
 
@@ -40,6 +54,11 @@ class Schedule extends Model
     public function job(): BelongsTo
     {
         return $this->belongsTo(Job::class);
+    }
+
+    public function territory(): BelongsTo
+    {
+        return $this->belongsTo(SalesTerritory::class, 'territory_id');
     }
 
     public function createdBy(): BelongsTo
@@ -91,6 +110,42 @@ class Schedule extends Model
     public function isConfirmed(): bool
     {
         return $this->status === 'confirmed';
+    }
+
+    /**
+     * Scope: territory shifts only.
+     */
+    public function scopeTerritoryShifts(Builder $query): Builder
+    {
+        return $query->where('schedule_type', 'territory');
+    }
+
+    /**
+     * Scope: job shifts only.
+     */
+    public function scopeJobShifts(Builder $query): Builder
+    {
+        return $query->where('schedule_type', 'job');
+    }
+
+    /**
+     * Check if this is a territory shift.
+     */
+    public function isTerritoryShift(): bool
+    {
+        return $this->schedule_type === 'territory';
+    }
+
+    /**
+     * Get a Google Maps directions URL to the meet-up location.
+     */
+    public function getMeetUpUrl(): ?string
+    {
+        if (! $this->meet_lat || ! $this->meet_lng) {
+            return null;
+        }
+
+        return "https://www.google.com/maps/dir/?api=1&destination={$this->meet_lat},{$this->meet_lng}";
     }
 
     /**

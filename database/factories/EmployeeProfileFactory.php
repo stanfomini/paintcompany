@@ -209,6 +209,45 @@ class EmployeeProfileFactory extends Factory
     }
 
     /**
+     * Employee with door knock commission.
+     */
+    public function withDoorKnockCommission(string $type = 'flat', float $amount = 25): static
+    {
+        return $this->state(function (array $attributes) use ($type, $amount) {
+            $rules = $attributes['commission_rules'] ?? [];
+            $rules[] = [
+                'source' => 'door_knock',
+                'type' => $type,
+                'amount' => $type === 'flat' ? $amount : 0,
+                'rate' => $type !== 'flat' ? $amount : 0,
+                'active' => true,
+                'auto_trigger' => true,
+            ];
+
+            return ['commission_rules' => $rules];
+        });
+    }
+
+    /**
+     * Employee with territory override commission.
+     */
+    public function withTerritoryOverrideCommission(float $rate = 0.02): static
+    {
+        return $this->state(function (array $attributes) use ($rate) {
+            $rules = $attributes['commission_rules'] ?? [];
+            $rules[] = [
+                'source' => 'territory_override',
+                'type' => 'revenue_percentage',
+                'rate' => $rate,
+                'active' => true,
+                'auto_trigger' => true,
+            ];
+
+            return ['commission_rules' => $rules];
+        });
+    }
+
+    /**
      * Fully complete employee profile.
      */
     public function complete(): static

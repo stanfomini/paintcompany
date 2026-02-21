@@ -25,6 +25,8 @@ class LeadSource extends Model
         'is_active',
         'is_system',
         'sort_order',
+        'workflow_id',
+        'vendor_id',
     ];
 
     protected function casts(): array
@@ -71,6 +73,16 @@ class LeadSource extends Model
     public function webhookEndpoint(): HasOne
     {
         return $this->hasOne(WebhookEndpoint::class);
+    }
+
+    public function workflow(): BelongsTo
+    {
+        return $this->belongsTo(Workflow::class);
+    }
+
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
     }
 
     public function scopeActive(Builder $query): Builder

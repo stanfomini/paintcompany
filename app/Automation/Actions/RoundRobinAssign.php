@@ -31,13 +31,34 @@ class RoundRobinAssign implements ActionInterface
     public static function getConfigSchema(): array
     {
         return [
+            'group_type' => [
+                'type' => 'string',
+                'label' => 'Assignment Group',
+                'description' => 'How to determine the pool of users for rotation.',
+                'required' => true,
+                'default' => 'specific_users',
+                'options' => [
+                    'specific_users' => 'Specific Users',
+                    'role' => 'By User Type/Role',
+                ],
+            ],
             'user_ids' => [
                 'type' => 'string',
                 'label' => 'Team Members',
                 'description' => 'Select the team members to rotate through.',
-                'required' => true,
+                'required' => false,
                 'multiple' => true,
                 'options' => User::where('type', 'internal')->pluck('name', 'id')->toArray(),
+            ],
+            'role' => [
+                'type' => 'string',
+                'label' => 'User Type',
+                'description' => 'When group type is "role", assign to users of this type.',
+                'required' => false,
+                'options' => [
+                    'internal' => 'Internal',
+                    'agent' => 'Agent',
+                ],
             ],
             'assignment_field' => [
                 'type' => 'string',
@@ -55,14 +76,13 @@ class RoundRobinAssign implements ActionInterface
      */
     public function execute(WorkflowRun $run, array $config): array
     {
-        $registry = app(Registry::class);
-        $userIdsStr = $registry->resolveDynamicValues($config['user_ids'] ?? '', $run);
+        $groupType = $config['group_type'] ?? 'specific_users';
         $field = $config['assignment_field'] ?? 'assigned_to';
 
-        $userIds = array_filter(array_map('intval', explode(',', $userIdsStr)));
+        $userIds = $this->resolveUserIds($run, $config, $groupType);
 
         if (empty($userIds)) {
-            return ['assigned' => false, 'error' => 'No user IDs provided'];
+            return ['assigned' => false, 'error' => 'No users available for assignment'];
         }
 
         $cacheKey = 'round_robin:'.md5($run->workflow_id.':'.implode(',', $userIds));
@@ -89,5 +109,33 @@ class RoundRobinAssign implements ActionInterface
         $run->update(['context' => $context]);
 
         return ['assigned' => true, 'assigned_to' => $selectedUserId, 'user_name' => $user->name];
+    }
+
+    /**
+     * Resolve the pool of user IDs based on group type.
+     *
+     * @param  array<string, mixed>  $config
+     * @return array<int>
+     */
+    protected function resolveUserIds(WorkflowRun $run, array $config, string $groupType): array
+    {
+        if ($groupType === 'role') {
+            $role = $config['role'] ?? null;
+
+            if (! $role) {
+                return [];
+            }
+
+            return User::where('type', $role)
+                ->where('is_active', true)
+                ->pluck('id')
+                ->toArray();
+        }
+
+        // Default: specific_users
+        $registry = app(Registry::class);
+        $userIdsStr = $registry->resolveDynamicValues($config['user_ids'] ?? '', $run);
+
+        return array_filter(array_map('intval', explode(',', $userIdsStr)));
     }
 }

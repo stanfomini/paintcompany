@@ -2,6 +2,11 @@
 
 use App\Models\LeadSource;
 use App\Models\User;
+use App\Models\Vendor;
+use App\Models\WebhookEndpoint;
+use App\Models\Workflow;
+use App\Models\WorkflowEdge;
+use App\Models\WorkflowNode;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -287,5 +292,129 @@ describe('Lead Sources System Protection', function () {
         expect($source->name)->toBe('Updated System Source');
         expect($source->color)->toBe('green');
         expect($source->type)->toBe('built_in');
+    });
+});
+
+describe('Lead Source Workflow Integration', function () {
+
+    it('auto-creates workflow and webhook endpoint when creating lead source', function () {
+        Livewire::test('pages::settings.lead-sources')
+            ->call('openAddModal')
+            ->set('name', 'Angi Leads')
+            ->set('type', 'webhook')
+            ->set('icon', 'signal')
+            ->set('color', 'purple')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertDispatched('lead-sources-updated');
+
+        $source = LeadSource::where('name', 'Angi Leads')->first();
+        expect($source)->not->toBeNull();
+        expect($source->type)->toBe('webhook');
+        expect($source->workflow_id)->not->toBeNull();
+
+        // Verify webhook endpoint auto-created
+        $source->refresh();
+        expect($source->webhookEndpoint)->not->toBeNull();
+        expect($source->webhookEndpoint->is_active)->toBeTrue();
+
+        $workflow = Workflow::find($source->workflow_id);
+        expect($workflow)->not->toBeNull();
+        expect($workflow->name)->toBe('Lead: Angi Leads');
+
+        $nodes = WorkflowNode::where('workflow_id', $workflow->id)->orderBy('position_y')->get();
+        expect($nodes)->toHaveCount(5);
+        expect($nodes[0]->type)->toBe('trigger');
+        expect($nodes[0]->node_class)->toBe('App\\Automation\\Triggers\\InboundWebhook');
+        expect($nodes[1]->node_class)->toBe('App\\Automation\\Actions\\CreateCustomer');
+        expect($nodes[2]->node_class)->toBe('App\\Automation\\Actions\\CreateProperty');
+        expect($nodes[3]->node_class)->toBe('App\\Automation\\Actions\\CreateDeal');
+        expect($nodes[4]->node_class)->toBe('App\\Automation\\Actions\\SendNotification');
+
+        $edges = WorkflowEdge::where('workflow_id', $workflow->id)->orderBy('sort_order')->get();
+        expect($edges)->toHaveCount(4);
+        expect($edges[0]->from_node_id)->toBe($nodes[0]->id);
+        expect($edges[0]->to_node_id)->toBe($nodes[1]->id);
+    });
+
+    it('auto-creates workflow with commission when vendor is linked', function () {
+        $vendor = Vendor::factory()->create();
+
+        Livewire::test('pages::settings.lead-sources')
+            ->call('openAddModal')
+            ->set('name', 'Vendor Leads')
+            ->set('type', 'webhook')
+            ->set('icon', 'signal')
+            ->set('color', 'green')
+            ->set('vendor_id', $vendor->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $source = LeadSource::where('name', 'Vendor Leads')->first();
+        expect($source->vendor_id)->toBe($vendor->id);
+        expect($source->workflow_id)->not->toBeNull();
+
+        $workflow = Workflow::find($source->workflow_id);
+        $nodes = WorkflowNode::where('workflow_id', $workflow->id)->orderBy('position_y')->get();
+        expect($nodes)->toHaveCount(6);
+
+        $nodeClasses = $nodes->pluck('node_class')->toArray();
+        expect($nodeClasses)->toContain('App\\Automation\\Actions\\CreateLeadSourceCommission');
+    });
+
+    it('displays webhook URL for webhook sources', function () {
+        $source = LeadSource::factory()->webhook()->create(['sort_order' => 1]);
+        $endpoint = WebhookEndpoint::factory()->create(['lead_source_id' => $source->id]);
+
+        Livewire::test('pages::settings.lead-sources')
+            ->assertSee($endpoint->getWebhookUrl());
+    });
+
+    it('can link vendor to webhook lead source', function () {
+        $vendor = Vendor::factory()->create();
+
+        Livewire::test('pages::settings.lead-sources')
+            ->call('openAddModal')
+            ->set('name', 'Vendor Source')
+            ->set('type', 'webhook')
+            ->set('vendor_id', $vendor->id)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $source = LeadSource::where('name', 'Vendor Source')->first();
+        expect($source->vendor_id)->toBe($vendor->id);
+    });
+
+    it('does not show custom type option', function () {
+        $component = Livewire::test('pages::settings.lead-sources');
+        $instance = $component->instance();
+        $typeOptions = $instance->typeOptions;
+        expect($typeOptions)->not->toHaveKey('custom');
+        expect($typeOptions)->toHaveKey('built_in');
+        expect($typeOptions)->toHaveKey('webhook');
+    });
+
+    it('creates workflow for all source types including built_in', function () {
+        Livewire::test('pages::settings.lead-sources')
+            ->call('openAddModal')
+            ->set('name', 'System-Like Source')
+            ->set('type', 'built_in')
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $source = LeadSource::where('name', 'System-Like Source')->first();
+        expect($source->workflow_id)->not->toBeNull();
+        expect($source->webhookEndpoint)->not->toBeNull();
+    });
+
+    it('shows vendor badge for sources with vendor', function () {
+        $vendor = Vendor::factory()->create(['name' => 'Acme Corp']);
+        $source = LeadSource::factory()->webhook()->create([
+            'sort_order' => 1,
+            'vendor_id' => $vendor->id,
+        ]);
+
+        Livewire::test('pages::settings.lead-sources')
+            ->assertSee('Acme Corp');
     });
 });
