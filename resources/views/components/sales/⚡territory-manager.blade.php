@@ -76,14 +76,25 @@ new #[Layout('layouts.app')] class extends Component
     #[Computed]
     public function territoryPolygons(): array
     {
-        return $this->territories
-            ->filter(fn ($t) => $t->boundary)
-            ->map(fn ($t) => [
-                'id' => $t->id,
-                'name' => $t->name,
-                'color' => $t->color,
-                'boundary' => $t->boundary,
-            ])->values()->toArray();
+        $user = auth()->user();
+        $scopeService = app(PermissionScopeService::class);
+
+        $query = SalesTerritory::query()
+            ->whereNotNull('boundary')
+            ->where('status', 'active');
+
+        if (! $scopeService->hasPermission($user, 'territories.view_all')) {
+            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+            $query->whereIn('id', $visibleIds);
+        }
+
+        return $query->get()->map(fn ($t) => [
+            'id' => $t->id,
+            'name' => $t->name,
+            'color' => $t->color ?? '#3B82F6',
+            'boundary' => $t->boundary,
+            'level' => $t->level,
+        ])->toArray();
     }
 
     #[Computed]
