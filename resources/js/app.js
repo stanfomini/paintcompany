@@ -180,6 +180,18 @@ document.addEventListener('alpine:init', () => {
         gpsStatus: 'idle', // idle, requesting, granted, denied, unavailable
         userLocationMarker: null,
 
+        // Tracking state (door knock live GPS)
+        watchId: null,
+        followMode: true,
+        userAccuracyCircle: null,
+        lastPositions: [],
+        stopCheckInterval: null,
+        lastGeocodedPosition: null,
+        stopDetected: false,
+        detectedAddress: '',
+        detectedStopPosition: null,
+        tooFar: false,
+
         init() {
             this.$nextTick(() => {
                 this.waitForLeaflet();
@@ -248,6 +260,16 @@ document.addEventListener('alpine:init', () => {
             // Click-to-place pin for door knock recording
             if (config.clickToPlace) {
                 this.map.on('click', (e) => {
+                    // Enforce 1000-foot (304.8m) radius when tracking with GPS
+                    if (config.trackLocation && this.userLocationMarker) {
+                        const userPos = this.userLocationMarker.getLatLng();
+                        const dist = this.haversineMeters(userPos.lat, userPos.lng, e.latlng.lat, e.latlng.lng);
+                        if (dist > 304.8) {
+                            this.tooFar = true;
+                            setTimeout(() => { this.tooFar = false; }, 3000);
+                            return;
+                        }
+                    }
                     this.placePin(e.latlng.lat, e.latlng.lng);
                     this.$dispatch('map-clicked', { lat: e.latlng.lat, lng: e.latlng.lng });
                 });
@@ -270,6 +292,14 @@ document.addEventListener('alpine:init', () => {
                 if (payload?.lat && payload?.lng) {
                     this.placePin(payload.lat, payload.lng);
                     this.map.setView([payload.lat, payload.lng], 17);
+                }
+            });
+
+            // Listen for address detection result (stop detection flow)
+            this.$wire?.on('address-detected', (data) => {
+                const payload = Array.isArray(data) ? data[0] : data;
+                if (payload?.address) {
+                    this.detectedAddress = payload.address;
                 }
             });
 
@@ -316,6 +346,16 @@ document.addEventListener('alpine:init', () => {
                         });
                     }
                 }, 500);
+            }
+
+            // Drag detection: disable follow mode when user manually pans
+            this.map.on('dragstart', () => {
+                this.followMode = false;
+            });
+
+            // Auto-start continuous tracking if configured (door knock page)
+            if (config.trackLocation) {
+                setTimeout(() => this.startTracking(), 300);
             }
         },
 
@@ -381,7 +421,7 @@ document.addEventListener('alpine:init', () => {
                             iconSize: [14, 14],
                             iconAnchor: [7, 7],
                         });
-                        this.userLocationMarker = L.marker([lat, lng], { icon: locIcon, zIndexOffset: -1000 }).addTo(this.map);
+                        this.userLocationMarker = L.marker([lat, lng], { icon: locIcon, zIndexOffset: 1000 }).addTo(this.map);
                     }
                 },
                 (err) => {
@@ -393,6 +433,169 @@ document.addEventListener('alpine:init', () => {
                 },
                 { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
             );
+        },
+
+        // Start continuous GPS tracking via watchPosition
+        startTracking() {
+            if (!navigator.geolocation) {
+                this.gpsStatus = 'unavailable';
+                return;
+            }
+
+            this.gpsStatus = 'requesting';
+            this.followMode = true;
+
+            this.watchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    this.gpsStatus = 'granted';
+                    this.updateUserPosition(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
+                },
+                (err) => {
+                    if (err.code === 1) {
+                        this.gpsStatus = 'denied';
+                    } else {
+                        this.gpsStatus = 'unavailable';
+                    }
+                },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 3000 }
+            );
+
+            // Start stop detection check every 2 seconds
+            this.stopCheckInterval = setInterval(() => this.checkForStop(), 2000);
+        },
+
+        // Stop GPS tracking
+        stopTracking() {
+            if (this.watchId !== null) {
+                navigator.geolocation.clearWatch(this.watchId);
+                this.watchId = null;
+            }
+            if (this.stopCheckInterval) {
+                clearInterval(this.stopCheckInterval);
+                this.stopCheckInterval = null;
+            }
+            this.lastPositions = [];
+            this.gpsStatus = 'idle';
+        },
+
+        // Update user position blue dot and accuracy circle
+        updateUserPosition(lat, lng, accuracy) {
+            if (!this.map) return;
+
+            // Update or create blue dot
+            if (this.userLocationMarker) {
+                this.userLocationMarker.setLatLng([lat, lng]);
+            } else {
+                const locIcon = L.divIcon({
+                    className: 'user-location',
+                    html: '<div style="background:#3B82F6;width:14px;height:14px;border-radius:50%;border:3px solid white;box-shadow:0 0 0 2px rgba(59,130,246,0.3),0 2px 4px rgba(0,0,0,0.2);"></div>',
+                    iconSize: [14, 14],
+                    iconAnchor: [7, 7],
+                });
+                this.userLocationMarker = L.marker([lat, lng], { icon: locIcon, zIndexOffset: 1000 }).addTo(this.map);
+            }
+
+            // Update or create accuracy circle
+            if (this.userAccuracyCircle) {
+                this.userAccuracyCircle.setLatLng([lat, lng]).setRadius(accuracy);
+            } else {
+                this.userAccuracyCircle = L.circle([lat, lng], {
+                    radius: accuracy,
+                    color: '#3B82F6',
+                    fillColor: '#3B82F6',
+                    fillOpacity: 0.1,
+                    weight: 1,
+                    interactive: false,
+                }).addTo(this.map);
+            }
+
+            // Auto-center if follow mode is on
+            if (this.followMode) {
+                this.map.setView([lat, lng], Math.max(this.map.getZoom(), 17));
+            }
+
+            // Record position for stop detection
+            this.lastPositions.push({ lat, lng, time: Date.now() });
+            // Keep only last 30 seconds of positions
+            const cutoff = Date.now() - 30000;
+            this.lastPositions = this.lastPositions.filter(p => p.time > cutoff);
+        },
+
+        // Check if user has stopped moving (~15 seconds within 10m radius)
+        checkForStop() {
+            if (this.lastPositions.length < 2) return;
+
+            const now = Date.now();
+            const recentPositions = this.lastPositions.filter(p => p.time > now - 15000);
+            if (recentPositions.length < 2) return;
+
+            // Check if all recent positions are within 10 meters of each other
+            const first = recentPositions[0];
+            const allNearby = recentPositions.every(p =>
+                this.haversineMeters(first.lat, first.lng, p.lat, p.lng) < 10
+            );
+            if (!allNearby) return;
+
+            // Ensure the oldest recent position is at least 12 seconds old
+            if (now - recentPositions[0].time < 12000) return;
+
+            // Calculate center of the stop cluster
+            const avgLat = recentPositions.reduce((s, p) => s + p.lat, 0) / recentPositions.length;
+            const avgLng = recentPositions.reduce((s, p) => s + p.lng, 0) / recentPositions.length;
+
+            // Skip if we already geocoded this spot (within 15m)
+            if (this.lastGeocodedPosition) {
+                const dist = this.haversineMeters(avgLat, avgLng, this.lastGeocodedPosition.lat, this.lastGeocodedPosition.lng);
+                if (dist < 15) return;
+            }
+
+            this.onStopDetected(avgLat, avgLng);
+        },
+
+        // Handle stop detection - show address suggestion, wait for user to confirm
+        onStopDetected(lat, lng) {
+            this.lastGeocodedPosition = { lat, lng };
+            this.detectedStopPosition = { lat, lng };
+            this.detectedAddress = '';
+            this.stopDetected = true;
+
+            // Ask Livewire to reverse-geocode without dropping a pin
+            this.$wire.detectAddress(lat, lng);
+        },
+
+        // User confirms the stop-detected pin drop
+        confirmStopPin() {
+            if (!this.detectedStopPosition) return;
+            const { lat, lng } = this.detectedStopPosition;
+            this.placePin(lat, lng);
+            this.$dispatch('map-clicked', { lat, lng });
+            this.dismissStopDetection();
+        },
+
+        // Dismiss stop detection toast
+        dismissStopDetection() {
+            this.stopDetected = false;
+            this.detectedStopPosition = null;
+            this.detectedAddress = '';
+        },
+
+        // Haversine distance in meters between two lat/lng points
+        haversineMeters(lat1, lng1, lat2, lng2) {
+            const R = 6371000;
+            const toRad = (deg) => deg * Math.PI / 180;
+            const dLat = toRad(lat2 - lat1);
+            const dLng = toRad(lng2 - lng1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        },
+
+        // Re-center map on current position and re-enable follow mode
+        recenter() {
+            this.followMode = true;
+            if (this.userLocationMarker) {
+                const pos = this.userLocationMarker.getLatLng();
+                this.map.setView(pos, Math.max(this.map.getZoom(), 17));
+            }
         },
 
         updateMarkers(markerData) {
@@ -437,14 +640,31 @@ document.addEventListener('alpine:init', () => {
             items.forEach(p => {
                 if (p.boundary?.coordinates?.[0]) {
                     const coords = p.boundary.coordinates[0].map(c => [c[1], c[0]]);
+
+                    // Style by territory level
+                    const levelStyles = {
+                        region: { weight: 4, dashArray: null, opacity: 0.8, fillOpacity: 0.08 },
+                        zone: { weight: 2.5, dashArray: null, opacity: 0.6, fillOpacity: 0.12 },
+                        block: { weight: 1.5, dashArray: '5, 5', opacity: 0.5, fillOpacity: 0.15 },
+                    };
+                    const style = levelStyles[p.level] || levelStyles.zone;
+
                     const polygon = L.polygon(coords, {
                         color: p.color || '#3B82F6',
-                        weight: 2,
-                        fillOpacity: 0.15,
+                        fillColor: p.color || '#3B82F6',
+                        weight: style.weight,
+                        dashArray: style.dashArray,
+                        opacity: style.opacity,
+                        fillOpacity: style.fillOpacity,
+                        interactive: false,
                     }).addTo(this.map);
 
                     if (p.name) {
-                        polygon.bindPopup(`<strong>${p.name}</strong>`);
+                        polygon.bindTooltip(p.name, {
+                            permanent: false,
+                            direction: 'center',
+                            className: 'territory-label',
+                        });
                     }
 
                     this.polygonLayers.push(polygon);
@@ -459,6 +679,11 @@ document.addEventListener('alpine:init', () => {
         },
 
         destroy() {
+            this.stopTracking();
+            if (this.userAccuracyCircle) {
+                this.map?.removeLayer(this.userAccuracyCircle);
+                this.userAccuracyCircle = null;
+            }
             if (this.map) {
                 this.map.remove();
                 this.map = null;
