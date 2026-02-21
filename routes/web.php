@@ -60,6 +60,15 @@ Route::livewire('/referral-terms', 'public.referral-terms')
     ->name('legal.referral-terms')
     ->middleware('throttle:60,1');
 
+// Service area location pages (local SEO)
+Route::livewire('/areas', 'public.areas-index')
+    ->name('areas.index')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/areas/{slug}', 'public.area-page')
+    ->name('areas.show')
+    ->middleware('throttle:60,1');
+
 Route::livewire('dashboard', 'dashboard')
     ->middleware(['auth', 'verified', 'auth.internal'])
     ->name('dashboard');

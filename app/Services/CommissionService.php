@@ -8,11 +8,11 @@ use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\DoorKnock;
 use App\Models\EmployeeProfile;
-use App\Models\SalesTerritory;
 use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\JobPayable;
 use App\Models\PayPeriod;
+use App\Models\SalesTerritory;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -167,18 +167,20 @@ class CommissionService
                 ->first();
 
             if ($employeeProfile) {
-                $entries[] = CommissionEntry::create([
-                    'employee_profile_id' => $employeeProfile->id,
-                    'source_type' => Job::class,
-                    'source_id' => $job->id,
-                    'source_label' => "Crew Bonus: {$job->title}",
-                    'commission_type' => 'flat',
-                    'basis_amount' => $revenue,
-                    'rate' => round($crewProfile->bonus_percent / 100, 4),
-                    'amount' => $bonusAmount,
-                    'status' => 'pending',
-                    'earned_date' => now()->toDateString(),
-                ]);
+                $entries[] = CommissionEntry::create(array_merge(
+                    $this->commissionableFieldsFor($employeeProfile),
+                    [
+                        'source_type' => Job::class,
+                        'source_id' => $job->id,
+                        'source_label' => "Crew Bonus: {$job->title}",
+                        'commission_type' => 'flat',
+                        'basis_amount' => $revenue,
+                        'rate' => round($crewProfile->bonus_percent / 100, 4),
+                        'amount' => $bonusAmount,
+                        'status' => 'pending',
+                        'earned_date' => now()->toDateString(),
+                    ]
+                ));
             } else {
                 $cogsAccount = Account::where('company_setting_id', CompanySetting::getInstance()->id)
                     ->where('code', '5010')->first();
@@ -315,18 +317,20 @@ class CommissionService
                 continue;
             }
 
-            $entries[] = CommissionEntry::create([
-                'employee_profile_id' => $employee->id,
-                'source_type' => get_class($sourceModel),
-                'source_id' => $sourceModel->getKey(),
-                'source_label' => $this->buildSourceLabel($source, $sourceModel),
-                'commission_type' => $rule['type'],
-                'basis_amount' => $this->getBasisAmount($rule, $revenue, $profit),
-                'rate' => $rule['rate'] ?? 0,
-                'amount' => $amount,
-                'status' => 'pending',
-                'earned_date' => now()->toDateString(),
-            ]);
+            $entries[] = CommissionEntry::create(array_merge(
+                $this->commissionableFieldsFor($employee),
+                [
+                    'source_type' => get_class($sourceModel),
+                    'source_id' => $sourceModel->getKey(),
+                    'source_label' => $this->buildSourceLabel($source, $sourceModel),
+                    'commission_type' => $rule['type'],
+                    'basis_amount' => $this->getBasisAmount($rule, $revenue, $profit),
+                    'rate' => $rule['rate'] ?? 0,
+                    'amount' => $amount,
+                    'status' => 'pending',
+                    'earned_date' => now()->toDateString(),
+                ]
+            ));
         }
 
         return $entries;
@@ -485,17 +489,163 @@ class CommissionService
         ?float $basisAmount = null,
         ?float $rate = null
     ): CommissionEntry {
-        return CommissionEntry::create([
-            'employee_profile_id' => $employee->id,
-            'commission_type' => $type,
-            'basis_amount' => $basisAmount ?? 0,
-            'rate' => $rate ?? 0,
-            'amount' => round($amount, 2),
-            'status' => 'pending',
-            'earned_date' => now()->toDateString(),
-            'source_label' => 'Manual Entry',
-            'notes' => $notes,
-        ]);
+        return CommissionEntry::create(array_merge(
+            $this->commissionableFieldsFor($employee),
+            [
+                'commission_type' => $type,
+                'basis_amount' => $basisAmount ?? 0,
+                'rate' => $rate ?? 0,
+                'amount' => round($amount, 2),
+                'status' => 'pending',
+                'earned_date' => now()->toDateString(),
+                'source_label' => 'Manual Entry',
+                'notes' => $notes,
+            ]
+        ));
+    }
+
+    /**
+     * Build the commissionable fields array for dual-write.
+     * Sets both the polymorphic columns and (when applicable) the legacy employee_profile_id.
+     *
+     * @return array{commissionable_type: string, commissionable_id: int, employee_profile_id: int|null}
+     */
+    public function commissionableFieldsFor(Model $commissionable, ?int $employeeProfileId = null): array
+    {
+        $fields = [
+            'commissionable_type' => get_class($commissionable),
+            'commissionable_id' => $commissionable->getKey(),
+        ];
+
+        // If the commissionable IS an EmployeeProfile, also set legacy column
+        if ($commissionable instanceof EmployeeProfile) {
+            $fields['employee_profile_id'] = $commissionable->getKey();
+        } elseif ($employeeProfileId) {
+            $fields['employee_profile_id'] = $employeeProfileId;
+        }
+
+        return $fields;
+    }
+
+    /**
+     * Apply commission rules from the commission_rules table for any commissionable entity.
+     *
+     * @return array<int, CommissionEntry>
+     */
+    public function applyRulesForCommissionable(
+        Model $commissionable,
+        string $source,
+        Model $sourceModel,
+        float $revenue = 0,
+        float $profit = 0,
+        bool $autoOnly = false,
+        ?int $employeeProfileId = null
+    ): array {
+        if (! method_exists($commissionable, 'getTableCommissionRulesForSource')) {
+            return [];
+        }
+
+        $rules = $commissionable->getTableCommissionRulesForSource($source, $autoOnly);
+        $entries = [];
+
+        foreach ($rules as $rule) {
+            // Evaluate conditions if present
+            if (! empty($rule['conditions']) && ! $this->evaluateConditions($rule['conditions'], $sourceModel)) {
+                continue;
+            }
+
+            $amount = $this->calculateAmountFromRuleData($rule, $revenue, $profit);
+
+            if ($amount <= 0) {
+                continue;
+            }
+
+            $entries[] = CommissionEntry::create(array_merge(
+                $this->commissionableFieldsFor($commissionable, $employeeProfileId),
+                [
+                    'source_type' => get_class($sourceModel),
+                    'source_id' => $sourceModel->getKey(),
+                    'source_label' => $this->buildSourceLabel($source, $sourceModel),
+                    'commission_type' => $rule['type'],
+                    'basis_amount' => $this->getBasisAmount($rule, $revenue, $profit),
+                    'rate' => $rule['rate'] ?? 0,
+                    'amount' => $amount,
+                    'status' => 'pending',
+                    'earned_date' => now()->toDateString(),
+                ]
+            ));
+        }
+
+        return $entries;
+    }
+
+    /**
+     * Check if a commission entry already exists for a commissionable + source combo.
+     */
+    public function hasDuplicateCommissionForCommissionable(Model $commissionable, Model $sourceModel): bool
+    {
+        return CommissionEntry::query()
+            ->where('commissionable_type', get_class($commissionable))
+            ->where('commissionable_id', $commissionable->getKey())
+            ->where('source_type', get_class($sourceModel))
+            ->where('source_id', $sourceModel->getKey())
+            ->whereNotIn('status', ['reversed'])
+            ->exists();
+    }
+
+    /**
+     * Evaluate conditions array against a source model.
+     * Returns true if ALL conditions pass (AND logic), or if conditions are empty/null.
+     */
+    public function evaluateConditions(array $conditions, Model $sourceModel): bool
+    {
+        if (empty($conditions)) {
+            return true;
+        }
+
+        foreach ($conditions as $condition) {
+            $field = $condition['field'] ?? '';
+            $operator = $condition['operator'] ?? 'equals';
+            $expected = $condition['value'] ?? null;
+            $actual = data_get($sourceModel, $field);
+
+            $passes = match ($operator) {
+                'equals' => $actual == $expected,
+                'not_equals' => $actual != $expected,
+                'greater_than' => (float) $actual > (float) $expected,
+                'less_than' => (float) $actual < (float) $expected,
+                'in' => in_array($actual, (array) $expected),
+                'is_empty' => empty($actual),
+                'is_not_empty' => ! empty($actual),
+                'contains' => is_string($actual) && str_contains($actual, (string) $expected),
+                default => true,
+            };
+
+            if (! $passes) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Calculate commission amount from rule data without requiring an EmployeeProfile.
+     * Handles flat, revenue_percentage, and profit_percentage types.
+     * Tiered is not supported for generic commissionables (returns 0).
+     */
+    protected function calculateAmountFromRuleData(array $rule, float $revenue, float $profit): float
+    {
+        $type = $rule['type'] ?? 'flat';
+        $rate = (float) ($rule['rate'] ?? 0);
+        $amount = (float) ($rule['amount'] ?? 0);
+
+        return match ($type) {
+            'revenue_percentage' => round($revenue * $rate, 2),
+            'profit_percentage' => round($profit * $rate, 2),
+            'flat' => round($amount, 2),
+            default => 0,
+        };
     }
 
     /**

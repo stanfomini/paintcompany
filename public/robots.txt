@@ -1,2 +1,11 @@
 User-agent: *
-Disallow:
+Disallow: /customer/
+Disallow: /agent/
+Disallow: /crew/
+Disallow: /chat/
+Disallow: /video-call-test/
+Disallow: /studio/
+Disallow: /walkie-talkie/
+Allow: /
+
+Sitemap: https://paintingmadeeasydenver.com/sitemap.xml

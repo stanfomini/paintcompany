@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\HasCommissionRules;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class AgentProfile extends Model
 {
+    use HasCommissionRules;
+
     protected $fillable = [
         'user_id',
         'company_name',

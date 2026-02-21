@@ -6,6 +6,7 @@ use App\Models\CommissionEntry;
 use App\Models\EmployeeProfile;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Database\Eloquent\Model;
 
 /**
  * @extends Factory<CommissionEntry>
@@ -21,6 +22,8 @@ class CommissionEntryFactory extends Factory
 
         return [
             'employee_profile_id' => EmployeeProfile::factory(),
+            'commissionable_type' => EmployeeProfile::class,
+            'commissionable_id' => null, // resolved via afterCreating below
             'commission_type' => 'revenue_percentage',
             'basis_amount' => $basisAmount,
             'rate' => $rate,
@@ -28,6 +31,16 @@ class CommissionEntryFactory extends Factory
             'status' => 'pending',
             'earned_date' => now()->toDateString(),
         ];
+    }
+
+    public function configure(): static
+    {
+        return $this->afterCreating(function (CommissionEntry $entry) {
+            // Auto-sync commissionable_id from employee_profile_id when using default factory
+            if ($entry->commissionable_type === EmployeeProfile::class && ! $entry->commissionable_id && $entry->employee_profile_id) {
+                $entry->update(['commissionable_id' => $entry->employee_profile_id]);
+            }
+        });
     }
 
     public function approved(): static
@@ -110,6 +123,18 @@ class CommissionEntryFactory extends Factory
     {
         return $this->state(fn (array $attributes) => [
             'source_label' => 'Job Commission',
+        ]);
+    }
+
+    /**
+     * Create a commission entry for any commissionable entity (not just EmployeeProfile).
+     */
+    public function forCommissionable(Model $commissionable, ?int $employeeProfileId = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'commissionable_type' => get_class($commissionable),
+            'commissionable_id' => $commissionable->getKey(),
+            'employee_profile_id' => $employeeProfileId ?? ($commissionable instanceof EmployeeProfile ? $commissionable->getKey() : null),
         ]);
     }
 }

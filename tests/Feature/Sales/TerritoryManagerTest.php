@@ -11,7 +11,7 @@ it('renders territory manager with tabs', function () {
         ->test('sales.territory-manager')
         ->assertSee('Map')
         ->assertSee('Hierarchy')
-        ->assertSee('Dispatch')
+        ->assertSee('Schedule')
         ->assertSee('Analytics')
         ->assertSet('activeTab', 'map');
 });
@@ -25,12 +25,12 @@ it('switches between tabs', function () {
         ->assertSet('activeTab', 'hierarchy');
 });
 
-it('hides dispatch tab without dispatch permission', function () {
+it('hides schedule tab without schedule permission', function () {
     $user = User::factory()->internal()->withRole('door_knocker')->create();
 
     Livewire::actingAs($user)
         ->test('sales.territory-manager')
-        ->assertDontSee('Dispatch');
+        ->assertDontSee('Schedule');
 });
 
 it('hides analytics tab without analytics permission', function () {
@@ -194,4 +194,128 @@ it('resets parentId when level changes', function () {
         ->assertSet('parentId', $region->id)
         ->set('level', 'region')
         ->assertSet('parentId', null);
+});
+
+it('allows block-only user to see new block button', function () {
+    $user = User::factory()->internal()->withRole('estimator')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->assertSee('New Block');
+});
+
+it('auto-sets level to block for block-only users', function () {
+    $user = User::factory()->internal()->withRole('estimator')->create();
+    $region = SalesTerritory::factory()->region()->create();
+    $zone = SalesTerritory::factory()->zone()->childOf($region)->create();
+
+    // Make zone visible to user via team membership
+    $zone->teamMembers()->attach($user->id, ['role' => 'estimator', 'added_by' => $user->id]);
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->call('createTerritory')
+        ->assertSet('level', 'block')
+        ->assertSet('parentId', $zone->id);
+});
+
+it('enforces block level in saveTerritory for block-only users', function () {
+    $user = User::factory()->internal()->withRole('estimator')->create();
+    $region = SalesTerritory::factory()->region()->create();
+    $zone = SalesTerritory::factory()->zone()->childOf($region)->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->set('name', 'My New Block')
+        ->set('level', 'block')
+        ->set('parentId', $zone->id)
+        ->set('color', '#00FF00')
+        ->call('saveTerritory')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('sales_territories', [
+        'name' => 'My New Block',
+        'level' => 'block',
+        'parent_id' => $zone->id,
+    ]);
+});
+
+it('owner sees New Territory label not New Block', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->assertSee('New Territory')
+        ->assertDontSee('New Block');
+});
+
+it('includes assigned user in territory polygon data', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+    $assignee = User::factory()->internal()->create(['name' => 'Jane Manager']);
+    SalesTerritory::factory()->region()->create([
+        'name' => 'North Region',
+        'assigned_user_id' => $assignee->id,
+    ]);
+
+    $component = Livewire::actingAs($user)
+        ->test('sales.territory-manager');
+
+    $polygons = $component->instance()->territoryPolygons;
+    $region = collect($polygons)->firstWhere('name', 'North Region');
+
+    expect($region)->not->toBeNull();
+    expect($region['assigned_user'])->toBe('Jane Manager');
+    expect($region['level_label'])->toBe('Region');
+});
+
+it('returns null assigned_user when territory has no assignment', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+    SalesTerritory::factory()->block()->create(['name' => 'Unassigned Block']);
+
+    $component = Livewire::actingAs($user)
+        ->test('sales.territory-manager');
+
+    $polygons = $component->instance()->territoryPolygons;
+    $block = collect($polygons)->firstWhere('name', 'Unassigned Block');
+
+    expect($block)->not->toBeNull();
+    expect($block['assigned_user'])->toBeNull();
+    expect($block['level_label'])->toBe('Block');
+});
+
+it('hides hierarchy tab for users without hierarchy permissions', function () {
+    $user = User::factory()->internal()->withRole('door_knocker')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->assertDontSee('Hierarchy');
+});
+
+it('redirects to map tab when unauthorized user sets hierarchy tab', function () {
+    $user = User::factory()->internal()->withRole('door_knocker')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->set('activeTab', 'hierarchy')
+        ->assertSet('activeTab', 'map');
+});
+
+it('shows hierarchy tab for users with hierarchy permissions', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->assertSee('Hierarchy')
+        ->set('activeTab', 'hierarchy')
+        ->assertSet('activeTab', 'hierarchy');
+});
+
+it('shows schedule tab for users with dispatch_blocks permission', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-manager')
+        ->assertSee('Schedule')
+        ->set('activeTab', 'schedule')
+        ->assertSet('activeTab', 'schedule');
 });

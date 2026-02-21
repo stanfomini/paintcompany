@@ -9,47 +9,7 @@
 <title>{{ $title ?? config('app.name') }}</title>
 
 @stack('meta')
-
-@hasSection('meta_description')
-<meta name="description" content="@yield('meta_description')">
-@endif
-@hasSection('canonical')
-<link rel="canonical" href="@yield('canonical')">
-@endif
-@hasSection('robots')
-<meta name="robots" content="@yield('robots')">
-@endif
-
-{{-- Open Graph --}}
-@hasSection('og_title')
-<meta property="og:title" content="@yield('og_title')">
-@endif
-@hasSection('meta_description')
-<meta property="og:description" content="@yield('meta_description')">
-@endif
-@hasSection('og_image')
-<meta property="og:image" content="@yield('og_image')">
-@endif
-@hasSection('og_url')
-<meta property="og:url" content="@yield('og_url')">
-@endif
-@hasSection('og_type')
-<meta property="og:type" content="@yield('og_type')">
-@endif
-<meta property="og:locale" content="{{ str_replace('_', '-', app()->getLocale()) }}">
-
-{{-- Twitter Card --}}
-<meta name="twitter:card" content="summary_large_image">
-@hasSection('og_title')
-<meta name="twitter:title" content="@yield('og_title')">
-@endif
-@hasSection('meta_description')
-<meta name="twitter:description" content="@yield('meta_description')">
-@endif
-@hasSection('og_image')
-<meta name="twitter:image" content="@yield('og_image')">
-@endif
-
+@stack('seo_meta')
 @stack('structured_data')
 
 <link rel="icon" href="/favicon.ico" sizes="any">

@@ -5,12 +5,86 @@ use App\Models\CompanySetting;
 use App\Models\LeadSource;
 use App\Models\User;
 use Carbon\Carbon;
+use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Layout('components.layouts.guest')] class extends Component
+new #[Layout('components.layouts.guest')] #[Title('Professional House Painting Denver | Painting Made Easy Denver')] class extends Component
 {
     public string $referralCode = '';
+
+    #[Computed]
+    public function structuredData(): string
+    {
+        $company = CompanySetting::getInstance();
+        $name = $company->company_name ?? config('app.name');
+        $phone = $company->company_phone ?? '';
+        $address = $company->company_address ?? '';
+        $city = $company->company_city ?? 'Denver';
+        $state = $company->company_state ?? 'CO';
+        $zip = $company->company_zip ?? '';
+
+        $localBusiness = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'LocalBusiness',
+            '@id' => url('/').'#business',
+            'name' => $name,
+            'description' => 'Professional house painting services in Denver, CO. Interior & exterior painting with real-time project tracking and a satisfaction guarantee.',
+            'url' => url('/'),
+            'telephone' => $phone,
+            'address' => [
+                '@type' => 'PostalAddress',
+                'streetAddress' => $address,
+                'addressLocality' => $city,
+                'addressRegion' => $state,
+                'postalCode' => $zip,
+                'addressCountry' => 'US',
+            ],
+            'areaServed' => ['@type' => 'City', 'name' => 'Denver', 'sameAs' => 'https://en.wikipedia.org/wiki/Denver'],
+            'priceRange' => '$$',
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        $organization = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'Organization',
+            'name' => $name,
+            'url' => url('/'),
+            'logo' => asset('apple-touch-icon.png'),
+            'contactPoint' => [
+                '@type' => 'ContactPoint',
+                'telephone' => $phone,
+                'contactType' => 'customer service',
+                'areaServed' => 'US',
+                'availableLanguage' => 'English',
+            ],
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        $services = json_encode([
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Interior House Painting', 'description' => 'Professional interior painting for homes in the Denver metro area. Walls, ceilings, trim, and cabinets.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Exterior House Painting', 'description' => 'Professional exterior painting and staining for Denver homes. Siding, trim, decks, and fences.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Cabinet Painting', 'description' => 'Kitchen and bathroom cabinet painting and refinishing in Denver, CO.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        $faq = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'FAQPage',
+            'mainEntity' => [
+                ['@type' => 'Question', 'name' => 'How long does it take to paint a house?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Most interior projects take 2-5 days depending on the number of rooms and prep work needed. Exterior projects typically take 3-7 days. We provide a detailed timeline with your estimate so you know exactly what to expect.']],
+                ['@type' => 'Question', 'name' => 'What paint brands do you use?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'We use premium paints from Sherwin-Williams and Benjamin Moore. Our most popular choices include Sherwin-Williams Duration for exteriors and Benjamin Moore Regal Select for interiors. We are happy to work with your preferred brand and color.']],
+                ['@type' => 'Question', 'name' => 'Do I need to move my furniture?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'No. Our crew handles all furniture moving and protection as part of every job. We cover floors, move furniture to the center of the room, and put everything back when we are done. It is all included in your quote.']],
+                ['@type' => 'Question', 'name' => 'How do virtual estimates work?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Simply submit photos of the areas you want painted through our customer portal. Our estimator reviews them, measures using advanced tools, and delivers a detailed quote, usually within 24 hours. No need to schedule an in-home visit.']],
+                ['@type' => 'Question', 'name' => 'Are you licensed and insured?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Yes. We are fully licensed, bonded, and insured in the state of Colorado. We carry general liability and workers compensation coverage on every job for your peace of mind.']],
+                ['@type' => 'Question', 'name' => 'What is included in your guarantee?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Every project comes with our Cleaner Than We Found It guarantee. If you find any drips, missed spots, or mess after we leave, we come back and fix it at no charge. We also warranty our workmanship for two years.']],
+                ['@type' => 'Question', 'name' => 'How much does it cost to paint a house in Denver?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Interior painting in Denver typically ranges from $2,500 to $8,000 for an average home, depending on the number of rooms, prep work, and paint quality. Exterior projects range from $4,000 to $12,000. Get a free, no-obligation estimate for your specific project.']],
+            ],
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        return '<script type="application/ld+json">'.$localBusiness.'</script>'
+            .'<script type="application/ld+json">'.$organization.'</script>'
+            .'<script type="application/ld+json">'.$services.'</script>'
+            .'<script type="application/ld+json">'.$faq.'</script>';
+    }
 
     public string $first_name = '';
 
@@ -275,21 +349,88 @@ new #[Layout('components.layouts.guest')] class extends Component
 }; ?>
 
 <div>
+    @push('seo_meta')
+    <meta name="description" content="Professional house painting services in Denver, CO. Interior &amp; exterior painting with real-time project tracking, daily photo updates, and a Cleaner Than We Found It guarantee. Free estimates in 24 hours.">
+    <link rel="canonical" href="{{ url('/') }}">
+    <meta name="robots" content="index, follow">
+    <meta property="og:title" content="Professional House Painting Denver | Painting Made Easy Denver">
+    <meta property="og:description" content="Denver homeowners get a stress-free painting experience with real-time project tracking, daily photo updates, and a satisfaction guarantee.">
+    <meta property="og:url" content="{{ url('/') }}">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="{{ str_replace('_', '-', app()->getLocale()) }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Professional House Painting Denver | Painting Made Easy Denver">
+    <meta name="twitter:description" content="Denver homeowners get a stress-free painting experience with real-time project tracking, daily photo updates, and a satisfaction guarantee.">
+    @endpush
+
+    @push('structured_data')
+    {!! $this->structuredData !!}
+    @endpush
+
     {{-- Section 0: Top Nav Bar (Sticky) --}}
-    <nav class="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200/60">
-        <div class="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-12">
-            <a href="/" class="text-sm font-bold text-zinc-900 tracking-tight">{{ __('Painting Made Easy Denver') }}</a>
-            <div class="flex items-center gap-3 text-xs">
-                <a href="{{ route('login') }}" class="text-zinc-500 hover:text-zinc-900 transition-colors">{{ __('Team') }}</a>
-                <span class="text-zinc-300">|</span>
-                <a href="{{ route('agent.login') }}" class="text-zinc-500 hover:text-zinc-900 transition-colors">{{ __('Agent') }}</a>
-                <span class="text-zinc-300">|</span>
-                <a href="{{ route('customer.login') }}" class="text-zinc-500 hover:text-zinc-900 transition-colors">{{ __('Customer') }}</a>
-                <span class="text-zinc-300">|</span>
-                <a href="{{ route('crew.login') }}" class="text-zinc-500 hover:text-zinc-900 transition-colors">{{ __('Crew') }}</a>
+    @php $companyPhone = \App\Models\CompanySetting::getInstance()->company_phone; @endphp
+    <nav class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-zinc-200/60 shadow-sm">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
+            {{-- Left: Logo + Phone --}}
+            <div class="flex items-center gap-4">
+                <a href="/" class="text-sm font-bold text-zinc-900 tracking-tight">{{ __('Painting Made Easy Denver') }}</a>
+                @if($companyPhone)
+                    <a href="tel:{{ $companyPhone }}" class="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full hover:bg-emerald-100 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>
+                        {{ $companyPhone }}
+                    </a>
+                @endif
+            </div>
+
+            {{-- Right: Portal Login Buttons (desktop) --}}
+            <div class="hidden md:flex items-center gap-2">
+                <a href="{{ route('login') }}" class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21M3 3h12m-.75 4.5H21m-3.75 0h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008zm0 3h.008v.008h-.008v-.008z" /></svg>
+                    {{ __('Team') }}
+                </a>
+                <a href="{{ route('agent.login') }}" class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0M12 12.75h.008v.008H12v-.008z" /></svg>
+                    {{ __('Agent') }}
+                </a>
+                <a href="{{ route('customer.login') }}" class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-amber-50 text-amber-700 hover:bg-amber-100 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" /></svg>
+                    {{ __('Customer') }}
+                </a>
+                <a href="{{ route('crew.login') }}" class="inline-flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full bg-zinc-100 text-zinc-700 hover:bg-zinc-200 transition-colors">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+                    {{ __('Crew') }}
+                </a>
+            </div>
+
+            {{-- Right: Mobile login dropdown --}}
+            <div class="md:hidden flex items-center gap-2" x-data="{ loginOpen: false }">
+                @if($companyPhone)
+                    <a href="tel:{{ $companyPhone }}" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-emerald-50 text-emerald-700">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>
+                    </a>
+                @endif
+                <div class="relative">
+                    <button x-on:click="loginOpen = !loginOpen" class="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full bg-zinc-100 text-zinc-700 hover:bg-zinc-200 transition-colors">
+                        <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" /></svg>
+                        {{ __('Login') }}
+                    </button>
+                    <div x-show="loginOpen" x-on:click.outside="loginOpen = false" x-transition class="absolute right-0 mt-2 w-44 bg-white rounded-xl shadow-lg border border-zinc-200 py-1 z-50">
+                        <a href="{{ route('login') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">{{ __('Team Portal') }}</a>
+                        <a href="{{ route('agent.login') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">{{ __('Agent Portal') }}</a>
+                        <a href="{{ route('customer.login') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">{{ __('Customer Portal') }}</a>
+                        <a href="{{ route('crew.login') }}" class="flex items-center gap-2 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-50">{{ __('Crew Portal') }}</a>
+                    </div>
+                </div>
             </div>
         </div>
     </nav>
+
+    {{-- Floating Click-to-Call (mobile only) --}}
+    @if($companyPhone)
+    <a href="tel:{{ $companyPhone }}" class="fixed bottom-4 left-4 z-40 sm:hidden inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-500 text-white shadow-lg hover:bg-emerald-600 transition-colors">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>
+    </a>
+    @endif
 
     {{-- Section 1: Hero --}}
     <section class="relative bg-gradient-to-br from-[#1B2D4F] via-[#1e3a6e] to-[#2563EB] text-white overflow-hidden pt-12">
@@ -866,6 +1007,94 @@ new #[Layout('components.layouts.guest')] class extends Component
         </div>
     </section>
 
+    {{-- Section 10.5: FAQ --}}
+    <section id="faq" class="bg-white py-16 sm:py-20">
+        <div class="max-w-3xl mx-auto px-4 sm:px-6">
+            <div class="text-center mb-12">
+                <h2 class="text-3xl sm:text-4xl font-bold text-zinc-900 mb-3">{{ __('Frequently Asked Questions') }}</h2>
+                <p class="text-zinc-600 text-lg">{{ __('Everything you need to know before your painting project.') }}</p>
+            </div>
+
+            <div class="space-y-3" x-data="{ openFaq: null }">
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 1 ? null : 1" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('How long does it take to paint a house?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 1 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 1" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('Most interior projects take 2-5 days depending on the number of rooms and prep work needed. Exterior projects typically take 3-7 days. We provide a detailed timeline with your estimate so you know exactly what to expect.') }}</div>
+                    </div>
+                </div>
+
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 2 ? null : 2" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('What paint brands do you use?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 2 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 2" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('We use premium paints from Sherwin-Williams and Benjamin Moore. Our most popular choices include Sherwin-Williams Duration for exteriors and Benjamin Moore Regal Select for interiors. We are happy to work with your preferred brand and color.') }}</div>
+                    </div>
+                </div>
+
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 3 ? null : 3" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('Do I need to move my furniture?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 3 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 3" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('No. Our crew handles all furniture moving and protection as part of every job. We cover floors, move furniture to the center of the room, and put everything back when we are done. It is all included in your quote.') }}</div>
+                    </div>
+                </div>
+
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 4 ? null : 4" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('How do virtual estimates work?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 4 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 4" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('Simply submit photos of the areas you want painted through our customer portal. Our estimator reviews them, measures using advanced tools, and delivers a detailed quote, usually within 24 hours. No need to schedule an in-home visit.') }}</div>
+                    </div>
+                </div>
+
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 5 ? null : 5" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('Are you licensed and insured?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 5 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 5" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('Yes. We are fully licensed, bonded, and insured in the state of Colorado. We carry general liability and workers compensation coverage on every job for your peace of mind.') }}</div>
+                    </div>
+                </div>
+
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 6 ? null : 6" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('What is included in your guarantee?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 6 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 6" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('Every project comes with our Cleaner Than We Found It guarantee. If you find any drips, missed spots, or mess after we leave, we come back and fix it at no charge. We also warranty our workmanship for two years.') }}</div>
+                    </div>
+                </div>
+
+                <div class="border border-zinc-200 rounded-xl overflow-hidden">
+                    <button x-on:click="openFaq = openFaq === 7 ? null : 7" class="w-full flex items-center justify-between px-6 py-4 text-left bg-white hover:bg-zinc-50 transition-colors">
+                        <span class="font-semibold text-zinc-900">{{ __('How much does it cost to paint a house in Denver?') }}</span>
+                        <svg class="w-5 h-5 text-zinc-400 shrink-0 transition-transform duration-200" :class="openFaq === 7 ? 'rotate-180' : ''" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+                    </button>
+                    <div x-show="openFaq === 7" x-collapse>
+                        <div class="px-6 pb-4 text-zinc-600">{{ __('Interior painting in Denver typically ranges from $2,500 to $8,000 for an average home, depending on the number of rooms, prep work, and paint quality. Exterior projects range from $4,000 to $12,000. Get a free, no-obligation estimate for your specific project.') }}</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-center mt-10">
+                <a href="#get-estimate" class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-lg">
+                    {{ __('Still Have Questions? Get a Free Estimate') }}
+                </a>
+            </div>
+        </div>
+    </section>
+
     {{-- Section 11: Lead Capture Form --}}
     <section id="get-estimate" class="bg-zinc-100 py-16 sm:py-20">
         <div class="max-w-2xl mx-auto px-6">
@@ -996,12 +1225,30 @@ new #[Layout('components.layouts.guest')] class extends Component
         </div>
     </section>
 
-    {{-- Section 13: Footer --}}
+    {{-- Section 13: Meet Your Local Team (Geo-personalized) --}}
+    <livewire:public.local-team />
+
+    {{-- Section 14: Footer --}}
     <footer class="bg-[#1B2D4F] text-white py-10">
         <div class="max-w-5xl mx-auto px-6">
+            {{-- Service Areas Links --}}
+            @php $footerAreas = \App\Models\ServiceArea::active()->orderBy('city')->get(); @endphp
+            @if($footerAreas->isNotEmpty())
+            <div class="mb-8 pb-8 border-b border-white/10">
+                <h3 class="text-sm font-bold text-blue-200 uppercase tracking-wider mb-4">{{ __('Service Areas') }}</h3>
+                <div class="flex flex-wrap gap-x-4 gap-y-2 text-sm">
+                    @foreach($footerAreas as $footerArea)
+                        <a href="{{ route('areas.show', $footerArea->slug) }}" class="text-blue-300 hover:text-white transition-colors">{{ $footerArea->city }}</a>
+                    @endforeach
+                    <a href="{{ route('areas.index') }}" class="text-emerald-400 hover:text-emerald-300 transition-colors font-medium">{{ __('View All') }} &rarr;</a>
+                </div>
+            </div>
+            @endif
             <div class="flex flex-col sm:flex-row items-center justify-between gap-6">
                 <p class="text-sm text-blue-200">&copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.</p>
                 <div class="flex flex-wrap items-center gap-4 text-sm">
+                    <a href="{{ route('areas.index') }}" class="text-blue-200 hover:text-white transition-colors">{{ __('Service Areas') }}</a>
+                    <span class="text-blue-400">|</span>
                     <a href="{{ route('legal.terms') }}" class="text-blue-200 hover:text-white transition-colors">Terms</a>
                     <span class="text-blue-400">|</span>
                     <a href="{{ route('legal.privacy') }}" class="text-blue-200 hover:text-white transition-colors">Privacy</a>
@@ -1011,4 +1258,7 @@ new #[Layout('components.layouts.guest')] class extends Component
             </div>
         </div>
     </footer>
+
+    {{-- Live Chat Widget --}}
+    <livewire:public.guest-chat />
 </div>

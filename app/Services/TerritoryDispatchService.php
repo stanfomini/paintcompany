@@ -6,9 +6,11 @@ use App\Events\TerritoryClaimed;
 use App\Events\TerritoryOffered;
 use App\Events\TerritoryOfferExpired;
 use App\Models\SalesTerritory;
+use App\Models\Schedule;
 use App\Models\TerritoryOffer;
 use App\Models\TerritoryPreference;
 use App\Models\User;
+use App\Notifications\TerritoryScheduleAssigned;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -239,5 +241,36 @@ class TerritoryDispatchService
         }
 
         return $expiredOffers->count();
+    }
+
+    /**
+     * Claim a flex block with race-condition-safe row locking.
+     * Reuses the same DB::transaction + lockForUpdate() pattern from claimOffer().
+     */
+    public function claimFlexBlock(Schedule $schedule, User $user): bool
+    {
+        if (! $user->employeeProfile) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($schedule, $user) {
+            $locked = Schedule::where('id', $schedule->id)
+                ->where('is_flex', true)
+                ->whereNull('employee_profile_id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $locked) {
+                return false;
+            }
+
+            $locked->update([
+                'employee_profile_id' => $user->employeeProfile->id,
+            ]);
+
+            $user->notify(new TerritoryScheduleAssigned($locked));
+
+            return true;
+        });
     }
 }

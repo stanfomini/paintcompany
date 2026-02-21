@@ -14,6 +14,8 @@ class CommissionEntry extends Model
 
     protected $fillable = [
         'employee_profile_id',
+        'commissionable_type',
+        'commissionable_id',
         'source_type',
         'source_id',
         'source_label',
@@ -44,6 +46,11 @@ class CommissionEntry extends Model
     public function employeeProfile(): BelongsTo
     {
         return $this->belongsTo(EmployeeProfile::class);
+    }
+
+    public function commissionable(): MorphTo
+    {
+        return $this->morphTo();
     }
 
     public function source(): MorphTo
@@ -84,6 +91,12 @@ class CommissionEntry extends Model
     public function scopeForEmployee(Builder $query, int $employeeProfileId): Builder
     {
         return $query->where('employee_profile_id', $employeeProfileId);
+    }
+
+    public function scopeForCommissionable(Builder $query, Model $model): Builder
+    {
+        return $query->where('commissionable_type', get_class($model))
+            ->where('commissionable_id', $model->getKey());
     }
 
     public function scopeEarnedBetween(Builder $query, $start, $end): Builder

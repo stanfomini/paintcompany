@@ -1,7 +1,11 @@
 <?php
 
+use App\Models\AgentProfile;
 use App\Models\CommissionEntry;
+use App\Models\CrewProfile;
 use App\Models\EmployeeProfile;
+use App\Models\User;
+use App\Models\Vendor;
 use App\Services\CommissionService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -24,6 +28,8 @@ class extends Component
     }
 
     public string $statusFilter = 'all';
+
+    public string $entityFilter = 'all';
 
     public string $dateFrom = '';
 
@@ -54,6 +60,12 @@ class extends Component
         $this->selected = [];
     }
 
+    public function updatedEntityFilter(): void
+    {
+        $this->resetPage();
+        $this->selected = [];
+    }
+
     public function updatedDateFrom(): void
     {
         $this->resetPage();
@@ -68,13 +80,60 @@ class extends Component
     public function commissions()
     {
         return CommissionEntry::query()
-            ->with(['employeeProfile.user', 'approvedBy'])
+            ->with(['employeeProfile.user', 'commissionable', 'approvedBy'])
             ->when($this->statusFilter !== 'all', fn ($q) => $q->where('status', $this->statusFilter))
+            ->when($this->entityFilter !== 'all', fn ($q) => $q->where('commissionable_type', match ($this->entityFilter) {
+                'employee' => EmployeeProfile::class,
+                'vendor' => Vendor::class,
+                'user' => User::class,
+                default => null,
+            }))
             ->when($this->dateFrom, fn ($q) => $q->where('earned_date', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('earned_date', '<=', $this->dateTo))
             ->orderByDesc('earned_date')
             ->orderByDesc('id')
             ->paginate(20);
+    }
+
+    public function resolveCommissionableName(CommissionEntry $entry): string
+    {
+        // Prefer commissionable relationship
+        $commissionable = $entry->commissionable;
+
+        if ($commissionable instanceof EmployeeProfile) {
+            return $commissionable->user?->name ?? '-';
+        }
+
+        if ($commissionable instanceof Vendor) {
+            return $commissionable->name ?? '-';
+        }
+
+        if ($commissionable instanceof User) {
+            return $commissionable->name ?? '-';
+        }
+
+        if ($commissionable instanceof CrewProfile) {
+            return $commissionable->user?->name ?? '-';
+        }
+
+        if ($commissionable instanceof AgentProfile) {
+            return $commissionable->user?->name ?? '-';
+        }
+
+        // Fallback to legacy employee_profile_id
+        return $entry->employeeProfile?->user?->name ?? '-';
+    }
+
+    public function resolveCommissionableType(CommissionEntry $entry): string
+    {
+        return match ($entry->commissionable_type) {
+            EmployeeProfile::class => 'Employee',
+            Vendor::class => 'Vendor',
+            User::class => 'Referrer',
+            CrewProfile::class => 'Crew',
+            AgentProfile::class => 'Agent',
+            default => 'Employee',
+        };
     }
 
     #[Computed]
@@ -203,7 +262,7 @@ class extends Component
     <div class="mb-6 flex items-center justify-between">
         <div>
             <flux:heading size="xl">{{ __('Commissions') }}</flux:heading>
-            <flux:text class="mt-1">{{ __('Manage employee commission entries.') }}</flux:text>
+            <flux:text class="mt-1">{{ __('Manage commission entries for employees, vendors, and referrers.') }}</flux:text>
         </div>
 
         <flux:button variant="primary" wire:click="openManualModal" icon="plus">
@@ -219,6 +278,13 @@ class extends Component
             <option value="approved">{{ __('Approved') }}</option>
             <option value="paid">{{ __('Paid') }}</option>
             <option value="reversed">{{ __('Reversed') }}</option>
+        </flux:select>
+
+        <flux:select wire:model.live="entityFilter" class="w-40">
+            <option value="all">{{ __('All Entities') }}</option>
+            <option value="employee">{{ __('Employees') }}</option>
+            <option value="vendor">{{ __('Vendors') }}</option>
+            <option value="user">{{ __('Referrers') }}</option>
         </flux:select>
 
         <flux:input type="date" wire:model.live="dateFrom" class="w-44" />
@@ -252,7 +318,7 @@ class extends Component
                             " />
                         @endif
                     </th>
-                    <th class="px-4 py-3 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __('Employee') }}</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __('Entity') }}</th>
                     <th class="px-4 py-3 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __('Source') }}</th>
                     <th class="px-4 py-3 text-left text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __('Type') }}</th>
                     <th class="px-4 py-3 text-right text-xs font-medium uppercase text-zinc-500 dark:text-zinc-400">{{ __('Basis') }}</th>
@@ -272,7 +338,10 @@ class extends Component
                             @endif
                         </td>
                         <td class="px-4 py-3 text-sm text-zinc-900 dark:text-zinc-100">
-                            {{ $entry->employeeProfile?->user?->name ?? '-' }}
+                            <div>{{ $this->resolveCommissionableName($entry) }}</div>
+                            @if ($entry->commissionable_type && $entry->commissionable_type !== \App\Models\EmployeeProfile::class)
+                                <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $this->resolveCommissionableType($entry) }}</div>
+                            @endif
                         </td>
                         <td class="px-4 py-3 text-sm text-zinc-600 dark:text-zinc-400">
                             {{ $entry->source_label ?? '-' }}

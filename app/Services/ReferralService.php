@@ -3,9 +3,11 @@
 namespace App\Services;
 
 use App\Models\Activity;
+use App\Models\CommissionEntry;
 use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\EmployeeProfile;
 use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Property;
@@ -150,6 +152,7 @@ class ReferralService
             $referral->referrer->notify(new ReferralRewardEarned($referral));
 
             $this->createRewardTask($referral);
+            $this->createReferralCommissionEntry($referral);
         }
     }
 
@@ -223,6 +226,46 @@ class ReferralService
             'description' => "{$referrerName} earned a referral reward for referring {$customerName}. Payment: {$paymentMethod} {$paymentHandle}",
             'is_completed' => false,
             'due_at' => now()->addDays(3),
+        ]);
+    }
+
+    /**
+     * Create a commission entry to track the referral reward in the unified commission system.
+     */
+    protected function createReferralCommissionEntry(Referral $referral): ?CommissionEntry
+    {
+        $exists = CommissionEntry::query()
+            ->where('commissionable_type', User::class)
+            ->where('commissionable_id', $referral->referrer_id)
+            ->where('source_type', Referral::class)
+            ->where('source_id', $referral->id)
+            ->whereNotIn('status', ['reversed'])
+            ->exists();
+
+        if ($exists) {
+            return null;
+        }
+
+        $referral->load(['referrer', 'customer']);
+        $customerName = $referral->customer->full_name ?? 'Customer';
+
+        $employeeProfileId = EmployeeProfile::where('user_id', $referral->referrer_id)
+            ->where('employment_status', 'active')
+            ->value('id');
+
+        return CommissionEntry::create([
+            'commissionable_type' => User::class,
+            'commissionable_id' => $referral->referrer_id,
+            'employee_profile_id' => $employeeProfileId,
+            'source_type' => Referral::class,
+            'source_id' => $referral->id,
+            'source_label' => "Referral: {$customerName}",
+            'commission_type' => 'flat',
+            'basis_amount' => 0,
+            'rate' => 0,
+            'amount' => (float) $referral->reward_amount,
+            'status' => 'pending',
+            'earned_date' => now()->toDateString(),
         ]);
     }
 }

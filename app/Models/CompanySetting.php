@@ -1486,4 +1486,22 @@ class CompanySetting extends Model
     {
         return $this->payment_split_config ?? [];
     }
+
+    public function isWithinBusinessHours(): bool
+    {
+        $now = now();
+        $dayOfWeek = $now->dayOfWeekIso; // 1=Mon, 7=Sun
+
+        $businessDays = $this->business_days ?? [1, 2, 3, 4, 5];
+        if (! in_array($dayOfWeek, $businessDays)) {
+            return false;
+        }
+
+        $start = $this->business_hours_start ?? '08:00';
+        $end = $this->business_hours_end ?? '17:00';
+
+        $currentTime = $now->format('H:i');
+
+        return $currentTime >= $start && $currentTime < $end;
+    }
 }

@@ -694,6 +694,17 @@ document.addEventListener('alpine:init', () => {
                             direction: 'center',
                             className: 'territory-label',
                         });
+
+                        // Popup with assignment info
+                        let popupContent = `<div class="font-semibold">${p.name}</div>`;
+                        if (p.level_label) {
+                            popupContent += `<div class="text-xs text-gray-500">${p.level_label}</div>`;
+                        }
+                        if (p.assigned_user) {
+                            const assignLabel = p.level === 'block' ? 'Assigned' : 'Manager';
+                            popupContent += `<div class="text-xs mt-1">${assignLabel}: ${p.assigned_user}</div>`;
+                        }
+                        polygon.bindPopup(popupContent);
                     }
 
                     this.polygonLayers.push(polygon);

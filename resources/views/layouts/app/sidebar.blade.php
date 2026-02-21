@@ -187,7 +187,8 @@
                         <flux:sidebar.item icon="academic-cap" :href="route('my.training')" :current="request()->routeIs('my.training')" wire:navigate>
                             {{ __('My Training') }}
                         </flux:sidebar.item>
-                        @if(auth()->user()->employeeProfile->hasCommissionRules())
+                        @if(auth()->user()->employeeProfile->hasCommissionRules()
+                            || \App\Models\CommissionEntry::where('commissionable_type', \App\Models\User::class)->where('commissionable_id', auth()->id())->exists())
                             <flux:sidebar.item icon="currency-dollar" :href="route('my.commissions')" :current="request()->routeIs('my.commissions')" wire:navigate>
                                 {{ __('My Commissions') }}
                             </flux:sidebar.item>
@@ -220,18 +221,30 @@
                     </flux:sidebar.group>
                 @endcanany
 
-                @can('settings.company')
+                @canany(['settings.company', 'team.manage_roles'])
                     <flux:sidebar.group :heading="__('Settings')" class="grid">
                         @can('settings.company')
                             <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
                                 {{ __('Company') }}
                             </flux:sidebar.item>
+                        @endcan
+                        @can('team.manage_roles')
+                            <flux:sidebar.item icon="shield-check" :href="route('roles.edit')" :current="request()->routeIs('roles.*')" wire:navigate>
+                                {{ __('Roles & Permissions') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('settings.workflows')
+                            <flux:sidebar.item icon="arrows-right-left" :href="route('workflows.edit')" :current="request()->routeIs('workflows.*')" wire:navigate>
+                                {{ __('Workflows') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('settings.company')
                             <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio')">
                                 {{ __('Studio') }}
                             </flux:sidebar.item>
                         @endcan
                     </flux:sidebar.group>
-                @endcan
+                @endcanany
             </flux:sidebar.nav>
 
             <flux:spacer />

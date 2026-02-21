@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property string $schedule_type
+ * @property bool $is_flex
  * @property int|null $territory_id
  * @property string|null $meet_address
  * @property string|null $meet_lat
@@ -22,6 +23,7 @@ class Schedule extends Model
     protected $fillable = [
         'employee_profile_id',
         'schedule_type',
+        'is_flex',
         'territory_id',
         'job_id',
         'date',
@@ -40,6 +42,7 @@ class Schedule extends Model
     {
         return [
             'date' => 'date',
+            'is_flex' => 'boolean',
             'break_duration' => 'integer',
             'meet_lat' => 'decimal:7',
             'meet_lng' => 'decimal:7',
@@ -126,6 +129,46 @@ class Schedule extends Model
     public function scopeJobShifts(Builder $query): Builder
     {
         return $query->where('schedule_type', 'job');
+    }
+
+    /**
+     * Scope: flex blocks only.
+     */
+    public function scopeFlexBlocks(Builder $query): Builder
+    {
+        return $query->where('is_flex', true);
+    }
+
+    /**
+     * Scope: assigned (non-flex) schedules only.
+     */
+    public function scopeAssigned(Builder $query): Builder
+    {
+        return $query->where('is_flex', false);
+    }
+
+    /**
+     * Check if this is a flex block.
+     */
+    public function isFlex(): bool
+    {
+        return (bool) $this->is_flex;
+    }
+
+    /**
+     * Check if this flex block is claimable (flex + no employee assigned).
+     */
+    public function isClaimable(): bool
+    {
+        return $this->isFlex() && $this->employee_profile_id === null;
+    }
+
+    /**
+     * Check if this flex block has been claimed (flex + employee assigned).
+     */
+    public function isClaimed(): bool
+    {
+        return $this->isFlex() && $this->employee_profile_id !== null;
     }
 
     /**

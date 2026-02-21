@@ -39,7 +39,9 @@ it('creates flat commission for vendor lead source', function () {
         ->and($entry->commission_type)->toBe('flat')
         ->and((float) $entry->amount)->toBe(150.0)
         ->and($entry->status)->toBe('pending')
-        ->and($entry->source_label)->toContain('Lead Source Commission');
+        ->and($entry->source_label)->toContain('Lead Source Commission')
+        ->and($entry->commissionable_type)->toBe(Vendor::class)
+        ->and($entry->commissionable_id)->toBe($vendor->id);
 });
 
 it('creates revenue percentage commission', function () {
@@ -123,11 +125,14 @@ it('returns false when no vendor linked', function () {
         ->and($result['reason'])->toBe('No vendor linked to lead source');
 });
 
-it('returns false when no employee profile for vendor', function () {
+it('creates commission even without employee profile for vendor', function () {
     $vendor = Vendor::factory()->create(['email' => 'noprofile@example.com']);
     $leadSource = LeadSource::factory()->create(['vendor_id' => $vendor->id]);
 
+    $deal = Deal::factory()->create();
     $run = WorkflowRun::factory()->create([
+        'subject_type' => Deal::class,
+        'subject_id' => $deal->id,
         'context' => ['lead_source_id' => $leadSource->id],
     ]);
 
@@ -137,8 +142,14 @@ it('returns false when no employee profile for vendor', function () {
         'amount' => 100,
     ]);
 
-    expect($result['commission_created'])->toBeFalse()
-        ->and($result['reason'])->toBe('No employee profile for vendor');
+    expect($result['commission_created'])->toBeTrue()
+        ->and($result['amount'])->toBe(100.0)
+        ->and($result['vendor_name'])->toBe($vendor->name);
+
+    $entry = CommissionEntry::find($result['commission_entry_id']);
+    expect($entry->commissionable_type)->toBe(Vendor::class)
+        ->and($entry->commissionable_id)->toBe($vendor->id)
+        ->and($entry->employee_profile_id)->toBeNull();
 });
 
 it('returns false when commission amount is zero', function () {

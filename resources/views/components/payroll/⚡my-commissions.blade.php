@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CommissionEntry;
+use App\Models\User;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -18,7 +19,16 @@ class extends Component
 
     public function boot(): void
     {
-        if (! auth()->user()?->employeeProfile) {
+        $user = auth()->user();
+
+        // Allow access if user has an employee profile OR has any commission entries as User
+        $hasEmployeeProfile = $user?->employeeProfile !== null;
+        $hasUserCommissions = $user && CommissionEntry::query()
+            ->where('commissionable_type', User::class)
+            ->where('commissionable_id', $user->id)
+            ->exists();
+
+        if (! $hasEmployeeProfile && ! $hasUserCommissions) {
             abort(403);
         }
     }
@@ -28,11 +38,31 @@ class extends Component
         $this->resetPage();
     }
 
+    /**
+     * Build the base query that finds all commissions for this user
+     * across both legacy employee_profile_id and polymorphic commissionable columns.
+     */
+    protected function myCommissionsQuery()
+    {
+        $user = auth()->user();
+        $profileId = $user->employeeProfile?->id;
+
+        return CommissionEntry::query()
+            ->where(function ($q) use ($user, $profileId) {
+                if ($profileId) {
+                    $q->where('employee_profile_id', $profileId);
+                }
+                $q->orWhere(function ($q2) use ($user) {
+                    $q2->where('commissionable_type', User::class)
+                        ->where('commissionable_id', $user->id);
+                });
+            });
+    }
+
     #[Computed]
     public function commissions()
     {
-        return CommissionEntry::query()
-            ->where('employee_profile_id', auth()->user()->employeeProfile->id)
+        return $this->myCommissionsQuery()
             ->when($this->statusFilter !== 'all', fn ($q) => $q->where('status', $this->statusFilter))
             ->orderByDesc('earned_date')
             ->orderByDesc('id')
@@ -42,27 +72,21 @@ class extends Component
     #[Computed]
     public function summaryCards(): array
     {
-        $profileId = auth()->user()->employeeProfile->id;
-
-        $pending = CommissionEntry::query()
-            ->forEmployee($profileId)
-            ->pending()
+        $pending = (clone $this->myCommissionsQuery())
+            ->where('status', 'pending')
             ->sum('amount');
 
-        $approved = CommissionEntry::query()
-            ->forEmployee($profileId)
-            ->approved()
+        $approved = (clone $this->myCommissionsQuery())
+            ->where('status', 'approved')
             ->sum('amount');
 
-        $paidThisMonth = CommissionEntry::query()
-            ->forEmployee($profileId)
-            ->paid()
+        $paidThisMonth = (clone $this->myCommissionsQuery())
+            ->where('status', 'paid')
             ->whereMonth('earned_date', now()->month)
             ->whereYear('earned_date', now()->year)
             ->sum('amount');
 
-        $ytdTotal = CommissionEntry::query()
-            ->forEmployee($profileId)
+        $ytdTotal = (clone $this->myCommissionsQuery())
             ->whereIn('status', ['paid', 'approved'])
             ->whereYear('earned_date', now()->year)
             ->sum('amount');

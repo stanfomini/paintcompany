@@ -3,7 +3,6 @@
 use App\Models\SalesTerritory;
 use App\Models\User;
 use App\Services\PermissionScopeService;
-use App\Services\TerritoryDispatchService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Validate;
@@ -43,18 +42,8 @@ new #[Layout('layouts.app')] class extends Component
 
     public bool $showForm = false;
 
-    public bool $showDispatchModal = false;
-
-    public ?int $dispatchTerritoryId = null;
-
-    public ?string $dispatchDate = null;
-
-    public int $dispatchExpiry = 30;
-
     public function mount(?SalesTerritory $territory = null): void
     {
-        $this->dispatchDate = now()->addDay()->toDateString();
-
         if ($territory?->exists) {
             $this->editTerritory($territory->id);
         }
@@ -98,33 +87,20 @@ new #[Layout('layouts.app')] class extends Component
             $query->whereIn('id', $visibleIds);
         }
 
-        return $query->get()->map(fn ($t) => [
+        return $query->with('assignedUser')->get()->map(fn ($t) => [
             'id' => $t->id,
             'name' => $t->name,
             'color' => $t->color ?? '#3B82F6',
             'boundary' => $t->boundary,
             'level' => $t->level,
+            'assigned_user' => $t->assignedUser?->name,
+            'level_label' => match ($t->level) {
+                'region' => __('Region'),
+                'zone' => __('Zone'),
+                'block' => __('Block'),
+                default => ucfirst($t->level),
+            },
         ])->toArray();
-    }
-
-    #[Computed]
-    public function dispatchableBlocks(): \Illuminate\Support\Collection
-    {
-        $user = auth()->user();
-        $scopeService = app(PermissionScopeService::class);
-
-        $query = SalesTerritory::query()
-            ->where('level', 'block')
-            ->where('status', 'active')
-            ->with(['assignedUser', 'parent'])
-            ->orderBy('name');
-
-        if (! $scopeService->hasPermission($user, 'territories.view_all')) {
-            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
-            $query->whereIn('id', $visibleIds);
-        }
-
-        return $query->get();
     }
 
     #[Computed]
@@ -293,9 +269,49 @@ new #[Layout('layouts.app')] class extends Component
         $this->dispatch('show-parent-context', boundary: $this->parentBoundary());
     }
 
+    public function updatedActiveTab(string $value): void
+    {
+        if ($value === 'hierarchy') {
+            $user = auth()->user();
+            if (! $user->can('territories.manage_regions')
+                && ! $user->can('territories.manage_zones')
+                && ! $user->can('territories.assign_team')
+            ) {
+                $this->activeTab = 'map';
+            }
+        }
+    }
+
+    public function canOnlyManageBlocks(): bool
+    {
+        $user = auth()->user();
+
+        return $user->can('territories.manage_blocks')
+            && ! $user->can('sales_territories.manage')
+            && ! $user->can('territories.manage_regions')
+            && ! $user->can('territories.manage_zones');
+    }
+
     public function createTerritory(): void
     {
         $this->resetForm();
+
+        if ($this->canOnlyManageBlocks()) {
+            $this->level = 'block';
+            // Auto-set parent to user's primary zone
+            $user = auth()->user();
+            $scopeService = app(PermissionScopeService::class);
+            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+            $zone = SalesTerritory::whereIn('id', $visibleIds)
+                ->where('level', 'zone')
+                ->where('status', 'active')
+                ->first();
+            if ($zone) {
+                $this->parentId = $zone->id;
+                $this->dispatch('show-parent-context', boundary: $this->parentBoundary());
+            }
+        }
+
         $this->showForm = true;
     }
 
@@ -323,6 +339,11 @@ new #[Layout('layouts.app')] class extends Component
 
     public function saveTerritory(): void
     {
+        // Enforce block level for block-only users
+        if ($this->canOnlyManageBlocks()) {
+            $this->level = 'block';
+        }
+
         $this->validate();
 
         // Validate parent requirement based on level
@@ -382,33 +403,6 @@ new #[Layout('layouts.app')] class extends Component
         $this->dispatch('territory-polygons', polygons: $this->territoryPolygons);
     }
 
-    public function openDispatch(int $territoryId): void
-    {
-        $this->dispatchTerritoryId = $territoryId;
-        $this->showDispatchModal = true;
-    }
-
-    public function dispatchTerritory(): void
-    {
-        $territory = SalesTerritory::findOrFail($this->dispatchTerritoryId);
-        $service = app(TerritoryDispatchService::class);
-        $workDate = \Carbon\Carbon::parse($this->dispatchDate);
-
-        $eligibleReps = $service->getEligibleReps($territory, $workDate);
-
-        if ($eligibleReps->isEmpty()) {
-            session()->flash('error', __('No eligible reps found for this date.'));
-            $this->showDispatchModal = false;
-
-            return;
-        }
-
-        $service->createOffer($territory, $workDate, $eligibleReps->pluck('id')->toArray(), $this->dispatchExpiry);
-
-        session()->flash('success', __('Territory dispatched to :count reps.', ['count' => $eligibleReps->count()]));
-        $this->showDispatchModal = false;
-    }
-
     public function setBoundary(array $boundary): void
     {
         $this->boundary = $boundary;
@@ -442,12 +436,12 @@ new #[Layout('layouts.app')] class extends Component
                 <flux:heading size="xl">{{ __('Territory Manager') }}</flux:heading>
                 <flux:text class="mt-1">{{ __('Create and manage sales territories, draw boundaries, and dispatch to reps.') }}</flux:text>
             </div>
-            @can('sales_territories.manage')
+            @canany(['sales_territories.manage', 'territories.manage_blocks'])
                 <flux:button variant="primary" wire:click="createTerritory">
                     <flux:icon name="plus" class="size-4 mr-1" />
-                    {{ __('New Territory') }}
+                    {{ $this->canOnlyManageBlocks() ? __('New Block') : __('New Territory') }}
                 </flux:button>
-            @endcan
+            @endcanany
         </div>
 
         {{-- Tab Navigation --}}
@@ -457,22 +451,18 @@ new #[Layout('layouts.app')] class extends Component
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'map' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
                     Map
                 </button>
+                @canany(['territories.manage_regions', 'territories.manage_zones', 'territories.assign_team'])
                 <button wire:click="$set('activeTab', 'hierarchy')"
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'hierarchy' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
                     Hierarchy
                 </button>
-                @can('territories.dispatch_blocks')
-                <button wire:click="$set('activeTab', 'dispatch')"
-                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'dispatch' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
-                    Dispatch
-                </button>
-                @endcan
-                @can('territories.manage_zones')
+                @endcanany
+                @canany(['territories.manage_zones', 'territories.dispatch_blocks'])
                 <button wire:click="$set('activeTab', 'schedule')"
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'schedule' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
                     Schedule
                 </button>
-                @endcan
+                @endcanany
                 @can('analytics.territory_pnl')
                 <button wire:click="$set('activeTab', 'analytics')"
                     class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'analytics' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
@@ -506,7 +496,7 @@ new #[Layout('layouts.app')] class extends Component
                 <div
                     wire:ignore
                     x-data="territoryMap({
-                        draw: {{ Auth::user()->can('sales_territories.manage') ? 'true' : 'false' }},
+                        draw: {{ Auth::user()->canAny(['sales_territories.manage', 'territories.manage_blocks']) ? 'true' : 'false' }},
                         geolocate: {{ $this->mapBounds ? 'false' : 'true' }},
                         zoom: {{ $this->mapBounds ? 12 : 5 }},
                         center: {{ json_encode($this->mapCenter) }},
@@ -571,11 +561,15 @@ new #[Layout('layouts.app')] class extends Component
                         <div class="grid grid-cols-2 gap-3">
                             <flux:field>
                                 <flux:label>{{ __('Level') }}</flux:label>
-                                <flux:select wire:model.live="level">
-                                    <option value="region">{{ __('Region') }}</option>
-                                    <option value="zone">{{ __('Zone') }}</option>
-                                    <option value="block">{{ __('Block') }}</option>
-                                </flux:select>
+                                @if($this->canOnlyManageBlocks())
+                                    <flux:input value="{{ __('Block') }}" disabled />
+                                @else
+                                    <flux:select wire:model.live="level">
+                                        <option value="region">{{ __('Region') }}</option>
+                                        <option value="zone">{{ __('Zone') }}</option>
+                                        <option value="block">{{ __('Block') }}</option>
+                                    </flux:select>
+                                @endif
                                 @error('level') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
                             </flux:field>
 
@@ -700,9 +694,6 @@ new #[Layout('layouts.app')] class extends Component
                                                         <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
                                                         <flux:menu>
                                                             <flux:menu.item wire:click="editTerritory({{ $zone->id }})" icon="pencil">{{ __('Edit') }}</flux:menu.item>
-                                                            @can('territory_dispatch.manage')
-                                                                <flux:menu.item wire:click="openDispatch({{ $zone->id }})" icon="paper-airplane">{{ __('Dispatch') }}</flux:menu.item>
-                                                            @endcan
                                                             <flux:menu.separator />
                                                             <flux:menu.item wire:click="archiveTerritory({{ $zone->id }})" icon="archive-box" wire:confirm="{{ __('Archive this territory?') }}">{{ __('Archive') }}</flux:menu.item>
                                                             <flux:menu.item wire:click="deleteTerritory({{ $zone->id }})" icon="trash" variant="danger" wire:confirm="{{ __('Permanently delete this territory and all related data?') }}">{{ __('Delete') }}</flux:menu.item>
@@ -788,33 +779,6 @@ new #[Layout('layouts.app')] class extends Component
         </div>
         @elseif($activeTab === 'hierarchy')
             <livewire:sales.territory-hierarchy />
-        @elseif($activeTab === 'dispatch')
-            <div class="space-y-4">
-                <div class="flex items-center justify-between">
-                    <flux:heading size="lg">Block Dispatch</flux:heading>
-                </div>
-
-                <div class="grid gap-3">
-                    @forelse($this->dispatchableBlocks as $block)
-                        <div wire:key="dispatch-{{ $block->id }}" class="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
-                            <div>
-                                <p class="font-medium text-sm">{{ $block->name }}</p>
-                                <p class="text-xs text-zinc-500">{{ $block->parent?->name ?? 'No zone' }}</p>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                @if($block->assignedUser)
-                                    <flux:badge size="sm">{{ $block->assignedUser->name }}</flux:badge>
-                                @else
-                                    <flux:badge variant="warning" size="sm">Unassigned</flux:badge>
-                                @endif
-                                <flux:button size="xs" wire:click="openDispatch({{ $block->id }})">Dispatch</flux:button>
-                            </div>
-                        </div>
-                    @empty
-                        <p class="text-center py-8 text-zinc-500">No blocks available for dispatch.</p>
-                    @endforelse
-                </div>
-            </div>
         @elseif($activeTab === 'schedule')
             <livewire:sales.territory-schedule />
         @elseif($activeTab === 'analytics')
@@ -876,38 +840,6 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         @endif
     </div>
-
-    {{-- Dispatch Modal --}}
-    @can('territory_dispatch.manage')
-    <flux:modal wire:model="showDispatchModal" class="max-w-md">
-        <div class="space-y-4">
-            <flux:heading size="lg">{{ __('Dispatch Territory') }}</flux:heading>
-            <flux:text>{{ __('Send this territory as an offer to eligible sales reps. They will receive a real-time notification and can accept or decline.') }}</flux:text>
-
-            <flux:field>
-                <flux:label>{{ __('Work Date') }}</flux:label>
-                <flux:input type="date" wire:model="dispatchDate" />
-            </flux:field>
-
-            <flux:field>
-                <flux:label>{{ __('Offer Expiry (minutes)') }}</flux:label>
-                <flux:input type="number" wire:model="dispatchExpiry" min="5" max="120" />
-                <flux:text size="sm" class="text-zinc-400">{{ __('Offer auto-expires after this many minutes.') }}</flux:text>
-            </flux:field>
-
-            <div class="flex gap-2 pt-2">
-                <flux:button variant="primary" wire:click="dispatchTerritory" class="grow">
-                    <flux:icon name="paper-airplane" class="size-4 mr-1" />
-                    {{ __('Dispatch Now') }}
-                </flux:button>
-                <flux:button variant="ghost" wire:click="$set('showDispatchModal', false)">
-                    {{ __('Cancel') }}
-                </flux:button>
-            </div>
-        </div>
-    </flux:modal>
-
-    @endcan
 
     @assets
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />

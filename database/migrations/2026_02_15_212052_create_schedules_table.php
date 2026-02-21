@@ -10,7 +10,7 @@ return new class extends Migration
     {
         Schema::create('schedules', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('employee_profile_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('employee_profile_id')->nullable()->constrained()->cascadeOnDelete();
             $table->foreignId('job_id')->nullable()->constrained('painting_jobs')->nullOnDelete();
             $table->date('date');
             $table->time('start_time');

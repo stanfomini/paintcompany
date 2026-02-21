@@ -97,6 +97,17 @@ class ScheduleFactory extends Factory
     }
 
     /**
+     * Flex block (unclaimed, no employee assigned).
+     */
+    public function flex(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'is_flex' => true,
+            'employee_profile_id' => null,
+        ]);
+    }
+
+    /**
      * With a meet-up location.
      */
     public function withMeetUp(string $address = '123 Main St', float $lat = 39.8283, float $lng = -98.5795): static

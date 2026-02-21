@@ -5,6 +5,7 @@ use App\Models\SalesTerritory;
 use App\Models\Schedule;
 use App\Models\User;
 use App\Notifications\TerritoryScheduleAssigned;
+use App\Services\TerritoryDispatchService;
 use App\Services\UnifiedCalendarService;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
@@ -288,4 +289,203 @@ it('full flow: zone manager schedules block, employee sees it in calendar', func
     expect($territoryEvent['title'])->toBe('Elm Street Block');
     expect($territoryEvent['url'])->toContain('google.com/maps');
     expect($territoryEvent['meta']['meet_address'])->toBe('456 Elm St, Springfield');
+});
+
+it('creates a flex schedule', function () {
+    $block = SalesTerritory::factory()->block()->create();
+    $manager = User::factory()->internal()->create();
+
+    $schedule = Schedule::factory()->territory($block)->flex()->create([
+        'created_by' => $manager->id,
+    ]);
+
+    expect($schedule->is_flex)->toBeTrue();
+    expect($schedule->employee_profile_id)->toBeNull();
+    expect($schedule->isFlex())->toBeTrue();
+    expect($schedule->isClaimable())->toBeTrue();
+    expect($schedule->isClaimed())->toBeFalse();
+});
+
+it('marks flex block as claimed when employee assigned', function () {
+    $profile = EmployeeProfile::factory()->create();
+    $block = SalesTerritory::factory()->block()->create();
+
+    $schedule = Schedule::factory()->territory($block)->flex()->create();
+    $schedule->update(['employee_profile_id' => $profile->id]);
+    $schedule->refresh();
+
+    expect($schedule->isFlex())->toBeTrue();
+    expect($schedule->isClaimable())->toBeFalse();
+    expect($schedule->isClaimed())->toBeTrue();
+});
+
+it('scopes flex blocks vs assigned schedules', function () {
+    Schedule::factory()->count(2)->territory()->create(); // assigned
+    Schedule::factory()->count(3)->territory()->flex()->create(); // flex
+
+    expect(Schedule::flexBlocks()->count())->toBe(3);
+    expect(Schedule::assigned()->count())->toBe(2);
+});
+
+it('pre-fills modal when opening with block via drag-drop method', function () {
+    $manager = User::factory()->internal()->withRole('owner')->create();
+    $knocker = User::factory()->internal()->create();
+    EmployeeProfile::factory()->create(['user_id' => $knocker->id]);
+    $block = SalesTerritory::factory()->block()->create();
+    $block->teamMembers()->attach($knocker->id, ['role' => 'knocker', 'added_by' => $manager->id]);
+
+    $date = now()->addDay()->format('Y-m-d');
+
+    Livewire::actingAs($manager)
+        ->test('sales.territory-schedule')
+        ->call('openScheduleModalWithBlock', $date, $knocker->id, $block->id)
+        ->assertSet('showScheduleModal', true)
+        ->assertSet('selectedDate', $date)
+        ->assertSet('selectedTerritoryId', $block->id)
+        ->assertSet('selectedUserIds', [$knocker->id]);
+});
+
+it('distinguishes flex from regular territory shifts', function () {
+    $block = SalesTerritory::factory()->block()->create();
+
+    $regular = Schedule::factory()->territory($block)->create();
+    $flex = Schedule::factory()->territory($block)->flex()->create();
+
+    expect($regular->isFlex())->toBeFalse();
+    expect($regular->isClaimable())->toBeFalse();
+    expect($flex->isFlex())->toBeTrue();
+    expect($flex->isClaimable())->toBeTrue();
+});
+
+it('claims a flex block successfully', function () {
+    Notification::fake();
+    $user = User::factory()->internal()->create();
+    $profile = EmployeeProfile::factory()->create(['user_id' => $user->id]);
+    $block = SalesTerritory::factory()->block()->create();
+
+    $schedule = Schedule::factory()->territory($block)->flex()->create([
+        'date' => now()->addDay()->toDateString(),
+    ]);
+
+    $service = app(TerritoryDispatchService::class);
+    $result = $service->claimFlexBlock($schedule, $user);
+
+    expect($result)->toBeTrue();
+    $schedule->refresh();
+    expect($schedule->employee_profile_id)->toBe($profile->id);
+    expect($schedule->isClaimed())->toBeTrue();
+
+    Notification::assertSentTo($user, TerritoryScheduleAssigned::class);
+});
+
+it('prevents double-claiming a flex block', function () {
+    Notification::fake();
+    $user1 = User::factory()->internal()->create();
+    EmployeeProfile::factory()->create(['user_id' => $user1->id]);
+    $user2 = User::factory()->internal()->create();
+    EmployeeProfile::factory()->create(['user_id' => $user2->id]);
+    $block = SalesTerritory::factory()->block()->create();
+
+    $schedule = Schedule::factory()->territory($block)->flex()->create([
+        'date' => now()->addDay()->toDateString(),
+    ]);
+
+    $service = app(TerritoryDispatchService::class);
+
+    // First claim succeeds
+    expect($service->claimFlexBlock($schedule, $user1))->toBeTrue();
+
+    // Second claim fails
+    expect($service->claimFlexBlock($schedule, $user2))->toBeFalse();
+
+    $schedule->refresh();
+    expect($schedule->employee_profile_id)->toBe($user1->employeeProfile->id);
+});
+
+it('rejects claiming a non-flex schedule', function () {
+    $user = User::factory()->internal()->create();
+    EmployeeProfile::factory()->create(['user_id' => $user->id]);
+    $block = SalesTerritory::factory()->block()->create();
+
+    $schedule = Schedule::factory()->territory($block)->create(); // Not flex
+
+    $service = app(TerritoryDispatchService::class);
+    $result = $service->claimFlexBlock($schedule, $user);
+
+    expect($result)->toBeFalse();
+});
+
+it('rejects claiming flex block without employee profile', function () {
+    $user = User::factory()->internal()->create(); // No employee profile
+    $block = SalesTerritory::factory()->block()->create();
+
+    $schedule = Schedule::factory()->territory($block)->flex()->create();
+
+    $service = app(TerritoryDispatchService::class);
+    $result = $service->claimFlexBlock($schedule, $user);
+
+    expect($result)->toBeFalse();
+});
+
+it('creates a flex block via schedule modal', function () {
+    $manager = User::factory()->internal()->withRole('owner')->create();
+    $block = SalesTerritory::factory()->block()->create();
+    $knocker = User::factory()->internal()->create();
+    EmployeeProfile::factory()->create(['user_id' => $knocker->id]);
+    $block->teamMembers()->attach($knocker->id, ['role' => 'knocker', 'added_by' => $manager->id]);
+
+    Livewire::actingAs($manager)
+        ->test('sales.territory-schedule')
+        ->call('openScheduleModal', now()->addDay()->format('Y-m-d'))
+        ->set('selectedTerritoryId', $block->id)
+        ->set('isFlex', true)
+        ->set('startTime', '08:00')
+        ->set('endTime', '16:00')
+        ->call('saveSchedule')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('schedules', [
+        'schedule_type' => 'territory',
+        'territory_id' => $block->id,
+        'is_flex' => true,
+        'employee_profile_id' => null,
+    ]);
+});
+
+it('claims flex block via schedule component', function () {
+    Notification::fake();
+    $manager = User::factory()->internal()->withRole('owner')->create();
+    $knocker = User::factory()->internal()->create();
+    $knockerProfile = EmployeeProfile::factory()->create(['user_id' => $knocker->id]);
+    $block = SalesTerritory::factory()->block()->create();
+    $block->teamMembers()->attach($knocker->id, ['role' => 'knocker', 'added_by' => $manager->id]);
+
+    $schedule = Schedule::factory()->territory($block)->flex()->create([
+        'date' => now()->startOfWeek()->addDay()->toDateString(),
+    ]);
+
+    Livewire::actingAs($knocker)
+        ->test('sales.territory-schedule')
+        ->call('claimFlexBlock', $schedule->id);
+
+    $schedule->refresh();
+    expect($schedule->employee_profile_id)->toBe($knockerProfile->id);
+    expect($schedule->isClaimed())->toBeTrue();
+});
+
+it('shows flex blocks in unclaimed row', function () {
+    $manager = User::factory()->internal()->withRole('owner')->create();
+    $knocker = User::factory()->internal()->create();
+    EmployeeProfile::factory()->create(['user_id' => $knocker->id]);
+    $block = SalesTerritory::factory()->block()->create(['name' => 'Flex Test Block']);
+    $block->teamMembers()->attach($knocker->id, ['role' => 'knocker', 'added_by' => $manager->id]);
+
+    Schedule::factory()->territory($block)->flex()->create([
+        'date' => now()->startOfWeek()->addDay()->toDateString(),
+    ]);
+
+    Livewire::actingAs($manager)
+        ->test('sales.territory-schedule')
+        ->assertSee('Flex / Unclaimed')
+        ->assertSee('Flex Test Block');
 });

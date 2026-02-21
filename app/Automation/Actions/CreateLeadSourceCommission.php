@@ -84,10 +84,8 @@ class CreateLeadSourceCommission implements ActionInterface
             return ['commission_created' => false, 'reason' => 'Vendor not found'];
         }
 
+        // Optional: find employee profile for backwards compat (vendor may or may not have one)
         $employeeProfile = $this->findEmployeeProfileForVendor($vendor);
-        if (! $employeeProfile) {
-            return ['commission_created' => false, 'reason' => 'No employee profile for vendor'];
-        }
 
         $commissionAmount = $this->calculateCommission($run, $config);
         if ($commissionAmount <= 0) {
@@ -101,7 +99,9 @@ class CreateLeadSourceCommission implements ActionInterface
         $sourceModel = $run->subject;
 
         $entry = CommissionEntry::create([
-            'employee_profile_id' => $employeeProfile->id,
+            'commissionable_type' => Vendor::class,
+            'commissionable_id' => $vendor->id,
+            'employee_profile_id' => $employeeProfile?->id,
             'source_type' => $sourceModel ? get_class($sourceModel) : null,
             'source_id' => $sourceModel?->getKey(),
             'source_label' => "Lead Source Commission: {$leadSource->name}",
