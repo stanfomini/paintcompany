@@ -70,6 +70,74 @@ it('assigns a user to a territory', function () {
     expect($zone->fresh()->assigned_user_id)->toBe($assignee->id);
 });
 
+it('creates a region from the hierarchy page', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-hierarchy')
+        ->call('startCreateRegion')
+        ->assertSet('childLevel', 'region')
+        ->assertSet('showCreateModal', true)
+        ->set('childName', 'West Region')
+        ->call('saveChild')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('sales_territories', [
+        'name' => 'West Region',
+        'level' => 'region',
+        'parent_id' => null,
+    ]);
+});
+
+it('adds a team member to a territory', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+    $knocker = User::factory()->internal()->withRole('door_knocker')->create();
+    $block = SalesTerritory::factory()->block()->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-hierarchy')
+        ->call('startAddTeamMember', $block->id)
+        ->assertSet('assigningTerritoryId', $block->id)
+        ->set('selectedUserId', $knocker->id)
+        ->set('teamRole', 'knocker')
+        ->call('addTeamMember')
+        ->assertHasNoErrors();
+
+    $this->assertDatabaseHas('territory_team_members', [
+        'territory_id' => $block->id,
+        'user_id' => $knocker->id,
+        'role' => 'knocker',
+    ]);
+});
+
+it('removes a team member from a territory', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+    $knocker = User::factory()->internal()->withRole('door_knocker')->create();
+    $block = SalesTerritory::factory()->block()->create();
+    $block->teamMembers()->attach($knocker->id, ['role' => 'knocker', 'added_by' => $user->id]);
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-hierarchy')
+        ->call('removeTeamMember', $block->id, $knocker->id);
+
+    $this->assertDatabaseMissing('territory_team_members', [
+        'territory_id' => $block->id,
+        'user_id' => $knocker->id,
+    ]);
+});
+
+it('assigns a manager to a region', function () {
+    $user = User::factory()->internal()->withRole('owner')->create();
+    $manager = User::factory()->internal()->withRole('manager')->create();
+    $region = SalesTerritory::factory()->region()->create();
+
+    Livewire::actingAs($user)
+        ->test('sales.territory-hierarchy')
+        ->call('assignManager', $region->id, $manager->id);
+
+    expect($region->fresh()->manager_id)->toBe($manager->id);
+});
+
 it('shows only visible territories for scoped user', function () {
     $regionManager = User::factory()->internal()->withRole('manager')->create();
 
