@@ -289,3 +289,65 @@ describe('Planner delegation actions', function () {
         expect($activity->fresh()->snoozed_until)->not->toBeNull();
     });
 });
+
+describe('Delegation manager UI', function () {
+    it('shows access button for users with planner.delegate_own', function () {
+        $user = User::factory()->internal()->withRole('estimator')->create();
+
+        Livewire::actingAs($user)
+            ->test('planner.my-day')
+            ->assertSee('Access');
+    });
+
+    it('can create a delegation via the manager component', function () {
+        $user = User::factory()->internal()->withRole('estimator')->create();
+        $delegate = User::factory()->internal()->withRole('estimator')->create();
+
+        Livewire::actingAs($user)
+            ->test('planner.delegation-manager')
+            ->set('showCreateForm', true)
+            ->set('newDelegateId', $delegate->id)
+            ->set('newAccessLevel', 'act')
+            ->set('newTimeframe', 'permanent')
+            ->call('saveDelegation')
+            ->assertHasNoErrors();
+
+        expect(PlannerDelegation::where('target_user_id', $user->id)
+            ->where('delegate_id', $delegate->id)
+            ->where('access_level', 'act')
+            ->exists())->toBeTrue();
+    });
+
+    it('can revoke a delegation via the manager component', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $delegate = User::factory()->internal()->create();
+
+        $delegation = PlannerDelegation::factory()->permanent()->create([
+            'grantor_id' => $user->id,
+            'target_user_id' => $user->id,
+            'delegate_id' => $delegate->id,
+            'access_level' => 'view',
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('planner.delegation-manager')
+            ->call('revoke', $delegation->id);
+
+        expect(PlannerDelegation::count())->toBe(0);
+    });
+
+    it('shows user selector when delegate has delegations', function () {
+        $target = User::factory()->internal()->withRole('estimator')->create(['name' => 'Target User']);
+        $delegate = User::factory()->internal()->withRole('estimator')->create();
+
+        PlannerDelegation::factory()->actAccess()->permanent()->create([
+            'grantor_id' => $target->id,
+            'target_user_id' => $target->id,
+            'delegate_id' => $delegate->id,
+        ]);
+
+        Livewire::actingAs($delegate)
+            ->test('planner.my-day')
+            ->assertSee('Target User');
+    });
+});

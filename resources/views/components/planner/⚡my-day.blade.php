@@ -51,6 +51,8 @@ new class extends Component
     // Delegation viewing
     public ?int $viewingUserId = null;
 
+    public bool $showDelegationManager = false;
+
     // Calendar sync
     public bool $showCalendarSync = false;
 
@@ -787,6 +789,11 @@ new class extends Component
                 <flux:button icon="calendar" variant="ghost" wire:click="$set('showCalendarSync', true)" size="sm">
                     {{ __('Subscribe') }}
                 </flux:button>
+                @can('planner.delegate_own')
+                    <flux:button icon="user-group" variant="ghost" wire:click="$set('showDelegationManager', true)" size="sm">
+                        {{ __('Access') }}
+                    </flux:button>
+                @endcan
                 <flux:button icon="plus" wire:click="openAddTask" variant="primary" size="sm">
                     {{ __('Add Task') }}
                 </flux:button>
@@ -1439,6 +1446,11 @@ new class extends Component
                 </flux:button>
             </div>
         </div>
+    </flux:modal>
+
+    {{-- Delegation Manager Flyout --}}
+    <flux:modal wire:model="showDelegationManager" variant="flyout" class="max-w-md">
+        <livewire:is component="planner.delegation-manager" wire:key="delegation-manager" />
     </flux:modal>
 
 </div>
