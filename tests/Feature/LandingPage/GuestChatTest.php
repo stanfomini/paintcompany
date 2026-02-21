@@ -4,9 +4,13 @@ use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
 use App\Models\GuestChatSession;
+use App\Models\Invitation;
 use App\Models\User;
 use App\Notifications\NewSupportChatNotification;
+use App\Services\ChatService;
+use App\Services\InvitationService;
 use App\Services\ReferralService;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
 use Livewire\Livewire;
 
@@ -153,4 +157,93 @@ it('persists session via cookie UUID', function () {
         ->test('public.guest-chat');
 
     $newComponent->assertSet('sessionId', $session->id);
+});
+
+it('auto-unarchives support thread when guest sends a new message', function () {
+    Notification::fake();
+    Event::fake();
+
+    $service = app(ChatService::class);
+
+    // Create a support thread
+    $thread = ChatThread::factory()->support()->create(['last_message_at' => now()]);
+    $participant = $thread->addParticipant($this->internalUser);
+
+    // Internal user archives the thread
+    $participant->archive();
+    expect($participant->fresh()->isArchived())->toBeTrue();
+
+    // Guest session sends a new message
+    $session = GuestChatSession::factory()->create([
+        'email' => 'guest@example.com',
+        'chat_thread_id' => $thread->id,
+        'status' => 'active',
+    ]);
+
+    $service->sendGuestMessage($thread, 'Hello again!', [
+        'guest_email' => 'guest@example.com',
+    ]);
+
+    // Thread should be auto-unarchived for the internal user
+    expect($participant->fresh()->isArchived())->toBeFalse();
+
+    // Message should exist
+    expect(ChatMessage::where('thread_id', $thread->id)->count())->toBe(1);
+});
+
+it('per-user archiving only affects the archiving user', function () {
+    Event::fake();
+
+    $service = app(ChatService::class);
+    $user2 = User::factory()->internal()->create();
+
+    $thread = ChatThread::factory()->support()->create(['last_message_at' => now()]);
+    $thread->addParticipant($this->internalUser);
+    $thread->addParticipant($user2);
+
+    // User 1 archives the thread
+    $service->archiveThread($thread, $this->internalUser);
+
+    // User 1 shouldn't see it
+    $user1Threads = $service->getThreadsForUser($this->internalUser);
+    expect($user1Threads)->toHaveCount(0);
+
+    // User 2 should still see it
+    $user2Threads = $service->getThreadsForUser($user2);
+    expect($user2Threads)->toHaveCount(1);
+});
+
+it('backfills guest session user_id when invitation is accepted', function () {
+    Notification::fake();
+
+    // Create a support thread + guest session
+    $thread = ChatThread::factory()->support()->create(['last_message_at' => now()]);
+    $thread->addParticipant($this->internalUser);
+
+    $session = GuestChatSession::factory()->create([
+        'email' => 'newcustomer@example.com',
+        'chat_thread_id' => $thread->id,
+        'status' => 'active',
+    ]);
+
+    // Create an invitation for the same email
+    $invitation = Invitation::factory()->forCustomer()->create([
+        'email' => 'newcustomer@example.com',
+        'inviter_id' => $this->internalUser->id,
+    ]);
+
+    // Accept the invitation (creates user + links customer)
+    $invitationService = app(InvitationService::class);
+    $user = $invitationService->acceptInvitation($invitation, [
+        'name' => 'New Customer',
+        'password' => 'Password123!',
+        'password_confirmation' => 'Password123!',
+    ]);
+
+    $session->refresh();
+    expect($session->user_id)->toBe($user->id)
+        ->and($session->status)->toBe('converted');
+
+    // User should be a participant in the support thread
+    expect($thread->hasParticipant($user))->toBeTrue();
 });

@@ -9,6 +9,7 @@ use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\EmployeeProfile;
 use App\Models\Estimate;
+use App\Models\GuestChatSession;
 use App\Models\Invoice;
 use App\Models\Property;
 use App\Models\Referral;
@@ -91,6 +92,16 @@ class ReferralService
                 $referrer->notify(new ReferralLeadCreated($referral));
             }
         }
+
+        // Link any active guest chat sessions with matching email
+        GuestChatSession::where('email', $data['email'])
+            ->where('status', 'active')
+            ->each(function (GuestChatSession $session) use ($customer) {
+                $session->update([
+                    'status' => 'converted',
+                    'user_id' => $customer->user_id ?? null,
+                ]);
+            });
 
         return [
             'customer' => $customer,

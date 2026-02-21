@@ -23,7 +23,7 @@ class ProcessVideoRecordingJob implements ShouldQueue
     public function __construct(
         public VideoRecording $recording
     ) {
-        $this->onConnection('redis')->onQueue('default');
+        $this->onQueue('default');
     }
 
     public function handle(PythonBridgeService $python): void

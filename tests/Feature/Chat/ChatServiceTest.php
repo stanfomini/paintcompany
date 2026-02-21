@@ -378,8 +378,9 @@ describe('ChatService getThreadsForUser', function () {
         $activeThread = ChatThread::factory()->create();
         $activeThread->addParticipant($user);
 
-        $archivedThread = ChatThread::factory()->archived()->create();
-        $archivedThread->addParticipant($user);
+        $archivedThread = ChatThread::factory()->create();
+        $participant = $archivedThread->addParticipant($user);
+        $participant->archive();
 
         $threads = $service->getThreadsForUser($user);
 

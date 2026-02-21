@@ -6,6 +6,7 @@ use App\Models\CrewProfile;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DealCollaborator;
+use App\Models\GuestChatSession;
 use App\Models\Invitation;
 use App\Models\User;
 use App\Notifications\AgentInvitationNotification;
@@ -244,7 +245,7 @@ class InvitationService
             // No pre-existing Customer record — create one from invitation data
             $nameParts = explode(' ', $user->name, 2);
 
-            return Customer::create([
+            $customer = Customer::create([
                 'user_id' => $user->id,
                 'created_by' => $invitation->inviter_id,
                 'first_name' => $nameParts[0],
@@ -253,20 +254,34 @@ class InvitationService
                 'status' => 'active',
                 'source' => 'invite_link',
             ]);
-        }
-
-        if (empty($customer->source)) {
-            $customer->update(['user_id' => $user->id, 'source' => 'invite_link']);
         } else {
-            $customer->update(['user_id' => $user->id]);
-        }
+            if (empty($customer->source)) {
+                $customer->update(['user_id' => $user->id, 'source' => 'invite_link']);
+            } else {
+                $customer->update(['user_id' => $user->id]);
+            }
 
-        // Add user as participant in any existing deal chat threads
-        foreach ($customer->deals()->with('chatThread')->get() as $deal) {
-            if ($deal->chatThread) {
-                $deal->chatThread->addParticipant($user);
+            // Add user as participant in any existing deal chat threads
+            foreach ($customer->deals()->with('chatThread')->get() as $deal) {
+                if ($deal->chatThread) {
+                    $deal->chatThread->addParticipant($user);
+                }
             }
         }
+
+        // Link any guest chat sessions and add user to their support threads
+        GuestChatSession::where('email', $user->email)
+            ->whereIn('status', ['active', 'converted'])
+            ->each(function (GuestChatSession $session) use ($user) {
+                $session->update([
+                    'user_id' => $user->id,
+                    'status' => 'converted',
+                ]);
+
+                if ($session->chat_thread_id) {
+                    $session->thread?->addParticipant($user);
+                }
+            });
 
         return $customer;
     }

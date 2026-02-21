@@ -1,11 +1,13 @@
 <?php
 
+use App\Events\NewThreadNotification;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
 use App\Models\GuestChatSession;
 use App\Models\User;
 use App\Notifications\NewSupportChatNotification;
+use App\Services\ChatService;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -67,9 +69,16 @@ new class extends Component {
 
         cookie()->queue('guest_chat_uuid', $uuid, 60 * 24 * 30);
 
-        $firstInternal = $internalUsers->first();
-        if ($firstInternal) {
-            $firstInternal->notify(new NewSupportChatNotification($session));
+        // Broadcast new thread to all internal users via Echo
+        try {
+            broadcast(new NewThreadNotification($thread));
+        } catch (\Throwable) {
+            // Broadcasting is non-critical
+        }
+
+        // Also send a database/email notification
+        foreach ($internalUsers as $user) {
+            $user->notify(new NewSupportChatNotification($session));
         }
     }
 
@@ -78,18 +87,16 @@ new class extends Component {
         $this->validate(['newMessage' => ['required', 'string', 'max:5000']]);
 
         $session = GuestChatSession::find($this->sessionId);
-        if (! $session) {
+        if (! $session || ! $session->thread) {
             return;
         }
 
-        ChatMessage::create([
-            'thread_id' => $session->chat_thread_id,
-            'user_id' => null,
-            'content' => $this->newMessage,
-            'metadata' => ['guest_email' => $session->email, 'guest_name' => $session->name],
-        ]);
+        app(ChatService::class)->sendGuestMessage(
+            $session->thread,
+            $this->newMessage,
+            ['guest_email' => $session->email, 'guest_name' => $session->name],
+        );
 
-        $session->thread->touchLastMessage();
         $this->newMessage = '';
     }
 
@@ -173,7 +180,17 @@ new class extends Component {
                 </div>
             @else
                 {{-- Messages Area --}}
-                <div class="flex-1 overflow-y-auto p-4 space-y-3 min-h-[200px] max-h-[320px]" wire:poll.5s="$refresh">
+                <div
+                    x-data="{
+                        scroll() { this.$el.scrollTop = this.$el.scrollHeight },
+                        init() {
+                            this.$nextTick(() => this.scroll());
+                            new MutationObserver(() => this.scroll()).observe(this.$el, { childList: true, subtree: true });
+                        }
+                    }"
+                    class="flex-1 overflow-y-auto p-4 space-y-3 min-h-[200px] max-h-[320px]"
+                    wire:poll.5s="$refresh"
+                >
                     @forelse($this->chatMessages as $message)
                         <div wire:key="msg-{{ $message->id }}" class="flex {{ $message->user_id ? 'justify-start' : 'justify-end' }}">
                             <div class="max-w-[80%] rounded-lg px-3 py-2 text-sm {{ $message->user_id ? 'bg-zinc-100 text-zinc-800' : 'bg-emerald-600 text-white' }}">

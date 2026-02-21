@@ -8,6 +8,7 @@ use App\Events\MessageTranslated;
 use App\Events\NewThreadNotification;
 use App\Jobs\SendUnreadChatEmailJob;
 use App\Models\ChatMessage;
+use App\Models\ChatParticipant;
 use App\Models\ChatThread;
 use App\Models\Deal;
 use App\Models\User;
@@ -414,14 +415,14 @@ class ChatService
     }
 
     /**
-     * Get threads for a user with unread counts.
+     * Get threads for a user with unread counts (excludes per-user archived).
      */
     public function getThreadsForUser(User $user): Collection
     {
         return ChatThread::query()
             ->forUser($user)
             ->visibleTo($user)
-            ->active()
+            ->notArchivedBy($user)
             ->with(['latestMessage.user', 'deal', 'activeParticipants.user'])
             ->latestActivity()
             ->get()
@@ -434,14 +435,14 @@ class ChatService
     }
 
     /**
-     * Get total unread count for a user.
+     * Get total unread count for a user (excludes per-user archived).
      */
     public function getUnreadCountForUser(User $user): int
     {
         return ChatThread::query()
             ->forUser($user)
             ->visibleTo($user)
-            ->active()
+            ->notArchivedBy($user)
             ->get()
             ->sum(fn (ChatThread $thread) => $thread->getUnreadCountFor($user));
     }
@@ -499,19 +500,78 @@ class ChatService
     }
 
     /**
-     * Archive a thread.
+     * Archive a thread for a specific user.
      */
-    public function archiveThread(ChatThread $thread): bool
+    public function archiveThread(ChatThread $thread, ?User $user = null): bool
     {
+        if ($user) {
+            $participant = $thread->getParticipant($user);
+
+            return $participant ? $participant->archive() : false;
+        }
+
+        // Fallback: global archive (legacy)
         return $thread->update(['is_archived' => true]);
     }
 
     /**
-     * Unarchive a thread.
+     * Unarchive a thread for a specific user.
      */
-    public function unarchiveThread(ChatThread $thread): bool
+    public function unarchiveThread(ChatThread $thread, ?User $user = null): bool
     {
+        if ($user) {
+            $participant = $thread->getParticipant($user);
+
+            return $participant ? $participant->unarchive() : false;
+        }
+
+        // Fallback: global unarchive (legacy)
         return $thread->update(['is_archived' => false]);
+    }
+
+    /**
+     * Send a guest message in a support thread (no authenticated user).
+     * Broadcasts to internal users and auto-unarchives the thread.
+     *
+     * @param  array{guest_email?: string, guest_name?: string}  $metadata
+     */
+    public function sendGuestMessage(ChatThread $thread, string $content, array $metadata = []): ChatMessage
+    {
+        $message = $thread->messages()->create([
+            'user_id' => null,
+            'content' => $content,
+            'type' => ChatMessage::TYPE_TEXT,
+            'is_internal' => false,
+            'metadata' => $metadata ?: null,
+        ]);
+
+        $thread->touchLastMessage();
+
+        // Auto-unarchive for all participants so the thread resurfaces
+        $thread->activeParticipants()
+            ->whereNotNull('archived_at')
+            ->each(fn (ChatParticipant $p) => $p->unarchive());
+
+        // Broadcast to thread channel so internal users see it in real-time
+        $this->safeBroadcast(new MessageSent($message));
+
+        // Dispatch unread email notifications
+        $this->dispatchGuestUnreadEmails($thread, $message);
+
+        return $message;
+    }
+
+    /**
+     * Dispatch unread email jobs for guest messages (notify all active participants).
+     */
+    private function dispatchGuestUnreadEmails(ChatThread $thread, ChatMessage $message): void
+    {
+        $participants = $thread->activeParticipants()->with('user')->get();
+
+        foreach ($participants as $participant) {
+            SendUnreadChatEmailJob::dispatch($message, $participant->user)
+                ->delay(now()->addMinutes(5));
+        }
     }
 
     /**

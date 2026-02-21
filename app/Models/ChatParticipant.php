@@ -16,6 +16,7 @@ class ChatParticipant extends Model
         'user_id',
         'last_read_at',
         'is_muted',
+        'archived_at',
         'joined_at',
         'left_at',
     ];
@@ -25,6 +26,7 @@ class ChatParticipant extends Model
         return [
             'last_read_at' => 'datetime',
             'is_muted' => 'boolean',
+            'archived_at' => 'datetime',
             'joined_at' => 'datetime',
             'left_at' => 'datetime',
         ];
@@ -76,6 +78,30 @@ class ChatParticipant extends Model
     public function toggleMute(): bool
     {
         return $this->update(['is_muted' => ! $this->is_muted]);
+    }
+
+    /**
+     * Archive this thread for this participant.
+     */
+    public function archive(): bool
+    {
+        return $this->update(['archived_at' => now()]);
+    }
+
+    /**
+     * Unarchive this thread for this participant.
+     */
+    public function unarchive(): bool
+    {
+        return $this->update(['archived_at' => null]);
+    }
+
+    /**
+     * Check if this participant has archived the thread.
+     */
+    public function isArchived(): bool
+    {
+        return $this->archived_at !== null;
     }
 
     /**

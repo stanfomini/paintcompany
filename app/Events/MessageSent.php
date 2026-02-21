@@ -41,6 +41,22 @@ class MessageSent implements ShouldBroadcastNow
     {
         $this->message->load(['user', 'attachments']);
 
+        $userData = null;
+        if ($this->message->user) {
+            $userData = [
+                'id' => $this->message->user->id,
+                'name' => $this->message->user->name,
+                'type' => $this->message->user->type,
+            ];
+        } elseif ($this->message->metadata) {
+            // Guest message - use metadata for display
+            $userData = [
+                'id' => null,
+                'name' => $this->message->metadata['guest_name'] ?? $this->message->metadata['guest_email'] ?? 'Guest',
+                'type' => 'guest',
+            ];
+        }
+
         return [
             'message' => [
                 'id' => $this->message->id,
@@ -52,11 +68,7 @@ class MessageSent implements ShouldBroadcastNow
                 'parent_id' => $this->message->parent_id,
                 'metadata' => $this->message->metadata,
                 'created_at' => $this->message->created_at->toISOString(),
-                'user' => [
-                    'id' => $this->message->user->id,
-                    'name' => $this->message->user->name,
-                    'type' => $this->message->user->type,
-                ],
+                'user' => $userData,
                 'attachments' => $this->message->attachments->map(fn ($attachment) => [
                     'id' => $attachment->id,
                     'filename' => $attachment->filename,

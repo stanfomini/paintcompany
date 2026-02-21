@@ -120,6 +120,10 @@ class CompanySetting extends Model
         'break_required_after_hours',
         'geofence_radius_feet',
         'locationiq_api_key',
+        // Business Hours
+        'business_hours_start',
+        'business_hours_end',
+        'business_days',
     ];
 
     protected function casts(): array
@@ -198,6 +202,8 @@ class CompanySetting extends Model
             'break_required_after_hours' => 'integer',
             'geofence_radius_feet' => 'integer',
             'locationiq_api_key' => 'encrypted',
+            // Business Hours
+            'business_days' => 'array',
         ];
     }
 
@@ -1489,7 +1495,8 @@ class CompanySetting extends Model
 
     public function isWithinBusinessHours(): bool
     {
-        $now = now();
+        $tz = $this->timezone ?? config('app.timezone', 'America/Denver');
+        $now = now($tz);
         $dayOfWeek = $now->dayOfWeekIso; // 1=Mon, 7=Sun
 
         $businessDays = $this->business_days ?? [1, 2, 3, 4, 5];

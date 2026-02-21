@@ -170,13 +170,37 @@ class ChatThread extends Model
     }
 
     /**
-     * Scope to filter threads for a specific user.
+     * Scope to filter threads for a specific user (active participant, not archived by them).
      */
     public function scopeForUser(Builder $query, User $user): Builder
     {
         return $query->whereHas('participants', function ($q) use ($user) {
             $q->where('user_id', $user->id)
                 ->whereNull('left_at');
+        });
+    }
+
+    /**
+     * Scope to exclude threads archived by the given user.
+     */
+    public function scopeNotArchivedBy(Builder $query, User $user): Builder
+    {
+        return $query->whereHas('participants', function ($q) use ($user) {
+            $q->where('user_id', $user->id)
+                ->whereNull('left_at')
+                ->whereNull('archived_at');
+        });
+    }
+
+    /**
+     * Scope to only include threads archived by the given user.
+     */
+    public function scopeArchivedBy(Builder $query, User $user): Builder
+    {
+        return $query->whereHas('participants', function ($q) use ($user) {
+            $q->where('user_id', $user->id)
+                ->whereNull('left_at')
+                ->whereNotNull('archived_at');
         });
     }
 

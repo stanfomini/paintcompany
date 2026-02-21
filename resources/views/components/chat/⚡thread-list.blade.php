@@ -48,7 +48,6 @@ new class extends Component {
     public function threads(): Collection
     {
         $user = auth()->user();
-        $chatService = app(ChatService::class);
 
         $query = ChatThread::query()
             ->forUser($user)
@@ -56,15 +55,14 @@ new class extends Component {
             ->with(['latestMessage.user', 'deal', 'activeParticipants.user'])
             ->latestActivity();
 
-        // Apply filter
+        // Apply filter using per-user archiving
         match ($this->filter) {
-            'unread' => $query->whereHas('messages', function ($q) use ($user) {
-                // Messages created after user's last read time
+            'unread' => $query->notArchivedBy($user)->whereHas('messages', function ($q) use ($user) {
                 $q->where('user_id', '!=', $user->id)
                     ->whereDoesntHave('reads', fn ($r) => $r->where('user_id', $user->id));
             }),
-            'archived' => $query->archived(),
-            default => $query->active(),
+            'archived' => $query->archivedBy($user),
+            default => $query->notArchivedBy($user),
         };
 
         $threads = $query->get();
@@ -98,7 +96,7 @@ new class extends Component {
         return ChatThread::query()
             ->forUser($user)
             ->visibleTo($user)
-            ->active()
+            ->notArchivedBy($user)
             ->get()
             ->sum(fn (ChatThread $thread) => $thread->getUnreadCountFor($user));
     }
@@ -106,11 +104,11 @@ new class extends Component {
     public function archiveThread(int $threadId): void
     {
         $thread = ChatThread::findOrFail($threadId);
+        $user = auth()->user();
 
-        // Verify user is a participant
-        abort_unless($thread->hasParticipant(auth()->user()), 403);
+        abort_unless($thread->hasParticipant($user), 403);
 
-        app(ChatService::class)->archiveThread($thread);
+        app(ChatService::class)->archiveThread($thread, $user);
 
         $this->dispatch('thread-archived');
         unset($this->threads);
@@ -119,11 +117,11 @@ new class extends Component {
     public function unarchiveThread(int $threadId): void
     {
         $thread = ChatThread::findOrFail($threadId);
+        $user = auth()->user();
 
-        // Verify user is a participant
-        abort_unless($thread->hasParticipant(auth()->user()), 403);
+        abort_unless($thread->hasParticipant($user), 403);
 
-        app(ChatService::class)->unarchiveThread($thread);
+        app(ChatService::class)->unarchiveThread($thread, $user);
 
         $this->dispatch('thread-unarchived');
         unset($this->threads);
@@ -222,7 +220,7 @@ new class extends Component {
                                             @elseif ($thread->type === 'support')
                                                 <flux:badge size="sm" color="purple">{{ __('Support') }}</flux:badge>
                                             @endif
-                                            @if ($thread->is_archived)
+                                            @if ($filter === 'archived')
                                                 <flux:badge size="sm" color="zinc">{{ __('Archived') }}</flux:badge>
                                             @endif
                                         </div>
@@ -265,7 +263,7 @@ new class extends Component {
                             <flux:dropdown>
                                 <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                 <flux:menu>
-                                    @if ($thread->is_archived)
+                                    @if ($filter === 'archived')
                                         <flux:menu.item
                                             wire:click="unarchiveThread({{ $thread->id }})"
                                             icon="archive-box-x-mark"
