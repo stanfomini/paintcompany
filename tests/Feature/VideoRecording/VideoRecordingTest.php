@@ -385,6 +385,56 @@ it('allows customer users to use chunked upload', function () {
         ->assertCreated();
 });
 
+// ── Mime Type Extension Mapping Tests ────────────────────────────────────
+
+it('can start chunked upload with mp4 mime type', function () {
+    Storage::fake('video-recordings');
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('video-recordings.start'), [
+            'mime_type' => 'video/mp4',
+            'title' => 'MP4 Upload',
+        ])
+        ->assertCreated();
+
+    $recording = VideoRecording::latest()->first();
+    expect($recording->original_path)->toEndWith('.mp4');
+});
+
+it('can start chunked upload with quicktime mime type', function () {
+    Storage::fake('video-recordings');
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('video-recordings.start'), [
+            'mime_type' => 'video/quicktime',
+            'title' => 'MOV Upload',
+        ])
+        ->assertCreated();
+
+    $recording = VideoRecording::latest()->first();
+    expect($recording->original_path)->toEndWith('.mov');
+});
+
+it('can start chunked upload with matroska mime type', function () {
+    Storage::fake('video-recordings');
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('video-recordings.start'), [
+            'mime_type' => 'video/x-matroska',
+            'title' => 'MKV Upload',
+        ])
+        ->assertCreated();
+
+    $recording = VideoRecording::latest()->first();
+    expect($recording->original_path)->toEndWith('.mkv');
+});
+
 // ── Status Endpoint Tests ──────────────────────────────────────────────
 
 it('returns recording status and urls', function () {

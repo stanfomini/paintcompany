@@ -69,7 +69,12 @@ class VideoRecordingUploadController extends Controller
 
         $user = $request->user();
         $diskName = config('filesystems.default');
-        $extension = str_contains($request->input('mime_type'), 'mp4') ? 'mp4' : 'webm';
+        $extension = match (true) {
+            str_contains($request->input('mime_type'), 'mp4') => 'mp4',
+            str_contains($request->input('mime_type'), 'quicktime') => 'mov',
+            str_contains($request->input('mime_type'), 'matroska') => 'mkv',
+            default => 'webm',
+        };
         $originalPath = 'video-recordings/originals/'.Str::uuid().'.'.$extension;
 
         // Create a local temp file for accumulating chunks
