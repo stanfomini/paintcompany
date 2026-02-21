@@ -487,9 +487,7 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
         @elseif($activeTab === 'hierarchy')
-            <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
-                Territory hierarchy tree (Task 2)
-            </div>
+            <livewire:sales.territory-hierarchy />
         @elseif($activeTab === 'dispatch')
             <div class="space-y-4">
                 <div class="flex items-center justify-between">
