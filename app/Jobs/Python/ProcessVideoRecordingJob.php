@@ -18,7 +18,7 @@ class ProcessVideoRecordingJob implements ShouldQueue
 
     public int $tries = 2;
 
-    public int $timeout = 300;
+    public int $timeout = 900;
 
     public function __construct(
         public VideoRecording $recording

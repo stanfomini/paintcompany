@@ -59,10 +59,10 @@ class VideoProcessor:
                 if streams:
                     iw = streams[0].get("width", 0)
                     ih = streams[0].get("height", 0)
-                    # Calculate target dimensions: fit within 1280x720, preserve aspect ratio
+                    # Calculate target dimensions: fit within 1920x1080, preserve aspect ratio
                     if iw > 0 and ih > 0:
-                        scale_w = min(1280 / iw, 1.0)
-                        scale_h = min(720 / ih, 1.0)
+                        scale_w = min(1920 / iw, 1.0)
+                        scale_h = min(1080 / ih, 1.0)
                         scale_factor = min(scale_w, scale_h)
                         tw = int(iw * scale_factor)
                         th = int(ih * scale_factor)
@@ -78,7 +78,7 @@ class VideoProcessor:
         logger.info(f"Transcoding {input_path} to {video_path}")
         transcode_cmd = [
             "ffmpeg", "-i", input_path,
-            "-c:v", "libx264", "-preset", "medium", "-crf", "23",
+            "-c:v", "libx264", "-preset", "slow", "-crf", "28",
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             "-vf", vf_filter,
