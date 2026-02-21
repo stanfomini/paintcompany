@@ -17,9 +17,7 @@ return new class extends Migration
         });
 
         if (DB::getDriverName() === 'mysql') {
-            Schema::table('schedules', function (Blueprint $table) {
-                $table->foreignId('employee_profile_id')->nullable()->constrained()->cascadeOnDelete()->change();
-            });
+            DB::statement('ALTER TABLE `schedules` MODIFY `employee_profile_id` BIGINT UNSIGNED NULL');
         }
     }
 
@@ -29,9 +27,7 @@ return new class extends Migration
     public function down(): void
     {
         if (DB::getDriverName() === 'mysql') {
-            Schema::table('schedules', function (Blueprint $table) {
-                $table->foreignId('employee_profile_id')->nullable(false)->constrained()->cascadeOnDelete()->change();
-            });
+            DB::statement('ALTER TABLE `schedules` MODIFY `employee_profile_id` BIGINT UNSIGNED NOT NULL');
         }
 
         Schema::table('schedules', function (Blueprint $table) {
