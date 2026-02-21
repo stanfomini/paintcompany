@@ -102,7 +102,7 @@ new class extends Component {
                                         >
                                             <svg class="size-10 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
                                             <span class="text-sm text-zinc-600 dark:text-zinc-400">{{ __('Drop a video file or click to browse') }}</span>
-                                            <span class="text-xs text-zinc-400">{{ __('MP4, WebM, MOV, MKV up to 200MB') }}</span>
+                                            <span class="text-xs text-zinc-400">{{ __('MP4, WebM, MOV, MKV up to 5GB') }}</span>
                                             <input type="file" class="hidden" accept="video/mp4,video/webm,video/quicktime,video/x-matroska" x-on:change="selectFile($event)" />
                                         </label>
                                     </div>
@@ -143,7 +143,9 @@ new class extends Component {
                                         <div class="w-full bg-zinc-200 dark:bg-zinc-700 rounded-full h-2.5 overflow-hidden">
                                             <div class="bg-blue-600 h-full rounded-full transition-all duration-300" x-bind:style="'width: ' + progress + '%'"></div>
                                         </div>
-                                        <p class="text-xs text-zinc-500" x-text="file ? formatSize(file.size) : ''"></p>
+                                        <p class="text-xs text-zinc-500">
+                                            <span x-text="file ? formatSize(file.size * progress / 100) + ' / ' + formatSize(file.size) : ''"></span>
+                                        </p>
                                     </div>
                                 </template>
 
@@ -211,7 +213,13 @@ new class extends Component {
             progress: 0,
             uploadComplete: false,
             errorMessage: '',
-            xhr: null,
+            abortController: null,
+            cancelled: false,
+
+            // Chunked upload config
+            CHUNK_SIZE: 5 * 1024 * 1024, // 5MB chunks
+            MAX_FILE_SIZE: 5 * 1024 * 1024 * 1024, // 5GB max
+            MAX_RETRIES: 3,
 
             openModal() {
                 this.showModal = true;
@@ -219,8 +227,11 @@ new class extends Component {
             },
 
             closeModal() {
-                if (this.uploading && this.xhr) {
-                    this.xhr.abort();
+                if (this.uploading) {
+                    this.cancelled = true;
+                    if (this.abortController) {
+                        this.abortController.abort();
+                    }
                 }
                 this.showModal = false;
                 if (this.uploadComplete) {
@@ -235,26 +246,22 @@ new class extends Component {
                 this.progress = 0;
                 this.uploadComplete = false;
                 this.errorMessage = '';
-                this.xhr = null;
+                this.abortController = null;
+                this.cancelled = false;
             },
 
             selectFile(event) {
                 const file = event.target.files[0];
-                if (file) {
-                    this.setFile(file);
-                }
+                if (file) this.setFile(file);
             },
 
             handleDrop(event) {
                 const file = event.dataTransfer.files[0];
-                if (file) {
-                    this.setFile(file);
-                }
+                if (file) this.setFile(file);
             },
 
             setFile(file) {
                 this.errorMessage = '';
-                const maxSize = 200 * 1024 * 1024;
                 const allowedTypes = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-matroska'];
 
                 if (!allowedTypes.includes(file.type)) {
@@ -262,8 +269,8 @@ new class extends Component {
                     return;
                 }
 
-                if (file.size > maxSize) {
-                    this.errorMessage = '{{ __("File is too large. Maximum size is 200MB.") }}';
+                if (file.size > this.MAX_FILE_SIZE) {
+                    this.errorMessage = '{{ __("File is too large. Maximum size is 5GB.") }}';
                     return;
                 }
 
@@ -274,60 +281,116 @@ new class extends Component {
             },
 
             formatSize(bytes) {
-                if (bytes < 1024 * 1024) {
-                    return (bytes / 1024).toFixed(1) + ' KB';
-                }
-                return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+                if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+                if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+                return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
             },
 
-            upload() {
+            async upload() {
                 if (!this.file) return;
 
                 this.uploading = true;
                 this.progress = 0;
                 this.errorMessage = '';
+                this.cancelled = false;
 
-                const formData = new FormData();
-                formData.append('file', this.file);
-                if (this.title) {
-                    formData.append('title', this.title);
-                }
+                const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+                const totalChunks = Math.ceil(this.file.size / this.CHUNK_SIZE);
 
-                this.xhr = new XMLHttpRequest();
+                try {
+                    // Step 1: Start chunked upload session
+                    const startResponse = await fetch('/api/video-recordings/start', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            mime_type: this.file.type,
+                            title: this.title || null,
+                        }),
+                    });
 
-                this.xhr.upload.addEventListener('progress', (e) => {
-                    if (e.lengthComputable) {
-                        this.progress = Math.round((e.loaded / e.total) * 100);
+                    if (!startResponse.ok) {
+                        const err = await startResponse.json().catch(() => ({}));
+                        throw new Error(err.message || 'Failed to start upload session.');
                     }
-                });
 
-                this.xhr.addEventListener('load', () => {
-                    if (this.xhr.status === 201) {
-                        this.uploading = false;
-                        this.uploadComplete = true;
-                    } else {
-                        this.uploading = false;
-                        try {
-                            const response = JSON.parse(this.xhr.responseText);
-                            this.errorMessage = response.message || '{{ __("Upload failed. Please try again.") }}';
-                        } catch {
-                            this.errorMessage = '{{ __("Upload failed. Please try again.") }}';
+                    const { id: recordingId } = await startResponse.json();
+
+                    // Step 2: Upload chunks sequentially
+                    for (let i = 0; i < totalChunks; i++) {
+                        if (this.cancelled) return;
+
+                        const start = i * this.CHUNK_SIZE;
+                        const end = Math.min(start + this.CHUNK_SIZE, this.file.size);
+                        const chunk = this.file.slice(start, end);
+
+                        let success = false;
+                        for (let attempt = 0; attempt < this.MAX_RETRIES; attempt++) {
+                            if (this.cancelled) return;
+
+                            try {
+                                this.abortController = new AbortController();
+                                const formData = new FormData();
+                                formData.append('chunk', chunk, `chunk_${i}`);
+                                formData.append('chunk_index', i);
+
+                                const chunkResponse = await fetch(`/api/video-recordings/${recordingId}/chunk`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'X-CSRF-TOKEN': csrfToken,
+                                        'Accept': 'application/json',
+                                    },
+                                    body: formData,
+                                    signal: this.abortController.signal,
+                                });
+
+                                if (!chunkResponse.ok) {
+                                    const err = await chunkResponse.json().catch(() => ({}));
+                                    throw new Error(err.message || `Chunk ${i} upload failed.`);
+                                }
+
+                                success = true;
+                                break;
+                            } catch (e) {
+                                if (e.name === 'AbortError') return;
+                                if (attempt === this.MAX_RETRIES - 1) throw e;
+                                // Wait before retry (exponential backoff)
+                                await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                            }
                         }
+
+                        if (!success) throw new Error('Failed to upload chunk after retries.');
+
+                        this.progress = Math.round(((i + 1) / totalChunks) * 100);
                     }
-                });
 
-                this.xhr.addEventListener('error', () => {
+                    if (this.cancelled) return;
+
+                    // Step 3: Finalize
+                    const finalizeResponse = await fetch(`/api/video-recordings/${recordingId}/finalize`, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'Accept': 'application/json',
+                        },
+                    });
+
+                    if (!finalizeResponse.ok) {
+                        const err = await finalizeResponse.json().catch(() => ({}));
+                        throw new Error(err.message || 'Failed to finalize upload.');
+                    }
+
                     this.uploading = false;
-                    this.errorMessage = '{{ __("Upload failed. Please check your connection and try again.") }}';
-                });
+                    this.uploadComplete = true;
 
-                this.xhr.addEventListener('abort', () => {
+                } catch (e) {
+                    if (this.cancelled) return;
                     this.uploading = false;
-                });
-
-                this.xhr.open('POST', '/api/video-recordings');
-                this.xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('meta[name="csrf-token"]').content);
-                this.xhr.send(formData);
+                    this.errorMessage = e.message || '{{ __("Upload failed. Please try again.") }}';
+                }
             }
         }));
     </script>
