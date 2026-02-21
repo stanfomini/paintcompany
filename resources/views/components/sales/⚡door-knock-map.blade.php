@@ -288,12 +288,12 @@ new #[Layout('layouts.app')] class extends Component {
         </div>
 
         {{-- Today's Stats Bar --}}
-        <div class="flex items-center gap-4 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-sm">
+        <div class="flex items-center gap-2 sm:gap-4 px-2 sm:px-3 py-1.5 sm:py-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-xs sm:text-sm">
             <span class="font-medium">Today:</span>
             <span>{{ $this->todayStats['total'] }} knocks</span>
             <span class="text-green-600">{{ $this->todayStats['appointments'] }} appts</span>
-            <span class="text-blue-600">{{ $this->todayStats['interested'] }} interested</span>
-            <span>{{ $this->todayStats['conversion'] }}% conv.</span>
+            <span class="text-blue-600 hidden sm:inline">{{ $this->todayStats['interested'] }} interested</span>
+            <span>{{ $this->todayStats['conversion'] }}%</span>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -423,7 +423,7 @@ new #[Layout('layouts.app')] class extends Component {
                         {{ __('Pin must be within 1,000 feet of your location.') }}
                     </div>
 
-                    <div x-ref="map" class="h-[500px] lg:h-[600px] w-full"></div>
+                    <div x-ref="map" class="h-[calc(100vh-14rem)] sm:h-[500px] lg:h-[600px] w-full"></div>
                 </div>
             </div>
 
