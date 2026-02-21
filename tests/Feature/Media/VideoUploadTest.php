@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\Python\ProcessVideoRecordingJob;
 use App\Models\User;
 use App\Models\VideoRecording;
 use Illuminate\Http\UploadedFile;
@@ -171,5 +172,85 @@ describe('Video Upload - My Videos Component', function () {
             ->assertSee($video->title)
             ->dispatch('video-uploaded')
             ->assertStatus(200);
+    });
+});
+
+describe('Chunked Video Upload (File Upload)', function () {
+    it('uploads a large file via chunked upload flow', function () {
+        Storage::fake();
+        Queue::fake();
+
+        $user = User::factory()->internal()->create();
+
+        // Step 1: Start session
+        $startResponse = $this->actingAs($user)
+            ->postJson('/api/video-recordings/start', [
+                'mime_type' => 'video/mp4',
+                'title' => 'Large Training Video',
+            ]);
+
+        $startResponse->assertCreated()
+            ->assertJsonStructure(['id', 'status', 'share_token']);
+
+        $recordingId = $startResponse->json('id');
+        $recording = VideoRecording::find($recordingId);
+
+        // Step 2: Upload multiple chunks (simulating a larger file)
+        $chunkData = str_repeat('x', 1024); // 1KB chunks for test
+
+        for ($i = 0; $i < 3; $i++) {
+            $chunk = UploadedFile::fake()->createWithContent("chunk_{$i}.mp4", $chunkData);
+
+            $this->actingAs($user)
+                ->postJson("/api/video-recordings/{$recordingId}/chunk", [
+                    'chunk' => $chunk,
+                    'chunk_index' => $i,
+                ])
+                ->assertSuccessful()
+                ->assertJsonPath('received', true)
+                ->assertJsonPath('chunk_index', $i);
+        }
+
+        // Step 3: Finalize
+        $this->actingAs($user)
+            ->postJson("/api/video-recordings/{$recordingId}/finalize")
+            ->assertSuccessful()
+            ->assertJsonPath('status', 'processing');
+
+        // Verify recording was created and is processing
+        $recording->refresh();
+        expect($recording->status)->toBe('processing')
+            ->and($recording->title)->toBe('Large Training Video')
+            ->and($recording->file_size_bytes)->toBe(3072); // 3 x 1024
+
+        Queue::assertPushed(ProcessVideoRecordingJob::class);
+    });
+
+    it('handles upload cancellation gracefully', function () {
+        Storage::fake();
+
+        $user = User::factory()->internal()->create();
+
+        // Start session
+        $startResponse = $this->actingAs($user)
+            ->postJson('/api/video-recordings/start', [
+                'mime_type' => 'video/mp4',
+            ]);
+
+        $recordingId = $startResponse->json('id');
+
+        // Upload one chunk
+        $chunk = UploadedFile::fake()->createWithContent('chunk_0.mp4', str_repeat('x', 512));
+        $this->actingAs($user)
+            ->postJson("/api/video-recordings/{$recordingId}/chunk", [
+                'chunk' => $chunk,
+                'chunk_index' => 0,
+            ])
+            ->assertSuccessful();
+
+        // Don't finalize - simulating cancellation
+        // Recording should stay in uploading state
+        $recording = VideoRecording::find($recordingId);
+        expect($recording->status)->toBe('uploading');
     });
 });
