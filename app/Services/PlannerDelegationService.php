@@ -23,6 +23,10 @@ class PlannerDelegationService
             throw new \InvalidArgumentException('Cannot delegate planner access to the same user.');
         }
 
+        if (! array_key_exists($accessLevel, PlannerDelegation::ACCESS_HIERARCHY)) {
+            throw new \InvalidArgumentException("Invalid access level: {$accessLevel}");
+        }
+
         $isOwnPlanner = $grantor->id === $targetUser->id;
 
         if ($isOwnPlanner) {

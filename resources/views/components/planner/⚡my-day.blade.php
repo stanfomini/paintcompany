@@ -239,6 +239,19 @@ new class extends Component
 
     public function updatedViewingUserId(): void
     {
+        if ($this->viewingUserId) {
+            $user = auth()->user();
+            $targetUser = User::find($this->viewingUserId);
+
+            if (! $targetUser
+                || (! $user->can('planner.view_all')
+                    && ! app(\App\Services\PlannerDelegationService::class)->canActOnBehalf($user, $targetUser, 'view'))) {
+                $this->viewingUserId = null;
+
+                return;
+            }
+        }
+
         $this->resetPage();
         unset($this->delegatedUsers);
         unset($this->activities);
@@ -290,7 +303,7 @@ new class extends Component
     #[Computed]
     public function viewingAccessLevel(): ?string
     {
-        if (! $this->viewingUserId) {
+        if (! $this->viewingUserId || ! $this->viewingUser) {
             return null;
         }
 
@@ -300,11 +313,9 @@ new class extends Component
             return 'full';
         }
 
-        $delegation = \App\Models\PlannerDelegation::query()
-            ->forDelegate($user)
-            ->forTarget(User::find($this->viewingUserId))
-            ->active()
-            ->first();
+        $delegationService = app(\App\Services\PlannerDelegationService::class);
+        $delegations = $delegationService->getDelegationsFor($user);
+        $delegation = $delegations->first(fn ($d) => $d->target_user_id === $this->viewingUserId);
 
         return $delegation?->access_level;
     }
@@ -601,8 +612,21 @@ new class extends Component
             $assignedTo = auth()->id();
         }
 
+        // When viewing another user's planner with full delegation, create tasks for them
+        $userId = auth()->id();
+        if ($this->viewingUserId && $this->viewingUserId !== auth()->id()) {
+            $targetUser = User::find($this->viewingUserId);
+            $canCreateForTarget = auth()->user()->can('planner.view_all')
+                || ($targetUser && app(\App\Services\PlannerDelegationService::class)->canActOnBehalf(auth()->user(), $targetUser, 'full'));
+
+            if ($canCreateForTarget) {
+                $userId = $this->viewingUserId;
+                $assignedTo = $this->taskAssignedTo ?: $this->viewingUserId;
+            }
+        }
+
         $data = [
-            'user_id' => auth()->id(),
+            'user_id' => $userId,
             'assigned_to' => $assignedTo,
             'type' => $this->taskType,
             'title' => $this->taskTitle,
