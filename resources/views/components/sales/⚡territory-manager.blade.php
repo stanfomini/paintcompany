@@ -29,6 +29,8 @@ new #[Layout('layouts.app')] class extends Component
     public ?float $centerLng = null;
 
     // UI state
+    public string $activeTab = 'map';
+
     public ?int $editingId = null;
 
     public bool $showForm = false;
@@ -225,6 +227,34 @@ new #[Layout('layouts.app')] class extends Component
             @endcan
         </div>
 
+        {{-- Tab Navigation --}}
+        <div class="border-b border-zinc-200 dark:border-zinc-700">
+            <nav class="-mb-px flex gap-4" aria-label="Tabs">
+                <button wire:click="$set('activeTab', 'map')"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'map' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                    Map
+                </button>
+                <button wire:click="$set('activeTab', 'hierarchy')"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'hierarchy' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                    Hierarchy
+                </button>
+                @can('territories.dispatch_blocks')
+                <button wire:click="$set('activeTab', 'dispatch')"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'dispatch' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                    Dispatch
+                </button>
+                @endcan
+                @can('analytics.territory_pnl')
+                <button wire:click="$set('activeTab', 'analytics')"
+                    class="px-3 py-2 text-sm font-medium border-b-2 transition-colors {{ $activeTab === 'analytics' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                    Analytics
+                </button>
+                @endcan
+            </nav>
+        </div>
+
+        {{-- Tab Content --}}
+        @if($activeTab === 'map')
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {{-- Map Column --}}
             <div class="lg:col-span-2">
@@ -392,9 +422,23 @@ new #[Layout('layouts.app')] class extends Component
                 </div>
             </div>
         </div>
+        @elseif($activeTab === 'hierarchy')
+            <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
+                Territory hierarchy tree (Task 2)
+            </div>
+        @elseif($activeTab === 'dispatch')
+            <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
+                Dispatch management (Task 3)
+            </div>
+        @elseif($activeTab === 'analytics')
+            <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
+                Territory P&L Analytics (Task 4)
+            </div>
+        @endif
     </div>
 
     {{-- Dispatch Modal --}}
+    @can('territory_dispatch.manage')
     <flux:modal wire:model="showDispatchModal" class="max-w-md">
         <div class="space-y-4">
             <flux:heading size="lg">{{ __('Dispatch Territory') }}</flux:heading>
@@ -422,6 +466,8 @@ new #[Layout('layouts.app')] class extends Component
             </div>
         </div>
     </flux:modal>
+
+    @endcan
 
     @assets
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
