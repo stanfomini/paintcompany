@@ -198,6 +198,26 @@ class RolesAndPermissionsSeeder extends Seeder
             'territory_dispatch.manage',
             'territory_dispatch.claim',
 
+            // Territory Hierarchy
+            'territories.manage_regions',
+            'territories.manage_zones',
+            'territories.manage_blocks',
+            'territories.assign_team',
+            'territories.view_all',
+            'territories.view_own',
+            'territories.dispatch_blocks',
+
+            // Commission Configuration
+            'commission.configure',
+            'commission.view_team',
+            'commission.view_all',
+
+            // Analytics
+            'analytics.territory_pnl',
+
+            // Compensation Planning
+            'compensation.planner',
+
             // AR Portal
             'ar.view',
             'ar.manage',
@@ -298,6 +318,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'door_knocks.view', 'door_knocks.record', 'door_knocks.view_all',
             // Territory Dispatch
             'territory_dispatch.view', 'territory_dispatch.manage', 'territory_dispatch.claim',
+            // Territory Hierarchy (all except manage_regions — grantable via scope)
+            'territories.manage_zones', 'territories.manage_blocks', 'territories.assign_team',
+            'territories.view_all', 'territories.dispatch_blocks',
+            'commission.configure', 'commission.view_all', 'analytics.territory_pnl', 'compensation.planner',
             // AR Portal
             'ar.view', 'ar.manage', 'ar.approve_payables', 'ar.create_journal_entries',
             // Workflows
@@ -370,6 +394,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'door_knocks.view', 'door_knocks.record', 'door_knocks.view_all',
             // Territory Dispatch
             'territory_dispatch.view', 'territory_dispatch.claim',
+            // Territory Hierarchy
+            'territories.manage_zones', 'territories.manage_blocks', 'territories.assign_team',
+            'territories.view_own', 'territories.dispatch_blocks',
+            'commission.configure', 'commission.view_team', 'analytics.territory_pnl',
             // AR Portal (view only)
             'ar.view',
             // Financial Summaries
@@ -416,6 +444,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'door_knocks.view', 'door_knocks.record',
             // Territory Dispatch
             'territory_dispatch.view', 'territory_dispatch.claim',
+            // Territory Hierarchy
+            'territories.view_own', 'territories.manage_blocks', 'territories.dispatch_blocks',
+            'territories.assign_team', 'commission.view_team',
             // Media Hub
             'media.view', 'media.record', 'media.send_emails', 'media.view_own_analytics',
             // Reports
@@ -491,6 +522,16 @@ class RolesAndPermissionsSeeder extends Seeder
             'scheduling.view',
             // Reports (own performance stats)
             'reports.own',
+        ]);
+
+        // Door Knocker - minimal permissions, focused on assigned blocks and recording knocks
+        $doorKnocker = Role::firstOrCreate(['name' => 'door_knocker', 'guard_name' => 'web']);
+        $doorKnocker->syncPermissions([
+            'territories.view_own',
+            'door_knocks.view',
+            'door_knocks.record',
+            'territory_dispatch.view',
+            'territory_dispatch.claim',
         ]);
     }
 }

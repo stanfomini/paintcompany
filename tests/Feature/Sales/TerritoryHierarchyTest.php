@@ -106,3 +106,29 @@ it('gets user territory teams', function () {
 
     expect($user->territoryTeams)->toHaveCount(2);
 });
+
+it('seeds the door_knocker role with correct permissions', function () {
+    $this->artisan('db:seed', ['--class' => 'RolesAndPermissionsSeeder']);
+
+    $role = \Spatie\Permission\Models\Role::findByName('door_knocker', 'web');
+    expect($role)->not->toBeNull();
+
+    $permissions = $role->permissions->pluck('name')->toArray();
+    expect($permissions)->toContain('territories.view_own');
+    expect($permissions)->toContain('door_knocks.record');
+    expect($permissions)->toContain('door_knocks.view');
+    expect($permissions)->not->toContain('territories.manage_regions');
+    expect($permissions)->not->toContain('commission.configure');
+});
+
+it('gives owner all territory hierarchy permissions', function () {
+    $this->artisan('db:seed', ['--class' => 'RolesAndPermissionsSeeder']);
+
+    $role = \Spatie\Permission\Models\Role::findByName('owner', 'web');
+    $permissions = $role->permissions->pluck('name')->toArray();
+
+    expect($permissions)->toContain('territories.manage_regions');
+    expect($permissions)->toContain('territories.view_all');
+    expect($permissions)->toContain('compensation.planner');
+    expect($permissions)->toContain('analytics.territory_pnl');
+});
