@@ -20,3 +20,6 @@ Schedule::command('documents:check-expiration')->dailyAt('08:00');
 Schedule::command('territory:expire-offers')->everyMinute();
 Schedule::command('api-sources:poll')->everyMinute();
 Schedule::command('sitemap:generate')->weekly();
+Schedule::call(function () {
+    app(\App\Services\PlannerDelegationService::class)->expireStale();
+})->daily()->name('planner:expire-delegations');
