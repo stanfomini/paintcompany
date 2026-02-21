@@ -51,6 +51,7 @@ class Activity extends Model
     protected $fillable = [
         'user_id',
         'assigned_to',
+        'acted_by',
         'subject_type',
         'subject_id',
         'type',
@@ -115,6 +116,14 @@ class Activity extends Model
     public function assignee(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    /**
+     * Get the user who acted on behalf of the assignee (delegate).
+     */
+    public function actedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'acted_by');
     }
 
     /**
