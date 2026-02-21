@@ -158,12 +158,12 @@ new class extends Component {
                     <form wire:submit="startChat" class="space-y-3">
                         <div>
                             <label for="guest-chat-email" class="block text-xs font-medium text-zinc-700 mb-1">{{ __('Email') }} *</label>
-                            <input wire:model="email" id="guest-chat-email" type="email" required class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('your@email.com') }}" />
+                            <input wire:model="email" id="guest-chat-email" type="email" required class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('your@email.com') }}" />
                             @error('email') <p class="text-xs text-red-500 mt-1">{{ $message }}</p> @enderror
                         </div>
                         <div>
                             <label for="guest-chat-name" class="block text-xs font-medium text-zinc-700 mb-1">{{ __('Name') }}</label>
-                            <input wire:model="name" id="guest-chat-name" type="text" class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('Your name (optional)') }}" />
+                            <input wire:model="name" id="guest-chat-name" type="text" class="w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('Your name (optional)') }}" />
                         </div>
                         <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium py-2 rounded-lg transition-colors">
                             <span wire:loading.remove wire:target="startChat">{{ __('Start Chat') }}</span>
@@ -195,7 +195,7 @@ new class extends Component {
                 {{-- Message Composer --}}
                 <div class="border-t border-zinc-200 p-3 shrink-0">
                     <form wire:submit="sendMessage" class="flex gap-2">
-                        <input wire:model="newMessage" type="text" class="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('Type a message...') }}" />
+                        <input wire:model="newMessage" type="text" class="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('Type a message...') }}" />
                         <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-2 transition-colors shrink-0">
                             <svg wire:loading.remove wire:target="sendMessage" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
                             <svg wire:loading wire:target="sendMessage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
