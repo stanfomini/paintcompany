@@ -62,6 +62,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'planner.view',
             'planner.view_all',
             'planner.manage',
+            'planner.delegate',
+            'planner.delegate_own',
 
             // Agent Listings
             'agent_listings.view',
@@ -263,7 +265,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Jobs
             'jobs.view', 'jobs.view_all', 'jobs.edit',
             // Planner
-            'planner.view', 'planner.view_all', 'planner.manage',
+            'planner.view', 'planner.view_all', 'planner.manage', 'planner.delegate', 'planner.delegate_own',
             // Agent Listings
             'agent_listings.view', 'agent_listings.manage',
             // Production Rates
@@ -348,7 +350,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Jobs
             'jobs.view', 'jobs.view_all', 'jobs.edit',
             // Planner
-            'planner.view', 'planner.view_all', 'planner.manage',
+            'planner.view', 'planner.view_all', 'planner.manage', 'planner.delegate', 'planner.delegate_own',
             // Agent Listings (view only)
             'agent_listings.view',
             // Production Rates (view only)
@@ -420,7 +422,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Jobs (view only)
             'jobs.view',
             // Planner (own activities)
-            'planner.view',
+            'planner.view', 'planner.delegate_own',
             // Production Rates (view only)
             'production_rates.view',
             // Communication
@@ -465,7 +467,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Jobs (view only)
             'jobs.view',
             // Planner
-            'planner.view', 'planner.manage',
+            'planner.view', 'planner.manage', 'planner.delegate_own',
             // Communication
             'chat.access', 'chat.with_internal', 'chat.with_crew',
             // Settings (contracts only)
@@ -500,7 +502,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Estimates (view only - see estimates from their knocks)
             'estimates.view',
             // Planner (own schedule)
-            'planner.view',
+            'planner.view', 'planner.delegate_own',
             // Communication (chat with internal team + customers for follow-ups)
             'chat.access', 'chat.with_internal', 'chat.with_customers',
             'video_call.access',
