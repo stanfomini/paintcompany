@@ -48,6 +48,9 @@ new class extends Component
 
     public string $view = 'command_center';
 
+    // Delegation viewing
+    public ?int $viewingUserId = null;
+
     // Calendar sync
     public bool $showCalendarSync = false;
 
@@ -232,6 +235,13 @@ new class extends Component
         $this->resetPage();
     }
 
+    public function updatedViewingUserId(): void
+    {
+        $this->resetPage();
+        unset($this->delegatedUsers);
+        unset($this->activities);
+    }
+
     #[Computed]
     public function activityTypes(): array
     {
@@ -245,6 +255,56 @@ new class extends Component
             ->where('is_active', true)
             ->orderBy('name')
             ->get();
+    }
+
+    #[Computed]
+    public function delegatedUsers(): \Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+
+        if ($user->can('planner.view_all')) {
+            return User::where('type', 'internal')
+                ->where('is_active', true)
+                ->where('id', '!=', $user->id)
+                ->orderBy('name')
+                ->get();
+        }
+
+        $delegations = app(\App\Services\PlannerDelegationService::class)->getDelegationsFor($user);
+
+        return $delegations->map(fn ($d) => $d->targetUser)->unique('id');
+    }
+
+    #[Computed]
+    public function viewingUser(): ?User
+    {
+        if (! $this->viewingUserId) {
+            return null;
+        }
+
+        return User::find($this->viewingUserId);
+    }
+
+    #[Computed]
+    public function viewingAccessLevel(): ?string
+    {
+        if (! $this->viewingUserId) {
+            return null;
+        }
+
+        $user = auth()->user();
+
+        if ($user->can('planner.view_all')) {
+            return 'full';
+        }
+
+        $delegation = \App\Models\PlannerDelegation::query()
+            ->forDelegate($user)
+            ->forTarget(User::find($this->viewingUserId))
+            ->active()
+            ->first();
+
+        return $delegation?->access_level;
     }
 
     #[Computed]
@@ -312,6 +372,10 @@ new class extends Component
 
         if ($this->timeFilter !== 'all') {
             $filters['time'] = $this->timeFilter;
+        }
+
+        if ($this->viewingUserId) {
+            $filters['viewing_user'] = User::find($this->viewingUserId);
         }
 
         return $service->getActivityStream(
@@ -828,6 +892,15 @@ new class extends Component
                     @endcan
                 </flux:select>
 
+                @if ($this->delegatedUsers->isNotEmpty())
+                    <flux:select wire:model.live="viewingUserId" class="w-48">
+                        <option value="">{{ __('My Activities') }}</option>
+                        @foreach ($this->delegatedUsers as $member)
+                            <option value="{{ $member->id }}">{{ $member->name }}</option>
+                        @endforeach
+                    </flux:select>
+                @endif
+
                 <flux:select wire:model.live="statusFilter" class="w-40">
                     <option value="active">{{ __('Active') }}</option>
                     <option value="needs_attention">{{ __('Needs Attention') }}</option>
@@ -850,6 +923,17 @@ new class extends Component
                     <option value="this_month">{{ __('This Month') }}</option>
                     <option value="overdue">{{ __('Overdue') }}</option>
                 </flux:select>
+            </div>
+        @endif
+
+        @if ($this->viewingUser)
+            <div class="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                <flux:icon name="eye" class="w-4 h-4 text-blue-600" />
+                <flux:text class="text-sm text-blue-700 dark:text-blue-300">
+                    {{ __("Viewing :name's planner", ['name' => $this->viewingUser->name]) }}
+                </flux:text>
+                <flux:badge size="sm" color="blue">{{ ucfirst($this->viewingAccessLevel ?? 'view') }}</flux:badge>
+                <flux:button size="sm" variant="ghost" wire:click="$set('viewingUserId', null)" icon="x-mark" class="ml-auto" />
             </div>
         @endif
 
