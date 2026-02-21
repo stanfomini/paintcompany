@@ -135,6 +135,11 @@ class User extends Authenticatable
         return $this->hasOne(CrewW9Form::class);
     }
 
+    public function permissionScopes(): HasMany
+    {
+        return $this->hasMany(PermissionScope::class);
+    }
+
     public function territoryTeams(): BelongsToMany
     {
         return $this->belongsToMany(SalesTerritory::class, 'territory_team_members', 'user_id', 'territory_id')
