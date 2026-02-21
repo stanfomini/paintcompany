@@ -2,6 +2,7 @@
 
 use App\Models\SalesTerritory;
 use App\Models\User;
+use App\Services\PermissionScopeService;
 use App\Services\TerritoryDispatchService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -82,6 +83,26 @@ new #[Layout('layouts.app')] class extends Component
                 'color' => $t->color,
                 'boundary' => $t->boundary,
             ])->values()->toArray();
+    }
+
+    #[Computed]
+    public function dispatchableBlocks(): \Illuminate\Support\Collection
+    {
+        $user = auth()->user();
+        $scopeService = app(PermissionScopeService::class);
+
+        $query = SalesTerritory::query()
+            ->where('level', 'block')
+            ->where('status', 'active')
+            ->with(['assignedUser', 'parent'])
+            ->orderBy('name');
+
+        if (! $scopeService->hasPermission($user, 'territories.view_all')) {
+            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+            $query->whereIn('id', $visibleIds);
+        }
+
+        return $query->get();
     }
 
     /**
@@ -427,8 +448,31 @@ new #[Layout('layouts.app')] class extends Component
                 Territory hierarchy tree (Task 2)
             </div>
         @elseif($activeTab === 'dispatch')
-            <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
-                Dispatch management (Task 3)
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <flux:heading size="lg">Block Dispatch</flux:heading>
+                </div>
+
+                <div class="grid gap-3">
+                    @forelse($this->dispatchableBlocks as $block)
+                        <div wire:key="dispatch-{{ $block->id }}" class="flex items-center justify-between p-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            <div>
+                                <p class="font-medium text-sm">{{ $block->name }}</p>
+                                <p class="text-xs text-zinc-500">{{ $block->parent?->name ?? 'No zone' }}</p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                @if($block->assignedUser)
+                                    <flux:badge size="sm">{{ $block->assignedUser->name }}</flux:badge>
+                                @else
+                                    <flux:badge variant="warning" size="sm">Unassigned</flux:badge>
+                                @endif
+                                <flux:button size="xs" wire:click="openDispatch({{ $block->id }})">Dispatch</flux:button>
+                            </div>
+                        </div>
+                    @empty
+                        <p class="text-center py-8 text-zinc-500">No blocks available for dispatch.</p>
+                    @endforelse
+                </div>
             </div>
         @elseif($activeTab === 'analytics')
             <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
