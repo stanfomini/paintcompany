@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\CommissionEntry;
 use App\Models\CompanySetting;
 use App\Models\Deal;
+use App\Models\DoorKnock;
 use App\Models\EmployeeProfile;
 use App\Models\Estimate;
 use App\Models\Job;
@@ -200,6 +201,37 @@ class CommissionService
         }
 
         return $entries;
+    }
+
+    /**
+     * Create commission entries from a door knock (appointment set or sold).
+     *
+     * @return array<int, CommissionEntry>
+     */
+    public function createFromDoorKnock(DoorKnock $knock): array
+    {
+        // Only qualifying statuses trigger commissions
+        if (! in_array($knock->status, ['appointment_set', 'sold'])) {
+            return [];
+        }
+
+        $employee = $this->findEmployeeForUser($knock->user_id);
+        if (! $employee) {
+            return [];
+        }
+
+        // Prevent duplicates
+        if ($this->hasDuplicateCommission($employee, $knock, 'door_knock')) {
+            return [];
+        }
+
+        // Get revenue from linked deal if available
+        $revenue = 0;
+        if ($knock->deal_id) {
+            $revenue = (float) ($knock->deal?->estimated_value ?? 0);
+        }
+
+        return $this->applyRulesForSource($employee, 'door_knock', $knock, $revenue, 0, autoOnly: true);
     }
 
     /**
@@ -444,6 +476,8 @@ class CommissionService
             'lead' => 'Lead: '.($sourceModel->customer_name ?? $sourceModel->title ?? "#{$sourceModel->id}"),
             'estimate' => 'Estimate: '.($sourceModel->estimate_number ?? "#{$sourceModel->id}"),
             'job' => 'Job: '.($sourceModel->title ?? "#{$sourceModel->id}"),
+            'door_knock' => 'Door Knock: '.($sourceModel->address ?? "#{$sourceModel->id}"),
+            'territory_override' => 'Territory Override: '.($sourceModel->title ?? "#{$sourceModel->id}"),
             default => ucfirst($source)." #{$sourceModel->id}",
         };
     }
