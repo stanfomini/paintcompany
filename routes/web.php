@@ -468,6 +468,10 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         ->middleware('permission:sales_territories.view')
         ->name('territory-analytics');
 
+    Route::livewire('/compensation-planner', 'sales.compensation-planner')
+        ->middleware('permission:compensation.planner')
+        ->name('compensation-planner');
+
     // AR Portal routes
     Route::middleware(['permission:ar.view'])->group(function () {
         Route::livewire('/ar', 'accounting.ar-index')->name('ar.index');

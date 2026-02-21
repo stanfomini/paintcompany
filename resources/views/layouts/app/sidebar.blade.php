@@ -102,6 +102,11 @@
                                 {{ __('Territory Analytics') }}
                             </flux:sidebar.item>
                         @endcan
+                        @can('compensation.planner')
+                            <flux:sidebar.item icon="calculator" :href="route('compensation-planner')" :current="request()->routeIs('compensation-planner')" wire:navigate>
+                                {{ __('Compensation Planner') }}
+                            </flux:sidebar.item>
+                        @endcan
                     </flux:sidebar.group>
                 @endcanany
 
