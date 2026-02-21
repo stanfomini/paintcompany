@@ -98,6 +98,66 @@ it('skips commission for non-qualifying knock statuses', function () {
     expect($entries)->toBeEmpty();
 });
 
+it('creates territory override commission for region manager when job completes', function () {
+    // Setup hierarchy: region (manager) > zone (estimator) > block (knocker)
+    $regionManager = User::factory()->internal()->create();
+    EmployeeProfile::factory()
+        ->for($regionManager, 'user')
+        ->withTerritoryOverrideCommission(0.02) // 2% override
+        ->create();
+
+    $estimator = User::factory()->internal()->create();
+    $knocker = User::factory()->internal()->create();
+
+    $region = SalesTerritory::factory()->region()->assignedTo($regionManager)->managedBy($regionManager)->create();
+    $zone = SalesTerritory::factory()->zone()->childOf($region)->assignedTo($estimator)->create();
+    $block = SalesTerritory::factory()->block()->childOf($zone)->assignedTo($knocker)->create();
+
+    // Create a knock that becomes a deal
+    $knock = DoorKnock::factory()->appointmentSet()->forUser($knocker)->create([
+        'territory_id' => $block->id,
+    ]);
+
+    $this->actingAs($knocker);
+    $deal = app(DoorKnockService::class)->convertToLead($knock);
+    $deal->update(['estimated_value' => 10000, 'actual_value' => 10000]);
+
+    // Create estimate and job (simulate job completion)
+    $estimate = \App\Models\Estimate::factory()->for($deal)->create([
+        'total' => 10000,
+    ]);
+    $job = \App\Models\Job::factory()->for($deal)->completed()->create([
+        'estimate_id' => $estimate->id,
+    ]);
+
+    $service = app(CommissionService::class);
+    $entries = $service->createTerritoryOverrideCommissions($job);
+
+    expect($entries)->toHaveCount(1);
+    expect($entries[0]->employee_profile_id)->toBe($regionManager->employeeProfile->id);
+    expect((float) $entries[0]->amount)->toBe(200.0); // 2% of $10,000
+    expect($entries[0]->commission_type)->toBe('revenue_percentage');
+});
+
+it('skips override commission when job has no door knock origin', function () {
+    $regionManager = User::factory()->internal()->create();
+    EmployeeProfile::factory()
+        ->for($regionManager, 'user')
+        ->withTerritoryOverrideCommission(0.02)
+        ->create();
+
+    $deal = Deal::factory()->create(['origin_door_knock_id' => null]);
+    $estimate = \App\Models\Estimate::factory()->for($deal)->create(['total' => 10000]);
+    $job = \App\Models\Job::factory()->for($deal)->completed()->create([
+        'estimate_id' => $estimate->id,
+    ]);
+
+    $service = app(CommissionService::class);
+    $entries = $service->createTerritoryOverrideCommissions($job);
+
+    expect($entries)->toBeEmpty();
+});
+
 it('prevents duplicate door knock commissions', function () {
     $knocker = User::factory()->internal()->create();
     EmployeeProfile::factory()

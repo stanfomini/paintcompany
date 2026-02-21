@@ -8,6 +8,7 @@ use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\DoorKnock;
 use App\Models\EmployeeProfile;
+use App\Models\SalesTerritory;
 use App\Models\Estimate;
 use App\Models\Job;
 use App\Models\JobPayable;
@@ -232,6 +233,60 @@ class CommissionService
         }
 
         return $this->applyRulesForSource($employee, 'door_knock', $knock, $revenue, 0, autoOnly: true);
+    }
+
+    /**
+     * Create territory override commissions by walking up the hierarchy.
+     * Called when a job completes that originated from a door knock.
+     *
+     * @return array<int, CommissionEntry>
+     */
+    public function createTerritoryOverrideCommissions(Job $job): array
+    {
+        $deal = $job->deal;
+        if (! $deal || ! $deal->origin_door_knock_id) {
+            return [];
+        }
+
+        $knock = DoorKnock::find($deal->origin_door_knock_id);
+        if (! $knock || ! $knock->territory_id) {
+            return [];
+        }
+
+        $territory = SalesTerritory::find($knock->territory_id);
+        if (! $territory) {
+            return [];
+        }
+
+        $revenue = (float) ($job->estimate?->total ?? $deal->actual_value ?? $deal->estimated_value ?? 0);
+        $entries = [];
+
+        // Walk up the hierarchy and apply override commissions
+        $ancestors = $territory->getAncestors();
+        foreach ($ancestors as $ancestor) {
+            $managerId = $ancestor->manager_id ?? $ancestor->assigned_user_id;
+            if (! $managerId) {
+                continue;
+            }
+
+            $employee = $this->findEmployeeForUser($managerId);
+            if (! $employee) {
+                continue;
+            }
+
+            // Prevent duplicates per manager per job
+            if ($this->hasDuplicateCommission($employee, $job, 'territory_override')) {
+                continue;
+            }
+
+            $overrideEntries = $this->applyRulesForSource(
+                $employee, 'territory_override', $job, $revenue, 0, autoOnly: true
+            );
+
+            $entries = array_merge($entries, $overrideEntries);
+        }
+
+        return $entries;
     }
 
     /**
