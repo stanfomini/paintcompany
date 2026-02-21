@@ -4,6 +4,7 @@ use App\Models\DoorKnock;
 use App\Models\SalesTerritory;
 use App\Services\DoorKnockService;
 use App\Services\LocationIQService;
+use App\Services\PermissionScopeService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -81,7 +82,17 @@ new #[Layout('layouts.app')] class extends Component {
     #[Computed]
     public function territories()
     {
-        return SalesTerritory::active()->orderBy('name')->get();
+        $user = auth()->user();
+        $scopeService = app(PermissionScopeService::class);
+
+        $query = SalesTerritory::active()->orderBy('name');
+
+        if (! $scopeService->hasPermission($user, 'territories.view_all')) {
+            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+            $query->whereIn('id', $visibleIds);
+        }
+
+        return $query->get();
     }
 
     /**
@@ -90,15 +101,45 @@ new #[Layout('layouts.app')] class extends Component {
     #[Computed]
     public function territoryPolygons(): array
     {
-        return SalesTerritory::active()
-            ->whereNotNull('boundary')
-            ->get()
+        $user = auth()->user();
+        $scopeService = app(PermissionScopeService::class);
+
+        $query = SalesTerritory::active()->whereNotNull('boundary');
+
+        if (! $scopeService->hasPermission($user, 'territories.view_all')) {
+            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+            $query->whereIn('id', $visibleIds);
+        }
+
+        return $query->get()
             ->map(fn ($t) => [
                 'id' => $t->id,
                 'name' => $t->name,
                 'color' => $t->color,
                 'boundary' => $t->boundary,
+                'level' => $t->level,
             ])->toArray();
+    }
+
+    #[Computed]
+    public function todayStats(): array
+    {
+        $user = auth()->user();
+        $today = now()->startOfDay();
+
+        $knocks = DoorKnock::where('user_id', $user->id)
+            ->where('knocked_at', '>=', $today)
+            ->get();
+
+        return [
+            'total' => $knocks->count(),
+            'appointments' => $knocks->where('status', 'appointment_set')->count(),
+            'interested' => $knocks->where('status', 'interested')->count(),
+            'not_home' => $knocks->where('status', 'not_home')->count(),
+            'conversion' => $knocks->count() > 0
+                ? round(($knocks->whereIn('status', ['interested', 'appointment_set', 'sold'])->count() / $knocks->count()) * 100)
+                : 0,
+        ];
     }
 
     #[Computed]
@@ -139,6 +180,21 @@ new #[Layout('layouts.app')] class extends Component {
 
         unset($this->knockMarkers);
         $this->dispatch('markers-updated', markers: $this->knockMarkers);
+    }
+
+    /**
+     * Reverse-geocode a location without dropping a pin (for stop detection suggestions).
+     */
+    public function detectAddress(float $lat, float $lng): void
+    {
+        try {
+            $locationService = app(LocationIQService::class);
+            $result = $locationService->getCachedOrFetch($lat, $lng);
+            $address = $result['address'] ?? '';
+            $this->dispatch('address-detected', address: $address);
+        } catch (\Exception $e) {
+            $this->dispatch('address-detected', address: __('Address unavailable'));
+        }
     }
 
     public function dropPin(float $lat, float $lng): void
@@ -231,6 +287,15 @@ new #[Layout('layouts.app')] class extends Component {
             </div>
         </div>
 
+        {{-- Today's Stats Bar --}}
+        <div class="flex items-center gap-4 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 rounded-lg text-sm">
+            <span class="font-medium">Today:</span>
+            <span>{{ $this->todayStats['total'] }} knocks</span>
+            <span class="text-green-600">{{ $this->todayStats['appointments'] }} appts</span>
+            <span class="text-blue-600">{{ $this->todayStats['interested'] }} interested</span>
+            <span>{{ $this->todayStats['conversion'] }}% conv.</span>
+        </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {{-- Map --}}
             <div class="lg:col-span-2">
@@ -238,7 +303,7 @@ new #[Layout('layouts.app')] class extends Component {
                     wire:ignore
                     x-data="territoryMap({
                         clickToPlace: true,
-                        geolocatePin: true,
+                        trackLocation: true,
                         zoom: {{ count($this->territoryPolygons) > 0 ? 12 : 14 }},
                         center: {{ json_encode($this->mapCenter) }},
                         polygons: {{ json_encode($this->territoryPolygons) }}
@@ -247,30 +312,49 @@ new #[Layout('layouts.app')] class extends Component {
                     x-on:viewport-changed.window="$wire.updateViewport($event.detail.neLat, $event.detail.neLng, $event.detail.swLat, $event.detail.swLng)"
                     class="rounded-xl border border-zinc-200 dark:border-zinc-700 overflow-hidden relative"
                 >
-                    {{-- GPS Status Bar --}}
+                    {{-- Tracking Controls --}}
                     <div class="absolute top-3 right-3 z-[1000] flex items-center gap-2">
+                        {{-- Re-center button (shown when follow mode is off) --}}
+                        <button
+                            x-show="!followMode && gpsStatus === 'granted'"
+                            x-cloak
+                            type="button"
+                            x-on:click="recenter()"
+                            class="flex items-center gap-1.5 rounded-lg bg-white dark:bg-zinc-800 px-3 py-2 text-sm font-medium shadow-md border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors text-blue-600"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
+                            </svg>
+                            {{ __('Re-center') }}
+                        </button>
+
+                        {{-- Tracking toggle --}}
                         <button
                             type="button"
-                            x-on:click="requestGeolocation(false)"
+                            x-on:click="watchId !== null ? stopTracking() : startTracking()"
                             class="flex items-center gap-1.5 rounded-lg bg-white dark:bg-zinc-800 px-3 py-2 text-sm font-medium shadow-md border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
                             :class="{
-                                'text-blue-600': gpsStatus === 'granted',
+                                'text-green-600': gpsStatus === 'granted' && watchId !== null,
                                 'text-red-500': gpsStatus === 'denied',
                                 'text-amber-500 animate-pulse': gpsStatus === 'requesting',
-                                'text-zinc-600 dark:text-zinc-300': gpsStatus === 'idle'
+                                'text-zinc-600 dark:text-zinc-300': gpsStatus === 'idle' || watchId === null
                             }"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
                             </svg>
-                            <span x-text="{
-                                idle: '{{ __('Drop Pin Here') }}',
-                                requesting: '{{ __('Getting GPS...') }}',
-                                granted: '{{ __('Drop Pin Here') }}',
-                                denied: '{{ __('GPS Denied') }}',
-                                unavailable: '{{ __('GPS Unavailable') }}'
-                            }[gpsStatus]"></span>
+                            <span x-text="
+                                gpsStatus === 'denied' ? '{{ __('GPS Denied') }}'
+                                : gpsStatus === 'unavailable' ? '{{ __('GPS Unavailable') }}'
+                                : gpsStatus === 'requesting' ? '{{ __('Getting GPS...') }}'
+                                : watchId !== null ? '{{ __('Tracking') }}'
+                                : '{{ __('Start Tracking') }}'
+                            "></span>
+                            <span x-show="watchId !== null && gpsStatus === 'granted'" class="relative flex h-2 w-2">
+                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                            </span>
                         </button>
                     </div>
 
@@ -281,6 +365,62 @@ new #[Layout('layouts.app')] class extends Component {
                         class="absolute bottom-0 left-0 right-0 z-[1000] bg-amber-50 dark:bg-amber-900/50 border-t border-amber-200 dark:border-amber-700 px-4 py-2 text-sm text-amber-800 dark:text-amber-200"
                     >
                         {{ __('Location access was denied. You can still tap the map to place pins, or enable location in your browser settings.') }}
+                    </div>
+
+                    {{-- Stop Detection Toast (address suggestion with confirm) --}}
+                    <div
+                        x-show="stopDetected"
+                        x-cloak
+                        x-transition:enter="transition ease-out duration-300"
+                        x-transition:enter-start="opacity-0 translate-y-2"
+                        x-transition:enter-end="opacity-100 translate-y-0"
+                        x-transition:leave="transition ease-in duration-200"
+                        x-transition:leave-start="opacity-100 translate-y-0"
+                        x-transition:leave-end="opacity-0 translate-y-2"
+                        class="absolute bottom-14 left-3 right-3 z-[1000] bg-blue-50 dark:bg-blue-900/50 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2 text-sm text-blue-800 dark:text-blue-200 flex items-center gap-2"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+                        </svg>
+                        <span x-show="!detectedAddress" class="animate-pulse">{{ __('Detecting address...') }}</span>
+                        <span x-show="detectedAddress" x-text="detectedAddress" class="truncate"></span>
+                        <button
+                            x-show="detectedAddress"
+                            x-cloak
+                            type="button"
+                            x-on:click="confirmStopPin()"
+                            class="shrink-0 ml-auto rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
+                        >
+                            {{ __('Drop Pin') }}
+                        </button>
+                        <button
+                            type="button"
+                            x-on:click="dismissStopDetection()"
+                            class="shrink-0 text-blue-400 hover:text-blue-600"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    {{-- Too Far Toast (1000-foot radius enforcement) --}}
+                    <div
+                        x-show="tooFar"
+                        x-cloak
+                        x-transition:enter="transition ease-out duration-300"
+                        x-transition:enter-start="opacity-0 translate-y-2"
+                        x-transition:enter-end="opacity-100 translate-y-0"
+                        x-transition:leave="transition ease-in duration-200"
+                        x-transition:leave-start="opacity-100 translate-y-0"
+                        x-transition:leave-end="opacity-0 translate-y-2"
+                        class="absolute bottom-14 left-3 right-3 z-[1000] bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-700 rounded-lg px-4 py-2 text-sm text-red-800 dark:text-red-200 flex items-center gap-2"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+                        </svg>
+                        {{ __('Pin must be within 1,000 feet of your location.') }}
                     </div>
 
                     <div x-ref="map" class="h-[500px] lg:h-[600px] w-full"></div>
@@ -380,7 +520,7 @@ new #[Layout('layouts.app')] class extends Component {
                     {{-- Instructions --}}
                     <flux:callout icon="map-pin" variant="outline">
                         <flux:callout.heading>{{ __('Record a Door Knock') }}</flux:callout.heading>
-                        <flux:callout.text>{{ __('Tap the map or use the GPS button to drop a pin at your location. The address will be auto-filled.') }}</flux:callout.text>
+                        <flux:callout.text>{{ __('Walk the neighborhood — the map follows you. Stop at a house for 15 seconds and the pin drops automatically. Or tap the map to place a pin manually.') }}</flux:callout.text>
                     </flux:callout>
 
                     {{-- Status Legend --}}
