@@ -723,9 +723,6 @@ new #[Layout('layouts.app')] class extends Component
                                                                 <flux:button variant="ghost" size="xs" icon="ellipsis-vertical" />
                                                                 <flux:menu>
                                                                     <flux:menu.item wire:click="editTerritory({{ $block->id }})" icon="pencil">{{ __('Edit') }}</flux:menu.item>
-                                                                    @can('territory_dispatch.manage')
-                                                                        <flux:menu.item wire:click="openDispatch({{ $block->id }})" icon="paper-airplane">{{ __('Dispatch') }}</flux:menu.item>
-                                                                    @endcan
                                                                     <flux:menu.separator />
                                                                     <flux:menu.item wire:click="archiveTerritory({{ $block->id }})" icon="archive-box" wire:confirm="{{ __('Archive this territory?') }}">{{ __('Archive') }}</flux:menu.item>
                                                                     <flux:menu.item wire:click="deleteTerritory({{ $block->id }})" icon="trash" variant="danger" wire:confirm="{{ __('Permanently delete this territory and all related data?') }}">{{ __('Delete') }}</flux:menu.item>
