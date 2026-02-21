@@ -132,3 +132,15 @@ it('gives owner all territory hierarchy permissions', function () {
     expect($permissions)->toContain('compensation.planner');
     expect($permissions)->toContain('analytics.territory_pnl');
 });
+
+it('creates a door knocker user with correct role', function () {
+    $this->artisan('db:seed', ['--class' => 'RolesAndPermissionsSeeder']);
+
+    $knocker = User::factory()->internal()->withRole('door_knocker')->create();
+
+    expect($knocker->type)->toBe('internal');
+    expect($knocker->hasRole('door_knocker'))->toBeTrue();
+    expect($knocker->hasPermissionTo('door_knocks.record'))->toBeTrue();
+    expect($knocker->hasPermissionTo('territories.view_own'))->toBeTrue();
+    expect($knocker->hasPermissionTo('territories.manage_regions'))->toBeFalse();
+});
