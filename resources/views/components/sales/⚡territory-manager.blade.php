@@ -31,6 +31,7 @@ new #[Layout('layouts.app')] class extends Component
 
     // UI state
     public string $activeTab = 'map';
+    public string $pnlPeriod = 'month';
 
     public ?int $editingId = null;
 
@@ -103,6 +104,37 @@ new #[Layout('layouts.app')] class extends Component
         }
 
         return $query->get();
+    }
+
+    #[Computed]
+    public function pnlData(): array
+    {
+        $pnlService = app(\App\Services\TerritoryPnlService::class);
+        $scopeService = app(PermissionScopeService::class);
+        $user = auth()->user();
+
+        [$start, $end] = match ($this->pnlPeriod) {
+            'week' => [now()->startOfWeek(), now()->endOfWeek()],
+            'month' => [now()->startOfMonth(), now()->endOfMonth()],
+            'quarter' => [now()->startOfQuarter(), now()->endOfQuarter()],
+            'year' => [now()->startOfYear(), now()->endOfYear()],
+            default => [now()->startOfMonth(), now()->endOfMonth()],
+        };
+
+        $query = SalesTerritory::where('level', 'region');
+        if (! $scopeService->hasPermission($user, 'territories.view_all')) {
+            $visibleIds = $scopeService->getVisibleTerritoryIds($user);
+            $query->whereIn('id', $visibleIds);
+        }
+
+        $regions = $query->get();
+        $results = [];
+
+        foreach ($regions as $region) {
+            $results[] = $pnlService->calculatePnlRollup($region, $start, $end);
+        }
+
+        return $results;
     }
 
     /**
@@ -475,8 +507,61 @@ new #[Layout('layouts.app')] class extends Component
                 </div>
             </div>
         @elseif($activeTab === 'analytics')
-            <div class="text-zinc-500 dark:text-zinc-400 p-8 text-center">
-                Territory P&L Analytics (Task 4)
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <flux:heading size="lg">Territory P&L</flux:heading>
+                    <flux:select wire:model.live="pnlPeriod" class="w-32">
+                        <option value="week">This Week</option>
+                        <option value="month">This Month</option>
+                        <option value="quarter">This Quarter</option>
+                        <option value="year">This Year</option>
+                    </flux:select>
+                </div>
+
+                <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    @forelse($this->pnlData as $pnl)
+                        <div wire:key="pnl-{{ $pnl['territory_id'] }}" class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4 space-y-3">
+                            <div class="flex items-center justify-between">
+                                <h3 class="font-semibold text-sm">{{ $pnl['territory_name'] }}</h3>
+                                <flux:badge size="sm" variant="{{ $pnl['within_budget'] ? 'success' : 'danger' }}">
+                                    {{ $pnl['budget_pct'] }}%
+                                </flux:badge>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                    <span class="text-zinc-500">Revenue</span>
+                                    <p class="font-medium">${{ number_format($pnl['revenue'], 0) }}</p>
+                                </div>
+                                <div>
+                                    <span class="text-zinc-500">Commissions</span>
+                                    <p class="font-medium">${{ number_format($pnl['commission_costs'], 0) }}</p>
+                                </div>
+                                <div>
+                                    <span class="text-zinc-500">Marketing</span>
+                                    <p class="font-medium">${{ number_format($pnl['marketing_costs'], 0) }}</p>
+                                </div>
+                                <div>
+                                    <span class="text-zinc-500">Margin</span>
+                                    <p class="font-medium {{ $pnl['margin'] >= 0 ? 'text-green-600' : 'text-red-600' }}">
+                                        \${{ number_format($pnl['margin'], 0) }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="flex justify-between text-xs text-zinc-500 mb-1">
+                                    <span>Commission Budget</span>
+                                    <span>{{ $pnl['budget_pct'] }}% / {{ $pnl['budget_target_pct'] }}%</span>
+                                </div>
+                                <div class="h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                                    <div class="h-full rounded-full transition-all {{ $pnl['within_budget'] ? 'bg-green-500' : 'bg-red-500' }}"
+                                         style="width: {{ min($pnl['budget_pct'] / max($pnl['budget_target_pct'], 1) * 100, 100) }}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <p class="text-center py-8 text-zinc-500 col-span-full">No territory data for this period.</p>
+                    @endforelse
+                </div>
             </div>
         @endif
     </div>
