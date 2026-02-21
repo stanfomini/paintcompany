@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Models\SalesTerritory;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -91,6 +92,31 @@ class SalesTerritoryFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'assigned_user_id' => $user->id,
         ]);
+    }
+
+    public function region(): static
+    {
+        return $this->state(fn () => ['level' => 'region']);
+    }
+
+    public function zone(): static
+    {
+        return $this->state(fn () => ['level' => 'zone']);
+    }
+
+    public function block(): static
+    {
+        return $this->state(fn () => ['level' => 'block']);
+    }
+
+    public function childOf(SalesTerritory $parent): static
+    {
+        return $this->state(fn () => ['parent_id' => $parent->id]);
+    }
+
+    public function managedBy(User $user): static
+    {
+        return $this->state(fn () => ['manager_id' => $user->id]);
     }
 
     /**

@@ -5,8 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 
 class SalesTerritory extends Model
 {
@@ -14,7 +16,7 @@ class SalesTerritory extends Model
 
     protected $fillable = [
         'name', 'description', 'color', 'boundary', 'assigned_user_id',
-        'status', 'center_lat', 'center_lng',
+        'status', 'level', 'parent_id', 'manager_id', 'center_lat', 'center_lng',
     ];
 
     protected function casts(): array
@@ -49,6 +51,75 @@ class SalesTerritory extends Model
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(SalesTerritory::class, 'parent_id');
+    }
+
+    public function children(): HasMany
+    {
+        return $this->hasMany(SalesTerritory::class, 'parent_id');
+    }
+
+    public function manager(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'manager_id');
+    }
+
+    public function descendants(): HasMany
+    {
+        return $this->children()->with('descendants');
+    }
+
+    public function scopeRegions($query)
+    {
+        return $query->where('level', 'region');
+    }
+
+    public function scopeZones($query)
+    {
+        return $query->where('level', 'zone');
+    }
+
+    public function scopeBlocks($query)
+    {
+        return $query->where('level', 'block');
+    }
+
+    public function scopeForLevel($query, string $level)
+    {
+        return $query->where('level', $level);
+    }
+
+    /**
+     * Get all descendant IDs (children + grandchildren) for permission scoping.
+     */
+    public function getDescendantIds(): array
+    {
+        $ids = [];
+        foreach ($this->children as $child) {
+            $ids[] = $child->id;
+            $ids = array_merge($ids, $child->getDescendantIds());
+        }
+
+        return $ids;
+    }
+
+    /**
+     * Get the full ancestor chain (parent, grandparent, etc).
+     */
+    public function getAncestors(): Collection
+    {
+        $ancestors = collect();
+        $current = $this->parent;
+        while ($current) {
+            $ancestors->push($current);
+            $current = $current->parent;
+        }
+
+        return $ancestors;
     }
 
     /**
