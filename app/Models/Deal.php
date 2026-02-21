@@ -83,6 +83,7 @@ class Deal extends Model
         'actual_start_date',
         'actual_end_date',
         'lead_source',
+        'origin_door_knock_id',
         'external_id',
         'follow_up_date',
         'sort_order',
@@ -178,6 +179,11 @@ class Deal extends Model
     public function leadSource(): BelongsTo
     {
         return $this->belongsTo(LeadSource::class);
+    }
+
+    public function originDoorKnock(): BelongsTo
+    {
+        return $this->belongsTo(DoorKnock::class, 'origin_door_knock_id');
     }
 
     /**

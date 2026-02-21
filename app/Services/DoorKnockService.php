@@ -128,6 +128,7 @@ class DoorKnockService
             'lead_source_id' => $personalLeadSource->id,
             'lead_generator_id' => $knock->user_id,
             'assigned_to' => $knock->user_id,
+            'origin_door_knock_id' => $knock->id,
         ]);
 
         // Update knock with links
