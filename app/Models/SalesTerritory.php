@@ -122,6 +122,11 @@ class SalesTerritory extends Model
         return $ancestors;
     }
 
+    public function budgets(): HasMany
+    {
+        return $this->hasMany(TerritoryBudget::class, 'territory_id');
+    }
+
     public function teamMembers(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'territory_team_members', 'territory_id', 'user_id')
