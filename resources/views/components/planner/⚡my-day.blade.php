@@ -353,9 +353,10 @@ new class extends Component
     /**
      * Base query for action methods. If the user has planner.view_all,
      * they can act on any activity (matches CommandCenterService viewing logic).
-     * Otherwise, restrict to activities they created or are assigned to.
+     * Otherwise, restrict to activities they created, are assigned to, or
+     * are delegated access to at the required level.
      */
-    private function activityQueryForAction(): \Illuminate\Database\Eloquent\Builder
+    private function activityQueryForAction(string $requiredLevel = 'act'): \Illuminate\Database\Eloquent\Builder
     {
         $user = auth()->user();
 
@@ -363,12 +364,34 @@ new class extends Component
             return Activity::query();
         }
 
-        return Activity::query()->forUserOrAssignedTo($user);
+        $delegationService = app(\App\Services\PlannerDelegationService::class);
+        $delegations = $delegationService->getDelegationsFor($user);
+        $delegatedUserIds = $delegations
+            ->filter(fn ($d) => $d->meetsAccessLevel($requiredLevel))
+            ->pluck('target_user_id')
+            ->toArray();
+
+        return Activity::query()->where(function ($q) use ($user, $delegatedUserIds) {
+            $q->where(function ($q2) use ($user) {
+                $q2->where('user_id', $user->id)
+                    ->orWhere('assigned_to', $user->id);
+            });
+
+            if (! empty($delegatedUserIds)) {
+                $q->orWhere(function ($q2) use ($delegatedUserIds) {
+                    $q2->whereIn('user_id', $delegatedUserIds)
+                        ->orWhereIn('assigned_to', $delegatedUserIds);
+                });
+            }
+        });
     }
 
     public function toggleComplete(int $activityId): void
     {
-        $activity = $this->activityQueryForAction()->findOrFail($activityId);
+        $activity = $this->activityQueryForAction('act')->findOrFail($activityId);
+
+        $user = auth()->user();
+        $isOwnActivity = $activity->user_id === $user->id || $activity->assigned_to === $user->id;
 
         if ($activity->is_completed) {
             $activity->markAsIncomplete();
@@ -376,13 +399,23 @@ new class extends Component
             $activity->markAsCompleted();
             app(PriorityScoreService::class)->updateScore($activity->fresh());
         }
+
+        if (! $isOwnActivity && ! $user->can('planner.view_all')) {
+            $activity->update(['acted_by' => $user->id]);
+        }
     }
 
     public function setPriority(int $activityId, string $priority): void
     {
-        $activity = $this->activityQueryForAction()->findOrFail($activityId);
+        $activity = $this->activityQueryForAction('act')->findOrFail($activityId);
 
-        $activity->update(['priority' => $priority]);
+        $user = auth()->user();
+        $isOwnActivity = $activity->user_id === $user->id || $activity->assigned_to === $user->id;
+
+        $activity->update([
+            'priority' => $priority,
+            'acted_by' => (! $isOwnActivity && ! $user->can('planner.view_all')) ? $user->id : $activity->acted_by,
+        ]);
         app(PriorityScoreService::class)->updateScore($activity->fresh());
     }
 
@@ -396,7 +429,10 @@ new class extends Component
 
     public function snoozeQuick(int $activityId, string $duration): void
     {
-        $activity = $this->activityQueryForAction()->findOrFail($activityId);
+        $activity = $this->activityQueryForAction('act')->findOrFail($activityId);
+
+        $user = auth()->user();
+        $isOwnActivity = $activity->user_id === $user->id || $activity->assigned_to === $user->id;
 
         $until = match ($duration) {
             '1h' => now()->addHour(),
@@ -407,6 +443,10 @@ new class extends Component
         };
 
         $activity->snoozeUntil($until);
+
+        if (! $isOwnActivity && ! $user->can('planner.view_all')) {
+            $activity->update(['acted_by' => $user->id]);
+        }
     }
 
     public function confirmSnooze(): void
@@ -415,9 +455,17 @@ new class extends Component
             return;
         }
 
-        $activity = $this->activityQueryForAction()->findOrFail($this->snoozeActivityId);
+        $activity = $this->activityQueryForAction('act')->findOrFail($this->snoozeActivityId);
+
+        $user = auth()->user();
+        $isOwnActivity = $activity->user_id === $user->id || $activity->assigned_to === $user->id;
 
         $activity->snoozeUntil(\Carbon\Carbon::parse($this->snoozeUntil));
+
+        if (! $isOwnActivity && ! $user->can('planner.view_all')) {
+            $activity->update(['acted_by' => $user->id]);
+        }
+
         $this->showSnoozeModal = false;
         $this->snoozeActivityId = null;
     }

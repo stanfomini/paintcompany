@@ -1,9 +1,11 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\PlannerDelegation;
 use App\Models\User;
 use App\Services\PlannerDelegationService;
 use Illuminate\Auth\Access\AuthorizationException;
+use Livewire\Livewire;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
@@ -191,5 +193,99 @@ describe('PlannerDelegationService', function () {
         $delegations = $service->getDelegationsFor($delegate);
 
         expect($delegations)->toHaveCount(2);
+    });
+});
+
+describe('Planner delegation actions', function () {
+    it('allows delegate with act access to toggle complete on target users activity', function () {
+        $target = User::factory()->internal()->withRole('estimator')->create();
+        $delegate = User::factory()->internal()->withRole('estimator')->create();
+
+        PlannerDelegation::factory()->actAccess()->permanent()->create([
+            'grantor_id' => $target->id,
+            'target_user_id' => $target->id,
+            'delegate_id' => $delegate->id,
+        ]);
+
+        $activity = Activity::factory()->create([
+            'user_id' => $target->id,
+            'assigned_to' => $target->id,
+            'is_completed' => false,
+        ]);
+
+        Livewire::actingAs($delegate)
+            ->test('planner.my-day')
+            ->call('toggleComplete', $activity->id);
+
+        $activity->refresh();
+        expect($activity->is_completed)->toBeTrue()
+            ->and($activity->acted_by)->toBe($delegate->id);
+    });
+
+    it('denies delegate with view-only access from toggling complete', function () {
+        $target = User::factory()->internal()->withRole('estimator')->create();
+        $delegate = User::factory()->internal()->withRole('estimator')->create();
+
+        PlannerDelegation::factory()->viewAccess()->permanent()->create([
+            'grantor_id' => $target->id,
+            'target_user_id' => $target->id,
+            'delegate_id' => $delegate->id,
+        ]);
+
+        $activity = Activity::factory()->create([
+            'user_id' => $target->id,
+            'assigned_to' => $target->id,
+            'is_completed' => false,
+        ]);
+
+        Livewire::actingAs($delegate)
+            ->test('planner.my-day')
+            ->call('toggleComplete', $activity->id);
+    })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+    it('allows delegate with act access to set priority', function () {
+        $target = User::factory()->internal()->withRole('estimator')->create();
+        $delegate = User::factory()->internal()->withRole('estimator')->create();
+
+        PlannerDelegation::factory()->actAccess()->permanent()->create([
+            'grantor_id' => $target->id,
+            'target_user_id' => $target->id,
+            'delegate_id' => $delegate->id,
+        ]);
+
+        $activity = Activity::factory()->create([
+            'user_id' => $target->id,
+            'assigned_to' => $target->id,
+            'priority' => 'normal',
+        ]);
+
+        Livewire::actingAs($delegate)
+            ->test('planner.my-day')
+            ->call('setPriority', $activity->id, 'high');
+
+        expect($activity->fresh()->priority)->toBe('high');
+    });
+
+    it('allows delegate with act access to snooze', function () {
+        $target = User::factory()->internal()->withRole('estimator')->create();
+        $delegate = User::factory()->internal()->withRole('estimator')->create();
+
+        PlannerDelegation::factory()->actAccess()->permanent()->create([
+            'grantor_id' => $target->id,
+            'target_user_id' => $target->id,
+            'delegate_id' => $delegate->id,
+        ]);
+
+        $activity = Activity::factory()->create([
+            'user_id' => $target->id,
+            'assigned_to' => $target->id,
+            'is_completed' => false,
+        ]);
+
+        Livewire::actingAs($delegate)
+            ->test('planner.my-day')
+            ->call('snoozeQuick', $activity->id, 'tomorrow');
+
+        expect($activity->fresh()->snoozed_until)->not->toBeNull();
     });
 });

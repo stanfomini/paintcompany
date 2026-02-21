@@ -102,6 +102,14 @@ class CommandCenterService
                 break;
         }
 
+        // If viewing a specific user's planner via delegation
+        if ($viewingUser = $filters['viewing_user'] ?? null) {
+            $query->where(function ($q) use ($viewingUser) {
+                $q->where('user_id', $viewingUser->id)
+                    ->orWhere('assigned_to', $viewingUser->id);
+            });
+        }
+
         // Status filter
         $status = $filters['status'] ?? 'active';
         switch ($status) {
