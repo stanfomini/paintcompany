@@ -12,9 +12,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('schedules', function (Blueprint $table) {
-            $table->boolean('is_flex')->default(false)->after('schedule_type');
-        });
+        if (! Schema::hasColumn('schedules', 'is_flex')) {
+            Schema::table('schedules', function (Blueprint $table) {
+                $table->boolean('is_flex')->default(false)->after('schedule_type');
+            });
+        }
 
         if (DB::getDriverName() === 'mysql') {
             DB::statement('ALTER TABLE `schedules` MODIFY `employee_profile_id` BIGINT UNSIGNED NULL');
