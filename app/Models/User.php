@@ -135,6 +135,13 @@ class User extends Authenticatable
         return $this->hasOne(CrewW9Form::class);
     }
 
+    public function territoryTeams(): BelongsToMany
+    {
+        return $this->belongsToMany(SalesTerritory::class, 'territory_team_members', 'user_id', 'territory_id')
+            ->withPivot('role', 'added_by')
+            ->withTimestamps();
+    }
+
     /**
      * Get territory offers claimed by this user.
      */

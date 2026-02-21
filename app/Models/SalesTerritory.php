@@ -122,6 +122,23 @@ class SalesTerritory extends Model
         return $ancestors;
     }
 
+    public function teamMembers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'territory_team_members', 'territory_id', 'user_id')
+            ->withPivot('role', 'added_by')
+            ->withTimestamps();
+    }
+
+    public function knockers(): BelongsToMany
+    {
+        return $this->teamMembers()->wherePivot('role', 'knocker');
+    }
+
+    public function estimators(): BelongsToMany
+    {
+        return $this->teamMembers()->wherePivot('role', 'estimator');
+    }
+
     /**
      * Check if a point is inside this territory's polygon boundary using ray casting algorithm.
      */

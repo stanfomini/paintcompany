@@ -72,3 +72,37 @@ it('scopes by level', function () {
     expect(SalesTerritory::zones()->count())->toBe(2);
     expect(SalesTerritory::blocks()->count())->toBe(3);
 });
+
+it('adds team members to a territory', function () {
+    $zone = SalesTerritory::factory()->zone()->create();
+    $knocker1 = User::factory()->internal()->create();
+    $knocker2 = User::factory()->internal()->create();
+    $addedBy = User::factory()->internal()->create();
+
+    $zone->teamMembers()->attach($knocker1, ['role' => 'knocker', 'added_by' => $addedBy->id]);
+    $zone->teamMembers()->attach($knocker2, ['role' => 'knocker', 'added_by' => $addedBy->id]);
+
+    expect($zone->teamMembers)->toHaveCount(2);
+    expect($zone->knockers)->toHaveCount(2);
+});
+
+it('prevents duplicate team member assignment', function () {
+    $zone = SalesTerritory::factory()->zone()->create();
+    $user = User::factory()->internal()->create();
+
+    $zone->teamMembers()->attach($user, ['role' => 'knocker']);
+
+    expect(fn () => $zone->teamMembers()->attach($user, ['role' => 'knocker']))
+        ->toThrow(\Illuminate\Database\QueryException::class);
+});
+
+it('gets user territory teams', function () {
+    $user = User::factory()->internal()->create();
+    $zone1 = SalesTerritory::factory()->zone()->create();
+    $zone2 = SalesTerritory::factory()->zone()->create();
+
+    $zone1->teamMembers()->attach($user, ['role' => 'knocker']);
+    $zone2->teamMembers()->attach($user, ['role' => 'estimator']);
+
+    expect($user->territoryTeams)->toHaveCount(2);
+});
