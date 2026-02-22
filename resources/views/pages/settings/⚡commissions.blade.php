@@ -143,7 +143,10 @@ new class extends Component {
 
 ?>
 
-<x-settings.layout heading="{{ __('Commission Defaults') }}" subheading="{{ __('Set company-wide commission rules by territory role. Employees inherit these unless they have personal overrides.') }}" :fullWidth="true">
+<section class="w-full">
+    @include('partials.settings-heading')
+
+    <x-pages::settings.layout :heading="__('Commission Defaults')" :subheading="__('Set company-wide commission rules by territory role. Employees inherit these unless they have personal overrides.')" :fullWidth="true">
     @if (session('commission-settings-saved'))
         <flux:callout variant="success" class="mb-4">
             {{ __('Commission defaults saved successfully.') }}
@@ -379,4 +382,5 @@ new class extends Component {
             </flux:button>
         </div>
     </div>
-</x-settings.layout>
+    </x-pages::settings.layout>
+</section>
