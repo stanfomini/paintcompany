@@ -45,6 +45,7 @@ new class extends Component {
     }
 
     #[On('video-uploaded')]
+    #[On('video-deleted')]
     public function refreshVideos(): void
     {
         unset($this->videos);

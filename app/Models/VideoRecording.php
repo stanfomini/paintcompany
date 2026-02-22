@@ -69,6 +69,26 @@ class VideoRecording extends Model
                 $recording->content_updated_at = now();
             }
         });
+
+        static::deleting(function (VideoRecording $recording) {
+            $disk = Storage::disk($recording->disk);
+
+            if ($recording->original_path && $disk->exists($recording->original_path)) {
+                $disk->delete($recording->original_path);
+            }
+            if ($recording->video_path && $disk->exists($recording->video_path)) {
+                $disk->delete($recording->video_path);
+            }
+            if ($recording->thumbnail_path && $disk->exists($recording->thumbnail_path)) {
+                $disk->delete($recording->thumbnail_path);
+            }
+
+            // Clean up any leftover temp chunk file
+            $tempPath = $recording->metadata['temp_chunk_path'] ?? null;
+            if ($tempPath && file_exists($tempPath)) {
+                @unlink($tempPath);
+            }
+        });
     }
 
     public function user(): BelongsTo

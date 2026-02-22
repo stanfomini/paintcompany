@@ -253,19 +253,7 @@ class VideoRecordingUploadController extends Controller
             abort(403, __('You can only delete your own recordings.'));
         }
 
-        $disk = Storage::disk($recording->disk);
-
-        // Delete files from storage
-        if ($recording->original_path && $disk->exists($recording->original_path)) {
-            $disk->delete($recording->original_path);
-        }
-        if ($recording->video_path && $disk->exists($recording->video_path)) {
-            $disk->delete($recording->video_path);
-        }
-        if ($recording->thumbnail_path && $disk->exists($recording->thumbnail_path)) {
-            $disk->delete($recording->thumbnail_path);
-        }
-
+        // File cleanup handled by VideoRecording::deleting event
         $recording->delete();
 
         return response()->json(['deleted' => true]);
