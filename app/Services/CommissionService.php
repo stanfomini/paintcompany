@@ -88,6 +88,139 @@ class CommissionService
     }
 
     /**
+     * Get the full commission attribution chain for a deal.
+     *
+     * @return array{
+     *     lead_source: ?string,
+     *     knocker: ?array{name: string, knock_date: string, knock_address: string},
+     *     territory_path: ?string,
+     *     estimator: ?array{name: string},
+     *     entries: array<int, array{person_name: string, role: string, source_label: string, amount: float, status: string}>,
+     *     total_amount: float,
+     *     revenue: float,
+     *     commission_percent: float
+     * }
+     */
+    public function getCommissionChainForDeal(Deal $deal): array
+    {
+        $chain = [
+            'lead_source' => $deal->lead_source,
+            'knocker' => null,
+            'territory_path' => null,
+            'estimator' => null,
+            'entries' => [],
+            'total_amount' => 0,
+            'revenue' => (float) ($deal->actual_value ?? $deal->estimated_value ?? 0),
+            'commission_percent' => 0,
+        ];
+
+        if ($deal->origin_door_knock_id) {
+            $knock = $deal->originDoorKnock()->with('user', 'territory')->first();
+            if ($knock) {
+                $chain['knocker'] = [
+                    'name' => $knock->user?->name ?? 'Unknown',
+                    'knock_date' => $knock->knocked_at?->format('M j, Y') ?? '-',
+                    'knock_address' => $knock->address ?? '-',
+                ];
+
+                if ($knock->territory) {
+                    $ancestors = $knock->territory->getAncestors();
+                    $path = $ancestors->pluck('name')->reverse()->push($knock->territory->name)->implode(' > ');
+                    $chain['territory_path'] = $path;
+                }
+            }
+        }
+
+        if ($deal->assigned_to) {
+            $assignee = $deal->assignedTo;
+            if ($assignee) {
+                $chain['estimator'] = ['name' => $assignee->name];
+            }
+        }
+
+        $estimateIds = $deal->estimates()->pluck('id')->all();
+        $jobId = $deal->job?->id;
+
+        $entries = CommissionEntry::query()
+            ->with(['employeeProfile.user'])
+            ->where(function ($q) use ($deal, $estimateIds, $jobId) {
+                $q->where(function ($q2) use ($deal) {
+                    $q2->where('source_type', Deal::class)->where('source_id', $deal->id);
+                });
+
+                if (! empty($estimateIds)) {
+                    $q->orWhere(function ($q2) use ($estimateIds) {
+                        $q2->where('source_type', Estimate::class)->whereIn('source_id', $estimateIds);
+                    });
+                }
+
+                if ($jobId) {
+                    $q->orWhere(function ($q2) use ($jobId) {
+                        $q2->where('source_type', Job::class)->where('source_id', $jobId);
+                    });
+                }
+
+                if ($deal->origin_door_knock_id) {
+                    $q->orWhere(function ($q2) use ($deal) {
+                        $q2->where('source_type', DoorKnock::class)->where('source_id', $deal->origin_door_knock_id);
+                    });
+                }
+            })
+            ->orderBy('earned_date')
+            ->get();
+
+        $totalAmount = 0;
+        foreach ($entries as $entry) {
+            $personName = $entry->employeeProfile?->user?->name ?? 'Unknown';
+            $chain['entries'][] = [
+                'id' => $entry->id,
+                'person_name' => $personName,
+                'role' => $this->inferRoleFromSource($entry->source_label ?? ''),
+                'source_label' => $entry->source_label ?? '-',
+                'commission_type' => $entry->commission_type,
+                'amount' => (float) $entry->amount,
+                'status' => $entry->status,
+                'earned_date' => $entry->earned_date?->format('M j, Y'),
+            ];
+            $totalAmount += (float) $entry->amount;
+        }
+
+        $chain['total_amount'] = round($totalAmount, 2);
+        if ($chain['revenue'] > 0) {
+            $chain['commission_percent'] = round(($totalAmount / $chain['revenue']) * 100, 1);
+        }
+
+        return $chain;
+    }
+
+    /**
+     * Infer role from source label.
+     */
+    protected function inferRoleFromSource(string $sourceLabel): string
+    {
+        if (str_starts_with($sourceLabel, 'Door Knock:')) {
+            return 'Knocker';
+        }
+        if (str_starts_with($sourceLabel, 'Estimate:')) {
+            return 'Estimator';
+        }
+        if (str_starts_with($sourceLabel, 'Territory Override:')) {
+            return 'Manager';
+        }
+        if (str_starts_with($sourceLabel, 'Job:')) {
+            return 'Sales';
+        }
+        if (str_starts_with($sourceLabel, 'Lead:')) {
+            return 'Lead Gen';
+        }
+        if (str_starts_with($sourceLabel, 'Crew Bonus:')) {
+            return 'Crew';
+        }
+
+        return 'Other';
+    }
+
+    /**
      * Create commission entries when a lead/deal is assigned.
      * Uses auto_trigger filtering and duplicate prevention.
      *
