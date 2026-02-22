@@ -17,9 +17,76 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CommissionService
 {
+    /**
+     * Get the effective commission rules for an employee.
+     * Merges company defaults (by territory role) with personal overrides.
+     * Overrides replace defaults where source matches; additional overrides are appended.
+     *
+     * @return array<int, array{source: string, type: string, rate?: float, amount?: float, auto_trigger: bool}>
+     */
+    public function getEffectiveRulesForEmployee(EmployeeProfile $employee, ?string $roleOverride = null): array
+    {
+        $role = $roleOverride ?? $this->resolveEmployeeTerritoryRole($employee);
+
+        $defaults = $role
+            ? CompanySetting::getInstance()->getCommissionDefaultsForRole($role)
+            : [];
+
+        $overrides = collect($employee->commission_rules ?? [])
+            ->filter(fn (array $rule) => ($rule['active'] ?? true))
+            ->values()
+            ->all();
+
+        $overrideSources = collect($overrides)->pluck('source')->unique()->all();
+
+        return collect($defaults)
+            ->reject(fn (array $rule) => in_array($rule['source'] ?? '', $overrideSources))
+            ->values()
+            ->merge($overrides)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Resolve the primary territory role for an employee.
+     */
+    public function resolveEmployeeTerritoryRole(EmployeeProfile $employee): ?string
+    {
+        $userId = $employee->user_id;
+
+        $membership = DB::table('territory_team_members')
+            ->where('user_id', $userId)
+            ->first();
+
+        if ($membership) {
+            return $membership->role;
+        }
+
+        $isManager = SalesTerritory::where('manager_id', $userId)->exists();
+        if ($isManager) {
+            return 'manager_override';
+        }
+
+        return null;
+    }
+
+    /**
+     * Get auto-trigger effective rules for a specific source.
+     *
+     * @return array<int, array>
+     */
+    public function getAutoEffectiveRulesForSource(EmployeeProfile $employee, string $source, ?string $roleOverride = null): array
+    {
+        return collect($this->getEffectiveRulesForEmployee($employee, $roleOverride))
+            ->filter(fn (array $rule) => ($rule['source'] ?? '') === $source && ($rule['auto_trigger'] ?? true))
+            ->values()
+            ->all();
+    }
+
     /**
      * Create commission entries when a lead/deal is assigned.
      * Uses auto_trigger filtering and duplicate prevention.
