@@ -124,6 +124,8 @@ class CompanySetting extends Model
         'business_hours_start',
         'business_hours_end',
         'business_days',
+        // Commission Defaults
+        'commission_defaults',
     ];
 
     protected function casts(): array
@@ -204,6 +206,8 @@ class CompanySetting extends Model
             'locationiq_api_key' => 'encrypted',
             // Business Hours
             'business_days' => 'array',
+            // Commission Defaults
+            'commission_defaults' => 'array',
         ];
     }
 
@@ -1491,6 +1495,42 @@ class CompanySetting extends Model
     public function getPaymentSplitConfig(): array
     {
         return $this->payment_split_config ?? [];
+    }
+
+    /**
+     * Get commission defaults for a specific role.
+     *
+     * @return array<int, array{source: string, type: string, rate?: float, amount?: float, trigger_on?: string, auto_trigger: bool}>
+     */
+    public function getCommissionDefaultsForRole(string $role): array
+    {
+        $defaults = $this->commission_defaults ?? [];
+
+        return $defaults[$role] ?? [];
+    }
+
+    /**
+     * Get tiered commission bracket defaults.
+     *
+     * @return array{period: string, brackets: array<int, array{min: float, max: ?float, rate: float}>}|null
+     */
+    public function getCommissionTierDefaults(): ?array
+    {
+        $defaults = $this->commission_defaults ?? [];
+
+        return $defaults['tiers'] ?? null;
+    }
+
+    /**
+     * Get all commission default roles (excluding 'tiers').
+     *
+     * @return array<string>
+     */
+    public function getCommissionDefaultRoles(): array
+    {
+        $defaults = $this->commission_defaults ?? [];
+
+        return array_keys(array_diff_key($defaults, ['tiers' => true]));
     }
 
     public function isWithinBusinessHours(): bool
