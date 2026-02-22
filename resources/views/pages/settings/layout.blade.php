@@ -43,6 +43,9 @@
                 @can('settings.workflows')
                     <flux:navlist.item :href="route('workflows.edit')" wire:navigate>{{ __('Workflows') }}</flux:navlist.item>
                 @endcan
+                @can('payroll.manage')
+                    <flux:navlist.item :href="route('commissions.edit')" wire:navigate>{{ __('Commissions') }}</flux:navlist.item>
+                @endcan
                 @can('vendors.view')
                     <flux:navlist.item :href="route('vendors.edit')" wire:navigate>{{ __('Vendors') }}</flux:navlist.item>
                 @endcan

@@ -77,6 +77,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:settings.workflows')
         ->name('workflows.builder');
 
+    Route::livewire('settings/commissions', 'pages::settings.commissions')
+        ->middleware('permission:payroll.manage')
+        ->name('commissions.edit');
+
     Route::livewire('settings/vendors', 'pages::settings.vendors')
         ->middleware('permission:vendors.view')
         ->name('vendors.edit');
