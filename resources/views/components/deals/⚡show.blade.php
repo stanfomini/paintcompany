@@ -110,6 +110,13 @@ new class extends Component {
         $this->followUpDate = null;
         $this->refreshDeal();
     }
+
+    #[Computed]
+    public function commissionChain(): array
+    {
+        return app(\App\Services\CommissionService::class)
+            ->getCommissionChainForDeal($this->deal);
+    }
 }; ?>
 
 <div>
@@ -485,6 +492,90 @@ new class extends Component {
                 </div>
             @endif
         </div>
+
+        {{-- Attribution & Commissions --}}
+        @can('payroll.manage')
+            @php $chain = $this->commissionChain; @endphp
+            <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                <flux:heading size="sm" class="mb-4">{{ __('Attribution & Commissions') }}</flux:heading>
+
+                <div class="space-y-4">
+                    {{-- Lead Source --}}
+                    <div class="flex items-center gap-3">
+                        <span class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Lead Source:') }}</span>
+                        <flux:badge size="sm" color="{{ $chain['lead_source'] === 'door_knock' ? 'blue' : 'zinc' }}">
+                            {{ ucfirst(str_replace('_', ' ', $chain['lead_source'] ?? 'Unknown')) }}
+                        </flux:badge>
+                    </div>
+
+                    {{-- Knocker Info --}}
+                    @if ($chain['knocker'])
+                        <div class="rounded-md bg-zinc-50 p-3 dark:bg-zinc-800">
+                            <div class="flex items-center gap-2 text-sm">
+                                <flux:icon name="hand-raised" class="size-4 text-blue-500" />
+                                <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $chain['knocker']['name'] }}</span>
+                                <span class="text-zinc-400">&middot;</span>
+                                <span class="text-zinc-500 dark:text-zinc-400">{{ $chain['knocker']['knock_date'] }}</span>
+                                <span class="text-zinc-400">&middot;</span>
+                                <span class="text-zinc-500 dark:text-zinc-400">{{ $chain['knocker']['knock_address'] }}</span>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Territory Path --}}
+                    @if ($chain['territory_path'])
+                        <div class="flex items-center gap-2 text-sm">
+                            <flux:icon name="map-pin" class="size-4 text-zinc-400" />
+                            <span class="text-zinc-600 dark:text-zinc-400">{{ $chain['territory_path'] }}</span>
+                        </div>
+                    @endif
+
+                    {{-- Commission Entries Table --}}
+                    @if (! empty($chain['entries']))
+                        <div class="overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700">
+                            <table class="min-w-full divide-y divide-zinc-200 dark:divide-zinc-700">
+                                <thead class="bg-zinc-50 dark:bg-zinc-800">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Person') }}</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Role') }}</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Source') }}</th>
+                                        <th class="px-4 py-2 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Amount') }}</th>
+                                        <th class="px-4 py-2 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Status') }}</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-zinc-200 bg-white dark:divide-zinc-700 dark:bg-zinc-900">
+                                    @foreach ($chain['entries'] as $entry)
+                                        <tr wire:key="chain-entry-{{ $entry['id'] }}">
+                                            <td class="whitespace-nowrap px-4 py-2 text-sm text-zinc-900 dark:text-zinc-100">{{ $entry['person_name'] }}</td>
+                                            <td class="whitespace-nowrap px-4 py-2">
+                                                <flux:badge size="sm" color="zinc">{{ $entry['role'] }}</flux:badge>
+                                            </td>
+                                            <td class="whitespace-nowrap px-4 py-2 text-sm text-zinc-500 dark:text-zinc-400">{{ $entry['source_label'] }}</td>
+                                            <td class="whitespace-nowrap px-4 py-2 text-right text-sm font-medium text-zinc-900 dark:text-zinc-100">${{ number_format($entry['amount'], 2) }}</td>
+                                            <td class="whitespace-nowrap px-4 py-2">
+                                                <flux:badge size="sm" color="{{ match($entry['status']) { 'pending' => 'yellow', 'approved' => 'green', 'paid' => 'blue', 'reversed' => 'red', default => 'zinc' } }}">
+                                                    {{ ucfirst($entry['status']) }}
+                                                </flux:badge>
+                                            </td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="flex items-center justify-end gap-4 text-sm">
+                            <span class="text-zinc-500 dark:text-zinc-400">{{ __('Total:') }}</span>
+                            <span class="font-semibold text-zinc-900 dark:text-zinc-100">${{ number_format($chain['total_amount'], 2) }}</span>
+                            @if ($chain['commission_percent'] > 0)
+                                <span class="text-zinc-400 dark:text-zinc-500">({{ $chain['commission_percent'] }}% of revenue)</span>
+                            @endif
+                        </div>
+                    @else
+                        <flux:text class="text-zinc-500">{{ __('No commission entries recorded for this deal.') }}</flux:text>
+                    @endif
+                </div>
+            </div>
+        @endcan
 
         {{-- Notes Section --}}
         <div class="mt-6 border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
