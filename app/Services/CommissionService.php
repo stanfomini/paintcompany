@@ -43,12 +43,16 @@ class CommissionService
 
         $overrideSources = collect($overrides)->pluck('source')->unique()->all();
 
-        return collect($defaults)
+        $defaultRules = collect($defaults)
             ->reject(fn (array $rule) => in_array($rule['source'] ?? '', $overrideSources))
-            ->values()
-            ->merge($overrides)
-            ->values()
-            ->all();
+            ->map(fn (array $rule) => array_merge($rule, ['_origin' => 'default']))
+            ->values();
+
+        $overrideRules = collect($overrides)
+            ->map(fn (array $rule) => array_merge($rule, ['_origin' => 'override']))
+            ->values();
+
+        return $defaultRules->merge($overrideRules)->values()->all();
     }
 
     /**
