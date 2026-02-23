@@ -91,6 +91,7 @@ new class extends Component
             'Planner' => ['planner.view', 'planner.view_all', 'planner.manage'],
             'Production Rates' => ['production_rates.view', 'production_rates.manage'],
             'Agent Listings' => ['agent_listings.view', 'agent_listings.manage'],
+            'Email' => ['email.access', 'email.manage'],
             'Communication' => [
                 'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
                 'walkie_talkie.access', 'video_call.access',

@@ -3,10 +3,9 @@
 use App\Models\EmailAccount;
 use App\Models\User;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\Layout;
 use Livewire\Component;
 
-new #[Layout('components.layouts.app', ['title' => 'Email Accounts'])] class extends Component {
+new class extends Component {
     public function boot(): void
     {
         if (! auth()->user()?->can('email.manage')) {
