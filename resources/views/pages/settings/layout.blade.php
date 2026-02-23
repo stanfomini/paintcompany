@@ -47,6 +47,9 @@
                 @can('payroll.manage')
                     <flux:navlist.item :href="route('commissions.edit')" wire:navigate>{{ __('Commissions') }}</flux:navlist.item>
                 @endcan
+                @can('email.manage')
+                    <flux:navlist.item :href="route('email-accounts.edit')" wire:navigate>{{ __('Email Accounts') }}</flux:navlist.item>
+                @endcan
                 @can('vendors.view')
                     <flux:navlist.item :href="route('vendors.edit')" wire:navigate>{{ __('Vendors') }}</flux:navlist.item>
                 @endcan

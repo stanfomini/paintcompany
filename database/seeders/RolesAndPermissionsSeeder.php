@@ -85,6 +85,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Email
             'email.access',
+            'email.manage',
 
             // Settings
             'settings.company',
@@ -277,7 +278,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
             // Email
-            'email.access',
+            'email.access', 'email.manage',
             // Settings
             'settings.company', 'settings.packages', 'settings.allocations',
             'settings.payment_integrations', 'settings.service_categories',
