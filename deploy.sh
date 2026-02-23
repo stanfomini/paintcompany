@@ -8,9 +8,8 @@ set -e
 
 cd /home/forge/apexnegotiations.com
 
-# Pull latest code (clean untracked conflicts first)
-git fetch origin $FORGE_SITE_BRANCH
-git reset --hard origin/$FORGE_SITE_BRANCH
+# Pull latest code
+git pull origin $FORGE_SITE_BRANCH
 
 # PHP dependencies
 composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader

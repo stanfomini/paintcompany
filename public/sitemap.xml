@@ -1,38 +1,163 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Homepage -->
   <url>
-    <loc>https://apexnegotiations.com</loc>
+    <loc>https://paintingmadeeasydenver.com</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
+
+  <!-- Calculator -->
   <url>
-    <loc>https://apexnegotiations.com/calculator</loc>
+    <loc>https://paintingmadeeasydenver.com/calculator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Careers -->
+  <url>
+    <loc>https://paintingmadeeasydenver.com/careers</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Watch Hub -->
+  <url>
+    <loc>https://paintingmadeeasydenver.com/watch</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Video Showcase -->
+  <url>
+    <loc>https://paintingmadeeasydenver.com/video/showcase</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>
+
+  <!-- Service Areas Index -->
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- Service Area Pages (Local SEO) -->
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/arvada-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/aurora-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/boulder-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/brighton-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/broomfield-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/castle-rock-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/centennial-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/commerce-city-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/denver-co</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://apexnegotiations.com/careers</loc>
+    <loc>https://paintingmadeeasydenver.com/areas/englewood-co</loc>
     <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <priority>0.7</priority>
   </url>
   <url>
-    <loc>https://apexnegotiations.com/terms</loc>
+    <loc>https://paintingmadeeasydenver.com/areas/federal-heights-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/golden-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/lakewood-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/littleton-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/longmont-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/northglenn-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/parker-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/thornton-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/westminster-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://paintingmadeeasydenver.com/areas/wheat-ridge-co</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+
+  <!-- Legal Pages -->
+  <url>
+    <loc>https://paintingmadeeasydenver.com/terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://apexnegotiations.com/privacy</loc>
+    <loc>https://paintingmadeeasydenver.com/privacy</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://apexnegotiations.com/referral-terms</loc>
+    <loc>https://paintingmadeeasydenver.com/referral-terms</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
-  </url>
-  <url>
-    <loc>https://apexnegotiations.com/watch</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.5</priority>
   </url>
 </urlset>
