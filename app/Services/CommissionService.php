@@ -17,9 +17,213 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class CommissionService
 {
+    /**
+     * Get the effective commission rules for an employee.
+     * Merges company defaults (by territory role) with personal overrides.
+     * Overrides replace defaults where source matches; additional overrides are appended.
+     *
+     * @return array<int, array{source: string, type: string, rate?: float, amount?: float, auto_trigger: bool}>
+     */
+    public function getEffectiveRulesForEmployee(EmployeeProfile $employee, ?string $roleOverride = null): array
+    {
+        $role = $roleOverride ?? $this->resolveEmployeeTerritoryRole($employee);
+
+        $defaults = $role
+            ? CompanySetting::getInstance()->getCommissionDefaultsForRole($role)
+            : [];
+
+        $overrides = collect($employee->commission_rules ?? [])
+            ->filter(fn (array $rule) => ($rule['active'] ?? true))
+            ->values()
+            ->all();
+
+        $overrideSources = collect($overrides)->pluck('source')->unique()->all();
+
+        $defaultRules = collect($defaults)
+            ->reject(fn (array $rule) => in_array($rule['source'] ?? '', $overrideSources))
+            ->map(fn (array $rule) => array_merge($rule, ['_origin' => 'default']))
+            ->values();
+
+        $overrideRules = collect($overrides)
+            ->map(fn (array $rule) => array_merge($rule, ['_origin' => 'override']))
+            ->values();
+
+        return $defaultRules->merge($overrideRules)->values()->all();
+    }
+
+    /**
+     * Resolve the primary territory role for an employee.
+     */
+    public function resolveEmployeeTerritoryRole(EmployeeProfile $employee): ?string
+    {
+        $userId = $employee->user_id;
+
+        $membership = DB::table('territory_team_members')
+            ->where('user_id', $userId)
+            ->first();
+
+        if ($membership) {
+            return $membership->role;
+        }
+
+        $isManager = SalesTerritory::where('manager_id', $userId)->exists();
+        if ($isManager) {
+            return 'manager_override';
+        }
+
+        return null;
+    }
+
+    /**
+     * Get auto-trigger effective rules for a specific source.
+     *
+     * @return array<int, array>
+     */
+    public function getAutoEffectiveRulesForSource(EmployeeProfile $employee, string $source, ?string $roleOverride = null): array
+    {
+        return collect($this->getEffectiveRulesForEmployee($employee, $roleOverride))
+            ->filter(fn (array $rule) => ($rule['source'] ?? '') === $source && ($rule['auto_trigger'] ?? true))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Get the full commission attribution chain for a deal.
+     *
+     * @return array{
+     *     lead_source: ?string,
+     *     knocker: ?array{name: string, knock_date: string, knock_address: string},
+     *     territory_path: ?string,
+     *     estimator: ?array{name: string},
+     *     entries: array<int, array{person_name: string, role: string, source_label: string, amount: float, status: string}>,
+     *     total_amount: float,
+     *     revenue: float,
+     *     commission_percent: float
+     * }
+     */
+    public function getCommissionChainForDeal(Deal $deal): array
+    {
+        $chain = [
+            'lead_source' => $deal->lead_source,
+            'knocker' => null,
+            'territory_path' => null,
+            'estimator' => null,
+            'entries' => [],
+            'total_amount' => 0,
+            'revenue' => (float) ($deal->actual_value ?? $deal->estimated_value ?? 0),
+            'commission_percent' => 0,
+        ];
+
+        if ($deal->origin_door_knock_id) {
+            $knock = $deal->originDoorKnock()->with('user', 'territory')->first();
+            if ($knock) {
+                $chain['knocker'] = [
+                    'name' => $knock->user?->name ?? 'Unknown',
+                    'knock_date' => $knock->knocked_at?->format('M j, Y') ?? '-',
+                    'knock_address' => $knock->address ?? '-',
+                ];
+
+                if ($knock->territory) {
+                    $ancestors = $knock->territory->getAncestors();
+                    $path = $ancestors->pluck('name')->reverse()->push($knock->territory->name)->implode(' > ');
+                    $chain['territory_path'] = $path;
+                }
+            }
+        }
+
+        if ($deal->assigned_to) {
+            $assignee = $deal->assignedTo;
+            if ($assignee) {
+                $chain['estimator'] = ['name' => $assignee->name];
+            }
+        }
+
+        $estimateIds = $deal->estimates()->pluck('id')->all();
+        $jobId = $deal->job?->id;
+
+        $entries = CommissionEntry::query()
+            ->with(['employeeProfile.user'])
+            ->where(function ($q) use ($deal, $estimateIds, $jobId) {
+                $q->where(function ($q2) use ($deal) {
+                    $q2->where('source_type', Deal::class)->where('source_id', $deal->id);
+                });
+
+                if (! empty($estimateIds)) {
+                    $q->orWhere(function ($q2) use ($estimateIds) {
+                        $q2->where('source_type', Estimate::class)->whereIn('source_id', $estimateIds);
+                    });
+                }
+
+                if ($jobId) {
+                    $q->orWhere(function ($q2) use ($jobId) {
+                        $q2->where('source_type', Job::class)->where('source_id', $jobId);
+                    });
+                }
+
+                if ($deal->origin_door_knock_id) {
+                    $q->orWhere(function ($q2) use ($deal) {
+                        $q2->where('source_type', DoorKnock::class)->where('source_id', $deal->origin_door_knock_id);
+                    });
+                }
+            })
+            ->orderBy('earned_date')
+            ->get();
+
+        $totalAmount = 0;
+        foreach ($entries as $entry) {
+            $personName = $entry->employeeProfile?->user?->name ?? 'Unknown';
+            $chain['entries'][] = [
+                'id' => $entry->id,
+                'person_name' => $personName,
+                'role' => $this->inferRoleFromSource($entry->source_label ?? ''),
+                'source_label' => $entry->source_label ?? '-',
+                'commission_type' => $entry->commission_type,
+                'amount' => (float) $entry->amount,
+                'status' => $entry->status,
+                'earned_date' => $entry->earned_date?->format('M j, Y'),
+            ];
+            $totalAmount += (float) $entry->amount;
+        }
+
+        $chain['total_amount'] = round($totalAmount, 2);
+        if ($chain['revenue'] > 0) {
+            $chain['commission_percent'] = round(($totalAmount / $chain['revenue']) * 100, 1);
+        }
+
+        return $chain;
+    }
+
+    /**
+     * Infer role from source label.
+     */
+    protected function inferRoleFromSource(string $sourceLabel): string
+    {
+        if (str_starts_with($sourceLabel, 'Door Knock:')) {
+            return 'Knocker';
+        }
+        if (str_starts_with($sourceLabel, 'Estimate:')) {
+            return 'Estimator';
+        }
+        if (str_starts_with($sourceLabel, 'Territory Override:')) {
+            return 'Manager';
+        }
+        if (str_starts_with($sourceLabel, 'Job:')) {
+            return 'Sales';
+        }
+        if (str_starts_with($sourceLabel, 'Lead:')) {
+            return 'Lead Gen';
+        }
+        if (str_starts_with($sourceLabel, 'Crew Bonus:')) {
+            return 'Crew';
+        }
+
+        return 'Other';
+    }
+
     /**
      * Create commission entries when a lead/deal is assigned.
      * Uses auto_trigger filtering and duplicate prevention.

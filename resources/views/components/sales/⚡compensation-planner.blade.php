@@ -41,6 +41,27 @@ new class extends Component {
         if (! auth()->user()->hasRole(['owner', 'admin'])) {
             abort(403);
         }
+
+        $defaults = \App\Models\CompanySetting::getInstance()->commission_defaults ?? [];
+        $knockerRules = $defaults['knocker'] ?? [];
+        $estimatorRules = $defaults['estimator'] ?? [];
+        $managerRules = $defaults['manager_override'] ?? [];
+
+        foreach ($knockerRules as $rule) {
+            if (($rule['source'] ?? '') === 'job' && ($rule['type'] ?? '') === 'revenue_percentage') {
+                $this->knockerCommissionPct = (($rule['rate'] ?? 0) * 100);
+            }
+        }
+        foreach ($estimatorRules as $rule) {
+            if (($rule['source'] ?? '') === 'estimate' && ($rule['type'] ?? '') === 'revenue_percentage') {
+                $this->estimatorTeamPct = (($rule['rate'] ?? 0) * 100);
+            }
+        }
+        foreach ($managerRules as $rule) {
+            if (($rule['source'] ?? '') === 'territory_override' && ($rule['type'] ?? '') === 'revenue_percentage') {
+                $this->regionManagerPct = (($rule['rate'] ?? 0) * 100);
+            }
+        }
     }
 
     public function saveScenario(): void
@@ -106,6 +127,11 @@ new class extends Component {
 <div x-data="compensationPlanner()" class="space-y-6">
     <flux:heading size="xl">Compensation Planner</flux:heading>
     <p class="text-sm text-zinc-500 dark:text-zinc-400">Compare three door knocker compensation models. Adjust sliders to see projected annual income and required activity levels.</p>
+
+    <flux:callout variant="info" class="mb-4">
+        Starting values are loaded from your <a href="{{ route('commissions.edit') }}" class="underline font-medium" wire:navigate>Commission Settings</a>.
+        Changes here are for modeling only — they don't update actual commission rates.
+    </flux:callout>
 
     {{-- Global Inputs --}}
     <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 p-4 space-y-4">

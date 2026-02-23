@@ -31,6 +31,8 @@ class extends Component
 
     public string $entityFilter = 'all';
 
+    public string $sourceFilter = 'all';
+
     public string $dateFrom = '';
 
     public string $dateTo = '';
@@ -66,6 +68,12 @@ class extends Component
         $this->selected = [];
     }
 
+    public function updatedSourceFilter(): void
+    {
+        $this->resetPage();
+        $this->selected = [];
+    }
+
     public function updatedDateFrom(): void
     {
         $this->resetPage();
@@ -87,6 +95,16 @@ class extends Component
                 'vendor' => Vendor::class,
                 'user' => User::class,
                 default => null,
+            }))
+            ->when($this->sourceFilter !== 'all', fn ($q) => $q->where('source_label', 'like', match ($this->sourceFilter) {
+                'door_knock' => 'Door Knock:%',
+                'estimate' => 'Estimate:%',
+                'job' => 'Job:%',
+                'territory_override' => 'Territory Override:%',
+                'lead' => 'Lead:%',
+                'manual' => 'Manual Entry%',
+                'crew' => 'Crew Bonus:%',
+                default => '%',
             }))
             ->when($this->dateFrom, fn ($q) => $q->where('earned_date', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->where('earned_date', '<=', $this->dateTo))
@@ -285,6 +303,17 @@ class extends Component
             <option value="employee">{{ __('Employees') }}</option>
             <option value="vendor">{{ __('Vendors') }}</option>
             <option value="user">{{ __('Referrers') }}</option>
+        </flux:select>
+
+        <flux:select wire:model.live="sourceFilter" class="w-44">
+            <option value="all">{{ __('All Sources') }}</option>
+            <option value="door_knock">{{ __('Door Knock') }}</option>
+            <option value="lead">{{ __('Lead') }}</option>
+            <option value="estimate">{{ __('Estimate') }}</option>
+            <option value="job">{{ __('Job') }}</option>
+            <option value="territory_override">{{ __('Territory Override') }}</option>
+            <option value="crew">{{ __('Crew Bonus') }}</option>
+            <option value="manual">{{ __('Manual Entry') }}</option>
         </flux:select>
 
         <flux:input type="date" wire:model.live="dateFrom" class="w-44" />

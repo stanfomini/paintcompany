@@ -159,7 +159,7 @@ class extends Component
         abort_unless(auth()->user()->can('payroll.manage'), 403);
 
         $this->validate([
-            'commissionRules.*.source' => 'required|in:lead,estimate,job',
+            'commissionRules.*.source' => 'required|in:lead,estimate,job,door_knock,territory_override',
             'commissionRules.*.type' => 'required|in:flat,revenue_percentage,profit_percentage,tiered',
             'commissionRules.*.rate' => 'nullable|numeric|min:0',
             'commissionRules.*.amount' => 'nullable|numeric|min:0',
@@ -177,6 +177,52 @@ class extends Component
         $this->employeeProfile->update(['commission_rules' => $rules ?: null]);
         $this->employeeProfile->refresh();
         session()->flash('success', __('Commission rules saved successfully.'));
+    }
+
+    #[Computed]
+    public function employeeTerritoryInfo(): ?array
+    {
+        $userId = $this->employeeProfile->user_id;
+
+        $membership = \Illuminate\Support\Facades\DB::table('territory_team_members')
+            ->where('user_id', $userId)
+            ->join('sales_territories', 'sales_territories.id', '=', 'territory_team_members.territory_id')
+            ->select('territory_team_members.role', 'sales_territories.name', 'sales_territories.id', 'sales_territories.level')
+            ->first();
+
+        if (! $membership) {
+            $managedTerritory = \App\Models\SalesTerritory::where('manager_id', $userId)->first();
+            if ($managedTerritory) {
+                return ['role' => 'manager_override', 'territory_name' => $managedTerritory->name, 'level' => $managedTerritory->level];
+            }
+
+            return null;
+        }
+
+        return [
+            'role' => $membership->role,
+            'territory_name' => $membership->name,
+            'level' => $membership->level,
+        ];
+    }
+
+    #[Computed]
+    public function effectiveRules(): array
+    {
+        return app(\App\Services\CommissionService::class)
+            ->getEffectiveRulesForEmployee($this->employeeProfile);
+    }
+
+    #[Computed]
+    public function companyDefaults(): array
+    {
+        $info = $this->employeeTerritoryInfo;
+        if (! $info) {
+            return [];
+        }
+
+        return \App\Models\CompanySetting::getInstance()
+            ->getCommissionDefaultsForRole($info['role']);
     }
 
     public function openEditModal(): void
@@ -1264,79 +1310,150 @@ class extends Component
 
         @if ($activeTab === 'commission')
             @can('payroll.manage')
-                <div class="space-y-4">
-                    <div class="flex items-center justify-between">
-                        <flux:heading size="lg">{{ __('Commission Rules') }}</flux:heading>
-                        <flux:button wire:click="addCommissionRule" size="sm" icon="plus" variant="primary">
-                            {{ __('Add Rule') }}
-                        </flux:button>
+                <div class="space-y-6">
+                    {{-- Section 1: Territory Role --}}
+                    @php $territoryInfo = $this->employeeTerritoryInfo; @endphp
+                    <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                        <flux:heading size="sm" class="mb-2">{{ __('Territory Role') }}</flux:heading>
+                        @if ($territoryInfo)
+                            <div class="flex items-center gap-3">
+                                <flux:badge color="blue">{{ ucfirst(str_replace('_', ' ', $territoryInfo['role'])) }}</flux:badge>
+                                <span class="text-sm text-zinc-600 dark:text-zinc-400">{{ $territoryInfo['territory_name'] }} ({{ ucfirst($territoryInfo['level']) }})</span>
+                            </div>
+                        @else
+                            <flux:text class="text-zinc-500">{{ __('No territory assignment found. Commission defaults cannot be inherited.') }}</flux:text>
+                        @endif
                     </div>
 
-                    @if (empty($commissionRules))
-                        <div class="rounded-lg border border-zinc-200 p-8 text-center dark:border-zinc-700">
-                            <flux:icon name="currency-dollar" class="mx-auto h-12 w-12 text-zinc-400" />
-                            <flux:heading size="sm" class="mt-4">{{ __('No Commission Rules') }}</flux:heading>
-                            <flux:text class="mt-2 text-zinc-500">{{ __('Add commission rules to automatically calculate commissions for this employee.') }}</flux:text>
-                        </div>
-                    @else
-                        <div class="space-y-3">
-                            @foreach ($commissionRules as $index => $rule)
-                                <div wire:key="rule-{{ $index }}" class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700 {{ ! $rule['active'] ? 'opacity-50' : '' }}">
-                                    <div class="flex items-start gap-4">
-                                        <div class="grid flex-1 gap-3 sm:grid-cols-4">
-                                            <flux:field>
-                                                <flux:label>{{ __('Source') }}</flux:label>
-                                                <flux:select wire:model="commissionRules.{{ $index }}.source">
-                                                    <option value="lead">{{ __('Lead') }}</option>
-                                                    <option value="estimate">{{ __('Estimate') }}</option>
-                                                    <option value="job">{{ __('Job') }}</option>
-                                                </flux:select>
-                                            </flux:field>
-
-                                            <flux:field>
-                                                <flux:label>{{ __('Type') }}</flux:label>
-                                                <flux:select wire:model="commissionRules.{{ $index }}.type">
-                                                    <option value="flat">{{ __('Flat') }}</option>
-                                                    <option value="revenue_percentage">{{ __('Revenue %') }}</option>
-                                                    <option value="profit_percentage">{{ __('Profit %') }}</option>
-                                                    <option value="tiered">{{ __('Tiered') }}</option>
-                                                </flux:select>
-                                            </flux:field>
-
-                                            <flux:field>
-                                                <flux:label>{{ __('Rate') }}</flux:label>
-                                                <flux:input wire:model="commissionRules.{{ $index }}.rate" type="number" step="0.0001" min="0" placeholder="{{ __('e.g. 0.05') }}" />
-                                            </flux:field>
-
-                                            <flux:field>
-                                                <flux:label>{{ __('Amount ($)') }}</flux:label>
-                                                <flux:input wire:model="commissionRules.{{ $index }}.amount" type="number" step="0.01" min="0" prefix="$" />
-                                            </flux:field>
-                                        </div>
-
-                                        <div class="flex items-center gap-3 pt-6">
-                                            <div class="flex items-center gap-1.5" title="{{ __('Auto-trigger on lifecycle events') }}">
-                                                <flux:checkbox wire:model="commissionRules.{{ $index }}.auto_trigger" />
-                                                <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Auto') }}</span>
-                                            </div>
-                                            <flux:switch wire:click="toggleCommissionRule({{ $index }})" :checked="$rule['active']" />
-                                            <flux:button wire:click="removeCommissionRule({{ $index }})" size="xs" variant="ghost" icon="trash" wire:confirm="{{ __('Remove this commission rule?') }}" />
-                                        </div>
+                    {{-- Section 2: Company Defaults (Inherited / Read-only) --}}
+                    @if (! empty($this->companyDefaults))
+                        <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                            <div class="mb-3 flex items-center gap-2">
+                                <flux:icon name="lock-closed" class="size-4 text-zinc-400" />
+                                <flux:heading size="sm">{{ __('Company Defaults (Inherited)') }}</flux:heading>
+                            </div>
+                            <div class="space-y-2">
+                                @foreach ($this->companyDefaults as $default)
+                                    <div class="flex items-center gap-3 rounded-md bg-zinc-50 px-3 py-2 text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                                        <span class="font-medium">{{ ucfirst(str_replace('_', ' ', $default['source'] ?? '-')) }}</span>
+                                        <span class="text-zinc-400 dark:text-zinc-500">&middot;</span>
+                                        <span>{{ ucfirst(str_replace('_', ' ', $default['type'] ?? '-')) }}</span>
+                                        <span class="text-zinc-400 dark:text-zinc-500">&middot;</span>
+                                        @if (($default['type'] ?? '') === 'flat')
+                                            <span>${{ number_format($default['amount'] ?? 0, 2) }}</span>
+                                        @else
+                                            <span>{{ number_format(($default['rate'] ?? 0) * 100, 1) }}%</span>
+                                        @endif
+                                        @if ($default['auto_trigger'] ?? false)
+                                            <flux:badge size="sm" color="zinc">{{ __('Auto') }}</flux:badge>
+                                        @endif
                                     </div>
-                                </div>
-                            @endforeach
-                        </div>
-
-                        <div class="flex justify-end">
-                            <flux:button wire:click="saveCommissionRules" variant="primary" icon="check">
-                                {{ __('Save Rules') }}
-                            </flux:button>
+                                @endforeach
+                            </div>
+                            <p class="mt-2 text-xs text-zinc-400 dark:text-zinc-500">{{ __('These are inherited from company settings and apply unless overridden below.') }}</p>
                         </div>
                     @endif
 
-                    {{-- Commission History --}}
+                    {{-- Section 3: Personal Overrides (Editable) --}}
+                    <div class="rounded-lg border border-zinc-200 p-5 dark:border-zinc-700">
+                        <div class="mb-4 flex items-center justify-between">
+                            <flux:heading size="sm">{{ __('Personal Overrides') }}</flux:heading>
+                            <flux:button wire:click="addCommissionRule" size="sm" icon="plus" variant="primary">
+                                {{ __('Add Override') }}
+                            </flux:button>
+                        </div>
+
+                        @if (empty($commissionRules))
+                            <flux:text class="text-zinc-500">{{ __('No personal overrides. This employee uses company defaults.') }}</flux:text>
+                        @else
+                            <div class="space-y-3">
+                                @foreach ($commissionRules as $index => $rule)
+                                    <div wire:key="rule-{{ $index }}" class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700 {{ ! $rule['active'] ? 'opacity-50' : '' }}">
+                                        <div class="flex items-start gap-4">
+                                            <div class="grid flex-1 gap-3 sm:grid-cols-4">
+                                                <flux:field>
+                                                    <flux:label>{{ __('Source') }}</flux:label>
+                                                    <flux:select wire:model="commissionRules.{{ $index }}.source">
+                                                        <option value="lead">{{ __('Lead') }}</option>
+                                                        <option value="estimate">{{ __('Estimate') }}</option>
+                                                        <option value="job">{{ __('Job') }}</option>
+                                                        <option value="door_knock">{{ __('Door Knock') }}</option>
+                                                        <option value="territory_override">{{ __('Territory Override') }}</option>
+                                                    </flux:select>
+                                                </flux:field>
+
+                                                <flux:field>
+                                                    <flux:label>{{ __('Type') }}</flux:label>
+                                                    <flux:select wire:model="commissionRules.{{ $index }}.type">
+                                                        <option value="flat">{{ __('Flat') }}</option>
+                                                        <option value="revenue_percentage">{{ __('Revenue %') }}</option>
+                                                        <option value="profit_percentage">{{ __('Profit %') }}</option>
+                                                        <option value="tiered">{{ __('Tiered') }}</option>
+                                                    </flux:select>
+                                                </flux:field>
+
+                                                <flux:field>
+                                                    <flux:label>{{ __('Rate') }}</flux:label>
+                                                    <flux:input wire:model="commissionRules.{{ $index }}.rate" type="number" step="0.0001" min="0" placeholder="{{ __('e.g. 0.05') }}" />
+                                                </flux:field>
+
+                                                <flux:field>
+                                                    <flux:label>{{ __('Amount ($)') }}</flux:label>
+                                                    <flux:input wire:model="commissionRules.{{ $index }}.amount" type="number" step="0.01" min="0" prefix="$" />
+                                                </flux:field>
+                                            </div>
+
+                                            <div class="flex items-center gap-3 pt-6">
+                                                <div class="flex items-center gap-1.5" title="{{ __('Auto-trigger on lifecycle events') }}">
+                                                    <flux:checkbox wire:model="commissionRules.{{ $index }}.auto_trigger" />
+                                                    <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Auto') }}</span>
+                                                </div>
+                                                <flux:switch wire:click="toggleCommissionRule({{ $index }})" :checked="$rule['active']" />
+                                                <flux:button wire:click="removeCommissionRule({{ $index }})" size="xs" variant="ghost" icon="trash" wire:confirm="{{ __('Remove this commission rule?') }}" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+
+                            <div class="mt-4 flex justify-end">
+                                <flux:button wire:click="saveCommissionRules" variant="primary" icon="check">
+                                    {{ __('Save Overrides') }}
+                                </flux:button>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Section 4: Effective Rules (Merged View) --}}
+                    @if (! empty($this->effectiveRules))
+                        <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-700">
+                            <flux:heading size="sm" class="mb-3">{{ __('Effective Rules (What Actually Applies)') }}</flux:heading>
+                            <div class="space-y-2">
+                                @foreach ($this->effectiveRules as $rule)
+                                    <div class="flex items-center gap-3 rounded-md bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-800">
+                                        <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ ucfirst(str_replace('_', ' ', $rule['source'] ?? '-')) }}</span>
+                                        <span class="text-zinc-400 dark:text-zinc-500">&middot;</span>
+                                        <span class="text-zinc-600 dark:text-zinc-400">{{ ucfirst(str_replace('_', ' ', $rule['type'] ?? '-')) }}</span>
+                                        <span class="text-zinc-400 dark:text-zinc-500">&middot;</span>
+                                        @if (($rule['type'] ?? '') === 'flat')
+                                            <span class="text-zinc-900 dark:text-zinc-100">${{ number_format($rule['amount'] ?? 0, 2) }}</span>
+                                        @else
+                                            <span class="text-zinc-900 dark:text-zinc-100">{{ number_format(($rule['rate'] ?? 0) * 100, 1) }}%</span>
+                                        @endif
+                                        @if (($rule['_origin'] ?? '') === 'override')
+                                            <flux:badge size="sm" color="yellow">{{ __('Override') }}</flux:badge>
+                                        @else
+                                            <flux:badge size="sm" color="zinc">{{ __('Default') }}</flux:badge>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Section 5: Recent Commission Entries --}}
                     @if ($employeeProfile->commissionEntries()->exists())
-                        <flux:separator class="my-6" />
+                        <flux:separator class="my-2" />
                         <div class="flex items-center justify-between">
                             <flux:heading size="lg">{{ __('Recent Commission Entries') }}</flux:heading>
                             <flux:button :href="route('payroll.commissions')" size="sm" variant="ghost" icon="arrow-top-right-on-square" wire:navigate>
