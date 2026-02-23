@@ -238,6 +238,10 @@ new class extends Component {
             @endif
         </h3>
         <div class="flex items-center gap-1 sm:gap-2">
+            <flux:button size="xs" variant="primary" icon="paper-airplane" wire:click="send" wire:loading.attr="disabled" class="sm:hidden">
+                <span wire:loading.remove wire:target="send">{{ __('Send') }}</span>
+                <span wire:loading wire:target="send">{{ __('Sending...') }}</span>
+            </flux:button>
             <flux:button size="xs" wire:click="saveDraft" wire:loading.attr="disabled">{{ __('Draft') }}</flux:button>
             <flux:button size="xs" wire:click="discard" variant="ghost">{{ __('Discard') }}</flux:button>
         </div>
