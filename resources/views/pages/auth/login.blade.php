@@ -5,7 +5,15 @@
         <!-- Session Status -->
         <x-auth-session-status class="text-center" :status="session('status')" />
 
-        <form method="POST" action="{{ route('login.store') }}" class="flex flex-col gap-6">
+        <!-- Password Form -->
+        <form
+            method="POST"
+            action="{{ route('login.store') }}"
+            class="flex flex-col gap-6"
+            x-data="{
+                isPwa: window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true,
+            }"
+        >
             @csrf
 
             <!-- Email Address -->
@@ -39,8 +47,8 @@
                 @endif
             </div>
 
-            <!-- Remember Me -->
-            <flux:checkbox name="remember" :label="__('Remember me')" :checked="old('remember')" />
+            <!-- Remember Me (auto-checked in PWA mode) -->
+            <flux:checkbox name="remember" :label="__('Remember me')" ::checked="isPwa || {{ old('remember') ? 'true' : 'false' }}" />
 
             <div class="flex items-center justify-end">
                 <flux:button variant="primary" type="submit" class="w-full" data-test="login-button">

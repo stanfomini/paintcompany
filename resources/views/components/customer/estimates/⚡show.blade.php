@@ -22,7 +22,9 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
 {
     public Estimate $estimate;
 
-    public string $activeTab = 'input';
+    public string $activeTab = 'photos';
+
+    public bool $showAreaCarousel = false;
 
     public string $customerNotes = '';
 
@@ -114,6 +116,8 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
 
         if (in_array($this->estimate->status, ['sent', 'accepted'])) {
             $this->activeTab = 'proposal';
+        } else {
+            $this->activeTab = 'photos';
         }
 
         $this->ensureChatParticipant();
@@ -416,6 +420,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
         return array_merge($options, $groups['interior'] ?? [], $groups['exterior'] ?? []);
     }
 
+    public function openAreaCarousel(): void
+    {
+        $this->showAreaCarousel = true;
+    }
+
+    public function closeAreaCarousel(): void
+    {
+        $this->showAreaCarousel = false;
+    }
+
     #[Computed]
     public function hasProposalPackages(): bool
     {
@@ -614,18 +628,25 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
             </flux:callout>
         @endif
 
+        {{-- View Your Rooms Button --}}
+        @if ($estimate->areas->count() > 0)
+            <div class="mb-6">
+                <button
+                    wire:click="openAreaCarousel"
+                    class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-base rounded-xl shadow hover:from-blue-700 hover:to-indigo-700 transition-all flex items-center justify-center gap-2 min-h-[48px]"
+                >
+                    <flux:icon name="squares-2x2" class="w-5 h-5" />
+                    {{ __('View Your Rooms') }}
+                    <flux:badge size="sm" color="blue" class="ml-1 bg-white/20 text-white border-0">
+                        {{ $estimate->areas->count() }}
+                    </flux:badge>
+                </button>
+            </div>
+        @endif
+
         {{-- Tab Navigation --}}
         <div x-data class="mb-6">
             <div class="flex flex-wrap gap-1 p-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
-                {{-- My Input --}}
-                <button
-                    wire:click="$set('activeTab', 'input')"
-                    class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {{ $activeTab === 'input' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
-                >
-                    <flux:icon name="pencil-square" class="w-4 h-4" />
-                    {{ __('My Input') }}
-                </button>
-
                 {{-- Photos & Videos --}}
                 <button
                     wire:click="$set('activeTab', 'photos')"
@@ -634,17 +655,6 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
                     <flux:icon name="photo" class="w-4 h-4" />
                     {{ __('Photos & Videos') }}
                 </button>
-
-                {{-- Scope of Work --}}
-                @if ($estimate->areas->count() > 0)
-                    <button
-                        wire:click="$set('activeTab', 'scope')"
-                        class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {{ $activeTab === 'scope' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
-                    >
-                        <flux:icon name="clipboard-document-list" class="w-4 h-4" />
-                        {{ __('Scope of Work') }}
-                    </button>
-                @endif
 
                 {{-- Proposal --}}
                 @if (in_array($estimate->status, ['sent', 'accepted']))
@@ -657,125 +667,21 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
                     </button>
                 @endif
 
-                {{-- Schedule --}}
+                {{-- Overview --}}
                 <button
-                    wire:click="$set('activeTab', 'schedule')"
-                    class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {{ $activeTab === 'schedule' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                    wire:click="$set('activeTab', 'overview')"
+                    class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {{ $activeTab === 'overview' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
                 >
-                    <flux:icon name="calendar" class="w-4 h-4" />
-                    {{ __('Schedule') }}
+                    <flux:icon name="pencil-square" class="w-4 h-4" />
+                    {{ __('Overview') }}
                 </button>
             </div>
         </div>
 
         {{-- ============================================================== --}}
-        {{-- TAB: My Input --}}
-        {{-- ============================================================== --}}
-        @if ($activeTab === 'input')
-            <div class="space-y-6">
-                {{-- What I'm Looking For --}}
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">{{ __('What I\'m Looking For') }}</flux:heading>
-
-                    <flux:field class="mb-4">
-                        <flux:label>{{ __('Describe what you\'re looking for') }}</flux:label>
-                        <flux:textarea
-                            wire:model.blur="customerNotes"
-                            wire:change="saveNotes"
-                            rows="4"
-                            :placeholder="__('Tell us about your vision - colors you like, areas of concern, special requests...')"
-                        />
-                    </flux:field>
-
-                    {{-- Checklist Grid --}}
-                    <div class="mt-4">
-                        <flux:label class="mb-3">{{ __('Services I\'m interested in') }}</flux:label>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            @foreach ($this->getCustomerChecklistOptions() as $key => $label)
-                                <label
-                                    class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
-                                        {{ in_array($key, $customerChecklist) ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}"
-                                    wire:key="checklist-{{ $key }}"
-                                >
-                                    <flux:checkbox
-                                        wire:model="customerChecklist"
-                                        value="{{ $key }}"
-                                        wire:change="saveChecklist"
-                                    />
-                                    <flux:text class="text-sm">{{ __($label) }}</flux:text>
-                                </label>
-                            @endforeach
-                        </div>
-                    </div>
-                </div>
-
-                {{-- Listing Link --}}
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">{{ __('Property Listing Link') }}</flux:heading>
-                    <flux:text class="text-sm text-zinc-500 mb-4">
-                        {{ __('If your home is listed online (Zillow, Redfin, etc.), share the link so the team can reference it.') }}
-                    </flux:text>
-
-                    <form wire:submit="saveListing" class="flex items-end gap-3">
-                        <flux:field class="flex-1">
-                            <flux:input
-                                wire:model="listingUrl"
-                                type="url"
-                                placeholder="https://www.zillow.com/homedetails/..."
-                            />
-                            <flux:error name="listingUrl" />
-                        </flux:field>
-                        <flux:button type="submit" variant="primary" size="sm" wire:loading.attr="disabled">
-                            <span wire:loading.remove wire:target="saveListing">{{ __('Save') }}</span>
-                            <span wire:loading wire:target="saveListing">{{ __('Saving...') }}</span>
-                        </flux:button>
-                    </form>
-
-                    @if ($estimate->deal?->listing_url)
-                        <div class="mt-3 flex items-center gap-2">
-                            <flux:icon name="link" class="h-4 w-4 text-zinc-400 shrink-0" />
-                            <a href="{{ $estimate->deal->listing_url }}" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 underline hover:no-underline break-all">
-                                {{ $estimate->deal->listing_url }}
-                            </a>
-                        </div>
-                    @endif
-                </div>
-
-                {{-- Per-Area Notes --}}
-                @if ($estimate->areas->count() > 0)
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                        <flux:heading size="sm" class="mb-4">{{ __('Notes by Area') }}</flux:heading>
-                        <flux:text class="text-sm text-zinc-500 mb-4">
-                            {{ __('Add specific notes for each area our team has identified.') }}
-                        </flux:text>
-
-                        <div class="space-y-4">
-                            @foreach ($estimate->areas as $area)
-                                <div class="p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg" wire:key="area-note-{{ $area->id }}">
-                                    <div class="flex items-center gap-2 mb-2">
-                                        <flux:text class="font-medium text-sm">{{ $area->name }}</flux:text>
-                                        <flux:badge size="sm" :color="$area->scope_type === 'exterior' ? 'orange' : 'blue'">
-                                            {{ ucfirst($area->scope_type ?? 'interior') }}
-                                        </flux:badge>
-                                    </div>
-                                    <flux:textarea
-                                        wire:model.blur="areaCustomerNotes.{{ $area->id }}"
-                                        wire:change="saveNotes"
-                                        rows="2"
-                                        :placeholder="__('Any notes for this area...')"
-                                        class="text-sm"
-                                    />
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
-                @endif
-            </div>
-
-        {{-- ============================================================== --}}
         {{-- TAB: Photos & Videos --}}
         {{-- ============================================================== --}}
-        @elseif ($activeTab === 'photos')
+        @if ($activeTab === 'photos')
             <div class="space-y-6">
                 {{-- Project Photos (Full Gallery with Upload, Annotation, Comments) --}}
                 @if ($estimate->deal?->property)
@@ -808,97 +714,6 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
                     </div>
                 </div>
 
-            </div>
-
-        {{-- ============================================================== --}}
-        {{-- TAB: Scope of Work --}}
-        {{-- ============================================================== --}}
-        @elseif ($activeTab === 'scope')
-            <div class="space-y-4">
-                @forelse ($estimate->areas as $area)
-                    <div
-                        class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden"
-                        x-data="{ expanded: false }"
-                        wire:key="scope-area-{{ $area->id }}"
-                    >
-                        {{-- Area Header --}}
-                        <button
-                            type="button"
-                            x-on:click="expanded = !expanded"
-                            class="w-full flex items-center justify-between p-4 bg-zinc-50 dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700/50 transition-colors text-left"
-                        >
-                            <div class="flex items-center gap-3">
-                                <flux:text class="font-medium">{{ $area->name }}</flux:text>
-                                <flux:badge size="sm" :color="$area->scope_type === 'exterior' ? 'orange' : 'blue'">
-                                    {{ ucfirst($area->scope_type ?? 'interior') }}
-                                </flux:badge>
-                            </div>
-                            <flux:icon name="chevron-down" class="w-5 h-5 text-zinc-400 transition-transform" x-bind:class="expanded && 'rotate-180'" />
-                        </button>
-
-                        {{-- Expanded Surface Details --}}
-                        <div x-show="expanded" x-collapse x-cloak class="border-t border-zinc-200 dark:border-zinc-700">
-                            @if ($area->surfaces->count() > 0)
-                                <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                    @foreach ($area->surfaces as $surface)
-                                        <div class="flex items-center justify-between px-4 py-3" wire:key="surface-{{ $surface->id }}">
-                                            <flux:text class="text-sm">{{ $surface->name }}</flux:text>
-                                            <div class="flex items-center gap-3">
-                                                @if ($surface->quantity)
-                                                    <flux:text class="text-sm text-zinc-500">
-                                                        {{ number_format($surface->quantity, 0) }} {{ $surface->unit ?? 'sqft' }}
-                                                    </flux:text>
-                                                @endif
-                                            </div>
-                                        </div>
-                                    @endforeach
-                                </div>
-                            @else
-                                <div class="p-4">
-                                    <flux:text class="text-sm text-zinc-500">{{ __('No surface details available yet.') }}</flux:text>
-                                </div>
-                            @endif
-
-                            {{-- Per-Area Checklist --}}
-                            <div class="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50">
-                                <flux:label class="mb-2">{{ __('Area Conditions') }}</flux:label>
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    @foreach ($this->getAreaChecklistOptions($area->scope_type) as $key => $label)
-                                        <label
-                                            class="flex items-center gap-2 p-2 rounded cursor-pointer text-sm
-                                                {{ in_array($key, $areaCustomerChecklists[$area->id] ?? []) ? 'text-blue-700 dark:text-blue-400' : 'text-zinc-600 dark:text-zinc-400' }}"
-                                            wire:key="area-{{ $area->id }}-check-{{ $key }}"
-                                        >
-                                            <flux:checkbox
-                                                wire:model="areaCustomerChecklists.{{ $area->id }}"
-                                                value="{{ $key }}"
-                                                wire:change="saveAreaChecklist({{ $area->id }})"
-                                            />
-                                            {{ __($label) }}
-                                        </label>
-                                    @endforeach
-                                </div>
-                            </div>
-
-                            {{-- Per-Area Notes --}}
-                            <div class="p-4 border-t border-zinc-200 dark:border-zinc-700">
-                                <flux:textarea
-                                    wire:model.blur="areaCustomerNotes.{{ $area->id }}"
-                                    wire:change="saveNotes"
-                                    rows="2"
-                                    :placeholder="__('Notes for :area...', ['area' => $area->name])"
-                                    class="text-sm"
-                                />
-                            </div>
-                        </div>
-                    </div>
-                @empty
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
-                        <flux:icon name="clipboard-document-list" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                        <flux:heading size="sm" class="mb-1">{{ __('Scope Being Developed') }}</flux:heading>
-                        <flux:text class="text-zinc-500 text-sm">{{ __('Our team is working on defining the scope of work for your project.') }}</flux:text>
-                    </div>
-                @endforelse
             </div>
 
         {{-- ============================================================== --}}
@@ -1023,153 +838,77 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
             </div>
 
         {{-- ============================================================== --}}
-        {{-- TAB: Schedule --}}
+        {{-- TAB: Overview --}}
         {{-- ============================================================== --}}
-        @elseif ($activeTab === 'schedule')
+        @elseif ($activeTab === 'overview')
             <div class="space-y-6">
-                {{-- Propose Meeting Form --}}
+                {{-- What I'm Looking For --}}
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">{{ __('Propose a Meeting') }}</flux:heading>
-                    <form wire:submit="proposeMeeting" class="space-y-4">
-                        <flux:field>
-                            <flux:label>{{ __('Title') }}</flux:label>
-                            <flux:input wire:model="meetingTitle" :placeholder="__('e.g., Estimate walk-through')" required />
-                            <flux:error name="meetingTitle" />
-                        </flux:field>
+                    <flux:heading size="sm" class="mb-4">{{ __('What I\'m Looking For') }}</flux:heading>
 
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <flux:field>
-                                <flux:label>{{ __('Date & Time') }}</flux:label>
-                                <flux:input wire:model="meetingDateTime" type="datetime-local" required />
-                                <flux:error name="meetingDateTime" />
-                            </flux:field>
+                    <flux:field class="mb-4">
+                        <flux:label>{{ __('Describe what you\'re looking for') }}</flux:label>
+                        <flux:textarea
+                            wire:model.blur="customerNotes"
+                            wire:change="saveNotes"
+                            rows="4"
+                            :placeholder="__('Tell us about your vision - colors you like, areas of concern, special requests...')"
+                        />
+                    </flux:field>
 
-                            <flux:field>
-                                <flux:label>{{ __('Meeting Type') }}</flux:label>
-                                <flux:select wire:model="meetingType">
-                                    <option value="in_person">{{ __('In Person') }}</option>
-                                    <option value="virtual">{{ __('Virtual') }}</option>
-                                </flux:select>
-                            </flux:field>
+                    {{-- Checklist Grid --}}
+                    <div class="mt-4">
+                        <flux:label class="mb-3">{{ __('Services I\'m interested in') }}</flux:label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            @foreach ($this->getCustomerChecklistOptions() as $key => $label)
+                                <label
+                                    class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors
+                                        {{ in_array($key, $customerChecklist) ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}"
+                                    wire:key="checklist-{{ $key }}"
+                                >
+                                    <flux:checkbox
+                                        wire:model="customerChecklist"
+                                        value="{{ $key }}"
+                                        wire:change="saveChecklist"
+                                    />
+                                    <flux:text class="text-sm">{{ __($label) }}</flux:text>
+                                </label>
+                            @endforeach
                         </div>
-
-                        @if (! $estimate->deal?->assigned_to)
-                            <flux:field>
-                                <flux:label>{{ __('Team Member') }}</flux:label>
-                                <flux:select wire:model="meetingTeamMember">
-                                    <option value="">{{ __('Any available') }}</option>
-                                    @foreach ($this->teamMembers as $member)
-                                        <option value="{{ $member->id }}">{{ $member->name }}</option>
-                                    @endforeach
-                                </flux:select>
-                            </flux:field>
-                        @endif
-
-                        <flux:field>
-                            <flux:label>{{ __('Description') }} <span class="text-zinc-400 font-normal">({{ __('optional') }})</span></flux:label>
-                            <flux:textarea wire:model="meetingDescription" rows="2" :placeholder="__('Any details about what you\'d like to discuss...')" />
-                            <flux:error name="meetingDescription" />
-                        </flux:field>
-
-                        <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
-                            <span wire:loading.remove wire:target="proposeMeeting">{{ __('Propose Meeting') }}</span>
-                            <span wire:loading wire:target="proposeMeeting">{{ __('Proposing...') }}</span>
-                        </flux:button>
-                    </form>
+                    </div>
                 </div>
 
-                {{-- Existing Meetings --}}
-                @if ($this->meetingActivities->count() > 0)
-                    @foreach ($this->meetingActivities as $meeting)
-                        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6" wire:key="meeting-{{ $meeting->id }}">
-                            <div class="flex items-start justify-between mb-3">
-                                <div class="flex items-start gap-3">
-                                    <div class="flex items-center justify-center w-10 h-10 rounded-full {{ $meeting->meeting_type === 'virtual' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-blue-100 dark:bg-blue-900/30' }} shrink-0">
-                                        <flux:icon :name="$meeting->meeting_type === 'virtual' ? 'video-camera' : 'calendar'" class="w-5 h-5 {{ $meeting->meeting_type === 'virtual' ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400' }}" />
-                                    </div>
-                                    <div>
-                                        <div class="flex items-center gap-2">
-                                            <flux:text class="font-medium">{{ $meeting->title }}</flux:text>
-                                            <flux:badge size="sm" :color="$meeting->meeting_type === 'virtual' ? 'purple' : 'blue'">
-                                                {{ $meeting->meeting_type === 'virtual' ? __('Virtual') : __('In Person') }}
-                                            </flux:badge>
-                                        </div>
-                                        @if ($meeting->due_at)
-                                            <flux:text class="text-sm text-zinc-500 mt-1">
-                                                {{ $meeting->due_at->format('l, F j, Y \a\t g:i A') }}
-                                            </flux:text>
-                                        @endif
-                                        @if ($meeting->description)
-                                            <flux:text class="text-sm text-zinc-500 mt-2">{{ $meeting->description }}</flux:text>
-                                        @endif
-                                        @if ($meeting->proposedBy)
-                                            <flux:text class="text-xs text-zinc-400 mt-1">
-                                                {{ __('Proposed by :name', ['name' => $meeting->proposedBy->name]) }}
-                                            </flux:text>
-                                        @endif
-                                    </div>
-                                </div>
-                                <flux:badge size="sm" :color="match($meeting->meeting_status) {
-                                    'proposed' => 'yellow',
-                                    'confirmed' => 'green',
-                                    'declined' => 'red',
-                                    'cancelled' => 'zinc',
-                                    default => 'zinc',
-                                }">
-                                    {{ __(ucfirst($meeting->meeting_status ?? 'pending')) }}
-                                </flux:badge>
-                            </div>
+                {{-- Listing Link --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
+                    <flux:heading size="sm" class="mb-4">{{ __('Property Listing Link') }}</flux:heading>
+                    <flux:text class="text-sm text-zinc-500 mb-4">
+                        {{ __('If your home is listed online (Zillow, Redfin, etc.), share the link so the team can reference it.') }}
+                    </flux:text>
 
-                            {{-- Confirmation Status --}}
-                            @if ($meeting->meeting_status === 'proposed' || $meeting->meeting_status === 'confirmed')
-                                <div class="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-xs">
-                                    <div class="flex items-center gap-1">
-                                        <flux:icon :name="$meeting->team_confirmed_at ? 'check-circle' : 'clock'" class="w-4 h-4 {{ $meeting->team_confirmed_at ? 'text-green-500' : 'text-zinc-400' }}" />
-                                        <span class="{{ $meeting->team_confirmed_at ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ __('Team') }}</span>
-                                    </div>
-                                    <div class="flex items-center gap-1">
-                                        <flux:icon :name="$meeting->customer_confirmed_at ? 'check-circle' : 'clock'" class="w-4 h-4 {{ $meeting->customer_confirmed_at ? 'text-green-500' : 'text-zinc-400' }}" />
-                                        <span class="{{ $meeting->customer_confirmed_at ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ __('You') }}</span>
-                                    </div>
-                                    @if ($estimate->deal?->agent_id)
-                                        <div class="flex items-center gap-1">
-                                            <flux:icon :name="$meeting->agent_confirmed_at ? 'check-circle' : 'clock'" class="w-4 h-4 {{ $meeting->agent_confirmed_at ? 'text-green-500' : 'text-zinc-400' }}" />
-                                            <span class="{{ $meeting->agent_confirmed_at ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ __('Agent') }}</span>
-                                        </div>
-                                    @endif
-                                </div>
-                            @endif
+                    <form wire:submit="saveListing" class="flex items-end gap-3">
+                        <flux:field class="flex-1">
+                            <flux:input
+                                wire:model="listingUrl"
+                                type="url"
+                                placeholder="https://www.zillow.com/homedetails/..."
+                            />
+                            <flux:error name="listingUrl" />
+                        </flux:field>
+                        <flux:button type="submit" variant="primary" size="sm" wire:loading.attr="disabled">
+                            <span wire:loading.remove wire:target="saveListing">{{ __('Save') }}</span>
+                            <span wire:loading wire:target="saveListing">{{ __('Saving...') }}</span>
+                        </flux:button>
+                    </form>
 
-                            {{-- Actions --}}
-                            @if ($meeting->meeting_status === 'proposed' && ! $meeting->customer_confirmed_at)
-                                <div class="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                                    <flux:button size="sm" variant="primary" wire:click="confirmMeeting({{ $meeting->id }})">
-                                        {{ __('Confirm') }}
-                                    </flux:button>
-                                    <flux:button size="sm" variant="ghost" wire:click="declineMeeting({{ $meeting->id }})">
-                                        {{ __('Decline') }}
-                                    </flux:button>
-                                </div>
-                            @endif
-
-                            @if ($meeting->meeting_status === 'confirmed' && $meeting->isVirtualMeeting() && $meeting->videoCall)
-                                <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                                    <flux:button size="sm" variant="primary" icon="video-camera" :href="route('video-call.test', $meeting->videoCall->room_id)">
-                                        {{ __('Join Video Call') }}
-                                    </flux:button>
-                                </div>
-                            @endif
+                    @if ($estimate->deal?->listing_url)
+                        <div class="mt-3 flex items-center gap-2">
+                            <flux:icon name="link" class="h-4 w-4 text-zinc-400 shrink-0" />
+                            <a href="{{ $estimate->deal->listing_url }}" target="_blank" class="text-sm text-blue-600 dark:text-blue-400 underline hover:no-underline break-all">
+                                {{ $estimate->deal->listing_url }}
+                            </a>
                         </div>
-                    @endforeach
-                @else
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
-                        <flux:icon name="calendar" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                        <flux:heading size="sm" class="mb-1">{{ __('No Meetings Yet') }}</flux:heading>
-                        <flux:text class="text-zinc-500 text-sm max-w-md mx-auto">
-                            {{ __('Use the form above to propose a meeting, or your team will schedule one for you.') }}
-                        </flux:text>
-                    </div>
-                @endif
+                    @endif
+                </div>
             </div>
         @endif
 
@@ -1275,4 +1014,17 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
             </div>
         @endif
     </div>
+
+    {{-- Area Carousel Overlay --}}
+    @if ($showAreaCarousel)
+        <div
+            x-data
+            x-on:close-area-carousel.window="$wire.closeAreaCarousel()"
+        >
+            <livewire:customer.estimates.area-carousel
+                :estimate="$estimate"
+                :key="'show-carousel-'.$estimate->id"
+            />
+        </div>
+    @endif
 </div>

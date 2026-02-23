@@ -40,6 +40,7 @@ return [
         'secret' => env('MAILGUN_SECRET'),
         'endpoint' => env('MAILGUN_ENDPOINT', 'api.mailgun.net'),
         'scheme' => 'https',
+        'webhook_signing_key' => env('MAILGUN_WEBHOOK_SIGNING_KEY'),
     ],
 
     'forge' => [
@@ -48,6 +49,11 @@ return [
 
     'locationiq' => [
         'key' => env('LOCATIONIQ_API_KEY'),
+    ],
+
+    'webpush' => [
+        'vapid_public_key' => env('VAPID_PUBLIC_KEY'),
+        'vapid_private_key' => env('VAPID_PRIVATE_KEY'),
     ],
 
 ];

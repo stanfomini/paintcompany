@@ -1,0 +1,433 @@
+<?php
+
+use App\Events\CustomerContributionAdded;
+use App\Models\Customer;
+use App\Models\Estimate;
+use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\Computed;
+use Livewire\Component;
+
+new class extends Component
+{
+    public Estimate $estimate;
+
+    public int $currentAreaIndex = 0;
+
+    /** @var array<int, string> */
+    public array $areaCustomerNotes = [];
+
+    /** @var array<int, array<string>> */
+    public array $areaCustomerChecklists = [];
+
+    public bool $showGuide = true;
+
+    /** @var array<string, array<string, string>> */
+    private const AREA_CHECKLIST_GROUPS = [
+        'common' => [
+            'needs_repair' => 'Needs repair work',
+            'peeling_paint' => 'Peeling or flaking paint',
+        ],
+        'interior' => [
+            'has_wallpaper' => 'Has wallpaper to remove',
+            'water_damage' => 'Water damage visible',
+            'dark_to_light' => 'Going from dark to light color',
+        ],
+        'exterior' => [
+            'high_ceiling' => 'High/vaulted ceiling',
+            'wood_rot' => 'Wood rot present',
+            'chalking_paint' => 'Chalking or oxidized paint',
+        ],
+    ];
+
+    public function mount(Estimate $estimate): void
+    {
+        $customer = Customer::query()
+            ->where('user_id', auth('customer')->id())
+            ->first();
+
+        if (! $customer || ! $estimate->deal->customerCanAccess($customer)) {
+            abort(403);
+        }
+
+        $this->estimate = $estimate->load(['areas.surfaces.productionRate']);
+
+        foreach ($this->estimate->areas as $area) {
+            $this->areaCustomerNotes[$area->id] = $area->customer_notes ?? '';
+            $this->areaCustomerChecklists[$area->id] = $area->customer_checklist ?? [];
+        }
+
+        $this->showGuide = ! session('area_carousel_guide_dismissed', false);
+    }
+
+    #[Computed]
+    public function areas()
+    {
+        return $this->estimate->areas;
+    }
+
+    #[Computed]
+    public function currentArea()
+    {
+        return $this->areas[$this->currentAreaIndex] ?? null;
+    }
+
+    #[Computed]
+    public function totalAreas(): int
+    {
+        return $this->areas->count();
+    }
+
+    #[Computed]
+    public function previousAreaName(): ?string
+    {
+        $prevIndex = $this->currentAreaIndex - 1;
+
+        return $prevIndex >= 0 ? $this->areas[$prevIndex]->name : null;
+    }
+
+    #[Computed]
+    public function nextAreaName(): ?string
+    {
+        $nextIndex = $this->currentAreaIndex + 1;
+
+        return $nextIndex < $this->totalAreas ? $this->areas[$nextIndex]->name : null;
+    }
+
+    public function nextArea(): void
+    {
+        if ($this->currentAreaIndex < $this->totalAreas - 1) {
+            $this->currentAreaIndex++;
+            $this->clearAreaComputeds();
+        }
+    }
+
+    public function previousArea(): void
+    {
+        if ($this->currentAreaIndex > 0) {
+            $this->currentAreaIndex--;
+            $this->clearAreaComputeds();
+        }
+    }
+
+    public function goToArea(int $index): void
+    {
+        if ($index >= 0 && $index < $this->totalAreas) {
+            $this->currentAreaIndex = $index;
+            $this->clearAreaComputeds();
+        }
+    }
+
+    public function dismissGuide(): void
+    {
+        $this->showGuide = false;
+        session(['area_carousel_guide_dismissed' => true]);
+    }
+
+    public function saveAreaNotes(int $areaId): void
+    {
+        $notes = $this->areaCustomerNotes[$areaId] ?? '';
+
+        $this->estimate->areas()->where('id', $areaId)->update([
+            'customer_notes' => $notes,
+        ]);
+
+        $user = Auth::guard('customer')->user();
+        CustomerContributionAdded::dispatch(
+            $this->estimate->id,
+            'notes',
+            $user->name,
+            'Updated area notes',
+        );
+    }
+
+    public function saveAreaChecklist(int $areaId): void
+    {
+        $checklist = $this->areaCustomerChecklists[$areaId] ?? [];
+
+        $this->estimate->areas()->where('id', $areaId)->update([
+            'customer_checklist' => $checklist,
+        ]);
+
+        $user = Auth::guard('customer')->user();
+        CustomerContributionAdded::dispatch(
+            $this->estimate->id,
+            'area_checklist',
+            $user->name,
+            'Updated area checklist',
+        );
+    }
+
+    /**
+     * Get checklist groups filtered by scope type for the current area.
+     *
+     * @return array<int, array{label: string, color: string, items: array<string, string>}>
+     */
+    public function getAreaChecklistGroups(?string $scopeType = null): array
+    {
+        $groups = [];
+        $groups[] = ['label' => 'General', 'color' => 'zinc', 'items' => self::AREA_CHECKLIST_GROUPS['common']];
+
+        if ($scopeType !== 'exterior') {
+            $groups[] = ['label' => 'Interior', 'color' => 'blue', 'items' => self::AREA_CHECKLIST_GROUPS['interior']];
+        }
+
+        if ($scopeType !== 'interior') {
+            $groups[] = ['label' => 'Exterior', 'color' => 'orange', 'items' => self::AREA_CHECKLIST_GROUPS['exterior']];
+        }
+
+        return $groups;
+    }
+
+    public function close(): void
+    {
+        $this->dispatch('close-area-carousel');
+    }
+
+    private function clearAreaComputeds(): void
+    {
+        unset($this->currentArea, $this->previousAreaName, $this->nextAreaName);
+    }
+}; ?>
+
+<div
+    x-data="{
+        touchStartX: 0,
+        touchEndX: 0,
+        handleTouchStart(e) { this.touchStartX = e.changedTouches[0].screenX; },
+        handleTouchEnd(e) {
+            this.touchEndX = e.changedTouches[0].screenX;
+            let diff = this.touchStartX - this.touchEndX;
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) $wire.nextArea();
+                else $wire.previousArea();
+            }
+        },
+        savedIndicators: {},
+        showSaved(areaId) {
+            this.savedIndicators[areaId] = true;
+            setTimeout(() => { this.savedIndicators[areaId] = false; }, 2000);
+        },
+    }"
+    x-on:keydown.escape.window="$wire.close()"
+    x-on:keydown.arrow-left.window="$wire.previousArea()"
+    x-on:keydown.arrow-right.window="$wire.nextArea()"
+    x-on:touchstart.passive="handleTouchStart($event)"
+    x-on:touchend.passive="handleTouchEnd($event)"
+    class="fixed inset-0 z-50 bg-white dark:bg-zinc-900 flex flex-col"
+>
+    {{-- Top Bar --}}
+    <div class="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 shrink-0">
+        <button
+            wire:click="close"
+            class="flex items-center justify-center w-11 h-11 rounded-xl bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-800/60 transition-colors shadow-sm"
+            title="{{ __('Close') }}"
+        >
+            <flux:icon name="x-mark" class="w-6 h-6" />
+        </button>
+
+        @if ($this->currentArea)
+            <div class="flex items-center gap-2 min-w-0 mx-3">
+                <span class="text-base font-bold text-zinc-900 dark:text-zinc-100 truncate">{{ $this->currentArea->name }}</span>
+                <flux:badge size="sm" :color="($this->currentArea->scope_type ?? 'interior') === 'exterior' ? 'orange' : 'blue'">
+                    {{ ucfirst($this->currentArea->scope_type ?? 'interior') }}
+                </flux:badge>
+            </div>
+        @endif
+
+        <span class="text-sm font-semibold text-zinc-600 dark:text-zinc-300 shrink-0 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg">
+            {{ $this->currentAreaIndex + 1 }} / {{ $this->totalAreas }}
+        </span>
+    </div>
+
+    {{-- First-time Guide Overlay --}}
+    @if ($showGuide)
+        <div
+            class="absolute inset-0 z-[60] bg-black/60 flex items-center justify-center p-6"
+            x-on:click.self="$wire.dismissGuide()"
+        >
+            <div class="bg-white dark:bg-zinc-800 rounded-2xl p-6 sm:p-8 max-w-sm w-full text-center shadow-2xl">
+                <div class="flex items-center justify-center gap-6 mb-6">
+                    <div class="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                        <flux:icon name="arrow-left" class="w-6 h-6" />
+                        <span class="text-sm font-medium">{{ __('Swipe') }}</span>
+                    </div>
+                    <div class="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                        <flux:icon name="hand-raised" class="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div class="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
+                        <span class="text-sm font-medium">{{ __('Swipe') }}</span>
+                        <flux:icon name="arrow-right" class="w-6 h-6" />
+                    </div>
+                </div>
+                <flux:heading size="lg" class="mb-2">{{ __('Review Your Rooms') }}</flux:heading>
+                <flux:text class="text-zinc-500 dark:text-zinc-400 text-sm mb-6">
+                    {{ __('Swipe left and right to see each room. Leave notes and flag any conditions for the team.') }}
+                </flux:text>
+                <button
+                    wire:click="dismissGuide"
+                    class="w-full py-3 bg-blue-600 text-white font-bold text-base rounded-xl hover:bg-blue-700 transition-colors"
+                >
+                    {{ __('Got It') }}
+                </button>
+            </div>
+        </div>
+    @endif
+
+    {{-- Area Content (scrollable) --}}
+    @if ($this->currentArea)
+        @php $area = $this->currentArea; @endphp
+        <div class="flex-1 overflow-y-auto" wire:key="area-slide-{{ $area->id }}">
+            <div class="p-4 sm:p-6 max-w-2xl mx-auto w-full space-y-6">
+
+                {{-- Area Name + Size --}}
+                <div>
+                    <h2 class="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ $area->name }}</h2>
+                    <div class="flex items-center gap-3 mt-1">
+                        <flux:badge size="sm" :color="($area->scope_type ?? 'interior') === 'exterior' ? 'orange' : 'blue'">
+                            {{ ucfirst($area->scope_type ?? 'interior') }}
+                        </flux:badge>
+                        @if ($area->wall_sqft > 0)
+                            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
+                                {{ number_format($area->wall_sqft, 0) }} {{ __('sqft walls') }}
+                            </flux:text>
+                        @endif
+                    </div>
+                </div>
+
+                {{-- Surfaces --}}
+                @if ($area->surfaces->count() > 0)
+                    <div>
+                        <h3 class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-3">{{ __('Surfaces') }}</h3>
+                        <div class="bg-zinc-50 dark:bg-zinc-800 rounded-xl divide-y divide-zinc-200 dark:divide-zinc-700">
+                            @foreach ($area->surfaces as $surface)
+                                <div class="flex items-center justify-between px-4 py-3" wire:key="carousel-surface-{{ $surface->id }}">
+                                    <flux:text class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ $surface->name }}</flux:text>
+                                    @if ($surface->quantity)
+                                        <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
+                                            {{ number_format($surface->quantity, 0) }} {{ $surface->unit ?? 'sqft' }}
+                                        </flux:text>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
+                {{-- Area Conditions Checklist (grouped) --}}
+                <div>
+                    <h3 class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-3">{{ __('What needs attention?') }}</h3>
+                    <div class="space-y-4">
+                        @foreach ($this->getAreaChecklistGroups($area->scope_type) as $group)
+                            <div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <span class="inline-block w-2 h-2 rounded-full bg-{{ $group['color'] }}-400"></span>
+                                    <span class="text-xs font-semibold text-{{ $group['color'] }}-600 dark:text-{{ $group['color'] }}-400 uppercase tracking-wide">{{ __($group['label']) }}</span>
+                                </div>
+                                <div class="space-y-1">
+                                    @foreach ($group['items'] as $key => $label)
+                                        <label
+                                            class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors min-h-[48px]
+                                                {{ in_array($key, $areaCustomerChecklists[$area->id] ?? []) ? 'border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}"
+                                            wire:key="carousel-check-{{ $area->id }}-{{ $key }}"
+                                        >
+                                            <flux:checkbox
+                                                wire:model="areaCustomerChecklists.{{ $area->id }}"
+                                                value="{{ $key }}"
+                                                wire:change="saveAreaChecklist({{ $area->id }})"
+                                                x-on:change="showSaved({{ $area->id }})"
+                                            />
+                                            <flux:text class="text-sm">{{ __($label) }}</flux:text>
+                                        </label>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+
+                {{-- Customer Notes --}}
+                <div>
+                    <h3 class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-3">{{ __('Your Notes') }}</h3>
+                    <flux:textarea
+                        wire:model.blur="areaCustomerNotes.{{ $area->id }}"
+                        wire:change="saveAreaNotes({{ $area->id }})"
+                        x-on:change="showSaved({{ $area->id }})"
+                        rows="4"
+                        :placeholder="__('Describe any specific requests for this room - colors, concerns, special instructions...')"
+                        class="text-base"
+                    />
+                    <div
+                        class="mt-2 flex items-center gap-1 text-sm text-green-600 dark:text-green-400 transition-opacity duration-300"
+                        x-show="savedIndicators[{{ $area->id }}]"
+                        x-transition:enter="transition ease-out duration-200"
+                        x-transition:enter-start="opacity-0"
+                        x-transition:enter-end="opacity-100"
+                        x-transition:leave="transition ease-in duration-150"
+                        x-transition:leave-start="opacity-100"
+                        x-transition:leave-end="opacity-0"
+                    >
+                        <flux:icon name="check-circle" class="w-4 h-4" />
+                        <span>{{ __('Saved') }}</span>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    @else
+        <div class="flex-1 flex items-center justify-center">
+            <div class="text-center p-6">
+                <flux:icon name="squares-2x2" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                <flux:heading size="lg" class="mb-2">{{ __('No Rooms Yet') }}</flux:heading>
+                <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('Your team is still setting up the rooms for this project.') }}</flux:text>
+            </div>
+        </div>
+    @endif
+
+    {{-- Bottom Navigation Bar --}}
+    @if ($this->totalAreas > 0)
+        <div class="shrink-0 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700 px-4 py-3 safe-area-bottom">
+            <div class="flex items-center justify-between gap-3 max-w-2xl mx-auto">
+                {{-- Previous --}}
+                <button
+                    wire:click="previousArea"
+                    @if ($this->currentAreaIndex === 0) disabled @endif
+                    class="flex items-center gap-1.5 px-4 py-3 rounded-xl text-sm font-bold transition-colors min-h-[48px] shadow-sm
+                        {{ $this->currentAreaIndex === 0
+                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-600 cursor-not-allowed'
+                            : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800/60' }}"
+                >
+                    <flux:icon name="arrow-left" class="w-4 h-4" />
+                    <span class="hidden sm:inline truncate max-w-[100px]">{{ $this->previousAreaName ?? __('Previous') }}</span>
+                    <span class="sm:hidden">{{ __('Prev') }}</span>
+                </button>
+
+                {{-- Dot Indicators --}}
+                <div class="flex items-center gap-1.5 overflow-hidden">
+                    @foreach ($this->areas as $index => $dotArea)
+                        <button
+                            wire:click="goToArea({{ $index }})"
+                            wire:key="dot-{{ $dotArea->id }}"
+                            class="w-2.5 h-2.5 rounded-full transition-all shrink-0
+                                {{ $index === $this->currentAreaIndex ? 'bg-blue-600 dark:bg-blue-400 scale-125' : 'bg-zinc-300 dark:bg-zinc-600 hover:bg-zinc-400 dark:hover:bg-zinc-500' }}"
+                            title="{{ $dotArea->name }}"
+                        ></button>
+                    @endforeach
+                </div>
+
+                {{-- Next --}}
+                <button
+                    wire:click="nextArea"
+                    @if ($this->currentAreaIndex >= $this->totalAreas - 1) disabled @endif
+                    class="flex items-center gap-1.5 px-4 py-3 rounded-xl text-sm font-bold transition-colors min-h-[48px] shadow-sm
+                        {{ $this->currentAreaIndex >= $this->totalAreas - 1
+                            ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-600 cursor-not-allowed'
+                            : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-800/60' }}"
+                >
+                    <span class="hidden sm:inline truncate max-w-[100px]">{{ $this->nextAreaName ?? __('Next') }}</span>
+                    <span class="sm:hidden">{{ __('Next') }}</span>
+                    <flux:icon name="arrow-right" class="w-4 h-4" />
+                </button>
+            </div>
+        </div>
+    @endif
+</div>

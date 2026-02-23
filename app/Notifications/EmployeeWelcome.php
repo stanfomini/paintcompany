@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\CompanySetting;
 use App\Models\EmployeeProfile;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class EmployeeWelcome extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(
         public EmployeeProfile $employeeProfile,
     ) {}
@@ -22,7 +26,24 @@ class EmployeeWelcome extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -48,5 +69,17 @@ class EmployeeWelcome extends Notification implements ShouldQueue
             'employee_profile_id' => $this->employeeProfile->id,
             'message' => "Welcome aboard, {$this->employeeProfile->user->name}!",
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $companyName = CompanySetting::getInstance()->company_name ?? 'the team';
+
+        return new WebPushMessage(
+            title: "Welcome to {$companyName}!",
+            body: 'Log in to complete your onboarding checklist',
+            url: '/login',
+            tag: 'employee-welcome',
+        );
     }
 }

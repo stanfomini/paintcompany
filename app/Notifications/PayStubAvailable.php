@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\PayStub;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class PayStubAvailable extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'payments';
+
     public function __construct(
         public PayStub $payStub,
     ) {}
@@ -21,7 +25,24 @@ class PayStubAvailable extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -51,5 +72,17 @@ class PayStubAvailable extends Notification implements ShouldQueue
             'pay_period_id' => $this->payStub->pay_period_id,
             'net_pay' => $this->payStub->net_pay,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $netPay = number_format((float) $this->payStub->net_pay, 2);
+
+        return new WebPushMessage(
+            title: 'Pay Stub Available',
+            body: "Your pay stub is ready - net pay \${$netPay}",
+            url: '/my/pay-stubs',
+            tag: "paystub-{$this->payStub->id}",
+        );
     }
 }

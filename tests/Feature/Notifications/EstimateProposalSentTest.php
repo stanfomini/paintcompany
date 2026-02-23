@@ -103,14 +103,14 @@ describe('EstimateProposalSent Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail channel only', function () {
+    it('uses mail database and broadcast channels', function () {
         $customer = Customer::factory()->make();
         $estimate = Estimate::factory()->make();
 
         $notification = new EstimateProposalSent($estimate);
         $channels = $notification->via($customer);
 
-        expect($channels)->toBe(['mail']);
+        expect($channels)->toBe(['mail', 'database', 'broadcast']);
     });
 
     it('converts to array with correct structure', function () {

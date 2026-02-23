@@ -58,6 +58,14 @@
                             </div>
                         </flux:sidebar.item>
                     @endcan
+                    @can('email.access')
+                        <flux:sidebar.item icon="at-symbol" :href="route('email.inbox')" :current="request()->routeIs('email.*')" wire:navigate>
+                            <div class="flex items-center justify-between w-full">
+                                {{ __('Email') }}
+                                @livewire('email.unread-badge')
+                            </div>
+                        </flux:sidebar.item>
+                    @endcan
                     @can('business_plan.view')
                         <flux:sidebar.item icon="presentation-chart-bar" :href="route('business-plan.index')" :current="request()->routeIs('business-plan.*')" wire:navigate>
                             {{ __('Business Plan') }}
@@ -330,7 +338,7 @@
         @auth
             @if (auth()->user()->isInternal())
                 {{-- Floating bottom-left button bar (bell + record) --}}
-                <div class="fixed bottom-4 inset-x-0 z-50 pointer-events-none lg:pl-64">
+                <div class="fixed inset-x-0 z-50 pointer-events-none lg:pl-64" style="bottom: calc(1rem + env(safe-area-inset-bottom, 0px))">
                     <div class="pl-4 flex items-end gap-2">
                         @livewire('notifications.notification-center')
                         @can('media.record')
@@ -361,6 +369,7 @@
         </script>
 
         @livewire('shared.toast-container')
+        @livewire('pwa.install-banner')
         @fluxScripts
     </body>
 </html>

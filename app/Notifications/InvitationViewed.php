@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Invitation;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class InvitationViewed extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(public Invitation $invitation) {}
 
     /**
@@ -19,7 +23,16 @@ class InvitationViewed extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['database', 'broadcast'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     /**
@@ -38,5 +51,15 @@ class InvitationViewed extends Notification implements ShouldQueue
     public function toBroadcast(object $notifiable): BroadcastMessage
     {
         return new BroadcastMessage($this->toArray($notifiable));
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Invitation Viewed',
+            body: "{$this->invitation->email} viewed your invitation",
+            url: '/dashboard',
+            tag: "invitation-{$this->invitation->id}",
+        );
     }
 }

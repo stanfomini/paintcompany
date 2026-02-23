@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Schedule;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class TerritoryScheduleAssigned extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'jobs';
+
     public function __construct(
         public Schedule $schedule
     ) {}
@@ -21,7 +25,16 @@ class TerritoryScheduleAssigned extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['database', 'broadcast'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     /**
@@ -46,5 +59,18 @@ class TerritoryScheduleAssigned extends Notification implements ShouldQueue
     public function toBroadcast(object $notifiable): BroadcastMessage
     {
         return new BroadcastMessage($this->toArray($notifiable));
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $territory = $this->schedule->territory;
+        $date = $this->schedule->date->format('M j, Y');
+
+        return new WebPushMessage(
+            title: 'Territory Schedule Assigned',
+            body: "You've been assigned to {$territory?->name} on {$date}",
+            url: $this->schedule->getMeetUpUrl() ?? '/my/schedule',
+            tag: "schedule-{$this->schedule->id}",
+        );
     }
 }

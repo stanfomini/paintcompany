@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Estimate;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class EstimateAccepted extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'estimates';
+
     public function __construct(public Estimate $estimate) {}
 
     /**
@@ -21,7 +25,24 @@ class EstimateAccepted extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -76,5 +97,17 @@ class EstimateAccepted extends Notification implements ShouldQueue
             'total' => $this->estimate->total,
             'customer_name' => $this->estimate->deal?->customer?->full_name,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $customerName = $this->estimate->deal?->customer?->full_name ?? 'Customer';
+
+        return new WebPushMessage(
+            title: 'Estimate Accepted',
+            body: "{$customerName} accepted estimate #{$this->estimate->estimate_number}",
+            url: "/estimates/{$this->estimate->id}",
+            tag: "estimate-{$this->estimate->id}",
+        );
     }
 }

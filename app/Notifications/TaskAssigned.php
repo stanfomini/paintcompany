@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Activity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +13,8 @@ use Illuminate\Notifications\Notification;
 class TaskAssigned extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'tasks';
 
     /**
      * Create a new notification instance.
@@ -26,7 +30,24 @@ class TaskAssigned extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     /**
@@ -67,5 +88,17 @@ class TaskAssigned extends Notification implements ShouldQueue
             'assigned_by' => $this->activity->user_id,
             'assigned_by_name' => $this->activity->user?->name,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $assignerName = $this->activity->user?->name ?? 'Someone';
+
+        return new WebPushMessage(
+            title: 'Task Assigned',
+            body: "{$assignerName} assigned you: {$this->activity->title}",
+            url: '/planner',
+            tag: "task-{$this->activity->id}",
+        );
     }
 }

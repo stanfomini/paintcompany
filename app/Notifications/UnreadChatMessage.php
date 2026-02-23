@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use Illuminate\Bus\Queueable;
@@ -14,6 +16,8 @@ class UnreadChatMessage extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'chat';
+
     public function __construct(public ChatMessage $message) {}
 
     /**
@@ -21,7 +25,24 @@ class UnreadChatMessage extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -57,6 +78,38 @@ class UnreadChatMessage extends Notification implements ShouldQueue
         $mail->line(__('You received this email because the message was unread for 5 minutes.'));
 
         return $mail;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        $this->message->loadMissing(['user', 'thread']);
+        $senderName = $this->message->user?->name ?? 'Someone';
+
+        return [
+            'type' => 'unread_chat_message',
+            'message_id' => $this->message->id,
+            'thread_id' => $this->message->thread_id,
+            'sender_name' => $senderName,
+            'preview' => Str::limit($this->message->content, 100),
+            'message' => "New message from {$senderName}",
+        ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $this->message->loadMissing(['user', 'thread']);
+        $senderName = $this->message->user?->name ?? 'Someone';
+        $preview = Str::limit($this->message->content, 80);
+
+        return new WebPushMessage(
+            title: "Message from {$senderName}",
+            body: $preview,
+            url: '/chat',
+            tag: "chat-{$this->message->thread_id}",
+        );
     }
 
     private function getChatUrl(object $notifiable, ChatThread $thread): ?string

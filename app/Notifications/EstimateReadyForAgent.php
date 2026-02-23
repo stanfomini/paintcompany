@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Deal;
 use App\Models\Estimate;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class EstimateReadyForAgent extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'estimates';
+
     public function __construct(
         public Estimate $estimate,
         public Deal $deal,
@@ -23,7 +27,24 @@ class EstimateReadyForAgent extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -56,5 +77,17 @@ class EstimateReadyForAgent extends Notification implements ShouldQueue
             'property_address' => $this->deal->property?->full_address ?? $this->deal->title,
             'estimate_total' => $this->estimate->total,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $address = $this->deal->property?->full_address ?? $this->deal->title;
+
+        return new WebPushMessage(
+            title: 'Estimate Ready',
+            body: "Estimate for {$address} is ready for review",
+            url: '/agent/dashboard',
+            tag: "estimate-{$this->estimate->id}",
+        );
     }
 }

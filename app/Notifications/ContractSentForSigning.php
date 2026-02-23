@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\CompanySetting;
 use App\Models\EmployeeContract;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class ContractSentForSigning extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'documents';
+
     public function __construct(
         public EmployeeContract $contract,
     ) {}
@@ -22,7 +26,24 @@ class ContractSentForSigning extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -48,5 +69,15 @@ class ContractSentForSigning extends Notification implements ShouldQueue
             'title' => $this->contract->title,
             'token' => $this->contract->token,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Contract to Sign',
+            body: "You have a contract to sign: {$this->contract->title}",
+            url: "/contracts/{$this->contract->token}/sign",
+            tag: "contract-{$this->contract->id}",
+        );
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\GuestChatSession;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -11,11 +13,30 @@ class NewSupportChatNotification extends Notification
 {
     use Queueable;
 
+    public string $pushCategory = 'chat';
+
     public function __construct(public GuestChatSession $session) {}
 
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -40,5 +61,17 @@ class NewSupportChatNotification extends Notification
             'name' => $this->session->name,
             'message' => 'New support chat from '.($this->session->name ?: $this->session->email),
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $name = $this->session->name ?: $this->session->email;
+
+        return new WebPushMessage(
+            title: 'New Support Chat',
+            body: "{$name} started a support conversation",
+            url: '/chat',
+            tag: "chat-support-{$this->session->id}",
+        );
     }
 }

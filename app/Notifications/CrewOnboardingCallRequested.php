@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
@@ -12,6 +14,8 @@ use Illuminate\Notifications\Notification;
 class CrewOnboardingCallRequested extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'jobs';
 
     public function __construct(
         public User $crew,
@@ -24,7 +28,24 @@ class CrewOnboardingCallRequested extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -60,5 +81,15 @@ class CrewOnboardingCallRequested extends Notification implements ShouldQueue
             'requested_at' => $this->requestedAt?->toISOString(),
             'message' => __(':name requested an onboarding call', ['name' => $this->crew->name]),
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Onboarding Call Requested',
+            body: "{$this->crew->name} wants to schedule an onboarding call",
+            url: "/crews/{$this->crew->id}",
+            tag: "crew-onboarding-{$this->crew->id}",
+        );
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Schedule;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class SchedulePublished extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'jobs';
+
     public function __construct(
         public Schedule $schedule,
     ) {}
@@ -21,7 +25,24 @@ class SchedulePublished extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -56,5 +77,17 @@ class SchedulePublished extends Notification implements ShouldQueue
             'start_time' => $this->schedule->start_time,
             'end_time' => $this->schedule->end_time,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $date = $this->schedule->date->format('M j, Y');
+
+        return new WebPushMessage(
+            title: 'New Schedule Published',
+            body: "You are scheduled to work on {$date}",
+            url: '/my/schedule',
+            tag: "schedule-{$this->schedule->id}",
+        );
     }
 }

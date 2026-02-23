@@ -369,7 +369,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 
     {{-- Section 0: Top Nav Bar (Sticky) --}}
     @php $companyPhone = \App\Models\CompanySetting::getInstance()->company_phone; @endphp
-    <nav class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-zinc-200/60 shadow-sm">
+    <nav class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-zinc-200/60 shadow-sm pwa-safe-top">
         <div class="max-w-6xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
             {{-- Left: Logo + Phone --}}
             <div class="flex items-center gap-4">
@@ -427,7 +427,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 
     {{-- Floating Click-to-Call (mobile only) --}}
     @if($companyPhone)
-    <a href="tel:{{ $companyPhone }}" class="fixed bottom-4 left-4 z-40 sm:hidden inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-500 text-white shadow-lg hover:bg-emerald-600 transition-colors">
+    <a href="tel:{{ $companyPhone }}" class="fixed bottom-4 left-4 z-40 sm:hidden inline-flex items-center justify-center w-14 h-14 rounded-full bg-emerald-500 text-white shadow-lg hover:bg-emerald-600 transition-colors pwa-safe-bottom">
         <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>
     </a>
     @endif
@@ -1229,7 +1229,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
     <livewire:public.local-team />
 
     {{-- Section 14: Footer --}}
-    <footer class="bg-[#1B2D4F] text-white py-10">
+    <footer class="bg-[#1B2D4F] text-white py-10 pwa-safe-bottom">
         <div class="max-w-5xl mx-auto px-6">
             {{-- Service Areas Links --}}
             @php $footerAreas = \App\Models\ServiceArea::active()->orderBy('city')->get(); @endphp

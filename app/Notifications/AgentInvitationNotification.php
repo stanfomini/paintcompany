@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Invitation;
 use App\Services\InvitationService;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class AgentInvitationNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(public Invitation $invitation) {}
 
     /**
@@ -20,7 +24,24 @@ class AgentInvitationNotification extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -53,5 +74,15 @@ class AgentInvitationNotification extends Notification implements ShouldQueue
             'invited_user_type' => $this->invitation->invited_user_type,
             'inviter_id' => $this->invitation->inviter_id,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Agent Invitation',
+            body: "You've been invited to join as a real estate agent partner",
+            url: '/',
+            tag: "invitation-{$this->invitation->id}",
+        );
     }
 }

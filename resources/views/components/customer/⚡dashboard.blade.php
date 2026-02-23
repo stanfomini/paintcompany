@@ -1,14 +1,33 @@
 <?php
 
+use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\User;
+use App\Services\MeetingService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class extends Component {
     public ?int $selectedDealId = null;
+
+    public bool $showAreaCarousel = false;
+
+    public ?int $carouselEstimateId = null;
+
+    public bool $showScheduleModal = false;
+
+    public string $meetingTitle = '';
+
+    public string $meetingDateTime = '';
+
+    public string $meetingType = 'in_person';
+
+    public string $meetingDescription = '';
 
     public function mount(): void
     {
@@ -194,6 +213,95 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
         return $items;
     }
 
+    #[Computed]
+    public function upcomingMeetings()
+    {
+        $deal = $this->selectedDeal;
+
+        if (! $deal) {
+            return collect();
+        }
+
+        return $deal->activities()
+            ->where('type', 'meeting')
+            ->whereNotNull('meeting_type')
+            ->where('due_at', '>=', now())
+            ->with(['proposedBy', 'videoCall'])
+            ->orderBy('due_at')
+            ->get();
+    }
+
+    #[Computed]
+    public function teamMembers()
+    {
+        return User::where('type', 'internal')->orderBy('name')->get(['id', 'name']);
+    }
+
+    public function openEstimateOverlay(int $estimateId): void
+    {
+        $this->carouselEstimateId = $estimateId;
+        $this->showAreaCarousel = true;
+    }
+
+    public function closeEstimateOverlay(): void
+    {
+        $this->showAreaCarousel = false;
+        $this->carouselEstimateId = null;
+    }
+
+    public function proposeMeeting(): void
+    {
+        $this->validate([
+            'meetingTitle' => 'required|string|max:255',
+            'meetingDateTime' => 'required|date|after:now',
+            'meetingType' => 'required|in:in_person,virtual',
+            'meetingDescription' => 'nullable|string|max:1000',
+        ]);
+
+        $user = Auth::guard('customer')->user();
+        $deal = $this->selectedDeal;
+
+        if (! $deal) {
+            return;
+        }
+
+        app(MeetingService::class)->proposeMeeting(
+            deal: $deal,
+            proposer: $user,
+            title: $this->meetingTitle,
+            dateTime: Carbon::parse($this->meetingDateTime),
+            meetingType: $this->meetingType,
+            description: $this->meetingDescription ?: null,
+        );
+
+        $this->reset(['meetingTitle', 'meetingDateTime', 'meetingType', 'meetingDescription', 'showScheduleModal']);
+        unset($this->upcomingMeetings);
+
+        session()->flash('success', __('Meeting proposed successfully.'));
+    }
+
+    public function confirmMeeting(int $activityId): void
+    {
+        $activity = Activity::findOrFail($activityId);
+        $user = Auth::guard('customer')->user();
+
+        app(MeetingService::class)->confirmMeeting($activity, $user);
+        unset($this->upcomingMeetings);
+
+        session()->flash('success', __('Meeting confirmed.'));
+    }
+
+    public function declineMeeting(int $activityId): void
+    {
+        $activity = Activity::findOrFail($activityId);
+        $user = Auth::guard('customer')->user();
+
+        app(MeetingService::class)->declineMeeting($activity, $user);
+        unset($this->upcomingMeetings);
+
+        session()->flash('success', __('Meeting declined.'));
+    }
+
     public function selectDeal(int $dealId): void
     {
         // Verify deal is accessible by any of the user's customer records
@@ -240,7 +348,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
 
     public function refreshDashboard(): void
     {
-        unset($this->selectedDeal, $this->actionItems, $this->deals, $this->pastDeals, $this->customers, $this->customer, $this->customerIds);
+        unset($this->selectedDeal, $this->actionItems, $this->deals, $this->pastDeals, $this->customers, $this->customer, $this->customerIds, $this->upcomingMeetings);
     }
 
     /**
@@ -636,7 +744,11 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                                             <span class="text-sm">{{ $item['text'] }}</span>
                                         </span>
                                         <flux:button variant="primary" size="sm" href="{{ $item['route'] }}" class="w-full sm:w-auto shrink-0">
-                                            {{ __('View') }}
+                                            @if ($item['type'] === 'estimate_review')
+                                                {{ __('Review Your Estimate') }}
+                                            @else
+                                                {{ __('Take Action') }}
+                                            @endif
                                         </flux:button>
                                     </li>
                                 @endforeach
@@ -645,99 +757,173 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     </flux:callout>
                 @endif
 
-                {{-- Estimates Section --}}
-                <flux:card>
-                    <flux:heading size="lg" class="mb-4">{{ __('Estimates') }}</flux:heading>
+                {{-- Schedule Card - Always visible, bright amber --}}
+                <div class="rounded-2xl border-2 border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-5 sm:p-6">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center shrink-0">
+                            <flux:icon name="calendar" class="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                            <flux:heading size="lg">{{ __('Schedule') }}</flux:heading>
+                            <flux:text class="text-sm text-amber-700 dark:text-amber-300">
+                                {{ __('Book a time to discuss your project') }}
+                            </flux:text>
+                        </div>
+                    </div>
 
-                    @if ($estimates->isNotEmpty())
-                        <div class="space-y-3">
-                            @foreach ($estimates as $estimate)
-                                @php
-                                    $badgeColor = match($estimate->status) {
-                                        'draft' => 'zinc',
-                                        'sent' => 'yellow',
-                                        'accepted' => 'green',
-                                        'rejected' => 'red',
-                                        'expired' => 'zinc',
-                                        default => 'zinc',
-                                    };
-                                @endphp
-                                <div wire:key="estimate-{{ $estimate->id }}" class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800">
-                                    <div class="flex items-center justify-between gap-2">
-                                        <div class="flex items-center gap-2 min-w-0">
-                                            <flux:icon name="document-text" class="h-4 w-4 shrink-0 text-zinc-400" />
-                                            <span class="text-sm font-medium truncate">{{ $estimate->estimate_number }}</span>
+                    @if ($this->upcomingMeetings->isNotEmpty())
+                        <div class="space-y-3 mb-4">
+                            @foreach ($this->upcomingMeetings->take(2) as $meeting)
+                                <div class="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-amber-200 dark:border-amber-700" wire:key="dash-meeting-{{ $meeting->id }}">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">{{ $meeting->title }}</flux:text>
+                                            @if ($meeting->due_at)
+                                                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                                                    {{ $meeting->due_at->format('l, M j \a\t g:i A') }}
+                                                </flux:text>
+                                            @endif
                                         </div>
-                                        <flux:badge size="sm" color="{{ $badgeColor }}" class="shrink-0">
-                                            {{ $estimate->status_label }}
+                                        <flux:badge size="sm" :color="match($meeting->meeting_status) {
+                                            'proposed' => 'yellow',
+                                            'confirmed' => 'green',
+                                            default => 'zinc',
+                                        }">
+                                            {{ __(ucfirst($meeting->meeting_status ?? 'pending')) }}
                                         </flux:badge>
                                     </div>
-                                    <div class="mt-2 flex items-center justify-between gap-2">
-                                        @if (in_array($estimate->status, ['sent', 'accepted']))
-                                            <span class="text-sm text-zinc-500 dark:text-zinc-400">${{ number_format($estimate->total, 2) }}</span>
-                                        @else
-                                            <span></span>
-                                        @endif
-                                        @if ($estimate->status === 'sent')
-                                            <flux:button variant="primary" size="sm" href="{{ route('customer.estimates.show', $estimate) }}">
-                                                {{ __('Review') }}
+                                    @if ($meeting->meeting_status === 'proposed' && ! $meeting->customer_confirmed_at)
+                                        <div class="flex items-center gap-2 mt-3">
+                                            <flux:button size="sm" variant="primary" wire:click="confirmMeeting({{ $meeting->id }})">
+                                                {{ __('Confirm') }}
                                             </flux:button>
-                                        @elseif ($estimate->status === 'draft')
-                                            <flux:button variant="ghost" size="sm" href="{{ route('customer.estimates.show', $estimate) }}">
-                                                {{ __('Collaborate') }}
+                                            <flux:button size="sm" variant="ghost" wire:click="declineMeeting({{ $meeting->id }})">
+                                                {{ __('Decline') }}
                                             </flux:button>
-                                        @elseif ($estimate->status === 'accepted')
-                                            <flux:button variant="ghost" size="sm" href="{{ route('customer.estimates.show', $estimate) }}">
-                                                {{ __('View') }}
+                                        </div>
+                                    @endif
+                                    @if ($meeting->meeting_status === 'confirmed' && $meeting->isVirtualMeeting() && $meeting->videoCall)
+                                        <div class="mt-3">
+                                            <flux:button size="sm" variant="primary" icon="video-camera" :href="route('video-call.test', $meeting->videoCall->room_id)">
+                                                {{ __('Join Video Call') }}
                                             </flux:button>
-                                        @endif
-                                    </div>
+                                        </div>
+                                    @endif
                                 </div>
                             @endforeach
                         </div>
-                    @else
-                        <div class="py-8 text-center">
-                            <flux:icon name="document-text" class="mx-auto h-12 w-12 text-zinc-300 dark:text-zinc-600" />
-                            <flux:text class="mt-3 text-zinc-500 dark:text-zinc-400">{{ __('No estimates yet for this project.') }}</flux:text>
-                        </div>
                     @endif
-                </flux:card>
 
-                {{-- Job Section --}}
+                    <button
+                        wire:click="$set('showScheduleModal', true)"
+                        class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                    >
+                        <flux:icon name="plus" class="w-5 h-5" />
+                        {{ __('Propose a Meeting') }}
+                    </button>
+                </div>
+
+                {{-- Job Progress Card - Styled, above estimates --}}
                 @if ($job)
-                    <flux:card>
-                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
-                            <flux:heading size="lg">{{ __('Job Progress') }}</flux:heading>
-                            <flux:button variant="ghost" size="sm" href="{{ route('customer.jobs.show', $job) }}" class="w-full sm:w-auto">
-                                {{ __('View Details') }}
-                            </flux:button>
+                    @php
+                        $jobStages = array_keys(\App\Models\Job::STAGES);
+                        $jobCurrentIndex = array_search($job->stage, $jobStages);
+                        $isCompleted = $job->isCompleted();
+                        $gradientFrom = $isCompleted ? 'from-green-600' : 'from-emerald-600';
+                        $gradientTo = $isCompleted ? 'to-emerald-700' : 'to-amber-600';
+                    @endphp
+                    <div class="rounded-2xl bg-gradient-to-br {{ $gradientFrom }} {{ $gradientTo }} p-5 sm:p-6 text-white shadow-lg">
+                        <div class="flex items-start justify-between gap-4 mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                                    <flux:icon name="paint-brush" class="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <h3 class="text-lg sm:text-xl font-bold">{{ __('Job Progress') }}</h3>
+                                    @if ($job->scheduled_date)
+                                        <p class="text-white/80 text-sm mt-0.5">
+                                            {{ __('Scheduled: :date', ['date' => $job->scheduled_date->format('M j, Y')]) }}
+                                        </p>
+                                    @endif
+                                </div>
+                            </div>
+                            <flux:badge size="lg" :color="$isCompleted ? 'green' : 'yellow'">
+                                {{ $isCompleted ? __('Completed') : ucfirst(str_replace('_', ' ', $job->stage)) }}
+                            </flux:badge>
                         </div>
 
-                        {{-- Mini Stage Progress Bar --}}
-                        @php
-                            $stages = array_keys(\App\Models\Job::STAGES);
-                            $currentIndex = array_search($job->stage, $stages);
-                        @endphp
-                        <div class="flex items-center gap-1 mb-3">
-                            @foreach ($stages as $index => $stage)
+                        {{-- Stage Progress Bar --}}
+                        <div class="flex items-center gap-1 mb-4">
+                            @foreach ($jobStages as $index => $stage)
                                 <div
-                                    wire:key="stage-{{ $stage }}"
-                                    class="h-2 flex-1 rounded-full {{ $index <= $currentIndex ? 'bg-blue-500 dark:bg-blue-400' : 'bg-zinc-200 dark:bg-zinc-700' }}"
+                                    wire:key="stage-bar-{{ $stage }}"
+                                    class="h-2.5 flex-1 rounded-full transition-all {{ $index <= $jobCurrentIndex ? 'bg-white/90' : 'bg-white/20' }}"
                                 ></div>
                             @endforeach
                         </div>
 
-                        <div class="flex items-center justify-between gap-2">
-                            <div class="min-w-0">
-                                @if ($job->scheduled_date)
-                                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                                        {{ __('Scheduled: :date', ['date' => $job->scheduled_date->format('M j, Y')]) }}
-                                    </flux:text>
-                                @endif
+                        <a
+                            href="{{ route('customer.jobs.show', $job) }}"
+                            class="block w-full py-3 bg-white/20 hover:bg-white/30 text-white font-bold text-base rounded-xl transition-colors text-center min-h-[48px] leading-[48px]"
+                        >
+                            {{ __('View Job Details') }} &rarr;
+                        </a>
+                    </div>
+                @endif
+
+                {{-- Estimate CTA Cards --}}
+                @if ($estimates->isNotEmpty())
+                    @foreach ($estimates as $estimate)
+                        @php
+                            $badgeColor = match($estimate->status) {
+                                'draft' => 'zinc',
+                                'sent' => 'blue',
+                                'accepted' => 'green',
+                                'rejected' => 'red',
+                                'expired' => 'zinc',
+                                default => 'zinc',
+                            };
+                        @endphp
+                        <div wire:key="estimate-cta-{{ $estimate->id }}" class="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-5 sm:p-6 text-white shadow-lg">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 class="text-lg sm:text-xl font-bold">{{ __('Your Painting Estimate') }}</h3>
+                                    <p class="text-blue-100 text-sm mt-1">{{ $estimate->estimate_number }}</p>
+                                    @if ($estimate->total && in_array($estimate->status, ['sent', 'accepted']))
+                                        <p class="text-2xl font-bold mt-2">${{ number_format($estimate->total, 2) }}</p>
+                                    @endif
+                                </div>
+                                <flux:badge size="lg" color="{{ $badgeColor }}">
+                                    {{ $estimate->status_label }}
+                                </flux:badge>
                             </div>
-                            <flux:badge size="sm" color="{{ $job->isCompleted() ? 'green' : 'blue' }}" class="shrink-0">
-                                {{ $job->isCompleted() ? __('Completed') : __('In Progress') }}
-                            </flux:badge>
+
+                            <button
+                                wire:click="openEstimateOverlay({{ $estimate->id }})"
+                                class="mt-4 w-full py-3 bg-white text-blue-700 font-bold text-base rounded-xl shadow hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                            >
+                                <flux:icon name="eye" class="w-5 h-5" />
+                                @if ($estimate->status === 'sent')
+                                    {{ __('See Your Estimate') }}
+                                @elseif ($estimate->status === 'draft')
+                                    {{ __('Help Build Your Estimate') }}
+                                @else
+                                    {{ __('View Your Estimate') }}
+                                @endif
+                            </button>
+
+                            @if (in_array($estimate->status, ['sent', 'accepted']))
+                                <a href="{{ route('customer.estimates.show', $estimate) }}" class="block text-center text-sm text-blue-200 underline mt-2 hover:text-white transition-colors">
+                                    {{ __('View full proposal & sign') }} &rarr;
+                                </a>
+                            @endif
+                        </div>
+                    @endforeach
+                @else
+                    <flux:card>
+                        <div class="py-8 text-center">
+                            <flux:icon name="document-text" class="mx-auto h-12 w-12 text-zinc-300 dark:text-zinc-600" />
+                            <flux:text class="mt-3 text-zinc-500 dark:text-zinc-400">{{ __('No estimates yet for this project.') }}</flux:text>
                         </div>
                     </flux:card>
                 @endif
@@ -800,4 +986,64 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
         @endif
     </div>
 
+    {{-- Schedule Meeting Modal --}}
+    @if ($showScheduleModal && $this->selectedDeal)
+        <flux:modal wire:model="showScheduleModal" class="max-w-lg">
+            <div class="p-6">
+                <flux:heading size="lg" class="mb-4">{{ __('Propose a Meeting') }}</flux:heading>
+                <form wire:submit="proposeMeeting" class="space-y-4">
+                    <flux:field>
+                        <flux:label>{{ __('Title') }}</flux:label>
+                        <flux:input wire:model="meetingTitle" :placeholder="__('e.g., Estimate walk-through')" required />
+                        <flux:error name="meetingTitle" />
+                    </flux:field>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <flux:field>
+                            <flux:label>{{ __('Date & Time') }}</flux:label>
+                            <flux:input wire:model="meetingDateTime" type="datetime-local" required />
+                            <flux:error name="meetingDateTime" />
+                        </flux:field>
+
+                        <flux:field>
+                            <flux:label>{{ __('Meeting Type') }}</flux:label>
+                            <flux:select wire:model="meetingType">
+                                <option value="in_person">{{ __('In Person') }}</option>
+                                <option value="virtual">{{ __('Virtual') }}</option>
+                            </flux:select>
+                        </flux:field>
+                    </div>
+
+                    <flux:field>
+                        <flux:label>{{ __('Description') }} <span class="text-zinc-400 font-normal">({{ __('optional') }})</span></flux:label>
+                        <flux:textarea wire:model="meetingDescription" rows="2" :placeholder="__('Any details about what you\'d like to discuss...')" />
+                        <flux:error name="meetingDescription" />
+                    </flux:field>
+
+                    <div class="flex items-center gap-3 pt-2">
+                        <flux:button type="submit" variant="primary" wire:loading.attr="disabled" class="flex-1">
+                            <span wire:loading.remove wire:target="proposeMeeting">{{ __('Propose Meeting') }}</span>
+                            <span wire:loading wire:target="proposeMeeting">{{ __('Proposing...') }}</span>
+                        </flux:button>
+                        <flux:button type="button" variant="ghost" wire:click="$set('showScheduleModal', false)">
+                            {{ __('Cancel') }}
+                        </flux:button>
+                    </div>
+                </form>
+            </div>
+        </flux:modal>
+    @endif
+
+    {{-- Area Carousel Overlay --}}
+    @if ($showAreaCarousel && $carouselEstimateId)
+        <div
+            x-data
+            x-on:close-area-carousel.window="$wire.closeEstimateOverlay()"
+        >
+            <livewire:customer.estimates.area-carousel
+                :estimate="App\Models\Estimate::find($carouselEstimateId)"
+                :key="'carousel-'.$carouselEstimateId"
+            />
+        </div>
+    @endif
 </div>

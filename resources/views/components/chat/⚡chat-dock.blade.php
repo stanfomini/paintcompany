@@ -219,7 +219,7 @@ new class extends Component {
         localStorage.setItem('chat_dock_open', JSON.stringify($wire.openThreadIds));
         localStorage.setItem('chat_dock_minimized', JSON.stringify($wire.minimizedIds));
     "
-    class="fixed bottom-0 right-0 z-50 pr-4 pb-4"
+    class="fixed bottom-0 right-0 z-50 pr-4" style="padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px)); padding-right: calc(1rem + env(safe-area-inset-right, 0px))"
 >
     {{-- ======================= --}}
     {{-- DESKTOP: Chat windows   --}}

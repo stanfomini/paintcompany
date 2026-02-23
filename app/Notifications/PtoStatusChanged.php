@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\PtoRequest;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +13,8 @@ use Illuminate\Notifications\Notification;
 class PtoStatusChanged extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'general';
 
     public function __construct(
         public PtoRequest $ptoRequest,
@@ -23,7 +27,24 @@ class PtoStatusChanged extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -60,5 +81,17 @@ class PtoStatusChanged extends Notification implements ShouldQueue
             'end_date' => $this->ptoRequest->end_date->toISOString(),
             'reason' => $this->reason,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $statusLabel = $this->status === 'approved' ? 'approved' : 'denied';
+
+        return new WebPushMessage(
+            title: 'PTO Request '.ucfirst($statusLabel),
+            body: "Your time off request has been {$statusLabel}",
+            url: '/my/pto',
+            tag: "pto-{$this->ptoRequest->id}",
+        );
     }
 }

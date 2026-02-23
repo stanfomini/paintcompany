@@ -240,3 +240,11 @@ Broadcast::channel('territory-dispatch.offer.{offerId}', function (User $user, i
         ->whereHas('eligibleUsers', fn ($q) => $q->where('user_id', $user->id))
         ->exists();
 }, ['guards' => ['web']]);
+
+/**
+ * Authorize access to a user's email channel.
+ * Only internal users with email.access permission can listen.
+ */
+Broadcast::channel('email.user.{userId}', function (User $user, int $userId) {
+    return $user->id === $userId && $user->isInternal();
+}, ['guards' => ['web']]);

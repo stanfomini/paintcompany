@@ -9,6 +9,9 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import './workflow-builder';
+import './tiptap-editor';
+import './pwa';
+import './push';
 
 window.Sortable = Sortable;
 window.html2canvas = html2canvas;

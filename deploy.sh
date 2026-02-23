@@ -27,6 +27,9 @@ fi
 npm ci --no-audit
 npm run build
 
+# Update service worker version to bust cache
+sed -i "s/CACHE_VERSION = .*/CACHE_VERSION = '$(git rev-parse --short HEAD)';/" public/sw.js
+
 # Laravel optimization
 php artisan config:cache
 php artisan route:cache

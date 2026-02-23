@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Deal;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class CollaboratorAccessGranted extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(public Deal $deal, public User $inviter) {}
 
     /**
@@ -22,7 +26,24 @@ class CollaboratorAccessGranted extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -47,5 +68,15 @@ class CollaboratorAccessGranted extends Notification implements ShouldQueue
             'deal_id' => $this->deal->id,
             'inviter_id' => $this->inviter->id,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Project Shared With You',
+            body: "{$this->inviter->name} shared '{$this->deal->title}' with you",
+            url: '/customer/dashboard',
+            tag: "collaborator-{$this->deal->id}",
+        );
     }
 }

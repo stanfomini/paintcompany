@@ -4,6 +4,7 @@
 @auth
 <meta name="user-id" content="{{ auth()->id() }}">
 <meta name="user-type" content="{{ auth()->user()->type }}">
+<meta name="vapid-public-key" content="{{ config('webpush.vapid.public_key') }}">
 @endauth
 
 <title>{{ $title ?? config('app.name') }}</title>
@@ -15,6 +16,11 @@
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#3b82f6">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Apex CRM">
 
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />

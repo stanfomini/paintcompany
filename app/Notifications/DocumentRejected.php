@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\CompanySetting;
 use App\Models\EmployeeDocument;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class DocumentRejected extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'documents';
+
     public function __construct(
         public EmployeeDocument $document,
     ) {}
@@ -22,7 +26,24 @@ class DocumentRejected extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -48,5 +69,15 @@ class DocumentRejected extends Notification implements ShouldQueue
             'document_name' => $this->document->name,
             'review_notes' => $this->document->review_notes,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Document Rejected',
+            body: "{$this->document->name} was rejected - please upload a corrected version",
+            url: '/my/documents',
+            tag: "document-{$this->document->id}",
+        );
     }
 }

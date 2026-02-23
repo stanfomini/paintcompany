@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Job;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +13,8 @@ use Illuminate\Notifications\Notification;
 class CustomerProposedDate extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'jobs';
 
     public function __construct(
         public Job $job,
@@ -22,7 +26,24 @@ class CustomerProposedDate extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -49,5 +70,15 @@ class CustomerProposedDate extends Notification implements ShouldQueue
             'proposed_date' => $this->proposedDate,
             'message' => __('Customer proposed date: :date', ['date' => $this->proposedDate]),
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Date Proposed',
+            body: "Customer proposed {$this->proposedDate} for job #{$this->job->job_number}",
+            url: "/jobs/{$this->job->id}",
+            tag: "job-{$this->job->id}",
+        );
     }
 }

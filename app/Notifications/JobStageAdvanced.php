@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Job;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +13,8 @@ use Illuminate\Notifications\Notification;
 class JobStageAdvanced extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'jobs';
 
     public function __construct(
         public Job $job,
@@ -23,7 +27,24 @@ class JobStageAdvanced extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -54,5 +75,17 @@ class JobStageAdvanced extends Notification implements ShouldQueue
             'to_stage' => $this->toStage,
             'message' => __('Job :number advanced from :from to :to', ['number' => $this->job->job_number, 'from' => $fromLabel, 'to' => $toLabel]),
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $toLabel = Job::STAGES[$this->toStage] ?? $this->toStage;
+
+        return new WebPushMessage(
+            title: 'Job Stage Updated',
+            body: "Job #{$this->job->job_number} moved to {$toLabel}",
+            url: "/jobs/{$this->job->id}",
+            tag: "job-{$this->job->id}",
+        );
     }
 }

@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Invoice;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class InvoiceSent extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'payments';
+
     public function __construct(public Invoice $invoice) {}
 
     /**
@@ -21,7 +25,24 @@ class InvoiceSent extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -64,5 +85,17 @@ class InvoiceSent extends Notification implements ShouldQueue
             'invoice_number' => $this->invoice->invoice_number,
             'total' => $this->invoice->total,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $total = number_format((float) $this->invoice->total, 2);
+
+        return new WebPushMessage(
+            title: 'New Invoice',
+            body: "Invoice #{$this->invoice->invoice_number} for \${$total}",
+            url: $this->invoice->getPublicUrl() ?? '/',
+            tag: "invoice-{$this->invoice->id}",
+        );
     }
 }

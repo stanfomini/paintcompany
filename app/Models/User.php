@@ -40,6 +40,7 @@ class User extends Authenticatable
         'referral_terms_ip_address',
         'referral_terms_initials',
         'follow_up_status',
+        'notification_preferences',
     ];
 
     /**
@@ -67,6 +68,7 @@ class User extends Authenticatable
             'is_active' => 'boolean',
             'needs_onboarding' => 'boolean',
             'referral_terms_accepted_at' => 'datetime',
+            'notification_preferences' => 'array',
         ];
     }
 
@@ -109,6 +111,11 @@ class User extends Authenticatable
     public function employeeProfile(): HasOne
     {
         return $this->hasOne(EmployeeProfile::class);
+    }
+
+    public function emailAccount(): HasOne
+    {
+        return $this->hasOne(EmailAccount::class);
     }
 
     /**
@@ -377,5 +384,60 @@ class User extends Authenticatable
     public function isLost(): bool
     {
         return $this->follow_up_status === 'lost';
+    }
+
+    public function webauthnCredentials(): HasMany
+    {
+        return $this->hasMany(WebauthnCredential::class);
+    }
+
+    public function pushSubscriptions(): HasMany
+    {
+        return $this->hasMany(PushSubscription::class);
+    }
+
+    /**
+     * Default notification preferences -- all channels enabled.
+     */
+    public static function defaultNotificationPreferences(): array
+    {
+        return [
+            'estimates' => ['email' => true, 'push' => true],
+            'chat' => ['email' => true, 'push' => true],
+            'email_messages' => ['email' => true, 'push' => true],
+            'jobs' => ['email' => true, 'push' => true],
+            'tasks' => ['email' => true, 'push' => true],
+            'payments' => ['email' => true, 'push' => true],
+            'documents' => ['email' => true, 'push' => true],
+            'general' => ['email' => true, 'push' => true],
+        ];
+    }
+
+    /**
+     * Get merged preferences (user overrides + defaults).
+     */
+    public function getNotificationPreference(string $category, string $channel): bool
+    {
+        $prefs = $this->notification_preferences ?? [];
+        $defaults = self::defaultNotificationPreferences();
+
+        return $prefs[$category][$channel] ?? $defaults[$category][$channel] ?? true;
+    }
+
+    /**
+     * Check if user wants push for a category.
+     */
+    public function wantsPush(string $category): bool
+    {
+        return $this->getNotificationPreference($category, 'push')
+            && $this->pushSubscriptions()->exists();
+    }
+
+    /**
+     * Check if user wants email for a category.
+     */
+    public function wantsEmail(string $category): bool
+    {
+        return $this->getNotificationPreference($category, 'email');
     }
 }

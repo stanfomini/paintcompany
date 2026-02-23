@@ -182,9 +182,9 @@ it('does not send email when recipient is not a participant', function () {
     Notification::assertNothingSent();
 });
 
-it('uses only mail channel', function () {
+it('uses mail database and broadcast channels', function () {
     $message = ChatMessage::factory()->create();
     $notification = new UnreadChatMessage($message);
 
-    expect($notification->via(new \stdClass))->toBe(['mail']);
+    expect($notification->via(new \stdClass))->toBe(['mail', 'database', 'broadcast']);
 });

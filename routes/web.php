@@ -10,6 +10,7 @@ use App\Http\Controllers\EstimateBreakdownExportController;
 use App\Http\Controllers\EstimatePdfController;
 use App\Http\Controllers\InvoicePdfController;
 use App\Http\Controllers\PainterBreakdownExportController;
+use App\Http\Controllers\PushSubscriptionController;
 use App\Http\Controllers\ScheduleCalendarFeedController;
 use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\SubcontractorExportController;
@@ -178,6 +179,12 @@ Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-recording
     Route::delete('/{recording}', [VideoRecordingUploadController::class, 'destroy'])->name('video-recordings.destroy');
 });
 
+// Push notification subscription (all authenticated user types)
+Route::middleware(['auth:web,customer,crew,agent'])->group(function () {
+    Route::post('/push/subscribe', [PushSubscriptionController::class, 'store'])->name('push.subscribe');
+    Route::delete('/push/unsubscribe', [PushSubscriptionController::class, 'destroy'])->name('push.unsubscribe');
+});
+
 // Public video recording playback (share token, no auth)
 Route::get('/v/{shareToken}', [VideoRecordingPlaybackController::class, 'show'])
     ->name('video-recording.public')
@@ -321,6 +328,14 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::middleware(['permission:chat.access'])->group(function () {
         Route::livewire('/chat', 'chat.thread-list')->name('chat.index');
         Route::livewire('/chat/{thread}', 'chat.thread-view')->name('chat.show');
+    });
+
+    // Email routes
+    Route::middleware(['permission:email.access'])->group(function () {
+        Route::livewire('/email', 'email.inbox')->name('email.inbox');
+        Route::livewire('/email/setup', 'email.account-setup')->name('email.setup');
+        Route::get('/email/attachments/{attachment}/download', [\App\Http\Controllers\EmailAttachmentController::class, 'download'])
+            ->name('email.attachment.download');
     });
 
     // Walkie-talkie routes
@@ -579,5 +594,10 @@ Route::get('/api/video-data/{type}/{id}', [VideoDataController::class, 'show'])
 // Video player page (public)
 Route::view('/video/showcase', 'video.showcase')
     ->name('video.showcase');
+
+// Email inbound webhook (Mailgun)
+Route::post('/webhooks/email/inbound', [\App\Http\Controllers\EmailInboundWebhookController::class, 'handle'])
+    ->name('webhooks.email.inbound')
+    ->middleware('throttle:120,1');
 
 require __DIR__.'/settings.php';

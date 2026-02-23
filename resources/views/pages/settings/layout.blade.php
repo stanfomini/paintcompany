@@ -7,6 +7,7 @@
                 <flux:navlist.item :href="route('two-factor.show')" wire:navigate>{{ __('Two-Factor Auth') }}</flux:navlist.item>
             @endif
             <flux:navlist.item :href="route('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navlist.item>
+            <flux:navlist.item :href="route('notification-preferences.edit')" wire:navigate>{{ __('Notifications') }}</flux:navlist.item>
             @if (auth()->user()->type === 'internal')
                 <flux:navlist.item :href="route('signature.edit')" wire:navigate>{{ __('Signature') }}</flux:navlist.item>
                 @can('settings.company')

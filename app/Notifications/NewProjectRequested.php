@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Customer;
 use App\Models\Deal;
 use Illuminate\Bus\Queueable;
@@ -13,6 +15,8 @@ class NewProjectRequested extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(
         public Deal $deal,
         public Customer $customer,
@@ -23,7 +27,24 @@ class NewProjectRequested extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -46,5 +67,15 @@ class NewProjectRequested extends Notification implements ShouldQueue
             'customer_id' => $this->customer->id,
             'message' => __(':name requested a new project.', ['name' => $this->customer->full_name]),
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'New Project Request',
+            body: "{$this->customer->full_name} requested a new project",
+            url: "/deals/{$this->deal->id}",
+            tag: "project-{$this->deal->id}",
+        );
     }
 }

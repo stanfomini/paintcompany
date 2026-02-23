@@ -218,6 +218,11 @@ class Deal extends Model
         return $this->morphMany(Activity::class, 'subject');
     }
 
+    public function emailLinks(): MorphMany
+    {
+        return $this->morphMany(EmailCrmLink::class, 'linkable');
+    }
+
     /**
      * Get the job for this deal.
      */

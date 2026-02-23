@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\CompanySetting;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -14,13 +16,55 @@ class CrewCompliancePackNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(
         public User $user,
     ) {}
 
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toArray(object $notifiable): array
+    {
+        return [
+            'type' => 'crew_compliance_pack',
+            'user_id' => $this->user->id,
+            'user_name' => $this->user->name,
+            'message' => "Compliance documents for {$this->user->name} have been emailed",
+        ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Compliance Pack Ready',
+            body: "Compliance documents for {$this->user->name} have been emailed",
+            url: '/crews',
+            tag: "compliance-pack-{$this->user->id}",
+        );
     }
 
     public function toMail(object $notifiable): MailMessage

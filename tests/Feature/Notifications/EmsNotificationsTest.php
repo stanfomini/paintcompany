@@ -33,11 +33,11 @@ describe('PtoRequested Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail and database channels', function () {
+    it('uses mail database and broadcast channels', function () {
         $notification = new PtoRequested(PtoRequest::factory()->make());
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail', 'database']);
+        expect($channels)->toBe(['mail', 'database', 'broadcast']);
     });
 
     it('has correct email subject with employee name', function () {
@@ -116,11 +116,11 @@ describe('PtoStatusChanged Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail and database channels', function () {
+    it('uses mail database and broadcast channels', function () {
         $notification = new PtoStatusChanged(PtoRequest::factory()->make(), 'approved');
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail', 'database']);
+        expect($channels)->toBe(['mail', 'database', 'broadcast']);
     });
 
     it('has correct subject for approval', function () {
@@ -221,11 +221,11 @@ describe('ContractSentForSigning Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail and database channels', function () {
+    it('uses mail database and broadcast channels', function () {
         $notification = new ContractSentForSigning(EmployeeContract::factory()->make());
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail', 'database']);
+        expect($channels)->toBe(['mail', 'database', 'broadcast']);
     });
 
     it('has correct email subject with contract title', function () {
@@ -278,11 +278,11 @@ describe('PayStubAvailable Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail and database channels', function () {
+    it('uses mail database and broadcast channels', function () {
         $notification = new PayStubAvailable(PayStub::factory()->make());
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail', 'database']);
+        expect($channels)->toBe(['mail', 'database', 'broadcast']);
     });
 
     it('has correct email subject', function () {
@@ -364,11 +364,11 @@ describe('SchedulePublished Notification', function () {
         expect($notification)->toBeInstanceOf(\Illuminate\Contracts\Queue\ShouldQueue::class);
     });
 
-    it('uses mail and database channels', function () {
+    it('uses mail database and broadcast channels', function () {
         $notification = new SchedulePublished(Schedule::factory()->make());
         $channels = $notification->via(User::factory()->make());
 
-        expect($channels)->toBe(['mail', 'database']);
+        expect($channels)->toBe(['mail', 'database', 'broadcast']);
     });
 
     it('has correct email subject with date', function () {

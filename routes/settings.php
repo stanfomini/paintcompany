@@ -17,6 +17,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/password', 'pages::settings.password')->name('user-password.edit');
     Route::livewire('settings/appearance', 'pages::settings.appearance')->name('appearance.edit');
+    Route::livewire('settings/notification-preferences', 'pages::settings.notification-preferences')->name('notification-preferences.edit');
     Route::livewire('settings/company', 'pages::settings.company')
         ->middleware('permission:settings.company')
         ->name('company.edit');

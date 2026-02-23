@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Customer;
 use App\Models\Property;
 use Illuminate\Bus\Queueable;
@@ -12,6 +14,8 @@ use Illuminate\Notifications\Notification;
 class NewOpenHouseSignup extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'general';
 
     /**
      * Create a new notification instance.
@@ -28,7 +32,24 @@ class NewOpenHouseSignup extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     /**
@@ -65,5 +86,17 @@ class NewOpenHouseSignup extends Notification implements ShouldQueue
             'customer_name' => "{$this->customer->first_name} {$this->customer->last_name}",
             'listing_address' => $this->listing->address,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $name = "{$this->customer->first_name} {$this->customer->last_name}";
+
+        return new WebPushMessage(
+            title: 'Open House Sign-up',
+            body: "{$name} signed up at {$this->listing->address}",
+            url: "/agent/customers/{$this->customer->id}",
+            tag: "openhouse-{$this->customer->id}",
+        );
     }
 }

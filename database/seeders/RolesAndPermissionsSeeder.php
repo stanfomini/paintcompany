@@ -83,6 +83,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'walkie_talkie.access',
             'video_call.access',
 
+            // Email
+            'email.access',
+
             // Settings
             'settings.company',
             'settings.packages',
@@ -273,6 +276,8 @@ class RolesAndPermissionsSeeder extends Seeder
             // Communication
             'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
+            // Email
+            'email.access',
             // Settings
             'settings.company', 'settings.packages', 'settings.allocations',
             'settings.payment_integrations', 'settings.service_categories',
@@ -358,6 +363,8 @@ class RolesAndPermissionsSeeder extends Seeder
             // Communication
             'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
+            // Email
+            'email.access',
             // Roadmap
             'roadmap.view', 'roadmap.edit',
             // KPIs
@@ -428,6 +435,8 @@ class RolesAndPermissionsSeeder extends Seeder
             // Communication
             'chat.access', 'chat.with_customers', 'chat.with_agents', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
+            // Email
+            'email.access',
             // Roadmap
             'roadmap.view',
             // KPIs

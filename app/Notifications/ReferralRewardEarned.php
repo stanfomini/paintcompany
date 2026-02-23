@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Referral;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -12,6 +14,8 @@ class ReferralRewardEarned extends Notification implements ShouldQueue
 {
     use Queueable;
 
+    public string $pushCategory = 'general';
+
     public function __construct(public Referral $referral) {}
 
     /**
@@ -21,7 +25,24 @@ class ReferralRewardEarned extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -52,5 +73,17 @@ class ReferralRewardEarned extends Notification implements ShouldQueue
             'reward_amount' => $this->referral->reward_amount,
             'type' => 'referral_reward_earned',
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $amount = number_format($this->referral->reward_amount, 2);
+
+        return new WebPushMessage(
+            title: 'Referral Reward Earned!',
+            body: "You earned \${$amount} from your referral",
+            url: '/dashboard',
+            tag: "referral-{$this->referral->id}",
+        );
     }
 }

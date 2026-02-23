@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\Vendor;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +13,8 @@ use Illuminate\Notifications\Notification;
 class VendorOnboardingCompleted extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'general';
 
     public function __construct(
         public Vendor $vendor,
@@ -22,7 +26,24 @@ class VendorOnboardingCompleted extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail', 'database'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -45,5 +66,15 @@ class VendorOnboardingCompleted extends Notification implements ShouldQueue
             'vendor_name' => $this->vendor->name,
             'documents_uploaded' => $this->documentsUploaded,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        return new WebPushMessage(
+            title: 'Vendor Onboarding Complete',
+            body: "{$this->vendor->name} completed their vendor onboarding",
+            url: '/vendors',
+            tag: "vendor-{$this->vendor->id}",
+        );
     }
 }

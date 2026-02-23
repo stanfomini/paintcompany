@@ -207,6 +207,11 @@ class Customer extends Model
         return $this->morphMany(Activity::class, 'subject');
     }
 
+    public function emailLinks(): MorphMany
+    {
+        return $this->morphMany(EmailCrmLink::class, 'linkable');
+    }
+
     /**
      * Scope to filter only active customers.
      */

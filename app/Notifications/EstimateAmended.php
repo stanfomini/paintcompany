@@ -2,6 +2,8 @@
 
 namespace App\Notifications;
 
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\EstimateAmendment;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +13,8 @@ use Illuminate\Notifications\Notification;
 class EstimateAmended extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public string $pushCategory = 'estimates';
 
     public function __construct(
         public EstimateAmendment $amendment
@@ -23,7 +27,24 @@ class EstimateAmended extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        return ['mail'];
+        $channels = [];
+
+        if (method_exists($notifiable, 'wantsEmail')) {
+            if ($notifiable->wantsEmail($this->pushCategory)) {
+                $channels[] = 'mail';
+            }
+        } else {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
+        }
+
+        $channels[] = 'database';
+        $channels[] = 'broadcast';
+
+        return $channels;
     }
 
     public function toMail(object $notifiable): MailMessage
@@ -85,5 +106,17 @@ class EstimateAmended extends Notification implements ShouldQueue
             'amendment_number' => $this->amendment->amendment_number,
             'change_count' => count($this->amendment->changes ?? []),
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $estimate = $this->amendment->estimate;
+
+        return new WebPushMessage(
+            title: 'Estimate Amended',
+            body: "Estimate #{$estimate->estimate_number} has been updated (Amendment #{$this->amendment->amendment_number})",
+            url: $estimate->getPublicUrl() ?? '/',
+            tag: "estimate-{$estimate->id}",
+        );
     }
 }

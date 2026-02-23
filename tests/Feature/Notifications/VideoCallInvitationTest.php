@@ -16,11 +16,11 @@ it('implements ShouldQueue', function () {
         ->toBeInstanceOf(ShouldQueue::class);
 });
 
-it('uses mail and database channels', function () {
+it('uses mail database and broadcast channels', function () {
     $videoCall = VideoCall::factory()->make();
     $notification = new VideoCallInvitation($videoCall, 'John');
 
-    expect($notification->via(new stdClass))->toBe(['mail', 'database']);
+    expect($notification->via(new stdClass))->toBe(['mail', 'database', 'broadcast']);
 });
 
 it('generates correct mail content with named route URL', function () {
