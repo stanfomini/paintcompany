@@ -289,7 +289,7 @@ new class extends Component {
     </div>
 
     {{-- Rich Text Editor --}}
-    <div class="flex-1 overflow-y-auto border-b border-zinc-200 dark:border-zinc-700" wire:ignore
+    <div class="min-h-0 flex-1 overflow-y-auto border-b border-zinc-200 dark:border-zinc-700" wire:ignore
         x-data="tiptapEditor({ content: $wire.entangle('body'), placeholder: '{{ __('Write your email...') }}' })">
         {{-- Toolbar --}}
         <div class="flex flex-wrap items-center gap-0.5 border-b border-zinc-100 px-2 py-1 dark:border-zinc-800 sm:gap-1 sm:px-3 sm:py-1.5">
@@ -348,19 +348,21 @@ new class extends Component {
     @endif
 
     {{-- Footer --}}
-    <div class="flex items-center justify-between gap-2 px-3 py-2.5 sm:px-4 sm:py-3">
-        <div class="flex items-center gap-2">
-            <flux:button variant="primary" wire:click="send" wire:loading.attr="disabled">
-                <span wire:loading.remove wire:target="send">{{ __('Send') }}</span>
-                <span wire:loading wire:target="send">{{ __('Sending...') }}</span>
-            </flux:button>
-            <label class="cursor-pointer rounded p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
-                <flux:icon name="paper-clip" class="size-5" />
-                <input type="file" wire:model="uploadedAttachments" multiple class="hidden" />
-            </label>
+    <div class="shrink-0 border-t border-zinc-200 bg-white px-3 py-2.5 dark:border-zinc-700 dark:bg-zinc-900 sm:px-4 sm:py-3">
+        <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+                <flux:button variant="primary" wire:click="send" wire:loading.attr="disabled">
+                    <span wire:loading.remove wire:target="send">{{ __('Send') }}</span>
+                    <span wire:loading wire:target="send">{{ __('Sending...') }}</span>
+                </flux:button>
+                <label class="cursor-pointer rounded p-2 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <flux:icon name="paper-clip" class="size-5" />
+                    <input type="file" wire:model="uploadedAttachments" multiple class="hidden" />
+                </label>
+            </div>
+            <p class="hidden text-xs text-zinc-400 sm:block">
+                {{ __('From') }}: {{ $this->account?->full_address }}
+            </p>
         </div>
-        <p class="hidden text-xs text-zinc-400 sm:block">
-            {{ __('From') }}: {{ $this->account?->full_address }}
-        </p>
     </div>
 </div>

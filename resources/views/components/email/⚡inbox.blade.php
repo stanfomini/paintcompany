@@ -192,7 +192,7 @@ new class extends Component {
     </div>
 
     {{-- Reading Pane / Compose --}}
-    <div class="hidden min-h-0 flex-1 flex-col md:flex {{ $threadId || $composing ? '!flex' : '' }}">
+    <div class="hidden min-h-0 flex-1 flex-col overflow-hidden md:flex {{ $threadId || $composing ? '!flex' : '' }}">
         {{-- Mobile back bar (visible on small screens when viewing thread/compose) --}}
         <div class="flex items-center gap-2 border-b border-zinc-200 px-3 py-2 dark:border-zinc-700 md:hidden">
             <flux:button size="sm" icon="arrow-left" wire:click="closeCompose" />
