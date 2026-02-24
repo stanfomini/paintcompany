@@ -234,6 +234,14 @@ class RolesAndPermissionsSeeder extends Seeder
             'workflows.view',
             'workflows.manage',
 
+            // Messenger
+            'messenger.manage',
+            'messenger.view',
+            'messenger.respond',
+
+            // Settings - Messenger
+            'settings.messenger',
+
             // Financial Summaries
             'team.view_financials',
             'crew.view_financials',
@@ -334,6 +342,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'ar.view', 'ar.manage', 'ar.approve_payables', 'ar.create_journal_entries',
             // Workflows
             'workflows.view', 'workflows.manage',
+            // Messenger
+            'messenger.manage', 'messenger.view', 'messenger.respond',
+            // Settings - Messenger
+            'settings.messenger',
             // Financial Summaries
             'team.view_financials', 'crew.view_financials',
             // Reports
@@ -410,6 +422,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'commission.configure', 'commission.view_team', 'analytics.territory_pnl',
             // AR Portal (view only)
             'ar.view',
+            // Messenger
+            'messenger.view', 'messenger.respond',
             // Financial Summaries
             'team.view_financials', 'crew.view_financials',
             // Reports
@@ -461,6 +475,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'territories.assign_team', 'commission.view_team',
             // Media Hub
             'media.view', 'media.record', 'media.send_emails', 'media.view_own_analytics',
+            // Messenger
+            'messenger.view',
             // Reports
             'reports.own',
         ]);

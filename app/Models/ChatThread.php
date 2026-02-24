@@ -21,9 +21,17 @@ class ChatThread extends Model
 
     public const TYPE_SUPPORT = 'support';
 
+    public const CHANNEL_INTERNAL = 'internal';
+
+    public const CHANNEL_FACEBOOK = 'facebook';
+
     protected $fillable = [
         'deal_id',
         'type',
+        'channel',
+        'customer_id',
+        'external_id',
+        'external_contact_id',
         'subject',
         'is_archived',
         'last_message_at',
@@ -44,6 +52,22 @@ class ChatThread extends Model
     public function deal(): BelongsTo
     {
         return $this->belongsTo(Deal::class);
+    }
+
+    /**
+     * Get the customer associated with this thread.
+     */
+    public function customer(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class);
+    }
+
+    /**
+     * Get the messenger conversation for this thread.
+     */
+    public function messengerConversation(): HasOne
+    {
+        return $this->hasOne(\App\Models\MessengerConversation::class, 'thread_id');
     }
 
     /**
@@ -239,6 +263,14 @@ class ChatThread extends Model
     public function scopeOfType(Builder $query, string $type): Builder
     {
         return $query->where('type', $type);
+    }
+
+    /**
+     * Scope to filter by channel.
+     */
+    public function scopeOfChannel(Builder $query, string $channel): Builder
+    {
+        return $query->where('channel', $channel);
     }
 
     /**

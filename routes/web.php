@@ -222,6 +222,7 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::livewire('/people', 'people.index')->name('people.index');
         Route::livewire('/customers', 'customers.index')->name('customers.index');
         Route::livewire('/customers/{customer}', 'customers.show')->name('customers.show');
+        Route::livewire('/customers/{customer}/communications', 'customers.communications-hub')->name('customers.communications');
         Route::livewire('/agents', 'agents.index')->name('agents.index');
         Route::livewire('/agents/{user}', 'agents.show')->name('agents.show');
         Route::livewire('/crews', 'crews.index')->name('crews.index');
@@ -598,6 +599,14 @@ Route::view('/video/showcase', 'video.showcase')
 // Email inbound webhook (Mailgun)
 Route::post('/webhooks/email/inbound', [\App\Http\Controllers\EmailInboundWebhookController::class, 'handle'])
     ->name('webhooks.email.inbound')
+    ->middleware('throttle:120,1');
+
+// Facebook Messenger webhook (no auth - verified by signature)
+Route::get('/webhook/facebook/receive', [\App\Http\Controllers\FacebookWebhookController::class, 'verify'])
+    ->name('webhook.facebook.verify')
+    ->middleware('throttle:60,1');
+Route::post('/webhook/facebook/receive', [\App\Http\Controllers\FacebookWebhookController::class, 'receive'])
+    ->name('webhook.facebook.receive')
     ->middleware('throttle:120,1');
 
 require __DIR__.'/settings.php';

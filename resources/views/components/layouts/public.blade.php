@@ -49,5 +49,6 @@
         </div>
 
         @fluxScripts
+        @include('partials.messenger-widget')
     </body>
 </html>

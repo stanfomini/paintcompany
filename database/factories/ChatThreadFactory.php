@@ -21,6 +21,7 @@ class ChatThreadFactory extends Factory
     {
         return [
             'type' => ChatThread::TYPE_DIRECT,
+            'channel' => ChatThread::CHANNEL_INTERNAL,
             'subject' => fake()->optional(0.5)->sentence(3),
             'is_archived' => false,
             'last_message_at' => fake()->optional(0.7)->dateTimeBetween('-1 week', 'now'),
@@ -58,6 +59,28 @@ class ChatThreadFactory extends Factory
         return $this->state(fn (array $attributes) => [
             'type' => ChatThread::TYPE_SUPPORT,
             'deal_id' => null,
+        ]);
+    }
+
+    /**
+     * Set channel to Facebook (Messenger thread).
+     */
+    public function facebook(?string $psid = null): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'type' => ChatThread::TYPE_SUPPORT,
+            'channel' => ChatThread::CHANNEL_FACEBOOK,
+            'external_contact_id' => $psid ?? fake()->numerify('##########'),
+        ]);
+    }
+
+    /**
+     * Set the customer for this thread.
+     */
+    public function forCustomer(\App\Models\Customer $customer): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'customer_id' => $customer->id,
         ]);
     }
 

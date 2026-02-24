@@ -6,6 +6,7 @@ use App\Events\MessageRead;
 use App\Events\MessageSent;
 use App\Events\MessageTranslated;
 use App\Events\NewThreadNotification;
+use App\Jobs\SendFacebookMessageJob;
 use App\Jobs\SendUnreadChatEmailJob;
 use App\Models\ChatMessage;
 use App\Models\ChatParticipant;
@@ -224,6 +225,9 @@ class ChatService
         // Translate message inline (real-time)
         $this->translateMessageInline($message);
 
+        // Sync to Facebook Messenger if applicable
+        $this->syncToFacebookMessenger($thread, $sender, $message, $content);
+
         return $message;
     }
 
@@ -279,6 +283,11 @@ class ChatService
 
             // Translate message inline (real-time)
             $this->translateMessageInline($message);
+
+            // Sync text content to Facebook Messenger if applicable
+            if (! empty($content)) {
+                $this->syncToFacebookMessenger($thread, $sender, $message, $content);
+            }
 
             return $message;
         });
@@ -353,6 +362,12 @@ class ChatService
 
         // Translate message inline (real-time)
         $this->translateMessageInline($message);
+
+        // Sync transcription to Facebook Messenger if applicable
+        $transcription = $audioData['transcription'] ?? '';
+        if (! empty($transcription)) {
+            $this->syncToFacebookMessenger($thread, $sender, $message, $transcription);
+        }
 
         return $message;
     }
@@ -723,5 +738,37 @@ class ChatService
         Storage::delete($attachment->path);
 
         return $attachment->delete();
+    }
+
+    /**
+     * Sync a message to Facebook Messenger if the thread is a Facebook channel.
+     * Also triggers human takeover if an internal user replies to an active bot conversation.
+     */
+    private function syncToFacebookMessenger(ChatThread $thread, User $sender, ChatMessage $message, string $content): void
+    {
+        if ($thread->channel !== ChatThread::CHANNEL_FACEBOOK || empty($thread->external_contact_id)) {
+            return;
+        }
+
+        // Only sync outbound messages from internal users
+        if (! $sender->isInternal()) {
+            return;
+        }
+
+        SendFacebookMessageJob::dispatch(
+            $thread->external_contact_id,
+            $content,
+            null,
+            $message->id,
+        );
+
+        // If there's an active bot conversation, trigger human takeover
+        $activeConversation = $thread->messengerConversation()
+            ->where('status', 'in_progress')
+            ->first();
+
+        if ($activeConversation) {
+            $activeConversation->update(['status' => 'human_takeover']);
+        }
     }
 }

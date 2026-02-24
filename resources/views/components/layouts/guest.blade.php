@@ -11,5 +11,6 @@
     <body class="min-h-screen bg-zinc-50 antialiased dark:bg-zinc-900">
         {{ $slot }}
         @fluxScripts
+        @include('partials.messenger-widget')
     </body>
 </html>

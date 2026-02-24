@@ -725,6 +725,10 @@ new class extends Component
                         @endif
                     </flux:button>
                 @endif
+                <flux:button variant="ghost" size="sm" wire:click="$dispatch('open-communications-drawer')">
+                    <flux:icon.chat-bubble-left-right class="size-4" />
+                    <span class="hidden sm:inline">{{ __('Communications') }}</span>
+                </flux:button>
             </div>
 
             {{-- Quick Actions --}}
@@ -1510,4 +1514,7 @@ new class extends Component
             </div>
         </form>
     </flux:modal>
+
+    {{-- Communications Drawer --}}
+    <livewire:customers.communications-drawer :customer="$customer" />
 </div>

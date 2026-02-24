@@ -90,6 +90,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:vendors.view')
         ->name('vendors.edit');
 
+    Route::livewire('settings/messenger', 'pages::settings.messenger-settings')
+        ->middleware('permission:messenger.manage')
+        ->name('messenger.edit');
+
     Route::get('settings/marketing-flyer', function () {
         $renderer = new ImageRenderer(new RendererStyle(300), new ImagickImageBackEnd);
         $qrPng = (new Writer($renderer))->writeString('https://paintingmadeeasydenver.com');

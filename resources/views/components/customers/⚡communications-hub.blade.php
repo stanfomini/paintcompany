@@ -1,0 +1,456 @@
+<?php
+
+use App\Models\ChatThread;
+use App\Models\Customer;
+use Illuminate\Support\Str;
+use Livewire\Attributes\Computed;
+use Livewire\Component;
+
+new class extends Component
+{
+    public function boot(): void
+    {
+        if (! auth()->user()?->can('people.view')) {
+            abort(403);
+        }
+    }
+
+    public Customer $customer;
+
+    public string $activeTab = 'all';
+
+    public function mount(Customer $customer): void
+    {
+        $this->customer = $customer;
+    }
+
+    public function setTab(string $tab): void
+    {
+        $this->activeTab = $tab;
+
+        // Clear computed caches when switching tabs
+        unset(
+            $this->allItems,
+            $this->messengerThreads,
+            $this->dealThreads,
+            $this->directThreads,
+            $this->emailLinks,
+        );
+    }
+
+    #[Computed]
+    public function allItems()
+    {
+        $items = collect();
+
+        // Chat threads linked to customer (via customer_id)
+        $customerThreads = ChatThread::query()
+            ->where('customer_id', $this->customer->id)
+            ->with(['latestMessage.user', 'deal', 'customer'])
+            ->get();
+
+        // Chat threads linked via deals
+        $dealIds = $this->customer->deals()->pluck('id');
+        $dealThreads = collect();
+        if ($dealIds->isNotEmpty()) {
+            $dealThreads = ChatThread::query()
+                ->whereIn('deal_id', $dealIds)
+                ->whereNotIn('id', $customerThreads->pluck('id'))
+                ->with(['latestMessage.user', 'deal'])
+                ->get();
+        }
+
+        $allThreads = $customerThreads->merge($dealThreads);
+
+        foreach ($allThreads as $thread) {
+            $items->push([
+                'type' => 'chat',
+                'channel' => $thread->channel,
+                'thread_type' => $thread->type,
+                'icon' => $this->getThreadIcon($thread),
+                'label' => $this->getThreadLabel($thread),
+                'preview' => $thread->latestMessage
+                    ? ($thread->latestMessage->user?->name ?? __('Unknown')).': '.Str::limit($thread->latestMessage->content, 80)
+                    : __('No messages yet'),
+                'sender' => $thread->latestMessage?->user?->name ?? null,
+                'date' => $thread->last_message_at ?? $thread->created_at,
+                'thread_id' => $thread->id,
+                'url' => route('chat.show', $thread),
+            ]);
+        }
+
+        // Email CRM links
+        $emailLinks = $this->customer->emailLinks()
+            ->with('message')
+            ->latest()
+            ->get();
+
+        foreach ($emailLinks as $link) {
+            $email = $link->message;
+            if (! $email) {
+                continue;
+            }
+            $items->push([
+                'type' => 'email',
+                'channel' => 'email',
+                'thread_type' => null,
+                'icon' => 'envelope',
+                'label' => $email->subject ?? __('(No subject)'),
+                'preview' => Str::limit($email->snippet ?? $email->body_text ?? '', 80),
+                'sender' => $email->from_name ?? $email->from_address,
+                'date' => $email->sent_at ?? $email->created_at,
+                'thread_id' => null,
+                'url' => route('email.inbox'),
+            ]);
+        }
+
+        return $items->sortByDesc('date')->values();
+    }
+
+    #[Computed]
+    public function messengerThreads()
+    {
+        return ChatThread::query()
+            ->where('customer_id', $this->customer->id)
+            ->ofChannel('facebook')
+            ->with(['latestMessage.user', 'messengerConversation'])
+            ->latestActivity()
+            ->get();
+    }
+
+    #[Computed]
+    public function dealThreads()
+    {
+        $dealIds = $this->customer->deals()->pluck('id');
+
+        if ($dealIds->isEmpty()) {
+            return collect();
+        }
+
+        return ChatThread::query()
+            ->ofType('deal')
+            ->whereIn('deal_id', $dealIds)
+            ->with(['latestMessage.user', 'deal'])
+            ->latestActivity()
+            ->get();
+    }
+
+    #[Computed]
+    public function directThreads()
+    {
+        if (! $this->customer->user_id) {
+            return collect();
+        }
+
+        return ChatThread::query()
+            ->ofType('direct')
+            ->forUser($this->customer->user)
+            ->with(['latestMessage.user', 'activeParticipants.user'])
+            ->latestActivity()
+            ->get();
+    }
+
+    #[Computed]
+    public function emailLinks()
+    {
+        return $this->customer->emailLinks()
+            ->with('message')
+            ->latest()
+            ->get();
+    }
+
+    private function getThreadIcon(ChatThread $thread): string
+    {
+        if ($thread->channel === 'facebook') {
+            return 'chat-bubble-oval-left';
+        }
+
+        return match ($thread->type) {
+            'deal' => 'briefcase',
+            'direct' => 'chat-bubble-left-right',
+            'support' => 'lifebuoy',
+            default => 'chat-bubble-left',
+        };
+    }
+
+    private function getThreadLabel(ChatThread $thread): string
+    {
+        if ($thread->channel === 'facebook') {
+            return __('Messenger');
+        }
+
+        return match ($thread->type) {
+            'deal' => $thread->deal?->title ?? __('Deal Chat'),
+            'direct' => $thread->subject ?? __('Direct Message'),
+            'support' => $thread->subject ?? __('Support'),
+            default => $thread->subject ?? __('Chat'),
+        };
+    }
+};
+?>
+
+<div>
+    <div class="max-w-5xl mx-auto">
+        {{-- Header --}}
+        <div class="flex items-center gap-2 sm:gap-3 mb-6">
+            <flux:button variant="ghost" :href="route('customers.show', $customer)" icon="arrow-left" wire:navigate class="shrink-0" size="sm">
+                <span class="hidden sm:inline">{{ __('Back') }}</span>
+            </flux:button>
+            <div class="min-w-0">
+                <flux:heading size="xl" class="truncate">{{ __('Communications') }}</flux:heading>
+                <flux:text size="sm" class="text-zinc-500 truncate">{{ $customer->full_name }}</flux:text>
+            </div>
+        </div>
+
+        {{-- Tabs --}}
+        <div class="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-700 mb-6 overflow-x-auto">
+            @php
+                $tabs = [
+                    'all' => __('View All'),
+                    'messenger' => __('Messenger'),
+                    'deals' => __('Deal Chats'),
+                    'direct' => __('Direct'),
+                    'emails' => __('Emails'),
+                ];
+            @endphp
+            @foreach ($tabs as $key => $label)
+                <button
+                    wire:click="setTab('{{ $key }}')"
+                    wire:key="tab-{{ $key }}"
+                    class="px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors {{ $activeTab === $key ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                >
+                    {{ $label }}
+                </button>
+            @endforeach
+        </div>
+
+        {{-- Tab Content --}}
+        <div>
+            @if ($activeTab === 'all')
+                @if ($this->allItems->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="chat-bubble-left-right" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('No communications found for this customer.') }}</flux:text>
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->allItems as $index => $item)
+                            <a
+                                href="{{ $item['url'] }}"
+                                wire:navigate
+                                wire:key="all-{{ $index }}"
+                                class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <div class="shrink-0 mt-0.5">
+                                    <div class="w-8 h-8 rounded-full flex items-center justify-center {{ $item['type'] === 'email' ? 'bg-amber-100 dark:bg-amber-900/30' : ($item['channel'] === 'facebook' ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-zinc-100 dark:bg-zinc-800') }}">
+                                        <flux:icon :name="$item['icon']" class="w-4 h-4 {{ $item['type'] === 'email' ? 'text-amber-600 dark:text-amber-400' : ($item['channel'] === 'facebook' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500') }}" />
+                                    </div>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <flux:text class="font-medium text-sm">{{ $item['label'] }}</flux:text>
+                                        <flux:badge size="sm" color="{{ $item['type'] === 'email' ? 'amber' : ($item['channel'] === 'facebook' ? 'blue' : 'zinc') }}">
+                                            {{ $item['type'] === 'email' ? __('Email') : ($item['channel'] === 'facebook' ? __('Messenger') : ucfirst($item['thread_type'] ?? __('Chat'))) }}
+                                        </flux:badge>
+                                    </div>
+                                    <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">{{ $item['preview'] }}</flux:text>
+                                </div>
+                                <div class="shrink-0 text-right">
+                                    @if ($item['date'])
+                                        <flux:text size="xs" class="text-zinc-400">{{ $item['date']->diffForHumans() }}</flux:text>
+                                    @endif
+                                    @if ($item['sender'])
+                                        <flux:text size="xs" class="text-zinc-400 mt-0.5">{{ $item['sender'] }}</flux:text>
+                                    @endif
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+
+            @elseif ($activeTab === 'messenger')
+                @if ($this->messengerThreads->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="chat-bubble-oval-left" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('No Messenger conversations with this customer.') }}</flux:text>
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->messengerThreads as $thread)
+                            <a
+                                href="{{ route('chat.show', $thread) }}"
+                                wire:navigate
+                                wire:key="messenger-{{ $thread->id }}"
+                                class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <div class="shrink-0 mt-0.5">
+                                    <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                        <flux:icon name="chat-bubble-oval-left" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <flux:text class="font-medium text-sm">{{ $thread->subject ?? $customer->full_name }}</flux:text>
+                                        @if ($thread->messengerConversation?->bot_enabled)
+                                            <flux:badge size="sm" color="purple">{{ __('Bot Active') }}</flux:badge>
+                                        @endif
+                                    </div>
+                                    @if ($thread->latestMessage)
+                                        <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">
+                                            {{ $thread->latestMessage->user?->name ?? __('Unknown') }}: {{ Str::limit($thread->latestMessage->content, 80) }}
+                                        </flux:text>
+                                    @else
+                                        <flux:text size="sm" class="text-zinc-400 mt-0.5">{{ __('No messages yet') }}</flux:text>
+                                    @endif
+                                </div>
+                                <div class="shrink-0">
+                                    <flux:text size="xs" class="text-zinc-400">
+                                        {{ ($thread->last_message_at ?? $thread->created_at)->diffForHumans() }}
+                                    </flux:text>
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+
+            @elseif ($activeTab === 'deals')
+                @if ($this->dealThreads->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="briefcase" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('No deal chat threads for this customer.') }}</flux:text>
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->dealThreads as $thread)
+                            <a
+                                href="{{ route('chat.show', $thread) }}"
+                                wire:navigate
+                                wire:key="deal-thread-{{ $thread->id }}"
+                                class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <div class="shrink-0 mt-0.5">
+                                    <div class="w-8 h-8 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+                                        <flux:icon name="briefcase" class="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                                    </div>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <flux:text class="font-medium text-sm">{{ $thread->deal?->title ?? __('Deal Chat') }}</flux:text>
+                                        @if ($thread->deal?->stage)
+                                            <flux:badge size="sm" color="zinc">{{ $thread->deal->stage_label }}</flux:badge>
+                                        @endif
+                                    </div>
+                                    @if ($thread->latestMessage)
+                                        <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">
+                                            {{ $thread->latestMessage->user?->name ?? __('Unknown') }}: {{ Str::limit($thread->latestMessage->content, 80) }}
+                                        </flux:text>
+                                    @else
+                                        <flux:text size="sm" class="text-zinc-400 mt-0.5">{{ __('No messages yet') }}</flux:text>
+                                    @endif
+                                </div>
+                                <div class="shrink-0">
+                                    <flux:text size="xs" class="text-zinc-400">
+                                        {{ ($thread->last_message_at ?? $thread->created_at)->diffForHumans() }}
+                                    </flux:text>
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+
+            @elseif ($activeTab === 'direct')
+                @if (! $customer->user_id)
+                    <div class="text-center py-12">
+                        <flux:icon name="chat-bubble-left-right" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('This customer does not have a portal account. Direct messages require a linked user.') }}</flux:text>
+                    </div>
+                @elseif ($this->directThreads->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="chat-bubble-left-right" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('No direct message threads for this customer.') }}</flux:text>
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->directThreads as $thread)
+                            <a
+                                href="{{ route('chat.show', $thread) }}"
+                                wire:navigate
+                                wire:key="direct-{{ $thread->id }}"
+                                class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <div class="shrink-0 mt-0.5">
+                                    <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                                        <flux:icon name="chat-bubble-left-right" class="w-4 h-4 text-green-600 dark:text-green-400" />
+                                    </div>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <flux:text class="font-medium text-sm">
+                                        {{ $thread->getDisplayNameFor(auth()->user()) }}
+                                    </flux:text>
+                                    @if ($thread->latestMessage)
+                                        <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">
+                                            {{ $thread->latestMessage->user?->name ?? __('Unknown') }}: {{ Str::limit($thread->latestMessage->content, 80) }}
+                                        </flux:text>
+                                    @else
+                                        <flux:text size="sm" class="text-zinc-400 mt-0.5">{{ __('No messages yet') }}</flux:text>
+                                    @endif
+                                </div>
+                                <div class="shrink-0">
+                                    <flux:text size="xs" class="text-zinc-400">
+                                        {{ ($thread->last_message_at ?? $thread->created_at)->diffForHumans() }}
+                                    </flux:text>
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+
+            @elseif ($activeTab === 'emails')
+                @if ($this->emailLinks->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="envelope" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('No emails linked to this customer.') }}</flux:text>
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->emailLinks as $link)
+                            @if ($link->message)
+                                <a
+                                    href="{{ route('email.inbox') }}"
+                                    wire:navigate
+                                    wire:key="email-{{ $link->id }}"
+                                    class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                                >
+                                    <div class="shrink-0 mt-0.5">
+                                        <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                            <flux:icon name="envelope" class="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <flux:text class="font-medium text-sm">{{ $link->message->subject ?? __('(No subject)') }}</flux:text>
+                                            <flux:badge size="sm" color="{{ $link->message->direction === 'inbound' ? 'green' : 'blue' }}">
+                                                {{ $link->message->direction === 'inbound' ? __('Received') : __('Sent') }}
+                                            </flux:badge>
+                                        </div>
+                                        <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">
+                                            {{ Str::limit($link->message->snippet ?? $link->message->body_text ?? '', 80) }}
+                                        </flux:text>
+                                    </div>
+                                    <div class="shrink-0 text-right">
+                                        <flux:text size="xs" class="text-zinc-400">
+                                            {{ ($link->message->sent_at ?? $link->message->created_at)->diffForHumans() }}
+                                        </flux:text>
+                                        <flux:text size="xs" class="text-zinc-400 mt-0.5">
+                                            {{ $link->message->from_name ?? $link->message->from_address }}
+                                        </flux:text>
+                                    </div>
+                                </a>
+                            @endif
+                        @endforeach
+                    </div>
+                @endif
+            @endif
+        </div>
+    </div>
+</div>
