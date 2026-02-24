@@ -53,6 +53,9 @@
                 @can('vendors.view')
                     <flux:navlist.item :href="route('vendors.edit')" wire:navigate>{{ __('Vendors') }}</flux:navlist.item>
                 @endcan
+                @can('messenger.manage')
+                    <flux:navlist.item :href="route('messenger.edit')" wire:navigate>{{ __('Messenger') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>
