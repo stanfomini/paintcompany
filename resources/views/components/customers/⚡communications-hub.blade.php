@@ -93,16 +93,25 @@ new class extends Component
             ]);
         }
 
-        // Email CRM links
+        // Email CRM links - show linked emails with deep-link to thread
         $emailLinks = $this->customer->emailLinks()
-            ->with('message')
+            ->with('message.thread')
             ->latest()
             ->get();
 
+        // Group by thread to avoid duplicate rows per thread
+        $seenThreads = [];
         foreach ($emailLinks as $link) {
             $email = $link->message;
             if (! $email) {
                 continue;
+            }
+            $threadId = $email->email_thread_id;
+            if ($threadId && isset($seenThreads[$threadId])) {
+                continue;
+            }
+            if ($threadId) {
+                $seenThreads[$threadId] = true;
             }
             $items->push([
                 'type' => 'email',
@@ -114,7 +123,7 @@ new class extends Component
                 'sender' => $email->from_name ?? $email->from_address,
                 'date' => $email->sent_at ?? $email->created_at,
                 'thread_id' => null,
-                'url' => route('email.inbox'),
+                'url' => $threadId ? route('email.inbox', ['threadId' => $threadId]) : route('email.inbox'),
             ]);
         }
 
@@ -172,10 +181,28 @@ new class extends Component
     #[Computed]
     public function emailLinks()
     {
-        return $this->customer->emailLinks()
-            ->with('message')
+        // Group by email thread so we show one row per conversation, not per message
+        $links = $this->customer->emailLinks()
+            ->with('message.thread')
             ->latest()
             ->get();
+
+        $seenThreads = [];
+
+        return $links->filter(function ($link) use (&$seenThreads) {
+            if (! $link->message) {
+                return false;
+            }
+            $threadId = $link->message->email_thread_id;
+            if ($threadId && isset($seenThreads[$threadId])) {
+                return false;
+            }
+            if ($threadId) {
+                $seenThreads[$threadId] = true;
+            }
+
+            return true;
+        })->values();
     }
 
     private function getThreadIcon(ChatThread $thread): string
@@ -435,7 +462,7 @@ new class extends Component
                         @foreach ($this->emailLinks as $link)
                             @if ($link->message)
                                 <a
-                                    href="{{ route('email.inbox') }}"
+                                    href="{{ $link->message->email_thread_id ? route('email.inbox', ['threadId' => $link->message->email_thread_id]) : route('email.inbox') }}"
                                     wire:navigate
                                     wire:key="email-{{ $link->id }}"
                                     class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"

@@ -38,11 +38,27 @@ new class extends Component
         }
 
         if ($this->activeTab === 'emails') {
+            $seenThreads = [];
+
             return $this->customer->emailLinks()
                 ->with('message')
                 ->latest()
                 ->limit(20)
                 ->get()
+                ->filter(function ($link) use (&$seenThreads) {
+                    if (! $link->message) {
+                        return false;
+                    }
+                    $threadId = $link->message->email_thread_id;
+                    if ($threadId && isset($seenThreads[$threadId])) {
+                        return false;
+                    }
+                    if ($threadId) {
+                        $seenThreads[$threadId] = true;
+                    }
+
+                    return true;
+                })
                 ->map(fn ($link) => [
                     'type' => 'email',
                     'channel' => 'email',
@@ -52,7 +68,9 @@ new class extends Component
                     'date' => $link->message?->created_at ?? $link->created_at,
                     'subject' => $link->message?->subject ?? 'Email',
                     'id' => $link->id,
-                ]);
+                    'email_thread_id' => $link->message?->email_thread_id,
+                ])
+                ->values();
         }
 
         $dealIds = $this->customer->deals()->pluck('id')->toArray();
