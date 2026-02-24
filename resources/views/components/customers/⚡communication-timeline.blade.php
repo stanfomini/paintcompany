@@ -14,10 +14,22 @@ new class extends Component
     #[Computed]
     public function timelineItems(): \Illuminate\Support\Collection
     {
+        $dealIds = $this->customer->deals()->pluck('id')->toArray();
+
         $threads = ChatThread::query()
-            ->where(function ($q) {
-                $q->where('customer_id', $this->customer->id)
-                    ->orWhereIn('deal_id', $this->customer->deals()->pluck('id'));
+            ->where(function ($q) use ($dealIds) {
+                $q->where('customer_id', $this->customer->id);
+
+                if (! empty($dealIds)) {
+                    $q->orWhereIn('deal_id', $dealIds);
+                }
+
+                if ($this->customer->user_id) {
+                    $q->orWhereHas('participants', function ($pq) {
+                        $pq->where('user_id', $this->customer->user_id)
+                            ->whereNull('left_at');
+                    });
+                }
             })
             ->with(['latestMessage.user', 'deal'])
             ->latestActivity()

@@ -37,10 +37,40 @@ new class extends Component
             return collect();
         }
 
+        if ($this->activeTab === 'emails') {
+            return $this->customer->emailLinks()
+                ->with('message')
+                ->latest()
+                ->limit(20)
+                ->get()
+                ->map(fn ($link) => [
+                    'type' => 'email',
+                    'channel' => 'email',
+                    'thread_type' => 'email',
+                    'preview' => $link->message?->subject ?? 'No subject',
+                    'sender' => $link->message?->from_address ?? 'Unknown',
+                    'date' => $link->message?->created_at ?? $link->created_at,
+                    'subject' => $link->message?->subject ?? 'Email',
+                    'id' => $link->id,
+                ]);
+        }
+
+        $dealIds = $this->customer->deals()->pluck('id')->toArray();
+
         $threads = ChatThread::query()
-            ->where(function ($q) {
-                $q->where('customer_id', $this->customer->id)
-                    ->orWhereIn('deal_id', $this->customer->deals()->pluck('id'));
+            ->where(function ($q) use ($dealIds) {
+                $q->where('customer_id', $this->customer->id);
+
+                if (! empty($dealIds)) {
+                    $q->orWhereIn('deal_id', $dealIds);
+                }
+
+                if ($this->customer->user_id) {
+                    $q->orWhereHas('participants', function ($pq) {
+                        $pq->where('user_id', $this->customer->user_id)
+                            ->whereNull('left_at');
+                    });
+                }
             })
             ->with(['latestMessage.user', 'deal'])
             ->latestActivity()
@@ -59,24 +89,6 @@ new class extends Component
                 'subject' => $thread->subject ?? $thread->deal?->title ?? 'Chat',
                 'id' => $thread->id,
             ]);
-
-        if ($this->activeTab === 'emails') {
-            return $this->customer->emailLinks()
-                ->with('message')
-                ->latest()
-                ->limit(20)
-                ->get()
-                ->map(fn ($link) => [
-                    'type' => 'email',
-                    'channel' => 'email',
-                    'thread_type' => 'email',
-                    'preview' => $link->message?->subject ?? 'No subject',
-                    'sender' => $link->message?->from_address ?? 'Unknown',
-                    'date' => $link->message?->created_at ?? $link->created_at,
-                    'subject' => $link->message?->subject ?? 'Email',
-                    'id' => $link->id,
-                ]);
-        }
 
         return $threads;
     }
@@ -199,7 +211,7 @@ new class extends Component
 
             {{-- Footer --}}
             <div class="px-4 py-3 border-t border-zinc-200 dark:border-zinc-700">
-                <flux:button variant="ghost" size="sm" class="w-full" :href="route('customers.show', $customer)" icon-trailing="arrow-right" wire:navigate>
+                <flux:button variant="ghost" size="sm" class="w-full" :href="route('customers.communications', $customer)" icon-trailing="arrow-right" wire:navigate>
                     {{ __('View Full Page') }}
                 </flux:button>
             </div>

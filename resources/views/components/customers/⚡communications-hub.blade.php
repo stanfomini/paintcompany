@@ -38,29 +38,43 @@ new class extends Component
         );
     }
 
+    /**
+     * Build the base query to find all threads related to this customer.
+     * Uses the same logic as the customer show page: deals + participant-based lookup.
+     */
+    private function customerThreadQuery()
+    {
+        $dealIds = $this->customer->deals()->pluck('id')->toArray();
+
+        return ChatThread::query()
+            ->where(function ($q) use ($dealIds) {
+                // Threads linked via customer_id
+                $q->where('customer_id', $this->customer->id);
+
+                // Threads linked via deals
+                if (! empty($dealIds)) {
+                    $q->orWhereIn('deal_id', $dealIds);
+                }
+
+                // Threads where the customer's user account is a participant
+                if ($this->customer->user_id) {
+                    $q->orWhereHas('participants', function ($pq) {
+                        $pq->where('user_id', $this->customer->user_id)
+                            ->whereNull('left_at');
+                    });
+                }
+            });
+    }
+
     #[Computed]
     public function allItems()
     {
         $items = collect();
 
-        // Chat threads linked to customer (via customer_id)
-        $customerThreads = ChatThread::query()
-            ->where('customer_id', $this->customer->id)
-            ->with(['latestMessage.user', 'deal', 'customer'])
+        $allThreads = $this->customerThreadQuery()
+            ->with(['latestMessage.user', 'deal', 'customer', 'messengerConversation'])
+            ->latestActivity()
             ->get();
-
-        // Chat threads linked via deals
-        $dealIds = $this->customer->deals()->pluck('id');
-        $dealThreads = collect();
-        if ($dealIds->isNotEmpty()) {
-            $dealThreads = ChatThread::query()
-                ->whereIn('deal_id', $dealIds)
-                ->whereNotIn('id', $customerThreads->pluck('id'))
-                ->with(['latestMessage.user', 'deal'])
-                ->get();
-        }
-
-        $allThreads = $customerThreads->merge($dealThreads);
 
         foreach ($allThreads as $thread) {
             $items->push([
@@ -110,8 +124,7 @@ new class extends Component
     #[Computed]
     public function messengerThreads()
     {
-        return ChatThread::query()
-            ->where('customer_id', $this->customer->id)
+        return $this->customerThreadQuery()
             ->ofChannel('facebook')
             ->with(['latestMessage.user', 'messengerConversation'])
             ->latestActivity()
@@ -143,8 +156,14 @@ new class extends Component
         }
 
         return ChatThread::query()
-            ->ofType('direct')
-            ->forUser($this->customer->user)
+            ->where(function ($q) {
+                $q->where('type', ChatThread::TYPE_DIRECT)
+                    ->orWhere('type', ChatThread::TYPE_SUPPORT);
+            })
+            ->whereHas('participants', function ($pq) {
+                $pq->where('user_id', $this->customer->user_id)
+                    ->whereNull('left_at');
+            })
             ->with(['latestMessage.user', 'activeParticipants.user'])
             ->latestActivity()
             ->get();
