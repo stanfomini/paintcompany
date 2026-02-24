@@ -592,7 +592,12 @@ new class extends Component {
                                         <div class="flex items-center gap-3">
                                             <flux:icon name="squares-2x2" class="w-5 h-5 text-zinc-400" />
                                             <div>
-                                                <flux:text class="font-medium">{{ $area->name }}</flux:text>
+                                                <div class="flex items-center gap-2">
+                                                    <flux:text class="font-medium">{{ $area->name }}</flux:text>
+                                                    @if ($area->is_customer_added)
+                                                        <flux:badge size="sm" color="green">{{ __('Customer Added') }}</flux:badge>
+                                                    @endif
+                                                </div>
                                                 <div class="text-sm text-zinc-500 dark:text-zinc-400">
                                                     @if ($area->is_fixed_price)
                                                         {{ __('Fixed Price') }}
@@ -1057,7 +1062,8 @@ new class extends Component {
             @php
                 $hasContributions = $estimate->customer_notes
                     || !empty($estimate->customer_checklist)
-                    || $estimate->areas->contains(fn($a) => $a->customer_notes || !empty($a->customer_checklist));
+                    || $estimate->areas->contains(fn($a) => $a->customer_notes || !empty($a->customer_checklist))
+                    || $estimate->areas->contains(fn($a) => $a->is_customer_added);
             @endphp
 
             @if ($hasContributions)
@@ -1070,6 +1076,30 @@ new class extends Component {
                         </button>
 
                         <div x-show="open" x-transition class="mt-4 space-y-4">
+                            {{-- Rooms Added by Customer --}}
+                            @php
+                                $customerAddedAreas = $estimate->areas->where('is_customer_added', true);
+                            @endphp
+                            @if ($customerAddedAreas->isNotEmpty())
+                                <div>
+                                    <flux:text class="text-sm font-medium text-zinc-500 dark:text-zinc-400">{{ __('Rooms Added by Customer') }}</flux:text>
+                                    <div class="mt-1 space-y-2">
+                                        @foreach ($customerAddedAreas as $customerArea)
+                                            <div class="flex items-center gap-2 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 p-2">
+                                                <flux:badge size="sm" color="green">{{ __('Customer') }}</flux:badge>
+                                                <flux:text class="text-sm font-medium">{{ $customerArea->name }}</flux:text>
+                                                @if ($customerArea->direct_sqft)
+                                                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ number_format($customerArea->direct_sqft, 0) }} sqft</flux:text>
+                                                @endif
+                                                <flux:badge size="sm" :color="($customerArea->scope_type ?? 'interior') === 'exterior' ? 'orange' : 'blue'">
+                                                    {{ ucfirst($customerArea->scope_type ?? 'interior') }}
+                                                </flux:badge>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+
                             {{-- General Notes --}}
                             @if ($estimate->customer_notes)
                                 <div>

@@ -54,6 +54,7 @@ class EstimateArea extends Model
         'notes',
         'customer_notes',
         'customer_checklist',
+        'is_customer_added',
         'agent_notes',
         'agent_checklist',
         'sort_order',
@@ -87,6 +88,7 @@ class EstimateArea extends Model
             'cached_customer_price' => 'float',
             'cached_tier_prices' => 'array',
             'customer_checklist' => 'array',
+            'is_customer_added' => 'boolean',
             'agent_checklist' => 'array',
             'sort_order' => 'integer',
             'wall_count' => 'integer',
@@ -121,6 +123,7 @@ class EstimateArea extends Model
                     if ($area->height > 0 && $area->wall_sqft > 0) {
                         $area->perimeter_lnft = round($area->wall_sqft / $area->height, 2);
                     }
+                    $area->perimeter_lnft = $area->perimeter_lnft ?? 0;
                     $area->baseboard_lnft = $area->perimeter_lnft;
                     break;
 

@@ -132,7 +132,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
         }
 
         return Deal::query()
-            ->with(['property', 'estimates', 'job.prepPlan', 'job.invoices', 'chatThread'])
+            ->with(['property', 'estimates.areas', 'job.prepPlan', 'job.invoices', 'chatThread'])
             ->find($this->selectedDealId);
     }
 
@@ -889,33 +889,37 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                                 <div>
                                     <h3 class="text-lg sm:text-xl font-bold">{{ __('Your Painting Estimate') }}</h3>
                                     <p class="text-blue-100 text-sm mt-1">{{ $estimate->estimate_number }}</p>
-                                    @if ($estimate->total && in_array($estimate->status, ['sent', 'accepted']))
-                                        <p class="text-2xl font-bold mt-2">${{ number_format($estimate->total, 2) }}</p>
-                                    @endif
                                 </div>
                                 <flux:badge size="lg" color="{{ $badgeColor }}">
                                     {{ $estimate->status_label }}
                                 </flux:badge>
                             </div>
 
-                            <button
-                                wire:click="openEstimateOverlay({{ $estimate->id }})"
-                                class="mt-4 w-full py-3 bg-white text-blue-700 font-bold text-base rounded-xl shadow hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 min-h-[48px]"
-                            >
-                                <flux:icon name="eye" class="w-5 h-5" />
-                                @if ($estimate->status === 'sent')
-                                    {{ __('See Your Estimate') }}
-                                @elseif ($estimate->status === 'draft')
-                                    {{ __('Help Build Your Estimate') }}
-                                @else
-                                    {{ __('View Your Estimate') }}
-                                @endif
-                            </button>
-
-                            @if (in_array($estimate->status, ['sent', 'accepted']))
-                                <a href="{{ route('customer.estimates.show', $estimate) }}" class="block text-center text-sm text-blue-200 underline mt-2 hover:text-white transition-colors">
-                                    {{ __('View full proposal & sign') }} &rarr;
+                            @if ($estimate->status === 'sent' && $estimate->total)
+                                <a
+                                    href="{{ route('customer.estimates.show', $estimate) }}"
+                                    class="mt-4 block w-full py-4 bg-white text-blue-700 font-bold text-xl rounded-xl shadow hover:bg-blue-50 transition-colors text-center min-h-[56px]"
+                                >
+                                    ${{ number_format($estimate->total, 2) }}
+                                    <span class="block text-sm font-medium text-blue-500 mt-0.5">{{ __('Tap to view your full proposal') }}</span>
                                 </a>
+                            @elseif ($estimate->status === 'accepted' && $estimate->total)
+                                <p class="text-2xl font-bold mt-2">${{ number_format($estimate->total, 2) }}</p>
+                                <a
+                                    href="{{ route('customer.estimates.show', $estimate) }}"
+                                    class="mt-3 block w-full py-3 bg-white/20 hover:bg-white/30 text-white font-bold text-base rounded-xl transition-colors text-center min-h-[48px]"
+                                >
+                                    {{ __('View Your Estimate') }}
+                                </a>
+                            @else
+                                {{-- Draft: no pricing visible --}}
+                                <button
+                                    wire:click="openEstimateOverlay({{ $estimate->id }})"
+                                    class="mt-4 w-full py-3 bg-white text-blue-700 font-bold text-base rounded-xl shadow hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                                >
+                                    <flux:icon name="eye" class="w-5 h-5" />
+                                    {{ __('Help Build Your Estimate') }}
+                                </button>
                             @endif
                         </div>
                     @endforeach
@@ -928,56 +932,38 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     </flux:card>
                 @endif
 
-                {{-- Property Info & Contact --}}
-                <div class="grid grid-cols-1 gap-4 sm:gap-6 lg:grid-cols-2">
-                    {{-- Property Info Card --}}
-                    @if ($property)
-                        <flux:card>
-                            <flux:heading size="lg" class="mb-4">{{ __('Property') }}</flux:heading>
-                            <div class="grid grid-cols-2 gap-3 sm:gap-4">
-                                <div class="col-span-2">
-                                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Address') }}</flux:text>
-                                    <flux:text class="font-medium break-words">
-                                        {{ $property->address }}@if ($property->city), {{ $property->city }}@endif
-                                        @if ($property->state) {{ $property->state }}@endif
-                                        @if ($property->zip) {{ $property->zip }}@endif
-                                    </flux:text>
-                                </div>
-                                @if ($property->square_footage)
-                                    <div>
-                                        <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Sq Ft') }}</flux:text>
-                                        <flux:text class="font-medium">{{ number_format($property->square_footage) }}</flux:text>
-                                    </div>
-                                @endif
-                                @if ($property->year_built)
-                                    <div>
-                                        <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Year Built') }}</flux:text>
-                                        <flux:text class="font-medium">{{ $property->year_built }}</flux:text>
-                                    </div>
-                                @endif
-                                @if ($property->type)
-                                    <div>
-                                        <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('Type') }}</flux:text>
-                                        <flux:text class="font-medium capitalize">{{ $property->type }}</flux:text>
-                                    </div>
-                                @endif
+                {{-- Add Rooms CTA --}}
+                @php
+                    $hasAnyAreas = $estimates->contains(fn ($e) => $e->areas->isNotEmpty());
+                    $hasEstimate = $estimates->isNotEmpty();
+                @endphp
+                @if ($hasEstimate && ! $hasAnyAreas)
+                    <div class="rounded-2xl border-2 border-dashed border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-5 sm:p-6">
+                        <div class="flex items-start gap-4">
+                            <div class="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center shrink-0">
+                                <flux:icon name="home" class="w-6 h-6 text-green-600 dark:text-green-400" />
                             </div>
-                        </flux:card>
-                    @endif
-
-                    {{-- Contact Card --}}
-                    <flux:card>
-                        <flux:heading size="lg" class="mb-2">{{ __('Need Help?') }}</flux:heading>
-                        <flux:text class="text-zinc-500 dark:text-zinc-400">
-                            {{ __('Our team is here to assist you with any questions about your project.') }}
-                        </flux:text>
-                        <div class="mt-4">
-                            <flux:button variant="primary" icon="chat-bubble-left-right" href="{{ route('customer.chat.index') }}" class="w-full sm:w-auto">
-                                {{ __('Send a Message') }}
-                            </flux:button>
+                            <div class="flex-1">
+                                <flux:heading size="lg" class="text-green-800 dark:text-green-200">{{ __('Tell Us About Your Home') }}</flux:heading>
+                                <flux:text class="text-green-600 dark:text-green-400 mt-1 text-sm">
+                                    {{ __('Add the rooms you want painted, upload photos, and share any details. The more we know, the better your estimate.') }}
+                                </flux:text>
+                                <button
+                                    wire:click="openEstimateOverlay({{ $estimates->first()->id }})"
+                                    class="mt-3 inline-flex items-center gap-2 px-5 py-3 bg-green-600 text-white font-bold text-sm rounded-xl hover:bg-green-700 transition-colors min-h-[48px]"
+                                >
+                                    <flux:icon name="plus" class="w-5 h-5" />
+                                    {{ __('Add Rooms & Photos') }}
+                                </button>
+                            </div>
                         </div>
-                    </flux:card>
-                </div>
+                    </div>
+                @endif
+
+                {{-- Deal Chat Embed --}}
+                @if ($this->selectedDealId)
+                    <livewire:customer.deal-chat-embed :deal-id="$this->selectedDealId" :key="'deal-chat-'.$this->selectedDealId" />
+                @endif
 
                 {{-- Collaborators / Shared Access --}}
                 <livewire:customer.collaborators :dealId="$this->selectedDealId" :key="'collaborators-'.$this->selectedDealId" />

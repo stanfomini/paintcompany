@@ -143,6 +143,34 @@ class Estimate extends Model
                 }
             }
         });
+
+        static::created(function (Estimate $estimate) {
+            // Send welcome message for first estimate on a deal
+            try {
+                $deal = $estimate->deal ?? $estimate->load('deal')->deal;
+                if (! $deal) {
+                    return;
+                }
+
+                // Only send for the first estimate on this deal
+                if ($deal->estimates()->count() > 1) {
+                    return;
+                }
+
+                $thread = $deal->getOrCreateChatThread();
+
+                $thread->messages()->create([
+                    'user_id' => $estimate->created_by,
+                    'content' => "Welcome to your painting project! Tell us anything about your home right here — rooms you want painted, colors you love, or any questions. We'll respond in real-time.",
+                    'type' => ChatMessage::TYPE_SYSTEM,
+                ]);
+
+                $thread->update(['last_message_at' => now()]);
+            } catch (\Throwable $e) {
+                // Don't let welcome message failure break estimate creation
+                \Illuminate\Support\Facades\Log::warning('Failed to send welcome message: '.$e->getMessage());
+            }
+        });
     }
 
     /**

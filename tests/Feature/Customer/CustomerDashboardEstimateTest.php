@@ -14,14 +14,17 @@ beforeEach(function () {
 });
 
 describe('Dashboard - Estimate CTA Card', function () {
-    it('shows estimate CTA with "See Your Estimate" for sent estimates', function () {
-        Estimate::factory()->forDeal($this->deal)->sent()->create(['estimate_number' => 'EST-2026-00001']);
+    it('shows estimate CTA with price button for sent estimates', function () {
+        Estimate::factory()->forDeal($this->deal)->sent()->create([
+            'estimate_number' => 'EST-2026-00001',
+            'total' => 3000.00,
+        ]);
 
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.dashboard')
             ->assertSee('Your Painting Estimate')
             ->assertSee('EST-2026-00001')
-            ->assertSee('See Your Estimate');
+            ->assertSee('Tap to view your full proposal');
     });
 
     it('shows estimate CTA with "Help Build Your Estimate" for draft estimates', function () {
@@ -50,16 +53,16 @@ describe('Dashboard - Estimate CTA Card', function () {
             ->assertSee('$5,250.00');
     });
 
-    it('shows "View full proposal" link for sent estimates', function () {
-        Estimate::factory()->forDeal($this->deal)->sent()->create();
+    it('shows "Tap to view your full proposal" for sent estimates', function () {
+        Estimate::factory()->forDeal($this->deal)->sent()->create(['total' => 1000.00]);
 
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.dashboard')
-            ->assertSee('View full proposal', escape: false);
+            ->assertSee('Tap to view your full proposal');
     });
 
-    it('opens estimate overlay on button click', function () {
-        $estimate = Estimate::factory()->forDeal($this->deal)->sent()->create();
+    it('opens estimate overlay on button click for draft estimates', function () {
+        $estimate = Estimate::factory()->forDeal($this->deal)->draft()->create();
 
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.dashboard')
