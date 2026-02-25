@@ -119,6 +119,35 @@ class User extends Authenticatable
     }
 
     /**
+     * Shared email accounts this user is a member of.
+     */
+    public function sharedEmailAccounts(): BelongsToMany
+    {
+        return $this->belongsToMany(EmailAccount::class, 'email_account_user')
+            ->withPivot('can_send', 'receives_notifications')
+            ->withTimestamps();
+    }
+
+    /**
+     * Get all email accounts the user can access (personal + shared memberships).
+     *
+     * @return \Illuminate\Support\Collection<int, EmailAccount>
+     */
+    public function allEmailAccounts(): \Illuminate\Support\Collection
+    {
+        $accounts = collect();
+
+        $personal = $this->emailAccount;
+        if ($personal) {
+            $accounts->push($personal);
+        }
+
+        return $accounts->merge(
+            $this->sharedEmailAccounts()->active()->get()
+        );
+    }
+
+    /**
      * Deals assigned to this user as salesperson.
      */
     public function assignedDeals(): HasMany

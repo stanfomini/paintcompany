@@ -93,6 +93,22 @@ new class extends Component {
         unset($this->recordings);
     }
 
+    public function toggleHubAvailability(int $recordingId): void
+    {
+        if ($this->readOnly) {
+            return;
+        }
+
+        // Only internal users can promote videos to the hub
+        if (! auth()->check() || auth()->user()->type !== 'internal') {
+            return;
+        }
+
+        $recording = VideoRecording::findOrFail($recordingId);
+        $recording->update(['available_in_hub' => ! $recording->available_in_hub]);
+        unset($this->recordings);
+    }
+
     public function deleteRecording(int $recordingId): void
     {
         if ($this->readOnly) {
@@ -392,6 +408,16 @@ new class extends Component {
                                                 @else
                                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
                                                 @endif
+                                            </button>
+                                        @endif
+                                        @if (! $readOnly && auth()->check() && auth()->user()->type === 'internal')
+                                            <button
+                                                type="button"
+                                                wire:click="toggleHubAvailability({{ $recording->id }})"
+                                                class="p-1.5 rounded transition-colors {{ $recording->available_in_hub ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30' : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800' }}"
+                                                title="{{ $recording->available_in_hub ? __('Available in Media Hub') : __('Add to Media Hub') }}"
+                                            >
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"></path></svg>
                                             </button>
                                         @endif
                                         @if (! $readOnly)

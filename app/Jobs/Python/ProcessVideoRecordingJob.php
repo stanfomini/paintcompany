@@ -70,8 +70,11 @@ class ProcessVideoRecordingJob implements ShouldQueue
             $finalDiskName = config('filesystems.default');
             $finalDisk = Storage::disk();
 
+            // Use unique paths to prevent CDN/browser cache collisions on re-processing
+            $uniqueId = $this->recording->id.'-'.\Illuminate\Support\Str::random(8);
+
             // Copy processed MP4 to final storage
-            $videoStoragePath = 'video-recordings/videos/'.$this->recording->id.'.mp4';
+            $videoStoragePath = 'video-recordings/videos/'.$uniqueId.'.mp4';
             if (isset($result['video_path']) && file_exists($result['video_path'])) {
                 $finalDisk->put($videoStoragePath, file_get_contents($result['video_path']));
             }
@@ -79,8 +82,16 @@ class ProcessVideoRecordingJob implements ShouldQueue
             // Copy thumbnail to final storage
             $thumbnailStoragePath = null;
             if (isset($result['thumbnail_path']) && file_exists($result['thumbnail_path'])) {
-                $thumbnailStoragePath = 'video-recordings/thumbnails/'.$this->recording->id.'.jpg';
+                $thumbnailStoragePath = 'video-recordings/thumbnails/'.$uniqueId.'.jpg';
                 $finalDisk->put($thumbnailStoragePath, file_get_contents($result['thumbnail_path']));
+            }
+
+            // Clean up old processed files if re-processing
+            if ($this->recording->video_path && $this->recording->video_path !== $videoStoragePath) {
+                $finalDisk->delete($this->recording->video_path);
+            }
+            if ($this->recording->thumbnail_path && $this->recording->thumbnail_path !== $thumbnailStoragePath) {
+                $finalDisk->delete($this->recording->thumbnail_path);
             }
 
             // Update the recording record to point at the final disk

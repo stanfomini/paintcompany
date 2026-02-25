@@ -1328,7 +1328,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         @endif
 
         {{-- Media (Photos & Videos) --}}
-        <livewire:shared.media-section :property="$job->deal?->property" :job="$job" context="job-customer" :readOnly="true" :key="'media-'.$job->id" />
+        <livewire:shared.media-section :property="$job->deal?->property" :job="$job" context="job-customer" :key="'media-'.$job->id" />
 
         {{-- Project Conversation (visible on all stages) --}}
         @if ($this->chatThread)

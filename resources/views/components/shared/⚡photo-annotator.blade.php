@@ -86,6 +86,7 @@ new class extends Component
     x-data="annotatorApp()"
     x-init="initAnnotator()"
     class="fixed inset-0 z-[60] bg-black flex flex-col"
+    data-photo-overlay
     x-on:keydown.escape.window.prevent="handleClose()"
 >
     {{-- Top Bar --}}

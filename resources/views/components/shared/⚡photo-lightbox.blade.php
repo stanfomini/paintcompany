@@ -221,6 +221,7 @@ new class extends Component
     x-on:touchstart.passive="handleTouchStart($event)"
     x-on:touchend.passive="handleTouchEnd($event)"
     class="fixed inset-0 z-50 bg-black flex flex-col"
+    data-photo-overlay
 >
     {{-- Top Bar --}}
     <div class="flex items-center justify-between px-3 sm:px-4 py-2 sm:py-3 bg-zinc-900/80 backdrop-blur-sm border-b border-zinc-800 shrink-0 relative z-20">

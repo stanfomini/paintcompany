@@ -86,7 +86,8 @@ new class extends Component {
         }
 
         if (! $this->estimate->hasCreatorSignature()) {
-            session()->flash('error', __('You must configure your signature before sending proposals. Go to Settings > Signature to add your signature.'));
+            session()->flash('error', __('You must set up your signature before you can send proposals.'));
+            $this->redirect(route('signature.edit'));
 
             return;
         }
@@ -119,8 +120,9 @@ new class extends Component {
         }
 
         if (! $this->estimate->hasCreatorSignature()) {
-            session()->flash('error', __('You must configure your signature before sending proposals. Go to Settings > Signature to add your signature.'));
+            session()->flash('error', __('You must configure your signature before sending proposals.'));
             $this->showSendModal = false;
+            $this->redirect(route('signature.edit'));
 
             return;
         }
@@ -133,6 +135,28 @@ new class extends Component {
         $this->showSendModal = false;
         $this->refreshEstimate();
         session()->flash('success', __('Proposal sent to :email', ['email' => $recipient->email]));
+    }
+
+    public function resendProposal(): void
+    {
+        abort_unless(auth()->user()->can('estimates.send'), 403);
+
+        if ($this->estimate->status !== 'sent') {
+            session()->flash('error', __('Only sent estimates can be resent.'));
+
+            return;
+        }
+
+        $recipient = $this->getProposalRecipient();
+        if (! $recipient) {
+            session()->flash('error', __('A customer or agent email is required to resend the proposal.'));
+
+            return;
+        }
+
+        $recipient->notify(new EstimateProposalSent($this->estimate));
+
+        session()->flash('success', __('Proposal resent to :email', ['email' => $recipient->email]));
     }
 
     /**
@@ -199,10 +223,11 @@ new class extends Component {
 
         $this->estimate->markAsRejected();
 
-        // Notify all internal users
-        $internalUsers = User::where('type', 'internal')->get();
-        foreach ($internalUsers as $user) {
-            $user->notify(new EstimateRejected($this->estimate, $reason));
+        // Notify assigned user + role subscribers
+        $recipients = app(\App\Services\NotificationRouter::class)
+            ->resolve('notify.estimate_rejected', $this->estimate);
+        foreach ($recipients as $recipient) {
+            $recipient->notify(new \App\Notifications\EstimateRejected($this->estimate, $reason));
         }
 
         $this->refreshEstimate();
@@ -410,6 +435,15 @@ new class extends Component {
                         <div class="hidden lg:block">
                             <flux:button wire:click="openSendModal" icon="paper-airplane" variant="primary">
                                 {{ __('Send Proposal') }}
+                            </flux:button>
+                        </div>
+                    @elseif ($estimate->status === 'sent')
+                        <div class="lg:hidden">
+                            <flux:button wire:click="resendProposal" icon="arrow-path" variant="ghost" wire:confirm="{{ __('Resend the proposal email to the customer?') }}" />
+                        </div>
+                        <div class="hidden lg:block">
+                            <flux:button wire:click="resendProposal" icon="arrow-path" variant="ghost" wire:confirm="{{ __('Resend the proposal email to the customer?') }}">
+                                {{ __('Resend') }}
                             </flux:button>
                         </div>
                     @endif

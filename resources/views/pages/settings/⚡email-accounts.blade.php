@@ -24,6 +24,11 @@ new class extends Component {
     public string $signatureHtml = '';
     public bool $isActive = true;
 
+    // Shared account fields
+    public string $accountType = 'personal';
+    public ?int $defaultNotifyUserId = null;
+    public array $memberIds = [];
+
     // Reassign modal
     public bool $showReassignModal = false;
     public ?int $reassigningId = null;
@@ -35,6 +40,12 @@ new class extends Component {
     public ?int $deletingId = null;
     public string $deletingAddress = '';
 
+    // Members management modal
+    public bool $showMembersModal = false;
+    public ?int $managingMembersId = null;
+    public array $currentMembers = [];
+    public ?int $addMemberId = null;
+
     public function updatedSearch(): void
     {
         // Reactivity handles the computed refresh
@@ -43,7 +54,7 @@ new class extends Component {
     #[Computed]
     public function accounts(): \Illuminate\Database\Eloquent\Collection
     {
-        $query = EmailAccount::query()->with('user')->orderBy('address');
+        $query = EmailAccount::query()->with(['user', 'members'])->orderBy('address');
 
         if ($this->search) {
             $query->where(function ($q) {
@@ -87,54 +98,89 @@ new class extends Component {
     {
         $account = EmailAccount::findOrFail($id);
         $this->editingId = $account->id;
+        $this->accountType = $account->type ?? 'personal';
         $this->userId = $account->user_id;
         $this->address = $account->address;
         $this->displayName = $account->display_name ?? '';
         $this->signatureHtml = $account->signature_html ?? '';
         $this->isActive = $account->is_active;
+        $this->defaultNotifyUserId = $account->default_notify_user_id;
+        $this->memberIds = $account->isShared() ? $account->members->pluck('id')->toArray() : [];
         $this->showModal = true;
     }
 
     public function save(): void
     {
+        $isShared = $this->accountType === 'shared';
+
         $rules = [
-            'userId' => 'required|exists:users,id',
+            'accountType' => 'required|in:personal,shared',
             'address' => 'required|string|min:3|max:30|regex:/^[a-z0-9.]+$/',
             'displayName' => 'nullable|string|max:100',
             'signatureHtml' => 'nullable|string|max:5000',
             'isActive' => 'boolean',
         ];
 
+        if ($isShared) {
+            $rules['defaultNotifyUserId'] = 'nullable|exists:users,id';
+            $rules['memberIds'] = 'required|array|min:1';
+            $rules['memberIds.*'] = 'exists:users,id';
+        } else {
+            $rules['userId'] = 'required|exists:users,id';
+        }
+
         if ($this->editingId) {
             $rules['address'] .= '|unique:email_accounts,address,' . $this->editingId;
-            $rules['userId'] .= '|unique:email_accounts,user_id,' . $this->editingId;
+            if (! $isShared) {
+                $rules['userId'] .= '|unique:email_accounts,user_id,' . $this->editingId;
+            }
         } else {
             $rules['address'] .= '|unique:email_accounts,address';
-            $rules['userId'] .= '|unique:email_accounts,user_id';
+            if (! $isShared) {
+                $rules['userId'] .= '|unique:email_accounts,user_id';
+            }
         }
 
         $this->validate($rules, [
             'userId.unique' => 'This user already has an email account.',
             'address.unique' => 'This email address is already taken.',
             'address.regex' => 'Only lowercase letters, numbers, and dots allowed.',
+            'memberIds.required' => 'Shared accounts must have at least one member.',
         ]);
 
         if ($this->editingId) {
             $account = EmailAccount::findOrFail($this->editingId);
-            $account->update([
+            $data = [
                 'address' => strtolower($this->address),
                 'display_name' => $this->displayName ?: null,
                 'signature_html' => $this->signatureHtml ?: null,
                 'is_active' => $this->isActive,
-            ]);
+            ];
+            if ($isShared) {
+                $data['default_notify_user_id'] = $this->defaultNotifyUserId;
+            }
+            $account->update($data);
+            if ($isShared) {
+                $account->members()->sync($this->memberIds);
+            }
         } else {
-            EmailAccount::create([
-                'user_id' => $this->userId,
+            $data = [
+                'type' => $this->accountType,
                 'address' => strtolower($this->address),
                 'display_name' => $this->displayName ?: null,
                 'signature_html' => $this->signatureHtml ?: null,
                 'is_active' => $this->isActive,
-            ]);
+            ];
+            if ($isShared) {
+                $data['user_id'] = null;
+                $data['default_notify_user_id'] = $this->defaultNotifyUserId;
+            } else {
+                $data['user_id'] = $this->userId;
+            }
+            $account = EmailAccount::create($data);
+            if ($isShared && ! empty($this->memberIds)) {
+                $account->members()->attach($this->memberIds);
+            }
         }
 
         $this->showModal = false;
@@ -199,10 +245,76 @@ new class extends Component {
     {
         $this->editingId = null;
         $this->userId = null;
+        $this->accountType = 'personal';
         $this->address = '';
         $this->displayName = '';
         $this->signatureHtml = '';
         $this->isActive = true;
+        $this->defaultNotifyUserId = null;
+        $this->memberIds = [];
+    }
+
+    public function openMembersModal(int $id): void
+    {
+        $account = EmailAccount::findOrFail($id);
+        if (! $account->isShared()) {
+            return;
+        }
+        $this->managingMembersId = $account->id;
+        $this->currentMembers = $account->members()->withPivot('can_send', 'receives_notifications')->get()
+            ->map(fn ($m) => [
+                'id' => $m->id,
+                'name' => $m->name,
+                'can_send' => (bool) $m->pivot->can_send,
+                'receives_notifications' => (bool) $m->pivot->receives_notifications,
+            ])->toArray();
+        $this->addMemberId = null;
+        $this->showMembersModal = true;
+    }
+
+    public function addMember(): void
+    {
+        if (! $this->addMemberId || ! $this->managingMembersId) {
+            return;
+        }
+
+        $account = EmailAccount::findOrFail($this->managingMembersId);
+        if (! $account->members()->where('users.id', $this->addMemberId)->exists()) {
+            $account->members()->attach($this->addMemberId, [
+                'can_send' => true,
+                'receives_notifications' => true,
+            ]);
+        }
+
+        $this->openMembersModal($this->managingMembersId);
+    }
+
+    public function removeMember(int $userId): void
+    {
+        if (! $this->managingMembersId) {
+            return;
+        }
+
+        $account = EmailAccount::findOrFail($this->managingMembersId);
+        $account->members()->detach($userId);
+        $this->openMembersModal($this->managingMembersId);
+    }
+
+    public function toggleMemberPermission(int $userId, string $field): void
+    {
+        if (! $this->managingMembersId || ! in_array($field, ['can_send', 'receives_notifications'])) {
+            return;
+        }
+
+        $account = EmailAccount::findOrFail($this->managingMembersId);
+        $member = $account->members()->where('users.id', $userId)->first();
+        if ($member) {
+            $account->members()->updateExistingPivot($userId, [
+                $field => ! $member->pivot->$field,
+            ]);
+        }
+
+        $this->openMembersModal($this->managingMembersId);
     }
 };
 ?>
@@ -238,9 +350,16 @@ new class extends Component {
                             <tr wire:key="account-{{ $account->id }}" class="{{ ! $account->is_active ? 'opacity-50' : '' }}">
                                 <td class="whitespace-nowrap px-4 py-3 text-sm font-medium text-zinc-900 dark:text-white">
                                     {{ $account->address }}@{{ config('email.domain') }}
+                                    @if ($account->isShared())
+                                        <flux:badge size="sm" color="purple" class="ml-1">{{ __('Shared') }}</flux:badge>
+                                    @endif
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300">
-                                    {{ $account->user?->name ?? '—' }}
+                                    @if ($account->isShared())
+                                        {{ $account->members->count() }} {{ __('members') }}
+                                    @else
+                                        {{ $account->user?->name ?? '—' }}
+                                    @endif
                                 </td>
                                 <td class="whitespace-nowrap px-4 py-3 text-sm text-zinc-600 dark:text-zinc-300">
                                     {{ $account->display_name ?? '—' }}
@@ -259,7 +378,11 @@ new class extends Component {
                                     <div class="flex items-center justify-end gap-1">
                                         <flux:button wire:click="openEditModal({{ $account->id }})" variant="ghost" size="sm" icon="pencil-square" />
                                         <flux:button wire:click="toggleActive({{ $account->id }})" variant="ghost" size="sm" icon="{{ $account->is_active ? 'pause' : 'play' }}" />
-                                        <flux:button wire:click="openReassignModal({{ $account->id }})" variant="ghost" size="sm" icon="arrow-right-circle" />
+                                        @if ($account->isShared())
+                                            <flux:button wire:click="openMembersModal({{ $account->id }})" variant="ghost" size="sm" icon="user-group" />
+                                        @else
+                                            <flux:button wire:click="openReassignModal({{ $account->id }})" variant="ghost" size="sm" icon="arrow-right-circle" />
+                                        @endif
                                         <flux:button wire:click="confirmDelete({{ $account->id }})" variant="ghost" size="sm" icon="trash" class="text-red-500 hover:text-red-700" />
                                     </div>
                                 </td>
@@ -294,16 +417,52 @@ new class extends Component {
                 <form wire:submit="save" class="space-y-4">
                     @unless ($editingId)
                         <flux:field>
-                            <flux:label>{{ __('User') }}</flux:label>
-                            <flux:select wire:model="userId">
-                                <option value="">{{ __('Select a user...') }}</option>
-                                @foreach ($this->availableUsers as $user)
+                            <flux:label>{{ __('Account Type') }}</flux:label>
+                            <flux:select wire:model.live="accountType">
+                                <option value="personal">{{ __('Personal') }}</option>
+                                <option value="shared">{{ __('Shared') }}</option>
+                            </flux:select>
+                        </flux:field>
+                    @endunless
+
+                    @if ($accountType === 'personal')
+                        @unless ($editingId)
+                            <flux:field>
+                                <flux:label>{{ __('User') }}</flux:label>
+                                <flux:select wire:model="userId">
+                                    <option value="">{{ __('Select a user...') }}</option>
+                                    @foreach ($this->availableUsers as $user)
+                                        <option value="{{ $user->id }}">{{ $user->name }}</option>
+                                    @endforeach
+                                </flux:select>
+                                <flux:error name="userId" />
+                            </flux:field>
+                        @endunless
+                    @else
+                        <flux:field>
+                            <flux:label>{{ __('Default Notification Recipient') }}</flux:label>
+                            <flux:select wire:model="defaultNotifyUserId">
+                                <option value="">{{ __('None (notify all members)') }}</option>
+                                @foreach ($this->allInternalUsers as $user)
                                     <option value="{{ $user->id }}">{{ $user->name }}</option>
                                 @endforeach
                             </flux:select>
-                            <flux:error name="userId" />
+                            <flux:description>{{ __('Primary person notified on new emails. Others with notifications enabled also receive alerts.') }}</flux:description>
                         </flux:field>
-                    @endunless
+
+                        <flux:field>
+                            <flux:label>{{ __('Members') }}</flux:label>
+                            <div class="space-y-2">
+                                @foreach ($this->allInternalUsers as $user)
+                                    <label class="flex items-center gap-2">
+                                        <input type="checkbox" wire:model="memberIds" value="{{ $user->id }}" class="rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800" />
+                                        <span class="text-sm text-zinc-700 dark:text-zinc-300">{{ $user->name }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                            <flux:error name="memberIds" />
+                        </flux:field>
+                    @endif
 
                     <flux:field>
                         <flux:label>{{ __('Email Address') }}</flux:label>
@@ -380,6 +539,60 @@ new class extends Component {
                 <div class="flex justify-end gap-3">
                     <flux:button wire:click="$set('showDeleteModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
                     <flux:button wire:click="delete" variant="danger">{{ __('Delete') }}</flux:button>
+                </div>
+            </div>
+        </flux:modal>
+
+        {{-- Members Management Modal --}}
+        <flux:modal wire:model="showMembersModal" class="max-w-lg">
+            <div class="space-y-6">
+                <flux:heading size="lg">{{ __('Manage Members') }}</flux:heading>
+
+                {{-- Current Members --}}
+                @if (count($currentMembers) > 0)
+                    <div class="space-y-2">
+                        @foreach ($currentMembers as $member)
+                            <div class="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                <span class="text-sm font-medium text-zinc-900 dark:text-white">{{ $member['name'] }}</span>
+                                <div class="flex items-center gap-3">
+                                    <label class="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                                        <input type="checkbox" {{ $member['can_send'] ? 'checked' : '' }}
+                                            wire:click="toggleMemberPermission({{ $member['id'] }}, 'can_send')"
+                                            class="rounded border-zinc-300 text-blue-600 dark:border-zinc-600" />
+                                        {{ __('Send') }}
+                                    </label>
+                                    <label class="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                                        <input type="checkbox" {{ $member['receives_notifications'] ? 'checked' : '' }}
+                                            wire:click="toggleMemberPermission({{ $member['id'] }}, 'receives_notifications')"
+                                            class="rounded border-zinc-300 text-blue-600 dark:border-zinc-600" />
+                                        {{ __('Notify') }}
+                                    </label>
+                                    <flux:button size="xs" variant="ghost" icon="x-mark" wire:click="removeMember({{ $member['id'] }})" class="text-red-500" />
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <p class="text-sm text-zinc-500">{{ __('No members yet.') }}</p>
+                @endif
+
+                {{-- Add Member --}}
+                <div class="flex items-end gap-2">
+                    <div class="flex-1">
+                        <flux:select wire:model="addMemberId" size="sm">
+                            <option value="">{{ __('Select a user to add...') }}</option>
+                            @foreach ($this->allInternalUsers as $user)
+                                @if (! collect($currentMembers)->pluck('id')->contains($user->id))
+                                    <option value="{{ $user->id }}">{{ $user->name }}</option>
+                                @endif
+                            @endforeach
+                        </flux:select>
+                    </div>
+                    <flux:button wire:click="addMember" size="sm" variant="primary" icon="plus">{{ __('Add') }}</flux:button>
+                </div>
+
+                <div class="flex justify-end">
+                    <flux:button wire:click="$set('showMembersModal', false)" variant="ghost">{{ __('Close') }}</flux:button>
                 </div>
             </div>
         </flux:modal>

@@ -21,6 +21,14 @@ class EmailAccountFactory extends Factory
         ];
     }
 
+    public function shared(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'user_id' => null,
+            'type' => 'shared',
+        ]);
+    }
+
     public function inactive(): static
     {
         return $this->state(fn (array $attributes) => [

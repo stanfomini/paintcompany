@@ -23,6 +23,9 @@ new class extends Component {
     #[Url]
     public ?int $threadId = null;
 
+    #[Url]
+    public ?int $activeAccountId = null;
+
     public bool $composing = false;
 
     public ?int $replyToId = null;
@@ -58,6 +61,7 @@ new class extends Component {
             'folder-changed' => 'onFolderChanged',
             'start-compose' => 'onStartCompose',
             'compose-reply' => 'onComposeReply',
+            'account-switched' => 'onAccountSwitched',
             "echo-private:email.user.{$userId},.email.received" => 'onEmailReceived',
             "echo-private:email.user.{$userId},.email.sent" => 'onEmailSentBroadcast',
         ];
@@ -66,6 +70,13 @@ new class extends Component {
     #[Computed]
     public function account(): ?EmailAccount
     {
+        if ($this->activeAccountId) {
+            $account = EmailAccount::find($this->activeAccountId);
+            if ($account && $this->userCanAccessAccount($account)) {
+                return $account;
+            }
+        }
+
         return auth()->user()->emailAccount;
     }
 
@@ -80,6 +91,15 @@ new class extends Component {
             ->withLabel('inbox')
             ->unread()
             ->count();
+    }
+
+    public function onAccountSwitched(int $accountId): void
+    {
+        $this->activeAccountId = $accountId;
+        $this->threadId = null;
+        $this->composing = false;
+        $this->folder = 'inbox';
+        unset($this->account, $this->unreadCount);
     }
 
     public function onEmailReceived(array $event = []): void
@@ -157,10 +177,34 @@ new class extends Component {
         $this->threadId = null;
         $this->composing = false;
     }
+
+    private function userCanAccessAccount(EmailAccount $account): bool
+    {
+        $user = auth()->user();
+
+        if ($account->isPersonal() && $account->user_id === $user->id) {
+            return true;
+        }
+
+        if ($account->isShared()) {
+            return $account->members()->where('users.id', $user->id)->exists();
+        }
+
+        return false;
+    }
 };
 ?>
 
-<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row" x-data="{ toastVisible: $wire.entangle('showNewEmailToast'), showMobileFolders: false }">
+<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row"
+    x-data="{
+        toastVisible: $wire.entangle('showNewEmailToast'),
+        showMobileFolders: false,
+        folderSidebarCollapsed: false,
+        init() {
+            this.$watch('$wire.threadId', v => { if (v) this.folderSidebarCollapsed = true })
+            this.$watch('$wire.composing', v => { if (v) this.folderSidebarCollapsed = true })
+        }
+    }">
     {{-- Mobile Top Bar (visible on small screens when viewing inbox list) --}}
     @if (! $threadId && ! $composing)
         <div class="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700 md:hidden">
@@ -178,17 +222,30 @@ new class extends Component {
     <div x-show="showMobileFolders" x-transition @click.away="showMobileFolders = false"
         x-on:mobile-folders-close.window="showMobileFolders = false"
         class="absolute inset-x-0 top-12 z-40 border-b border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900 md:hidden" x-cloak>
-        @livewire('email.folder-sidebar', ['currentFolder' => $folder], key('sidebar-mobile'))
+        @livewire('email.folder-sidebar', ['currentFolder' => $folder, 'activeAccountId' => $activeAccountId], key('sidebar-mobile-' . $activeAccountId))
     </div>
 
     {{-- Desktop Folder Sidebar --}}
-    <div class="hidden w-56 shrink-0 border-r border-zinc-200 dark:border-zinc-700 lg:block">
-        @livewire('email.folder-sidebar', ['currentFolder' => $folder], key('sidebar'))
+    <div x-show="!folderSidebarCollapsed" x-cloak class="hidden w-56 shrink-0 border-r border-zinc-200 dark:border-zinc-700 lg:block">
+        <div class="flex items-center justify-between border-b border-zinc-200 px-2 py-1 dark:border-zinc-700">
+            <span class="text-xs font-medium uppercase tracking-wider text-zinc-400">{{ __('Folders') }}</span>
+            <button @click="folderSidebarCollapsed = true" class="rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Collapse sidebar') }}">
+                <flux:icon name="chevron-left" class="size-4" />
+            </button>
+        </div>
+        @livewire('email.folder-sidebar', ['currentFolder' => $folder, 'activeAccountId' => $activeAccountId], key('sidebar-' . $activeAccountId))
     </div>
+
+    {{-- Collapsed Sidebar Toggle (desktop only) --}}
+    <button x-show="folderSidebarCollapsed" x-cloak @click="folderSidebarCollapsed = false"
+        class="hidden shrink-0 items-center justify-center border-r border-zinc-200 px-1 py-2 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:border-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300 lg:flex"
+        title="{{ __('Expand folder sidebar') }}">
+        <flux:icon name="chevron-right" class="size-4" />
+    </button>
 
     {{-- Email List --}}
     <div class="min-h-0 w-full flex-1 shrink-0 border-r border-zinc-200 dark:border-zinc-700 md:w-80 md:flex-none lg:w-96 {{ $threadId || $composing ? 'hidden md:block' : '' }}">
-        @livewire('email.email-list', ['folder' => $folder, 'selectedThreadId' => $threadId], key('list-' . $folder))
+        @livewire('email.email-list', ['folder' => $folder, 'selectedThreadId' => $threadId, 'activeAccountId' => $activeAccountId], key('list-' . $folder . '-' . $activeAccountId))
     </div>
 
     {{-- Reading Pane / Compose --}}
@@ -209,9 +266,10 @@ new class extends Component {
             @livewire('email.compose-form', [
                 'mode' => $composeMode,
                 'replyToId' => $replyToId,
-            ], key('compose-' . $replyToId . '-' . $composeMode))
+                'accountId' => $this->account?->id,
+            ], key('compose-' . $replyToId . '-' . $composeMode . '-' . $activeAccountId))
         @elseif ($threadId)
-            @livewire('email.thread-view', ['threadId' => $threadId], key('thread-' . $threadId))
+            @livewire('email.thread-view', ['threadId' => $threadId, 'activeAccountId' => $activeAccountId], key('thread-' . $threadId . '-' . $activeAccountId))
         @else
             <div class="flex flex-1 items-center justify-center text-zinc-400 dark:text-zinc-500">
                 <div class="text-center">

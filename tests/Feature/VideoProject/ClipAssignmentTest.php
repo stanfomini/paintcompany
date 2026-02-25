@@ -10,7 +10,7 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-it('can assign a clip to a scene via media-selected event', function () {
+it('can assign a clip to a scene via selectMedia', function () {
     $user = User::factory()->create(['type' => 'internal']);
     $project = VideoProject::factory()->create(['user_id' => $user->id]);
     $scene = VideoProjectScene::factory()->create(['video_project_id' => $project->id]);
@@ -20,12 +20,12 @@ it('can assign a clip to a scene via media-selected event', function () {
         ->test('studio.editor', ['videoProject' => $project])
         ->set('activeSceneId', $scene->id)
         ->set('pendingSlot', 'main')
-        ->dispatch('media-selected', type: VideoRecording::class, id: $recording->id);
+        ->call('selectMedia', 'video-recording', $recording->id);
 
     expect($scene->clips()->count())->toBe(1);
     $clip = $scene->clips()->first();
     expect($clip->slot)->toBe('main');
-    expect($clip->source_type)->toBe(VideoRecording::class);
+    expect($clip->source_type)->toBe('video-recording');
     expect($clip->source_id)->toBe($recording->id);
 });
 
@@ -95,11 +95,11 @@ it('replaces clip in same slot', function () {
 
     // Assign first clip
     $component->set('pendingSlot', 'main')
-        ->dispatch('media-selected', type: VideoRecording::class, id: $recording1->id);
+        ->call('selectMedia', 'video-recording', $recording1->id);
 
     // Replace with second clip
     $component->set('pendingSlot', 'main')
-        ->dispatch('media-selected', type: VideoRecording::class, id: $recording2->id);
+        ->call('selectMedia', 'video-recording', $recording2->id);
 
     expect($scene->clips()->count())->toBe(1);
     expect($scene->clips()->first()->source_id)->toBe($recording2->id);

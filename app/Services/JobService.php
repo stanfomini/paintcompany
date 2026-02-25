@@ -88,10 +88,10 @@ class JobService
             'estimate_id' => $estimate->id,
         ]);
 
-        // Notify internal users
-        $internalUsers = User::where('type', 'internal')->get();
-        foreach ($internalUsers as $user) {
-            $user->notify(new JobCreated($job));
+        // Notify assigned user + role subscribers
+        $recipients = app(NotificationRouter::class)->resolve('notify.job_created', $job);
+        foreach ($recipients as $recipient) {
+            $recipient->notify(new JobCreated($job));
         }
 
         $this->plannerAutomation->onJobCreated($job);
@@ -114,7 +114,7 @@ class JobService
             ]);
 
             $assignedUser = $job->deal?->assignedTo;
-            if ($assignedUser) {
+            if ($assignedUser && $assignedUser->isInternal()) {
                 $assignedUser->notify(new JobStageAdvanced($job, $oldStage, $job->stage));
             }
 
@@ -167,7 +167,7 @@ class JobService
         JobActivity::log($job, 'date_confirmed_customer', 'Customer confirmed the scheduled date');
 
         $assignedUser = $job->deal?->assignedTo;
-        if ($assignedUser) {
+        if ($assignedUser && $assignedUser->isInternal()) {
             $assignedUser->notify(new CustomerConfirmedDate($job));
         }
 
@@ -208,7 +208,7 @@ class JobService
         JobActivity::log($job, 'colors_confirmed_customer', 'Customer confirmed color selections');
 
         $assignedUser = $job->deal?->assignedTo;
-        if ($assignedUser) {
+        if ($assignedUser && $assignedUser->isInternal()) {
             $assignedUser->notify(new CustomerConfirmedColors($job));
         }
 
@@ -251,7 +251,7 @@ class JobService
             );
 
             $assignedUser = $deal->assignedTo;
-            if ($assignedUser) {
+            if ($assignedUser && $assignedUser->isInternal()) {
                 $assignedUser->notify(new CustomerProposedDate($job, $date->format('l, F j, Y')));
             }
         }
@@ -282,9 +282,9 @@ class JobService
 
         JobActivity::log($job, 'completed', 'Job marked as completed');
 
-        // Notify assigned user
+        // Notify assigned user (internal only)
         $assignedUser = $job->deal?->assignedTo;
-        if ($assignedUser) {
+        if ($assignedUser && $assignedUser->isInternal()) {
             $assignedUser->notify(new JobCompleted($job));
         }
 

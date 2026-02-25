@@ -229,7 +229,7 @@ new class extends Component
 
             {{-- Footer --}}
             <div class="px-4 py-3 border-t border-zinc-200 dark:border-zinc-700">
-                <flux:button variant="ghost" size="sm" class="w-full" :href="route('customers.communications', $customer)" icon-trailing="arrow-right" wire:navigate>
+                <flux:button variant="ghost" size="sm" class="w-full" :href="$customer->user_id ? route('communications.index', ['contactId' => $customer->user_id]) : route('customers.communications', $customer)" icon-trailing="arrow-right" wire:navigate>
                     {{ __('View Full Page') }}
                 </flux:button>
             </div>

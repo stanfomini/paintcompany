@@ -49,7 +49,7 @@ it('generates caption segments from whisper segments', function () {
     $recording = VideoRecording::factory()->ready()->create();
     VideoProjectClip::factory()->create([
         'video_project_scene_id' => $scene->id,
-        'source_type' => VideoRecording::class,
+        'source_type' => 'video-recording',
         'source_id' => $recording->id,
         'in_point_ms' => 0,
     ]);
@@ -81,7 +81,7 @@ it('offsets caption timestamps by clip in_point_ms', function () {
     $recording = VideoRecording::factory()->ready()->create();
     VideoProjectClip::factory()->create([
         'video_project_scene_id' => $scene->id,
-        'source_type' => VideoRecording::class,
+        'source_type' => 'video-recording',
         'source_id' => $recording->id,
         'in_point_ms' => 5000,
     ]);
@@ -108,7 +108,7 @@ it('creates overlay records from job', function () {
     $recording = VideoRecording::factory()->ready()->create();
     VideoProjectClip::factory()->create([
         'video_project_scene_id' => $scene->id,
-        'source_type' => VideoRecording::class,
+        'source_type' => 'video-recording',
         'source_id' => $recording->id,
         'in_point_ms' => 0,
     ]);
@@ -140,7 +140,7 @@ it('clears existing captions before regenerating', function () {
     $recording = VideoRecording::factory()->ready()->create();
     VideoProjectClip::factory()->create([
         'video_project_scene_id' => $scene->id,
-        'source_type' => VideoRecording::class,
+        'source_type' => 'video-recording',
         'source_id' => $recording->id,
     ]);
 
@@ -190,7 +190,7 @@ it('handles transcription errors gracefully', function () {
     $recording = VideoRecording::factory()->ready()->create();
     VideoProjectClip::factory()->create([
         'video_project_scene_id' => $scene->id,
-        'source_type' => VideoRecording::class,
+        'source_type' => 'video-recording',
         'source_id' => $recording->id,
     ]);
 

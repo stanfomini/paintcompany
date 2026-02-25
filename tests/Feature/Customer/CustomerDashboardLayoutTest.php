@@ -49,6 +49,14 @@ describe('Customer Dashboard Layout', function () {
             ->assertDontSee('Tell Us About Your Home');
     });
 
+    it('does not show Add Rooms CTA for sent estimates', function () {
+        Estimate::factory()->forDeal($this->deal)->sent()->create();
+
+        Livewire::actingAs($this->customerUser, 'customer')
+            ->test('customer.dashboard')
+            ->assertDontSee('Tell Us About Your Home');
+    });
+
     it('shows price button for sent estimates', function () {
         Estimate::factory()->forDeal($this->deal)->sent()->create([
             'total' => 5000.00,

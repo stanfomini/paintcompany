@@ -36,6 +36,7 @@ class VideoRecording extends Model
         'recordable_id',
         'share_token',
         'show_on_proposal',
+        'available_in_hub',
         'error_message',
         'visibility',
         'description',
@@ -51,6 +52,7 @@ class VideoRecording extends Model
             'width' => 'integer',
             'height' => 'integer',
             'show_on_proposal' => 'boolean',
+            'available_in_hub' => 'boolean',
             'metadata' => 'array',
             'content_updated_at' => 'datetime',
         ];
@@ -119,6 +121,13 @@ class VideoRecording extends Model
         return $this->hasMany(VideoEmail::class);
     }
 
+    public function landingPageSections(): BelongsToMany
+    {
+        return $this->belongsToMany(LandingPageVideoSection::class, 'landing_page_video_section_items')
+            ->withPivot('sort_order')
+            ->withTimestamps();
+    }
+
     public function scopePublicVisible(Builder $query): Builder
     {
         return $query->where('visibility', 'public');
@@ -136,13 +145,42 @@ class VideoRecording extends Model
 
     public function getVideoUrl(): ?string
     {
-        $path = $this->video_path ?? $this->original_path;
+        $path = $this->getPlayablePath();
 
-        if (! $path) {
+        if ($path === null) {
             return null;
         }
 
         return $this->getSignedOrPublicUrl($path, 'video');
+    }
+
+    /**
+     * Get the stream URL served through the application (supports any disk).
+     */
+    public function getStreamUrl(): ?string
+    {
+        if ($this->getPlayablePath() === null) {
+            return null;
+        }
+
+        return route('video-recordings.stream', $this);
+    }
+
+    /**
+     * Determine the best available path for video playback.
+     * Returns null when no valid file path exists.
+     */
+    public function getPlayablePath(): ?string
+    {
+        // Prefer processed video, fall back to original
+        $path = $this->video_path ?? $this->original_path;
+
+        // Reject null, empty, or clearly invalid paths (e.g. "0" from failed storage)
+        if ($path === null || strlen($path) < 3 || ! str_contains($path, '/')) {
+            return null;
+        }
+
+        return $path;
     }
 
     public function getThumbnailUrl(): ?string

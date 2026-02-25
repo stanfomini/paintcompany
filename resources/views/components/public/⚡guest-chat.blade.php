@@ -4,7 +4,10 @@ use App\Events\NewThreadNotification;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
+use App\Models\Customer;
+use App\Models\Deal;
 use App\Models\GuestChatSession;
+use App\Models\MessengerSetting;
 use App\Models\User;
 use App\Notifications\NewSupportChatNotification;
 use App\Services\ChatService;
@@ -23,7 +26,7 @@ new class extends Component {
     {
         $uuid = request()->cookie('guest_chat_uuid');
         if ($uuid) {
-            $session = GuestChatSession::where('uuid', $uuid)->where('status', 'active')->first();
+            $session = GuestChatSession::where('uuid', $uuid)->whereIn('status', ['active', 'converted'])->first();
             if ($session) {
                 $this->sessionId = $session->id;
             }
@@ -37,15 +40,76 @@ new class extends Component {
             'name' => ['nullable', 'string', 'max:255'],
         ]);
 
+        // Parse name into first/last
+        $nameParts = $this->name ? preg_split('/\s+/', trim($this->name), 2) : [];
+        $firstName = $nameParts[0] ?? null;
+        $lastName = $nameParts[1] ?? null;
+
+        // Find or create a customer user for this email
+        $customerUser = User::where('email', $this->email)->first();
+
+        if (! $customerUser) {
+            $customerUser = new User([
+                'name' => $this->name ?: explode('@', $this->email)[0],
+                'email' => $this->email,
+                'password' => bcrypt(Str::random(32)),
+            ]);
+            $customerUser->type = 'customer';
+            $customerUser->save();
+        }
+
+        // Find or create a Customer record
+        $customer = Customer::where('email', $this->email)->first();
+
+        if (! $customer) {
+            $messengerSettings = MessengerSetting::getInstance();
+            $defaultAssignee = $messengerSettings->default_assigned_to;
+            $createdBy = $defaultAssignee ?? User::where('type', 'internal')->first()?->id;
+
+            $customer = Customer::create([
+                'user_id' => $customerUser->id,
+                'first_name' => $firstName ?? explode('@', $this->email)[0],
+                'last_name' => $lastName ?? '',
+                'email' => $this->email,
+                'source' => 'online',
+                'status' => 'active',
+                'created_by' => $createdBy,
+                'assigned_to' => $defaultAssignee,
+            ]);
+
+            // Create a new lead deal
+            Deal::create([
+                'customer_id' => $customer->id,
+                'title' => 'Painting Estimate - '.($this->name ?: $this->email),
+                'stage' => 'lead',
+                'lead_source' => 'website',
+                'created_by' => $createdBy,
+            ]);
+        }
+
         $thread = ChatThread::create([
             'type' => ChatThread::TYPE_SUPPORT,
             'subject' => 'Support: '.($this->name ?: $this->email),
+            'customer_id' => $customer->id,
             'last_message_at' => now(),
         ]);
+
+        // Add customer user as participant so they appear in communications hub
+        $thread->addParticipant($customerUser);
 
         $internalUsers = User::where('type', 'internal')->get();
         foreach ($internalUsers as $user) {
             $thread->addParticipant($user);
+        }
+
+        // Send the welcome greeting from messenger settings as the first chat message
+        $greeting = MessengerSetting::getInstance()->widget_greeting_logged_out;
+        if ($greeting) {
+            $assignee = $customer->assigned_to ? User::find($customer->assigned_to) : null;
+            $greetingUser = $assignee ?? $internalUsers->first();
+            if ($greetingUser) {
+                app(ChatService::class)->sendMessage($thread, $greetingUser, $greeting);
+            }
         }
 
         $uuid = Str::uuid()->toString();
@@ -57,7 +121,8 @@ new class extends Component {
             'city' => null,
             'user_agent' => request()->userAgent(),
             'chat_thread_id' => $thread->id,
-            'status' => 'active',
+            'user_id' => $customerUser->id,
+            'status' => 'converted',
             'started_at' => now(),
             'metadata' => [
                 'page_url' => request()->header('Referer'),

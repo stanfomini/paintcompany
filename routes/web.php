@@ -16,6 +16,7 @@ use App\Http\Controllers\StripeWebhookController;
 use App\Http\Controllers\SubcontractorExportController;
 use App\Http\Controllers\VideoCallPlaybackController;
 use App\Http\Controllers\VideoRecordingPlaybackController;
+use App\Http\Controllers\VideoRecordingStreamController;
 use App\Http\Controllers\VideoRecordingUploadController;
 use App\Http\Middleware\SetLocale;
 use Illuminate\Support\Facades\Route;
@@ -190,6 +191,8 @@ Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-calls/{vi
 
 // Video recording API (standalone walkaround recorder, all authenticated user types)
 Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-recordings')->group(function () {
+    Route::get('/{recording}/stream', [VideoRecordingStreamController::class, 'stream'])->name('video-recordings.stream');
+    Route::get('/{recording}/thumbnail', [VideoRecordingStreamController::class, 'thumbnail'])->name('video-recordings.thumbnail');
     Route::post('/', [VideoRecordingUploadController::class, 'store'])->name('video-recordings.store');
     Route::post('/start', [VideoRecordingUploadController::class, 'startChunkedUpload'])->name('video-recordings.start');
     Route::post('/{recording}/chunk', [VideoRecordingUploadController::class, 'uploadChunk'])->name('video-recordings.chunk');
@@ -345,9 +348,13 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
             ->name('area-templates.edit');
     });
 
+    // Communications hub (unified chat + email)
+    Route::livewire('/communications', 'communications.hub')
+        ->name('communications.index');
+
     // Chat routes
     Route::middleware(['permission:chat.access'])->group(function () {
-        Route::livewire('/chat', 'chat.thread-list')->name('chat.index');
+        Route::redirect('/chat', '/communications')->name('chat.index');
         Route::livewire('/chat/{thread}', 'chat.thread-view')->name('chat.show');
     });
 

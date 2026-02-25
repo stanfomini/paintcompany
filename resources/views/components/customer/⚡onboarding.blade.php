@@ -355,16 +355,33 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
             return;
         }
 
-        $deal = Deal::create([
-            'customer_id' => $customer->id,
-            'property_id' => $property?->id,
-            'title' => $property
-                ? $property->address.' - '.$customer->first_name.' '.$customer->last_name
-                : 'Painting Estimate - '.$customer->first_name.' '.$customer->last_name,
-            'description' => $this->projectNotes ?: null,
-            'stage' => 'lead',
-            'created_by' => $createdBy,
-        ]);
+        // Reuse an existing bare deal (lead stage, no property, no estimate) if one exists
+        $deal = $customer->deals()
+            ->where('stage', 'lead')
+            ->whereNull('property_id')
+            ->whereDoesntHave('estimates')
+            ->first();
+
+        $title = $property
+            ? $property->address.' - '.$customer->first_name.' '.$customer->last_name
+            : 'Painting Estimate - '.$customer->first_name.' '.$customer->last_name;
+
+        if ($deal) {
+            $deal->update([
+                'property_id' => $property?->id,
+                'title' => $title,
+                'description' => $this->projectNotes ?: $deal->description,
+            ]);
+        } else {
+            $deal = Deal::create([
+                'customer_id' => $customer->id,
+                'property_id' => $property?->id,
+                'title' => $title,
+                'description' => $this->projectNotes ?: null,
+                'stage' => 'lead',
+                'created_by' => $createdBy,
+            ]);
+        }
 
         Estimate::create([
             'deal_id' => $deal->id,
@@ -395,7 +412,15 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
         // Find or create a lead-stage deal
         $deal = $customer->deals()->where('stage', 'lead')->first();
 
-        if (! $deal) {
+        if ($deal) {
+            // Attach property to bare deal if it doesn't have one
+            if (! $deal->property_id && $property) {
+                $deal->update([
+                    'property_id' => $property->id,
+                    'description' => $this->projectNotes ?: $deal->description,
+                ]);
+            }
+        } else {
             $deal = Deal::create([
                 'customer_id' => $customer->id,
                 'property_id' => $property?->id ?? $customer->properties()->latest()->first()?->id,

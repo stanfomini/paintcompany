@@ -15,7 +15,7 @@ beforeEach(function () {
     $this->customerUser = User::factory()->customer()->create();
     $this->customer = Customer::factory()->create(['user_id' => $this->customerUser->id]);
     $this->deal = Deal::factory()->forCustomer($this->customer)->create();
-    $this->estimate = Estimate::factory()->forDeal($this->deal)->sent()->create();
+    $this->estimate = Estimate::factory()->forDeal($this->deal)->draft()->create();
 
     $this->category = EstimateTemplateCategory::factory()->room()->create();
     $this->template = EstimateTemplate::factory()->create([
@@ -86,17 +86,17 @@ describe('Area Carousel - Add Room', function () {
         $component->assertSet('currentAreaIndex', 0);
     });
 
-    it('reports canAddRooms true when no estimator areas exist', function () {
+    it('reports canAddRooms true for draft estimates', function () {
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.estimates.area-carousel', ['estimate' => $this->estimate])
             ->assertSet('canAddRooms', true);
     });
 
-    it('reports canAddRooms false when estimator areas exist', function () {
-        EstimateArea::factory()->forEstimate($this->estimate)->create(['is_customer_added' => false]);
+    it('reports canAddRooms false for sent estimates', function () {
+        $sentEstimate = Estimate::factory()->forDeal($this->deal)->sent()->create();
 
         Livewire::actingAs($this->customerUser, 'customer')
-            ->test('customer.estimates.area-carousel', ['estimate' => $this->estimate])
+            ->test('customer.estimates.area-carousel', ['estimate' => $sentEstimate])
             ->assertSet('canAddRooms', false);
     });
 

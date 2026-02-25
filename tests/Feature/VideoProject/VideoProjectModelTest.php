@@ -135,7 +135,7 @@ it('can create a clip with factory', function () {
 it('clip has source morph relationship', function () {
     $recording = VideoRecording::factory()->ready()->create();
     $clip = VideoProjectClip::factory()->create([
-        'source_type' => VideoRecording::class,
+        'source_type' => 'video-recording',
         'source_id' => $recording->id,
     ]);
     expect($clip->source)->toBeInstanceOf(VideoRecording::class)

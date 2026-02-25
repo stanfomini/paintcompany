@@ -83,6 +83,14 @@ class VideoRecordingFactory extends Factory
         ]);
     }
 
+    public function standalone(): static
+    {
+        return $this->ready()->state(fn () => [
+            'visibility' => 'public',
+            'title' => fake()->sentence(3),
+        ]);
+    }
+
     public function withDescription(): static
     {
         return $this->state(fn () => [

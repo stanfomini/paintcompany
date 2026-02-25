@@ -6,6 +6,7 @@ import { PropertyShowcaseProps, defaultProps } from "./types";
 import { PromoVideo } from "./promo/PromoVideo";
 import { defaultPromoProps } from "./promo/types";
 import { TOTAL_FRAMES, FPS } from "./promo/brand";
+import { PaintingTimelapse, TOTAL_TIMELAPSE_FRAMES, TIMELAPSE_FPS } from "./timelapse/PaintingTimelapse";
 
 // Default props for preview in Remotion Studio
 const previewProps: PropertyShowcaseProps = {
@@ -35,6 +36,16 @@ const previewProps: PropertyShowcaseProps = {
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      {/* Painting Timelapse Video */}
+      <Composition
+        id="PaintingTimelapse"
+        component={PaintingTimelapse}
+        durationInFrames={TOTAL_TIMELAPSE_FRAMES}
+        fps={TIMELAPSE_FPS}
+        width={1920}
+        height={1080}
+      />
+
       {/* Promo Video - Main marketing video */}
       <Composition
         id="PromoVideo"

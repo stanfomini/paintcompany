@@ -23,7 +23,7 @@ class VideoProjectClipFactory extends Factory
         return [
             'video_project_scene_id' => VideoProjectScene::factory(),
             'slot' => 'main',
-            'source_type' => VideoRecording::class,
+            'source_type' => 'video-recording',
             'source_id' => VideoRecording::factory()->ready(),
             'in_point_ms' => 0,
             'volume' => 100,
@@ -49,7 +49,7 @@ class VideoProjectClipFactory extends Factory
     public function fromPhoto(): static
     {
         return $this->state(fn () => [
-            'source_type' => PropertyPhoto::class,
+            'source_type' => 'property-photo',
             'source_id' => PropertyPhoto::factory(),
         ]);
     }

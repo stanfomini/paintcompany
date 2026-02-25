@@ -115,7 +115,7 @@ it('does not send internal message email to non-internal user', function () {
     $job = new SendUnreadChatEmailJob($message, $recipient);
     $job->handle();
 
-    Notification::assertNothingSent();
+    Notification::assertNotSentTo($recipient, UnreadChatMessage::class);
 });
 
 it('sends internal message email to internal user', function () {

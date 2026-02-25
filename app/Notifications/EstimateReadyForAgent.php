@@ -6,6 +6,7 @@ use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Deal;
 use App\Models\Estimate;
+use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -13,7 +14,10 @@ use Illuminate\Notifications\Notification;
 
 class EstimateReadyForAgent extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, RestrictsToUserTypes;
+
+    /** @var array<string> Only agent users should receive this */
+    protected array $allowedUserTypes = ['agent'];
 
     public string $pushCategory = 'estimates';
 
@@ -27,6 +31,10 @@ class EstimateReadyForAgent extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
+        if (! $this->isAllowedRecipient($notifiable)) {
+            return [];
+        }
+
         $channels = [];
 
         if (method_exists($notifiable, 'wantsEmail')) {

@@ -2,6 +2,8 @@
 
 use App\Models\ChatThread;
 use App\Models\Customer;
+use App\Models\EmailAccount;
+use App\Models\EmailMessage;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -18,6 +20,15 @@ new class extends Component
     public Customer $customer;
 
     public string $activeTab = 'all';
+
+    // Reply modal
+    public bool $showReplyModal = false;
+    public ?int $replyToMessageId = null;
+    public ?int $replyAccountId = null;
+
+    public string $replyTo = '';
+    public string $replySubject = '';
+    public string $replyBody = '';
 
     public function mount(Customer $customer): void
     {
@@ -124,6 +135,8 @@ new class extends Component
                 'date' => $email->sent_at ?? $email->created_at,
                 'thread_id' => null,
                 'url' => $threadId ? route('email.inbox', ['threadId' => $threadId]) : route('email.inbox'),
+                'message_id' => $email->id,
+                'direction' => $email->direction,
             ]);
         }
 
@@ -205,6 +218,84 @@ new class extends Component
         })->values();
     }
 
+    public function openReplyModal(int $messageId): void
+    {
+        $message = EmailMessage::find($messageId);
+        if (! $message) {
+            return;
+        }
+
+        $this->replyToMessageId = $messageId;
+        $this->replyTo = $message->from_address;
+        $this->replySubject = str_starts_with(strtolower($message->subject), 're:')
+            ? $message->subject
+            : 'Re: ' . $message->subject;
+
+        // Determine the reply account - prefer shared account, fallback to personal
+        $account = $message->account;
+        if ($account) {
+            $this->replyAccountId = $account->id;
+        } else {
+            $personal = auth()->user()->emailAccount;
+            $this->replyAccountId = $personal?->id;
+        }
+
+        // Quote original message
+        $date = $message->sent_at?->format('M j, Y \a\t g:i A') ?? '';
+        $from = $message->from_name ?? $message->from_address;
+        $this->replyBody = '<br><br><div class="gmail_quote">'
+            . '<p>On ' . $date . ', ' . $from . ' wrote:</p>'
+            . '<blockquote style="border-left: 2px solid #ccc; padding-left: 12px; color: #666;">'
+            . $message->body_html
+            . '</blockquote></div>';
+
+        // Append signature
+        $replyAccount = $this->replyAccountId ? EmailAccount::find($this->replyAccountId) : null;
+        if ($replyAccount?->signature_html) {
+            $this->replyBody = '<br><br><div class="signature">--<br>' . $replyAccount->signature_html . '</div>' . $this->replyBody;
+        }
+
+        $this->showReplyModal = true;
+    }
+
+    public function sendReply(): void
+    {
+        if (! $this->replyTo || ! $this->replyAccountId) {
+            return;
+        }
+
+        $account = EmailAccount::find($this->replyAccountId);
+        if (! $account) {
+            return;
+        }
+
+        $replyToMessage = $this->replyToMessageId ? EmailMessage::find($this->replyToMessageId) : null;
+
+        app(\App\Services\EmailService::class)->send(
+            account: $account,
+            to: [['address' => $this->replyTo, 'name' => null]],
+            subject: $this->replySubject,
+            bodyHtml: $this->replyBody,
+            replyTo: $replyToMessage,
+        );
+
+        $this->showReplyModal = false;
+        $this->replyToMessageId = null;
+        $this->replyTo = '';
+        $this->replySubject = '';
+        $this->replyBody = '';
+        $this->replyAccountId = null;
+
+        // Refresh data
+        unset($this->allItems, $this->emailLinks);
+    }
+
+    public function closeReplyModal(): void
+    {
+        $this->showReplyModal = false;
+        $this->replyToMessageId = null;
+    }
+
     private function getThreadIcon(ChatThread $thread): string
     {
         if ($thread->channel === 'facebook') {
@@ -281,9 +372,7 @@ new class extends Component
                 @else
                     <div class="space-y-2">
                         @foreach ($this->allItems as $index => $item)
-                            <a
-                                href="{{ $item['url'] }}"
-                                wire:navigate
+                            <div
                                 wire:key="all-{{ $index }}"
                                 class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                             >
@@ -292,7 +381,7 @@ new class extends Component
                                         <flux:icon :name="$item['icon']" class="w-4 h-4 {{ $item['type'] === 'email' ? 'text-amber-600 dark:text-amber-400' : ($item['channel'] === 'facebook' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500') }}" />
                                     </div>
                                 </div>
-                                <div class="flex-1 min-w-0">
+                                <a href="{{ $item['url'] }}" wire:navigate class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <flux:text class="font-medium text-sm">{{ $item['label'] }}</flux:text>
                                         <flux:badge size="sm" color="{{ $item['type'] === 'email' ? 'amber' : ($item['channel'] === 'facebook' ? 'blue' : 'zinc') }}">
@@ -300,7 +389,7 @@ new class extends Component
                                         </flux:badge>
                                     </div>
                                     <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">{{ $item['preview'] }}</flux:text>
-                                </div>
+                                </a>
                                 <div class="shrink-0 text-right">
                                     @if ($item['date'])
                                         <flux:text size="xs" class="text-zinc-400">{{ $item['date']->diffForHumans() }}</flux:text>
@@ -308,8 +397,13 @@ new class extends Component
                                     @if ($item['sender'])
                                         <flux:text size="xs" class="text-zinc-400 mt-0.5">{{ $item['sender'] }}</flux:text>
                                     @endif
+                                    @if ($item['type'] === 'email' && isset($item['message_id']) && ($item['direction'] ?? null) === 'inbound')
+                                        <flux:button size="xs" icon="arrow-uturn-left" wire:click.prevent="openReplyModal({{ $item['message_id'] }})" class="mt-1">
+                                            {{ __('Reply') }}
+                                        </flux:button>
+                                    @endif
                                 </div>
-                            </a>
+                            </div>
                         @endforeach
                     </div>
                 @endif
@@ -461,9 +555,7 @@ new class extends Component
                     <div class="space-y-2">
                         @foreach ($this->emailLinks as $link)
                             @if ($link->message)
-                                <a
-                                    href="{{ $link->message->email_thread_id ? route('email.inbox', ['threadId' => $link->message->email_thread_id]) : route('email.inbox') }}"
-                                    wire:navigate
+                                <div
                                     wire:key="email-{{ $link->id }}"
                                     class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                                 >
@@ -472,7 +564,7 @@ new class extends Component
                                             <flux:icon name="envelope" class="w-4 h-4 text-amber-600 dark:text-amber-400" />
                                         </div>
                                     </div>
-                                    <div class="flex-1 min-w-0">
+                                    <a href="{{ $link->message->email_thread_id ? route('email.inbox', ['threadId' => $link->message->email_thread_id]) : route('email.inbox') }}" wire:navigate class="flex-1 min-w-0">
                                         <div class="flex items-center gap-2">
                                             <flux:text class="font-medium text-sm">{{ $link->message->subject ?? __('(No subject)') }}</flux:text>
                                             <flux:badge size="sm" color="{{ $link->message->direction === 'inbound' ? 'green' : 'blue' }}">
@@ -482,7 +574,7 @@ new class extends Component
                                         <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">
                                             {{ Str::limit($link->message->snippet ?? $link->message->body_text ?? '', 80) }}
                                         </flux:text>
-                                    </div>
+                                    </a>
                                     <div class="shrink-0 text-right">
                                         <flux:text size="xs" class="text-zinc-400">
                                             {{ ($link->message->sent_at ?? $link->message->created_at)->diffForHumans() }}
@@ -490,8 +582,13 @@ new class extends Component
                                         <flux:text size="xs" class="text-zinc-400 mt-0.5">
                                             {{ $link->message->from_name ?? $link->message->from_address }}
                                         </flux:text>
+                                        @if ($link->message->direction === 'inbound')
+                                            <flux:button size="xs" icon="arrow-uturn-left" wire:click="openReplyModal({{ $link->message->id }})" class="mt-1">
+                                                {{ __('Reply') }}
+                                            </flux:button>
+                                        @endif
                                     </div>
-                                </a>
+                                </div>
                             @endif
                         @endforeach
                     </div>
@@ -499,4 +596,33 @@ new class extends Component
             @endif
         </div>
     </div>
+
+    {{-- Reply Modal --}}
+    <flux:modal wire:model="showReplyModal" class="max-w-5xl w-[75vw]">
+        <div class="space-y-4">
+            <flux:heading size="lg">{{ __('Reply') }}</flux:heading>
+
+            <div class="space-y-3">
+                <div class="flex items-center gap-2">
+                    <label class="w-12 shrink-0 text-sm text-zinc-500">{{ __('To') }}</label>
+                    <flux:input wire:model="replyTo" size="sm" readonly />
+                </div>
+                <div class="flex items-center gap-2">
+                    <label class="w-12 shrink-0 text-sm text-zinc-500">{{ __('Subject') }}</label>
+                    <flux:input wire:model="replySubject" size="sm" />
+                </div>
+            </div>
+
+            <div>
+                <flux:textarea wire:model="replyBody" rows="12" />
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <flux:button wire:click="closeReplyModal" variant="ghost">{{ __('Cancel') }}</flux:button>
+                <flux:button wire:click="sendReply" variant="primary" icon="paper-airplane">
+                    {{ __('Send Reply') }}
+                </flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>

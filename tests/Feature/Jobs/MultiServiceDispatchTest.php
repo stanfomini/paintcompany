@@ -8,29 +8,22 @@ use App\Services\JobDispatchService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 
-/**
- * Helper to get or create a service category by slug, avoiding unique constraint violations.
- */
-function paintingCategory(): ServiceCategory
-{
-    return ServiceCategory::firstOrCreate(
+beforeEach(function () {
+    $this->paintingCat = ServiceCategory::firstOrCreate(
         ['slug' => 'painting'],
         ['name' => 'Painting', 'description' => 'Interior and exterior painting services', 'icon' => 'paint-brush', 'color' => 'blue', 'is_active' => true, 'sort_order' => 1]
     );
-}
 
-function cleaningCategory(): ServiceCategory
-{
-    return ServiceCategory::firstOrCreate(
+    $this->cleaningCat = ServiceCategory::firstOrCreate(
         ['slug' => 'cleaning'],
         ['name' => 'Cleaning', 'description' => 'Post-painting cleanup and pressure washing', 'icon' => 'sparkles', 'color' => 'green', 'is_active' => true, 'sort_order' => 2]
     );
-}
+});
 
 /**
  * Helper to create a crew user with a specific service category and crew size.
  */
-function createCrewForService(ServiceCategory $category, int $crewSize = 3): User
+function createCrewForServiceCategory(ServiceCategory $category, int $crewSize = 3): User
 {
     $user = User::factory()->crew()->create();
     $user->crewProfile->update([
@@ -43,11 +36,11 @@ function createCrewForService(ServiceCategory $category, int $crewSize = 3): Use
 }
 
 it('getEligibleCrews filters by service_category_id on crew profiles', function () {
-    $painting = paintingCategory();
-    $cleaning = cleaningCategory();
+    $painting = $this->paintingCat;
+    $cleaning = $this->cleaningCat;
 
-    $paintCrew = createCrewForService($painting, 3);
-    $cleanCrew = createCrewForService($cleaning, 3);
+    $paintCrew = createCrewForServiceCategory($painting, 3);
+    $cleanCrew = createCrewForServiceCategory($cleaning, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
     JobServiceRequirement::factory()->create([
@@ -64,10 +57,10 @@ it('getEligibleCrews filters by service_category_id on crew profiles', function 
 });
 
 it('getEligibleCrews filters by crew_size >= required_crew_size', function () {
-    $painting = paintingCategory();
+    $painting = $this->paintingCat;
 
-    $smallCrew = createCrewForService($painting, 2);
-    $largeCrew = createCrewForService($painting, 5);
+    $smallCrew = createCrewForServiceCategory($painting, 2);
+    $largeCrew = createCrewForServiceCategory($painting, 5);
 
     $job = Job::factory()->create(['required_crew_size' => 3]);
     JobServiceRequirement::factory()->create([
@@ -85,8 +78,8 @@ it('getEligibleCrews filters by crew_size >= required_crew_size', function () {
 });
 
 it('dispatchToCrews with a service category tags the pivot with service_category_id', function () {
-    $painting = paintingCategory();
-    $crew = createCrewForService($painting, 3);
+    $painting = $this->paintingCat;
+    $crew = createCrewForServiceCategory($painting, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
     JobServiceRequirement::factory()->create([
@@ -111,8 +104,8 @@ it('dispatchToCrews with a service category tags the pivot with service_category
 });
 
 it('dispatchToCrews updates the JobServiceRequirement status to dispatched', function () {
-    $painting = paintingCategory();
-    $crew = createCrewForService($painting, 3);
+    $painting = $this->paintingCat;
+    $crew = createCrewForServiceCategory($painting, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
     $requirement = JobServiceRequirement::factory()->create([
@@ -130,12 +123,12 @@ it('dispatchToCrews updates the JobServiceRequirement status to dispatched', fun
 });
 
 it('acceptJob scoped to crew service category only auto-rejects same-service crews', function () {
-    $painting = paintingCategory();
-    $cleaning = cleaningCategory();
+    $painting = $this->paintingCat;
+    $cleaning = $this->cleaningCat;
 
-    $paintCrew1 = createCrewForService($painting, 3);
-    $paintCrew2 = createCrewForService($painting, 3);
-    $cleanCrew = createCrewForService($cleaning, 3);
+    $paintCrew1 = createCrewForServiceCategory($painting, 3);
+    $paintCrew2 = createCrewForServiceCategory($painting, 3);
+    $cleanCrew = createCrewForServiceCategory($cleaning, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
 
@@ -170,10 +163,10 @@ it('acceptJob scoped to crew service category only auto-rejects same-service cre
 });
 
 it('acceptJob race condition: only first crew of same service can accept', function () {
-    $painting = paintingCategory();
+    $painting = $this->paintingCat;
 
-    $crew1 = createCrewForService($painting, 3);
-    $crew2 = createCrewForService($painting, 3);
+    $crew1 = createCrewForServiceCategory($painting, 3);
+    $crew2 = createCrewForServiceCategory($painting, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
 
@@ -190,10 +183,10 @@ it('acceptJob race condition: only first crew of same service can accept', funct
 });
 
 it('rejectJob scoped to crew service category', function () {
-    $painting = paintingCategory();
-    $cleaning = cleaningCategory();
+    $painting = $this->paintingCat;
+    $cleaning = $this->cleaningCat;
 
-    $paintCrew = createCrewForService($painting, 3);
+    $paintCrew = createCrewForServiceCategory($painting, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
 
@@ -226,9 +219,9 @@ it('rejectJob scoped to crew service category', function () {
 });
 
 it('replaceCrew revokes accepted crew and opens slot', function () {
-    $painting = paintingCategory();
+    $painting = $this->paintingCat;
 
-    $crew = createCrewForService($painting, 3);
+    $crew = createCrewForServiceCategory($painting, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
     $requirement = JobServiceRequirement::factory()->create([
@@ -264,11 +257,11 @@ it('replaceCrew revokes accepted crew and opens slot', function () {
 });
 
 it('different service types can have independent dispatch', function () {
-    $painting = paintingCategory();
-    $cleaning = cleaningCategory();
+    $painting = $this->paintingCat;
+    $cleaning = $this->cleaningCat;
 
-    $paintCrew = createCrewForService($painting, 3);
-    $cleanCrew = createCrewForService($cleaning, 3);
+    $paintCrew = createCrewForServiceCategory($painting, 3);
+    $cleanCrew = createCrewForServiceCategory($cleaning, 3);
 
     $job = Job::factory()->create(['required_crew_size' => 2]);
 
@@ -321,11 +314,11 @@ it('different service types can have independent dispatch', function () {
 });
 
 it('available jobs for crew filtered by crew service_category_id', function () {
-    $painting = paintingCategory();
-    $cleaning = cleaningCategory();
+    $painting = $this->paintingCat;
+    $cleaning = $this->cleaningCat;
 
-    $paintCrew = createCrewForService($painting, 3);
-    $cleanCrew = createCrewForService($cleaning, 3);
+    $paintCrew = createCrewForServiceCategory($painting, 3);
+    $cleanCrew = createCrewForServiceCategory($cleaning, 3);
 
     $job1 = Job::factory()->create(['title' => 'Paint Job Alpha']);
     $job2 = Job::factory()->create(['title' => 'Clean Job Beta']);

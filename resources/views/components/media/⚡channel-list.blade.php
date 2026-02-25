@@ -22,8 +22,15 @@ new class extends Component {
     #[Computed]
     public function channels()
     {
-        return VideoChannel::query()
-            ->where('user_id', auth()->id())
+        $query = VideoChannel::query();
+
+        if (! auth()->user()?->can('media.manage')) {
+            $query->where('user_id', auth()->id());
+        } else {
+            $query->with('user:id,name');
+        }
+
+        return $query
             ->withCount('items')
             ->orderBy('sort_order')
             ->orderBy('name')
@@ -51,14 +58,16 @@ new class extends Component {
 
     public function toggleActive(int $channelId): void
     {
-        $channel = VideoChannel::where('user_id', auth()->id())->findOrFail($channelId);
+        $channel = VideoChannel::findOrFail($channelId);
+        $this->authorize('update', $channel);
         $channel->update(['is_active' => ! $channel->is_active]);
         unset($this->channels);
     }
 
     public function deleteChannel(int $channelId): void
     {
-        $channel = VideoChannel::where('user_id', auth()->id())->findOrFail($channelId);
+        $channel = VideoChannel::findOrFail($channelId);
+        $this->authorize('delete', $channel);
         $channel->delete();
         unset($this->channels);
     }
@@ -93,6 +102,11 @@ new class extends Component {
                         <flux:text class="text-sm text-zinc-500 mt-0.5">
                             {{ $channel->items_count }} {{ trans_choice('video|videos', $channel->items_count) }}
                             &middot; /watch/{{ $channel->slug }}
+                            @can('media.manage')
+                                @if($channel->user)
+                                    &middot; {{ $channel->user->name }}
+                                @endif
+                            @endcan
                         </flux:text>
                     </div>
                     <div class="flex items-center gap-2 shrink-0 ml-4">

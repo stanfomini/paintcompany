@@ -3,9 +3,11 @@
 namespace App\Jobs;
 
 use App\Events\EmailReceived;
+use App\Models\Customer;
 use App\Models\EmailAccount;
 use App\Models\EmailLabel;
 use App\Models\EmailMessage;
+use App\Models\User;
 use App\Notifications\EmailReceivedNotification;
 use App\Services\EmailThreadingService;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -133,8 +135,107 @@ class ProcessInboundEmailJob implements ShouldQueue
         // 11. Broadcast
         event(new EmailReceived($message));
 
-        // 12. Push notification
-        $account->user->notify(new EmailReceivedNotification($message));
+        // 12. Push notification (skip for replies to automated notification emails)
+        if ($this->isReplyToNotificationEmail($inReplyTo, $references)) {
+            Log::info('Email webhook: skipping notification — reply to automated notification email', [
+                'message_id' => $messageId,
+                'in_reply_to' => $inReplyTo,
+            ]);
+
+            return;
+        }
+
+        $this->notifyRecipients($account, $message);
+    }
+
+    /**
+     * Send notifications to the appropriate recipients based on account type.
+     *
+     * For personal accounts, notifies the account owner.
+     * For shared accounts, uses a priority system:
+     *   1. Customer's assigned rep (if sender matches a known customer)
+     *   2. Default notify user (if no assigned rep found)
+     *   3. All members with receives_notifications enabled (excluding already notified)
+     */
+    private function notifyRecipients(EmailAccount $account, EmailMessage $message): void
+    {
+        if ($account->isPersonal()) {
+            $account->user?->notify(new EmailReceivedNotification($message));
+
+            return;
+        }
+
+        $notifiedUserIds = [];
+
+        // Priority 1: Customer's assigned rep (if sender matches a customer)
+        $customer = Customer::where('email', $message->from_address)->first();
+        if ($customer && $customer->assigned_to) {
+            $assignedUser = User::find($customer->assigned_to);
+            if ($assignedUser) {
+                $assignedUser->notify(new EmailReceivedNotification($message));
+                $notifiedUserIds[] = $assignedUser->id;
+            }
+        }
+
+        // Priority 2: Default notify user (when no assigned rep was found)
+        if (empty($notifiedUserIds) && $account->default_notify_user_id) {
+            $defaultUser = $account->defaultNotifyUser;
+            if ($defaultUser) {
+                $defaultUser->notify(new EmailReceivedNotification($message));
+                $notifiedUserIds[] = $defaultUser->id;
+            }
+        }
+
+        // Priority 3 (or additional): All members with receives_notifications
+        $members = $account->members()
+            ->wherePivot('receives_notifications', true)
+            ->whereNotIn('users.id', $notifiedUserIds)
+            ->get();
+
+        foreach ($members as $member) {
+            $member->notify(new EmailReceivedNotification($message));
+        }
+    }
+
+    /**
+     * Detect if this inbound email is a reply to an automated notification email.
+     *
+     * Notification emails sent via Laravel's mailer (not EmailService) don't create
+     * EmailMessage records. So if In-Reply-To references a message ID with no
+     * matching outbound EmailMessage, the sender is replying to a notification.
+     *
+     * @param  string[]|null  $references
+     */
+    private function isReplyToNotificationEmail(?string $inReplyTo, ?array $references): bool
+    {
+        if (! $inReplyTo && empty($references)) {
+            return false;
+        }
+
+        // Collect all referenced message IDs
+        $referencedIds = collect($references ?? []);
+        if ($inReplyTo) {
+            $referencedIds->push($inReplyTo);
+        }
+        $referencedIds = $referencedIds->unique()->filter()->values();
+
+        if ($referencedIds->isEmpty()) {
+            return false;
+        }
+
+        // If ANY referenced message exists as an outbound EmailMessage, this is
+        // a reply to a real email conversation — not a notification reply.
+        $hasOutboundMatch = EmailMessage::where('direction', 'outbound')
+            ->whereIn('message_id', $referencedIds->all())
+            ->exists();
+
+        if ($hasOutboundMatch) {
+            return false;
+        }
+
+        // If there are referenced IDs but NONE match outbound messages,
+        // this is likely a reply to a notification email.
+        return true;
     }
 
     /**

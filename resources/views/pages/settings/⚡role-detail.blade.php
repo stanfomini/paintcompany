@@ -38,7 +38,7 @@ new class extends Component
      */
     protected function defaultRoleNames(): array
     {
-        return ['owner', 'admin', 'manager', 'estimator', 'hr_manager', 'door_to_door'];
+        return ['owner', 'admin', 'manager', 'estimator', 'hr_manager', 'door_to_door', 'door_knocker'];
     }
 
     /**
@@ -54,6 +54,7 @@ new class extends Component
             'estimator' => __('Create and manage estimates'),
             'hr_manager' => __('Employee management, hiring, onboarding, payroll'),
             'door_to_door' => __('Door knocking, territory claiming, quick video outreach'),
+            'door_knocker' => __('Assigned block knocking, minimal access'),
         ];
     }
 
@@ -70,6 +71,7 @@ new class extends Component
             'estimator' => 'green',
             'hr_manager' => 'cyan',
             'door_to_door' => 'orange',
+            'door_knocker' => 'zinc',
         ];
     }
 
@@ -88,7 +90,7 @@ new class extends Component
             'Jobs' => ['jobs.view', 'jobs.view_all', 'jobs.edit'],
             'Invoices' => ['invoices.view', 'invoices.view_all', 'invoices.create', 'invoices.send', 'invoices.manage'],
             'Payments' => ['payments.view', 'payments.record'],
-            'Planner' => ['planner.view', 'planner.view_all', 'planner.manage'],
+            'Planner' => ['planner.view', 'planner.view_all', 'planner.manage', 'planner.delegate', 'planner.delegate_own'],
             'Production Rates' => ['production_rates.view', 'production_rates.manage'],
             'Agent Listings' => ['agent_listings.view', 'agent_listings.manage'],
             'Email' => ['email.access', 'email.manage'],
@@ -104,6 +106,10 @@ new class extends Component
             'Sales Territories' => ['sales_territories.view', 'sales_territories.manage'],
             'Door Knocks' => ['door_knocks.view', 'door_knocks.record', 'door_knocks.view_all'],
             'Territory Dispatch' => ['territory_dispatch.view', 'territory_dispatch.manage', 'territory_dispatch.claim'],
+            'Territory Hierarchy' => ['territories.manage_regions', 'territories.manage_zones', 'territories.manage_blocks', 'territories.assign_team', 'territories.view_all', 'territories.view_own', 'territories.dispatch_blocks'],
+            'Commission' => ['commission.configure', 'commission.view_all', 'commission.view_team'],
+            'Analytics' => ['analytics.territory_pnl'],
+            'Compensation' => ['compensation.planner'],
             'Referrals' => ['referrals.view', 'referrals.manage'],
             'Business Plan' => ['business_plan.view', 'business_plan.manage'],
             'Roadmap' => ['roadmap.view', 'roadmap.edit', 'roadmap.manage'],
@@ -121,11 +127,19 @@ new class extends Component
             'Scheduling' => ['scheduling.view', 'scheduling.view_all', 'scheduling.manage'],
             'Payroll' => ['payroll.view', 'payroll.manage'],
             'Workflows' => ['workflows.view', 'workflows.manage'],
+            'Messenger' => ['messenger.manage', 'messenger.view', 'messenger.respond'],
+            'Notifications' => [
+                'notify.estimate_accepted', 'notify.estimate_rejected', 'notify.proposal_viewed',
+                'notify.job_created', 'notify.job_stage_advanced',
+                'notify.customer_confirmed_date', 'notify.customer_confirmed_colors', 'notify.customer_proposed_date',
+                'notify.new_account_created', 'notify.new_support_chat', 'notify.new_messenger_lead',
+                'notify.customer_portal_login',
+            ],
             'Settings' => [
                 'settings.company', 'settings.packages', 'settings.allocations',
                 'settings.payment_integrations', 'settings.service_categories',
                 'settings.budget_mappings', 'settings.referral', 'settings.contracts',
-                'settings.lead_sources', 'settings.workflows',
+                'settings.lead_sources', 'settings.workflows', 'settings.messenger',
             ],
             'Administration' => ['team.manage_users', 'team.manage_invitations', 'team.manage_roles', 'admin.access_settings'],
         ];

@@ -26,7 +26,7 @@ class NotifyOnCustomerLogin
         $customerRecord = Customer::where('user_id', $user->id)->first();
         $assignee = $customerRecord?->assignedTo;
 
-        if (! $assignee) {
+        if (! $assignee || ! $assignee->isInternal()) {
             return;
         }
 

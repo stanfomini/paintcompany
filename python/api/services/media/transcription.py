@@ -270,6 +270,7 @@ class TranscriptionService:
             options = {
                 "verbose": verbose,
                 "task": task,
+                "word_timestamps": True,
             }
             if language:
                 options["language"] = language
@@ -277,17 +278,48 @@ class TranscriptionService:
             # Perform transcription
             result = self._model.transcribe(audio_path, **options)
 
-            # Extract and format segments
+            # Extract word-level timestamps and group into caption phrases
             segments = []
             for segment in result.get("segments", []):
-                segments.append(
-                    {
-                        "id": segment.get("id"),
-                        "start": round(segment.get("start", 0), 2),
-                        "end": round(segment.get("end", 0), 2),
-                        "text": segment.get("text", "").strip(),
-                    }
-                )
+                words = segment.get("words", [])
+                if words:
+                    # Group words into phrases of ~4 words for readable captions
+                    phrase_words = []
+                    phrase_start = None
+                    for word_info in words:
+                        w_start = round(word_info.get("start", 0), 2)
+                        w_end = round(word_info.get("end", 0), 2)
+                        w_text = word_info.get("word", "").strip()
+                        if not w_text:
+                            continue
+
+                        if phrase_start is None:
+                            phrase_start = w_start
+
+                        phrase_words.append(w_text)
+
+                        # Emit a caption every ~4 words or at end of segment
+                        if len(phrase_words) >= 4 or word_info is words[-1]:
+                            segments.append(
+                                {
+                                    "id": len(segments),
+                                    "start": phrase_start,
+                                    "end": w_end,
+                                    "text": " ".join(phrase_words),
+                                }
+                            )
+                            phrase_words = []
+                            phrase_start = None
+                else:
+                    # Fallback: no word timestamps available
+                    segments.append(
+                        {
+                            "id": segment.get("id"),
+                            "start": round(segment.get("start", 0), 2),
+                            "end": round(segment.get("end", 0), 2),
+                            "text": segment.get("text", "").strip(),
+                        }
+                    )
 
             # Calculate duration from last segment
             duration = 0.0

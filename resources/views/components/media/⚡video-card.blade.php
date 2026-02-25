@@ -6,6 +6,8 @@ use Livewire\Component;
 new class extends Component {
     public VideoRecording $video;
 
+    public bool $showCreator = false;
+
     public function copyLink(): void
     {
         $url = $this->video->getShareableUrl();
@@ -18,7 +20,7 @@ new class extends Component {
 
     public function delete(): void
     {
-        abort_unless($this->video->user_id === auth()->id(), 403);
+        $this->authorize('delete', $this->video);
         $this->video->delete();
         $this->dispatch('video-deleted');
     }
@@ -69,15 +71,24 @@ new class extends Component {
                         {{ $video->views_count ?? 0 }} {{ __('views') }}
                     </flux:text>
                 </div>
+                @if($showCreator)
+                    <flux:text class="text-xs text-zinc-500">
+                        {{ $video->user?->name ?? __('Company') }}
+                    </flux:text>
+                @endif
             </div>
 
             <flux:dropdown position="bottom" align="end">
                 <flux:button variant="ghost" size="sm" icon="ellipsis-vertical" />
                 <flux:menu>
                     <flux:menu.item icon="link" wire:click="copyLink">{{ __('Copy Link') }}</flux:menu.item>
-                    <flux:menu.item icon="pencil" :href="route('media.video.show', $video)" wire:navigate>{{ __('Edit') }}</flux:menu.item>
-                    <flux:menu.separator />
-                    <flux:menu.item icon="trash" variant="danger" wire:click="delete" wire:confirm="{{ __('Are you sure you want to delete this video?') }}">{{ __('Delete') }}</flux:menu.item>
+                    @can('update', $video)
+                        <flux:menu.item icon="pencil" :href="route('media.video.show', $video)" wire:navigate>{{ __('Edit') }}</flux:menu.item>
+                    @endcan
+                    @can('delete', $video)
+                        <flux:menu.separator />
+                        <flux:menu.item icon="trash" variant="danger" wire:click="delete" wire:confirm="{{ __('Are you sure you want to delete this video?') }}">{{ __('Delete') }}</flux:menu.item>
+                    @endcan
                 </flux:menu>
             </flux:dropdown>
         </div>

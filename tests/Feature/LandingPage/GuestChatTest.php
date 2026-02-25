@@ -1,10 +1,15 @@
 <?php
 
+use App\Jobs\SendWelcomeEmailJob;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
+use App\Models\Customer;
+use App\Models\Deal;
+use App\Models\EmailAccount;
 use App\Models\GuestChatSession;
 use App\Models\Invitation;
+use App\Models\MessengerSetting;
 use App\Models\User;
 use App\Notifications\NewSupportChatNotification;
 use App\Services\ChatService;
@@ -12,6 +17,7 @@ use App\Services\InvitationService;
 use App\Services\ReferralService;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 
 beforeEach(function () {
@@ -30,8 +36,21 @@ it('allows guest to start a chat session with email', function () {
     $session = GuestChatSession::where('email', 'visitor@example.com')->first();
     expect($session)->not->toBeNull()
         ->and($session->name)->toBe('Jane Doe')
-        ->and($session->status)->toBe('active')
-        ->and($session->uuid)->not->toBeEmpty();
+        ->and($session->status)->toBe('converted')
+        ->and($session->uuid)->not->toBeEmpty()
+        ->and($session->user_id)->not->toBeNull();
+
+    // Should auto-create customer and new lead deal
+    $customer = Customer::where('email', 'visitor@example.com')->first();
+    expect($customer)->not->toBeNull()
+        ->and($customer->first_name)->toBe('Jane')
+        ->and($customer->last_name)->toBe('Doe')
+        ->and($customer->source)->toBe('online');
+
+    $deal = Deal::where('customer_id', $customer->id)->first();
+    expect($deal)->not->toBeNull()
+        ->and($deal->stage)->toBe('lead')
+        ->and($deal->lead_source)->toBe('website');
 });
 
 it('creates a support chat thread when starting chat', function () {
@@ -49,6 +68,15 @@ it('creates a support chat thread when starting chat', function () {
 
     // Internal users should be participants
     expect($session->thread->hasParticipant($this->internalUser))->toBeTrue();
+
+    // Customer user should also be a participant (for communications hub)
+    $customerUser = User::where('email', 'visitor@example.com')->first();
+    expect($customerUser)->not->toBeNull();
+    expect($session->thread->hasParticipant($customerUser))->toBeTrue();
+
+    // Thread should be linked to customer
+    $customer = Customer::where('email', 'visitor@example.com')->first();
+    expect($session->thread->customer_id)->toBe($customer->id);
 });
 
 it('allows guest to send a message', function () {
@@ -211,6 +239,70 @@ it('per-user archiving only affects the archiving user', function () {
     // User 2 should still see it
     $user2Threads = $service->getThreadsForUser($user2);
     expect($user2Threads)->toHaveCount(1);
+});
+
+it('assigns customer to default assigned user from messenger settings', function () {
+    Notification::fake();
+    Queue::fake([SendWelcomeEmailJob::class]);
+
+    EmailAccount::factory()->create(['user_id' => $this->internalUser->id]);
+
+    MessengerSetting::clearInstanceCache();
+    $settings = MessengerSetting::getInstance();
+    $settings->update(['default_assigned_to' => $this->internalUser->id]);
+    MessengerSetting::clearInstanceCache();
+
+    Livewire::test('public.guest-chat')
+        ->set('email', 'assigned@example.com')
+        ->set('name', 'Assigned Guest')
+        ->call('startChat');
+
+    $customer = Customer::where('email', 'assigned@example.com')->first();
+    expect($customer)->not->toBeNull()
+        ->and($customer->assigned_to)->toBe($this->internalUser->id)
+        ->and($customer->created_by)->toBe($this->internalUser->id);
+
+    Queue::assertPushed(SendWelcomeEmailJob::class);
+});
+
+it('sends welcome greeting message from messenger settings when chat starts', function () {
+    Notification::fake();
+
+    MessengerSetting::clearInstanceCache();
+    $settings = MessengerSetting::getInstance();
+    $settings->update(['widget_greeting_logged_out' => 'Welcome! We will get back to you shortly.']);
+    MessengerSetting::clearInstanceCache();
+
+    Livewire::test('public.guest-chat')
+        ->set('email', 'greeted@example.com')
+        ->set('name', 'Greeted Guest')
+        ->call('startChat');
+
+    $session = GuestChatSession::where('email', 'greeted@example.com')->first();
+    $messages = ChatMessage::where('thread_id', $session->chat_thread_id)->get();
+
+    expect($messages)->toHaveCount(1);
+    expect($messages->first()->content)->toBe('Welcome! We will get back to you shortly.');
+    expect($messages->first()->user_id)->toBe($this->internalUser->id);
+});
+
+it('does not send welcome greeting when none is configured', function () {
+    Notification::fake();
+
+    MessengerSetting::clearInstanceCache();
+    $settings = MessengerSetting::getInstance();
+    $settings->update(['widget_greeting_logged_out' => null]);
+    MessengerSetting::clearInstanceCache();
+
+    Livewire::test('public.guest-chat')
+        ->set('email', 'nogreeting@example.com')
+        ->set('name', 'No Greeting')
+        ->call('startChat');
+
+    $session = GuestChatSession::where('email', 'nogreeting@example.com')->first();
+    $messages = ChatMessage::where('thread_id', $session->chat_thread_id)->get();
+
+    expect($messages)->toHaveCount(0);
 });
 
 it('backfills guest session user_id when invitation is accepted', function () {

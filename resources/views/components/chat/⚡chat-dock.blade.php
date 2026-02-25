@@ -323,7 +323,7 @@ new class extends Component {
                     {{-- Panel Footer --}}
                     <div class="border-t border-zinc-200 dark:border-zinc-700 px-4 py-2.5 shrink-0">
                         <a
-                            href="{{ route('chat.index') }}"
+                            href="{{ route('communications.index') }}"
                             wire:navigate
                             class="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                         >
@@ -421,7 +421,7 @@ new class extends Component {
                     {{-- Footer --}}
                     <div class="border-t border-zinc-200 dark:border-zinc-700 px-4 py-2.5 shrink-0">
                         <a
-                            href="{{ route('chat.index') }}"
+                            href="{{ route('communications.index') }}"
                             wire:navigate
                             class="block text-center text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                         >

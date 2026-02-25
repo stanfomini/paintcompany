@@ -228,7 +228,7 @@ it('rejects chunks from non-owner', function () {
     Storage::fake('video-recordings');
 
     $owner = User::factory()->internal()->withFullAccess()->create();
-    $other = User::factory()->internal()->withFullAccess()->create();
+    $other = User::factory()->internal()->create();
 
     $recording = VideoRecording::factory()->create([
         'user_id' => $owner->id,
@@ -358,7 +358,7 @@ it('rejects finalize from non-owner', function () {
     Storage::fake('video-recordings');
 
     $owner = User::factory()->internal()->withFullAccess()->create();
-    $other = User::factory()->internal()->withFullAccess()->create();
+    $other = User::factory()->internal()->create();
 
     $recording = VideoRecording::factory()->create([
         'user_id' => $owner->id,
@@ -468,7 +468,7 @@ it('allows owner to update recording title', function () {
 
 it('prevents non-owner from updating recording title', function () {
     $owner = User::factory()->internal()->withFullAccess()->create();
-    $other = User::factory()->internal()->withFullAccess()->create();
+    $other = User::factory()->internal()->create();
     $recording = VideoRecording::factory()->create(['user_id' => $owner->id]);
 
     $this->actingAs($other)
@@ -496,7 +496,7 @@ it('allows owner to delete a recording', function () {
 
 it('prevents non-owner from deleting a recording', function () {
     $owner = User::factory()->internal()->withFullAccess()->create();
-    $other = User::factory()->internal()->withFullAccess()->create();
+    $other = User::factory()->internal()->create();
     $recording = VideoRecording::factory()->create(['user_id' => $owner->id]);
 
     $this->actingAs($other)

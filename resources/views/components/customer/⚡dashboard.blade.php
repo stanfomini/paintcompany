@@ -934,10 +934,10 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
 
                 {{-- Add Rooms CTA --}}
                 @php
+                    $hasDraftEstimate = $estimates->contains(fn ($e) => $e->status === 'draft');
                     $hasAnyAreas = $estimates->contains(fn ($e) => $e->areas->isNotEmpty());
-                    $hasEstimate = $estimates->isNotEmpty();
                 @endphp
-                @if ($hasEstimate && ! $hasAnyAreas)
+                @if ($hasDraftEstimate && ! $hasAnyAreas)
                     <div class="rounded-2xl border-2 border-dashed border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-5 sm:p-6">
                         <div class="flex items-start gap-4">
                             <div class="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center shrink-0">

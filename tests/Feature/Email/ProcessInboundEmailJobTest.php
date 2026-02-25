@@ -183,4 +183,82 @@ describe('ProcessInboundEmailJob', function () {
             }
         );
     });
+
+    it('skips notification when reply references a notification email (no outbound record)', function () {
+        Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
+        Event::fake([EmailReceived::class]);
+        Notification::fake();
+
+        // In-Reply-To references a message ID that has no outbound EmailMessage record
+        // (i.e., it was a Laravel notification email, not sent via EmailService)
+        $notificationMessageId = '<notification-'.fake()->uuid().'@mailgun.org>';
+
+        $payload = buildPayload([
+            'In-Reply-To' => $notificationMessageId,
+            'References' => $notificationMessageId,
+            'subject' => 'Re: Your Estimate is Ready',
+        ]);
+
+        (new ProcessInboundEmailJob($payload))->handle(new \App\Services\EmailThreadingService);
+
+        // Message should still be saved for CRM visibility
+        expect(EmailMessage::count())->toBe(1);
+        expect(EmailMessage::first()->subject)->toBe('Re: Your Estimate is Ready');
+
+        // But no notification should fire (prevents feedback loop)
+        Notification::assertNothingSent();
+    });
+
+    it('sends notification when reply references a real outbound email', function () {
+        Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
+        Event::fake([EmailReceived::class]);
+        Notification::fake();
+
+        // Create an outbound EmailMessage that was sent via EmailService
+        $outboundMessageId = '<outbound-'.fake()->uuid().'@mailgun.org>';
+        $thread = EmailThread::factory()->create(['email_account_id' => $this->account->id]);
+        EmailMessage::factory()->create([
+            'email_thread_id' => $thread->id,
+            'email_account_id' => $this->account->id,
+            'direction' => 'outbound',
+            'message_id' => $outboundMessageId,
+        ]);
+
+        $payload = buildPayload([
+            'In-Reply-To' => $outboundMessageId,
+            'References' => $outboundMessageId,
+            'subject' => 'Re: Follow up on your project',
+        ]);
+
+        (new ProcessInboundEmailJob($payload))->handle(new \App\Services\EmailThreadingService);
+
+        // Message saved
+        expect(EmailMessage::where('direction', 'inbound')->count())->toBe(1);
+
+        // Notification SHOULD fire — this is a real email conversation
+        Notification::assertSentTo(
+            $this->account->user,
+            EmailReceivedNotification::class,
+        );
+    });
+
+    it('sends notification for new emails without In-Reply-To', function () {
+        Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
+        Event::fake([EmailReceived::class]);
+        Notification::fake();
+
+        // No In-Reply-To or References — brand new email
+        $payload = buildPayload([
+            'subject' => 'New inquiry about painting',
+        ]);
+
+        (new ProcessInboundEmailJob($payload))->handle(new \App\Services\EmailThreadingService);
+
+        expect(EmailMessage::count())->toBe(1);
+
+        Notification::assertSentTo(
+            $this->account->user,
+            EmailReceivedNotification::class,
+        );
+    });
 });

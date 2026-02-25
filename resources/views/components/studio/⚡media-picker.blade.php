@@ -11,7 +11,14 @@ new class extends Component {
     public string $activeTab = 'starred';
     public string $search = '';
     public int $page = 1;
-    public bool $showMediaPicker = false;
+    public bool $show = true;
+
+    public function updatedShow(): void
+    {
+        if (! $this->show) {
+            $this->dispatch('media-picker-closed');
+        }
+    }
 
     public function updatedSearch(): void
     {
@@ -73,13 +80,13 @@ new class extends Component {
     public function selectMedia(string $type, int $id): void
     {
         $this->dispatch('media-selected', type: $type, id: $id);
-        $this->showMediaPicker = false;
+        $this->show = false;
     }
 };
 ?>
 
 <div>
-    <flux:modal wire:model="showMediaPicker" class="max-w-4xl">
+    <flux:modal wire:model="show" class="max-w-4xl">
         <div class="p-4">
             <flux:heading size="lg" class="mb-4">{{ __('Select Media') }}</flux:heading>
 

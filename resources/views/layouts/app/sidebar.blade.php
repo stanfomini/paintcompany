@@ -4,10 +4,10 @@
         @include('partials.head')
     </head>
     <body class="min-h-screen bg-white dark:bg-zinc-800 overflow-x-hidden">
-        <flux:sidebar sticky collapsible="mobile" class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
+        <flux:sidebar sticky collapsible class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:sidebar.header>
                 <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
-                <flux:sidebar.collapse class="lg:hidden" />
+                <flux:sidebar.collapse persist />
             </flux:sidebar.header>
 
             <div class="flex justify-center px-4 pb-2">
@@ -50,20 +50,17 @@
                             {{ __('Production Rates') }}
                         </flux:sidebar.item>
                     @endcan
-                    @can('chat.access')
-                        <flux:sidebar.item icon="chat-bubble-left-right" :href="route('chat.index')" :current="request()->routeIs('chat.*')" wire:navigate>
+                    @canany(['chat.access', 'email.access'])
+                        <flux:sidebar.item icon="chat-bubble-left-right" :href="route('communications.index')" :current="request()->routeIs('communications.*')" wire:navigate>
                             <div class="flex items-center justify-between w-full">
-                                {{ __('Messages') }}
-                                @livewire('chat.unread-badge')
+                                {{ __('Communications') }}
+                                @livewire('communications.unread-badge')
                             </div>
                         </flux:sidebar.item>
-                    @endcan
+                    @endcanany
                     @can('email.access')
-                        <flux:sidebar.item icon="at-symbol" :href="route('email.inbox')" :current="request()->routeIs('email.*')" wire:navigate>
-                            <div class="flex items-center justify-between w-full">
-                                {{ __('Email') }}
-                                @livewire('email.unread-badge')
-                            </div>
+                        <flux:sidebar.item icon="envelope" :href="route('email.inbox')" :current="request()->routeIs('email.*')" wire:navigate>
+                            {{ __('Email') }}
                         </flux:sidebar.item>
                     @endcan
                     @can('business_plan.view')

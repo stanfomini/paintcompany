@@ -72,7 +72,7 @@ class EstimateView extends Model
         $deal = $estimate->deal;
         $assignee = $deal?->assignedTo ?? $deal?->customer?->assignedTo;
 
-        if ($assignee) {
+        if ($assignee && $assignee->isInternal()) {
             $assignee->notify(new ProposalViewed($estimate));
         }
     }

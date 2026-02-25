@@ -990,7 +990,7 @@ class Estimate extends Model
 
         $agent = User::find($deal->agent_id);
 
-        if ($agent) {
+        if ($agent && $agent->isAgent()) {
             $agent->notify(new \App\Notifications\EstimateReadyForAgent($this, $deal));
         }
     }

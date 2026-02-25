@@ -4,18 +4,12 @@ use App\Events\CustomerContributionAdded;
 use App\Models\Customer;
 use App\Models\Estimate;
 use App\Models\EstimateTemplate;
-use App\Models\PropertyPhoto;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
-use Livewire\WithFileUploads;
-
 new class extends Component
 {
-    use WithFileUploads;
-
     public Estimate $estimate;
 
     public int $currentAreaIndex = 0;
@@ -28,10 +22,9 @@ new class extends Component
     /** @var array<int, array<string>> */
     public array $areaCustomerChecklists = [];
 
-    /** @var array<\Livewire\Features\SupportFileUploads\TemporaryUploadedFile> */
-    public array $areaPhotos = [];
-
     public bool $showGuide = true;
+
+    public bool $showRoomPicker = false;
 
     /** @var array<string, array<string, string>> */
     private const AREA_CHECKLIST_GROUPS = [
@@ -108,9 +101,7 @@ new class extends Component
     #[Computed]
     public function canAddRooms(): bool
     {
-        return $this->estimate->areas()
-            ->where('is_customer_added', false)
-            ->count() === 0;
+        return $this->estimate->status === 'draft';
     }
 
     #[Computed]
@@ -215,6 +206,7 @@ new class extends Component
 
         $this->areaCustomerNotes[$area->id] = '';
         $this->areaCustomerChecklists[$area->id] = [];
+        $this->showRoomPicker = false;
 
         $user = Auth::guard('customer')->user();
         CustomerContributionAdded::dispatch(
@@ -229,6 +221,11 @@ new class extends Component
     public function onRoomAdded(int $templateId, string $size): void
     {
         $this->addRoom($templateId, $size);
+    }
+
+    public function toggleRoomPicker(): void
+    {
+        $this->showRoomPicker = ! $this->showRoomPicker;
     }
 
     public function removeCustomerRoom(int $areaId): void
@@ -253,37 +250,6 @@ new class extends Component
             'room_removed',
             $user->name,
             "Removed {$areaName}",
-        );
-    }
-
-    public function uploadAreaPhoto(int $areaId): void
-    {
-        $this->validate([
-            'areaPhotos.*' => 'image|max:10240',
-        ]);
-
-        foreach ($this->areaPhotos as $photo) {
-            $storedPath = $photo->store('property-photos', 'public');
-
-            PropertyPhoto::create([
-                'estimate_id' => $this->estimate->id,
-                'estimate_area_id' => $areaId,
-                'path' => $storedPath,
-                'disk' => 'public',
-                'original_filename' => $photo->getClientOriginalName(),
-                'file_size' => $photo->getSize(),
-                'mime_type' => $photo->getMimeType(),
-            ]);
-        }
-
-        $this->areaPhotos = [];
-
-        $user = Auth::guard('customer')->user();
-        CustomerContributionAdded::dispatch(
-            $this->estimate->id,
-            'photo_uploaded',
-            $user->name,
-            'Uploaded photos',
         );
     }
 
@@ -339,12 +305,12 @@ new class extends Component
             setTimeout(() => { this.savedIndicators[areaId] = false; }, 2000);
         },
     }"
-    x-on:keydown.escape.window="$wire.close()"
-    x-on:keydown.arrow-left.window="$wire.previousArea()"
-    x-on:keydown.arrow-right.window="$wire.nextArea()"
+    x-on:keydown.escape.window="if (!document.querySelector('[data-photo-overlay]')) $wire.close()"
+    x-on:keydown.arrow-left.window="if (!document.querySelector('[data-photo-overlay]')) $wire.previousArea()"
+    x-on:keydown.arrow-right.window="if (!document.querySelector('[data-photo-overlay]')) $wire.nextArea()"
     x-on:touchstart.passive="handleTouchStart($event)"
     x-on:touchend.passive="handleTouchEnd($event)"
-    class="fixed inset-0 z-50 bg-white dark:bg-zinc-900 flex flex-col"
+    class="fixed inset-0 z-40 bg-white dark:bg-zinc-900 flex flex-col"
 >
     {{-- Top Bar --}}
     <div class="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 shrink-0">
@@ -372,15 +338,28 @@ new class extends Component
 
             @if ($this->canAddRooms)
                 <button
-                    wire:click="$dispatch('open-room-picker')"
-                    class="flex items-center justify-center w-11 h-11 rounded-xl bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/60 transition-colors shadow-sm"
-                    title="{{ __('Add Room') }}"
+                    wire:click="toggleRoomPicker"
+                    class="flex items-center justify-center w-11 h-11 rounded-xl {{ $showRoomPicker ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400' : 'bg-green-100 dark:bg-green-900/40 text-green-600 dark:text-green-400 hover:bg-green-200 dark:hover:bg-green-800/60' }} transition-colors shadow-sm"
+                    title="{{ $showRoomPicker ? __('Close') : __('Add Room') }}"
                 >
-                    <flux:icon name="plus" class="w-6 h-6" />
+                    <flux:icon :name="$showRoomPicker ? 'x-mark' : 'plus'" class="w-6 h-6" />
                 </button>
             @endif
         </div>
     </div>
+
+    {{-- Room Picker Panel (slides over area content) --}}
+    @if ($showRoomPicker && $this->canAddRooms)
+        <div class="flex-1 overflow-y-auto bg-white dark:bg-zinc-900">
+            <div class="p-4 sm:p-6 max-w-2xl mx-auto w-full">
+                <div class="text-center mb-4">
+                    <flux:heading size="lg">{{ __('Add a Room') }}</flux:heading>
+                    <flux:text class="text-zinc-500 dark:text-zinc-400 text-sm mt-1">{{ __('Pick a room and size, then tap to add it.') }}</flux:text>
+                </div>
+                <livewire:customer.estimates.room-picker :key="'room-picker-panel'" />
+            </div>
+        </div>
+    @else
 
     {{-- First-time Guide Overlay --}}
     @if ($showGuide)
@@ -439,7 +418,7 @@ new class extends Component
 
                 {{-- Tabs --}}
                 <div class="flex gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
-                    @foreach (['details' => 'Details', 'photos' => 'Photos', 'notes' => 'Notes'] as $tabKey => $tabLabel)
+                    @foreach (['details' => 'Details', 'photos' => 'Photos & Videos', 'notes' => 'Notes'] as $tabKey => $tabLabel)
                         <button
                             wire:click="switchTab('{{ $tabKey }}')"
                             wire:key="tab-{{ $tabKey }}"
@@ -518,54 +497,37 @@ new class extends Component
                     @endif
                 @endif
 
-                {{-- Photos Tab --}}
+                {{-- Photos & Videos Tab --}}
                 @if ($activeTab === 'photos')
-                    <div>
-                        <h3 class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-3">{{ __('Photos') }}</h3>
-
-                        {{-- Existing photos for this area --}}
-                        @php
-                            $photos = PropertyPhoto::where('estimate_id', $estimate->id)
-                                ->where('estimate_area_id', $area->id)
-                                ->get();
-                        @endphp
-
-                        @if ($photos->isNotEmpty())
-                            <div class="grid grid-cols-2 gap-2 mb-4">
-                                @foreach ($photos as $photo)
-                                    <div wire:key="area-photo-{{ $photo->id }}" class="relative aspect-square rounded-lg overflow-hidden bg-zinc-100 dark:bg-zinc-800">
-                                        <img src="{{ Storage::disk($photo->disk ?? 'public')->url($photo->path) }}" alt="{{ $photo->original_filename }}" class="w-full h-full object-cover" />
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endif
-
-                        {{-- Upload area --}}
-                        <div class="border-2 border-dashed border-zinc-300 dark:border-zinc-600 rounded-xl p-6 text-center">
-                            <flux:icon name="camera" class="w-8 h-8 mx-auto text-zinc-400 dark:text-zinc-500 mb-2" />
-                            <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mb-3">{{ __('Take a photo or upload from gallery') }}</flux:text>
-                            <label class="inline-flex items-center gap-2 px-4 py-3 bg-blue-600 text-white font-medium text-sm rounded-xl hover:bg-blue-700 cursor-pointer transition-colors min-h-[48px]">
-                                <flux:icon name="arrow-up-tray" class="w-4 h-4" />
-                                {{ __('Upload Photos') }}
-                                <input
-                                    type="file"
-                                    wire:model="areaPhotos"
-                                    accept="image/*"
-                                    capture="environment"
-                                    multiple
-                                    class="hidden"
+                    <div class="space-y-6">
+                        {{-- Photos --}}
+                        <div>
+                            @if ($estimate->deal?->property)
+                                <livewire:shared.photo-gallery
+                                    :property="$estimate->deal->property"
+                                    :estimate="$estimate"
+                                    context="estimate-customer"
+                                    :compact="true"
+                                    :key="'area-photos-'.$area->id.'-'.$estimate->id"
                                 />
-                            </label>
-                            <div wire:loading wire:target="areaPhotos" class="mt-2">
-                                <flux:text class="text-sm text-blue-600 dark:text-blue-400">{{ __('Uploading...') }}</flux:text>
-                            </div>
-                            @if (!empty($areaPhotos))
-                                <div class="mt-3">
-                                    <flux:button wire:click="uploadAreaPhoto({{ $area->id }})" variant="primary" size="sm">
-                                        {{ __('Save Photos') }}
-                                    </flux:button>
+                            @else
+                                <div class="border-2 border-dashed border-zinc-300 dark:border-zinc-600 rounded-xl p-6 text-center">
+                                    <flux:icon name="photo" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-2" />
+                                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
+                                        {{ __('Photos will be available once a property is linked to this project.') }}
+                                    </flux:text>
                                 </div>
                             @endif
+                        </div>
+
+                        {{-- Videos --}}
+                        <div>
+                            <h3 class="text-sm font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-3">{{ __('Videos') }}</h3>
+                            <livewire:estimates.video-walkarounds
+                                :recordable="$estimate"
+                                :readOnly="false"
+                                :key="'area-videos-'.$estimate->id"
+                            />
                         </div>
                     </div>
                 @endif
@@ -622,6 +584,8 @@ new class extends Component
             </div>
         </div>
     @endif
+
+    @endif {{-- end showRoomPicker else --}}
 
     {{-- Bottom Navigation Bar --}}
     @if ($this->totalAreas > 0)

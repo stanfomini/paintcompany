@@ -30,10 +30,12 @@ describe('EmailReceivedNotification', function () {
         $notification = new EmailReceivedNotification($message);
         $channels = $notification->via($user);
 
-        expect($channels)->toBe([WebPushChannel::class]);
+        expect($channels)->toContain(WebPushChannel::class);
+        expect($channels)->toContain('database');
+        expect($channels)->toContain('broadcast');
     });
 
-    it('returns empty channels when user has no push subscription', function () {
+    it('returns database and broadcast channels when user has no push subscription', function () {
         $user = User::factory()->internal()->create();
 
         $thread = EmailThread::factory()->create();
@@ -44,10 +46,12 @@ describe('EmailReceivedNotification', function () {
         $notification = new EmailReceivedNotification($message);
         $channels = $notification->via($user);
 
-        expect($channels)->toBe([]);
+        expect($channels)->not->toContain(WebPushChannel::class);
+        expect($channels)->toContain('database');
+        expect($channels)->toContain('broadcast');
     });
 
-    it('returns empty channels when user has push disabled for email_messages', function () {
+    it('excludes WebPush when user has push disabled for email_messages', function () {
         $user = User::factory()->internal()->create([
             'notification_preferences' => [
                 'email_messages' => ['email' => true, 'push' => false],
@@ -69,7 +73,9 @@ describe('EmailReceivedNotification', function () {
         $notification = new EmailReceivedNotification($message);
         $channels = $notification->via($user);
 
-        expect($channels)->toBe([]);
+        expect($channels)->not->toContain(WebPushChannel::class);
+        expect($channels)->toContain('database');
+        expect($channels)->toContain('broadcast');
     });
 
     it('builds correct WebPushMessage with from_name', function () {

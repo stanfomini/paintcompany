@@ -22,13 +22,24 @@ class EmailReceived implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        $userId = $this->message->account?->user_id;
+        $account = $this->message->account;
 
-        if (! $userId) {
+        if (! $account) {
             return [];
         }
 
-        return [new PrivateChannel('email.user.'.$userId)];
+        // Personal account: single user channel
+        if ($account->isPersonal() && $account->user_id) {
+            return [new PrivateChannel('email.user.'.$account->user_id)];
+        }
+
+        // Shared account: broadcast to all members
+        $channels = [];
+        foreach ($account->members as $member) {
+            $channels[] = new PrivateChannel('email.user.'.$member->id);
+        }
+
+        return $channels;
     }
 
     public function broadcastAs(): string

@@ -12,16 +12,26 @@ class UserObserver
      */
     public function created(User $user): void
     {
-        // Don't notify for internal users (admins create these themselves)
         if ($user->type === 'internal') {
             return;
         }
 
-        // Notify the primary admin (user ID 1)
-        $admin = User::find(1);
+        // Notify all internal users whose role has the notify.new_account_created permission
+        $recipients = User::query()
+            ->where('type', 'internal')
+            ->permission('notify.new_account_created')
+            ->get();
 
-        if ($admin) {
-            $admin->notify(new NewAccountCreated($user));
+        // Fallback: if no permissions are set up yet, notify user ID 1
+        if ($recipients->isEmpty()) {
+            $admin = User::find(1);
+            if ($admin && $admin->isInternal()) {
+                $recipients = collect([$admin]);
+            }
+        }
+
+        foreach ($recipients as $recipient) {
+            $recipient->notify(new NewAccountCreated($user));
         }
     }
 }

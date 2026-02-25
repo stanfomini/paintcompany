@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\MediaStar;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Livewire\Component;
 
 new class extends Component {
@@ -12,17 +13,25 @@ new class extends Component {
     {
         $this->starrableType = $starrableType;
         $this->starrableId = $starrableId;
-        $this->isStarred = MediaStar::where('user_id', auth()->id())
-            ->where('starrable_type', $starrableType)
-            ->where('starrable_id', $starrableId)
-            ->exists();
+        $this->isStarred = $this->resolveModel() !== null
+            && $this->resolveModel()->isStarredBy(auth()->user());
     }
 
     public function toggle(): void
     {
-        $model = $this->starrableType::findOrFail($this->starrableId);
+        $model = $this->resolveModel();
+        if (! $model) {
+            return;
+        }
         $this->isStarred = $model->toggleStar(auth()->user());
         $this->dispatch('star-toggled');
+    }
+
+    private function resolveModel(): ?\Illuminate\Database\Eloquent\Model
+    {
+        $class = Relation::getMorphedModel($this->starrableType) ?? $this->starrableType;
+
+        return $class::find($this->starrableId);
     }
 };
 ?>

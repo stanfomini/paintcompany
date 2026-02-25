@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EmailAccount;
 use App\Models\EmailMessage;
 use App\Models\EmailThread;
 use Livewire\Attributes\Computed;
@@ -8,9 +9,12 @@ use Livewire\Component;
 new class extends Component {
     public int $threadId;
 
-    public function mount(int $threadId): void
+    public ?int $activeAccountId = null;
+
+    public function mount(int $threadId, ?int $activeAccountId = null): void
     {
         $this->threadId = $threadId;
+        $this->activeAccountId = $activeAccountId;
         $this->markThreadAsRead();
     }
 
@@ -26,12 +30,16 @@ new class extends Component {
     #[Computed]
     public function account()
     {
+        if ($this->activeAccountId) {
+            return EmailAccount::find($this->activeAccountId);
+        }
+
         return auth()->user()->emailAccount;
     }
 
     public function markThreadAsRead(): void
     {
-        $account = auth()->user()->emailAccount;
+        $account = $this->account;
         if (! $account) {
             return;
         }

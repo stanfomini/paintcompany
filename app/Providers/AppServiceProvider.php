@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DoorKnock;
 use App\Models\Estimate;
@@ -10,12 +11,14 @@ use App\Models\Job;
 use App\Models\OverheadEntry;
 use App\Models\Payment;
 use App\Models\User;
+use App\Observers\CustomerObserver;
 use App\Observers\InvoiceObserver;
 use App\Observers\OverheadEntryObserver;
 use App\Observers\PaymentObserver;
 use App\Observers\UserObserver;
 use App\Observers\WorkflowModelObserver;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -38,11 +41,13 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureMorphMap();
 
         Payment::observe(PaymentObserver::class);
         OverheadEntry::observe(OverheadEntryObserver::class);
         Invoice::observe(InvoiceObserver::class);
         User::observe(UserObserver::class);
+        Customer::observe(CustomerObserver::class);
 
         // Workflow engine observer — fires on model lifecycle events
         $workflowModels = [Deal::class, Job::class, Estimate::class, Invoice::class, DoorKnock::class, Payment::class];
@@ -54,6 +59,20 @@ class AppServiceProvider extends ServiceProvider
             \Illuminate\Auth\Events\Login::class,
             \App\Listeners\NotifyOnCustomerLogin::class
         );
+
+        // Tag all outgoing notification emails with headers to prevent feedback loops
+        Event::listen(
+            \Illuminate\Mail\Events\MessageSending::class,
+            \App\Listeners\TagNotificationEmails::class
+        );
+    }
+
+    protected function configureMorphMap(): void
+    {
+        Relation::morphMap([
+            'video-recording' => \App\Models\VideoRecording::class,
+            'property-photo' => \App\Models\PropertyPhoto::class,
+        ]);
     }
 
     protected function configureDefaults(): void

@@ -107,7 +107,7 @@ it('prevents duplicate stars for same user and model', function () {
     // Create directly to test unique constraint
     MediaStar::create([
         'user_id' => $user->id,
-        'starrable_type' => VideoRecording::class,
+        'starrable_type' => 'video-recording',
         'starrable_id' => $recording->id,
     ]);
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EmailAccount;
 use App\Models\EmailLabel;
 use App\Models\EmailMessage;
 use Livewire\Attributes\Computed;
@@ -8,6 +9,8 @@ use Livewire\Component;
 
 new class extends Component {
     public string $currentFolder = 'inbox';
+
+    public ?int $activeAccountId = null;
 
     #[On('sidebar-refresh')]
     public function refreshCounts(): void
@@ -18,7 +21,17 @@ new class extends Component {
     #[Computed]
     public function account()
     {
+        if ($this->activeAccountId) {
+            return EmailAccount::find($this->activeAccountId);
+        }
+
         return auth()->user()->emailAccount;
+    }
+
+    #[Computed]
+    public function availableAccounts()
+    {
+        return auth()->user()->allEmailAccounts();
     }
 
     #[Computed]
@@ -44,6 +57,12 @@ new class extends Component {
         ];
     }
 
+    public function updatedActiveAccountId($value): void
+    {
+        $this->dispatch('account-switched', accountId: (int) $value)->to('email.inbox');
+        unset($this->account, $this->folders);
+    }
+
     public function selectFolder(string $slug): void
     {
         $this->dispatch('folder-changed', folder: $slug);
@@ -60,6 +79,19 @@ new class extends Component {
 ?>
 
 <div class="flex h-full flex-col bg-zinc-50 dark:bg-zinc-900">
+    {{-- Account Switcher (only shown when user has multiple accounts) --}}
+    @if ($this->availableAccounts->count() > 1)
+        <div class="px-3 pt-3 pb-1">
+            <flux:select wire:model.live="activeAccountId" size="sm">
+                @foreach ($this->availableAccounts as $acc)
+                    <option value="{{ $acc->id }}">
+                        {{ $acc->isShared() ? '(' . __('Shared') . ') ' : '' }}{{ $acc->address }}@{{ config('email.domain') }}
+                    </option>
+                @endforeach
+            </flux:select>
+        </div>
+    @endif
+
     {{-- Compose Button --}}
     <div class="p-3">
         <flux:button variant="primary" class="w-full" icon="pencil-square"

@@ -5,13 +5,17 @@ namespace App\Notifications;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\GuestChatSession;
+use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class NewSupportChatNotification extends Notification
 {
-    use Queueable;
+    use Queueable, RestrictsToUserTypes;
+
+    /** @var array<string> Only internal users should receive this */
+    protected array $allowedUserTypes = ['internal'];
 
     public string $pushCategory = 'chat';
 
@@ -19,6 +23,10 @@ class NewSupportChatNotification extends Notification
 
     public function via(object $notifiable): array
     {
+        if (! $this->isAllowedRecipient($notifiable)) {
+            return [];
+        }
+
         $channels = [];
 
         if (method_exists($notifiable, 'wantsEmail')) {

@@ -6,6 +6,7 @@ use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Job;
 use App\Models\ServiceCategory;
+use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -13,7 +14,10 @@ use Illuminate\Notifications\Notification;
 
 class CrewJobDispatched extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, RestrictsToUserTypes;
+
+    /** @var array<string> Only crew users should receive this */
+    protected array $allowedUserTypes = ['crew'];
 
     public string $pushCategory = 'jobs';
 
@@ -27,6 +31,10 @@ class CrewJobDispatched extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
+        if (! $this->isAllowedRecipient($notifiable)) {
+            return [];
+        }
+
         $channels = [];
 
         if (method_exists($notifiable, 'wantsEmail')) {

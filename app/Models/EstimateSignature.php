@@ -59,10 +59,11 @@ class EstimateSignature extends Model
                 ]
             );
 
-            // Notify all internal users about the accepted estimate
-            $internalUsers = User::where('type', 'internal')->get();
-            foreach ($internalUsers as $user) {
-                $user->notify(new EstimateAccepted($signature->estimate));
+            // Notify assigned user + role subscribers
+            $recipients = app(\App\Services\NotificationRouter::class)
+                ->resolve('notify.estimate_accepted', $signature->estimate);
+            foreach ($recipients as $recipient) {
+                $recipient->notify(new EstimateAccepted($signature->estimate));
             }
 
             // Create a deal chat thread for the accepted estimate
@@ -71,6 +72,7 @@ class EstimateSignature extends Model
                 $thread = $deal->getOrCreateChatThread();
 
                 // Add internal users as participants
+                $internalUsers = User::where('type', 'internal')->get();
                 foreach ($internalUsers as $user) {
                     if (! $thread->hasParticipant($user)) {
                         $thread->addParticipant($user);

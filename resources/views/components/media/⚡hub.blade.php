@@ -31,6 +31,17 @@ class extends Component {
             {{ __('My Videos') }}
         </flux:button>
 
+        @can('media.manage')
+            <flux:button
+                size="sm"
+                :variant="$tab === 'company-videos' ? 'filled' : 'ghost'"
+                icon="building-office"
+                wire:click="setTab('company-videos')"
+            >
+                {{ __('All Videos') }}
+            </flux:button>
+        @endcan
+
         @can('media.manage_channels')
             <flux:button
                 size="sm"
@@ -63,15 +74,30 @@ class extends Component {
                 {{ __('Analytics') }}
             </flux:button>
         @endcanany
+
+        @can('media.manage')
+            <flux:button
+                size="sm"
+                :variant="$tab === 'landing-page' ? 'filled' : 'ghost'"
+                icon="globe-alt"
+                wire:click="setTab('landing-page')"
+            >
+                {{ __('Landing Page') }}
+            </flux:button>
+        @endcan
     </div>
 
     @if($tab === 'videos')
         @livewire('media.my-videos')
+    @elseif($tab === 'company-videos')
+        @livewire('media.company-videos')
     @elseif($tab === 'channels')
         @livewire('media.channel-list')
     @elseif($tab === 'training')
         @livewire('media.training-list')
     @elseif($tab === 'analytics')
         @livewire('media.analytics-overview')
+    @elseif($tab === 'landing-page')
+        @livewire('media.landing-page-videos')
     @endif
 </div>

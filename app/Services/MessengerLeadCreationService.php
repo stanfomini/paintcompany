@@ -210,7 +210,7 @@ class MessengerLeadCreationService
         }
 
         $user = User::find($settings->default_assigned_to);
-        if (! $user) {
+        if (! $user || ! $user->isInternal()) {
             return;
         }
 

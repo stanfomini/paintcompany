@@ -25,7 +25,17 @@ class GenerateSceneCaptionsJob implements ShouldQueue
 
         $this->scene->overlays()->where('type', 'caption')->delete();
 
+        $sceneDurationMs = $this->scene->getEffectiveDurationMs();
+
         foreach ($segments as $index => $segment) {
+            // Cap end_ms to scene duration so captions don't overflow
+            $endMs = min($segment['end_ms'], $sceneDurationMs);
+
+            // Skip segments that start after the scene ends
+            if ($segment['start_ms'] >= $sceneDurationMs) {
+                continue;
+            }
+
             $this->scene->overlays()->create([
                 'type' => 'caption',
                 'content' => $segment['text'],
@@ -40,7 +50,7 @@ class GenerateSceneCaptionsJob implements ShouldQueue
                 'position_y' => 0.85,
                 'width' => 0.8,
                 'start_ms' => $segment['start_ms'],
-                'end_ms' => $segment['end_ms'],
+                'end_ms' => $endMs,
                 'sort_order' => 900 + $index,
             ]);
         }

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EmailAccount;
 use App\Models\EmailMessage;
 use App\Services\EmailService;
 use Livewire\Attributes\Computed;
@@ -13,6 +14,8 @@ new class extends Component {
     public string $mode = 'new'; // new, reply, reply-all, forward
 
     public ?int $replyToId = null;
+
+    public ?int $accountId = null;
 
     #[Validate('required|string')]
     public string $to = '';
@@ -34,10 +37,11 @@ new class extends Component {
 
     public ?int $draftId = null;
 
-    public function mount(string $mode = 'new', ?int $replyToId = null): void
+    public function mount(string $mode = 'new', ?int $replyToId = null, ?int $accountId = null): void
     {
         $this->mode = $mode;
         $this->replyToId = $replyToId;
+        $this->accountId = $accountId;
 
         if ($replyToId) {
             $this->prefillFromReply();
@@ -47,7 +51,46 @@ new class extends Component {
     #[Computed]
     public function account()
     {
+        if ($this->accountId) {
+            $account = EmailAccount::find($this->accountId);
+            if ($account) {
+                $user = auth()->user();
+
+                if ($account->isPersonal() && $account->user_id === $user->id) {
+                    return $account;
+                }
+
+                if ($account->isShared() && $account->members()->where('users.id', $user->id)->wherePivot('can_send', true)->exists()) {
+                    return $account;
+                }
+            }
+        }
+
         return auth()->user()->emailAccount;
+    }
+
+    #[Computed]
+    public function availableAccounts()
+    {
+        $user = auth()->user();
+        $accounts = collect();
+
+        $personal = $user->emailAccount;
+        if ($personal) {
+            $accounts->push($personal);
+        }
+
+        $shared = $user->sharedEmailAccounts()
+            ->active()
+            ->wherePivot('can_send', true)
+            ->get();
+
+        return $accounts->merge($shared);
+    }
+
+    public function updatedAccountId(): void
+    {
+        unset($this->account);
     }
 
     #[Computed]
@@ -249,6 +292,21 @@ new class extends Component {
 
     {{-- Recipients --}}
     <div class="space-y-2 border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-700 sm:px-4 sm:py-3">
+        @if ($this->availableAccounts->count() > 1)
+            <div class="flex items-center gap-2">
+                <label class="w-8 shrink-0 text-xs text-zinc-500 sm:w-10 sm:text-sm">{{ __('From') }}</label>
+                <div class="min-w-0 flex-1">
+                    <flux:select wire:model.live="accountId" size="sm">
+                        @foreach ($this->availableAccounts as $acc)
+                            <option value="{{ $acc->id }}">
+                                {{ $acc->isShared() ? '(' . __('Shared') . ') ' : '' }}{{ $acc->display_name ?? $acc->address }} &lt;{{ $acc->full_address }}&gt;
+                            </option>
+                        @endforeach
+                    </flux:select>
+                </div>
+            </div>
+        @endif
+
         <div class="flex items-center gap-2">
             <label class="w-8 shrink-0 text-xs text-zinc-500 sm:w-10 sm:text-sm">{{ __('To') }}</label>
             <div class="min-w-0 flex-1">

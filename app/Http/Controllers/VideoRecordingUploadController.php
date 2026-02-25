@@ -28,7 +28,8 @@ class VideoRecordingUploadController extends Controller
         $diskName = config('filesystems.default');
 
         // Store the original file on the default disk (could be S3)
-        $originalPath = 'video-recordings/originals/'.$file->hashName();
+        $extension = $file->guessExtension() ?? 'webm';
+        $originalPath = 'video-recordings/originals/'.Str::uuid().'.'.$extension;
         Storage::put($originalPath, file_get_contents($file->getRealPath()));
 
         // Create the recording record
@@ -117,11 +118,7 @@ class VideoRecordingUploadController extends Controller
             'chunk_index' => ['required', 'integer', 'min:0'],
         ]);
 
-        $user = $request->user();
-
-        if ($recording->user_id !== $user->id) {
-            abort(403, __('You can only upload to your own recordings.'));
-        }
+        $this->authorize('update', $recording);
 
         if ($recording->status !== 'uploading') {
             abort(422, __('Recording is not accepting uploads.'));
@@ -162,11 +159,7 @@ class VideoRecordingUploadController extends Controller
      */
     public function finalizeUpload(Request $request, VideoRecording $recording): JsonResponse
     {
-        $user = $request->user();
-
-        if ($recording->user_id !== $user->id) {
-            abort(403, __('You can only finalize your own recordings.'));
-        }
+        $this->authorize('update', $recording);
 
         if ($recording->status !== 'uploading') {
             abort(422, __('Recording is not in uploading state.'));
@@ -227,11 +220,7 @@ class VideoRecordingUploadController extends Controller
      */
     public function updateTitle(Request $request, VideoRecording $recording): JsonResponse
     {
-        $user = $request->user();
-
-        if ($recording->user_id !== $user->id) {
-            abort(403, __('You can only edit your own recordings.'));
-        }
+        $this->authorize('update', $recording);
 
         $request->validate([
             'title' => ['required', 'string', 'max:255'],
@@ -247,11 +236,7 @@ class VideoRecordingUploadController extends Controller
      */
     public function destroy(Request $request, VideoRecording $recording): JsonResponse
     {
-        $user = $request->user();
-
-        if ($recording->user_id !== $user->id) {
-            abort(403, __('You can only delete your own recordings.'));
-        }
+        $this->authorize('delete', $recording);
 
         // File cleanup handled by VideoRecording::deleting event
         $recording->delete();

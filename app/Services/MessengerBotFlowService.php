@@ -201,7 +201,7 @@ class MessengerBotFlowService
         $settings = MessengerSetting::getInstance();
         if ($settings->default_assigned_to) {
             $user = User::find($settings->default_assigned_to);
-            if ($user) {
+            if ($user && $user->isInternal()) {
                 try {
                     $user->notify(new \App\Notifications\MessengerHumanTakeoverNeeded($conversation));
                 } catch (\Exception $e) {

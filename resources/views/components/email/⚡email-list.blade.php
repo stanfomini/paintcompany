@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\EmailAccount;
 use App\Models\EmailMessage;
 use App\Models\EmailThread;
 use Livewire\Attributes\Computed;
@@ -13,6 +14,8 @@ new class extends Component {
     public string $folder = 'inbox';
 
     public ?int $selectedThreadId = null;
+
+    public ?int $activeAccountId = null;
 
     public string $search = '';
 
@@ -28,6 +31,10 @@ new class extends Component {
     #[Computed]
     public function account()
     {
+        if ($this->activeAccountId) {
+            return EmailAccount::find($this->activeAccountId);
+        }
+
         return auth()->user()->emailAccount;
     }
 

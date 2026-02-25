@@ -265,6 +265,48 @@ it('creates a new project via onboarding flow', function () {
     Notification::assertSentTo($internalUser, NewProjectRequested::class);
 });
 
+it('reuses bare deal when customer completes onboarding', function () {
+    Notification::fake();
+
+    $user = User::factory()->customer()->create(['needs_onboarding' => false]);
+    $customer = Customer::factory()->create(['user_id' => $user->id]);
+    $internalUser = User::factory()->internal()->create();
+
+    // Team creates a bare deal (no property, no estimate)
+    $bareDeal = Deal::factory()->create([
+        'customer_id' => $customer->id,
+        'property_id' => null,
+        'title' => 'Stanford Marketing - Lead',
+        'stage' => 'lead',
+        'created_by' => $internalUser->id,
+    ]);
+
+    Livewire::withQueryParams(['new_project' => true])
+        ->actingAs($user, 'customer')
+        ->test('customer.onboarding')
+        ->assertSet('isNewProject', true)
+        ->set('address', '789 Elm St')
+        ->set('city', 'Boulder')
+        ->set('state', 'CO')
+        ->set('zip', '80301')
+        ->call('nextStep')
+        ->set('projectNotes', 'Full exterior repaint')
+        ->call('nextStep')
+        ->call('selectEstimatePreference', 'in_person');
+
+    // Should NOT create a second deal — reuses the bare one
+    $deals = Deal::where('customer_id', $customer->id)->get();
+    expect($deals)->toHaveCount(1);
+
+    // Bare deal should now have property + estimate attached
+    $bareDeal->refresh();
+    expect($bareDeal->property)->not->toBeNull();
+    expect($bareDeal->property->address)->toBe('789 Elm St');
+    expect($bareDeal->description)->toBe('Full exterior repaint');
+    expect($bareDeal->estimates)->toHaveCount(1);
+    expect($bareDeal->estimates->first()->status)->toBe('draft');
+});
+
 it('redirects returning customer to step 2 for new project', function () {
     $user = User::factory()->customer()->create(['needs_onboarding' => false]);
     $customer = Customer::factory()->create(['user_id' => $user->id]);

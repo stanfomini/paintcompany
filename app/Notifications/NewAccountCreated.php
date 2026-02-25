@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\User;
+use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\BroadcastMessage;
@@ -13,7 +14,10 @@ use Illuminate\Notifications\Notification;
 
 class NewAccountCreated extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use Queueable, RestrictsToUserTypes;
+
+    /** @var array<string> Only internal users should receive this */
+    protected array $allowedUserTypes = ['internal'];
 
     public string $pushCategory = 'general';
 
@@ -24,6 +28,10 @@ class NewAccountCreated extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
+        if (! $this->isAllowedRecipient($notifiable)) {
+            return [];
+        }
+
         $channels = [];
 
         if (method_exists($notifiable, 'wantsEmail')) {

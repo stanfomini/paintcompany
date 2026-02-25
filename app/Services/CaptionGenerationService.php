@@ -20,12 +20,14 @@ class CaptionGenerationService
     {
         $segments = [];
 
-        foreach ($scene->clips()->with('source')->get() as $clip) {
-            if ($clip->source_type !== VideoRecording::class) {
+        foreach ($scene->clips()->get() as $clip) {
+            if ($clip->source_type !== 'video-recording') {
                 continue;
             }
 
-            $recording = $clip->source;
+            // Load recording directly instead of via morph relation
+            // to avoid stale morph map issues in queue workers
+            $recording = VideoRecording::find($clip->source_id);
             if (! $recording || ! $recording->getVideoUrl()) {
                 continue;
             }
@@ -43,8 +45,9 @@ class CaptionGenerationService
             }
 
             foreach ($result['segments'] as $segment) {
-                $startMs = $clip->in_point_ms + (int) ($segment['start'] * 1000);
-                $endMs = $clip->in_point_ms + (int) ($segment['end'] * 1000);
+                $clipOffset = $clip->in_point_ms ?? 0;
+                $startMs = $clipOffset + (int) ($segment['start'] * 1000);
+                $endMs = $clipOffset + (int) ($segment['end'] * 1000);
 
                 $segments[] = [
                     'text' => trim($segment['text']),

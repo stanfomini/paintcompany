@@ -346,6 +346,18 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 
         $this->redirect(route('next-steps'));
     }
+
+    #[Computed]
+    public function videoSections()
+    {
+        return \App\Models\LandingPageVideoSection::query()
+            ->active()
+            ->has('videos')
+            ->with(['videos' => fn ($q) => $q->where('status', 'ready')->orderByPivot('sort_order')])
+            ->orderBy('sort_order')
+            ->get()
+            ->keyBy('slug');
+    }
 }; ?>
 
 <div>
@@ -649,6 +661,52 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         </div>
     </section>
 
+    {{-- Video Section: Tutorials (after Section 4c) --}}
+    @if($this->videoSections->has('tutorials'))
+        @php $videoSection = $this->videoSections->get('tutorials'); @endphp
+        <section wire:key="video-section-tutorials" class="bg-zinc-50 py-16 sm:py-20">
+            <div class="max-w-5xl mx-auto px-4 sm:px-6">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl sm:text-4xl font-bold text-zinc-900 mb-3">{{ $videoSection->title }}</h2>
+                    @if($videoSection->subtitle)
+                        <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $videoSection->subtitle }}</p>
+                    @endif
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    @foreach($videoSection->videos as $video)
+                        <div wire:key="lp-video-{{ $video->id }}" class="group">
+                            <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                <template x-if="!playing">
+                                    <div class="w-full h-full relative">
+                                        @if($video->getThumbnailUrl())
+                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                        @else
+                                            <div class="w-full h-full flex items-center justify-center bg-zinc-200">
+                                                <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                            </div>
+                                        @endif
+                                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                            <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </div>
+                                        </div>
+                                        @if($video->formatted_duration)
+                                            <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                        @endif
+                                    </div>
+                                </template>
+                                <template x-if="playing">
+                                    <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                </template>
+                            </div>
+                            <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </section>
+    @endif
+
     {{-- Section 5: "You're Not Alone" --}}
     <section class="bg-gradient-to-r from-blue-50 to-emerald-50 py-16 sm:py-20">
         <div class="max-w-5xl mx-auto px-4 sm:px-6">
@@ -702,6 +760,52 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             </div>
         </div>
     </section>
+
+    {{-- Video Section: Showcases (after Section 5) --}}
+    @if($this->videoSections->has('showcases'))
+        @php $videoSection = $this->videoSections->get('showcases'); @endphp
+        <section wire:key="video-section-showcases" class="bg-white py-16 sm:py-20">
+            <div class="max-w-5xl mx-auto px-4 sm:px-6">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl sm:text-4xl font-bold text-zinc-900 mb-3">{{ $videoSection->title }}</h2>
+                    @if($videoSection->subtitle)
+                        <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $videoSection->subtitle }}</p>
+                    @endif
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    @foreach($videoSection->videos as $video)
+                        <div wire:key="lp-video-{{ $video->id }}" class="group">
+                            <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                <template x-if="!playing">
+                                    <div class="w-full h-full relative">
+                                        @if($video->getThumbnailUrl())
+                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                        @else
+                                            <div class="w-full h-full flex items-center justify-center bg-zinc-200">
+                                                <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                            </div>
+                                        @endif
+                                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                            <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </div>
+                                        </div>
+                                        @if($video->formatted_duration)
+                                            <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                        @endif
+                                    </div>
+                                </template>
+                                <template x-if="playing">
+                                    <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                </template>
+                            </div>
+                            <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </section>
+    @endif
 
     {{-- Section 6: Value Stack --}}
     <section class="bg-white py-16 sm:py-20">
@@ -774,6 +878,52 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             </div>
         </div>
     </section>
+
+    {{-- Video Section: Testimonials (after Section 7) --}}
+    @if($this->videoSections->has('testimonials'))
+        @php $videoSection = $this->videoSections->get('testimonials'); @endphp
+        <section wire:key="video-section-testimonials" class="bg-zinc-50 py-16 sm:py-20">
+            <div class="max-w-5xl mx-auto px-4 sm:px-6">
+                <div class="text-center mb-10">
+                    <h2 class="text-3xl sm:text-4xl font-bold text-zinc-900 mb-3">{{ $videoSection->title }}</h2>
+                    @if($videoSection->subtitle)
+                        <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $videoSection->subtitle }}</p>
+                    @endif
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    @foreach($videoSection->videos as $video)
+                        <div wire:key="lp-video-{{ $video->id }}" class="group">
+                            <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                <template x-if="!playing">
+                                    <div class="w-full h-full relative">
+                                        @if($video->getThumbnailUrl())
+                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                        @else
+                                            <div class="w-full h-full flex items-center justify-center bg-zinc-200">
+                                                <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                            </div>
+                                        @endif
+                                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                            <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </div>
+                                        </div>
+                                        @if($video->formatted_duration)
+                                            <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                        @endif
+                                    </div>
+                                </template>
+                                <template x-if="playing">
+                                    <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                </template>
+                            </div>
+                            <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+        </section>
+    @endif
 
     {{-- Section 8: Scarcity / Availability --}}
     <section class="bg-gradient-to-r from-amber-50 to-amber-100 py-16 sm:py-20">

@@ -108,7 +108,9 @@ class JobDispatchService
                 JobDispatchedToCrew::dispatch($job, $crewUserId, $category?->id);
 
                 $crewUser = User::find($crewUserId);
-                $crewUser?->notify(new CrewJobDispatched($job, $category));
+                if ($crewUser?->isCrew()) {
+                    $crewUser->notify(new CrewJobDispatched($job, $category));
+                }
             }
 
             $this->plannerAutomation->onCrewDispatched($job, $dispatched);
