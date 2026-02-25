@@ -247,7 +247,7 @@
                             </flux:sidebar.item>
                         @endcan
                         @can('settings.company')
-                            <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio')">
+                            <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio*')" wire:navigate>
                                 {{ __('Studio') }}
                             </flux:sidebar.item>
                         @endcan

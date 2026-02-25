@@ -56,4 +56,9 @@ return [
         'vapid_private_key' => env('VAPID_PRIVATE_KEY'),
     ],
 
+    'remotion' => [
+        'build_secret' => env('REMOTION_BUILD_SECRET', 'remotion-build-secret'),
+        'timeout_minutes' => env('REMOTION_BUILD_TIMEOUT', 15),
+    ],
+
 ];

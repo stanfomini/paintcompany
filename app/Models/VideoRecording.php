@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasStars;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -16,7 +17,7 @@ use Illuminate\Support\Str;
 class VideoRecording extends Model
 {
     /** @use HasFactory<\Database\Factories\VideoRecordingFactory> */
-    use HasFactory;
+    use HasFactory, HasStars;
 
     protected $fillable = [
         'user_id',

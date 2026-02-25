@@ -150,10 +150,30 @@ Route::livewire('/video-call-test/{room?}', 'video-call.test')
     ->middleware(['auth:web,customer,crew,agent'])
     ->name('video-call.test');
 
-// Streaming studio (OBS-style browser broadcasting)
-Route::livewire('/studio/{session?}', 'studio.studio')
+// Guest recording invite (public, no auth - token serves as authentication)
+Route::livewire('/record/{token}', 'studio.public-recorder')
+    ->name('recording.invite')
+    ->middleware('throttle:30,1');
+
+// Studio - Video Editor (project list)
+Route::livewire('/studio', 'studio.project-list')
     ->middleware(['auth:web,agent'])
     ->name('studio');
+
+// Studio - Project Editor
+Route::livewire('/studio/{videoProject}/edit', 'studio.editor')
+    ->middleware(['auth:web,agent'])
+    ->name('studio.edit');
+
+// Studio - Public share view (no auth, token-based)
+Route::livewire('/studio/share/{token}', 'studio.share-view')
+    ->name('studio.share')
+    ->middleware('throttle:60,1');
+
+// Studio - Live Streaming (deprioritized, hidden from nav)
+Route::livewire('/studio/live/{session?}', 'studio.studio')
+    ->middleware(['auth:web,agent'])
+    ->name('studio.live');
 
 // Guest participant join (signed URL, 24-hour expiry)
 Route::livewire('/studio/join/{token}', 'studio.guest-view')
@@ -569,6 +589,11 @@ Route::post('/webhooks/increase', [\App\Http\Controllers\IncreaseWebhookControll
 Route::post('/webhooks/leads/{token}', \App\Http\Controllers\WebhookLeadController::class)
     ->middleware('throttle:60,1')
     ->name('webhook.lead');
+
+// Remotion build callback (verified by API secret header)
+Route::post('/api/remotion/build-complete', \App\Http\Controllers\Api\RemotionBuildCallbackController::class)
+    ->middleware('throttle:30,1')
+    ->name('api.remotion.build-complete');
 
 // AI Build webhooks (verified by API secret header)
 Route::post('/webhooks/ai-build', [\App\Http\Controllers\Api\AiBuildWebhookController::class, 'trigger'])

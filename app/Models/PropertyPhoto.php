@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasStars;
 use App\Services\PhotoUrlService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -12,7 +13,7 @@ use Illuminate\Support\Facades\Storage;
 
 class PropertyPhoto extends Model
 {
-    use HasFactory;
+    use HasFactory, HasStars;
 
     public const CATEGORIES = [
         'before' => 'Before',
