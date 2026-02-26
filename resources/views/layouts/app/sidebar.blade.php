@@ -329,17 +329,7 @@
             @include('partials.flash-messages')
         </div>
 
-        @auth
-            @if (auth()->user()?->isInternal())
-                <div class="pb-14">
-                    {{ $slot }}
-                </div>
-            @else
-                {{ $slot }}
-            @endif
-        @else
-            {{ $slot }}
-        @endauth
+        {{ $slot }}
 
         {{-- Footer action bar + global listeners for internal users --}}
         @auth
