@@ -63,7 +63,7 @@ new class extends Component
 };
 ?>
 
-<div wire:poll.30s="refreshCounts">
+<div wire:poll.30s.visible="refreshCounts">
     {{-- Footer action bar --}}
     <div class="fixed bottom-0 inset-x-0 z-40 lg:pl-64" style="padding-bottom: env(safe-area-inset-bottom, 0px)">
         <div class="flex items-stretch border-t border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
@@ -78,17 +78,19 @@ new class extends Component
                         </span>
                     @endif
                 </div>
-                <span class="hidden sm:inline">{{ __('Notifications') }}</span>
+                <span class="sr-only sm:not-sr-only sm:inline">{{ __('Notifications') }}</span>
             </a>
+
 
             {{-- Record --}}
             @can('media.record')
                 <button
+                    type="button"
                     x-data
                     x-on:click="$dispatch('open-quick-recorder')"
                     class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 transition-colors border-x border-zinc-200 dark:border-zinc-700">
                     <flux:icon name="video-camera" variant="outline" class="size-5" />
-                    <span class="hidden sm:inline">{{ __('Record') }}</span>
+                    <span class="sr-only sm:not-sr-only sm:inline">{{ __('Record') }}</span>
                 </button>
             @endcan
 
@@ -103,7 +105,7 @@ new class extends Component
                         </span>
                     @endif
                 </div>
-                <span class="hidden sm:inline">{{ __('Messages') }}</span>
+                <span class="sr-only sm:not-sr-only sm:inline">{{ __('Messages') }}</span>
             </a>
         </div>
     </div>
