@@ -65,22 +65,13 @@ new class extends Component {
 
 <div
     x-data="quickRecorder({ csrfToken: @js(csrf_token()) })"
+    x-on:open-quick-recorder.window="startCamera()"
     x-on:restore-body-scroll.window="
         document.body.style.overflow = '';
         document.body.style.position = '';
         document.body.style.width = '';
     "
 >
-    {{-- Record button (sits next to notification bell in shared bottom bar) --}}
-    <button
-        type="button"
-        x-show="stage === 'idle'"
-        @click="startCamera()"
-        class="pointer-events-auto w-10 h-10 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-red-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-        title="{{ __('Quick Record') }}"
-    >
-        <flux:icon name="video-camera" class="size-4" />
-    </button>
 
     {{-- Fullscreen Recorder Overlay (teleported to body, same as walkaround) --}}
     <template x-teleport="body">
