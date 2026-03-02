@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\EmailCrmLink;
 use App\Models\EmailMessage;
+use App\Models\GuestChatSession;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -34,130 +35,318 @@ class CommunicationsContactService
             ->distinct()
             ->pluck('user_id');
 
-        if ($contactUserIds->isEmpty()) {
-            return collect();
-        }
-
         // Step 2: Load users with basic info
-        $usersQuery = User::query()->whereIn('id', $contactUserIds);
+        $contacts = collect();
+        $users = collect();
 
-        // Apply search filter
-        if ($search) {
-            $usersQuery->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                    ->orWhere('email', 'like', "%{$search}%");
-            });
-        }
+        if ($contactUserIds->isNotEmpty()) {
+            $usersQuery = User::query()->whereIn('id', $contactUserIds);
 
-        // Apply type filter
-        if ($typeFilter && $typeFilter !== 'all') {
-            $usersQuery->where('type', $typeFilter);
-        }
-
-        $users = $usersQuery->get();
-
-        if ($users->isEmpty()) {
-            return collect();
-        }
-
-        // Step 3: Preload shared threads for all contacts at once
-        $sharedThreads = ChatThread::query()
-            ->forUser($viewer)
-            ->where(function ($q) use ($users) {
-                $q->whereHas('participants', function ($pq) use ($users) {
-                    $pq->whereIn('user_id', $users->pluck('id'))
-                        ->whereNull('left_at');
+            // Apply search filter
+            if ($search) {
+                $usersQuery->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                        ->orWhere('email', 'like', "%{$search}%");
                 });
-            })
-            ->with(['latestMessage.user'])
+            }
+
+            // Apply type filter (only for user-based contacts)
+            if ($typeFilter && $typeFilter !== 'all' && $typeFilter !== 'setter_support') {
+                $usersQuery->where('type', $typeFilter);
+            }
+
+            $users = $usersQuery->get();
+        }
+
+        if ($users->isNotEmpty()) {
+            // Step 3: Preload shared threads for all contacts at once
+            $sharedThreads = ChatThread::query()
+                ->forUser($viewer)
+                ->where(function ($q) use ($users) {
+                    $q->whereHas('participants', function ($pq) use ($users) {
+                        $pq->whereIn('user_id', $users->pluck('id'))
+                            ->whereNull('left_at');
+                    });
+                })
+                ->with(['latestMessage.user'])
+                ->get();
+
+            // Group threads by contact user ID
+            $threadsByContact = collect();
+            foreach ($sharedThreads as $thread) {
+                $participantIds = $thread->activeParticipants()
+                    ->pluck('user_id')
+                    ->filter(fn ($id) => $id !== $viewer->id);
+
+                foreach ($participantIds as $userId) {
+                    if (! $threadsByContact->has($userId)) {
+                        $threadsByContact[$userId] = collect();
+                    }
+                    $threadsByContact[$userId]->push($thread);
+                }
+            }
+
+            // Step 4: Batch-load email data for all contacts upfront to avoid N+1
+            $customerUserIds = $users->where('type', 'customer')->pluck('id');
+            $customersMap = $customerUserIds->isNotEmpty()
+                ? Customer::whereIn('user_id', $customerUserIds)->get()->keyBy('user_id')
+                : collect();
+
+            // Batch-load linked email message IDs for all customers
+            $customerIds = $customersMap->pluck('id');
+            $emailLinksMap = $customerIds->isNotEmpty()
+                ? EmailCrmLink::where('linkable_type', Customer::class)
+                    ->whereIn('linkable_id', $customerIds)
+                    ->get()
+                    ->groupBy('linkable_id')
+                : collect();
+
+            // Batch-load active deal existence for support-only detection
+            $activeDealsSet = $customerIds->isNotEmpty()
+                ? Deal::whereIn('customer_id', $customerIds)
+                    ->whereNotIn('stage', Deal::TERMINAL_STAGES)
+                    ->distinct()
+                    ->pluck('customer_id')
+                    ->flip()
+                : collect();
+
+            // Batch email unread counts and latest dates for linked customers
+            $allLinkedMessageIds = $emailLinksMap->flatten()->pluck('email_message_id')->unique();
+            $emailUnreadByCustomerId = collect();
+            $emailLatestByCustomerId = collect();
+            if ($allLinkedMessageIds->isNotEmpty()) {
+                $emailUnreadByCustomerId = EmailMessage::query()
+                    ->whereIn('email_messages.id', $allLinkedMessageIds)
+                    ->unread()
+                    ->withLabel('inbox')
+                    ->join('email_crm_links', 'email_messages.id', '=', 'email_crm_links.email_message_id')
+                    ->where('email_crm_links.linkable_type', Customer::class)
+                    ->whereIn('email_crm_links.linkable_id', $customerIds)
+                    ->selectRaw('email_crm_links.linkable_id, count(*) as cnt')
+                    ->groupBy('email_crm_links.linkable_id')
+                    ->pluck('cnt', 'linkable_id');
+
+                $emailLatestByCustomerId = EmailMessage::query()
+                    ->whereIn('email_messages.id', $allLinkedMessageIds)
+                    ->join('email_crm_links', 'email_messages.id', '=', 'email_crm_links.email_message_id')
+                    ->where('email_crm_links.linkable_type', Customer::class)
+                    ->whereIn('email_crm_links.linkable_id', $customerIds)
+                    ->selectRaw('email_crm_links.linkable_id, max(email_messages.sent_at) as latest')
+                    ->groupBy('email_crm_links.linkable_id')
+                    ->pluck('latest', 'linkable_id')
+                    ->map(fn ($d) => $d ? \Carbon\Carbon::parse($d) : null);
+            }
+
+            // Build contact array for each user
+            $contacts = $users->map(function (User $user) use ($viewer, $threadsByContact, $customersMap, $activeDealsSet, $emailUnreadByCustomerId, $emailLatestByCustomerId) {
+                $contactThreads = $threadsByContact->get($user->id, collect());
+
+                // Find most recent chat activity across threads
+                $lastChatActivity = $contactThreads
+                    ->pluck('last_message_at')
+                    ->filter()
+                    ->sortDesc()
+                    ->first();
+
+                // Find the most recent email activity for this contact (from batched data)
+                $lastEmailActivity = null;
+                $emailUnread = 0;
+                $customer = $customersMap->get($user->id);
+                if ($customer) {
+                    $lastEmailActivity = $emailLatestByCustomerId->get($customer->id);
+                    $emailUnread = (int) $emailUnreadByCustomerId->get($customer->id, 0);
+                } elseif ($user->email) {
+                    // Fallback for non-customer contacts: single query (rare case)
+                    $lastEmailActivity = $this->getContactLatestEmailDate($user);
+                    $emailUnread = $this->getContactUnreadEmailCount($user);
+                }
+
+                // Use whichever is more recent: chat or email
+                $lastActivity = $lastChatActivity;
+                if ($lastEmailActivity && (! $lastActivity || $lastEmailActivity->gt($lastActivity))) {
+                    $lastActivity = $lastEmailActivity;
+                }
+
+                // Find the most recent message preview
+                $latestThread = $contactThreads
+                    ->filter(fn ($t) => $t->latestMessage !== null)
+                    ->sortByDesc(fn ($t) => $t->last_message_at)
+                    ->first();
+
+                $preview = null;
+                if ($latestThread?->latestMessage) {
+                    $msg = $latestThread->latestMessage;
+                    $senderName = $msg->user?->name ?? 'Unknown';
+                    $preview = $senderName.': '.Str::limit($msg->content, 80);
+                }
+
+                // Calculate combined unread count from chat threads and emails
+                $chatUnread = $contactThreads->sum(
+                    fn (ChatThread $thread) => $thread->getUnreadCountFor($viewer)
+                );
+                $unreadCount = $chatUnread + $emailUnread;
+
+                // Determine if this is a support-only contact (no active deal/estimate)
+                $isSupportOnly = false;
+                if ($user->type === 'customer' && $customer) {
+                    $hasSupportThread = $contactThreads->contains(fn ($t) => $t->type === 'support');
+                    if ($hasSupportThread) {
+                        $isSupportOnly = ! $activeDealsSet->has($customer->id);
+                    }
+                }
+
+                return [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'type' => $user->type,
+                    'avatar_url' => $user->getAvatarUrl(),
+                    'initials' => $user->initials(),
+                    'last_activity_at' => $lastActivity,
+                    'last_message_preview' => $preview,
+                    'unread_count' => $unreadCount,
+                    'has_unread' => $unreadCount > 0,
+                    'is_support_only' => $isSupportOnly,
+                ];
+            });
+
+            // Step 4b: Filter contacts by viewer's permissions
+            $contacts = $this->filterContactsByPermissions($contacts, $viewer, $threadsByContact);
+        }
+
+        // Step 5: Add setter support sessions as virtual contacts
+        // These are appointment setters who chat without user accounts
+        // Only include when type filter is 'all' (setter contacts are not regular user types)
+        if (! $typeFilter || $typeFilter === 'all') {
+            $setterContacts = $this->getSetterSupportContacts($viewer);
+
+            // Apply search filter to setter contacts
+            if ($search) {
+                $setterContacts = $setterContacts->filter(function ($c) use ($search) {
+                    return str_contains(strtolower($c['name']), strtolower($search));
+                })->values();
+            }
+
+            $contacts = $contacts->merge($setterContacts);
+        }
+
+        // Step 6: Sort by last_activity_at descending (nulls last)
+        return $contacts
+            ->sortByDesc(fn ($c) => $c['last_activity_at'] ?? '1970-01-01')
+            ->values();
+    }
+
+    /**
+     * Get setter support sessions as virtual contacts.
+     * These are appointment setters who chat without user accounts.
+     */
+    private function getSetterSupportContacts(User $viewer): Collection
+    {
+        $sessions = GuestChatSession::query()
+            ->whereJsonContains('metadata->source', 'setter_support')
+            ->whereIn('status', ['active', 'converted'])
+            ->whereNotNull('chat_thread_id')
+            ->with(['thread.latestMessage.user'])
             ->get();
 
-        // Group threads by contact user ID
-        $threadsByContact = collect();
-        foreach ($sharedThreads as $thread) {
-            $participantIds = $thread->activeParticipants()
-                ->pluck('user_id')
-                ->filter(fn ($id) => $id !== $viewer->id);
-
-            foreach ($participantIds as $userId) {
-                if (! $threadsByContact->has($userId)) {
-                    $threadsByContact[$userId] = collect();
-                }
-                $threadsByContact[$userId]->push($thread);
-            }
-        }
-
-        // Step 4: Build contact array for each user
-        $contacts = $users->map(function (User $user) use ($viewer, $threadsByContact) {
-            $contactThreads = $threadsByContact->get($user->id, collect());
-
-            // Find most recent chat activity across threads
-            $lastChatActivity = $contactThreads
-                ->pluck('last_message_at')
-                ->filter()
-                ->sortDesc()
-                ->first();
-
-            // Find the most recent email activity for this contact
-            $lastEmailActivity = $this->getContactLatestEmailDate($user);
-
-            // Use whichever is more recent: chat or email
-            $lastActivity = $lastChatActivity;
-            if ($lastEmailActivity && (! $lastActivity || $lastEmailActivity->gt($lastActivity))) {
-                $lastActivity = $lastEmailActivity;
+        return $sessions->map(function (GuestChatSession $session) use ($viewer) {
+            $thread = $session->thread;
+            if (! $thread) {
+                return null;
             }
 
-            // Find the most recent message preview
-            $latestThread = $contactThreads
-                ->filter(fn ($t) => $t->latestMessage !== null)
-                ->sortByDesc(fn ($t) => $t->last_message_at)
-                ->first();
+            $lastActivity = $thread->last_message_at ?? $thread->created_at;
 
             $preview = null;
-            if ($latestThread?->latestMessage) {
-                $msg = $latestThread->latestMessage;
-                $senderName = $msg->user?->name ?? 'Unknown';
-                $preview = $senderName.': '.Str::limit($msg->content, 80);
+            if ($thread->latestMessage) {
+                $senderName = $thread->latestMessage->user?->name ?? ($session->name ?: $session->email);
+                $preview = $senderName.': '.Str::limit($thread->latestMessage->content, 80);
             }
 
-            // Calculate combined unread count from chat threads and emails
-            $chatUnread = $contactThreads->sum(
-                fn (ChatThread $thread) => $thread->getUnreadCountFor($viewer)
-            );
-            $emailUnread = $this->getContactUnreadEmailCount($user);
-            $unreadCount = $chatUnread + $emailUnread;
-
-            // Determine if this is a support-only contact (no active deal/estimate)
-            $isSupportOnly = false;
-            if ($user->type === 'customer') {
-                $hasSupportThread = $contactThreads->contains(fn ($t) => $t->type === 'support');
-                if ($hasSupportThread) {
-                    $customer = Customer::where('user_id', $user->id)->first();
-                    $hasActiveDeal = $customer && $customer->deals()
-                        ->whereNotIn('stage', Deal::TERMINAL_STAGES)
-                        ->exists();
-                    $isSupportOnly = ! $hasActiveDeal;
-                }
-            }
+            $unreadCount = $thread->getUnreadCountFor($viewer);
+            $displayName = ($session->name ?: $session->email).' (Setter)';
+            $initials = strtoupper(substr($session->name ?: $session->email, 0, 2));
 
             return [
-                'id' => $user->id,
-                'name' => $user->name,
-                'type' => $user->type,
-                'avatar_url' => $user->getAvatarUrl(),
-                'initials' => $user->initials(),
+                'id' => 'setter-'.$session->id,
+                'name' => $displayName,
+                'type' => 'setter_support',
+                'avatar_url' => null,
+                'initials' => $initials,
                 'last_activity_at' => $lastActivity,
                 'last_message_preview' => $preview,
                 'unread_count' => $unreadCount,
                 'has_unread' => $unreadCount > 0,
-                'is_support_only' => $isSupportOnly,
+                'is_support_only' => true,
+                'setter_session_id' => $session->id,
+                'thread_id' => $thread->id,
             ];
-        });
+        })->filter()->values();
+    }
 
-        // Step 5: Sort by last_activity_at descending (nulls last)
-        return $contacts
-            ->sortByDesc(fn ($c) => $c['last_activity_at'] ?? '1970-01-01')
-            ->values();
+    /**
+     * Filter contacts based on viewer's chat permissions.
+     * A contact is visible if they share at least one thread the viewer can see.
+     */
+    private function filterContactsByPermissions(
+        Collection $contacts,
+        User $viewer,
+        Collection $threadsByContact
+    ): Collection {
+        // Only apply granular filtering to internal users with roles
+        if (! $viewer->isInternal() || $viewer->roles->isEmpty()) {
+            return $contacts;
+        }
+
+        $canViewDeals = $viewer->can('chat.view_deal_chats');
+        $canViewWebsiteLeads = $viewer->can('chat.view_website_leads');
+        $canViewSetterSupport = $viewer->can('chat.view_setter_support');
+        $canChatInternal = $viewer->can('chat.with_internal');
+        $canChatCustomers = $viewer->can('chat.with_customers');
+        $canChatAgents = $viewer->can('chat.with_agents');
+        $canChatCrew = $viewer->can('chat.with_crew');
+
+        return $contacts->filter(function (array $contact) use (
+            $threadsByContact, $canViewDeals, $canViewWebsiteLeads, $canViewSetterSupport,
+            $canChatInternal, $canChatCustomers, $canChatAgents, $canChatCrew
+        ) {
+            $contactId = $contact['id'];
+            $contactType = $contact['type'];
+            $threads = $threadsByContact->get($contactId, collect());
+
+            if ($threads->isEmpty()) {
+                return false;
+            }
+
+            // Check type-level permission
+            $typeAllowed = match ($contactType) {
+                'internal' => $canChatInternal,
+                'customer' => $canChatCustomers,
+                'agent' => $canChatAgents,
+                'crew' => $canChatCrew,
+                null => true, // null-type users (setters) pass type check; filtered by thread source
+                default => true,
+            };
+
+            if (! $typeAllowed) {
+                return false;
+            }
+
+            // Check if they have at least one visible thread
+            return $threads->contains(function (ChatThread $thread) use (
+                $canViewDeals, $canViewWebsiteLeads, $canViewSetterSupport
+            ) {
+                return match ($thread->type) {
+                    ChatThread::TYPE_DEAL => $canViewDeals,
+                    ChatThread::TYPE_SUPPORT => match ($thread->source) {
+                        ChatThread::SOURCE_WEBSITE_LEAD => $canViewWebsiteLeads,
+                        ChatThread::SOURCE_SETTER_SUPPORT => $canViewSetterSupport,
+                        default => true,
+                    },
+                    ChatThread::TYPE_DIRECT => true,
+                    default => true,
+                };
+            });
+        })->values();
     }
 
     /**
