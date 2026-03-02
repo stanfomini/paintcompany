@@ -21,6 +21,10 @@ class ChatThread extends Model
 
     public const TYPE_SUPPORT = 'support';
 
+    public const SOURCE_WEBSITE_LEAD = 'website_lead';
+
+    public const SOURCE_SETTER_SUPPORT = 'setter_support';
+
     public const CHANNEL_INTERNAL = 'internal';
 
     public const CHANNEL_FACEBOOK = 'facebook';
@@ -28,6 +32,7 @@ class ChatThread extends Model
     protected $fillable = [
         'deal_id',
         'type',
+        'source',
         'channel',
         'customer_id',
         'external_id',
@@ -230,12 +235,41 @@ class ChatThread extends Model
 
     /**
      * Scope to filter threads based on user's view permissions.
-     * Internal users with roles who lack chat.view_deal_chats won't see deal threads.
+     * Internal users with roles are filtered by chat.view_deal_chats,
+     * chat.view_website_leads, and chat.view_setter_support permissions.
      */
     public function scopeVisibleTo(Builder $query, User $user): Builder
     {
-        if ($user->isInternal() && $user->roles->isNotEmpty() && ! $user->can('chat.view_deal_chats')) {
-            return $query->where('type', '!=', self::TYPE_DEAL);
+        if ($user->isInternal() && $user->roles->isNotEmpty()) {
+            $canViewDeals = $user->can('chat.view_deal_chats');
+            $canViewWebsiteLeads = $user->can('chat.view_website_leads');
+            $canViewSetterSupport = $user->can('chat.view_setter_support');
+
+            // Only apply filtering if user is missing at least one permission
+            if (! $canViewDeals || ! $canViewWebsiteLeads || ! $canViewSetterSupport) {
+                $query->where(function (Builder $q) use ($canViewDeals, $canViewWebsiteLeads, $canViewSetterSupport) {
+                    if (! $canViewDeals) {
+                        $q->where('type', '!=', self::TYPE_DEAL);
+                    }
+
+                    if (! $canViewWebsiteLeads && ! $canViewSetterSupport) {
+                        // Block all support threads
+                        $q->where('type', '!=', self::TYPE_SUPPORT);
+                    } elseif (! $canViewWebsiteLeads) {
+                        // Block website lead support threads only
+                        $q->where(function ($sq) {
+                            $sq->where('type', '!=', self::TYPE_SUPPORT)
+                                ->orWhereNot('source', self::SOURCE_WEBSITE_LEAD);
+                        });
+                    } elseif (! $canViewSetterSupport) {
+                        // Block setter support threads only
+                        $q->where(function ($sq) {
+                            $sq->where('type', '!=', self::TYPE_SUPPORT)
+                                ->orWhereNot('source', self::SOURCE_SETTER_SUPPORT);
+                        });
+                    }
+                });
+            }
         }
 
         return $query;

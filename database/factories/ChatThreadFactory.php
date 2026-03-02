@@ -63,6 +63,26 @@ class ChatThreadFactory extends Factory
     }
 
     /**
+     * Set source to website_lead (support thread from landing page).
+     */
+    public function websiteLead(): static
+    {
+        return $this->support()->state(fn (array $attributes) => [
+            'source' => ChatThread::SOURCE_WEBSITE_LEAD,
+        ]);
+    }
+
+    /**
+     * Set source to setter_support.
+     */
+    public function setterSupport(): static
+    {
+        return $this->support()->state(fn (array $attributes) => [
+            'source' => ChatThread::SOURCE_SETTER_SUPPORT,
+        ]);
+    }
+
+    /**
      * Set channel to Facebook (Messenger thread).
      */
     public function facebook(?string $psid = null): static
