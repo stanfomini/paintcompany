@@ -2,6 +2,7 @@
 
 use App\Models\ChatThread;
 use App\Models\User;
+use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Spatie\Permission\PermissionRegistrar;
@@ -95,5 +96,69 @@ describe('Contact visibility permissions', function () {
         $contacts = $service->getContacts($viewer);
 
         expect($contacts->pluck('name')->toArray())->toContain('Multi Thread Customer');
+    });
+});
+
+describe('Unread count scoping', function () {
+    beforeEach(function () {
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        (new RolesAndPermissionsSeeder)->run();
+    });
+
+    it('excludes website lead thread messages from unread count when permission missing', function () {
+        $user = User::factory()->internal()->create();
+        $user->assignRole('estimator');
+
+        $leadUser = User::factory()->customer()->create();
+        $thread = ChatThread::factory()->websiteLead()->betweenUsers($user, $leadUser)->create([
+            'last_message_at' => now(),
+        ]);
+
+        $thread->messages()->create([
+            'user_id' => $leadUser->id,
+            'content' => 'Hello from website',
+            'type' => 'text',
+        ]);
+
+        $count = app(ChatService::class)->getUnreadCountForUser($user);
+        expect($count)->toBe(0);
+    });
+
+    it('includes website lead thread messages when permission granted', function () {
+        $user = User::factory()->internal()->create();
+        $user->assignRole('admin');
+
+        $leadUser = User::factory()->customer()->create();
+        $thread = ChatThread::factory()->websiteLead()->betweenUsers($user, $leadUser)->create([
+            'last_message_at' => now(),
+        ]);
+
+        $thread->messages()->create([
+            'user_id' => $leadUser->id,
+            'content' => 'Hello from website',
+            'type' => 'text',
+        ]);
+
+        $count = app(ChatService::class)->getUnreadCountForUser($user);
+        expect($count)->toBe(1);
+    });
+
+    it('excludes setter support thread messages from unread count when permission missing', function () {
+        $user = User::factory()->internal()->create();
+        $user->assignRole('estimator');
+
+        $setterUser = User::factory()->create(['type' => null]);
+        $thread = ChatThread::factory()->setterSupport()->betweenUsers($user, $setterUser)->create([
+            'last_message_at' => now(),
+        ]);
+
+        $thread->messages()->create([
+            'user_id' => $setterUser->id,
+            'content' => 'Setter needs help',
+            'type' => 'text',
+        ]);
+
+        $count = app(ChatService::class)->getUnreadCountForUser($user);
+        expect($count)->toBe(0);
     });
 });

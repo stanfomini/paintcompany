@@ -4,10 +4,11 @@ namespace App\Services;
 
 use App\Events\MessageRead;
 use App\Events\MessageSent;
-use App\Events\MessageTranslated;
 use App\Events\NewThreadNotification;
 use App\Jobs\SendFacebookMessageJob;
 use App\Jobs\SendUnreadChatEmailJob;
+use App\Jobs\SendUnreadChatSmsJob;
+use App\Jobs\TranslateChatMessageJob;
 use App\Models\ChatMessage;
 use App\Models\ChatParticipant;
 use App\Models\ChatThread;
@@ -19,7 +20,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Stichoza\GoogleTranslate\GoogleTranslate;
 
 class ChatService
 {
@@ -222,8 +222,8 @@ class ChatService
         // Dispatch delayed email for offline participants
         $this->dispatchUnreadEmailJobs($thread, $message, $sender, $isInternal);
 
-        // Translate message inline (real-time)
-        $this->translateMessageInline($message);
+        // Queue translation (non-blocking)
+        TranslateChatMessageJob::dispatch($message);
 
         // Sync to Facebook Messenger if applicable
         $this->syncToFacebookMessenger($thread, $sender, $message, $content);
@@ -281,8 +281,8 @@ class ChatService
 
             $this->dispatchUnreadEmailJobs($thread, $message, $sender, $isInternal);
 
-            // Translate message inline (real-time)
-            $this->translateMessageInline($message);
+            // Queue translation (non-blocking)
+            TranslateChatMessageJob::dispatch($message);
 
             // Sync text content to Facebook Messenger if applicable
             if (! empty($content)) {
@@ -360,8 +360,8 @@ class ChatService
         // Dispatch delayed email for offline participants
         $this->dispatchUnreadEmailJobs($thread, $message, $sender, $isInternal);
 
-        // Translate message inline (real-time)
-        $this->translateMessageInline($message);
+        // Queue translation (non-blocking)
+        TranslateChatMessageJob::dispatch($message);
 
         // Sync transcription to Facebook Messenger if applicable
         $transcription = $audioData['transcription'] ?? '';
@@ -392,13 +392,13 @@ class ChatService
 
         $this->safeBroadcastToOthers(new MessageSent($message->fresh()));
 
-        // Clear old translation and re-translate
+        // Clear old translation and re-translate via queue
         $metadata = $message->metadata ?? [];
         unset($metadata['detected_lang'], $metadata['translations'], $metadata['translation_error']);
         $message->update(['metadata' => $metadata ?: null]);
 
-        // Re-translate inline (real-time)
-        $this->translateMessageInline($message->fresh());
+        // Queue re-translation (non-blocking)
+        TranslateChatMessageJob::dispatch($message->fresh());
 
         return $message;
     }
@@ -451,15 +451,62 @@ class ChatService
 
     /**
      * Get total unread count for a user (excludes per-user archived).
+     * Uses a single SQL query with JOINs instead of loading all threads.
      */
     public function getUnreadCountForUser(User $user): int
     {
-        return ChatThread::query()
-            ->forUser($user)
-            ->visibleTo($user)
-            ->notArchivedBy($user)
-            ->get()
-            ->sum(fn (ChatThread $thread) => $thread->getUnreadCountFor($user));
+        $query = DB::table('chat_messages')
+            ->join('chat_participants', function ($join) use ($user) {
+                $join->on('chat_messages.thread_id', '=', 'chat_participants.thread_id')
+                    ->where('chat_participants.user_id', '=', $user->id)
+                    ->whereNull('chat_participants.left_at')
+                    ->whereNull('chat_participants.archived_at');
+            })
+            ->where('chat_messages.user_id', '!=', $user->id)
+            ->whereNull('chat_messages.deleted_at')
+            ->whereColumn('chat_messages.created_at', '>', DB::raw('COALESCE(chat_participants.last_read_at, \'1970-01-01\')'));
+
+        // Non-internal users can't see internal messages
+        if (! $user->isInternal()) {
+            $query->where('chat_messages.is_internal', false);
+        }
+
+        // Permission-based thread filtering for internal users with roles
+        if ($user->isInternal() && $user->roles->isNotEmpty()) {
+            $needsThreadJoin = ! $user->can('chat.view_deal_chats')
+                || ! $user->can('chat.view_website_leads')
+                || ! $user->can('chat.view_setter_support');
+
+            if ($needsThreadJoin) {
+                $query->join('chat_threads', 'chat_messages.thread_id', '=', 'chat_threads.id');
+
+                if (! $user->can('chat.view_deal_chats')) {
+                    $query->where('chat_threads.type', '!=', ChatThread::TYPE_DEAL);
+                }
+
+                if (! $user->can('chat.view_website_leads')) {
+                    $query->where(function ($q) {
+                        $q->where('chat_threads.type', '!=', ChatThread::TYPE_SUPPORT)
+                            ->orWhere(function ($q2) {
+                                $q2->where('chat_threads.source', '!=', ChatThread::SOURCE_WEBSITE_LEAD)
+                                    ->orWhereNull('chat_threads.source');
+                            });
+                    });
+                }
+
+                if (! $user->can('chat.view_setter_support')) {
+                    $query->where(function ($q) {
+                        $q->where('chat_threads.type', '!=', ChatThread::TYPE_SUPPORT)
+                            ->orWhere(function ($q2) {
+                                $q2->where('chat_threads.source', '!=', ChatThread::SOURCE_SETTER_SUPPORT)
+                                    ->orWhereNull('chat_threads.source');
+                            });
+                    });
+                }
+            }
+        }
+
+        return (int) $query->count();
     }
 
     /**
@@ -586,6 +633,12 @@ class ChatService
         foreach ($participants as $participant) {
             SendUnreadChatEmailJob::dispatch($message, $participant->user)
                 ->delay(now()->addMinutes(5));
+
+            // Also dispatch SMS notification
+            if ($participant->user->wantsSms('chat')) {
+                SendUnreadChatSmsJob::dispatch($message, $participant->user)
+                    ->delay(now()->addMinutes(5));
+            }
         }
     }
 
@@ -606,74 +659,12 @@ class ChatService
 
             SendUnreadChatEmailJob::dispatch($message, $participant->user)
                 ->delay(now()->addMinutes(5));
-        }
-    }
 
-    /**
-     * Translate a message inline using GoogleTranslate (real-time, no queue).
-     */
-    private function translateMessageInline(ChatMessage $message): void
-    {
-        if ($message->isSystem()) {
-            return;
-        }
-
-        $text = trim($message->content);
-
-        if (mb_strlen($text) < 5) {
-            return;
-        }
-
-        $metadata = $message->metadata ?? [];
-
-        if (isset($metadata['detected_lang'])) {
-            return;
-        }
-
-        if (mb_strlen($text) > 5000) {
-            $metadata['translation_error'] = 'text_too_large';
-            $message->update(['metadata' => $metadata]);
-
-            return;
-        }
-
-        try {
-            $tr = app(GoogleTranslate::class);
-            $tr->setSource(null);
-            $tr->setTarget('en');
-
-            $translated = $tr->translate($text);
-            $detectedLang = $tr->getLastDetectedSource();
-
-            $targetLang = $detectedLang === 'en' ? 'es' : 'en';
-
-            if ($detectedLang === $targetLang) {
-                $metadata['detected_lang'] = $detectedLang;
-                $message->update(['metadata' => $metadata]);
-                $this->safeBroadcast(new MessageTranslated($message));
-
-                return;
+            // Also dispatch SMS notification
+            if ($participant->user->wantsSms('chat')) {
+                SendUnreadChatSmsJob::dispatch($message, $participant->user)
+                    ->delay(now()->addMinutes(5));
             }
-
-            if ($targetLang !== 'en') {
-                $tr->setSource(null);
-                $tr->setTarget($targetLang);
-                $translated = $tr->translate($text);
-            }
-
-            $metadata['detected_lang'] = $detectedLang;
-            $metadata['translations'][$targetLang] = $translated;
-            $message->update(['metadata' => $metadata]);
-
-            $this->safeBroadcast(new MessageTranslated($message));
-        } catch (\Exception $e) {
-            Log::error('Chat translation failed', [
-                'message_id' => $message->id,
-                'error' => $e->getMessage(),
-            ]);
-
-            $metadata['translation_error'] = $e->getMessage();
-            $message->update(['metadata' => $metadata]);
         }
     }
 
