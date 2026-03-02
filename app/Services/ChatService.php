@@ -631,15 +631,44 @@ class ChatService
         $participants = $thread->activeParticipants()->with('user')->get();
 
         foreach ($participants as $participant) {
-            SendUnreadChatEmailJob::dispatch($message, $participant->user)
+            $user = $participant->user;
+
+            // Skip if user lacks permission to view this support thread type
+            if (! $this->canViewSupportThread($user, $thread)) {
+                continue;
+            }
+
+            SendUnreadChatEmailJob::dispatch($message, $user)
                 ->delay(now()->addMinutes(5));
 
             // Also dispatch SMS notification
-            if ($participant->user->wantsSms('chat')) {
-                SendUnreadChatSmsJob::dispatch($message, $participant->user)
+            if ($user->wantsSms('chat')) {
+                SendUnreadChatSmsJob::dispatch($message, $user)
                     ->delay(now()->addMinutes(5));
             }
         }
+    }
+
+    /**
+     * Check if a user has permission to view a support thread based on its source.
+     */
+    private function canViewSupportThread(User $user, ChatThread $thread): bool
+    {
+        // Non-internal users or users without roles: no restriction
+        if (! $user->isInternal() || $user->roles->isEmpty()) {
+            return true;
+        }
+
+        // Only apply to support threads
+        if ($thread->type !== ChatThread::TYPE_SUPPORT) {
+            return true;
+        }
+
+        return match ($thread->source) {
+            ChatThread::SOURCE_WEBSITE_LEAD => $user->can('chat.view_website_leads'),
+            ChatThread::SOURCE_SETTER_SUPPORT => $user->can('chat.view_setter_support'),
+            default => true,
+        };
     }
 
     /**

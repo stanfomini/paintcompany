@@ -1,11 +1,13 @@
 <?php
 
+use App\Jobs\SendUnreadChatEmailJob;
 use App\Models\ChatThread;
 use App\Models\GuestChatSession;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -273,5 +275,43 @@ describe('Guest chat sets website_lead source', function () {
 
         expect($thread->hasParticipant($admin))->toBeTrue();
         expect($thread->hasParticipant($hrManager))->toBeFalse();
+    });
+});
+
+describe('Notification permission gating', function () {
+    beforeEach(function () {
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        (new RolesAndPermissionsSeeder)->run();
+    });
+
+    it('does not dispatch unread email to users without support thread permission', function () {
+        Queue::fake();
+
+        $admin = User::factory()->internal()->create();
+        $admin->assignRole('admin');
+
+        $estimator = User::factory()->internal()->create();
+        $estimator->assignRole('estimator');
+
+        $setterUser = User::factory()->create(['type' => null]);
+        $thread = ChatThread::factory()->setterSupport()->betweenUsers($admin, $setterUser)->create([
+            'last_message_at' => now(),
+        ]);
+        // Also add estimator as participant (simulating legacy behavior)
+        $thread->addParticipant($estimator);
+
+        app(ChatService::class)->sendGuestMessage($thread, 'Need help!', [
+            'guest_email' => 'setter@test.com',
+            'source' => 'setter_support',
+        ]);
+
+        // Should dispatch for admin but NOT for estimator
+        Queue::assertPushed(SendUnreadChatEmailJob::class, function ($job) use ($admin) {
+            return $job->recipient->id === $admin->id;
+        });
+
+        Queue::assertNotPushed(SendUnreadChatEmailJob::class, function ($job) use ($estimator) {
+            return $job->recipient->id === $estimator->id;
+        });
     });
 });
