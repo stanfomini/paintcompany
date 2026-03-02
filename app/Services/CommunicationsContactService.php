@@ -8,7 +8,6 @@ use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\EmailCrmLink;
 use App\Models\EmailMessage;
-use App\Models\GuestChatSession;
 use App\Models\User;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -51,7 +50,7 @@ class CommunicationsContactService
             }
 
             // Apply type filter (only for user-based contacts)
-            if ($typeFilter && $typeFilter !== 'all' && $typeFilter !== 'setter_support') {
+            if ($typeFilter && $typeFilter !== 'all') {
                 $usersQuery->where('type', $typeFilter);
             }
 
@@ -213,74 +212,10 @@ class CommunicationsContactService
             $contacts = $this->filterContactsByPermissions($contacts, $viewer, $threadsByContact);
         }
 
-        // Step 5: Add setter support sessions as virtual contacts
-        // These are appointment setters who chat without user accounts
-        // Only include when type filter is 'all' (setter contacts are not regular user types)
-        if (! $typeFilter || $typeFilter === 'all') {
-            $setterContacts = $this->getSetterSupportContacts($viewer);
-
-            // Apply search filter to setter contacts
-            if ($search) {
-                $setterContacts = $setterContacts->filter(function ($c) use ($search) {
-                    return str_contains(strtolower($c['name']), strtolower($search));
-                })->values();
-            }
-
-            $contacts = $contacts->merge($setterContacts);
-        }
-
-        // Step 6: Sort by last_activity_at descending (nulls last)
+        // Step 5: Sort by last_activity_at descending (nulls last)
         return $contacts
             ->sortByDesc(fn ($c) => $c['last_activity_at'] ?? '1970-01-01')
             ->values();
-    }
-
-    /**
-     * Get setter support sessions as virtual contacts.
-     * These are appointment setters who chat without user accounts.
-     */
-    private function getSetterSupportContacts(User $viewer): Collection
-    {
-        $sessions = GuestChatSession::query()
-            ->whereJsonContains('metadata->source', 'setter_support')
-            ->whereIn('status', ['active', 'converted'])
-            ->whereNotNull('chat_thread_id')
-            ->with(['thread.latestMessage.user'])
-            ->get();
-
-        return $sessions->map(function (GuestChatSession $session) use ($viewer) {
-            $thread = $session->thread;
-            if (! $thread) {
-                return null;
-            }
-
-            $lastActivity = $thread->last_message_at ?? $thread->created_at;
-
-            $preview = null;
-            if ($thread->latestMessage) {
-                $senderName = $thread->latestMessage->user?->name ?? ($session->name ?: $session->email);
-                $preview = $senderName.': '.Str::limit($thread->latestMessage->content, 80);
-            }
-
-            $unreadCount = $thread->getUnreadCountFor($viewer);
-            $displayName = ($session->name ?: $session->email).' (Setter)';
-            $initials = strtoupper(substr($session->name ?: $session->email, 0, 2));
-
-            return [
-                'id' => 'setter-'.$session->id,
-                'name' => $displayName,
-                'type' => 'setter_support',
-                'avatar_url' => null,
-                'initials' => $initials,
-                'last_activity_at' => $lastActivity,
-                'last_message_preview' => $preview,
-                'unread_count' => $unreadCount,
-                'has_unread' => $unreadCount > 0,
-                'is_support_only' => true,
-                'setter_session_id' => $session->id,
-                'thread_id' => $thread->id,
-            ];
-        })->filter()->values();
     }
 
     /**
