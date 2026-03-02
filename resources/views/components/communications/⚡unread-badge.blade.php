@@ -16,6 +16,7 @@ new class extends Component
             "echo-private:chat.user.{$userId},.message.sent" => 'refreshCount',
             "echo-private:email.user.{$userId},.email.received" => 'refreshCount',
             'message-sent' => 'refreshCount',
+            'refresh-notification-counts' => 'refreshCount',
         ];
     }
 
@@ -35,11 +36,11 @@ new class extends Component
             $count += app(ChatService::class)->getUnreadCountForUser($user);
         }
 
-        // Email unread
+        // Email unread (all accounts including shared)
         if ($user->can('email.access')) {
-            $account = $user->emailAccount;
-            if ($account) {
-                $count += EmailMessage::where('email_account_id', $account->id)
+            $accountIds = $user->allEmailAccounts()->pluck('id');
+            if ($accountIds->isNotEmpty()) {
+                $count += EmailMessage::whereIn('email_account_id', $accountIds)
                     ->withLabel('inbox')
                     ->unread()
                     ->count();
@@ -51,7 +52,7 @@ new class extends Component
 };
 ?>
 
-<span wire:poll.30s>
+<span wire:poll.60s.visible="refreshCount">
     @if ($this->totalCount > 0)
         <span class="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1 font-medium">
             {{ $this->totalCount > 99 ? '99+' : $this->totalCount }}

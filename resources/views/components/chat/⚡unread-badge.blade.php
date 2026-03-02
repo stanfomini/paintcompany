@@ -20,6 +20,7 @@ new class extends Component {
             "echo-private:chat.user.{$userId},.thread.created" => 'refreshCount',
             "echo-private:chat.user.{$userId},.message.sent" => 'refreshCount',
             'message-sent' => 'refreshCount',
+            'refresh-notification-counts' => 'refreshCount',
         ];
     }
 
@@ -36,7 +37,7 @@ new class extends Component {
 };
 ?>
 
-<span wire:poll.30s>
+<span wire:poll.60s.visible="refreshCount">
     @if ($this->unreadCount > 0)
         <span class="bg-red-500 text-white text-xs rounded-full min-w-5 h-5 flex items-center justify-center px-1 font-medium">
             {{ $this->unreadCount > 99 ? '99+' : $this->unreadCount }}

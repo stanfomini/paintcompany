@@ -5,6 +5,7 @@ use App\Models\ChatThread;
 use App\Models\EmailAccount;
 use App\Models\EmailMessage;
 use App\Models\Customer;
+use App\Models\GuestChatSession;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
@@ -23,7 +24,7 @@ new class extends Component
     }
 
     #[Url]
-    public ?int $contactId = null;
+    public ?string $contactId = null;
 
     public string $search = '';
 
@@ -33,6 +34,10 @@ new class extends Component
 
     // Inline chat state
     public ?int $expandedThreadId = null;
+
+    // Setter support contact state
+    public ?int $setterSessionId = null;
+    public ?int $setterThreadId = null;
 
     // Email thread viewer state
     public ?int $viewingEmailThreadId = null;
@@ -74,7 +79,7 @@ new class extends Component
 
     public function onNewMessage(): void
     {
-        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function onThreadMessage(): void
@@ -99,7 +104,7 @@ new class extends Component
 
     public function refreshData(): void
     {
-        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     #[Computed]
@@ -112,10 +117,31 @@ new class extends Component
         );
     }
 
+    /**
+     * Whether the currently selected contact is a setter support contact.
+     */
+    public function isSetterContact(): bool
+    {
+        return $this->contactId && str_starts_with($this->contactId, 'setter-');
+    }
+
+    /**
+     * Get the selected setter session's data from the contacts list.
+     */
+    #[Computed]
+    public function selectedSetterData(): ?array
+    {
+        if (! $this->isSetterContact()) {
+            return null;
+        }
+
+        return $this->contacts->firstWhere('id', $this->contactId);
+    }
+
     #[Computed]
     public function selectedContact(): ?User
     {
-        if (! $this->contactId) {
+        if (! $this->contactId || $this->isSetterContact()) {
             return null;
         }
 
@@ -125,6 +151,33 @@ new class extends Component
     #[Computed]
     public function contactItems()
     {
+        if ($this->isSetterContact()) {
+            // For setter contacts, show their single support thread
+            if (! $this->setterThreadId) {
+                return collect();
+            }
+            $thread = ChatThread::with(['latestMessage.user'])->find($this->setterThreadId);
+            if (! $thread) {
+                return collect();
+            }
+            return collect([[
+                'type' => 'chat',
+                'channel' => null,
+                'thread_type' => 'support',
+                'icon' => 'lifebuoy',
+                'label' => $thread->subject ?? 'Setter Support',
+                'preview' => $thread->latestMessage
+                    ? ($thread->latestMessage->user?->name ?? 'Guest').': '.\Illuminate\Support\Str::limit($thread->latestMessage->content, 80)
+                    : 'No messages yet',
+                'sender' => $thread->latestMessage?->user?->name,
+                'date' => $thread->last_message_at ?? $thread->created_at,
+                'thread_id' => $thread->id,
+                'url' => route('chat.show', $thread),
+                'message_id' => null,
+                'direction' => null,
+            ]]);
+        }
+
         if (! $this->selectedContact) {
             return collect();
         }
@@ -139,6 +192,17 @@ new class extends Component
     #[Computed]
     public function tabUnreadCounts(): array
     {
+        if ($this->isSetterContact()) {
+            $unread = 0;
+            if ($this->setterThreadId) {
+                $thread = ChatThread::find($this->setterThreadId);
+                if ($thread) {
+                    $unread = $thread->getUnreadCountFor(auth()->user());
+                }
+            }
+            return ['all' => $unread, 'direct' => $unread, 'messenger' => 0, 'deals' => 0, 'emails' => 0];
+        }
+
         if (! $this->selectedContact) {
             return [];
         }
@@ -182,16 +246,30 @@ new class extends Component
         return $chatItems->count() === 1;
     }
 
-    public function selectContact(int $userId): void
+    public function selectContact(string $contactId): void
     {
-        $this->contactId = $userId;
+        $this->contactId = $contactId;
         $this->activeTab = 'all';
         $this->expandedThreadId = null;
+        $this->setterSessionId = null;
+        $this->setterThreadId = null;
+
+        // If this is a setter contact, extract the session/thread info
+        if (str_starts_with($contactId, 'setter-')) {
+            $sessionId = (int) str_replace('setter-', '', $contactId);
+            $session = GuestChatSession::find($sessionId);
+            if ($session) {
+                $this->setterSessionId = $session->id;
+                $this->setterThreadId = $session->chat_thread_id;
+                // Auto-expand the thread
+                $this->expandedThreadId = $session->chat_thread_id;
+            }
+        }
 
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
-        unset($this->contactItems, $this->selectedContact, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function clearContact(): void
@@ -199,11 +277,13 @@ new class extends Component
         $this->contactId = null;
         $this->activeTab = 'all';
         $this->expandedThreadId = null;
+        $this->setterSessionId = null;
+        $this->setterThreadId = null;
 
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
-        unset($this->contactItems, $this->selectedContact, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function setTab(string $tab): void
@@ -329,7 +409,11 @@ new class extends Component
 
         $replyAccount = $this->replyAccountId ? EmailAccount::find($this->replyAccountId) : null;
         if ($replyAccount?->signature_html) {
-            $this->replyBody = '<br><br><div class="signature">--<br>'.$replyAccount->signature_html.'</div>'.$this->replyBody;
+            $sig = $replyAccount->signature_html;
+            if (strip_tags($sig) === $sig) {
+                $sig = nl2br(e($sig));
+            }
+            $this->replyBody = '<br><br><div class="signature">--<br>'.$sig.'</div>'.$this->replyBody;
         }
 
         $this->composingReply = true;
@@ -421,7 +505,7 @@ new class extends Component
 };
 ?>
 
-<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row" wire:poll.30s="refreshData">
+<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row" wire:poll.60s.visible="refreshData">
     {{-- Left Sidebar: Contact List --}}
     <div class="{{ $contactId ? 'hidden md:flex' : 'flex' }} w-full md:w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-700 flex-col h-full">
         {{-- Header --}}
@@ -444,8 +528,8 @@ new class extends Component
             @forelse ($this->contacts as $contact)
                 <button
                     wire:key="contact-{{ $contact['id'] }}"
-                    wire:click="selectContact({{ $contact['id'] }})"
-                    class="w-full text-left px-3 sm:px-4 py-3 border-b border-zinc-100 dark:border-zinc-700/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors {{ $contactId === $contact['id'] ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : '' }}"
+                    wire:click="selectContact('{{ $contact['id'] }}')"
+                    class="w-full text-left px-3 sm:px-4 py-3 border-b border-zinc-100 dark:border-zinc-700/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors {{ $contactId == $contact['id'] ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : '' }}"
                 >
                     <div class="flex items-start gap-3">
                         <div class="relative shrink-0">
@@ -502,7 +586,68 @@ new class extends Component
 
     {{-- Right Panel --}}
     <div class="{{ $contactId ? 'flex' : 'hidden md:flex' }} flex-1 flex-col min-w-0 h-full">
-        @if ($this->selectedContact)
+        @if ($this->isSetterContact() && $this->selectedSetterData)
+            {{-- SETTER SUPPORT CONTACT --}}
+            @php $setter = $this->selectedSetterData; @endphp
+            <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">
+                <button wire:click="clearContact" class="md:hidden shrink-0 p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <flux:icon name="arrow-left" class="size-5" />
+                </button>
+                <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center shrink-0">
+                    <flux:icon name="lifebuoy" class="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <flux:heading size="sm" class="truncate">{{ $setter['name'] }}</flux:heading>
+                        <flux:badge size="sm" class="hidden sm:inline-flex" color="amber">{{ __('Setter Support') }}</flux:badge>
+                    </div>
+                    <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Appointment setter support chat') }}</flux:text>
+                </div>
+            </div>
+
+            {{-- Setter thread as full messenger view --}}
+            @if ($setterThreadId)
+                <div class="flex flex-col flex-1 min-h-0">
+                    <div
+                        x-data="{
+                            scrollToBottom() { this.$el.scrollTop = this.$el.scrollHeight },
+                            init() {
+                                this.$nextTick(() => this.scrollToBottom());
+                                new MutationObserver(() => this.scrollToBottom()).observe(this.$el, { childList: true, subtree: true });
+                            }
+                        }"
+                        class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3"
+                    >
+                        @forelse ($this->threadMessages as $msg)
+                            @php $isOwn = $msg->user_id === auth()->id(); @endphp
+                            <div wire:key="msg-setter-{{ $msg->id }}" class="flex {{ $isOwn ? 'justify-end' : ($msg->user_id ? 'justify-start' : 'justify-start') }}">
+                                <div class="max-w-[80%] sm:max-w-[70%]">
+                                    @if (! $isOwn)
+                                        <p class="text-[11px] text-zinc-400 mb-0.5 px-1">{{ $msg->user?->name ?? ($setter['name'] ?? 'Guest') }}</p>
+                                    @endif
+                                    <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
+                                        <p class="whitespace-pre-wrap break-words">{{ $msg->content }}</p>
+                                        <p class="text-[10px] mt-1 {{ $isOwn ? 'text-blue-200' : 'text-zinc-400' }}">{{ $msg->created_at->format('M j, g:i A') }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        @empty
+                            <div class="text-center py-8">
+                                <flux:text size="sm" class="text-zinc-400">{{ __('No messages in this support thread yet.') }}</flux:text>
+                            </div>
+                        @endforelse
+                    </div>
+
+                    {{-- Reply input --}}
+                    @php $setterThread = ChatThread::find($setterThreadId); @endphp
+                    @if ($setterThread)
+                        <div class="border-t border-zinc-200 dark:border-zinc-700 p-3 sm:p-4 shrink-0 bg-white dark:bg-zinc-900">
+                            @livewire('chat.message-composer', ['thread' => $setterThread], key('composer-setter-' . $setterThread->id))
+                        </div>
+                    @endif
+                </div>
+            @endif
+        @elseif ($this->selectedContact)
             {{-- Contact Header --}}
             <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">
                 <button wire:click="clearContact" class="md:hidden shrink-0 p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">

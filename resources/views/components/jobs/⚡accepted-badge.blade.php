@@ -11,19 +11,12 @@ new class extends Component {
             return [];
         }
 
-        $userId = auth()->id();
-
         return [
-            "echo-private:App.Models.User.{$userId},.Illuminate\\Notifications\\Events\\BroadcastNotificationCreated" => 'handleNotification',
+            'echo-private:internal-jobs,.job.created' => 'refreshCount',
+            'echo-private:internal-jobs,.stage.changed' => 'refreshCount',
             'job-stage-changed' => 'refreshCount',
+            'refresh-notification-counts' => 'refreshCount',
         ];
-    }
-
-    public function handleNotification(array $data): void
-    {
-        if (($data['type'] ?? '') === 'App\\Notifications\\JobCreated') {
-            unset($this->count);
-        }
     }
 
     public function refreshCount(): void
@@ -39,7 +32,7 @@ new class extends Component {
 };
 ?>
 
-<span wire:poll.30s>
+<span wire:poll.60s.visible="refreshCount">
     @if ($this->count > 0)
         <span class="inline-flex items-center gap-1 bg-emerald-500 text-white text-[10px] font-semibold rounded-full px-1.5 py-0.5 leading-none">
             {{ $this->count > 99 ? '99+' : $this->count }}

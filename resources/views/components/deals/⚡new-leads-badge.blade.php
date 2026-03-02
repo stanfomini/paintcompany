@@ -12,8 +12,10 @@ new class extends Component {
         }
 
         return [
-            'echo-private:internal-team,lead.created' => 'refreshCount',
+            'echo-private:internal-team,.lead.created' => 'refreshCount',
+            'echo-private:internal-team,.estimate.status.changed' => 'refreshCount',
             'deal-stage-changed' => 'refreshCount',
+            'refresh-notification-counts' => 'refreshCount',
         ];
     }
 
@@ -30,7 +32,7 @@ new class extends Component {
 };
 ?>
 
-<span wire:poll.30s>
+<span wire:poll.60s.visible="refreshCount">
     @if ($this->count > 0)
         <span class="inline-flex items-center gap-1 bg-blue-500 text-white text-[10px] font-semibold rounded-full px-1.5 py-0.5 leading-none">
             {{ $this->count > 99 ? '99+' : $this->count }}

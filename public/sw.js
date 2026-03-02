@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'eb6563a6-v6';
+const CACHE_VERSION = 'eb6563a6-v13';
 const CACHE_NAME = `apex-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 
@@ -79,7 +79,26 @@ self.addEventListener('push', (event) => {
         renotify: true,
     };
 
-    event.waitUntil(self.registration.showNotification(data.title || 'Apex CRM', options));
+    event.waitUntil(
+        self.registration.showNotification(data.title || 'Apex CRM', options).then(() => {
+            // Set app badge count if supported
+            if (data.badge_count !== undefined && navigator.setAppBadge) {
+                navigator.setAppBadge(data.badge_count).catch(() => {});
+            }
+
+            // Notify open clients to refresh notification counts
+            return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+                clients.forEach((client) => {
+                    client.postMessage({
+                        type: 'notification-received',
+                        badge_count: data.badge_count,
+                        tag: data.tag,
+                        title: data.title,
+                    });
+                });
+            });
+        })
+    );
 });
 
 // Notification click: open/focus the app at the deep link URL
