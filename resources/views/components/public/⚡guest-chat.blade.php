@@ -89,6 +89,7 @@ new class extends Component {
 
         $thread = ChatThread::create([
             'type' => ChatThread::TYPE_SUPPORT,
+            'source' => ChatThread::SOURCE_WEBSITE_LEAD,
             'subject' => 'Support: '.($this->name ?: $this->email),
             'customer_id' => $customer->id,
             'last_message_at' => now(),
@@ -97,7 +98,13 @@ new class extends Component {
         // Add customer user as participant so they appear in communications hub
         $thread->addParticipant($customerUser);
 
-        $internalUsers = User::where('type', 'internal')->get();
+        $internalUsers = User::where('type', 'internal')->get()->filter(function (User $user) {
+            if ($user->roles->isEmpty()) {
+                return true;
+            }
+
+            return $user->can('chat.view_website_leads');
+        });
         foreach ($internalUsers as $user) {
             $thread->addParticipant($user);
         }
@@ -254,7 +261,7 @@ new class extends Component {
                         }
                     }"
                     class="flex-1 overflow-y-auto p-4 space-y-3 min-h-[200px] max-h-[320px]"
-                    wire:poll.5s="$refresh"
+                    wire:poll.5s.visible="$refresh"
                 >
                     @forelse($this->chatMessages as $message)
                         <div wire:key="msg-{{ $message->id }}" class="flex {{ $message->user_id ? 'justify-start' : 'justify-end' }}">

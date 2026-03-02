@@ -233,3 +233,45 @@ describe('Setter support chat creates user', function () {
         expect($thread->hasParticipant($estimator))->toBeFalse();
     });
 });
+
+describe('Guest chat sets website_lead source', function () {
+    beforeEach(function () {
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        (new RolesAndPermissionsSeeder)->run();
+    });
+
+    it('creates thread with website_lead source', function () {
+        $internal = User::factory()->internal()->create();
+        $internal->assignRole('admin');
+
+        Livewire::test('public.guest-chat')
+            ->set('email', 'visitor@example.com')
+            ->set('name', 'Web Visitor')
+            ->call('startChat');
+
+        $session = GuestChatSession::where('email', 'visitor@example.com')->first();
+        $thread = $session->thread;
+
+        expect($thread->source)->toBe('website_lead');
+        expect($thread->type)->toBe('support');
+    });
+
+    it('only adds permitted internal users as participants for website leads', function () {
+        $admin = User::factory()->internal()->create();
+        $admin->assignRole('admin');
+
+        $hrManager = User::factory()->internal()->create();
+        $hrManager->assignRole('hr_manager');
+
+        Livewire::test('public.guest-chat')
+            ->set('email', 'lead@example.com')
+            ->set('name', 'New Lead')
+            ->call('startChat');
+
+        $session = GuestChatSession::where('email', 'lead@example.com')->first();
+        $thread = $session->thread;
+
+        expect($thread->hasParticipant($admin))->toBeTrue();
+        expect($thread->hasParticipant($hrManager))->toBeFalse();
+    });
+});
