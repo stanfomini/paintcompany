@@ -76,6 +76,8 @@ class RolesAndPermissionsSeeder extends Seeder
             // Communication
             'chat.access',
             'chat.view_deal_chats',
+            'chat.view_website_leads',
+            'chat.view_setter_support',
             'chat.with_customers',
             'chat.with_agents',
             'chat.with_crew',
@@ -283,7 +285,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates
             'production_rates.view', 'production_rates.manage',
             // Communication
-            'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+            'chat.access', 'chat.view_deal_chats', 'chat.view_website_leads', 'chat.view_setter_support', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
             // Email
             'email.access', 'email.manage',
@@ -374,7 +376,7 @@ class RolesAndPermissionsSeeder extends Seeder
             // Production Rates (view only)
             'production_rates.view',
             // Communication
-            'chat.access', 'chat.view_deal_chats', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
+            'chat.access', 'chat.view_deal_chats', 'chat.view_website_leads', 'chat.view_setter_support', 'chat.with_customers', 'chat.with_agents', 'chat.with_crew', 'chat.with_internal',
             'walkie_talkie.access', 'video_call.access',
             // Email
             'email.access',
