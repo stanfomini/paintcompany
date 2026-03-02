@@ -1,10 +1,12 @@
 <?php
 
 use App\Models\ChatThread;
+use App\Models\GuestChatSession;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
 use Database\Seeders\RolesAndPermissionsSeeder;
+use Livewire\Livewire;
 use Spatie\Permission\PermissionRegistrar;
 
 it('has source constants on ChatThread', function () {
@@ -160,5 +162,74 @@ describe('Unread count scoping', function () {
 
         $count = app(ChatService::class)->getUnreadCountForUser($user);
         expect($count)->toBe(0);
+    });
+});
+
+describe('Setter support chat creates user', function () {
+    beforeEach(function () {
+        app()[PermissionRegistrar::class]->forgetCachedPermissions();
+        (new RolesAndPermissionsSeeder)->run();
+    });
+
+    it('creates a user with null type when setter starts chat', function () {
+        $internal = User::factory()->internal()->create();
+        $internal->assignRole('admin');
+
+        Livewire::test('public.setter-support-chat')
+            ->set('email', 'setter@example.com')
+            ->set('name', 'Jane Setter')
+            ->call('startChat');
+
+        $user = User::where('email', 'setter@example.com')->first();
+        expect($user)->not->toBeNull();
+        expect($user->type)->toBeNull();
+        expect($user->name)->toBe('Jane Setter');
+
+        $session = GuestChatSession::where('email', 'setter@example.com')->first();
+        expect($session->user_id)->toBe($user->id);
+
+        $thread = $session->thread;
+        expect($thread->source)->toBe('setter_support');
+        expect($thread->hasParticipant($user))->toBeTrue();
+    });
+
+    it('reuses existing user when setter starts another chat', function () {
+        $existing = User::factory()->create([
+            'email' => 'returning@setter.com',
+            'name' => 'Returning Setter',
+            'type' => null,
+        ]);
+
+        $internal = User::factory()->internal()->create();
+        $internal->assignRole('admin');
+
+        Livewire::test('public.setter-support-chat')
+            ->set('email', 'returning@setter.com')
+            ->set('name', 'Returning Setter')
+            ->call('startChat');
+
+        expect(User::where('email', 'returning@setter.com')->count())->toBe(1);
+
+        $session = GuestChatSession::where('email', 'returning@setter.com')->first();
+        expect($session->user_id)->toBe($existing->id);
+    });
+
+    it('only adds permitted internal users as participants', function () {
+        $admin = User::factory()->internal()->create();
+        $admin->assignRole('admin');
+
+        $estimator = User::factory()->internal()->create();
+        $estimator->assignRole('estimator');
+
+        Livewire::test('public.setter-support-chat')
+            ->set('email', 'setter2@example.com')
+            ->set('name', 'Test Setter')
+            ->call('startChat');
+
+        $session = GuestChatSession::where('email', 'setter2@example.com')->first();
+        $thread = $session->thread;
+
+        expect($thread->hasParticipant($admin))->toBeTrue();
+        expect($thread->hasParticipant($estimator))->toBeFalse();
     });
 });
