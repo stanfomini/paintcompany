@@ -176,7 +176,10 @@ class ChatThread extends Model
         }
 
         $query = $this->messages()
-            ->where('user_id', '!=', $user->id);
+            ->where(function ($q) use ($user) {
+                $q->where('user_id', '!=', $user->id)
+                    ->orWhereNull('user_id');
+            });
 
         // Non-internal users can't see internal messages
         if (! $user->isInternal()) {

@@ -462,7 +462,10 @@ class ChatService
                     ->whereNull('chat_participants.left_at')
                     ->whereNull('chat_participants.archived_at');
             })
-            ->where('chat_messages.user_id', '!=', $user->id)
+            ->where(function ($q) use ($user) {
+                $q->where('chat_messages.user_id', '!=', $user->id)
+                    ->orWhereNull('chat_messages.user_id');
+            })
             ->whereNull('chat_messages.deleted_at')
             ->whereColumn('chat_messages.created_at', '>', DB::raw('COALESCE(chat_participants.last_read_at, \'1970-01-01\')'));
 
@@ -633,18 +636,24 @@ class ChatService
         foreach ($participants as $participant) {
             $user = $participant->user;
 
+            if (! $user) {
+                continue;
+            }
+
             // Skip if user lacks permission to view this support thread type
             if (! $this->canViewSupportThread($user, $thread)) {
                 continue;
             }
 
-            SendUnreadChatEmailJob::dispatch($message, $user)
-                ->delay(now()->addMinutes(5));
+            SendUnreadChatEmailJob::dispatch($message, $user);
 
-            // Also dispatch SMS notification
-            if ($user->wantsSms('chat')) {
-                SendUnreadChatSmsJob::dispatch($message, $user)
-                    ->delay(now()->addMinutes(5));
+            // Also dispatch SMS notification (non-blocking — never let SMS errors prevent other notifications)
+            try {
+                if ($user->wantsSms('chat')) {
+                    SendUnreadChatSmsJob::dispatch($message, $user);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed to dispatch SMS notification', ['user_id' => $user->id, 'error' => $e->getMessage()]);
             }
         }
     }
@@ -682,17 +691,23 @@ class ChatService
             ->get();
 
         foreach ($participants as $participant) {
+            if (! $participant->user) {
+                continue;
+            }
+
             if ($isInternal && ! $participant->user->isInternal()) {
                 continue;
             }
 
-            SendUnreadChatEmailJob::dispatch($message, $participant->user)
-                ->delay(now()->addMinutes(5));
+            SendUnreadChatEmailJob::dispatch($message, $participant->user);
 
-            // Also dispatch SMS notification
-            if ($participant->user->wantsSms('chat')) {
-                SendUnreadChatSmsJob::dispatch($message, $participant->user)
-                    ->delay(now()->addMinutes(5));
+            // Also dispatch SMS notification (non-blocking — never let SMS errors prevent other notifications)
+            try {
+                if ($participant->user->wantsSms('chat')) {
+                    SendUnreadChatSmsJob::dispatch($message, $participant->user);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed to dispatch SMS notification', ['user_id' => $participant->user->id, 'error' => $e->getMessage()]);
             }
         }
     }
