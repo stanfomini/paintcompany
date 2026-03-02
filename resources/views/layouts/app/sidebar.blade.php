@@ -3,7 +3,7 @@
     <head>
         @include('partials.head')
     </head>
-    <body class="min-h-screen bg-white dark:bg-zinc-800 overflow-x-hidden">
+    <body class="h-dvh bg-white dark:bg-zinc-800 overflow-hidden">
         <flux:sidebar sticky collapsible class="border-e border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:sidebar.header>
                 <x-app-logo :sidebar="true" href="{{ route('dashboard') }}" wire:navigate />
@@ -60,7 +60,10 @@
                     @endcanany
                     @can('email.access')
                         <flux:sidebar.item icon="envelope" :href="route('email.inbox')" :current="request()->routeIs('email.*')" wire:navigate>
-                            {{ __('Email') }}
+                            <div class="flex items-center justify-between w-full">
+                                {{ __('Email') }}
+                                @livewire('email.unread-badge')
+                            </div>
                         </flux:sidebar.item>
                     @endcan
                     @can('business_plan.view')
@@ -76,6 +79,11 @@
                     @can('referrals.view')
                         <flux:sidebar.item icon="gift" :href="route('referrals.index')" :current="request()->routeIs('referrals.*')" wire:navigate>
                             {{ __('Referrals') }}
+                        </flux:sidebar.item>
+                    @endcan
+                    @can('settings.company')
+                        <flux:sidebar.item icon="calendar" :href="route('bookings.index')" :current="request()->routeIs('bookings.*')" wire:navigate>
+                            {{ __('Bookings') }}
                         </flux:sidebar.item>
                     @endcan
                 </flux:sidebar.group>
@@ -159,7 +167,7 @@
                             {{ __('Onboarding') }}
                         </flux:sidebar.item>
                     @endcan
-                    @if (auth()->user() && app(\App\Services\InvitationService::class)->canSendInvitations(auth()->user()))
+                    @if (auth()->user()?->canSendInvitations())
                         <flux:sidebar.item icon="envelope" :href="route('invitations')" :current="request()->routeIs('invitations')" wire:navigate>
                             {{ __('Invitations') }}
                         </flux:sidebar.item>
@@ -192,8 +200,7 @@
                         <flux:sidebar.item icon="academic-cap" :href="route('my.training')" :current="request()->routeIs('my.training')" wire:navigate>
                             {{ __('My Training') }}
                         </flux:sidebar.item>
-                        @if(auth()->user()->employeeProfile->hasCommissionRules()
-                            || \App\Models\CommissionEntry::where('commissionable_type', \App\Models\User::class)->where('commissionable_id', auth()->id())->exists())
+                        @if(auth()->user()->hasCommissionActivity())
                             <flux:sidebar.item icon="currency-dollar" :href="route('my.commissions')" :current="request()->routeIs('my.commissions')" wire:navigate>
                                 {{ __('My Commissions') }}
                             </flux:sidebar.item>
@@ -246,6 +253,11 @@
                         @can('settings.company')
                             <flux:sidebar.item icon="video-camera" :href="route('studio')" :current="request()->routeIs('studio*')" wire:navigate>
                                 {{ __('Studio') }}
+                            </flux:sidebar.item>
+                        @endcan
+                        @can('settings.company')
+                            <flux:sidebar.item icon="calendar-days" :href="route('settings.booking')" :current="request()->routeIs('settings.booking')" wire:navigate>
+                                {{ __('Booking Settings') }}
                             </flux:sidebar.item>
                         @endcan
                     </flux:sidebar.group>
@@ -325,16 +337,21 @@
             @endauth
         </flux:header>
 
-        <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-4">
-            @include('partials.flash-messages')
-        </div>
-
         {{ $slot }}
 
-        {{-- Footer action bar + global listeners for internal users --}}
+        {{-- Footer bar as grid row for internal users --}}
         @auth
             @if (auth()->user()->isInternal())
-                @livewire('layout.footer-bar')
+                <flux:footer class="!p-0">
+                    @livewire('layout.footer-bar')
+                </flux:footer>
+            @endif
+        @endauth
+
+        {{-- Overlays/modals for internal users (outside grid, use own positioning) --}}
+        @auth
+            @if (auth()->user()->isInternal())
+                @livewire('notifications.notification-center')
                 @livewire('notifications.new-lead-alert')
                 @can('media.record')
                     @livewire('media.quick-recorder')
