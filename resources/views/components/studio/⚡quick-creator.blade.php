@@ -145,10 +145,117 @@ class extends Component {
         previewUrl: null,
         previewType: null,
 
+        // Recording state
+        recordingState: 'idle',
+        stream: null,
+        mediaRecorder: null,
+        recordedChunks: [],
+        recordedBlob: null,
+        uploadProgress: 0,
+        recordingSeconds: 0,
+        recordingTimer: null,
+        useFrontCamera: true,
+        segmentCount: 0,
+
         setActiveClip(index, url, type) {
             this.activeClipIndex = index;
             this.previewUrl = url;
             this.previewType = type;
+        },
+
+        async startCamera() {
+            try {
+                this.stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: this.useFrontCamera ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+                    audio: true
+                });
+                this.$refs.cameraPreview.srcObject = this.stream;
+                this.recordingState = 'previewing';
+            } catch (e) {
+                console.error('Camera access denied:', e);
+            }
+        },
+
+        flipCamera() {
+            this.useFrontCamera = !this.useFrontCamera;
+            this.stopCamera();
+            this.startCamera();
+        },
+
+        startRecording() {
+            this.recordedChunks = [];
+            const mimeType = this.getSupportedMimeType();
+            this.mediaRecorder = new MediaRecorder(this.stream, {
+                mimeType: mimeType,
+                videoBitsPerSecond: 2500000
+            });
+            this.mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) this.recordedChunks.push(e.data);
+            };
+            this.mediaRecorder.onstop = () => {
+                this.recordedBlob = new Blob(this.recordedChunks, { type: mimeType });
+                this.uploadSegment();
+            };
+            this.mediaRecorder.start(1000);
+            this.recordingState = 'recording';
+            this.recordingSeconds = 0;
+            this.recordingTimer = setInterval(() => this.recordingSeconds++, 1000);
+        },
+
+        stopRecording() {
+            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+                this.mediaRecorder.stop();
+                clearInterval(this.recordingTimer);
+            }
+        },
+
+        async uploadSegment() {
+            this.recordingState = 'uploading';
+            this.uploadProgress = 0;
+            const formData = new FormData();
+            const ext = this.recordedBlob.type.includes('webm') ? 'webm' : 'mp4';
+            formData.append('file', this.recordedBlob, `segment-${++this.segmentCount}.${ext}`);
+            formData.append('title', `Recording Segment ${this.segmentCount}`);
+
+            const xhr = new XMLHttpRequest();
+            xhr.upload.onprogress = (e) => {
+                if (e.lengthComputable) this.uploadProgress = Math.round((e.loaded / e.total) * 100);
+            };
+            xhr.onload = () => {
+                if (xhr.status === 200 || xhr.status === 201) {
+                    const response = JSON.parse(xhr.responseText);
+                    $wire.addRecordedClip(response.id);
+                    this.recordingState = 'previewing';
+                    this.uploadProgress = 0;
+                }
+            };
+            xhr.onerror = () => {
+                console.error('Upload failed');
+                this.recordingState = 'previewing';
+            };
+            xhr.open('POST', '/api/video-recordings');
+            xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('meta[name=\"csrf-token\"]').content);
+            xhr.send(formData);
+        },
+
+        stopCamera() {
+            if (this.stream) {
+                this.stream.getTracks().forEach(t => t.stop());
+                this.stream = null;
+            }
+            this.recordingState = 'idle';
+            clearInterval(this.recordingTimer);
+        },
+
+        getSupportedMimeType() {
+            const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
+            return types.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+        },
+
+        formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = seconds % 60;
+            return `${m}:${s.toString().padStart(2, '0')}`;
         }
     }"
     class="flex flex-col h-[calc(100vh-4rem)] bg-zinc-950"
@@ -192,14 +299,52 @@ class extends Component {
                 {{ $videoProject->aspect_ratio === '16:9' ? 'w-full max-w-full aspect-video' : '' }}
                 {{ $videoProject->aspect_ratio === '1:1' ? 'h-full max-h-full aspect-square' : '' }}"
         >
-            {{-- Preview content --}}
-            <template x-if="previewUrl && previewType === 'image'">
+            {{-- Camera preview (when recording) --}}
+            <video
+                x-ref="cameraPreview"
+                autoplay
+                muted
+                playsinline
+                x-show="recordingState === 'previewing' || recordingState === 'recording' || recordingState === 'uploading'"
+                class="w-full h-full object-cover"
+                x-cloak
+            ></video>
+
+            {{-- Recording indicator overlay --}}
+            <div
+                x-show="recordingState === 'recording'"
+                x-cloak
+                class="absolute top-3 left-3 flex items-center gap-2"
+            >
+                <span class="flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">
+                    <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                    REC
+                </span>
+                <span class="text-white text-sm font-mono bg-black/50 px-2 py-0.5 rounded" x-text="formatTime(recordingSeconds)"></span>
+            </div>
+
+            {{-- Upload progress overlay --}}
+            <div
+                x-show="recordingState === 'uploading'"
+                x-cloak
+                class="absolute inset-0 bg-black/50 flex items-center justify-center"
+            >
+                <div class="text-center">
+                    <span class="text-white text-sm font-medium">{{ __('Saving...') }}</span>
+                    <div class="w-48 h-2 bg-zinc-700 rounded-full overflow-hidden mt-2">
+                        <div class="h-full bg-blue-500 transition-all rounded-full" :style="`width: ${uploadProgress}%`"></div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Clip preview content (when not recording) --}}
+            <template x-if="recordingState === 'idle' && previewUrl && previewType === 'image'">
                 <img :src="previewUrl" alt="" class="w-full h-full object-cover" />
             </template>
-            <template x-if="previewUrl && previewType === 'video'">
+            <template x-if="recordingState === 'idle' && previewUrl && previewType === 'video'">
                 <video :src="previewUrl" controls class="w-full h-full object-cover"></video>
             </template>
-            <template x-if="!previewUrl">
+            <template x-if="recordingState === 'idle' && !previewUrl">
                 <div class="text-center p-8">
                     <flux:icon name="photo" class="mx-auto size-12 text-zinc-600" />
                     <p class="mt-3 text-sm text-zinc-500">{{ __('Add media to get started') }}</p>
@@ -211,6 +356,53 @@ class extends Component {
                     </button>
                 </div>
             </template>
+        </div>
+    </div>
+
+    {{-- Recording controls --}}
+    <div class="bg-zinc-900 border-t border-zinc-800 px-4 py-3">
+        <div class="flex items-center justify-center gap-4">
+            {{-- Start Camera (when idle) --}}
+            <button
+                x-show="recordingState === 'idle'"
+                @click="startCamera()"
+                class="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-400 text-white text-sm font-medium rounded-full transition-colors"
+            >
+                <flux:icon name="video-camera" class="size-4" />
+                {{ __('Record') }}
+            </button>
+
+            {{-- Camera controls (when previewing) --}}
+            <div x-show="recordingState === 'previewing'" x-cloak class="flex items-center gap-4">
+                <button @click="flipCamera()" class="p-2 text-zinc-400 hover:text-white transition-colors rounded-full hover:bg-zinc-800">
+                    <flux:icon name="arrow-path" class="size-5" />
+                </button>
+                <button
+                    @click="startRecording()"
+                    class="w-16 h-16 rounded-full bg-red-500 hover:bg-red-400 border-4 border-white transition-colors"
+                ></button>
+                <button @click="stopCamera()" class="p-2 text-zinc-400 hover:text-white transition-colors text-sm">
+                    {{ __('Done') }}
+                </button>
+            </div>
+
+            {{-- Stop recording (when recording) --}}
+            <div x-show="recordingState === 'recording'" x-cloak class="flex items-center gap-4">
+                <button
+                    @click="stopRecording()"
+                    class="w-16 h-16 rounded-full bg-red-500 border-4 border-white flex items-center justify-center transition-colors hover:bg-red-400"
+                >
+                    <div class="w-6 h-6 bg-white rounded-sm"></div>
+                </button>
+            </div>
+
+            {{-- Upload indicator (when uploading) --}}
+            <div x-show="recordingState === 'uploading'" x-cloak class="flex items-center gap-3">
+                <span class="text-white text-sm">{{ __('Saving...') }}</span>
+                <div class="w-32 h-2 bg-zinc-700 rounded-full overflow-hidden">
+                    <div class="h-full bg-blue-500 transition-all rounded-full" :style="`width: ${uploadProgress}%`"></div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -266,13 +458,6 @@ class extends Component {
             >
                 <flux:icon name="plus" class="size-6" />
             </button>
-        </div>
-    </div>
-
-    {{-- Tool bar placeholder --}}
-    <div class="bg-zinc-900 border-t border-zinc-800 px-4 py-3">
-        <div class="flex items-center justify-center gap-4 text-zinc-600 text-xs">
-            <span>{{ __('Tools coming soon') }}</span>
         </div>
     </div>
 
