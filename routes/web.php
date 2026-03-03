@@ -95,9 +95,31 @@ Route::livewire('/vendor/onboarding/{token}', 'public.vendor-onboarding')
     ->name('vendor.onboarding')
     ->middleware('throttle:60,1');
 
+// Public communications hub showcase page
+Route::livewire('/features/communications-hub', 'public.communications-hub')
+    ->name('features.communications-hub')
+    ->middleware('throttle:60,1');
+
 // Public calculator showcase page (marketing landing page for agents)
 Route::livewire('/calculator', 'public.calculator')
     ->name('calculator')
+    ->middleware('throttle:60,1');
+
+// Public booking routes
+Route::livewire('/book', 'public.vendor-booking')
+    ->name('booking.general')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/book/{slug}', 'public.vendor-booking')
+    ->name('booking.vendor')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/booking/{token}/confirmed', 'public.booking-confirmed')
+    ->name('booking.confirmed')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/booking/{token}/cancel', 'public.booking-cancel')
+    ->name('booking.cancel')
     ->middleware('throttle:60,1');
 
 // Public ROI viewer for agents to share with customers
@@ -119,6 +141,11 @@ Route::get('/careers/qr/{token}', function (string $token) {
 
     return redirect()->route('careers.apply', ['jobListing' => $listing, 'source' => 'qr_code']);
 })->name('careers.qr')->middleware('throttle:60,1');
+
+// Chat audio streaming (signed URL, proper headers for browser playback)
+Route::get('/chat-audio/{filename}', [\App\Http\Controllers\ChatAudioController::class, 'stream'])
+    ->name('chat.audio.stream')
+    ->middleware(['signed', 'throttle:120,1']);
 
 // Public video call recording playback (signed URL)
 Route::get('/recording/{videoCall:room_id}', [VideoCallPlaybackController::class, 'show'])
@@ -166,6 +193,11 @@ Route::livewire('/studio/{videoProject}/edit', 'studio.editor')
     ->middleware(['auth:web,agent'])
     ->name('studio.edit');
 
+// Studio - Remotion AI Video Builder
+Route::livewire('/studio/remotion', 'studio.remotion-builder')
+    ->middleware(['auth:web,agent'])
+    ->name('studio.remotion');
+
 // Studio - Public share view (no auth, token-based)
 Route::livewire('/studio/share/{token}', 'studio.share-view')
     ->name('studio.share')
@@ -192,6 +224,7 @@ Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-calls/{vi
 // Video recording API (standalone walkaround recorder, all authenticated user types)
 Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-recordings')->group(function () {
     Route::get('/{recording}/stream', [VideoRecordingStreamController::class, 'stream'])->name('video-recordings.stream');
+    Route::get('/{recording}/download', [VideoRecordingStreamController::class, 'download'])->name('video-recordings.download');
     Route::get('/{recording}/thumbnail', [VideoRecordingStreamController::class, 'thumbnail'])->name('video-recordings.thumbnail');
     Route::post('/', [VideoRecordingUploadController::class, 'store'])->name('video-recordings.store');
     Route::post('/start', [VideoRecordingUploadController::class, 'startChunkedUpload'])->name('video-recordings.start');
@@ -364,6 +397,8 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::livewire('/email/setup', 'email.account-setup')->name('email.setup');
         Route::get('/email/attachments/{attachment}/download', [\App\Http\Controllers\EmailAttachmentController::class, 'download'])
             ->name('email.attachment.download');
+        Route::get('/email/attachments/{attachment}/preview', [\App\Http\Controllers\EmailAttachmentController::class, 'preview'])
+            ->name('email.attachment.preview');
     });
 
     // Walkie-talkie routes
@@ -390,6 +425,11 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
             ->middleware('permission:media.manage_training')
             ->name('media.training.manage');
     });
+
+    // Bookings routes
+    Route::livewire('/bookings', 'bookings.index')
+        ->middleware('permission:settings.company')
+        ->name('bookings.index');
 
     // Referrals admin
     Route::middleware(['permission:referrals.view'])->group(function () {
@@ -639,6 +679,11 @@ Route::get('/webhook/facebook/receive', [\App\Http\Controllers\FacebookWebhookCo
     ->middleware('throttle:60,1');
 Route::post('/webhook/facebook/receive', [\App\Http\Controllers\FacebookWebhookController::class, 'receive'])
     ->name('webhook.facebook.receive')
+    ->middleware('throttle:120,1');
+
+// Twilio SMS webhook (no auth - verified by Twilio signature)
+Route::post('/webhooks/twilio/sms', [\App\Http\Controllers\TwilioWebhookController::class, 'receive'])
+    ->name('webhooks.twilio.sms')
     ->middleware('throttle:120,1');
 
 require __DIR__.'/settings.php';

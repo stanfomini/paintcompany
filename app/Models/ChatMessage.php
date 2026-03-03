@@ -161,7 +161,7 @@ class ChatMessage extends Model
 
     /**
      * Get a fresh audio URL for this message.
-     * Generates a new signed URL from the stored path, avoiding expired URL issues.
+     * Uses a dedicated streaming route with signed URL for proper audio headers.
      */
     public function getAudioUrl(): ?string
     {
@@ -171,8 +171,14 @@ class ChatMessage extends Model
 
         $path = $this->metadata['audio_path'] ?? null;
 
-        if ($path && \Illuminate\Support\Facades\Storage::exists($path)) {
-            return storage_url($path);
+        if ($path) {
+            $filename = basename($path);
+
+            return \Illuminate\Support\Facades\URL::signedRoute(
+                'chat.audio.stream',
+                ['filename' => $filename],
+                now()->addHours(24)
+            );
         }
 
         // Fallback to stored URL (may be expired but better than nothing)

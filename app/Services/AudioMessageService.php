@@ -45,11 +45,12 @@ class AudioMessageService
      */
     public function processAudioMessage(UploadedFile $audio): array
     {
-        $filename = Str::uuid().'.'.$this->getExtension($audio);
+        $extension = $this->getExtension($audio);
+        $filename = Str::uuid().'.'.$extension;
         $storagePath = 'chat-audio/'.$filename;
 
-        // Write to a local temp file for transcription (Python needs a filesystem path)
-        $tempFile = tempnam(sys_get_temp_dir(), 'audio_');
+        // Write to a local temp file with correct extension (Python needs it for format detection)
+        $tempFile = tempnam(sys_get_temp_dir(), 'audio_').'.'.$extension;
         file_put_contents($tempFile, file_get_contents($audio->getRealPath()));
 
         try {
@@ -96,8 +97,8 @@ class AudioMessageService
         $filename = Str::uuid().'.'.$extension;
         $storagePath = 'chat-audio/'.$filename;
 
-        // Write to a local temp file for transcription (Python needs a filesystem path)
-        $tempFile = tempnam(sys_get_temp_dir(), 'audio_');
+        // Write to a local temp file with correct extension (Python needs it for format detection)
+        $tempFile = tempnam(sys_get_temp_dir(), 'audio_').'.'.$extension;
         file_put_contents($tempFile, $audioData);
 
         try {
