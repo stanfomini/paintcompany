@@ -57,8 +57,20 @@ return [
     ],
 
     'remotion' => [
-        'build_secret' => env('REMOTION_BUILD_SECRET', 'remotion-build-secret'),
+        'build_secret' => env('REMOTION_BUILD_SECRET'),
         'timeout_minutes' => env('REMOTION_BUILD_TIMEOUT', 15),
+    ],
+
+    'twilio' => [
+        'sid' => env('TWILIO_SID'),
+        'token' => env('TWILIO_AUTH_TOKEN'),
+        'from' => env('TWILIO_PHONE_NUMBER'),
+        'enabled' => env('TWILIO_ENABLED', false),
+        'daily_limit' => env('TWILIO_DAILY_LIMIT', 500),
+    ],
+
+    'meta' => [
+        'pixel_id' => env('META_PIXEL_ID'),
     ],
 
 ];
