@@ -1183,7 +1183,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
                                                 <div class="flex items-center gap-2">
                                                     <flux:icon name="microphone" class="w-4 h-4 {{ $isOwnMessage ? 'text-blue-400 dark:text-blue-200' : 'text-zinc-400' }}" />
                                                     <audio controls preload="metadata" class="h-8 max-w-[200px]">
-                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}">
+                                                        <source src="{{ $message->getAudioUrl() ?? '' }}">
                                                     </audio>
                                                 </div>
                                                 @if (! empty($message->metadata['transcription']))

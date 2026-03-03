@@ -160,6 +160,26 @@ class ChatMessage extends Model
     }
 
     /**
+     * Get a fresh audio URL for this message.
+     * Generates a new signed URL from the stored path, avoiding expired URL issues.
+     */
+    public function getAudioUrl(): ?string
+    {
+        if (! $this->isAudio()) {
+            return null;
+        }
+
+        $path = $this->metadata['audio_path'] ?? null;
+
+        if ($path && \Illuminate\Support\Facades\Storage::exists($path)) {
+            return storage_url($path);
+        }
+
+        // Fallback to stored URL (may be expired but better than nothing)
+        return $this->metadata['audio_url'] ?? null;
+    }
+
+    /**
      * Scope to filter messages visible to a user.
      */
     public function scopeVisibleTo(Builder $query, User $user): Builder

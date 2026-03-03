@@ -298,11 +298,11 @@ new class extends Component {
                                 @if($message->user_id)
                                     <p class="text-xs font-medium {{ $message->user_id ? 'text-zinc-500' : 'text-emerald-100' }} mb-0.5">{{ $message->user?->name ?? __('Team') }}</p>
                                 @endif
-                                @if ($message->type === 'audio' && ($message->metadata['audio_url'] ?? null))
+                                @if ($message->type === 'audio' && ($message->getAudioUrl() ?? null))
                                     <div class="space-y-1">
                                         <audio controls preload="metadata" class="max-w-full h-8">
-                                            <source src="{{ $message->metadata['audio_url'] }}" type="{{ $message->metadata['audio_mime_type'] ?? 'audio/webm' }}">
-                                            <source src="{{ $message->metadata['audio_url'] }}" type="audio/mp4">
+                                            <source src="{{ $message->getAudioUrl() }}" type="{{ $message->metadata['audio_mime_type'] ?? 'audio/webm' }}">
+                                            <source src="{{ $message->getAudioUrl() }}" type="audio/mp4">
                                         </audio>
                                         @if ($message->content)
                                             <p class="text-xs italic opacity-75">{{ $message->content }}</p>

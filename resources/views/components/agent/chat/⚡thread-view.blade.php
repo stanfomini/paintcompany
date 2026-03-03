@@ -338,7 +338,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                             @elseif ($message->isAudio())
                                 {{-- Audio message --}}
                                 @php
-                                    $audioUrl = $message->metadata['audio_url'] ?? '';
+                                    $audioUrl = $message->getAudioUrl() ?? '';
                                     $audioMime = $message->metadata['audio_mime_type'] ?? null;
                                     $isM4a = $audioMime === 'audio/mp4' || str_ends_with($audioUrl, '.m4a');
                                 @endphp
@@ -383,7 +383,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                             </svg>
                                             <span>{{ __('Audio unavailable') }}</span>
-                                            <a href="{{ $message->metadata['audio_url'] ?? '' }}" download class="underline hover:no-underline">{{ __('Download') }}</a>
+                                            <a href="{{ $message->getAudioUrl() ?? '' }}" download class="underline hover:no-underline">{{ __('Download') }}</a>
                                         </div>
                                     </div>
 

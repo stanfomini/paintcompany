@@ -72,6 +72,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
             "echo-private:crew.job.{$this->job->id},.date.updated" => 'handleDateUpdated',
             "echo-private:crew.job.{$this->job->id},.color.updated" => 'handleColorUpdated',
             "echo-private:crew.job.{$this->job->id},.crew.dispatched" => 'handleCrewDispatched',
+            "echo-private:crew.job.{$this->job->id},.task.updated" => 'handleTaskUpdated',
         ];
     }
 
@@ -126,6 +127,12 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     public function handleCrewDispatched(): void
     {
         $this->job->refresh();
+    }
+
+    public function handleTaskUpdated(): void
+    {
+        $this->job->refresh();
+        unset($this->prepPlan, $this->prepProgress);
     }
 
     public function mount(Job $job): void
@@ -451,7 +458,13 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
     public function cycleTask(int $taskId): void
     {
         $task = JobPrepTask::findOrFail($taskId);
-        app(JobPrepService::class)->cycleTaskStatus($task, Auth::guard('crew')->user());
+        $newStatus = app(JobPrepService::class)->cycleTaskStatus($task, Auth::guard('crew')->user());
+
+        if (class_exists(\App\Events\JobTaskUpdated::class)) {
+            $dayNumber = $task->day?->day_number ?? $this->activePrepDay;
+            broadcast(new \App\Events\JobTaskUpdated($this->job, $taskId, $newStatus, $dayNumber))->toOthers();
+        }
+
         unset($this->prepPlan, $this->prepProgress);
     }
 
@@ -3047,7 +3060,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
 
         {{-- 8. Embedded Chat --}}
         @if ($this->hasAccepted && $this->chatThread)
-            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" wire:poll.10s>
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg mt-6 overflow-hidden" wire:poll.10s.visible>
                 <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
                     <div class="flex items-center gap-2">
                         <flux:icon name="chat-bubble-left-right" class="w-5 h-5 text-zinc-500" />
@@ -3087,7 +3100,7 @@ new #[Layout('components.layouts.crew', ['title' => 'Job Details'])] class exten
                                             @if ($message->isAudio())
                                                 <div class="space-y-2">
                                                     <audio controls class="w-full max-w-[240px]" preload="metadata">
-                                                        <source src="{{ $message->metadata['audio_url'] ?? '' }}">
+                                                        <source src="{{ $message->getAudioUrl() ?? '' }}">
                                                     </audio>
                                                     @if (!empty($message->metadata['transcription']))
                                                         <div class="pt-1 border-t {{ $isOwnMessage ? 'border-blue-200 dark:border-blue-500' : 'border-zinc-200 dark:border-zinc-700' }}">
