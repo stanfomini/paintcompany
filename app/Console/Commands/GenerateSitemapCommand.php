@@ -2,41 +2,50 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ServiceArea;
 use Illuminate\Console\Command;
 
 class GenerateSitemapCommand extends Command
 {
     protected $signature = 'sitemap:generate';
 
-    protected $description = 'Generate the sitemap.xml file';
+    protected $description = 'Generate sitemap.xml with all public pages and service areas';
 
     public function handle(): int
     {
-        $urls = [
-            ['loc' => url('/'), 'changefreq' => 'weekly', 'priority' => '1.0'],
-            ['loc' => url('/calculator'), 'changefreq' => 'monthly', 'priority' => '0.8'],
-            ['loc' => url('/careers'), 'changefreq' => 'monthly', 'priority' => '0.6'],
-            ['loc' => url('/terms'), 'changefreq' => 'yearly', 'priority' => '0.3'],
-            ['loc' => url('/privacy'), 'changefreq' => 'yearly', 'priority' => '0.3'],
-            ['loc' => url('/referral-terms'), 'changefreq' => 'yearly', 'priority' => '0.3'],
-            ['loc' => url('/watch'), 'changefreq' => 'weekly', 'priority' => '0.5'],
-        ];
+        $baseUrl = config('app.url');
 
-        // Placeholder: future area pages from ServiceArea model
-        // if (class_exists(\App\Models\ServiceArea::class)) {
-        //     foreach (\App\Models\ServiceArea::active()->get() as $area) {
-        //         $urls[] = ['loc' => url("/painting/{$area->slug}"), 'changefreq' => 'weekly', 'priority' => '0.7'];
-        //     }
-        // }
+        $urls = collect();
 
+        // Static pages
+        $urls->push(['loc' => $baseUrl, 'changefreq' => 'weekly', 'priority' => '1.0']);
+        $urls->push(['loc' => $baseUrl.'/book', 'changefreq' => 'weekly', 'priority' => '0.9']);
+        $urls->push(['loc' => $baseUrl.'/areas', 'changefreq' => 'weekly', 'priority' => '0.8']);
+        $urls->push(['loc' => $baseUrl.'/calculator', 'changefreq' => 'monthly', 'priority' => '0.8']);
+        $urls->push(['loc' => $baseUrl.'/careers', 'changefreq' => 'monthly', 'priority' => '0.6']);
+        $urls->push(['loc' => $baseUrl.'/watch', 'changefreq' => 'weekly', 'priority' => '0.5']);
+        $urls->push(['loc' => $baseUrl.'/terms', 'changefreq' => 'yearly', 'priority' => '0.3']);
+        $urls->push(['loc' => $baseUrl.'/privacy', 'changefreq' => 'yearly', 'priority' => '0.3']);
+        $urls->push(['loc' => $baseUrl.'/referral-terms', 'changefreq' => 'yearly', 'priority' => '0.3']);
+
+        // Dynamic service area pages
+        ServiceArea::active()->orderBy('city')->each(function (ServiceArea $area) use ($urls, $baseUrl) {
+            $urls->push([
+                'loc' => $baseUrl.'/areas/'.$area->slug,
+                'changefreq' => 'weekly',
+                'priority' => '0.8',
+            ]);
+        });
+
+        // Build XML
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n";
         $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'."\n";
 
         foreach ($urls as $url) {
             $xml .= "  <url>\n";
-            $xml .= "    <loc>{$url['loc']}</loc>\n";
-            $xml .= "    <changefreq>{$url['changefreq']}</changefreq>\n";
-            $xml .= "    <priority>{$url['priority']}</priority>\n";
+            $xml .= '    <loc>'.htmlspecialchars($url['loc']).'</loc>'."\n";
+            $xml .= '    <changefreq>'.$url['changefreq'].'</changefreq>'."\n";
+            $xml .= '    <priority>'.$url['priority'].'</priority>'."\n";
             $xml .= "  </url>\n";
         }
 
@@ -44,7 +53,7 @@ class GenerateSitemapCommand extends Command
 
         file_put_contents(public_path('sitemap.xml'), $xml);
 
-        $this->info('Sitemap generated with '.count($urls).' URLs.');
+        $this->info('Sitemap generated with '.$urls->count().' URLs.');
 
         return self::SUCCESS;
     }
