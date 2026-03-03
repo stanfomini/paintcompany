@@ -623,6 +623,9 @@ class ChatService
         // Dispatch unread email notifications
         $this->dispatchGuestUnreadEmails($thread, $message);
 
+        // Queue translation (non-blocking)
+        TranslateChatMessageJob::dispatch($message);
+
         return $message;
     }
 
@@ -660,6 +663,9 @@ class ChatService
 
         // Dispatch unread email notifications
         $this->dispatchGuestUnreadEmails($thread, $message);
+
+        // Queue translation (non-blocking)
+        TranslateChatMessageJob::dispatch($message);
 
         return $message;
     }

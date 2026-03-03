@@ -628,20 +628,21 @@ new class extends Component
                                     <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
                                         @if ($msg->isAudio())
                                             @include('components.communications._audio-message', ['message' => $msg, 'isOwn' => $isOwn])
+                                        @elseif ($msg->needsTranslationFor(app()->getLocale()))
+                                            <span class="whitespace-pre-wrap break-words">{{ $msg->getTranslation(app()->getLocale()) }}</span>
                                         @else
                                             <span class="whitespace-pre-wrap break-words">{{ $msg->content }}</span>
                                         @endif
                                     </div>
-                                    {{-- Translation --}}
                                     @if (! $msg->isAudio() && $msg->needsTranslationFor(app()->getLocale()))
-                                        <div x-data="{ showTranslation: false }" class="px-1 mt-0.5">
-                                            <button @click="showTranslation = !showTranslation" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
-                                                <span x-show="!showTranslation">{{ __('See translation') }}</span>
-                                                <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                        <div x-data="{ showOriginal: false }" class="px-1 mt-0.5">
+                                            <button @click="showOriginal = !showOriginal" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
+                                                <span x-show="!showOriginal">{{ __('Show original') }}</span>
+                                                <span x-show="showOriginal" x-cloak>{{ __('Hide original') }}</span>
                                             </button>
-                                            <div x-show="showTranslation" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
-                                                {{ $msg->getTranslation(app()->getLocale()) }}
-                                                <span class="opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($msg->getDetectedLanguage())]) }}</span>
+                                            <div x-show="showOriginal" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
+                                                {{ $msg->content }}
+                                                <span class="opacity-60">({{ strtoupper($msg->getDetectedLanguage()) }})</span>
                                             </div>
                                         </div>
                                     @endif
@@ -964,20 +965,21 @@ new class extends Component
                                             <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
                                                 @if ($msg->isAudio())
                                                     @include('components.communications._audio-message', ['message' => $msg, 'isOwn' => $isOwn])
+                                                @elseif ($msg->needsTranslationFor(app()->getLocale()))
+                                                    <span class="whitespace-pre-wrap break-words">{{ $msg->getTranslation(app()->getLocale()) }}</span>
                                                 @else
                                                     <span class="whitespace-pre-wrap break-words">{{ $msg->content }}</span>
                                                 @endif
                                             </div>
-                                            {{-- Translation --}}
                                             @if (! $msg->isAudio() && $msg->needsTranslationFor(app()->getLocale()))
-                                                <div x-data="{ showTranslation: false }" class="px-1 mt-0.5">
-                                                    <button @click="showTranslation = !showTranslation" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
-                                                        <span x-show="!showTranslation">{{ __('See translation') }}</span>
-                                                        <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                <div x-data="{ showOriginal: false }" class="px-1 mt-0.5">
+                                                    <button @click="showOriginal = !showOriginal" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
+                                                        <span x-show="!showOriginal">{{ __('Show original') }}</span>
+                                                        <span x-show="showOriginal" x-cloak>{{ __('Hide original') }}</span>
                                                     </button>
-                                                    <div x-show="showTranslation" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
-                                                        {{ $msg->getTranslation(app()->getLocale()) }}
-                                                        <span class="opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($msg->getDetectedLanguage())]) }}</span>
+                                                    <div x-show="showOriginal" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
+                                                        {{ $msg->content }}
+                                                        <span class="opacity-60">({{ strtoupper($msg->getDetectedLanguage()) }})</span>
                                                     </div>
                                                 </div>
                                             @endif
@@ -1089,20 +1091,21 @@ new class extends Component
                                                             <div class="rounded-lg px-3 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600' }}">
                                                                 @if ($msg->isAudio())
                                                                     @include('components.communications._audio-message', ['message' => $msg, 'isOwn' => $isOwn])
+                                                                @elseif ($msg->needsTranslationFor(app()->getLocale()))
+                                                                    <span class="whitespace-pre-wrap break-words">{{ $msg->getTranslation(app()->getLocale()) }}</span>
                                                                 @else
                                                                     <span class="whitespace-pre-wrap break-words">{{ $msg->content }}</span>
                                                                 @endif
                                                             </div>
-                                                            {{-- Translation --}}
                                                             @if (! $msg->isAudio() && $msg->needsTranslationFor(app()->getLocale()))
-                                                                <div x-data="{ showTranslation: false }" class="px-1 mt-0.5">
-                                                                    <button @click="showTranslation = !showTranslation" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
-                                                                        <span x-show="!showTranslation">{{ __('See translation') }}</span>
-                                                                        <span x-show="showTranslation" x-cloak>{{ __('Show original') }}</span>
+                                                                <div x-data="{ showOriginal: false }" class="px-1 mt-0.5">
+                                                                    <button @click="showOriginal = !showOriginal" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
+                                                                        <span x-show="!showOriginal">{{ __('Show original') }}</span>
+                                                                        <span x-show="showOriginal" x-cloak>{{ __('Hide original') }}</span>
                                                                     </button>
-                                                                    <div x-show="showTranslation" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
-                                                                        {{ $msg->getTranslation(app()->getLocale()) }}
-                                                                        <span class="opacity-60">{{ __('Translated from :lang', ['lang' => strtoupper($msg->getDetectedLanguage())]) }}</span>
+                                                                    <div x-show="showOriginal" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
+                                                                        {{ $msg->content }}
+                                                                        <span class="opacity-60">({{ strtoupper($msg->getDetectedLanguage()) }})</span>
                                                                     </div>
                                                                 </div>
                                                             @endif
