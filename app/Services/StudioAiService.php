@@ -11,6 +11,8 @@ use App\AI\Tools\GetJobPhotos;
 use App\AI\Tools\GetPropertyPhotos;
 use App\AI\Tools\SearchDeals;
 use App\Models\CompanySetting;
+use App\Models\Deal;
+use App\Models\PropertyPhoto;
 use App\Models\User;
 use App\Models\VideoProject;
 use Prism\Prism\Enums\Provider;
@@ -61,6 +63,149 @@ class StudioAiService
             'project_id' => $project->id,
             'status' => 'pending',
         ];
+    }
+
+    /**
+     * Fill a template-based project with media from system data.
+     * Reads structure_json segments and auto-fills clips from the associated deal.
+     */
+    public function fillTemplate(VideoProject $project): void
+    {
+        $template = $project->template;
+        if (! $template) {
+            return;
+        }
+
+        $dealId = $project->metadata['deal_id'] ?? null;
+        if (! $dealId) {
+            return;
+        }
+
+        $deal = Deal::with(['property.photos', 'estimates.photos', 'job.videoRecordings'])->find($dealId);
+        if (! $deal) {
+            return;
+        }
+
+        $media = $this->collectDealMedia($deal);
+        $this->fillSceneClips($project, $template, $media);
+        $this->fillTemplateOverlays($project, $template, $deal);
+    }
+
+    /**
+     * Collect all categorized media from a deal.
+     *
+     * @return array{before: \Illuminate\Support\Collection, after: \Illuminate\Support\Collection, all: \Illuminate\Support\Collection}
+     */
+    private function collectDealMedia(Deal $deal): array
+    {
+        $allPhotos = collect();
+        $beforePhotos = collect();
+        $afterPhotos = collect();
+
+        if ($deal->property) {
+            $allPhotos = $deal->property->photos;
+            $beforePhotos = $allPhotos->where('category', 'before');
+            $afterPhotos = $allPhotos->where('category', 'after');
+        }
+
+        foreach ($deal->estimates as $estimate) {
+            $estimatePhotos = $estimate->photos;
+            $allPhotos = $allPhotos->merge($estimatePhotos);
+            $beforePhotos = $beforePhotos->merge($estimatePhotos->where('category', 'before'));
+            $afterPhotos = $afterPhotos->merge($estimatePhotos->where('category', 'after'));
+        }
+
+        return [
+            'before' => $beforePhotos->unique('id'),
+            'after' => $afterPhotos->unique('id'),
+            'all' => $allPhotos->unique('id'),
+        ];
+    }
+
+    /**
+     * Fill scene clips based on template segment auto_fill rules.
+     */
+    private function fillSceneClips(VideoProject $project, \App\Models\StudioTemplate $template, array $media): void
+    {
+        $segments = $template->structure_json['segments'] ?? [];
+        $scenes = $project->scenes()->orderBy('sort_order')->get();
+
+        foreach ($scenes as $index => $scene) {
+            $segment = $segments[$index] ?? null;
+            if (! $segment || ($segment['type'] ?? null) !== 'media') {
+                continue;
+            }
+
+            $autoFill = $segment['auto_fill'] ?? null;
+            if (! $autoFill) {
+                continue;
+            }
+
+            $mediaToAdd = match ($autoFill) {
+                'before_photos' => $media['before']->take(3),
+                'after_photos' => $media['after']->take(3),
+                'all_photos' => $media['all']->take(5),
+                'first_photo' => $media['all']->take(1),
+                'last_photo' => $media['all']->reverse()->take(1),
+                'best_photo' => $media['all']->take(1),
+                'estimate_photos' => $media['all']->take(5),
+                'recent_completions' => $media['after']->take(5),
+                default => collect(),
+            };
+
+            foreach ($mediaToAdd->values() as $sortOrder => $photo) {
+                $scene->clips()->create([
+                    'slot' => 'main',
+                    'source_type' => PropertyPhoto::class,
+                    'source_id' => $photo->id,
+                    'sort_order' => $sortOrder,
+                    'volume' => 100,
+                    'fit_mode' => 'cover',
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Fill overlays from template overlay definitions.
+     */
+    private function fillTemplateOverlays(VideoProject $project, \App\Models\StudioTemplate $template, Deal $deal): void
+    {
+        $overlayDefs = $template->structure_json['overlays'] ?? [];
+        $scenes = $project->scenes()->orderBy('sort_order')->get();
+        $firstScene = $scenes->first();
+
+        if (! $firstScene || empty($overlayDefs)) {
+            return;
+        }
+
+        $company = CompanySetting::getInstance();
+
+        foreach ($overlayDefs as $overlayDef) {
+            $content = match ($overlayDef['auto_fill'] ?? null) {
+                'company_name' => $company->company_name ?? '',
+                'company_phone' => $company->company_phone ?? '',
+                'customer_name' => $deal->customer?->full_name ?? '',
+                'estimate_total' => $deal->estimates->first()?->total
+                    ? '$'.number_format((float) $deal->estimates->first()->total, 0)
+                    : '',
+                default => $overlayDef['content'] ?? '',
+            };
+
+            if ($content === '') {
+                continue;
+            }
+
+            $targetScene = isset($overlayDef['segment_index']) && isset($scenes[$overlayDef['segment_index']])
+                ? $scenes[$overlayDef['segment_index']]
+                : $firstScene;
+
+            $targetScene->overlays()->create([
+                'type' => $overlayDef['type'] ?? 'text',
+                'content' => $content,
+                'sort_order' => $targetScene->overlays()->count(),
+            ]);
+        }
     }
 
     /**
