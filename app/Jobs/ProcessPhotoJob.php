@@ -220,13 +220,15 @@ class ProcessPhotoJob implements ShouldQueue
 
         // Write to a temp file then store on the target disk
         $tmpFile = tempnam(sys_get_temp_dir(), 'photo_');
-        imagejpeg($resized, $tmpFile, 85);
 
-        Storage::disk($disk)->put($variantPath, file_get_contents($tmpFile));
-
-        unlink($tmpFile);
-        imagedestroy($sourceImage);
-        imagedestroy($resized);
+        try {
+            imagejpeg($resized, $tmpFile, 85);
+            Storage::disk($disk)->put($variantPath, file_get_contents($tmpFile));
+        } finally {
+            @unlink($tmpFile);
+            imagedestroy($sourceImage);
+            imagedestroy($resized);
+        }
 
         return $variantPath;
     }

@@ -156,11 +156,14 @@ class AnnotationService
         $annotatedPath = "{$annotatedDir}/{$photo->filename}";
 
         $tmpFile = tempnam(sys_get_temp_dir(), 'annotated_');
-        imagejpeg($sourceImage, $tmpFile, 90);
-        Storage::disk($disk)->put($annotatedPath, file_get_contents($tmpFile));
 
-        unlink($tmpFile);
-        imagedestroy($sourceImage);
+        try {
+            imagejpeg($sourceImage, $tmpFile, 90);
+            Storage::disk($disk)->put($annotatedPath, file_get_contents($tmpFile));
+        } finally {
+            @unlink($tmpFile);
+            imagedestroy($sourceImage);
+        }
 
         $photo->update(['annotated_path' => $annotatedPath]);
     }
@@ -209,11 +212,14 @@ class AnnotationService
         $layerPath = "{$layerDir}/{$annotation->author_type}_{$photo->filename}";
 
         $tmpFile = tempnam(sys_get_temp_dir(), 'layer_');
-        imagejpeg($sourceImage, $tmpFile, 90);
-        Storage::disk($disk)->put($layerPath, file_get_contents($tmpFile));
 
-        unlink($tmpFile);
-        imagedestroy($sourceImage);
+        try {
+            imagejpeg($sourceImage, $tmpFile, 90);
+            Storage::disk($disk)->put($layerPath, file_get_contents($tmpFile));
+        } finally {
+            @unlink($tmpFile);
+            imagedestroy($sourceImage);
+        }
 
         $annotation->update(['rendered_path' => $layerPath]);
     }
