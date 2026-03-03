@@ -202,6 +202,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                     'customer'
                 );
                 $acceptUrl = $invitationService->generateAcceptUrl($invitation);
+                $this->dispatch('lead-submitted');
                 $this->redirect($acceptUrl);
 
                 return;
@@ -211,6 +212,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         }
 
         // Fallback if invitation creation fails
+        $this->dispatch('lead-submitted');
         $this->redirect(route('next-steps'));
     }
 
@@ -270,6 +272,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                     'customer'
                 );
                 $acceptUrl = $invitationService->generateAcceptUrl($invitation);
+                $this->dispatch('lead-submitted');
                 $this->redirect($acceptUrl);
 
                 return;
@@ -279,6 +282,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         }
 
         // Fallback
+        $this->dispatch('lead-submitted');
         $this->redirect(route('next-steps'));
     }
 
@@ -451,12 +455,19 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             <div class="absolute bottom-0 left-0 w-72 h-72 bg-white rounded-full translate-y-1/2 -translate-x-1/3"></div>
         </div>
         <div class="relative max-w-5xl mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-12 sm:pb-16 text-center">
-            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 leading-tight">{!! __('Your Home, Beautifully Transformed. <span class="text-emerald-400">Guaranteed.</span>') !!}</h1>
-            <p class="text-lg sm:text-xl text-blue-100 mb-8 max-w-3xl mx-auto leading-relaxed">{{ __('Denver homeowners get a stress-free painting experience with real-time project tracking, daily photo updates, and a "Cleaner Than We Found It" guarantee. No ghosting. No surprises. No mess.') }}</p>
-            <a href="#get-estimate" class="inline-flex items-center gap-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-xl">
-                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                {{ __('Get Your Free Estimate in 24 Hours') }}
-            </a>
+            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 leading-tight">{!! __('Professional Painting, <span class="text-emerald-400">Fort Collins to Castle Rock</span>') !!}</h1>
+            <p class="text-lg sm:text-xl text-blue-100 mb-6 max-w-3xl mx-auto leading-relaxed">{{ __('A stress-free painting experience with real-time project tracking, daily photo updates, and a "Cleaner Than We Found It" guarantee. No ghosting. No surprises. No mess.') }}</p>
+            <p class="text-sm text-blue-200 mb-8 max-w-2xl mx-auto">{{ __('Serving Fort Collins, Loveland, Longmont, Boulder, Denver, Arvada, Lakewood, Littleton, Highlands Ranch, Castle Rock & surrounding areas') }}</p>
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="{{ route('booking.general') }}" class="inline-flex items-center gap-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-xl">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+                    {{ __('Book Your Free Estimate') }}
+                </a>
+                <a href="#get-estimate" class="inline-flex items-center gap-3 bg-white/10 hover:bg-white/20 backdrop-blur text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors border border-white/20">
+                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
+                    {{ __('Tell Us About Your Project') }}
+                </a>
+            </div>
         </div>
         {{-- Trust Bar --}}
         <div class="relative border-t border-white/10">
@@ -480,6 +491,17 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                     </div>
                 </div>
             </div>
+        </div>
+    </section>
+
+    {{-- Booking CTA Bar --}}
+    <section class="bg-gradient-to-r from-emerald-600 to-emerald-500 py-4">
+        <div class="max-w-4xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6">
+            <p class="text-white font-medium text-base sm:text-lg text-center sm:text-left">{{ __('Skip the wait — book your free in-home estimate online') }}</p>
+            <a href="{{ route('booking.general') }}" class="inline-flex items-center gap-2 bg-white text-emerald-700 font-bold px-5 py-2.5 rounded-lg text-sm transition-colors hover:bg-emerald-50 shrink-0">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>
+                {{ __('Book a Time') }}
+            </a>
         </div>
     </section>
 
@@ -1378,6 +1400,21 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
     {{-- Section 13: Meet Your Local Team (Geo-personalized) --}}
     <livewire:public.local-team />
 
+    {{-- Section: Join the Team --}}
+    <section class="bg-zinc-900 py-12 sm:py-16">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-emerald-500/20 text-emerald-400 mb-4">
+                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" /></svg>
+            </div>
+            <h2 class="text-2xl sm:text-3xl font-bold text-white mb-3">{{ __('We\'re Hiring Painters') }}</h2>
+            <p class="text-zinc-400 text-lg mb-6 max-w-xl mx-auto">{{ __('Join a team that respects your craft and your time. Competitive pay, consistent work, and a company that invests in your growth.') }}</p>
+            <a href="{{ route('careers') }}" class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-6 py-3 rounded-xl text-base transition-colors">
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 14.15v4.25c0 1.094-.787 2.036-1.872 2.18-2.087.277-4.216.42-6.378.42s-4.291-.143-6.378-.42c-1.085-.144-1.872-1.086-1.872-2.18v-4.25m16.5 0a2.18 2.18 0 00.75-1.661V8.706c0-1.081-.768-2.015-1.837-2.175a48.114 48.114 0 00-3.413-.387m4.5 8.006c-.194.165-.42.295-.673.38A23.978 23.978 0 0112 15.75c-2.648 0-5.195-.429-7.577-1.22a2.016 2.016 0 01-.673-.38m0 0A2.18 2.18 0 013 12.489V8.706c0-1.081.768-2.015 1.837-2.175a48.111 48.111 0 013.413-.387m7.5 0V5.25A2.25 2.25 0 0013.5 3h-3a2.25 2.25 0 00-2.25 2.25v.894m7.5 0a48.667 48.667 0 00-7.5 0M12 12.75h.008v.008H12v-.008z" /></svg>
+                {{ __('View Open Positions') }}
+            </a>
+        </div>
+    </section>
+
     {{-- Section 14: Footer --}}
     <footer class="bg-[#1B2D4F] text-white py-10 pwa-safe-bottom">
         <div class="max-w-5xl mx-auto px-6">
@@ -1408,6 +1445,16 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             </div>
         </div>
     </footer>
+
+    @script
+    <script>
+        Livewire.on('lead-submitted', () => {
+            if (typeof fbq === 'function') {
+                fbq('track', 'Lead');
+            }
+        });
+    </script>
+    @endscript
 
     {{-- Live Chat Widget --}}
     <livewire:public.guest-chat />
