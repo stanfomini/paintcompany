@@ -55,18 +55,30 @@ it('tool definitions have correct names', function () {
     expect($names)->toEqualCanonicalizing($service->getRegisteredTools());
 });
 
-it('returns assist edit response structure', function () {
+it('returns assist edit response from Claude', function () {
     $user = User::factory()->internal()->create();
     $project = VideoProject::factory()->create(['user_id' => $user->id]);
-    $service = new StudioAiService($user);
+    $project->scenes()->create(['sort_order' => 0, 'name' => 'Scene 1', 'layout' => 'solo']);
 
-    $result = $service->assistEdit($project, 'Add captions to all clips');
+    Prism::fake([
+        new TextResponse(
+            steps: collect([]),
+            text: '{"action": "suggestion", "message": "Try rearranging the clips."}',
+            finishReason: \Prism\Prism\Enums\FinishReason::Stop,
+            toolCalls: [],
+            toolResults: [],
+            usage: new Usage(50, 100),
+            meta: new Meta('fake-id', 'claude-haiku-4-5-20251001'),
+            messages: collect([]),
+        ),
+    ]);
+
+    $service = new StudioAiService($user);
+    $result = $service->assistEdit($project, 'Make it more engaging');
 
     expect($result)->toBeArray()
-        ->and($result['action'])->toBe('assist')
-        ->and($result['instruction'])->toBe('Add captions to all clips')
-        ->and($result['project_id'])->toBe($project->id)
-        ->and($result['status'])->toBe('pending');
+        ->and($result['action'])->toBe('suggestion')
+        ->and($result['message'])->toBe('Try rearranging the clips.');
 });
 
 it('generates a video project from prompt using Prism fake', function () {

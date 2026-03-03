@@ -54,16 +54,71 @@ class StudioAiService
     }
 
     /**
-     * AI-assisted editing: interpret an instruction and apply changes.
+     * AI-assisted editing: interpret an instruction and apply changes to the project.
+     * Uses Claude to understand the instruction and map it to concrete actions.
      */
     public function assistEdit(VideoProject $project, string $instruction): array
     {
-        return [
-            'action' => 'assist',
-            'instruction' => $instruction,
-            'project_id' => $project->id,
-            'status' => 'pending',
-        ];
+        $lowerInstruction = strtolower($instruction);
+
+        if (str_contains($lowerInstruction, 'caption') || str_contains($lowerInstruction, 'subtitle')) {
+            $captions = $this->generateCaptions($project);
+
+            return [
+                'action' => 'captions_added',
+                'count' => count($captions),
+                'message' => count($captions) > 0
+                    ? count($captions).' captions added from audio transcription.'
+                    : 'No audio clips found to transcribe.',
+            ];
+        }
+
+        $projectContext = $this->buildProjectContext($project);
+
+        $systemPrompt = <<<PROMPT
+        You are a video editing assistant. The user has a video project and wants to make changes.
+
+        Current project state:
+        {$projectContext}
+
+        Interpret the user's instruction and respond with a JSON object describing the action to take.
+
+        Possible actions:
+        - {"action": "add_text", "content": "text to add", "position": "bottom-center"}
+        - {"action": "remove_clips", "indices": [0, 2], "reason": "removing as requested"}
+        - {"action": "reorder_clips", "new_order": [2, 0, 1], "reason": "putting best content first"}
+        - {"action": "add_transition", "clip_index": 1, "type": "fade", "duration_ms": 500}
+        - {"action": "change_speed", "clip_index": 0, "speed": 2.0}
+        - {"action": "suggestion", "message": "Here's what I recommend..."}
+
+        Respond ONLY with the JSON object, no other text.
+        PROMPT;
+
+        try {
+            $response = Prism::text()
+                ->using(Provider::Anthropic, 'claude-haiku-4-5-20251001')
+                ->withSystemPrompt($systemPrompt)
+                ->withPrompt($instruction)
+                ->asText();
+
+            $result = json_decode($response->text, true);
+
+            if (! $result || ! isset($result['action'])) {
+                return [
+                    'action' => 'suggestion',
+                    'message' => $response->text,
+                ];
+            }
+
+            return $result;
+        } catch (\Exception $e) {
+            report($e);
+
+            return [
+                'action' => 'error',
+                'message' => 'Could not process your request. Please try again.',
+            ];
+        }
     }
 
     /**
@@ -277,6 +332,33 @@ class StudioAiService
         }
 
         return $captions;
+    }
+
+    /**
+     * Build a text description of the project's current state for AI context.
+     */
+    private function buildProjectContext(VideoProject $project): string
+    {
+        $scenes = $project->scenes()->with(['clips.source', 'overlays'])->orderBy('sort_order')->get();
+
+        $context = "Title: {$project->title}\n";
+        $context .= "Aspect Ratio: {$project->aspect_ratio}\n";
+        $context .= 'Clips: '.$scenes->flatMap->clips->count()."\n";
+        $context .= 'Overlays: '.$scenes->flatMap->overlays->count()."\n\n";
+
+        foreach ($scenes as $scene) {
+            $context .= "Scene: {$scene->name}\n";
+            foreach ($scene->clips as $i => $clip) {
+                $sourceName = $clip->source?->title ?? $clip->source?->caption ?? 'Untitled';
+                $sourceType = class_basename($clip->source_type);
+                $context .= "  Clip {$i}: {$sourceType} - {$sourceName}\n";
+            }
+            foreach ($scene->overlays as $overlay) {
+                $context .= "  Overlay: [{$overlay->type}] {$overlay->content}\n";
+            }
+        }
+
+        return $context;
     }
 
     /**
