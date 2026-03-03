@@ -203,7 +203,8 @@ class FacebookMessengerService
             ->first();
 
         if ($conversation) {
-            // Route to bot flow (will be handled by MessengerBotFlowService)
+            app(MessengerBotFlowService::class)->processResponse($conversation, $text);
+
             return;
         }
 

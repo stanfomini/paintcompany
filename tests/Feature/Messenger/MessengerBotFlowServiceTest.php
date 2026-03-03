@@ -452,3 +452,82 @@ describe('getMappableFields', function () {
         expect($fields['Deal Fields'])->toHaveKey('deal.title');
     });
 });
+
+describe('end-to-end bot conversation via webhook', function () {
+    it('advances conversation when user replies to bot step', function () {
+        $flow = MessengerBotFlow::factory()->active()->create([
+            'greeting_message' => 'Welcome!',
+        ]);
+
+        $step1 = MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'What is your name?',
+        ]);
+
+        $step2 = MessengerBotStep::factory()->textQuestion('customer.email')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 2,
+            'message_text' => 'What is your email?',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('99998888')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        // Start conversation
+        $conversation = $service->startConversation($thread, '99998888');
+        expect($conversation->current_step_id)->toBe($step1->id);
+
+        // Simulate user replying to step 1
+        $service->processResponse($conversation->fresh(), 'John');
+
+        $conversation->refresh();
+        expect($conversation->current_step_id)->toBe($step2->id);
+        expect($conversation->answers)->toHaveKey("step_{$step1->id}", 'John');
+    });
+
+    it('routes incoming message to bot flow service when conversation is active', function () {
+        $flow = MessengerBotFlow::factory()->active()->create([
+            'greeting_message' => 'Welcome!',
+        ]);
+
+        $step1 = MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'What is your name?',
+        ]);
+
+        $step2 = MessengerBotStep::factory()->textQuestion('customer.email')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 2,
+            'message_text' => 'What is your email?',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('77776666')->create();
+
+        // Create an active conversation manually (simulating one already started)
+        $conversation = MessengerConversation::create([
+            'flow_id' => $flow->id,
+            'thread_id' => $thread->id,
+            'facebook_psid' => '77776666',
+            'status' => 'in_progress',
+            'current_step_id' => $step1->id,
+            'answers' => [],
+            'started_at' => now(),
+            'last_activity_at' => now(),
+        ]);
+
+        // Simulate an incoming message via the service (this is what the webhook calls)
+        $messengerService = app(\App\Services\FacebookMessengerService::class);
+        $messengerService->processIncomingMessage([
+            'messaging' => [[
+                'sender' => ['id' => '77776666'],
+                'message' => ['text' => 'Jane'],
+            ]],
+        ]);
+
+        $conversation->refresh();
+        expect($conversation->current_step_id)->toBe($step2->id);
+        expect($conversation->answers)->toHaveKey("step_{$step1->id}", 'Jane');
+    });
+});
