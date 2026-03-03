@@ -122,6 +122,15 @@ Route::livewire('/booking/{token}/cancel', 'public.booking-cancel')
     ->name('booking.cancel')
     ->middleware('throttle:60,1');
 
+// Public color visualizer
+Route::livewire('/visualize', 'public.color-visualizer')
+    ->name('visualize')
+    ->middleware('throttle:30,1');
+
+Route::livewire('/visualize/{uuid}', 'public.visualization-result')
+    ->name('visualize.result')
+    ->middleware('throttle:60,1');
+
 // Public ROI viewer for agents to share with customers
 Route::livewire('/roi/{token}', 'public.roi-viewer')
     ->name('roi.public')
@@ -183,10 +192,29 @@ Route::livewire('/record/{token}', 'studio.public-recorder')
     ->name('recording.invite')
     ->middleware('throttle:30,1');
 
-// Studio - Video Editor (project list)
-Route::livewire('/studio', 'studio.project-list')
+// Studio - Feed (deal browser, my videos, recordings, media hub)
+Route::livewire('/studio', 'studio.studio-feed')
     ->middleware(['auth:web,agent'])
     ->name('studio');
+
+// Studio - Quick Creator
+Route::livewire('/studio/create/{videoProject?}', 'studio.quick-creator')
+    ->middleware(['auth:web,agent'])
+    ->name('studio.create');
+
+// Studio - Create from Deal
+Route::get('/studio/create-from-deal/{deal}', function (\App\Models\Deal $deal) {
+    $project = \App\Models\VideoProject::create([
+        'user_id' => auth()->id(),
+        'title' => $deal->title.' Video',
+        'status' => 'draft',
+        'creation_mode' => 'quick',
+        'aspect_ratio' => '9:16',
+        'metadata' => ['deal_id' => $deal->id],
+    ]);
+
+    return redirect()->route('studio.create', $project);
+})->middleware(['auth:web,agent'])->name('studio.create-from-deal');
 
 // Studio - Project Editor
 Route::livewire('/studio/{videoProject}/edit', 'studio.editor')
@@ -343,7 +371,16 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::get('/estimates/{estimate}/painter-breakdown/pdf/financials', [PainterBreakdownExportController::class, 'financials'])
             ->middleware('permission:financials.view_painter_breakdown')
             ->name('estimates.painter-breakdown.pdf.financials');
+
+        // Color visualizer with estimate context
+        Route::livewire('/estimates/{estimate}/visualize', 'estimates.color-visualizer')
+            ->middleware('permission:estimates.edit')
+            ->name('estimates.visualize');
     });
+
+    // Standalone color visualizer (no estimate context)
+    Route::livewire('/color-visualizer', 'estimates.color-visualizer')
+        ->name('color-visualizer');
 
     // Jobs routes
     Route::middleware(['permission:jobs.view'])->group(function () {
