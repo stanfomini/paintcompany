@@ -16,6 +16,16 @@ class extends Component {
 
     public ?int $pipBackgroundIndex = null;
 
+    public bool $showTextEditor = false;
+
+    public string $overlayText = '';
+
+    public string $overlayPosition = 'bottom-center';
+
+    public string $overlayColor = '#ffffff';
+
+    public string $overlaySize = 'md';
+
     public function mount(VideoProject $videoProject): void
     {
         abort_unless($videoProject->user_id === auth()->id(), 403);
@@ -128,6 +138,43 @@ class extends Component {
         }
 
         $this->videoProject->update(['aspect_ratio' => $ratio]);
+    }
+
+    public function addTextOverlay(): void
+    {
+        $this->validate([
+            'overlayText' => 'required|min:1',
+            'overlayPosition' => 'required',
+        ]);
+
+        $scene = $this->videoProject->scenes()->orderBy('sort_order')->first();
+        if (! $scene) {
+            return;
+        }
+
+        $scene->overlays()->create([
+            'type' => 'text',
+            'content' => $this->overlayText,
+            'sort_order' => $scene->overlays()->count(),
+            'style' => [
+                'position' => $this->overlayPosition,
+                'color' => $this->overlayColor,
+                'size' => $this->overlaySize,
+            ],
+        ]);
+
+        $this->overlayText = '';
+        $this->showTextEditor = false;
+        unset($this->overlays);
+    }
+
+    public function removeOverlay(int $index): void
+    {
+        $overlays = $this->overlays;
+        if (isset($overlays[$index])) {
+            $overlays[$index]->delete();
+            unset($this->overlays);
+        }
     }
 
     #[On('media-selected')]
@@ -356,6 +403,37 @@ class extends Component {
                     </button>
                 </div>
             </template>
+
+            {{-- Overlay preview rendering --}}
+            @foreach($this->overlays as $overlay)
+                @php
+                    $pos = $overlay->style['position'] ?? 'bottom-center';
+                    $posClasses = match($pos) {
+                        'top-left' => 'top-4 left-4',
+                        'top-center' => 'top-4 left-1/2 -translate-x-1/2',
+                        'top-right' => 'top-4 right-4',
+                        'center' => 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
+                        'bottom-left' => 'bottom-4 left-4',
+                        'bottom-center' => 'bottom-4 left-1/2 -translate-x-1/2',
+                        'bottom-right' => 'bottom-4 right-4',
+                        default => 'bottom-4 left-1/2 -translate-x-1/2',
+                    };
+                    $sizeClasses = match($overlay->style['size'] ?? 'md') {
+                        'sm' => 'text-sm',
+                        'md' => 'text-lg',
+                        'lg' => 'text-2xl',
+                        'xl' => 'text-4xl',
+                        default => 'text-lg',
+                    };
+                @endphp
+                <div
+                    wire:key="overlay-preview-{{ $overlay->id }}"
+                    class="absolute font-bold pointer-events-none {{ $posClasses }} {{ $sizeClasses }}"
+                    style="color: {{ $overlay->style['color'] ?? '#ffffff' }}; text-shadow: 0 2px 4px rgba(0,0,0,0.8);"
+                >
+                    {{ $overlay->content }}
+                </div>
+            @endforeach
         </div>
     </div>
 
@@ -460,6 +538,58 @@ class extends Component {
             </button>
         </div>
     </div>
+
+    {{-- Toolbar --}}
+    <div class="bg-zinc-900 border-t border-zinc-800 px-4 py-2">
+        <div class="flex items-center justify-center gap-6">
+            <button wire:click="$set('showTextEditor', true)" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white transition-colors">
+                <flux:icon name="bars-3-bottom-left" class="size-5" />
+                <span class="text-xs">{{ __('Text') }}</span>
+            </button>
+        </div>
+    </div>
+
+    {{-- Text editor panel --}}
+    @if($showTextEditor)
+        <div class="bg-zinc-900 border-t border-zinc-800 px-4 py-3">
+            <div class="bg-zinc-800 p-4 rounded-xl border border-zinc-700">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="text-white font-medium text-sm">{{ __('Add Text') }}</span>
+                    <button wire:click="$set('showTextEditor', false)" class="text-zinc-400 hover:text-white">
+                        <flux:icon name="x-mark" class="size-5" />
+                    </button>
+                </div>
+                <flux:input wire:model="overlayText" placeholder="{{ __('Enter text...') }}" class="mb-3" />
+                <div class="flex flex-wrap gap-1.5 mb-3">
+                    @foreach(['top-left' => 'TL', 'top-center' => 'TC', 'top-right' => 'TR', 'center' => 'C', 'bottom-left' => 'BL', 'bottom-center' => 'BC', 'bottom-right' => 'BR'] as $pos => $label)
+                        <button
+                            wire:click="$set('overlayPosition', '{{ $pos }}')"
+                            class="px-2 py-1 rounded text-xs transition-colors {{ $overlayPosition === $pos ? 'bg-blue-500 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' }}"
+                        >
+                            {{ $label }}
+                        </button>
+                    @endforeach
+                </div>
+                <flux:button wire:click="addTextOverlay" variant="primary" size="sm" class="w-full">
+                    {{ __('Add Text') }}
+                </flux:button>
+            </div>
+        </div>
+    @endif
+
+    {{-- Overlay list --}}
+    @if($this->overlays->isNotEmpty())
+        <div class="bg-zinc-900 border-t border-zinc-800 px-4 py-2 space-y-1">
+            @foreach($this->overlays as $index => $overlay)
+                <div wire:key="overlay-list-{{ $overlay->id }}" class="flex items-center justify-between bg-zinc-800 px-3 py-2 rounded">
+                    <span class="text-white text-sm truncate">{{ $overlay->content }}</span>
+                    <button wire:click="removeOverlay({{ $index }})" class="text-zinc-400 hover:text-red-400 transition-colors shrink-0 ml-2">
+                        <flux:icon name="trash" class="size-4" />
+                    </button>
+                </div>
+            @endforeach
+        </div>
+    @endif
 
     {{-- Media browser --}}
     <div x-show="showMediaBrowser" x-cloak @media-selected.window="showMediaBrowser = false">
