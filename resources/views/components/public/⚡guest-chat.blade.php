@@ -10,6 +10,7 @@ use App\Models\GuestChatSession;
 use App\Models\MessengerSetting;
 use App\Models\User;
 use App\Notifications\NewSupportChatNotification;
+use App\Services\AudioMessageService;
 use App\Services\ChatService;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
@@ -21,6 +22,8 @@ new class extends Component {
     public string $name = '';
     public string $newMessage = '';
     public ?int $sessionId = null;
+    public bool $isRecording = false;
+    public bool $isProcessingAudio = false;
 
     public function mount(): void
     {
@@ -172,6 +175,32 @@ new class extends Component {
         $this->newMessage = '';
     }
 
+    public function processRecordedAudio(string $audioBase64, string $mimeType = 'audio/webm'): void
+    {
+        $this->isProcessingAudio = true;
+
+        try {
+            $session = GuestChatSession::find($this->sessionId);
+            if (! $session || ! $session->thread) {
+                return;
+            }
+
+            $audioService = app(AudioMessageService::class);
+            $audioData = $audioService->processBase64Audio($audioBase64, $mimeType);
+
+            app(ChatService::class)->sendGuestAudioMessage(
+                $session->thread,
+                $audioData,
+                ['guest_email' => $session->email, 'guest_name' => $session->name],
+            );
+        } catch (\Exception $e) {
+            $this->addError('audio', __('Failed to process audio: :error', ['error' => $e->getMessage()]));
+        } finally {
+            $this->isProcessingAudio = false;
+            $this->isRecording = false;
+        }
+    }
+
     #[Computed]
     public function chatMessages(): \Illuminate\Database\Eloquent\Collection
     {
@@ -269,7 +298,21 @@ new class extends Component {
                                 @if($message->user_id)
                                     <p class="text-xs font-medium {{ $message->user_id ? 'text-zinc-500' : 'text-emerald-100' }} mb-0.5">{{ $message->user?->name ?? __('Team') }}</p>
                                 @endif
-                                <p>{{ $message->content }}</p>
+                                @if ($message->type === 'audio' && ($message->metadata['audio_url'] ?? null))
+                                    <div class="space-y-1">
+                                        <audio controls preload="metadata" class="max-w-full h-8">
+                                            <source src="{{ $message->metadata['audio_url'] }}" type="{{ $message->metadata['audio_mime_type'] ?? 'audio/webm' }}">
+                                            <source src="{{ $message->metadata['audio_url'] }}" type="audio/mp4">
+                                        </audio>
+                                        @if ($message->content)
+                                            <p class="text-xs italic opacity-75">{{ $message->content }}</p>
+                                        @elseif (($message->metadata['transcription_status'] ?? '') === 'pending')
+                                            <p class="text-xs italic opacity-75 animate-pulse">{{ __('Transcribing...') }}</p>
+                                        @endif
+                                    </div>
+                                @else
+                                    <p>{{ $message->content }}</p>
+                                @endif
                                 <p class="text-[10px] mt-1 {{ $message->user_id ? 'text-zinc-400' : 'text-emerald-200' }}">{{ $message->created_at->format('g:i A') }}</p>
                             </div>
                         </div>
@@ -282,15 +325,225 @@ new class extends Component {
                 </div>
 
                 {{-- Message Composer --}}
-                <div class="border-t border-zinc-200 p-3 shrink-0">
-                    <form wire:submit="sendMessage" class="flex gap-2">
-                        <input wire:model="newMessage" type="text" class="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('Type a message...') }}" />
-                        <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-2 transition-colors shrink-0">
-                            <svg wire:loading.remove wire:target="sendMessage" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
-                            <svg wire:loading wire:target="sendMessage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
-                        </button>
-                    </form>
-                    @error('newMessage') <p class="text-xs text-red-500 mt-1">{{ $message }}</p> @enderror
+                <div class="shrink-0" x-data="{
+                    recording: false,
+                    recordingTime: 0,
+                    mediaRecorder: null,
+                    audioChunks: [],
+                    timer: null,
+                    stream: null,
+                    hasMediaSupport: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder),
+                    permissionDenied: false,
+                    requestingPermission: false,
+                    previewing: false,
+                    previewUrl: null,
+                    previewBlob: null,
+                    previewDuration: 0,
+                    currentMimeType: null,
+                    audioContext: null,
+                    analyser: null,
+                    audioLevel: 0,
+                    peakLevel: 0,
+                    levelAnimationFrame: null,
+
+                    getSupportedMimeType() {
+                        const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+                        for (const type of types) {
+                            if (MediaRecorder.isTypeSupported(type)) return type;
+                        }
+                        return '';
+                    },
+
+                    async startRecording() {
+                        if (this.recording || !this.hasMediaSupport || this.requestingPermission) return;
+                        this.requestingPermission = true;
+                        this.permissionDenied = false;
+                        try {
+                            this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+                            this.requestingPermission = false;
+                            this.startLevelMonitoring();
+                            this.currentMimeType = this.getSupportedMimeType();
+                            this.mediaRecorder = new MediaRecorder(this.stream, { mimeType: this.currentMimeType });
+                            this.audioChunks = [];
+                            this.mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) this.audioChunks.push(e.data); };
+                            this.mediaRecorder.onstop = () => {
+                                this.stopLevelMonitoring();
+                                this.cleanupStream();
+                                if (this.audioChunks.length > 0) {
+                                    const blob = new Blob(this.audioChunks, { type: this.currentMimeType });
+                                    this.previewBlob = blob;
+                                    this.previewUrl = URL.createObjectURL(blob);
+                                    this.previewDuration = this.recordingTime;
+                                    this.previewing = true;
+                                }
+                            };
+                            this.mediaRecorder.start(100);
+                            this.recording = true;
+                            this.recordingTime = 0;
+                            this.timer = setInterval(() => this.recordingTime++, 1000);
+                        } catch (err) {
+                            this.requestingPermission = false;
+                            if (err.name === 'NotAllowedError') { this.permissionDenied = true; }
+                        }
+                    },
+
+                    stopRecording() {
+                        if (!this.recording) return;
+                        this.recording = false;
+                        clearInterval(this.timer);
+                        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                            this.mediaRecorder.stop();
+                        }
+                    },
+
+                    cancelRecording() {
+                        this.recording = false;
+                        clearInterval(this.timer);
+                        this.audioChunks = [];
+                        if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+                            this.mediaRecorder.stop();
+                        }
+                        this.cleanupStream();
+                        this.stopLevelMonitoring();
+                        this.previewing = false;
+                        if (this.previewUrl) { URL.revokeObjectURL(this.previewUrl); this.previewUrl = null; }
+                        this.previewBlob = null;
+                    },
+
+                    discardPreview() {
+                        this.previewing = false;
+                        if (this.previewUrl) { URL.revokeObjectURL(this.previewUrl); this.previewUrl = null; }
+                        this.previewBlob = null;
+                    },
+
+                    async sendAudio() {
+                        if (!this.previewBlob) return;
+                        this.previewing = false;
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                            const base64 = reader.result.split(',')[1];
+                            $wire.processRecordedAudio(base64, this.currentMimeType);
+                        };
+                        reader.readAsDataURL(this.previewBlob);
+                        if (this.previewUrl) { URL.revokeObjectURL(this.previewUrl); this.previewUrl = null; }
+                        this.previewBlob = null;
+                    },
+
+                    startLevelMonitoring() {
+                        try {
+                            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                            this.analyser = this.audioContext.createAnalyser();
+                            this.analyser.fftSize = 2048;
+                            this.analyser.smoothingTimeConstant = 0.3;
+                            const source = this.audioContext.createMediaStreamSource(this.stream);
+                            source.connect(this.analyser);
+                            const dataArray = new Uint8Array(this.analyser.fftSize);
+                            const updateLevel = () => {
+                                if (!this.recording) return;
+                                this.analyser.getByteTimeDomainData(dataArray);
+                                let sum = 0, peak = 0;
+                                for (let i = 0; i < dataArray.length; i++) {
+                                    const v = Math.abs(dataArray[i] - 128);
+                                    sum += v * v;
+                                    peak = Math.max(peak, v);
+                                }
+                                this.audioLevel = Math.min(100, Math.round(Math.sqrt(sum / dataArray.length) * 2));
+                                this.peakLevel = Math.max(this.peakLevel, peak);
+                                this.levelAnimationFrame = requestAnimationFrame(updateLevel);
+                            };
+                            updateLevel();
+                        } catch (e) { /* VU meter is optional */ }
+                    },
+
+                    stopLevelMonitoring() {
+                        if (this.levelAnimationFrame) { cancelAnimationFrame(this.levelAnimationFrame); this.levelAnimationFrame = null; }
+                        if (this.audioContext) { this.audioContext.close().catch(() => {}); this.audioContext = null; }
+                        this.audioLevel = 0;
+                    },
+
+                    cleanupStream() {
+                        if (this.stream) { this.stream.getTracks().forEach(t => t.stop()); this.stream = null; }
+                    },
+
+                    formatTime(seconds) {
+                        const m = Math.floor(seconds / 60);
+                        const s = seconds % 60;
+                        return m + ':' + (s < 10 ? '0' : '') + s;
+                    }
+                }" @keydown.escape.window="if (recording) cancelRecording(); else if (previewing) discardPreview();">
+
+                    {{-- Recording State --}}
+                    <template x-if="recording">
+                        <div class="border-t border-zinc-200 p-3 space-y-2">
+                            <div class="flex items-center gap-3">
+                                <div class="w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse"></div>
+                                <span class="text-sm font-medium text-red-600" x-text="formatTime(recordingTime)"></span>
+                                {{-- VU Meter --}}
+                                <div class="flex-1 flex gap-0.5 items-center h-4">
+                                    <template x-for="i in 10" :key="i">
+                                        <div class="flex-1 rounded-sm transition-all duration-75"
+                                             :class="audioLevel >= i * 10 ? (i <= 7 ? 'bg-emerald-500 h-full' : 'bg-red-500 h-full') : 'bg-zinc-300 h-1/2'"
+                                        ></div>
+                                    </template>
+                                </div>
+                                <button @click="stopRecording()" type="button" class="text-xs font-medium text-zinc-600 hover:text-zinc-900 px-2 py-1 rounded border border-zinc-300">
+                                    {{ __('Stop') }}
+                                </button>
+                                <button @click="cancelRecording()" type="button" class="text-xs text-red-500 hover:text-red-700 px-1">
+                                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+
+                    {{-- Preview State --}}
+                    <template x-if="previewing">
+                        <div class="border-t border-zinc-200 p-3 space-y-2">
+                            <audio controls :src="previewUrl" class="w-full h-8"></audio>
+                            <div class="flex gap-2">
+                                <button @click="discardPreview()" type="button" class="flex-1 text-xs font-medium text-zinc-600 hover:text-zinc-900 px-3 py-1.5 rounded border border-zinc-300">
+                                    {{ __('Discard') }}
+                                </button>
+                                <button @click="sendAudio()" type="button" class="flex-1 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded">
+                                    {{ __('Send') }}
+                                </button>
+                            </div>
+                        </div>
+                    </template>
+
+                    {{-- Processing State --}}
+                    @if ($isProcessingAudio)
+                        <div class="border-t border-zinc-200 p-3 flex items-center gap-2 text-sm text-zinc-500">
+                            <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                            {{ __('Processing audio...') }}
+                        </div>
+                    @endif
+
+                    {{-- Normal Input (hidden when recording/previewing/processing) --}}
+                    <template x-if="!recording && !previewing">
+                        <div class="border-t border-zinc-200 p-3" @if($isProcessingAudio) style="display:none" @endif>
+                            <form wire:submit="sendMessage" class="flex gap-2">
+                                <input wire:model="newMessage" type="text" class="flex-1 rounded-lg border border-zinc-300 px-3 py-2 text-sm text-zinc-900 bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500" placeholder="{{ __('Type a message...') }}" />
+                                {{-- Microphone button --}}
+                                <button x-show="hasMediaSupport" @click="startRecording()" type="button" class="text-zinc-400 hover:text-emerald-600 rounded-lg px-2 py-2 transition-colors shrink-0" :class="requestingPermission && 'animate-pulse'">
+                                    <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>
+                                </button>
+                                {{-- Send button --}}
+                                <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg px-3 py-2 transition-colors shrink-0">
+                                    <svg wire:loading.remove wire:target="sendMessage" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
+                                    <svg wire:loading wire:target="sendMessage" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                                </button>
+                            </form>
+                            @error('newMessage') <p class="text-xs text-red-500 mt-1">{{ $message }}</p> @enderror
+                        </div>
+                    </template>
+
+                    {{-- Permission denied message --}}
+                    <template x-if="permissionDenied">
+                        <div class="px-3 pb-2">
+                            <p class="text-xs text-red-500">{{ __('Microphone access denied. Check browser permissions.') }}</p>
+                        </div>
+                    </template>
                 </div>
             @endif
         </div>

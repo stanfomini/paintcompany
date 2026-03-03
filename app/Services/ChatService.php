@@ -627,6 +627,44 @@ class ChatService
     }
 
     /**
+     * Send a guest audio message in a support thread (no authenticated user).
+     *
+     * @param  array{audio_url: string, audio_path: string, audio_duration: float|null, transcription: string|null, transcription_status: string}  $audioData
+     * @param  array{guest_email?: string, guest_name?: string}  $metadata
+     */
+    public function sendGuestAudioMessage(ChatThread $thread, array $audioData, array $metadata = []): ChatMessage
+    {
+        $message = $thread->messages()->create([
+            'user_id' => null,
+            'content' => $audioData['transcription'] ?? '',
+            'type' => ChatMessage::TYPE_AUDIO,
+            'is_internal' => false,
+            'metadata' => array_merge($metadata ?: [], [
+                'audio_url' => $audioData['audio_url'],
+                'audio_path' => $audioData['audio_path'],
+                'audio_duration' => $audioData['audio_duration'],
+                'transcription' => $audioData['transcription'],
+                'transcription_status' => $audioData['transcription_status'],
+            ]),
+        ]);
+
+        $thread->touchLastMessage();
+
+        // Auto-unarchive for all participants
+        $thread->activeParticipants()
+            ->whereNotNull('archived_at')
+            ->each(fn (ChatParticipant $p) => $p->unarchive());
+
+        // Broadcast to thread channel so internal users see it in real-time
+        $this->safeBroadcast(new MessageSent($message));
+
+        // Dispatch unread email notifications
+        $this->dispatchGuestUnreadEmails($thread, $message);
+
+        return $message;
+    }
+
+    /**
      * Dispatch unread email jobs for guest messages (notify all active participants).
      */
     private function dispatchGuestUnreadEmails(ChatThread $thread, ChatMessage $message): void
