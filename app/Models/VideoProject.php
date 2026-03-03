@@ -18,6 +18,10 @@ class VideoProject extends Model
         'title',
         'description',
         'status',
+        'creation_mode',
+        'aspect_ratio',
+        'ai_prompt',
+        'template_id',
         'resolution_width',
         'resolution_height',
         'fps',
@@ -32,6 +36,8 @@ class VideoProject extends Model
     protected function casts(): array
     {
         return [
+            'creation_mode' => 'string',
+            'aspect_ratio' => 'string',
             'resolution_width' => 'integer',
             'resolution_height' => 'integer',
             'fps' => 'integer',
@@ -62,6 +68,11 @@ class VideoProject extends Model
     public function voiceovers(): HasMany
     {
         return $this->hasMany(VideoProjectVoiceover::class)->orderBy('sort_order');
+    }
+
+    public function template(): BelongsTo
+    {
+        return $this->belongsTo(StudioTemplate::class, 'template_id');
     }
 
     public function renderedVideo(): BelongsTo
@@ -95,5 +106,20 @@ class VideoProject extends Model
     public function isFailed(): bool
     {
         return $this->status === 'failed';
+    }
+
+    public function isQuickMode(): bool
+    {
+        return $this->creation_mode === 'quick';
+    }
+
+    public function isAiGenerated(): bool
+    {
+        return $this->creation_mode === 'ai_generated';
+    }
+
+    public function isTemplateMode(): bool
+    {
+        return $this->creation_mode === 'template';
     }
 }
