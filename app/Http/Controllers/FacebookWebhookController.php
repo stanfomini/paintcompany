@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\MessengerSetting;
 use App\Services\FacebookMessengerService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -24,6 +25,11 @@ class FacebookWebhookController extends Controller
         $result = $this->messenger->verifyWebhook($mode, $token, $challenge);
 
         if ($result !== null) {
+            MessengerSetting::getInstance()->update([
+                'is_connected' => true,
+                'connected_at' => now(),
+            ]);
+
             return response($result, 200);
         }
 

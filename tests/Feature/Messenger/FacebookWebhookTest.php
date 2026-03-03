@@ -65,6 +65,22 @@ describe('Webhook Verification (GET)', function () {
 
         expect($response->getContent())->toBe('my-unique-challenge-42');
     });
+
+    it('sets is_connected to true after successful webhook verification', function () {
+        $settings = MessengerSetting::getInstance();
+        expect($settings->is_connected)->toBeFalse();
+
+        $this->get('/webhook/facebook/receive?'.http_build_query([
+            'hub_mode' => 'subscribe',
+            'hub_verify_token' => $settings->verify_token,
+            'hub_challenge' => 'test-challenge-123',
+        ]))->assertOk();
+
+        MessengerSetting::clearInstanceCache();
+        $settings = MessengerSetting::getInstance();
+        expect($settings->is_connected)->toBeTrue();
+        expect($settings->connected_at)->not->toBeNull();
+    });
 });
 
 describe('Webhook Receive (POST)', function () {
