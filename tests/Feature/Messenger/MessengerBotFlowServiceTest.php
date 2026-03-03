@@ -427,6 +427,42 @@ describe('checkTimeouts', function () {
     });
 });
 
+describe('quick reply options', function () {
+    it('translates label/value to title/payload when sending quick replies', function () {
+        $flow = MessengerBotFlow::factory()->active()->create([
+            'greeting_message' => 'Hi there!',
+        ]);
+
+        $step = MessengerBotStep::factory()->quickReply()->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'Interior or exterior?',
+            'quick_reply_options' => [
+                ['label' => 'Interior', 'value' => 'interior'],
+                ['label' => 'Exterior', 'value' => 'exterior'],
+            ],
+        ]);
+
+        $thread = ChatThread::factory()->facebook('55554444')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        $conversation = $service->startConversation($thread, '55554444');
+
+        // Verify the quick reply was sent with correct title/payload format
+        Http::assertSent(function ($request) {
+            $quickReplies = $request['message']['quick_replies'] ?? [];
+            if (empty($quickReplies)) {
+                return false;
+            }
+
+            return $quickReplies[0]['title'] === 'Interior'
+                && $quickReplies[0]['payload'] === 'interior'
+                && $quickReplies[1]['title'] === 'Exterior'
+                && $quickReplies[1]['payload'] === 'exterior';
+        });
+    });
+});
+
 describe('getActiveFlow', function () {
     it('only one flow can be active at a time', function () {
         $flow1 = MessengerBotFlow::factory()->active()->create();

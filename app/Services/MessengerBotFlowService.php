@@ -111,7 +111,15 @@ class MessengerBotFlowService
                 break;
 
             case MessengerBotStep::TYPE_QUICK_REPLY:
-                $options = $nextStep->quick_reply_options ?? [];
+                $options = collect($nextStep->quick_reply_options ?? [])
+                    ->map(fn (array $opt) => [
+                        'title' => $opt['title'] ?? $opt['label'] ?? '',
+                        'payload' => $opt['payload'] ?? $opt['value'] ?? '',
+                    ])
+                    ->filter(fn (array $opt) => $opt['title'] !== '' && $opt['payload'] !== '')
+                    ->values()
+                    ->all();
+
                 if (! empty($options)) {
                     $this->messengerService->sendQuickReply($psid, $nextStep->message_text, $options);
                 } else {
