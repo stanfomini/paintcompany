@@ -10,10 +10,16 @@ class ChatAudioController extends Controller
     /**
      * Stream a chat audio file with proper headers for browser playback.
      *
-     * Uses a signed URL parameter for auth (no login required for public chat users).
+     * Only used for local disk storage. S3 serves directly via presigned URLs.
+     * Uses a signed route parameter for auth (no login required for public chat users).
      */
     public function stream(string $filename): StreamedResponse
     {
+        // On S3, audio is served directly — this route shouldn't be hit
+        if (config('filesystems.disks.'.config('filesystems.default').'.driver') === 's3') {
+            abort(404);
+        }
+
         $path = 'chat-audio/'.$filename;
 
         if (! Storage::exists($path)) {

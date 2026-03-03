@@ -161,7 +161,9 @@ class ChatMessage extends Model
 
     /**
      * Get a fresh audio URL for this message.
-     * Uses a dedicated streaming route with signed URL for proper audio headers.
+     *
+     * S3: uses S3 presigned temporary URL (serves directly from S3, no proxy).
+     * Local: uses dedicated streaming route with signed URL for proper audio headers.
      */
     public function getAudioUrl(): ?string
     {
@@ -171,18 +173,23 @@ class ChatMessage extends Model
 
         $path = $this->metadata['audio_path'] ?? null;
 
-        if ($path) {
-            $filename = basename($path);
-
-            return \Illuminate\Support\Facades\URL::signedRoute(
-                'chat.audio.stream',
-                ['filename' => $filename],
-                now()->addHours(24)
-            );
+        if (! $path) {
+            return $this->metadata['audio_url'] ?? null;
         }
 
-        // Fallback to stored URL (may be expired but better than nothing)
-        return $this->metadata['audio_url'] ?? null;
+        $disk = \Illuminate\Support\Facades\Storage::disk();
+
+        // S3/cloud storage: use presigned temporary URL (direct from S3)
+        if (config('filesystems.disks.'.config('filesystems.default').'.driver') === 's3') {
+            return $disk->temporaryUrl($path, now()->addHours(24));
+        }
+
+        // Local storage: use dedicated streaming route with proper audio headers
+        return \Illuminate\Support\Facades\URL::signedRoute(
+            'chat.audio.stream',
+            ['filename' => basename($path)],
+            now()->addHours(24)
+        );
     }
 
     /**
