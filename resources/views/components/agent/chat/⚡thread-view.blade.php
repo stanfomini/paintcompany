@@ -337,23 +337,17 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                 <flux:text class="text-sm">{{ $message->content }}</flux:text>
                             @elseif ($message->isAudio())
                                 {{-- Audio message --}}
-                                @php
-                                    $audioUrl = $message->getAudioUrl() ?? '';
-                                    $audioMime = $message->metadata['audio_mime_type'] ?? null;
-                                    $isM4a = $audioMime === 'audio/mp4' || str_ends_with($audioUrl, '.m4a');
-                                @endphp
                                 <div class="space-y-2">
-                                    {{-- Audio player with multiple source formats for cross-browser support --}}
+                                    {{-- Audio player --}}
                                     <div
                                         x-data="{
                                             audioError: false,
                                             audioLoaded: false,
-                                            handleError(e) {
-                                                console.error('[AudioPlayer] Error loading audio:', e.target.error);
-                                                this.audioError = true;
-                                            },
-                                            handleLoaded() {
-                                                this.audioLoaded = true;
+                                            checkError(el) {
+                                                if (this.audioLoaded) return;
+                                                if (el.networkState === 3 || (el.error && el.readyState === 0)) {
+                                                    this.audioError = true;
+                                                }
                                             }
                                         }"
                                         class="relative"
@@ -362,18 +356,11 @@ new #[Layout('components.layouts.agent', ['title' => 'Conversation'])] class ext
                                             controls
                                             class="w-full max-w-[280px]"
                                             preload="metadata"
-                                            x-on:error="handleError($event)"
-                                            x-on:loadedmetadata="handleLoaded()"
+                                            x-on:error="$nextTick(() => checkError($el))"
+                                            x-on:loadedmetadata="audioLoaded = true; audioError = false"
                                             x-show="!audioError"
                                         >
-                                            @if ($isM4a)
-                                                <source src="{{ $audioUrl }}" type="audio/mp4">
-                                            @else
-                                                <source src="{{ $audioUrl }}" type="audio/webm; codecs=opus">
-                                                <source src="{{ $audioUrl }}" type="audio/webm">
-                                            @endif
-                                            <source src="{{ $audioUrl }}" type="audio/mp4">
-                                            <source src="{{ $audioUrl }}">
+                                            <source src="{{ $message->getAudioUrl() ?? '' }}">
                                             {{ __('Your browser does not support audio playback.') }}
                                         </audio>
 
