@@ -15,6 +15,7 @@ use App\Models\Deal;
 use App\Models\PropertyPhoto;
 use App\Models\User;
 use App\Models\VideoProject;
+use App\Models\VideoRecording;
 use Prism\Prism\Enums\Provider;
 use Prism\Prism\Facades\Prism;
 use Prism\Prism\Text\Response as TextResponse;
@@ -206,6 +207,76 @@ class StudioAiService
                 'sort_order' => $targetScene->overlays()->count(),
             ]);
         }
+    }
+
+    /**
+     * Generate auto-captions for video clips using Whisper transcription.
+     * Creates timed text overlays on the project's scenes.
+     *
+     * @return array<int, array{text: string, start: float, end: float, scene_id: int}> Generated caption segments
+     */
+    public function generateCaptions(VideoProject $project): array
+    {
+        $python = app(PythonBridgeService::class);
+
+        if (! $python->isEnabled()) {
+            return [];
+        }
+
+        $captions = [];
+        $scenes = $project->scenes()->with('clips.source')->orderBy('sort_order')->get();
+
+        foreach ($scenes as $scene) {
+            foreach ($scene->clips as $clip) {
+                if ($clip->source_type !== VideoRecording::class) {
+                    continue;
+                }
+
+                $recording = $clip->source;
+                if (! $recording || ! $recording->isReady()) {
+                    continue;
+                }
+
+                $audioUrl = $recording->getVideoUrl() ?? $recording->getStreamUrl();
+                if (! $audioUrl) {
+                    continue;
+                }
+
+                try {
+                    $result = $python->transcribeAudio($audioUrl);
+
+                    if (! isset($result['segments'])) {
+                        continue;
+                    }
+
+                    foreach ($result['segments'] as $segment) {
+                        $text = trim($segment['text'] ?? '');
+                        if ($text === '') {
+                            continue;
+                        }
+
+                        $scene->overlays()->create([
+                            'type' => 'caption',
+                            'content' => $text,
+                            'sort_order' => $scene->overlays()->count(),
+                        ]);
+
+                        $captions[] = [
+                            'text' => $text,
+                            'start' => $segment['start'] ?? 0,
+                            'end' => $segment['end'] ?? 0,
+                            'scene_id' => $scene->id,
+                        ];
+                    }
+                } catch (\Exception $e) {
+                    report($e);
+
+                    continue;
+                }
+            }
+        }
+
+        return $captions;
     }
 
     /**
