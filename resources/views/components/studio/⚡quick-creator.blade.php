@@ -216,6 +216,22 @@ class extends Component {
         }
     }
 
+    public function setClipAsPipBackground(?int $index): void
+    {
+        if ($index !== null) {
+            $clips = $this->clips;
+            if (! isset($clips[$index])) {
+                return;
+            }
+        }
+        $this->pipBackgroundIndex = $index;
+    }
+
+    public function clearPipBackground(): void
+    {
+        $this->pipBackgroundIndex = null;
+    }
+
     #[On('media-selected')]
     public function onMediaSelected(string $type, int $id): void
     {
@@ -243,6 +259,23 @@ class extends Component {
         useFrontCamera: true,
         segmentCount: 0,
 
+        // PIP state
+        pipMode: false,
+        pipBackgroundUrl: null,
+        pipBackgroundType: null,
+
+        enterPipMode(url, type) {
+            this.pipMode = true;
+            this.pipBackgroundUrl = url;
+            this.pipBackgroundType = type;
+        },
+
+        exitPipMode() {
+            this.pipMode = false;
+            this.pipBackgroundUrl = null;
+            this.pipBackgroundType = null;
+        },
+
         setActiveClip(index, url, type) {
             this.activeClipIndex = index;
             this.previewUrl = url;
@@ -255,8 +288,10 @@ class extends Component {
                     video: { facingMode: this.useFrontCamera ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
                     audio: true
                 });
-                this.$refs.cameraPreview.srcObject = this.stream;
                 this.recordingState = 'previewing';
+                await this.$nextTick();
+                const videoEl = this.pipMode ? this.$refs.pipCameraPreview : this.$refs.cameraPreview;
+                if (videoEl) videoEl.srcObject = this.stream;
             } catch (e) {
                 console.error('Camera access denied:', e);
             }
@@ -377,6 +412,15 @@ class extends Component {
         @endforeach
     </div>
 
+    {{-- PIP indicator --}}
+    <div x-show="pipMode" x-cloak class="flex items-center justify-center gap-2 text-blue-400 text-sm px-3 py-1 bg-zinc-900/50">
+        <flux:icon name="squares-2x2" class="size-4" />
+        <span>{{ __('PIP Mode') }}</span>
+        <button @click="exitPipMode(); $wire.clearPipBackground()" class="text-zinc-400 hover:text-white transition-colors">
+            <flux:icon name="x-mark" class="size-4" />
+        </button>
+    </div>
+
     {{-- Preview area --}}
     <div class="flex-1 flex items-center justify-center p-4 overflow-hidden">
         <div
@@ -385,13 +429,28 @@ class extends Component {
                 {{ $videoProject->aspect_ratio === '16:9' ? 'w-full max-w-full aspect-video' : '' }}
                 {{ $videoProject->aspect_ratio === '1:1' ? 'h-full max-h-full aspect-square' : '' }}"
         >
-            {{-- Camera preview (when recording) --}}
+            {{-- PIP preview layout (background + camera corner) --}}
+            <template x-if="pipMode && (recordingState === 'previewing' || recordingState === 'recording' || recordingState === 'uploading')">
+                <div class="relative w-full h-full">
+                    <template x-if="pipBackgroundType === 'image'">
+                        <img :src="pipBackgroundUrl" class="w-full h-full object-cover" />
+                    </template>
+                    <template x-if="pipBackgroundType === 'video'">
+                        <video :src="pipBackgroundUrl" class="w-full h-full object-cover" autoplay loop muted></video>
+                    </template>
+                    <video x-ref="pipCameraPreview" autoplay muted playsinline
+                        class="absolute bottom-3 right-3 w-1/4 h-1/4 object-cover rounded-lg border-2 border-white shadow-lg">
+                    </video>
+                </div>
+            </template>
+
+            {{-- Camera preview (when recording, non-PIP) --}}
             <video
                 x-ref="cameraPreview"
                 autoplay
                 muted
                 playsinline
-                x-show="recordingState === 'previewing' || recordingState === 'recording' || recordingState === 'uploading'"
+                x-show="!pipMode && (recordingState === 'previewing' || recordingState === 'recording' || recordingState === 'uploading')"
                 class="w-full h-full object-cover"
                 x-cloak
             ></video>
@@ -563,6 +622,22 @@ class extends Component {
                             {{ $clip->metadata['speed'] }}x
                         </span>
                     @endif
+
+                    {{-- PIP background button --}}
+                    @php
+                        $clipUrl = $clip->source instanceof \App\Models\PropertyPhoto
+                            ? $clip->source->url
+                            : ($clip->source instanceof \App\Models\VideoRecording ? ($clip->source->getThumbnailUrl() ?? '') : '');
+                        $clipType = $clip->source instanceof \App\Models\VideoRecording ? 'video' : 'image';
+                    @endphp
+                    <button
+                        wire:click.stop="setClipAsPipBackground({{ $index }})"
+                        @click.stop="enterPipMode('{{ $clipUrl }}', '{{ $clipType }}')"
+                        class="absolute bottom-0.5 left-0.5 p-0.5 bg-black/60 rounded text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-500/80"
+                        title="{{ __('Use as PIP background') }}"
+                    >
+                        <flux:icon name="squares-2x2" class="size-3" />
+                    </button>
 
                     {{-- Delete button --}}
                     <button
