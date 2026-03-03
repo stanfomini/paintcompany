@@ -5,6 +5,7 @@ use App\Models\VideoProject;
 use App\Models\VideoRecording;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -18,6 +19,8 @@ class extends Component {
 
     #[Url]
     public string $search = '';
+
+    public bool $showTemplatePicker = false;
 
     public function updatedSearch(): void
     {
@@ -41,6 +44,17 @@ class extends Component {
         ]);
 
         $this->redirect(route('studio.create', $project), navigate: true);
+    }
+
+    public function openTemplates(): void
+    {
+        $this->showTemplatePicker = true;
+    }
+
+    #[On('ai-project-created')]
+    public function onAiProjectCreated(int $projectId): void
+    {
+        $this->redirect(route('studio.create', $projectId), navigate: true);
     }
 
     #[Computed]
@@ -94,11 +108,24 @@ class extends Component {
             <flux:heading size="xl">{{ __('Studio') }}</flux:heading>
             <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{{ __('Browse deals, videos, and media') }}</p>
         </div>
-        <flux:button wire:click="createBlank" variant="primary">
-            <flux:icon name="plus" class="size-4 mr-1" />
-            {{ __('Create') }}
-        </flux:button>
+        <div class="flex items-center gap-2">
+            <flux:button wire:click="openTemplates" variant="ghost" icon="rectangle-stack">
+                {{ __('Templates') }}
+            </flux:button>
+            <flux:button wire:click="createBlank" variant="primary">
+                <flux:icon name="plus" class="size-4 mr-1" />
+                {{ __('Create') }}
+            </flux:button>
+        </div>
     </div>
+
+    {{-- AI Prompt Bar --}}
+    <div class="mb-6">
+        <livewire:studio.ai-prompt-bar />
+    </div>
+
+    {{-- Template Picker Modal --}}
+    <livewire:studio.template-picker :show="$showTemplatePicker" />
 
     {{-- Tabs --}}
     <div class="flex flex-wrap items-center gap-2 mb-6 sticky top-0 z-10 bg-white dark:bg-zinc-950 py-2 -mx-4 px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 border-b border-zinc-200 dark:border-zinc-700">
