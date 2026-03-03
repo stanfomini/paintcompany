@@ -22,6 +22,7 @@ class VideoProjectClip extends Model
         'start_ms',
         'volume',
         'fit_mode',
+        'metadata',
         'transition_type',
         'transition_duration_ms',
         'sort_order',
@@ -34,6 +35,7 @@ class VideoProjectClip extends Model
             'out_point_ms' => 'integer',
             'start_ms' => 'integer',
             'volume' => 'integer',
+            'metadata' => 'array',
             'transition_duration_ms' => 'integer',
             'sort_order' => 'integer',
         ];

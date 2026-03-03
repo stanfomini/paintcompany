@@ -160,6 +160,25 @@ class extends Component {
         unset($this->clips);
     }
 
+    public function setClipSpeed(int $index, float $speed): void
+    {
+        $clips = $this->clips;
+        if (! isset($clips[$index])) {
+            return;
+        }
+
+        if (! in_array($speed, [0.5, 1.0, 1.5, 2.0])) {
+            return;
+        }
+
+        $clip = $clips[$index];
+        $metadata = $clip->metadata ?? [];
+        $metadata['speed'] = $speed;
+        $clip->update(['metadata' => $metadata]);
+
+        unset($this->clips);
+    }
+
     public function addTextOverlay(): void
     {
         $this->validate([
@@ -538,6 +557,13 @@ class extends Component {
                         </span>
                     @endif
 
+                    {{-- Speed badge --}}
+                    @if(($clip->metadata['speed'] ?? 1.0) != 1.0)
+                        <span class="absolute top-0.5 left-0.5 bg-yellow-500 text-black text-[10px] font-bold px-1 rounded">
+                            {{ $clip->metadata['speed'] }}x
+                        </span>
+                    @endif
+
                     {{-- Delete button --}}
                     <button
                         wire:click.stop="removeClip({{ $index }})"
@@ -612,6 +638,28 @@ class extends Component {
                 <flux:icon name="bars-3-bottom-left" class="size-5" />
                 <span class="text-xs">{{ __('Text') }}</span>
             </button>
+            <div x-data="{ showSpeed: false }" class="relative">
+                <button @click="showSpeed = !showSpeed" class="flex flex-col items-center gap-1 text-zinc-400 hover:text-white transition-colors">
+                    <flux:icon name="forward" class="size-5" />
+                    <span class="text-xs">{{ __('Speed') }}</span>
+                </button>
+                <div
+                    x-show="showSpeed"
+                    @click.outside="showSpeed = false"
+                    x-cloak
+                    class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 z-10"
+                >
+                    @foreach([0.5, 1.0, 1.5, 2.0] as $speed)
+                        <button
+                            wire:click="setClipSpeed(activeClipIndex, {{ $speed }})"
+                            @click="showSpeed = false"
+                            class="block w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 rounded whitespace-nowrap"
+                        >
+                            {{ $speed }}x
+                        </button>
+                    @endforeach
+                </div>
+            </div>
         </div>
     </div>
 
