@@ -26,6 +26,12 @@ class extends Component {
 
     public string $overlaySize = 'md';
 
+    public bool $showExportModal = false;
+
+    public bool $isRendering = false;
+
+    public bool $publishToHub = false;
+
     public function mount(VideoProject $videoProject): void
     {
         abort_unless($videoProject->user_id === auth()->id(), 403);
@@ -232,6 +238,66 @@ class extends Component {
         $this->pipBackgroundIndex = null;
     }
 
+    public function openExportModal(): void
+    {
+        $this->showExportModal = true;
+    }
+
+    public function startRender(): void
+    {
+        $this->isRendering = true;
+        $this->videoProject->update(['status' => 'rendering']);
+        $this->showExportModal = false;
+    }
+
+    public function publishToHub(): void
+    {
+        $recording = $this->videoProject->renderedVideo;
+        if (! $recording) {
+            return;
+        }
+
+        $recording->update(['available_in_hub' => true]);
+        $this->publishToHub = true;
+    }
+
+    public function unpublishFromHub(): void
+    {
+        $recording = $this->videoProject->renderedVideo;
+        if (! $recording) {
+            return;
+        }
+
+        $recording->update(['available_in_hub' => false]);
+        $this->publishToHub = false;
+    }
+
+    #[Computed]
+    public function shareUrl(): ?string
+    {
+        return $this->videoProject->share_token
+            ? url('/studio/share/'.$this->videoProject->share_token)
+            : null;
+    }
+
+    #[Computed]
+    public function downloadUrl(): ?string
+    {
+        $recording = $this->videoProject->renderedVideo;
+        if (! $recording || ! $recording->isReady()) {
+            return null;
+        }
+
+        return $recording->getVideoUrl();
+    }
+
+    #[Computed]
+    public function isProjectRendered(): bool
+    {
+        return $this->videoProject->status === 'rendered'
+            && $this->videoProject->renderedVideo?->isReady();
+    }
+
     #[On('media-selected')]
     public function onMediaSelected(string $type, int $id): void
     {
@@ -395,9 +461,9 @@ class extends Component {
                 placeholder="{{ __('Untitled Project') }}"
             />
         </div>
-        <a href="{{ route('studio') }}" wire:navigate class="text-sm font-medium text-blue-400 hover:text-blue-300">
+        <flux:button wire:click="openExportModal" variant="primary" size="sm">
             {{ __('Done') }}
-        </a>
+        </flux:button>
     </div>
 
     {{-- Aspect ratio pills --}}
@@ -784,4 +850,83 @@ class extends Component {
     <div x-show="showMediaBrowser" x-cloak @media-selected.window="showMediaBrowser = false">
         <livewire:studio.media-browser />
     </div>
+
+    {{-- Export modal --}}
+    @if($showExportModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/70" wire:click.self="$set('showExportModal', false)">
+            <div class="bg-zinc-800 rounded-2xl border border-zinc-700 w-full max-w-md mx-4 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-bold text-white">{{ __('Export Video') }}</h3>
+                    <button wire:click="$set('showExportModal', false)" class="text-zinc-400 hover:text-white">
+                        <flux:icon name="x-mark" class="size-5" />
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    {{-- Render button --}}
+                    @if($videoProject->status === 'draft' || $videoProject->status === 'failed')
+                        <flux:button wire:click="startRender" variant="primary" class="w-full" icon="play">
+                            {{ __('Render Video') }}
+                        </flux:button>
+                        <p class="text-xs text-zinc-400">{{ __('Combines your clips into a final video.') }}</p>
+                    @elseif($videoProject->status === 'rendering')
+                        <div class="flex items-center gap-3 text-yellow-400">
+                            <svg class="animate-spin size-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                            <span>{{ __('Rendering... This may take a few minutes.') }}</span>
+                        </div>
+                    @endif
+
+                    {{-- Download (when rendered) --}}
+                    @if($this->isProjectRendered)
+                        <a href="{{ $this->downloadUrl }}" target="_blank"
+                            class="flex items-center gap-3 w-full px-4 py-3 bg-zinc-700 rounded-lg text-white hover:bg-zinc-600 transition-colors">
+                            <flux:icon name="arrow-down-tray" class="size-5" />
+                            <span>{{ __('Download Video') }}</span>
+                        </a>
+                    @endif
+
+                    {{-- Publish to Hub --}}
+                    @if($this->isProjectRendered)
+                        <div class="flex items-center justify-between px-4 py-3 bg-zinc-700 rounded-lg">
+                            <div class="flex items-center gap-3 text-white">
+                                <flux:icon name="globe-alt" class="size-5" />
+                                <span>{{ __('Publish to Media Hub') }}</span>
+                            </div>
+                            <flux:switch
+                                wire:click="{{ $publishToHub ? 'unpublishFromHub' : 'publishToHub' }}"
+                                :checked="$publishToHub" />
+                        </div>
+                    @endif
+
+                    {{-- Share Link --}}
+                    @if($this->shareUrl)
+                        <div class="px-4 py-3 bg-zinc-700 rounded-lg">
+                            <div class="flex items-center gap-3 text-white mb-2">
+                                <flux:icon name="link" class="size-5" />
+                                <span>{{ __('Share Link') }}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" value="{{ $this->shareUrl }}" readonly
+                                    class="flex-1 bg-zinc-800 border border-zinc-600 rounded px-3 py-1.5 text-sm text-zinc-300" />
+                                <button onclick="navigator.clipboard.writeText('{{ $this->shareUrl }}')"
+                                    class="px-3 py-1.5 bg-zinc-600 text-white rounded text-sm hover:bg-zinc-500 transition-colors">
+                                    {{ __('Copy') }}
+                                </button>
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Back to studio --}}
+                    <a href="{{ route('studio') }}" wire:navigate
+                        class="flex items-center justify-center gap-2 w-full px-4 py-3 bg-zinc-900 rounded-lg text-zinc-400 hover:text-white transition-colors text-sm">
+                        <flux:icon name="arrow-left" class="size-4" />
+                        {{ __('Back to Studio') }}
+                    </a>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>
