@@ -140,6 +140,26 @@ class extends Component {
         $this->videoProject->update(['aspect_ratio' => $ratio]);
     }
 
+    public function setTransition(int $clipIndex, string $type, int $durationMs = 500): void
+    {
+        $validTypes = ['cut', 'fade', 'slide-left', 'slide-right', 'zoom'];
+        if (! in_array($type, $validTypes)) {
+            return;
+        }
+
+        $clips = $this->clips;
+        if (! isset($clips[$clipIndex])) {
+            return;
+        }
+
+        $clips[$clipIndex]->update([
+            'transition_type' => $type,
+            'transition_duration_ms' => $durationMs,
+        ]);
+
+        unset($this->clips);
+    }
+
     public function addTextOverlay(): void
     {
         $this->validate([
@@ -486,7 +506,7 @@ class extends Component {
 
     {{-- Clip strip --}}
     <div class="bg-zinc-900 border-t border-zinc-800 px-4 py-3">
-        <div class="flex items-center gap-2 overflow-x-auto pb-1">
+        <div class="flex items-center gap-0 overflow-x-auto pb-1">
             @forelse($this->clips as $index => $clip)
                 <div
                     wire:key="clip-{{ $clip->id }}"
@@ -526,13 +546,59 @@ class extends Component {
                         <flux:icon name="x-mark" class="size-3" />
                     </button>
                 </div>
+
+                {{-- Transition button between clips --}}
+                @if(! $loop->last)
+                    @php
+                        $nextClip = $this->clips[$index + 1] ?? null;
+                        $currentTransition = $nextClip?->transition_type;
+                        $transitionLabel = match($currentTransition) {
+                            'fade' => 'F',
+                            'slide-left' => 'SL',
+                            'slide-right' => 'SR',
+                            'zoom' => 'Z',
+                            'cut' => 'C',
+                            default => null,
+                        };
+                    @endphp
+                    <div x-data="{ showTransitions: false }" class="relative shrink-0" wire:key="transition-{{ $clip->id }}">
+                        <button
+                            @click="showTransitions = !showTransitions"
+                            class="w-6 h-16 flex items-center justify-center text-zinc-500 hover:text-white transition-colors"
+                        >
+                            @if($transitionLabel)
+                                <span class="text-[10px] font-bold text-blue-400">{{ $transitionLabel }}</span>
+                            @else
+                                <flux:icon name="chevron-right" class="size-3" />
+                            @endif
+                        </button>
+
+                        {{-- Transition picker dropdown --}}
+                        <div
+                            x-show="showTransitions"
+                            @click.outside="showTransitions = false"
+                            x-cloak
+                            class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg p-1.5 z-10 min-w-[120px]"
+                        >
+                            @foreach(['cut' => 'Cut', 'fade' => 'Fade', 'slide-left' => 'Slide L', 'slide-right' => 'Slide R', 'zoom' => 'Zoom'] as $type => $label)
+                                <button
+                                    wire:click="setTransition({{ $index + 1 }}, '{{ $type }}')"
+                                    @click="showTransitions = false"
+                                    class="block w-full text-left px-3 py-1.5 text-sm rounded transition-colors {{ $currentTransition === $type ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-300 hover:bg-zinc-700' }}"
+                                >
+                                    {{ $label }}
+                                </button>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
             @empty
             @endforelse
 
             {{-- Add clip button --}}
             <button
                 @click="showMediaBrowser = true"
-                class="shrink-0 w-16 h-16 rounded-lg border-2 border-dashed border-zinc-700 hover:border-zinc-500 flex items-center justify-center text-zinc-500 hover:text-zinc-400 transition-colors"
+                class="shrink-0 w-16 h-16 rounded-lg border-2 border-dashed border-zinc-700 hover:border-zinc-500 flex items-center justify-center text-zinc-500 hover:text-zinc-400 transition-colors ml-2"
             >
                 <flux:icon name="plus" class="size-6" />
             </button>

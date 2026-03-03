@@ -19,8 +19,11 @@ class VideoProjectClip extends Model
         'source_id',
         'in_point_ms',
         'out_point_ms',
+        'start_ms',
         'volume',
         'fit_mode',
+        'transition_type',
+        'transition_duration_ms',
         'sort_order',
     ];
 
@@ -29,7 +32,9 @@ class VideoProjectClip extends Model
         return [
             'in_point_ms' => 'integer',
             'out_point_ms' => 'integer',
+            'start_ms' => 'integer',
             'volume' => 'integer',
+            'transition_duration_ms' => 'integer',
             'sort_order' => 'integer',
         ];
     }
