@@ -3,6 +3,7 @@
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\Job;
+use App\Models\PaintColor;
 use App\Models\JobActivity;
 use App\Models\JobPrepApproval;
 use App\Models\JobPrepPlan;
@@ -30,6 +31,8 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
     public string $newColorCode = '';
 
     public string $newColorHex = '#ffffff';
+
+    public string $jobColorSearch = '';
 
     public string $proposedDate = '';
 
@@ -233,6 +236,36 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         $this->job->load('deal.chatThread');
 
         session()->flash('success', __('Your preferred date has been proposed. We\'ll review and confirm shortly.'));
+    }
+
+    #[Computed]
+    public function jobColorSearchResults()
+    {
+        if (strlen($this->jobColorSearch) < 2) {
+            return collect();
+        }
+
+        return PaintColor::query()
+            ->with('brand')
+            ->active()
+            ->search($this->jobColorSearch)
+            ->orderByRaw('CASE WHEN name LIKE ? THEN 0 ELSE 1 END', [$this->jobColorSearch . '%'])
+            ->limit(8)
+            ->get();
+    }
+
+    public function selectJobColor(int $colorId): void
+    {
+        $color = PaintColor::with('brand')->find($colorId);
+        if (! $color) {
+            return;
+        }
+
+        $this->newColorName = $color->name;
+        $this->newColorBrand = $color->brand?->name ?? '';
+        $this->newColorCode = $color->code;
+        $this->newColorHex = $color->hex_value;
+        $this->jobColorSearch = '';
     }
 
     /**
@@ -1544,26 +1577,84 @@ new #[Layout('components.layouts.customer', ['title' => 'Job Progress'])] class 
         <div class="space-y-4">
             <flux:heading size="lg">{{ __('Choose a Color') }}</flux:heading>
 
+            {{-- Color Search --}}
+            <div
+                x-data="{ open: false }"
+                x-on:click.outside="open = false"
+                class="relative"
+            >
+                <flux:field>
+                    <flux:label>{{ __('Search Paint Colors') }}</flux:label>
+                    <flux:input
+                        wire:model.live.debounce.300ms="jobColorSearch"
+                        x-on:focus="open = true"
+                        x-on:input="open = true"
+                        placeholder="{{ __('Search by name or code...') }}"
+                        icon="magnifying-glass"
+                    />
+                </flux:field>
+
+                @if ($this->jobColorSearchResults->isNotEmpty())
+                    <div
+                        x-show="open"
+                        x-transition.opacity
+                        class="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 shadow-lg max-h-60 overflow-y-auto"
+                    >
+                        @foreach ($this->jobColorSearchResults as $result)
+                            <button
+                                type="button"
+                                wire:key="job-color-{{ $result->id }}"
+                                wire:click="selectJobColor({{ $result->id }})"
+                                x-on:click="open = false"
+                                class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors text-left"
+                            >
+                                <span
+                                    class="size-8 rounded-md border border-zinc-300 dark:border-zinc-600 shrink-0 shadow-sm"
+                                    style="background-color: {{ $result->hex_value }}"
+                                ></span>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{{ $result->name }}</div>
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $result->code }}</div>
+                                </div>
+                                <span class="shrink-0 text-xs font-medium text-zinc-400 dark:text-zinc-500">{{ $result->brand->code ?? $result->brand->name }}</span>
+                            </button>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
+
+            {{-- Selected Color Preview --}}
+            @if ($newColorName)
+                <div class="flex items-center gap-3 p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+                    <div class="size-10 rounded-lg border border-zinc-300 dark:border-zinc-600 shrink-0 shadow-sm" style="background-color: {{ $newColorHex }}"></div>
+                    <div>
+                        <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ $newColorName }}</div>
+                        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ collect([$newColorBrand, $newColorCode])->filter()->join(' - ') }}</div>
+                    </div>
+                </div>
+            @endif
+
+            <flux:separator />
+
+            <flux:text class="text-xs text-zinc-500">{{ __('Or enter a custom color:') }}</flux:text>
+
             <flux:field>
                 <flux:label>{{ __('Color Name') }}</flux:label>
                 <flux:input wire:model="newColorName" placeholder="e.g. Simply White" />
                 <flux:error name="newColorName" />
             </flux:field>
 
-            <flux:field>
-                <flux:label>{{ __('Brand (optional)') }}</flux:label>
-                <flux:input wire:model="newColorBrand" placeholder="e.g. Benjamin Moore" />
-            </flux:field>
+            <div class="grid grid-cols-2 gap-3">
+                <flux:field>
+                    <flux:label>{{ __('Brand') }}</flux:label>
+                    <flux:input wire:model="newColorBrand" placeholder="e.g. Benjamin Moore" />
+                </flux:field>
 
-            <flux:field>
-                <flux:label>{{ __('Color Code (optional)') }}</flux:label>
-                <flux:input wire:model="newColorCode" placeholder="e.g. OC-17" />
-            </flux:field>
-
-            <flux:field>
-                <flux:label>{{ __('Preview Color (optional)') }}</flux:label>
-                <flux:input type="color" wire:model="newColorHex" />
-            </flux:field>
+                <flux:field>
+                    <flux:label>{{ __('Code') }}</flux:label>
+                    <flux:input wire:model="newColorCode" placeholder="e.g. OC-17" />
+                </flux:field>
+            </div>
 
             <div class="flex justify-end gap-2">
                 <flux:button wire:click="$set('showColorModal', false)" variant="ghost">{{ __('Cancel') }}</flux:button>
