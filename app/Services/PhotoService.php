@@ -29,7 +29,7 @@ class PhotoService
         $disk = config('filesystems.default');
         $basePath = "photos/properties/{$property->id}/originals";
         $filename = "{$uuid}.{$ext}";
-        $storagePath = $file->storeAs($basePath, $filename);
+        $storagePath = $file->storeAs($basePath, $filename, $disk);
 
         $photo = PropertyPhoto::create([
             'property_id' => $property->id,
