@@ -133,13 +133,13 @@ new class extends Component {
             }
         } else {
             // Fallback for estimates without a property
-            $disk = 'public';
+            $disk = config('filesystems.default');
             $storagePath = "photos/estimates/{$this->estimate->id}";
             $maxSortOrder = $this->estimate->photos()->max('sort_order') ?? 0;
 
             foreach ($this->uploadedPhotos as $photo) {
                 $filename = $photo->hashName();
-                $path = $photo->storeAs($storagePath, $filename, 'public');
+                $path = $photo->storeAs($storagePath, $filename, $disk);
 
                 PropertyPhoto::create([
                     'property_id' => null,

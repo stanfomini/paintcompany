@@ -93,13 +93,14 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
             'uploadedPhoto' => 'required|image|max:10240',
         ]);
 
-        $path = $this->uploadedPhoto->store('visualizations/originals', 'photos');
+        $disk = config('filesystems.default');
+        $path = $this->uploadedPhoto->store('visualizations/originals', $disk);
 
         $visualization = ColorVisualization::create([
             'session_id' => session()->getId(),
             'original_image_path' => $path,
             'prompt' => $this->prompt,
-            'disk' => 'photos',
+            'disk' => $disk,
             'lead_name' => $this->leadFirstName ? trim("{$this->leadFirstName} {$this->leadLastName}") : null,
             'lead_email' => $this->leadEmail ?: null,
             'lead_phone' => $this->leadPhone ?: null,

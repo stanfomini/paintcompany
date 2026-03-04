@@ -62,7 +62,7 @@ class AnnotationService
      */
     public function clearAnnotation(PropertyPhoto $photo, ?string $authorType = null, ?User $user = null): void
     {
-        $disk = $photo->disk ?? 'public';
+        $disk = $photo->disk ?? config('filesystems.default');
 
         if ($authorType) {
             $annotation = $photo->annotations()->forAuthorType($authorType)->first();
@@ -113,7 +113,7 @@ class AnnotationService
             return;
         }
 
-        $disk = $photo->disk ?? 'public';
+        $disk = $photo->disk ?? config('filesystems.default');
         $originalPath = $photo->medium_path ?? $photo->original_path ?? $photo->path;
 
         if (! $originalPath || ! Storage::disk($disk)->exists($originalPath)) {
@@ -173,7 +173,7 @@ class AnnotationService
      */
     public function renderLayer(PropertyPhoto $photo, PhotoAnnotation $annotation): void
     {
-        $disk = $photo->disk ?? 'public';
+        $disk = $photo->disk ?? config('filesystems.default');
         $originalPath = $photo->medium_path ?? $photo->original_path ?? $photo->path;
 
         if (! $originalPath || ! Storage::disk($disk)->exists($originalPath)) {

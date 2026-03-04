@@ -546,7 +546,7 @@ class extends Component {
             }
 
             if ($this->newPayableAttachment) {
-                $data['attachment_path'] = $this->newPayableAttachment->store('payable-attachments', 'public');
+                $data['attachment_path'] = $this->newPayableAttachment->store('payable-attachments', config('filesystems.default'));
             }
         }
 
@@ -983,7 +983,7 @@ class extends Component {
                                                             <div class="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                                                                 {{ $payable->description }}
                                                                 @if ($payable->hasAttachment())
-                                                                    <a href="{{ Storage::disk('public')->url($payable->attachment_path) }}" target="_blank" title="View attachment" class="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+                                                                    <a href="{{ storage_url($payable->attachment_path) }}" target="_blank" title="View attachment" class="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
                                                                         <flux:icon name="paper-clip" variant="micro" class="size-3" />
                                                                     </a>
                                                                 @endif

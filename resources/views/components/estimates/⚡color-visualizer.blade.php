@@ -89,14 +89,15 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
             'uploadedPhoto' => 'required|image|max:10240',
         ]);
 
-        $path = $this->uploadedPhoto->store('visualizations/originals', 'photos');
+        $disk = config('filesystems.default');
+        $path = $this->uploadedPhoto->store('visualizations/originals', $disk);
 
         $visualization = ColorVisualization::create([
             'user_id' => auth()->id(),
             'estimate_id' => $this->estimate?->id,
             'original_image_path' => $path,
             'prompt' => $this->prompt,
-            'disk' => 'photos',
+            'disk' => $disk,
         ]);
 
         $this->visualizationId = $visualization->id;
@@ -117,7 +118,7 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
             'estimate_id' => $this->estimate->id,
             'original_image_path' => $photo->path,
             'prompt' => $this->prompt ?: 'Awaiting color description...',
-            'disk' => $photo->disk ?? 'photos',
+            'disk' => $photo->disk ?? config('filesystems.default'),
         ]);
 
         $this->visualizationId = $visualization->id;
@@ -149,7 +150,7 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
         }
 
         $viz = $this->visualization;
-        $sourceDisk = $viz->disk ?? 'photos';
+        $sourceDisk = $viz->disk ?? config('filesystems.default');
         $targetDisk = config('filesystems.default');
 
         $colorNames = collect($viz->parsed_colors)
@@ -408,13 +409,13 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
                             <div>
                                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{{ __('Before') }}</flux:text>
                                 <div class="rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                                    <img src="{{ Storage::disk($this->visualization->disk ?? 'photos')->url($this->visualization->original_image_path) }}" alt="Original" class="w-full h-auto" />
+                                    <img src="{{ Storage::disk($this->visualization->disk ?? config('filesystems.default'))->url($this->visualization->original_image_path) }}" alt="Original" class="w-full h-auto" />
                                 </div>
                             </div>
                             <div>
                                 <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mb-1">{{ __('After') }}</flux:text>
                                 <div class="rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
-                                    <img src="{{ Storage::disk($this->visualization->disk ?? 'photos')->url($this->visualization->result_image_path) }}" alt="Visualization" class="w-full h-auto" />
+                                    <img src="{{ Storage::disk($this->visualization->disk ?? config('filesystems.default'))->url($this->visualization->result_image_path) }}" alt="Visualization" class="w-full h-auto" />
                                 </div>
                             </div>
                         </div>
@@ -439,7 +440,7 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
                             <flux:button wire:click="regenerate" variant="ghost" icon="arrow-path">
                                 {{ __('New Visualization') }}
                             </flux:button>
-                            <a href="{{ Storage::disk($this->visualization->disk ?? 'photos')->url($this->visualization->result_image_path) }}" download class="inline-flex">
+                            <a href="{{ Storage::disk($this->visualization->disk ?? config('filesystems.default'))->url($this->visualization->result_image_path) }}" download class="inline-flex">
                                 <flux:button variant="ghost" icon="arrow-down-tray">
                                     {{ __('Download') }}
                                 </flux:button>

@@ -45,7 +45,7 @@ class RemotionBuildCallbackController extends Controller
         $buildRequest = RemotionBuildRequest::findOrFail($request->input('request_id'));
 
         // Store the raw Remotion output as the original file (same as regular uploads)
-        $disk = 'local';
+        $disk = config('filesystems.default');
         $originalPath = $request->file('file')->store('video-recordings/originals', $disk);
 
         // Create VideoRecording in processing state — Python pipeline handles re-encode,

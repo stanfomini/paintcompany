@@ -65,7 +65,7 @@ class GenerateColorVisualizationJob implements ShouldQueue
             $enhancedPrompt = $this->buildImagePrompt($parsedColors);
 
             // Step 3: Generate the recolored image
-            $disk = $this->visualization->disk ?? 'photos';
+            $disk = $this->visualization->disk ?? config('filesystems.default');
             $provider = config('services.color_visualizer.image_provider', 'openai');
             $model = config('services.color_visualizer.image_model', 'gpt-image-1');
 
