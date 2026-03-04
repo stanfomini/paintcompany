@@ -26,7 +26,7 @@ class PhotoService
     {
         $uuid = Str::uuid();
         $ext = $file->getClientOriginalExtension() ?: 'jpg';
-        $disk = config('filesystems.default');
+        $disk = 'public';
         $basePath = "photos/properties/{$property->id}/originals";
         $filename = "{$uuid}.{$ext}";
         $storagePath = $file->storeAs($basePath, $filename, $disk);

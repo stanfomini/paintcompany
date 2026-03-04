@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Storage;
 
 describe('PhotoService', function () {
     beforeEach(function () {
-        Storage::fake(config('filesystems.default'));
+        Storage::fake('public');
         Queue::fake();
     });
 
@@ -38,7 +38,7 @@ describe('PhotoService', function () {
             ->and($photo->processing_status)->toBe('pending')
             ->and($photo->sort_order)->toBe(1);
 
-        Storage::disk(config('filesystems.default'))->assertExists($photo->path);
+        Storage::disk('public')->assertExists($photo->path);
     });
 
     it('deletes a photo and its storage files', function () {
@@ -50,11 +50,11 @@ describe('PhotoService', function () {
         $photo = $service->upload($file, $property, $user);
         $path = $photo->path;
 
-        Storage::disk(config('filesystems.default'))->assertExists($path);
+        Storage::disk('public')->assertExists($path);
 
         $service->delete($photo);
 
-        Storage::disk(config('filesystems.default'))->assertMissing($path);
+        Storage::disk('public')->assertMissing($path);
         expect(PropertyPhoto::find($photo->id))->toBeNull();
     });
 

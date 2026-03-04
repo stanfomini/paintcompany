@@ -373,13 +373,13 @@ class User extends Authenticatable
             return null;
         }
 
-        return storage_url($this->avatar_path);
+        return storage_url($this->avatar_path, diskName: 'public');
     }
 
     public function deleteAvatar(): void
     {
         if ($this->avatar_path) {
-            Storage::delete($this->avatar_path);
+            Storage::disk('public')->delete($this->avatar_path);
             $this->update(['avatar_path' => null]);
         }
     }
