@@ -22,7 +22,7 @@ new #[Layout('components.layouts.guest')] #[Title('Color Visualization Result')]
 <meta property="og:title" content="AI Color Visualization | Painting Made Easy Denver" />
 <meta property="og:description" content="See how your home could look with new paint colors!" />
 @if($visualization->result_image_path)
-<meta property="og:image" content="{{ Storage::disk($visualization->disk)->url($visualization->result_image_path) }}" />
+<meta property="og:image" content="{{ storage_url($visualization->result_image_path, diskName: $visualization->disk) }}" />
 @endif
 <meta property="og:type" content="website" />
 <meta property="og:url" content="{{ route('visualize.result', $visualization->uuid) }}" />
@@ -46,13 +46,13 @@ new #[Layout('components.layouts.guest')] #[Title('Color Visualization Result')]
             <div class="grid gap-6 sm:grid-cols-2">
                 <div>
                     <p class="mb-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">Before</p>
-                    <img src="{{ Storage::disk($visualization->disk)->url($visualization->original_image_path) }}"
+                    <img src="{{ storage_url($visualization->original_image_path, diskName: $visualization->disk) }}"
                          alt="Original photo"
                          class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700" />
                 </div>
                 <div>
                     <p class="mb-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">After</p>
-                    <img src="{{ Storage::disk($visualization->disk)->url($visualization->result_image_path) }}"
+                    <img src="{{ storage_url($visualization->result_image_path, diskName: $visualization->disk) }}"
                          alt="Visualized result"
                          class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700" />
                 </div>
@@ -85,7 +85,7 @@ new #[Layout('components.layouts.guest')] #[Title('Color Visualization Result')]
             {{-- Actions --}}
             <div class="mt-6 flex flex-wrap gap-3">
                 @if($visualization->result_image_path)
-                    <a href="{{ Storage::disk($visualization->disk)->url($visualization->result_image_path) }}"
+                    <a href="{{ storage_url($visualization->result_image_path, diskName: $visualization->disk) }}"
                        download="color-visualization.png"
                        class="inline-flex items-center gap-2 rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-700 dark:hover:bg-zinc-600">
                         <flux:icon.arrow-down-tray variant="micro" />

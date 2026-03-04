@@ -255,13 +255,13 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                     <div class="grid gap-4 sm:grid-cols-2">
                         <div>
                             <p class="mb-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">Original</p>
-                            <img src="{{ Storage::disk($this->visualization->disk)->url($this->visualization->original_image_path) }}"
+                            <img src="{{ storage_url($this->visualization->original_image_path, diskName: $this->visualization->disk) }}"
                                  alt="Original photo"
                                  class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700" />
                         </div>
                         <div>
                             <p class="mb-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">Visualized</p>
-                            <img src="{{ Storage::disk($this->visualization->disk)->url($this->visualization->result_image_path) }}"
+                            <img src="{{ storage_url($this->visualization->result_image_path, diskName: $this->visualization->disk) }}"
                                  alt="Visualized result"
                                  class="w-full rounded-lg border border-zinc-200 dark:border-zinc-700" />
                         </div>
