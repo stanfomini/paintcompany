@@ -18,6 +18,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
 
     public $uploadedPhoto;
     public string $prompt = '';
+    public string $colorSearch = '';
     public ?int $visualizationId = null;
     public bool $isGenerating = false;
     public bool $showLeadForm = false;
@@ -39,14 +40,31 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
     }
 
     #[Computed]
-    public function popularColors()
+    public function colorSearchResults()
     {
+        if (strlen($this->colorSearch) < 2) {
+            return collect();
+        }
+
         return PaintColor::query()
             ->with('brand')
-            ->popular()
             ->active()
-            ->orderBy('paint_brand_id')
+            ->search($this->colorSearch)
+            ->orderByRaw('CASE WHEN name LIKE ? THEN 0 ELSE 1 END', [$this->colorSearch . '%'])
+            ->limit(8)
             ->get();
+    }
+
+    public function selectSearchColor(int $colorId): void
+    {
+        $this->insertColorName($colorId);
+        $this->colorSearch = '';
+    }
+
+    #[Computed]
+    public function popularColors()
+    {
+        return PaintColor::getCachedPopularColors();
     }
 
     #[Computed]
@@ -325,6 +343,55 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror
                     </div>
+                </div>
+
+                {{-- Color search --}}
+                <div
+                    x-data="{ open: false }"
+                    x-on:click.outside="open = false"
+                    class="relative"
+                >
+                    <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Find a Color</label>
+                    <div class="mt-1">
+                        <flux:input
+                            wire:model.live.debounce.300ms="colorSearch"
+                            x-on:focus="open = true"
+                            x-on:input="open = true"
+                            placeholder="Search 12,000+ colors by name or code..."
+                            icon="magnifying-glass"
+                        />
+                    </div>
+                    <div wire:loading wire:target="colorSearch" class="absolute right-3 top-[2.35rem]">
+                        <flux:icon.arrow-path class="size-4 animate-spin text-zinc-400" />
+                    </div>
+
+                    @if ($this->colorSearchResults->isNotEmpty())
+                        <div
+                            x-show="open"
+                            x-transition.opacity
+                            class="absolute z-50 mt-1 w-full rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800 max-h-72 overflow-y-auto"
+                        >
+                            @foreach ($this->colorSearchResults as $result)
+                                <button
+                                    type="button"
+                                    wire:key="search-{{ $result->id }}"
+                                    wire:click="selectSearchColor({{ $result->id }})"
+                                    x-on:click="open = false"
+                                    class="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700/50"
+                                >
+                                    <span
+                                        class="size-8 shrink-0 rounded-md border border-zinc-300 shadow-sm dark:border-zinc-600"
+                                        style="background-color: {{ $result->hex_value }}"
+                                    ></span>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">{{ $result->name }}</div>
+                                        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $result->code }} &middot; {{ $result->hex_value }}</div>
+                                    </div>
+                                    <span class="shrink-0 text-xs font-medium text-zinc-400 dark:text-zinc-500">{{ $result->brand->code ?? $result->brand->name }}</span>
+                                </button>
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
 
                 {{-- Color description --}}

@@ -27,20 +27,39 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
 
     public bool $addedToEstimate = false;
 
+    public string $colorSearch = '';
+
     public function mount(?Estimate $estimate = null): void
     {
         $this->estimate = $estimate;
     }
 
     #[Computed]
-    public function popularColors()
+    public function colorSearchResults()
     {
+        if (strlen($this->colorSearch) < 2) {
+            return collect();
+        }
+
         return PaintColor::query()
             ->with('brand')
-            ->popular()
             ->active()
-            ->orderBy('paint_brand_id')
+            ->search($this->colorSearch)
+            ->orderByRaw('CASE WHEN name LIKE ? THEN 0 ELSE 1 END', [$this->colorSearch . '%'])
+            ->limit(8)
             ->get();
+    }
+
+    public function selectSearchColor(int $colorId): void
+    {
+        $this->insertColorName($colorId);
+        $this->colorSearch = '';
+    }
+
+    #[Computed]
+    public function popularColors()
+    {
+        return PaintColor::getCachedPopularColors();
     }
 
     #[Computed]
@@ -264,6 +283,52 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
                     </div>
                 </div>
             @endif
+
+            {{-- Color Search --}}
+            <div
+                x-data="{ open: false }"
+                x-on:click.outside="open = false"
+                class="relative"
+            >
+                <flux:heading size="sm" class="mb-3">{{ __('Find a Color') }}</flux:heading>
+                <flux:input
+                    wire:model.live.debounce.300ms="colorSearch"
+                    x-on:focus="open = true"
+                    x-on:input="open = true"
+                    placeholder="{{ __('Search 12,000+ colors by name or code...') }}"
+                    icon="magnifying-glass"
+                />
+                <div wire:loading wire:target="colorSearch" class="absolute right-3 top-[2.85rem]">
+                    <flux:icon.arrow-path class="size-4 animate-spin text-zinc-400" />
+                </div>
+
+                @if ($this->colorSearchResults->isNotEmpty())
+                    <div
+                        x-show="open"
+                        x-transition.opacity
+                        class="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 shadow-lg max-h-72 overflow-y-auto"
+                    >
+                        @foreach ($this->colorSearchResults as $result)
+                            <button
+                                wire:key="search-{{ $result->id }}"
+                                wire:click="selectSearchColor({{ $result->id }})"
+                                x-on:click="open = false"
+                                class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-50 dark:hover:bg-zinc-700/50 transition-colors text-left"
+                            >
+                                <span
+                                    class="size-8 rounded-md border border-zinc-300 dark:border-zinc-600 shrink-0 shadow-sm"
+                                    style="background-color: {{ $result->hex_value }}"
+                                ></span>
+                                <div class="min-w-0 flex-1">
+                                    <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{{ $result->name }}</div>
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ $result->code }} &middot; {{ $result->hex_value }}</div>
+                                </div>
+                                <span class="text-xs font-medium text-zinc-400 dark:text-zinc-500 shrink-0">{{ $result->brand->code ?? $result->brand->name }}</span>
+                            </button>
+                        @endforeach
+                    </div>
+                @endif
+            </div>
 
             {{-- Color Prompt --}}
             <div>

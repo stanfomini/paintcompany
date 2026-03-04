@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class PaintColor extends Model
 {
@@ -69,5 +71,50 @@ class PaintColor extends Model
     public function getDisplayNameAttribute(): string
     {
         return "{$this->name} ({$this->code})";
+    }
+
+    /**
+     * Get popular colors, cached for 24 hours.
+     */
+    public static function getCachedPopularColors(?int $brandId = null): Collection
+    {
+        $key = $brandId ? "paint_colors:popular:{$brandId}" : 'paint_colors:popular:all';
+
+        return Cache::remember($key, 86400, function () use ($brandId) {
+            $query = static::active()->popular()->with('brand')->orderBy('name');
+
+            if ($brandId) {
+                $query->where('paint_brand_id', $brandId);
+            }
+
+            return $query->get();
+        });
+    }
+
+    /**
+     * Get distinct color families, cached for 24 hours.
+     */
+    public static function getCachedColorFamilies(): Collection
+    {
+        return Cache::remember('paint_colors:families', 86400, function () {
+            return static::active()
+                ->distinct()
+                ->orderBy('color_family')
+                ->pluck('color_family')
+                ->filter();
+        });
+    }
+
+    /**
+     * Clear all paint color caches (call after seeding).
+     */
+    public static function clearCache(): void
+    {
+        Cache::forget('paint_colors:popular:all');
+        Cache::forget('paint_colors:families');
+
+        PaintBrand::pluck('id')->each(function (int $id): void {
+            Cache::forget("paint_colors:popular:{$id}");
+        });
     }
 }
