@@ -37,7 +37,7 @@ class VideoDataController extends Controller
         }
 
         $photos = $property->photos->map(fn ($photo) => [
-            'url' => storage_url($photo->path),
+            'url' => $photo->url,
             'caption' => $photo->caption,
             'category' => $photo->category,
         ])->toArray();
@@ -73,7 +73,7 @@ class VideoDataController extends Controller
         }
 
         $photos = $property->photos->map(fn ($photo) => [
-            'url' => storage_url($photo->path),
+            'url' => $photo->url,
             'caption' => $photo->caption,
             'category' => $photo->category,
         ])->toArray();

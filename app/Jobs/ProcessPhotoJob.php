@@ -27,7 +27,7 @@ class ProcessPhotoJob implements ShouldQueue
     public function handle(): void
     {
         $photo = $this->photo;
-        $disk = $photo->disk ?? 'public';
+        $disk = $photo->disk ?? config('filesystems.default');
         $originalPath = $photo->original_path ?? $photo->path;
 
         if (! $originalPath || ! Storage::disk($disk)->exists($originalPath)) {

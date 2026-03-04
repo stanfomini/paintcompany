@@ -9,13 +9,13 @@ if (! function_exists('storage_url')) {
      * Returns a temporary signed URL for cloud disks (S3, etc.)
      * and a regular public URL for local disks.
      */
-    function storage_url(?string $path, int $minutes = 60): ?string
+    function storage_url(?string $path, int $minutes = 60, ?string $diskName = null): ?string
     {
         if (! $path) {
             return null;
         }
 
-        $disk = Storage::disk();
+        $disk = Storage::disk($diskName ?? config('filesystems.default'));
 
         if (method_exists($disk, 'temporaryUrl')) {
             try {

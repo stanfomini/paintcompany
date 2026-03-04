@@ -654,7 +654,16 @@
                             @foreach ($photoRow as $photo)
                                 <div class="photo-cell">
                                     <div class="photo-wrapper">
-                                        <img src="{{ public_path('storage/' . ltrim($photo->path, '/')) }}" class="photo-image" alt="{{ $photo->caption ?? __('Project photo') }}">
+                                        @php
+                                            $diskName = $photo->disk ?? config('filesystems.default');
+                                            $imgDisk = \Illuminate\Support\Facades\Storage::disk($diskName);
+                                            $imgSrc = '';
+                                            if ($imgDisk->exists($photo->path)) {
+                                                $imgData = base64_encode($imgDisk->get($photo->path));
+                                                $imgSrc = 'data:' . ($photo->mime_type ?? 'image/jpeg') . ';base64,' . $imgData;
+                                            }
+                                        @endphp
+                                        <img src="{{ $imgSrc }}" class="photo-image" alt="{{ $photo->caption ?? __('Project photo') }}">
                                         @if ($photo->caption)
                                             <div class="photo-caption">{{ $photo->caption }}</div>
                                         @endif
