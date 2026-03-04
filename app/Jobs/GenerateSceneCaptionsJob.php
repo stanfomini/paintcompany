@@ -15,13 +15,19 @@ class GenerateSceneCaptionsJob implements ShouldQueue
 
     public int $timeout = 300;
 
+    /** @var array<int, int> */
+    public array $backoff = [15, 60];
+
     public function __construct(
         public VideoProjectScene $scene,
+        public string $source = 'video',
     ) {}
 
     public function handle(CaptionGenerationService $service): void
     {
-        $segments = $service->generateForScene($this->scene);
+        $segments = $this->source === 'voiceover'
+            ? $service->generateFromVoiceover($this->scene)
+            : $service->generateForScene($this->scene);
 
         $this->scene->overlays()->where('type', 'caption')->delete();
 

@@ -65,7 +65,7 @@ describe('Customer Dashboard Layout', function () {
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.dashboard')
             ->assertSee('5,000.00')
-            ->assertSee('Tap to view your full proposal');
+            ->assertSee('View Your Full Proposal');
     });
 
     it('does not show price for draft estimates', function () {

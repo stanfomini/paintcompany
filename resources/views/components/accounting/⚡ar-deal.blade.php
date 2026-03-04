@@ -705,7 +705,7 @@ class extends Component {
                 </div>
             @endif
             @foreach ($this->acceptedCrews as $crew)
-                <div class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs dark:border-emerald-700 dark:bg-emerald-900/30">
+                <div wire:key="crew-{{ $crew->id }}" class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs dark:border-emerald-700 dark:bg-emerald-900/30">
                     <span class="font-medium text-emerald-600 dark:text-emerald-400">Crew</span>
                     <span class="text-emerald-900 dark:text-emerald-100">{{ $crew->name }}</span>
                 </div>

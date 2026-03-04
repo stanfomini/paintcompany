@@ -1,9 +1,12 @@
 <?php
 
+use App\Models\AppointmentBooking;
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\EmailAccount;
 use App\Models\EmailMessage;
+use Carbon\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -33,6 +36,21 @@ new class extends Component
     public function mount(Customer $customer): void
     {
         $this->customer = $customer;
+    }
+
+    #[Computed]
+    public function appointments(): Collection
+    {
+        return AppointmentBooking::query()
+            ->where('customer_id', $this->customer->id)
+            ->whereIn('status', [
+                AppointmentBooking::STATUS_CONFIRMED,
+                AppointmentBooking::STATUS_COMPLETED,
+            ])
+            ->orderBy('booked_date')
+            ->orderBy('booked_start_time')
+            ->with(['estimator', 'deal', 'vendor'])
+            ->get();
     }
 
     public function setTab(string $tab): void
@@ -249,10 +267,14 @@ new class extends Component
             . $message->body_html
             . '</blockquote></div>';
 
-        // Append signature
+        // Append signature (convert newlines to <br> for plain-text signatures)
         $replyAccount = $this->replyAccountId ? EmailAccount::find($this->replyAccountId) : null;
         if ($replyAccount?->signature_html) {
-            $this->replyBody = '<br><br><div class="signature">--<br>' . $replyAccount->signature_html . '</div>' . $this->replyBody;
+            $sig = $replyAccount->signature_html;
+            if (strip_tags($sig) === $sig) {
+                $sig = nl2br(e($sig));
+            }
+            $this->replyBody = '<br><br><div class="signature">--<br>' . $sig . '</div>' . $this->replyBody;
         }
 
         $this->showReplyModal = true;
@@ -338,6 +360,59 @@ new class extends Component
                 <flux:text size="sm" class="text-zinc-500 truncate">{{ $customer->full_name }}</flux:text>
             </div>
         </div>
+
+        {{-- Appointments --}}
+        @if ($this->appointments->isNotEmpty())
+            <div class="mb-6 space-y-3">
+                <flux:heading size="md">{{ __('Appointments') }}</flux:heading>
+                @foreach ($this->appointments as $appointment)
+                    <div
+                        wire:key="appointment-{{ $appointment->id }}"
+                        class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                    >
+                        <div class="shrink-0 mt-0.5">
+                            <div class="w-8 h-8 rounded-full flex items-center justify-center {{ $appointment->status === 'confirmed' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-blue-100 dark:bg-blue-900/30' }}">
+                                <flux:icon name="calendar-days" class="w-4 h-4 {{ $appointment->status === 'confirmed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400' }}" />
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <flux:badge size="sm" color="{{ $appointment->status === 'confirmed' ? 'green' : 'blue' }}">
+                                    {{ __(ucfirst($appointment->status)) }}
+                                </flux:badge>
+                                @if ($appointment->estimate_preference)
+                                    <flux:badge size="sm" color="zinc">
+                                        {{ $appointment->estimate_preference === 'in_person' ? __('In Person') : __('Virtual') }}
+                                    </flux:badge>
+                                @endif
+                                @if ($appointment->vendor)
+                                    <flux:badge size="sm" color="purple">{{ $appointment->vendor->name }}</flux:badge>
+                                @endif
+                            </div>
+                            <flux:text class="font-medium text-sm">
+                                {{ $appointment->booked_date->format('l, F j, Y') }}
+                            </flux:text>
+                            <flux:text size="sm" class="text-zinc-500">
+                                {{ Carbon::parse($appointment->booked_start_time)->format('g:i A') }} - {{ Carbon::parse($appointment->booked_end_time)->format('g:i A') }}
+                            </flux:text>
+                            @if ($appointment->estimator)
+                                <flux:text size="sm" class="text-zinc-500 mt-0.5">
+                                    {{ __('Estimator') }}: {{ $appointment->estimator->name }}
+                                </flux:text>
+                            @endif
+                        </div>
+                        <div class="shrink-0 text-right text-xs text-zinc-400">
+                            @if ($appointment->prospect_phone)
+                                <div>{{ $appointment->prospect_phone }}</div>
+                            @endif
+                            @if ($appointment->prospect_email)
+                                <div>{{ $appointment->prospect_email }}</div>
+                            @endif
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
 
         {{-- Tabs --}}
         <div class="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-700 mb-6 overflow-x-auto">
@@ -613,8 +688,45 @@ new class extends Component
                 </div>
             </div>
 
-            <div>
-                <flux:textarea wire:model="replyBody" rows="12" />
+            <div
+                x-data="{
+                    content: $wire.entangle('replyBody'),
+                    updateIframe() {
+                        const iframe = this.$refs.emailFrame;
+                        if (!iframe) return;
+                        const doc = iframe.contentDocument || iframe.contentWindow.document;
+                        doc.open();
+                        doc.write(`<!DOCTYPE html><html><head><style>
+                            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.5; color: #333; margin: 0; padding: 12px; word-wrap: break-word; overflow-wrap: break-word; }
+                            img { max-width: 100%; height: auto; }
+                            table { max-width: 100%; }
+                            blockquote { border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666; }
+                            a { color: #2563eb; }
+                        </style></head><body contenteditable='true'>` + (this.content || '') + `</body></html>`);
+                        doc.close();
+                        doc.body.addEventListener('input', () => {
+                            this.content = doc.body.innerHTML;
+                        });
+                    },
+                    init() {
+                        this.$nextTick(() => this.updateIframe());
+                        this.$watch('content', () => {
+                            const iframe = this.$refs.emailFrame;
+                            if (!iframe) return;
+                            const doc = iframe.contentDocument || iframe.contentWindow.document;
+                            if (doc.body && doc.body.innerHTML !== this.content) {
+                                this.updateIframe();
+                            }
+                        });
+                    }
+                }"
+                class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden"
+            >
+                <iframe
+                    x-ref="emailFrame"
+                    class="w-full bg-white"
+                    style="min-height: 200px; max-height: 50vh; height: 300px; border: none;"
+                ></iframe>
             </div>
 
             <div class="flex justify-end gap-3">

@@ -95,8 +95,13 @@ select:focus[data-flux-control] {
             padding-top: env(safe-area-inset-top);
         }
 
-        /* Main content area bottom padding for home indicator */
-        [data-flux-main] {
+        /* Footer bar bottom padding for home indicator */
+        [data-flux-footer] {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+
+        /* Fallback: if no footer, main gets the safe-area bottom */
+        body:not(:has([data-flux-footer])) [data-flux-main] {
             padding-bottom: env(safe-area-inset-bottom);
         }
 

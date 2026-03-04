@@ -150,9 +150,14 @@ new class extends Component {
                 .'</blockquote></div>';
         }
 
-        // Append signature
+        // Append signature (convert newlines to <br> for plain-text signatures)
         if ($this->account?->signature_html) {
-            $this->body = '<br><br><div class="signature">--<br>'.$this->account->signature_html.'</div>'.$this->body;
+            $sig = $this->account->signature_html;
+            // If the signature has no HTML tags, treat it as plain text and convert newlines
+            if (strip_tags($sig) === $sig) {
+                $sig = nl2br(e($sig));
+            }
+            $this->body = '<br><br><div class="signature">--<br>'.$sig.'</div>'.$this->body;
         }
     }
 
@@ -351,49 +356,130 @@ new class extends Component {
     </div>
 
     {{-- Rich Text Editor --}}
-    <div class="min-h-0 flex-1 overflow-y-auto border-b border-zinc-200 dark:border-zinc-700" wire:ignore
-        x-data="tiptapEditor({ content: $wire.entangle('body'), placeholder: '{{ __('Write your email...') }}' })">
+    <div class="min-h-0 flex-1 border-b border-zinc-200 dark:border-zinc-700"
+        x-data="{
+            content: $wire.entangle('body'),
+            doc: null,
+            updateIframe() {
+                const iframe = this.$refs.emailFrame;
+                if (!iframe) return;
+                this.doc = iframe.contentDocument || iframe.contentWindow.document;
+                this.doc.open();
+                this.doc.write(`<!DOCTYPE html><html><head><style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; color: #333; margin: 0; padding: 12px; word-wrap: break-word; overflow-wrap: break-word; min-height: 150px; }
+                    body:empty:before { content: '{{ __('Write your email...') }}'; color: #999; }
+                    h1 { font-size: 24px; font-weight: 700; margin: 8px 0; }
+                    h2 { font-size: 20px; font-weight: 600; margin: 6px 0; }
+                    h3 { font-size: 16px; font-weight: 600; margin: 4px 0; }
+                    img { max-width: 100%; height: auto; }
+                    table { max-width: 100%; }
+                    blockquote { border-left: 2px solid #ccc; padding-left: 12px; margin-left: 0; color: #666; }
+                    a { color: #2563eb; }
+                    hr { border: none; border-top: 1px solid #ddd; margin: 12px 0; }
+                </style></head><body contenteditable='true'>` + (this.content || '') + `</body></html>`);
+                this.doc.close();
+                this.doc.body.addEventListener('input', () => {
+                    this.content = this.doc.body.innerHTML;
+                });
+            },
+            execCmd(cmd, value = null) {
+                if (!this.doc) return;
+                this.doc.body.focus();
+                this.doc.execCommand(cmd, false, value);
+                this.content = this.doc.body.innerHTML;
+            },
+            insertLink() {
+                const url = prompt('Enter URL');
+                if (url) this.execCmd('createLink', url);
+            },
+            insertImage() {
+                const url = prompt('Enter image URL');
+                if (url) this.execCmd('insertImage', url);
+            },
+            init() {
+                this.$nextTick(() => this.updateIframe());
+                this.$watch('content', (value) => {
+                    if (!this.doc || !this.doc.body) return;
+                    if (this.doc.body.innerHTML !== value) {
+                        this.updateIframe();
+                    }
+                });
+            }
+        }">
         {{-- Toolbar --}}
         <div class="flex flex-wrap items-center gap-0.5 border-b border-zinc-100 px-2 py-1 dark:border-zinc-800 sm:gap-1 sm:px-3 sm:py-1.5">
-            <button type="button" @click="toggleBold()" :class="isActive('bold') ? 'bg-zinc-200 dark:bg-zinc-700' : ''"
+            {{-- Heading dropdown --}}
+            <select @change="if ($event.target.value === 'p') { execCmd('formatBlock', 'p'); } else { execCmd('formatBlock', $event.target.value); } $event.target.value = '';"
+                class="h-7 rounded border-none bg-transparent px-1 py-0 text-xs text-zinc-600 hover:bg-zinc-100 focus:ring-0 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                <option value="" disabled selected>{{ __('Style') }}</option>
+                <option value="p">{{ __('Normal') }}</option>
+                <option value="h1">{{ __('Heading 1') }}</option>
+                <option value="h2">{{ __('Heading 2') }}</option>
+                <option value="h3">{{ __('Heading 3') }}</option>
+            </select>
+            <div class="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></div>
+            <button type="button" @click="execCmd('bold')"
                 class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Bold">
                 <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"/></svg>
             </button>
-            <button type="button" @click="toggleItalic()" :class="isActive('italic') ? 'bg-zinc-200 dark:bg-zinc-700' : ''"
+            <button type="button" @click="execCmd('italic')"
                 class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Italic">
                 <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><line x1="19" y1="4" x2="10" y2="4" stroke-width="2"/><line x1="14" y1="20" x2="5" y2="20" stroke-width="2"/><line x1="15" y1="4" x2="9" y2="20" stroke-width="2"/></svg>
             </button>
-            <button type="button" @click="toggleUnderline()" :class="isActive('underline') ? 'bg-zinc-200 dark:bg-zinc-700' : ''"
+            <button type="button" @click="execCmd('underline')"
                 class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Underline">
                 <svg class="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 3v7a6 6 0 0 0 6 6 6 6 0 0 0 6-6V3" stroke-width="2"/><line x1="4" y1="21" x2="20" y2="21" stroke-width="2"/></svg>
             </button>
+            <button type="button" @click="execCmd('strikeThrough')"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Strikethrough">
+                <svg class="size-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="4" y1="12" x2="20" y2="12"/><path d="M17.5 7.5c0-2-2-3.5-5.5-3.5S6.5 5.5 6.5 7.5c0 1.5 1 2.5 3 3.5"/><path d="M6.5 16.5c0 2 2 3.5 5.5 3.5s5.5-1.5 5.5-3.5c0-1.5-1-2.5-3-3.5"/></svg>
+            </button>
             <div class="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></div>
-            <button type="button" @click="toggleBulletList()" :class="isActive('bulletList') ? 'bg-zinc-200 dark:bg-zinc-700' : ''"
+            {{-- Text color --}}
+            <label class="relative rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 cursor-pointer" title="Text Color">
+                <flux:icon name="paint-brush" class="size-4" />
+                <input type="color" value="#000000" @input="execCmd('foreColor', $event.target.value)"
+                    class="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+            </label>
+            <div class="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></div>
+            <button type="button" @click="execCmd('insertUnorderedList')"
                 class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Bullet List">
                 <flux:icon name="list-bullet" class="size-4" />
             </button>
-            <button type="button" @click="toggleOrderedList()" :class="isActive('orderedList') ? 'bg-zinc-200 dark:bg-zinc-700' : ''"
+            <button type="button" @click="execCmd('insertOrderedList')"
                 class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Numbered List">
                 <flux:icon name="queue-list" class="size-4" />
             </button>
+            <button type="button" @click="execCmd('insertHorizontalRule')"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Horizontal Rule">
+                <flux:icon name="minus" class="size-4" />
+            </button>
             <div class="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></div>
-            <button type="button" @click="setLink()" class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Link">
+            <button type="button" @click="insertLink()"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Link">
                 <flux:icon name="link" class="size-4" />
             </button>
-            <button type="button" @click="insertImage()" class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Image">
+            <button type="button" @click="insertImage()"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Image">
                 <flux:icon name="photo" class="size-4" />
             </button>
             <div class="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700"></div>
-            <button type="button" @click="undo()" class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Undo">
+            <button type="button" @click="execCmd('removeFormat')"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Clear Formatting">
+                <flux:icon name="x-circle" class="size-4" />
+            </button>
+            <button type="button" @click="execCmd('undo')"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Undo">
                 <flux:icon name="arrow-uturn-left" class="size-4" />
             </button>
-            <button type="button" @click="redo()" class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Redo">
+            <button type="button" @click="execCmd('redo')"
+                class="rounded p-1.5 text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800" title="Redo">
                 <flux:icon name="arrow-uturn-right" class="size-4" />
             </button>
         </div>
 
-        {{-- Editor Area --}}
-        <div x-ref="editor" class="min-h-[150px] sm:min-h-[200px]"></div>
+        {{-- Editor Area (contenteditable iframe) --}}
+        <iframe x-ref="emailFrame" class="w-full flex-1 bg-white" style="min-height: 200px; height: 100%; border: none;"></iframe>
     </div>
 
     {{-- Attachments --}}

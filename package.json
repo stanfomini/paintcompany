@@ -30,6 +30,7 @@
         "cropperjs": "^1.6.2",
         "fabric": "^6.9.1",
         "html2canvas": "^1.4.1",
+        "interactjs": "^1.10.27",
         "laravel-echo": "^2.3.0",
         "laravel-vite-plugin": "^2.0",
         "leaflet": "^1.9.4",
@@ -43,7 +44,8 @@
         "remotion": "4.0.407",
         "sortablejs": "^1.15.6",
         "tailwindcss": "^4.0.7",
-        "vite": "^7.0.4"
+        "vite": "^7.0.4",
+        "wavesurfer.js": "^7.12.1"
     },
     "optionalDependencies": {
         "@rollup/rollup-linux-x64-gnu": "4.9.5",

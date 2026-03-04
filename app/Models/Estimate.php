@@ -568,9 +568,12 @@ class Estimate extends Model
 
     /**
      * Resolve the paint product for a tier, category, and scope.
+     * Results are memoized per request to avoid repeated DB queries.
      */
     public function resolveTierPaint(string $tier, string $category, ?string $scope = null): ?PaintProduct
     {
+        static $paintProductCache = [];
+
         $scope = $scope ?? $this->project_type ?? 'interior';
         $config = $this->getPaintTierConfig($tier);
 
@@ -578,17 +581,25 @@ class Estimate extends Model
             return null;
         }
 
+        $paintProductId = null;
+
         // Check category-specific paint first
         if (isset($config['paint_by_category'][$scope][$category])) {
-            return PaintProduct::find($config['paint_by_category'][$scope][$category]);
+            $paintProductId = $config['paint_by_category'][$scope][$category];
+        } elseif (isset($config['default_paint_product_id'])) {
+            // Fall back to default paint for this tier
+            $paintProductId = $config['default_paint_product_id'];
         }
 
-        // Fall back to default paint for this tier
-        if (isset($config['default_paint_product_id'])) {
-            return PaintProduct::find($config['default_paint_product_id']);
+        if (! $paintProductId) {
+            return null;
         }
 
-        return null;
+        if (! array_key_exists($paintProductId, $paintProductCache)) {
+            $paintProductCache[$paintProductId] = PaintProduct::find($paintProductId);
+        }
+
+        return $paintProductCache[$paintProductId];
     }
 
     /**
@@ -1177,19 +1188,26 @@ class Estimate extends Model
     /**
      * Resolve the paint product for a specific surface category.
      * Implements cascade: Estimate override → Company default → null
+     * Results are memoized per request to avoid repeated DB queries.
      *
      * @param  string  $category  Surface category (walls, ceiling, trim, doors, body, fascia, eaves)
      * @return PaintProduct|null The resolved paint product or null
      */
     public function resolvePaintForCategory(string $category): ?PaintProduct
     {
+        static $paintProductCache = [];
+
         $paintProductId = $this->getPaintProductIdForCategory($category);
 
         if (! $paintProductId) {
             return null;
         }
 
-        return PaintProduct::find($paintProductId);
+        if (! array_key_exists($paintProductId, $paintProductCache)) {
+            $paintProductCache[$paintProductId] = PaintProduct::find($paintProductId);
+        }
+
+        return $paintProductCache[$paintProductId];
     }
 
     /**

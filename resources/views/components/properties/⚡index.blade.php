@@ -56,7 +56,8 @@ new class extends Component {
         $this->resetPage();
     }
 
-    public function getCustomersProperty(): Collection
+    #[Computed]
+    public function customers(): Collection
     {
         return Customer::query()
             ->orderBy('first_name')

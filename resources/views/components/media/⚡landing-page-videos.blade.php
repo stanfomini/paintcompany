@@ -169,7 +169,7 @@ new class extends Component
                                 <div wire:key="section-video-{{ $section->id }}-{{ $video->id }}" class="relative group">
                                     <div class="aspect-video bg-zinc-100 dark:bg-zinc-800 rounded-lg overflow-hidden">
                                         @if($video->getThumbnailUrl())
-                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->title }}" class="w-full h-full object-cover" />
+                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->title }}" class="w-full h-full object-cover" loading="lazy" />
                                         @else
                                             <div class="w-full h-full flex items-center justify-center">
                                                 <flux:icon name="video-camera" class="h-6 w-6 text-zinc-400" />
@@ -209,7 +209,7 @@ new class extends Component
                     <div wire:key="picker-video-{{ $video->id }}" class="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 cursor-pointer" wire:click="addVideo({{ $video->id }})">
                         <div class="w-20 aspect-video bg-zinc-100 dark:bg-zinc-800 rounded overflow-hidden shrink-0">
                             @if($video->getThumbnailUrl())
-                                <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->title }}" class="w-full h-full object-cover" />
+                                <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->title }}" class="w-full h-full object-cover" loading="lazy" />
                             @else
                                 <div class="w-full h-full flex items-center justify-center">
                                     <flux:icon name="video-camera" class="h-4 w-4 text-zinc-400" />

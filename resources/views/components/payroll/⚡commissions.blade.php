@@ -452,7 +452,7 @@ class extends Component
                 <flux:select wire:model="manualEmployeeId">
                     <option value="">{{ __('Select an employee...') }}</option>
                     @foreach ($this->employees as $emp)
-                        <option value="{{ $emp->id }}">{{ $emp->user->name }} ({{ $emp->employee_number }})</option>
+                        <option wire:key="emp-{{ $emp->id }}" value="{{ $emp->id }}">{{ $emp->user->name }} ({{ $emp->employee_number }})</option>
                     @endforeach
                 </flux:select>
                 <flux:error name="manualEmployeeId" />

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\Python\ProcessVideoRecordingJob;
 use App\Models\RemotionBuildRequest;
 use App\Models\VideoRecording;
 use Illuminate\Http\JsonResponse;
@@ -43,25 +44,33 @@ class RemotionBuildCallbackController extends Controller
 
         $buildRequest = RemotionBuildRequest::findOrFail($request->input('request_id'));
 
-        // Store the video file
-        $path = $request->file('file')->store('remotion-renders', 's3');
+        // Store the raw Remotion output as the original file (same as regular uploads)
+        $disk = 'local';
+        $originalPath = $request->file('file')->store('video-recordings/originals', $disk);
 
-        // Create VideoRecording
+        // Create VideoRecording in processing state — Python pipeline handles re-encode,
+        // thumbnail generation, duration detection, and Apple device compatibility
         $recording = VideoRecording::create([
             'user_id' => $buildRequest->user_id,
             'title' => 'Remotion: '.str()->limit($buildRequest->prompt, 80),
-            'video_path' => $path,
-            'disk' => 's3',
+            'original_path' => $originalPath,
+            'disk' => $disk,
             'mime_type' => $request->file('file')->getMimeType(),
             'file_size_bytes' => $request->file('file')->getSize(),
-            'status' => 'ready',
+            'status' => 'processing',
+            'metadata' => [
+                'source' => 'remotion',
+                'build_request_id' => $buildRequest->id,
+            ],
         ]);
+
+        ProcessVideoRecordingJob::dispatch($recording);
 
         $buildRequest->markCompleted($recording->id);
 
         Log::info("Remotion build completed for request #{$buildRequest->id}", [
             'video_recording_id' => $recording->id,
-            'file_path' => $path,
+            'original_path' => $originalPath,
         ]);
 
         return response()->json([

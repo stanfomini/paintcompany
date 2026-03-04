@@ -29,6 +29,19 @@ class AgentContributionAdded implements ShouldBroadcast
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function broadcastWith(): array
+    {
+        return [
+            'estimate_id' => $this->estimateId,
+            'type' => $this->type,
+            'agent_name' => $this->agentName,
+            'description' => $this->description,
+        ];
+    }
+
     public function broadcastAs(): string
     {
         return 'agent.contribution';

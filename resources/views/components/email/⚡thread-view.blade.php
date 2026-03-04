@@ -79,10 +79,26 @@ new class extends Component {
             $this->dispatch('thread-selected', threadId: 0)->to('email.inbox');
         }
     }
+
+    /**
+     * Replace cid: references in HTML body with actual preview URLs.
+     */
+    public function resolveInlineImages(EmailMessage $message): string
+    {
+        $html = $message->body_html ?? '';
+
+        foreach ($message->attachments->where('is_inline', true) as $att) {
+            if ($att->content_id) {
+                $html = str_replace('cid:'.$att->content_id, route('email.attachment.preview', $att), $html);
+            }
+        }
+
+        return $html;
+    }
 };
 ?>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col" x-data="{ lightbox: null }">
     @if ($this->thread)
         {{-- Thread Header --}}
         <div class="border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-700 sm:px-4 sm:py-3">
@@ -136,23 +152,91 @@ new class extends Component {
                     {{-- Message Body --}}
                     <div x-show="expanded" x-collapse class="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-4">
                         <div class="prose prose-sm dark:prose-invert max-w-none overflow-x-auto">
-                            {!! $message->body_html !!}
+                            {!! $this->resolveInlineImages($message) !!}
                         </div>
 
                         {{-- Attachments --}}
-                        @if ($message->attachments->count() > 0)
+                        @php
+                            $visibleAttachments = $message->attachments->where('is_inline', false);
+                        @endphp
+                        @if ($visibleAttachments->count() > 0)
                             <div class="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800">
                                 <p class="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                                    {{ __('Attachments') }} ({{ $message->attachments->count() }})
+                                    {{ __('Attachments') }} ({{ $visibleAttachments->count() }})
                                 </p>
                                 <div class="flex flex-wrap gap-2">
-                                    @foreach ($message->attachments->where('is_inline', false) as $attachment)
-                                        <a href="{{ route('email.attachment.download', $attachment) }}"
-                                            class="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800">
-                                            <flux:icon name="paper-clip" class="size-3.5" />
-                                            <span class="max-w-[150px] truncate">{{ $attachment->original_filename }}</span>
-                                            <span class="text-zinc-400">({{ number_format($attachment->file_size / 1024) }}KB)</span>
-                                        </a>
+                                    @foreach ($visibleAttachments as $attachment)
+                                        @if ($attachment->isImage())
+                                            {{-- Image: clickable thumbnail --}}
+                                            <button
+                                                @click="lightbox = '{{ route('email.attachment.preview', $attachment) }}'"
+                                                class="group relative overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-500 transition-colors"
+                                            >
+                                                <img
+                                                    src="{{ route('email.attachment.preview', $attachment) }}"
+                                                    alt="{{ $attachment->original_filename }}"
+                                                    class="h-20 w-28 object-cover"
+                                                    loading="lazy"
+                                                />
+                                                <div class="absolute inset-x-0 bottom-0 bg-black/50 px-1.5 py-0.5">
+                                                    <span class="block truncate text-[10px] text-white">{{ $attachment->original_filename }}</span>
+                                                </div>
+                                            </button>
+                                        @elseif ($attachment->isPdf())
+                                            {{-- PDF: card with icon --}}
+                                            <div x-data="{ showPdf: false }" class="flex flex-col">
+                                                <button
+                                                    @click="showPdf = !showPdf"
+                                                    class="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800 transition-colors"
+                                                >
+                                                    <svg class="size-4 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path d="M4 18h12a2 2 0 002-2V6l-4-4H4a2 2 0 00-2 2v12a2 2 0 002 2zm8-14l4 4h-4V4zM6 10h8v2H6v-2zm0 4h5v2H6v-2z"/></svg>
+                                                    <span class="max-w-[150px] truncate">{{ $attachment->original_filename }}</span>
+                                                    <span class="text-zinc-400">({{ $attachment->formatted_size }})</span>
+                                                </button>
+                                                <template x-if="showPdf">
+                                                    <div class="mt-2 w-full max-w-lg">
+                                                        <iframe
+                                                            src="{{ route('email.attachment.preview', $attachment) }}"
+                                                            class="h-96 w-full rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                                        ></iframe>
+                                                    </div>
+                                                </template>
+                                                <a href="{{ route('email.attachment.download', $attachment) }}" class="mt-1 text-[10px] text-blue-600 hover:underline dark:text-blue-400">
+                                                    {{ __('Download') }}
+                                                </a>
+                                            </div>
+                                        @elseif ($attachment->isVideo())
+                                            {{-- Video: HTML5 player --}}
+                                            <div class="flex flex-col">
+                                                <video
+                                                    controls
+                                                    preload="metadata"
+                                                    class="max-h-48 max-w-xs rounded-lg border border-zinc-200 dark:border-zinc-700"
+                                                >
+                                                    <source src="{{ route('email.attachment.preview', $attachment) }}" type="{{ $attachment->mime_type }}">
+                                                </video>
+                                                <span class="mt-1 text-[10px] text-zinc-500">{{ $attachment->original_filename }} ({{ $attachment->formatted_size }})</span>
+                                            </div>
+                                        @elseif ($attachment->isAudio())
+                                            {{-- Audio: HTML5 player --}}
+                                            <div class="flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                                <flux:icon name="musical-note" class="size-4 text-purple-500" />
+                                                <div class="flex flex-col">
+                                                    <span class="text-xs font-medium">{{ $attachment->original_filename }}</span>
+                                                    <audio controls preload="metadata" class="mt-1 h-8 w-48">
+                                                        <source src="{{ route('email.attachment.preview', $attachment) }}" type="{{ $attachment->mime_type }}">
+                                                    </audio>
+                                                </div>
+                                            </div>
+                                        @else
+                                            {{-- Default: download link --}}
+                                            <a href="{{ route('email.attachment.download', $attachment) }}"
+                                                class="inline-flex items-center gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-xs hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800 transition-colors">
+                                                <flux:icon name="paper-clip" class="size-3.5" />
+                                                <span class="max-w-[150px] truncate">{{ $attachment->original_filename }}</span>
+                                                <span class="text-zinc-400">({{ $attachment->formatted_size }})</span>
+                                            </a>
+                                        @endif
                                     @endforeach
                                 </div>
                             </div>
@@ -180,6 +264,20 @@ new class extends Component {
                 </div>
             @endforeach
         </div>
+
+        {{-- Image Lightbox --}}
+        <template x-if="lightbox">
+            <div
+                class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                @click.self="lightbox = null"
+                @keydown.escape.window="lightbox = null"
+            >
+                <button @click="lightbox = null" class="absolute right-4 top-4 text-white hover:text-zinc-300">
+                    <svg class="size-8" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+                <img :src="lightbox" class="max-h-[90vh] max-w-[90vw] rounded-lg object-contain" />
+            </div>
+        </template>
     @else
         <div class="flex flex-1 items-center justify-center text-zinc-400">
             {{ __('Thread not found') }}

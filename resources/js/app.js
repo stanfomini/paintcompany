@@ -1,21 +1,24 @@
-import Sortable from 'sortablejs';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
-import html2canvas from 'html2canvas';
-import Cropper from 'cropperjs';
-import 'cropperjs/dist/cropper.css';
-import { Calendar } from '@fullcalendar/core';
-import dayGridPlugin from '@fullcalendar/daygrid';
-import timeGridPlugin from '@fullcalendar/timegrid';
-import interactionPlugin from '@fullcalendar/interaction';
-import './workflow-builder';
-import './tiptap-editor';
 import './pwa';
 import './push';
 
-window.Sortable = Sortable;
-window.html2canvas = html2canvas;
-window.Cropper = Cropper;
+// Lazy loaders for heavy dependencies — only fetched when actually needed on the page
+window.loadSortable = async () => {
+    if (!window.Sortable) {
+        const { default: Sortable } = await import('sortablejs');
+        window.Sortable = Sortable;
+    }
+    return window.Sortable;
+};
+
+window.loadHtml2canvas = async () => {
+    if (!window.html2canvas) {
+        const { default: html2canvas } = await import('html2canvas');
+        window.html2canvas = html2canvas;
+    }
+    return window.html2canvas;
+};
 
 window.Pusher = Pusher;
 
@@ -32,7 +35,13 @@ if (document.querySelector('meta[name="user-id"]')) {
     });
 }
 
-// Avatar Cropper Alpine.js component
+// Studio Editor — must be a synchronous import so Alpine.data('studioEditor')
+// is registered BEFORE Alpine processes the DOM. Dynamic import() is too late.
+// Vite will code-split the heavy deps (fabric, wavesurfer) into a separate chunk
+// that loads in parallel but is guaranteed to execute before this module runs.
+import './studio/index.js';
+
+// Avatar Cropper Alpine.js component — lazy-loads cropperjs
 document.addEventListener('alpine:init', () => {
     Alpine.data('avatarCropper', () => ({
         cropper: null,
@@ -64,13 +73,19 @@ document.addEventListener('alpine:init', () => {
             event.target.value = '';
         },
 
-        initCropper() {
+        async initCropper() {
             if (this.cropper) {
                 this.cropper.destroy();
             }
 
+            // Lazy-load Cropper and its CSS
+            const [{ default: Cropper }] = await Promise.all([
+                import('cropperjs'),
+                import('cropperjs/dist/cropper.css'),
+            ]);
+
             const image = this.$refs.cropImage;
-            this.cropper = new window.Cropper(image, {
+            this.cropper = new Cropper(image, {
                 aspectRatio: 1,
                 viewMode: 1,
                 dragMode: 'move',
@@ -123,11 +138,23 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 
-// FullCalendar Alpine.js component for planner calendar view
+// FullCalendar Alpine.js component — lazy-loads @fullcalendar packages
 document.addEventListener('alpine:init', () => {
     Alpine.data('calendarView', () => ({
         calendar: null,
-        init() {
+        async init() {
+            const [
+                { Calendar },
+                { default: dayGridPlugin },
+                { default: timeGridPlugin },
+                { default: interactionPlugin },
+            ] = await Promise.all([
+                import('@fullcalendar/core'),
+                import('@fullcalendar/daygrid'),
+                import('@fullcalendar/timegrid'),
+                import('@fullcalendar/interaction'),
+            ]);
+
             this.$nextTick(() => {
                 this.calendar = new Calendar(this.$refs.calendar, {
                     plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin],
@@ -170,6 +197,16 @@ document.addEventListener('alpine:init', () => {
         },
     }));
 });
+
+// Lazy-load tiptap editor — only imported when a tiptapEditor element exists on the page
+if (document.querySelector('[x-data*="tiptapEditor"]')) {
+    import('./tiptap-editor');
+}
+
+// Lazy-load workflow builder — only imported on workflow settings page
+if (document.querySelector('[x-data*="workflowBuilder"]')) {
+    import('./workflow-builder');
+}
 
 // Territory System - Leaflet Map Component
 document.addEventListener('alpine:init', () => {

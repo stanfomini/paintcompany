@@ -3,7 +3,6 @@
 use App\Models\Deal;
 use App\Models\Estimate;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -29,11 +28,18 @@ new class extends Component {
 
     public int $perPage = 15;
 
-    #[On('estimate-created')]
-    #[On('estimate-updated')]
+    public function getListeners(): array
+    {
+        return [
+            'estimate-created' => 'refreshList',
+            'estimate-updated' => 'refreshList',
+            'echo-private:internal-team,.estimate.status.changed' => 'refreshList',
+        ];
+    }
+
     public function refreshList(): void
     {
-        // Re-render is triggered automatically
+        unset($this->estimates);
     }
 
     public function updatedSearch(): void
@@ -71,7 +77,8 @@ new class extends Component {
     public function deals()
     {
         return Deal::query()
-            ->with('customer')
+            ->select('id', 'title', 'customer_id')
+            ->with('customer:id,first_name,last_name')
             ->orderBy('title')
             ->get();
     }

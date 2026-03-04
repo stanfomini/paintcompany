@@ -27,9 +27,19 @@ class MessageSent implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        return [
+        $channels = [
             new PrivateChannel('chat.thread.'.$this->message->thread_id),
         ];
+
+        // Also broadcast to each participant's user channel for badge/count updates
+        $this->message->load('thread.activeParticipants');
+        foreach ($this->message->thread->activeParticipants as $participant) {
+            if ($participant->user_id !== $this->message->user_id) {
+                $channels[] = new PrivateChannel('chat.user.'.$participant->user_id);
+            }
+        }
+
+        return $channels;
     }
 
     /**

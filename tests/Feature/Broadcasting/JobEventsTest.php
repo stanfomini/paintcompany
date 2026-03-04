@@ -1,8 +1,11 @@
 <?php
 
 use App\Events\CrewDispatched;
+use App\Events\JobCreated;
+use App\Events\JobInvoiceCreated;
 use App\Events\JobNotification;
 use App\Events\JobStageChanged;
+use App\Events\JobTaskUpdated;
 use App\Events\PhotoUpdated;
 use App\Events\PrepApprovalChanged;
 use App\Events\PrepPlanUpdated;
@@ -52,20 +55,39 @@ describe('Events implement ShouldBroadcast', function () {
 
         expect($event)->toBeInstanceOf(ShouldBroadcast::class);
     });
+
+    it('JobCreated implements ShouldBroadcast', function () {
+        $event = new JobCreated($this->job);
+
+        expect($event)->toBeInstanceOf(ShouldBroadcast::class);
+    });
+
+    it('JobTaskUpdated implements ShouldBroadcast', function () {
+        $event = new JobTaskUpdated($this->job, 1, 'completed');
+
+        expect($event)->toBeInstanceOf(ShouldBroadcast::class);
+    });
+
+    it('JobInvoiceCreated implements ShouldBroadcast', function () {
+        $event = new JobInvoiceCreated($this->job, 1, 500.00);
+
+        expect($event)->toBeInstanceOf(ShouldBroadcast::class);
+    });
 });
 
 describe('Events have correct broadcastOn channels', function () {
 
-    it('JobStageChanged broadcasts on job, customer.job, and crew.job channels', function () {
+    it('JobStageChanged broadcasts on job, customer.job, crew.job, and internal-jobs channels', function () {
         $event = new JobStageChanged($this->job, 'estimate_accepted', 'scheduling_colors');
         $channels = $event->broadcastOn();
 
-        expect($channels)->toHaveCount(3);
+        expect($channels)->toHaveCount(4);
 
         $channelNames = array_map(fn ($ch) => $ch->name, $channels);
         expect($channelNames)->toContain('private-job.'.$this->job->id)
             ->toContain('private-customer.job.'.$this->job->id)
-            ->toContain('private-crew.job.'.$this->job->id);
+            ->toContain('private-crew.job.'.$this->job->id)
+            ->toContain('private-internal-jobs');
     });
 
     it('CrewDispatched broadcasts on job and crew.job channels', function () {
@@ -135,6 +157,37 @@ describe('Events have correct broadcastOn channels', function () {
             ->toContain('private-customer.job.'.$this->job->id);
     });
 
+    it('JobCreated broadcasts on internal-jobs channel', function () {
+        $event = new JobCreated($this->job);
+        $channels = $event->broadcastOn();
+
+        expect($channels)->toHaveCount(1);
+        expect($channels[0]->name)->toBe('private-internal-jobs');
+    });
+
+    it('JobTaskUpdated broadcasts on job, crew.job, and customer.job channels', function () {
+        $event = new JobTaskUpdated($this->job, 1, 'completed');
+        $channels = $event->broadcastOn();
+
+        expect($channels)->toHaveCount(3);
+
+        $channelNames = array_map(fn ($ch) => $ch->name, $channels);
+        expect($channelNames)->toContain('private-job.'.$this->job->id)
+            ->toContain('private-crew.job.'.$this->job->id)
+            ->toContain('private-customer.job.'.$this->job->id);
+    });
+
+    it('JobInvoiceCreated broadcasts on job and customer.job channels', function () {
+        $event = new JobInvoiceCreated($this->job, 1, 500.00);
+        $channels = $event->broadcastOn();
+
+        expect($channels)->toHaveCount(2);
+
+        $channelNames = array_map(fn ($ch) => $ch->name, $channels);
+        expect($channelNames)->toContain('private-job.'.$this->job->id)
+            ->toContain('private-customer.job.'.$this->job->id);
+    });
+
     it('all channels are PrivateChannel instances', function () {
         $events = [
             new JobStageChanged($this->job, 'a', 'b'),
@@ -143,6 +196,9 @@ describe('Events have correct broadcastOn channels', function () {
             new PrepApprovalChanged($this->job, 'company'),
             new PhotoUpdated($this->job),
             new JobNotification($this->job, 'msg'),
+            new JobCreated($this->job),
+            new JobTaskUpdated($this->job, 1, 'completed'),
+            new JobInvoiceCreated($this->job, 1, 100.00),
         ];
 
         foreach ($events as $event) {
@@ -189,6 +245,24 @@ describe('Events have correct broadcastAs names', function () {
         $event = new JobNotification($this->job, 'msg');
 
         expect($event->broadcastAs())->toBe('job.notification');
+    });
+
+    it('JobCreated broadcasts as job.created', function () {
+        $event = new JobCreated($this->job);
+
+        expect($event->broadcastAs())->toBe('job.created');
+    });
+
+    it('JobTaskUpdated broadcasts as task.updated', function () {
+        $event = new JobTaskUpdated($this->job, 1, 'completed');
+
+        expect($event->broadcastAs())->toBe('task.updated');
+    });
+
+    it('JobInvoiceCreated broadcasts as invoice.created', function () {
+        $event = new JobInvoiceCreated($this->job, 1, 100.00);
+
+        expect($event->broadcastAs())->toBe('invoice.created');
     });
 });
 
@@ -376,5 +450,34 @@ describe('Event payload contents are correct', function () {
         expect($payload['job_id'])->toBe($this->job->id);
         expect($payload['message'])->toBe('Paint delivered');
         expect($payload['type'])->toBe('info');
+    });
+
+    it('JobCreated broadcastWith contains correct keys', function () {
+        $event = new JobCreated($this->job);
+        $payload = $event->broadcastWith();
+
+        expect($payload)->toHaveKeys(['job_id', 'job_number', 'deal_id']);
+        expect($payload['job_id'])->toBe($this->job->id);
+    });
+
+    it('JobTaskUpdated broadcastWith contains correct keys', function () {
+        $event = new JobTaskUpdated($this->job, 5, 'completed', 2);
+        $payload = $event->broadcastWith();
+
+        expect($payload)->toHaveKeys(['job_id', 'task_id', 'status', 'day_number']);
+        expect($payload['job_id'])->toBe($this->job->id);
+        expect($payload['task_id'])->toBe(5);
+        expect($payload['status'])->toBe('completed');
+        expect($payload['day_number'])->toBe(2);
+    });
+
+    it('JobInvoiceCreated broadcastWith contains correct keys', function () {
+        $event = new JobInvoiceCreated($this->job, 10, 1500.50);
+        $payload = $event->broadcastWith();
+
+        expect($payload)->toHaveKeys(['job_id', 'invoice_id', 'amount']);
+        expect($payload['job_id'])->toBe($this->job->id);
+        expect($payload['invoice_id'])->toBe(10);
+        expect($payload['amount'])->toBe(1500.50);
     });
 });

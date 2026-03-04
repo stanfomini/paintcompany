@@ -18,6 +18,18 @@ if ('serviceWorker' in navigator) {
                     }
                 });
             });
+            // Auto-register push subscription for logged-in users
+            if (window.pushNotifications?.isSupported()) {
+                navigator.serviceWorker.ready.then(async () => {
+                    const userMeta = document.querySelector('meta[name="user-id"]');
+                    if (!userMeta?.content) return;
+
+                    const alreadySubscribed = await window.pushNotifications.isSubscribed();
+                    if (!alreadySubscribed) {
+                        await window.pushNotifications.subscribe();
+                    }
+                });
+            }
         } catch (err) {
             console.error('SW registration failed:', err);
         }
@@ -26,6 +38,16 @@ if ('serviceWorker' in navigator) {
     // When new SW takes over, reload page
     navigator.serviceWorker.addEventListener('controllerchange', () => {
         window.location.reload();
+    });
+
+    // Listen for messages from SW (e.g. push notification received)
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'notification-received' && window.Livewire) {
+            Livewire.dispatch('refresh-notification-counts', {
+                badge_count: event.data.badge_count ?? null,
+                tag: event.data.tag ?? null,
+            });
+        }
     });
 }
 

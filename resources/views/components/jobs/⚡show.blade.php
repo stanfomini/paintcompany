@@ -78,6 +78,8 @@ new class extends Component {
             "echo-private:job.{$this->job->id},prep.approval.changed" => 'onPrepApprovalChanged',
             "echo-private:job.{$this->job->id},photo.updated" => 'onPhotoUpdated',
             "echo-private:job.{$this->job->id},job.notification" => 'onJobNotification',
+            "echo-private:job.{$this->job->id},.task.updated" => 'onTaskUpdated',
+            "echo-private:job.{$this->job->id},.invoice.created" => 'onInvoiceCreated',
             'job-updated' => 'refreshJob',
             'color-updated' => 'refreshJob',
             'crew-dispatched' => 'refreshJob',
@@ -181,11 +183,16 @@ new class extends Component {
 
         if ($this->invoices->where('type', Invoice::TYPE_DEPOSIT)->isNotEmpty()) {
             session()->flash('error', __('A deposit invoice already exists for this job.'));
+
             return;
         }
 
         $service = app(InvoiceService::class);
-        $service->createDepositInvoice($this->job->estimate, $this->job);
+        $invoice = $service->createDepositInvoice($this->job->estimate, $this->job);
+
+        if (class_exists(\App\Events\JobInvoiceCreated::class)) {
+            broadcast(new \App\Events\JobInvoiceCreated($this->job, $invoice->id, (float) $invoice->total))->toOthers();
+        }
 
         unset($this->invoices);
         session()->flash('success', __('Deposit invoice created.'));
@@ -197,11 +204,16 @@ new class extends Component {
 
         if ($this->invoices->where('type', Invoice::TYPE_FINAL)->isNotEmpty()) {
             session()->flash('error', __('A final invoice already exists for this job.'));
+
             return;
         }
 
         $service = app(InvoiceService::class);
-        $service->createFinalInvoice($this->job);
+        $invoice = $service->createFinalInvoice($this->job);
+
+        if (class_exists(\App\Events\JobInvoiceCreated::class)) {
+            broadcast(new \App\Events\JobInvoiceCreated($this->job, $invoice->id, (float) $invoice->total))->toOthers();
+        }
 
         unset($this->invoices);
         session()->flash('success', __('Final invoice created.'));
@@ -281,6 +293,17 @@ new class extends Component {
         $this->refreshJob();
         $message = $data['message'] ?? 'Job updated.';
         session()->flash('success', $message);
+    }
+
+    public function onTaskUpdated(): void
+    {
+        $this->refreshJob();
+    }
+
+    public function onInvoiceCreated(): void
+    {
+        unset($this->invoices);
+        $this->refreshJob();
     }
 
     public function onMessageSent(): void

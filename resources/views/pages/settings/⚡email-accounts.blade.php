@@ -117,7 +117,7 @@ new class extends Component {
             'accountType' => 'required|in:personal,shared',
             'address' => 'required|string|min:3|max:30|regex:/^[a-z0-9.]+$/',
             'displayName' => 'nullable|string|max:100',
-            'signatureHtml' => 'nullable|string|max:5000',
+            'signatureHtml' => 'nullable|string|max:50000',
             'isActive' => 'boolean',
         ];
 
@@ -482,7 +482,102 @@ new class extends Component {
 
                     <flux:field>
                         <flux:label>{{ __('Signature') }} <span class="text-zinc-400">({{ __('optional') }})</span></flux:label>
-                        <flux:textarea wire:model="signatureHtml" rows="3" placeholder="{{ __('Best regards, Your Name') }}" />
+                        <flux:description class="mb-2">{{ __('Format your signature with bold, italic, colors, images, and links.') }}</flux:description>
+                        <div
+                            x-data="{
+                                content: $wire.entangle('signatureHtml'),
+                                doc: null,
+                                updateIframe() {
+                                    const iframe = this.$refs.sigFrame;
+                                    if (!iframe) return;
+                                    this.doc = iframe.contentDocument || iframe.contentWindow.document;
+                                    this.doc.open();
+                                    this.doc.write(`<!DOCTYPE html><html><head><style>
+                                        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; line-height: 1.5; color: #333; margin: 0; padding: 10px; word-wrap: break-word; min-height: 80px; }
+                                        body:empty:before { content: 'Best regards, Your Name'; color: #999; }
+                                        img { max-width: 200px; height: auto; }
+                                        a { color: #2563eb; }
+                                    </style></head><body contenteditable='true'>` + (this.content || '') + `</body></html>`);
+                                    this.doc.close();
+                                    this.doc.body.addEventListener('input', () => {
+                                        this.content = this.doc.body.innerHTML;
+                                    });
+                                },
+                                execCmd(cmd, value = null) {
+                                    if (!this.doc) return;
+                                    this.doc.body.focus();
+                                    this.doc.execCommand(cmd, false, value);
+                                    this.content = this.doc.body.innerHTML;
+                                },
+                                insertLink() {
+                                    const url = prompt('{{ __('Enter URL') }}');
+                                    if (url) this.execCmd('createLink', url);
+                                },
+                                insertImage() {
+                                    const url = prompt('{{ __('Enter image URL (e.g. your company logo)') }}');
+                                    if (url) this.execCmd('insertImage', url);
+                                },
+                                uploadImage() {
+                                    this.$refs.sigImageUpload.click();
+                                },
+                                handleImageUpload(event) {
+                                    const file = event.target.files[0];
+                                    if (!file) return;
+                                    if (!file.type.startsWith('image/')) { alert('Please select an image file.'); return; }
+                                    if (file.size > 500 * 1024) { alert('Image must be under 500KB for email signatures.'); return; }
+                                    const reader = new FileReader();
+                                    reader.onload = (e) => {
+                                        this.doc.body.focus();
+                                        this.doc.execCommand('insertImage', false, e.target.result);
+                                        this.content = this.doc.body.innerHTML;
+                                    };
+                                    reader.readAsDataURL(file);
+                                    event.target.value = '';
+                                },
+                                init() {
+                                    this.$nextTick(() => this.updateIframe());
+                                    this.$watch('content', (value) => {
+                                        if (!this.doc || !this.doc.body) return;
+                                        if (this.doc.body.innerHTML !== value) {
+                                            this.updateIframe();
+                                        }
+                                    });
+                                }
+                            }"
+                        >
+                            {{-- Signature toolbar --}}
+                            <div class="flex flex-wrap items-center gap-0.5 rounded-t-lg border border-zinc-200 bg-zinc-50 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800">
+                                <button type="button" @click="execCmd('bold')" class="rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700" title="Bold">
+                                    <strong class="text-xs">B</strong>
+                                </button>
+                                <button type="button" @click="execCmd('italic')" class="rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700" title="Italic">
+                                    <em class="text-xs">I</em>
+                                </button>
+                                <button type="button" @click="execCmd('underline')" class="rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700" title="Underline">
+                                    <span class="text-xs underline">U</span>
+                                </button>
+                                <div class="mx-0.5 h-4 w-px bg-zinc-300 dark:bg-zinc-600"></div>
+                                <label class="relative rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700 cursor-pointer" title="Text Color">
+                                    <svg class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 3l6 15H6l6-15z"/><line x1="4" y1="21" x2="20" y2="21" stroke-width="3"/></svg>
+                                    <input type="color" value="#000000" @input="execCmd('foreColor', $event.target.value)"
+                                        class="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+                                </label>
+                                <div class="mx-0.5 h-4 w-px bg-zinc-300 dark:bg-zinc-600"></div>
+                                <button type="button" @click="insertLink()" class="rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700" title="Link">
+                                    <flux:icon name="link" class="size-3.5" />
+                                </button>
+                                <button type="button" @click="insertImage()" class="rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700" title="Image from URL">
+                                    <flux:icon name="globe-alt" class="size-3.5" />
+                                </button>
+                                <button type="button" @click="uploadImage()" class="rounded p-1 text-zinc-600 hover:bg-zinc-200 dark:text-zinc-400 dark:hover:bg-zinc-700" title="Upload Image">
+                                    <flux:icon name="photo" class="size-3.5" />
+                                </button>
+                                <input type="file" x-ref="sigImageUpload" accept="image/*" class="hidden" @change="handleImageUpload($event)" />
+                            </div>
+
+                            {{-- Signature editor --}}
+                            <iframe x-ref="sigFrame" class="w-full rounded-b-lg border border-t-0 border-zinc-200 bg-white dark:border-zinc-700" style="height: 120px; border: none;"></iframe>
+                        </div>
                     </flux:field>
 
                     @if ($editingId)

@@ -58,6 +58,10 @@ new class extends Component {
             session()->flash('note-success', __('Note added successfully.'));
         }
 
+        if (class_exists(\App\Events\DealNoteAdded::class)) {
+            broadcast(new \App\Events\DealNoteAdded($this->dealId, auth()->user()->name, $this->editingNoteId ? 'updated' : 'created'))->toOthers();
+        }
+
         $this->resetForm();
     }
 
@@ -86,6 +90,11 @@ new class extends Component {
         if ($note) {
             $note->delete();
             $this->dispatch('note-deleted');
+
+            if (class_exists(\App\Events\DealNoteAdded::class)) {
+                broadcast(new \App\Events\DealNoteAdded($this->dealId, auth()->user()->name, 'deleted'))->toOthers();
+            }
+
             session()->flash('note-success', __('Note deleted successfully.'));
         }
     }

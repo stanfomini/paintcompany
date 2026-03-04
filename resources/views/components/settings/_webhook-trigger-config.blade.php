@@ -20,7 +20,7 @@
 <flux:separator />
 
 @if (! $webhookSamplePayload)
-    <div wire:poll.5s="refreshWebhookPayload" class="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
+    <div wire:poll.5s.visible="refreshWebhookPayload" class="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
         <div class="relative flex h-3 w-3">
             <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
             <span class="relative inline-flex h-3 w-3 rounded-full bg-amber-500"></span>

@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Estimate;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class EstimateProposalSent extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'estimates';
 
@@ -37,6 +40,10 @@ class EstimateProposalSent extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -84,6 +91,14 @@ class EstimateProposalSent extends Notification implements ShouldQueue
             'estimate_number' => $this->estimate->estimate_number,
             'total' => $this->estimate->total,
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        return new SmsMessage(
+            body: "Your estimate #{$this->estimate->estimate_number} is ready to view!",
+            deepLink: $this->estimate->getPublicUrl(),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Job;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,7 +16,7 @@ use Illuminate\Notifications\Notification;
 
 class JobStageAdvanced extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
@@ -47,6 +50,10 @@ class JobStageAdvanced extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -83,6 +90,16 @@ class JobStageAdvanced extends Notification implements ShouldQueue
             'to_stage' => $this->toStage,
             'message' => __('Job :number advanced from :from to :to', ['number' => $this->job->job_number, 'from' => $fromLabel, 'to' => $toLabel]),
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $toLabel = Job::STAGES[$this->toStage] ?? $this->toStage;
+
+        return new SmsMessage(
+            body: "Job #{$this->job->job_number} updated to: {$toLabel}.",
+            deepLink: url("/jobs/{$this->job->id}"),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

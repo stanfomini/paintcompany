@@ -5,7 +5,6 @@ use App\Models\EstimateActivity;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -54,6 +53,22 @@ new class extends Component {
     public function mount(Estimate $estimate): void
     {
         $this->estimate = $estimate;
+    }
+
+    public function getListeners(): array
+    {
+        return [
+            'estimate-updated' => 'refreshActivities',
+            'options-updated' => 'refreshActivities',
+            'photos-updated' => 'refreshActivities',
+            'notes-updated' => 'refreshActivities',
+            "echo-private:estimate.{$this->estimate->id},.estimate.area.updated" => 'refreshActivities',
+            "echo-private:estimate.{$this->estimate->id},.estimate.photo.updated" => 'refreshActivities',
+            "echo-private:estimate.{$this->estimate->id},.estimate.status.changed" => 'refreshActivities',
+            "echo-private:estimate.{$this->estimate->id},.estimate.signature.added" => 'refreshActivities',
+            "echo-private:estimate.{$this->estimate->id},.estimate.note.added" => 'refreshActivities',
+            "echo-private:estimate.{$this->estimate->id},.estimate.options.toggled" => 'refreshActivities',
+        ];
     }
 
     public function loadMore(): void
@@ -118,13 +133,10 @@ new class extends Component {
     /**
      * Refresh activities when estimate is updated.
      */
-    #[On('estimate-updated')]
-    #[On('options-updated')]
-    #[On('photos-updated')]
-    #[On('notes-updated')]
     public function refreshActivities(): void
     {
-        // The view will re-render automatically, refreshing the activities
+        unset($this->activities);
+        unset($this->totalCount);
     }
 
     /**

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\InvitationService;
+use App\Services\TwilioService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -10,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
@@ -28,6 +31,7 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'phone',
         'avatar_path',
         'password',
         // 'type' and 'is_active' intentionally excluded - set explicitly in code to prevent privilege escalation
@@ -41,6 +45,7 @@ class User extends Authenticatable
         'referral_terms_initials',
         'follow_up_status',
         'notification_preferences',
+        'sms_opted_out_at',
     ];
 
     /**
@@ -69,6 +74,7 @@ class User extends Authenticatable
             'needs_onboarding' => 'boolean',
             'referral_terms_accepted_at' => 'datetime',
             'notification_preferences' => 'array',
+            'sms_opted_out_at' => 'datetime',
         ];
     }
 
@@ -431,14 +437,14 @@ class User extends Authenticatable
     public static function defaultNotificationPreferences(): array
     {
         return [
-            'estimates' => ['email' => true, 'push' => true],
-            'chat' => ['email' => true, 'push' => true],
-            'email_messages' => ['email' => true, 'push' => true],
-            'jobs' => ['email' => true, 'push' => true],
-            'tasks' => ['email' => true, 'push' => true],
-            'payments' => ['email' => true, 'push' => true],
-            'documents' => ['email' => true, 'push' => true],
-            'general' => ['email' => true, 'push' => true],
+            'estimates' => ['email' => true, 'push' => true, 'sms' => true],
+            'chat' => ['email' => true, 'push' => true, 'sms' => true],
+            'email_messages' => ['email' => true, 'push' => true, 'sms' => false],
+            'jobs' => ['email' => true, 'push' => true, 'sms' => true],
+            'tasks' => ['email' => true, 'push' => true, 'sms' => false],
+            'payments' => ['email' => true, 'push' => true, 'sms' => true],
+            'documents' => ['email' => true, 'push' => true, 'sms' => false],
+            'general' => ['email' => true, 'push' => true, 'sms' => false],
         ];
     }
 
@@ -468,5 +474,67 @@ class User extends Authenticatable
     public function wantsEmail(string $category): bool
     {
         return $this->getNotificationPreference($category, 'email');
+    }
+
+    /**
+     * Check if user wants SMS for a category.
+     */
+    public function wantsSms(string $category): bool
+    {
+        return $this->getNotificationPreference($category, 'sms')
+            && ! $this->isSmsOptedOut()
+            && ! empty($this->routeNotificationForTwilio());
+    }
+
+    /**
+     * Check if user has opted out of SMS.
+     */
+    public function isSmsOptedOut(): bool
+    {
+        return $this->sms_opted_out_at !== null;
+    }
+
+    /**
+     * Check if the user can send invitations (cached).
+     */
+    public function canSendInvitations(): bool
+    {
+        return Cache::remember("user.{$this->id}.can_send_invitations", 300, function () {
+            return app(InvitationService::class)->canSendInvitations($this);
+        });
+    }
+
+    /**
+     * Check if the user has commission activity (cached).
+     */
+    public function hasCommissionActivity(): bool
+    {
+        return Cache::remember("user.{$this->id}.has_commissions", 300, function () {
+            return $this->employeeProfile?->hasCommissionRules()
+                || CommissionEntry::where('commissionable_type', self::class)
+                    ->where('commissionable_id', $this->id)
+                    ->exists();
+        });
+    }
+
+    /**
+     * Resolve the phone number for Twilio SMS routing.
+     */
+    public function routeNotificationForTwilio(): ?string
+    {
+        // Check profile phone first, fall back to users.phone
+        $phone = match ($this->type) {
+            'customer' => $this->customerProfile?->phone,
+            'agent' => $this->agentProfile?->phone,
+            'crew' => $this->crewProfile?->phone,
+            'internal' => $this->employeeProfile?->phone,
+            default => null,
+        } ?? $this->phone;
+
+        if (! $phone) {
+            return null;
+        }
+
+        return app(TwilioService::class)->formatE164($phone);
     }
 }

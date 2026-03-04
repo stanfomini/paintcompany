@@ -156,10 +156,13 @@ describe('ProcessInboundEmailJob', function () {
         Queue::assertPushed(DownloadEmailAttachmentsJob::class);
     });
 
-    it('sends push notification to account owner', function () {
+    it('sends push notification to account owner when sender is known user', function () {
         Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
         Event::fake([EmailReceived::class]);
         Notification::fake();
+
+        // Create a known user matching the sender address
+        \App\Models\User::factory()->customer()->create(['email' => 'sender@external.com']);
 
         // User needs a push subscription for via() to return the WebPush channel
         \App\Models\PushSubscription::create([
@@ -182,6 +185,23 @@ describe('ProcessInboundEmailJob', function () {
                     && $notification->message->subject === 'Test Inbound Email';
             }
         );
+    });
+
+    it('skips notification when sender is external (no user account)', function () {
+        Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
+        Event::fake([EmailReceived::class]);
+        Notification::fake();
+
+        // No user with sender@external.com exists
+        $payload = buildPayload();
+
+        (new ProcessInboundEmailJob($payload))->handle(new \App\Services\EmailThreadingService);
+
+        // Email is saved for CRM visibility
+        expect(EmailMessage::count())->toBe(1);
+
+        // But no notification fires — external sender only shows in email tab
+        Notification::assertNothingSent();
     });
 
     it('skips notification when reply references a notification email (no outbound record)', function () {
@@ -209,10 +229,13 @@ describe('ProcessInboundEmailJob', function () {
         Notification::assertNothingSent();
     });
 
-    it('sends notification when reply references a real outbound email', function () {
+    it('sends notification when reply references a real outbound email from known user', function () {
         Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
         Event::fake([EmailReceived::class]);
         Notification::fake();
+
+        // Create a known user matching the sender address
+        \App\Models\User::factory()->customer()->create(['email' => 'sender@external.com']);
 
         // Create an outbound EmailMessage that was sent via EmailService
         $outboundMessageId = '<outbound-'.fake()->uuid().'@mailgun.org>';
@@ -235,17 +258,20 @@ describe('ProcessInboundEmailJob', function () {
         // Message saved
         expect(EmailMessage::where('direction', 'inbound')->count())->toBe(1);
 
-        // Notification SHOULD fire — this is a real email conversation
+        // Notification SHOULD fire — known user replying to a real email conversation
         Notification::assertSentTo(
             $this->account->user,
             EmailReceivedNotification::class,
         );
     });
 
-    it('sends notification for new emails without In-Reply-To', function () {
+    it('sends notification for new emails without In-Reply-To from known user', function () {
         Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
         Event::fake([EmailReceived::class]);
         Notification::fake();
+
+        // Create a known user matching the sender address
+        \App\Models\User::factory()->customer()->create(['email' => 'sender@external.com']);
 
         // No In-Reply-To or References — brand new email
         $payload = buildPayload([

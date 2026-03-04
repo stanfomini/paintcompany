@@ -34,11 +34,11 @@ it('denies customer users access to studio', function () {
         ->assertSessionHas('warning');
 });
 
-it('creates a new session when accessing studio without session id', function () {
+it('creates a new session when accessing studio live without session id', function () {
     $user = User::factory()->internal()->create();
 
     $this->actingAs($user)
-        ->get('/studio');
+        ->get('/studio/live');
 
     $this->assertDatabaseHas('stream_sessions', [
         'user_id' => $user->id,
@@ -51,7 +51,7 @@ it('loads existing session when session id is provided', function () {
     $session = StreamSession::factory()->for($user)->create();
 
     $this->actingAs($user)
-        ->get("/studio/{$session->id}")
+        ->get("/studio/live/{$session->id}")
         ->assertOk();
 });
 
@@ -61,7 +61,7 @@ it('denies access to another users session', function () {
     $session = StreamSession::factory()->for($owner)->create();
 
     $this->actingAs($other)
-        ->get("/studio/{$session->id}")
+        ->get("/studio/live/{$session->id}")
         ->assertForbidden();
 });
 

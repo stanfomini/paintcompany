@@ -102,6 +102,14 @@ Broadcast::channel('internal-team', function (User $user) {
 });
 
 /**
+ * Authorize access to the internal jobs channel.
+ * Only internal users can listen (for job kanban board updates).
+ */
+Broadcast::channel('internal-jobs', function (User $user) {
+    return $user->isInternal();
+});
+
+/**
  * Authorize access to a video call room.
  * User must be internal, assigned crew, or the customer for the associated job.
  */
@@ -248,3 +256,13 @@ Broadcast::channel('territory-dispatch.offer.{offerId}', function (User $user, i
 Broadcast::channel('email.user.{userId}', function (User $user, int $userId) {
     return $user->id === $userId && $user->isInternal();
 }, ['guards' => ['web']]);
+
+/**
+ * Authorize access to a color visualization channel.
+ * Any authenticated user can listen to their own visualization updates.
+ */
+Broadcast::channel('visualization.{uuid}', function (User $user, string $uuid) {
+    return \App\Models\ColorVisualization::where('uuid', $uuid)
+        ->where('user_id', $user->id)
+        ->exists();
+}, ['guards' => ['web', 'customer', 'agent']]);

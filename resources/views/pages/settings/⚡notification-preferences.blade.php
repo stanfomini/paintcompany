@@ -8,6 +8,8 @@ use Livewire\Component;
 new class extends Component {
     public array $preferences = [];
 
+    public string $smsPhoneInput = '';
+
     public bool $saved = false;
 
     public function boot(): void
@@ -26,8 +28,33 @@ new class extends Component {
             $this->preferences[$category] = [
                 'email' => $saved[$category]['email'] ?? $channels['email'],
                 'push' => $saved[$category]['push'] ?? $channels['push'],
+                'sms' => $saved[$category]['sms'] ?? $channels['sms'] ?? false,
             ];
         }
+
+        // Pre-fill from wherever their phone lives (profile or users table)
+        $user = auth()->user();
+        $this->smsPhoneInput = $user->phone ?? match ($user->type) {
+            'customer' => $user->customerProfile?->phone,
+            'agent' => $user->agentProfile?->phone,
+            'crew' => $user->crewProfile?->phone,
+            'internal' => $user->employeeProfile?->phone,
+            default => null,
+        } ?? '';
+    }
+
+    #[Computed]
+    public function hasPhone(): bool
+    {
+        $user = auth()->user();
+
+        return ! empty($user->routeNotificationForTwilio());
+    }
+
+    #[Computed]
+    public function smsPhone(): ?string
+    {
+        return auth()->user()->routeNotificationForTwilio();
     }
 
     #[Computed]
@@ -68,6 +95,20 @@ new class extends Component {
         $this->saved = true;
     }
 
+    public function savePhone(): void
+    {
+        $this->validate([
+            'smsPhoneInput' => ['required', 'string', 'min:10', 'max:20'],
+        ]);
+
+        auth()->user()->update(['phone' => $this->smsPhoneInput]);
+
+        unset($this->hasPhone);
+        unset($this->smsPhone);
+
+        $this->saved = true;
+    }
+
     public function removeDevice(int $subscriptionId): void
     {
         auth()->user()->pushSubscriptions()
@@ -95,6 +136,7 @@ new class extends Component {
                             <th class="px-4 py-3 font-medium text-zinc-700 dark:text-zinc-300">{{ __('Category') }}</th>
                             <th class="px-4 py-3 text-center font-medium text-zinc-700 dark:text-zinc-300">{{ __('Email') }}</th>
                             <th class="px-4 py-3 text-center font-medium text-zinc-700 dark:text-zinc-300">{{ __('Push') }}</th>
+                            <th class="px-4 py-3 text-center font-medium text-zinc-700 dark:text-zinc-300">{{ __('SMS') }}</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-zinc-200 dark:divide-zinc-700">
@@ -110,6 +152,15 @@ new class extends Component {
                                     <div class="flex justify-center">
                                         @if ($this->hasPushSubscriptions)
                                             <flux:switch wire:model.live="preferences.{{ $key }}.push" />
+                                        @else
+                                            <flux:switch disabled />
+                                        @endif
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 text-center">
+                                    <div class="flex justify-center">
+                                        @if ($this->hasPhone)
+                                            <flux:switch wire:model.live="preferences.{{ $key }}.sms" />
                                         @else
                                             <flux:switch disabled />
                                         @endif
@@ -234,6 +285,26 @@ new class extends Component {
                     @endforeach
                 </div>
             @endif
+
+            {{-- SMS Phone --}}
+            <div class="space-y-3">
+                <flux:heading size="sm">{{ __('SMS Phone Number') }}</flux:heading>
+                <flux:subheading>{{ __('Your phone number for receiving SMS alerts.') }}</flux:subheading>
+
+                <div class="flex items-center gap-3">
+                    <flux:input
+                        wire:model="smsPhoneInput"
+                        placeholder="(555) 123-4567"
+                        class="max-w-xs"
+                    />
+                    <flux:button variant="primary" size="sm" wire:click="savePhone">
+                        {{ __('Save Phone') }}
+                    </flux:button>
+                </div>
+                @error('smsPhoneInput')
+                    <p class="text-sm text-red-600 dark:text-red-400">{{ $message }}</p>
+                @enderror
+            </div>
         </div>
     </x-pages::settings.layout>
 </section>

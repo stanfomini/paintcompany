@@ -126,6 +126,16 @@ class CompanySetting extends Model
         'business_days',
         // Commission Defaults
         'commission_defaults',
+        // Booking Configuration
+        'booking_enabled',
+        'booking_slot_duration_minutes',
+        'booking_buffer_minutes',
+        'booking_lookahead_days',
+        'booking_min_notice_hours',
+        'bookable_estimator_ids',
+        // Color Visualizer
+        'visualizer_agent_prompt',
+        'visualizer_image_prompt',
     ];
 
     protected function casts(): array
@@ -208,6 +218,13 @@ class CompanySetting extends Model
             'business_days' => 'array',
             // Commission Defaults
             'commission_defaults' => 'array',
+            // Booking Configuration
+            'booking_enabled' => 'boolean',
+            'booking_slot_duration_minutes' => 'integer',
+            'booking_buffer_minutes' => 'integer',
+            'booking_lookahead_days' => 'integer',
+            'booking_min_notice_hours' => 'integer',
+            'bookable_estimator_ids' => 'array',
         ];
     }
 
@@ -1531,6 +1548,31 @@ class CompanySetting extends Model
         $defaults = $this->commission_defaults ?? [];
 
         return array_keys(array_diff_key($defaults, ['tiers' => true]));
+    }
+
+    public function getBookingSlotDuration(): int
+    {
+        return $this->booking_slot_duration_minutes ?? 60;
+    }
+
+    public function getBookingBuffer(): int
+    {
+        return $this->booking_buffer_minutes ?? 15;
+    }
+
+    public function getBookingLookaheadDays(): int
+    {
+        return $this->booking_lookahead_days ?? 30;
+    }
+
+    public function getBookingMinNoticeHours(): int
+    {
+        return $this->booking_min_notice_hours ?? 24;
+    }
+
+    public function getBookableEstimatorIds(): array
+    {
+        return $this->bookable_estimator_ids ?? [];
     }
 
     public function isWithinBusinessHours(): bool

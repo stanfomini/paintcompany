@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\EstimatePhotoUpdated;
 use App\Models\Estimate;
 use App\Models\PropertyPhoto;
 use App\Services\PhotoService;
@@ -65,6 +66,18 @@ new class extends Component {
     public function mount(Estimate $estimate): void
     {
         $this->estimate = $estimate;
+        $this->loadPhotos();
+    }
+
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:estimate.{$this->estimate->id},.estimate.photo.updated" => 'handlePhotoUpdated',
+        ];
+    }
+
+    public function handlePhotoUpdated(): void
+    {
         $this->loadPhotos();
     }
 
@@ -149,6 +162,13 @@ new class extends Component {
         $this->loadPhotos();
         $this->closeUploadModal();
         $this->dispatch('photos-updated');
+
+        broadcast(new EstimatePhotoUpdated(
+            $this->estimate->id,
+            0,
+            'uploaded',
+            auth()->user()?->name ?? 'System'
+        ))->toOthers();
     }
 
     public function openEditModal(int $id): void
@@ -199,6 +219,25 @@ new class extends Component {
         $this->loadPhotos();
         $this->closeEditModal();
         $this->dispatch('photos-updated');
+
+        broadcast(new EstimatePhotoUpdated(
+            $this->estimate->id,
+            $this->editingPhotoId ?? 0,
+            'updated',
+            auth()->user()?->name ?? 'System'
+        ))->toOthers();
+    }
+
+    public function toggleShowOnProposal(int $id): void
+    {
+        $photo = $this->estimate->photos()->find($id);
+
+        if (! $photo) {
+            return;
+        }
+
+        $photo->update(['show_on_proposal' => ! $photo->show_on_proposal]);
+        $this->loadPhotos();
     }
 
     public function deletePhoto(int $id): void
@@ -212,6 +251,13 @@ new class extends Component {
         $photo->delete();
         $this->loadPhotos();
         $this->dispatch('photos-updated');
+
+        broadcast(new EstimatePhotoUpdated(
+            $this->estimate->id,
+            $id,
+            'deleted',
+            auth()->user()?->name ?? 'System'
+        ))->toOthers();
     }
 
     public function reorderPhotos(array $order): void
@@ -252,7 +298,8 @@ new class extends Component {
      *
      * @return Collection<int, PropertyPhoto>
      */
-    public function getFilteredPhotosProperty(): Collection
+    #[Computed]
+    public function filteredPhotos(): Collection
     {
         if ($this->filterCategory === 'all') {
             return $this->photos;
@@ -266,7 +313,8 @@ new class extends Component {
      *
      * @return Collection<int, \App\Models\EstimateArea>
      */
-    public function getAreasProperty(): Collection
+    #[Computed]
+    public function areas(): Collection
     {
         return $this->estimate->areas()->orderBy('sort_order')->get();
     }
@@ -276,9 +324,15 @@ new class extends Component {
     {{-- Header --}}
     <div class="flex items-center justify-between mb-4">
         <flux:heading size="lg">{{ __('Photos') }}</flux:heading>
-        <flux:button wire:click="openUploadModal" icon="arrow-up-tray" size="sm">
-            {{ __('Upload Photos') }}
-        </flux:button>
+        <div class="flex items-center gap-3">
+            <a href="{{ route('estimates.visualize', $this->estimate) }}" wire:navigate class="inline-flex items-center gap-1.5 text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400">
+                <flux:icon.sparkles class="size-4" />
+                {{ __('Visualize Colors') }}
+            </a>
+            <flux:button wire:click="openUploadModal" icon="arrow-up-tray" size="sm">
+                {{ __('Upload Photos') }}
+            </flux:button>
+        </div>
     </div>
 
     {{-- Category Filter Tabs --}}
@@ -362,16 +416,17 @@ new class extends Component {
                             />
                         </div>
 
-                        {{-- Show on Proposal indicator --}}
-                        @if ($photo->show_on_proposal)
-                            <div class="absolute top-2 left-2">
-                                <flux:tooltip :content="__('Visible on proposal')">
-                                    <flux:badge color="green" size="sm">
-                                        <flux:icon name="eye" class="w-3 h-3" />
-                                    </flux:badge>
-                                </flux:tooltip>
-                            </div>
-                        @endif
+                        {{-- Show on Proposal toggle --}}
+                        <div class="absolute top-2 left-2">
+                            <flux:tooltip :content="$photo->show_on_proposal ? __('Visible on proposal — click to hide') : __('Hidden from proposal — click to show')">
+                                <button
+                                    wire:click.stop="toggleShowOnProposal({{ $photo->id }})"
+                                    class="rounded-full p-1 transition-colors {{ $photo->show_on_proposal ? 'bg-green-500 text-white' : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100' }}"
+                                >
+                                    <flux:icon name="{{ $photo->show_on_proposal ? 'eye' : 'eye-slash' }}" class="w-3.5 h-3.5" />
+                                </button>
+                            </flux:tooltip>
+                        </div>
                     </div>
 
                     {{-- Photo Info --}}

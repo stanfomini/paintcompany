@@ -3,6 +3,7 @@
 use App\Models\Deal;
 use App\Models\VideoRecording;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -13,6 +14,12 @@ new class extends Component {
     public string $search = '';
     public ?int $selectedDealId = null;
     public bool $show = false;
+
+    #[On('open-media-browser')]
+    public function open(): void
+    {
+        $this->show = true;
+    }
 
     public function updatedSearch(): void
     {

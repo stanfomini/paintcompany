@@ -28,6 +28,17 @@ class ListingDataScraped implements ShouldBroadcast
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function broadcastWith(): array
+    {
+        return [
+            'deal_id' => $this->dealId,
+            'status' => $this->success ? 'success' : 'failed',
+        ];
+    }
+
     public function broadcastAs(): string
     {
         return 'listing.scraped';

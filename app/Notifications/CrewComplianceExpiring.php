@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\User;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class CrewComplianceExpiring extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'jobs';
 
@@ -41,6 +44,10 @@ class CrewComplianceExpiring extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -80,6 +87,16 @@ class CrewComplianceExpiring extends Notification implements ShouldQueue
             'crew_name' => $this->crew->name,
             'expiring_items' => $this->expiringItems,
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $count = count($this->expiringItems);
+
+        return new SmsMessage(
+            body: "{$this->crew->name} has {$count} compliance document(s) expiring soon.",
+            deepLink: url("/crews/{$this->crew->id}"),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

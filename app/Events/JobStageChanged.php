@@ -28,6 +28,7 @@ class JobStageChanged implements ShouldBroadcast
             new PrivateChannel('job.'.$this->job->id),
             new PrivateChannel('customer.job.'.$this->job->id),
             new PrivateChannel('crew.job.'.$this->job->id),
+            new PrivateChannel('internal-jobs'),
         ];
     }
 

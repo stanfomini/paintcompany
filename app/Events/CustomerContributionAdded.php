@@ -29,6 +29,19 @@ class CustomerContributionAdded implements ShouldBroadcast
         ];
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function broadcastWith(): array
+    {
+        return [
+            'estimate_id' => $this->estimateId,
+            'type' => $this->type,
+            'customer_name' => $this->customerName,
+            'description' => $this->description,
+        ];
+    }
+
     public function broadcastAs(): string
     {
         return 'customer.contribution';

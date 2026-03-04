@@ -100,6 +100,7 @@ class extends Component {
             ->whereBetween('date', [$start->toDateString(), $end->toDateString()])
             ->when($this->employeeFilter !== 'all', fn ($q) => $q->forEmployee((int) $this->employeeFilter))
             ->where('status', '!=', 'cancelled')
+            ->where('schedule_type', '!=', 'estimate')
             ->orderBy('start_time')
             ->get()
             ->groupBy(fn (Schedule $s) => $s->date->toDateString());
@@ -125,6 +126,7 @@ class extends Component {
                 $this->weekEnd->toDateString(),
             ])
             ->when($this->employeeFilter !== 'all', fn ($q) => $q->forEmployee((int) $this->employeeFilter))
+            ->where('schedule_type', '!=', 'estimate')
             ->orderBy('start_time')
             ->get()
             ->groupBy(fn (Schedule $s) => $s->date->toDateString());

@@ -84,6 +84,15 @@ class extends Component {
             >
                 {{ __('Landing Page') }}
             </flux:button>
+
+            <flux:button
+                size="sm"
+                :variant="$tab === 'showcase' ? 'filled' : 'ghost'"
+                icon="photo"
+                wire:click="setTab('showcase')"
+            >
+                {{ __('Showcase') }}
+            </flux:button>
         @endcan
     </div>
 
@@ -99,5 +108,7 @@ class extends Component {
         @livewire('media.analytics-overview')
     @elseif($tab === 'landing-page')
         @livewire('media.landing-page-videos')
+    @elseif($tab === 'showcase')
+        @livewire('media.landing-page-showcase')
     @endif
 </div>

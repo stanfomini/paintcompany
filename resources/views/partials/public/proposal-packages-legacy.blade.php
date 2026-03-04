@@ -63,7 +63,17 @@
 
                     {{-- Price --}}
                     <div class="text-center mb-6">
-                        <span class="text-3xl font-bold text-gray-900">${{ number_format($package['total'], 2) }}</span>
+                        @if ($package['discount_amount'] > 0)
+                            <span class="text-lg text-gray-400 line-through">${{ number_format($package['subtotal'] + ($package['warranty_price'] ?? 0), 2) }}</span>
+                            <span class="text-3xl font-bold text-gray-900">${{ number_format($package['total'], 2) }}</span>
+                            <div class="mt-1">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                    {{ $package['discount_percent'] > 0 ? number_format($package['discount_percent'], 0) . '% ' : '' }}{{ __('Discount') }}: -${{ number_format($package['discount_amount'], 2) }}
+                                </span>
+                            </div>
+                        @else
+                            <span class="text-3xl font-bold text-gray-900">${{ number_format($package['total'], 2) }}</span>
+                        @endif
                     </div>
 
                     {{-- Package Features / Add-on Services --}}
@@ -255,11 +265,25 @@
         </div>
 
         <div class="px-6 py-4 space-y-3">
-            {{-- Package Total --}}
+            {{-- Package Subtotal (before discount) --}}
             <div class="flex justify-between items-center text-sm">
                 <span class="text-gray-600">{{ $selectedPackage['name'] ?? __('Selected Package') }}</span>
-                <span class="text-gray-900">${{ number_format($selectedPackage['total'] ?? 0, 2) }}</span>
+                @if (($selectedPackage['discount_amount'] ?? 0) > 0)
+                    <span class="text-gray-900">${{ number_format(($selectedPackage['subtotal'] ?? 0) + ($selectedPackage['warranty_price'] ?? 0), 2) }}</span>
+                @else
+                    <span class="text-gray-900">${{ number_format($selectedPackage['total'] ?? 0, 2) }}</span>
+                @endif
             </div>
+
+            {{-- Package Discount --}}
+            @if (($selectedPackage['discount_amount'] ?? 0) > 0)
+                <div class="flex justify-between items-center text-sm">
+                    <span class="text-green-600">
+                        {{ ($selectedPackage['discount_percent'] ?? 0) > 0 ? number_format($selectedPackage['discount_percent'], 0) . '% ' : '' }}{{ __('Discount') }}
+                    </span>
+                    <span class="text-green-600 font-medium">-${{ number_format($selectedPackage['discount_amount'], 2) }}</span>
+                </div>
+            @endif
 
             {{-- Optional Items --}}
             @if ($this->optionalItemsTotal > 0)

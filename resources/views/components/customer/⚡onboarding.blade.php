@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\AppointmentBooking;
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\Deal;
@@ -18,6 +19,12 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
     public bool $isNewProject = false;
 
     public bool $isAgentSourced = false;
+
+    public bool $isBookingSourced = false;
+
+    public ?string $appointmentDate = null;
+
+    public ?string $appointmentTime = null;
 
     public string $agentName = '';
 
@@ -95,6 +102,24 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
             }
         }
 
+        // Detect booking-sourced customer (deal created via vendor booking page)
+        if ($user->needs_onboarding && $this->customer && ! $this->isAgentSourced) {
+            $bookingDeal = Deal::where('customer_id', $this->customer->id)
+                ->where('lead_source', 'vendor_booking')
+                ->with(['appointmentBooking'])
+                ->first();
+
+            if ($bookingDeal && $bookingDeal->appointmentBooking) {
+                $this->isBookingSourced = true;
+                $booking = $bookingDeal->appointmentBooking;
+                $this->appointmentDate = $booking->booked_date?->format('l, F j, Y');
+                $this->appointmentTime = $booking->booked_start_time;
+                if (empty($this->projectNotes) && $booking->prospect_description) {
+                    $this->projectNotes = $booking->prospect_description;
+                }
+            }
+        }
+
         // For returning customers requesting a new project, skip to step 2 (property)
         if ($this->isNewProject && ! $user->needs_onboarding) {
             $this->step = 2;
@@ -160,7 +185,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
     {
         if ($this->step === 1) {
             $this->validate([
-                'phone' => ['nullable', 'string', 'max:50'],
+                'phone' => ['required', 'string', 'max:50'],
                 'preferredContact' => ['nullable', 'string', 'in:phone,email,text'],
             ]);
         }
@@ -233,7 +258,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
     public function completeAgentSourced(): void
     {
         $this->validate([
-            'phone' => ['nullable', 'string', 'max:50'],
+            'phone' => ['required', 'string', 'max:50'],
             'preferredContact' => ['nullable', 'string', 'in:phone,email,text'],
         ]);
 
@@ -515,6 +540,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
                 <flux:field>
                     <flux:label>{{ __('Phone Number') }}</flux:label>
                     <flux:input wire:model="phone" placeholder="(555) 123-4567" />
+                    <flux:description>{{ __('Used for SMS project updates and alerts.') }}</flux:description>
                     <flux:error name="phone" />
                 </flux:field>
 
@@ -573,6 +599,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
                 <flux:field>
                     <flux:label>{{ __('Phone Number') }}</flux:label>
                     <flux:input wire:model="phone" placeholder="(555) 123-4567" />
+                    <flux:description>{{ __('Used for SMS project updates and alerts.') }}</flux:description>
                     <flux:error name="phone" />
                 </flux:field>
 
@@ -728,41 +755,59 @@ new #[Layout('components.layouts.customer', ['title' => 'Welcome'])] class exten
 
         {{-- Step 4: Estimate Preference --}}
         @if ($step === 4)
-            <flux:heading size="lg" class="mb-1">{{ __('How Would You Like Your Estimate?') }}</flux:heading>
-            <flux:text size="sm" class="text-zinc-500 mb-6">{{ __('Choose how you\'d prefer us to assess your project.') }}</flux:text>
+            @if ($isBookingSourced)
+                {{-- Booking customers: show appointment confirmation --}}
+                <flux:heading size="lg" class="mb-1">{{ __('Your Estimate Appointment') }}</flux:heading>
+                <flux:text size="sm" class="text-zinc-500 mb-6">{{ __('You already have an appointment scheduled.') }}</flux:text>
 
-            <div class="grid gap-4 sm:grid-cols-2">
-                <button
-                    wire:click="selectEstimatePreference('virtual')"
-                    class="group relative flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center transition-all hover:border-blue-500 hover:shadow-md {{ $estimatePreference === 'virtual' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700' }}"
-                >
-                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
-                        <flux:icon name="video-camera" class="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                        <p class="font-semibold text-zinc-900 dark:text-zinc-100">{{ __('Virtual Estimate') }}</p>
-                        <p class="mt-1 text-sm text-zinc-500">{{ __('Video walkthrough from your phone - fast and convenient') }}</p>
-                    </div>
-                </button>
+                <div class="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-6 text-center">
+                    <flux:icon name="calendar" class="h-10 w-10 text-blue-600 mx-auto mb-3" />
+                    <p class="text-lg font-semibold text-blue-900 dark:text-blue-100">{{ $appointmentDate }}</p>
+                    <p class="text-blue-700 dark:text-blue-300">{{ $appointmentTime }}</p>
+                </div>
 
-                <button
-                    wire:click="selectEstimatePreference('in_person')"
-                    class="group relative flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center transition-all hover:border-blue-500 hover:shadow-md {{ $estimatePreference === 'in_person' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700' }}"
-                >
-                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
-                        <flux:icon name="home" class="h-6 w-6 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                        <p class="font-semibold text-zinc-900 dark:text-zinc-100">{{ __('In-Person Estimate') }}</p>
-                        <p class="mt-1 text-sm text-zinc-500">{{ __('We\'ll visit your property for a detailed assessment') }}</p>
-                    </div>
-                </button>
-            </div>
+                <div class="mt-6 flex justify-between">
+                    <flux:button variant="ghost" wire:click="previousStep">{{ __('Back') }}</flux:button>
+                    <flux:button variant="primary" wire:click="complete">{{ __('Continue to Dashboard') }}</flux:button>
+                </div>
+            @else
+                {{-- Regular customers: virtual vs in-person choice --}}
+                <flux:heading size="lg" class="mb-1">{{ __('How Would You Like Your Estimate?') }}</flux:heading>
+                <flux:text size="sm" class="text-zinc-500 mb-6">{{ __('Choose how you\'d prefer us to assess your project.') }}</flux:text>
 
-            <div class="mt-6 flex justify-between">
-                <flux:button variant="ghost" wire:click="previousStep">{{ __('Back') }}</flux:button>
-                <flux:button variant="ghost" wire:click="complete">{{ __('Skip for now') }}</flux:button>
-            </div>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <button
+                        wire:click="selectEstimatePreference('virtual')"
+                        class="group relative flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center transition-all hover:border-blue-500 hover:shadow-md {{ $estimatePreference === 'virtual' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700' }}"
+                    >
+                        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
+                            <flux:icon name="video-camera" class="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                            <p class="font-semibold text-zinc-900 dark:text-zinc-100">{{ __('Virtual Estimate') }}</p>
+                            <p class="mt-1 text-sm text-zinc-500">{{ __('Video walkthrough from your phone - fast and convenient') }}</p>
+                        </div>
+                    </button>
+
+                    <button
+                        wire:click="selectEstimatePreference('in_person')"
+                        class="group relative flex flex-col items-center gap-3 rounded-lg border-2 p-6 text-center transition-all hover:border-blue-500 hover:shadow-md {{ $estimatePreference === 'in_person' ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 dark:border-zinc-700' }}"
+                    >
+                        <div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/50">
+                            <flux:icon name="home" class="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                        </div>
+                        <div>
+                            <p class="font-semibold text-zinc-900 dark:text-zinc-100">{{ __('In-Person Estimate') }}</p>
+                            <p class="mt-1 text-sm text-zinc-500">{{ __('We\'ll visit your property for a detailed assessment') }}</p>
+                        </div>
+                    </button>
+                </div>
+
+                <div class="mt-6 flex justify-between">
+                    <flux:button variant="ghost" wire:click="previousStep">{{ __('Back') }}</flux:button>
+                    <flux:button variant="ghost" wire:click="complete">{{ __('Skip for now') }}</flux:button>
+                </div>
+            @endif
         @endif
     </div>
 

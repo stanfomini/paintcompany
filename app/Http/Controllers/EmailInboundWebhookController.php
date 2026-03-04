@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Jobs\ProcessInboundEmailJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
@@ -24,6 +25,16 @@ class EmailInboundWebhookController extends Controller
         $attachmentCount = (int) ($payload['attachment-count'] ?? 0);
         $savedAttachments = [];
 
+        // Parse Mailgun's content-id-map JSON as fallback for per-attachment content IDs
+        $contentIdMap = [];
+        if (! empty($payload['content-id-map'])) {
+            $decoded = json_decode($payload['content-id-map'], true);
+            if (is_array($decoded)) {
+                // Mailgun format: {"<cid>": "attachment-N"} — invert to {"attachment-N": "<cid>"}
+                $contentIdMap = array_flip($decoded);
+            }
+        }
+
         for ($i = 1; $i <= $attachmentCount; $i++) {
             $file = $request->file("attachment-{$i}");
             if (! $file) {
@@ -33,16 +44,28 @@ class EmailInboundWebhookController extends Controller
             $tempPath = 'email-attachments/pending/'.Str::uuid().'_'.$file->getClientOriginalName();
             Storage::put($tempPath, $file->getContent());
 
+            // Use per-field content-id first, then fall back to content-id-map
+            $contentId = $payload["attachment-{$i}-content-id"]
+                ?? ($contentIdMap["attachment-{$i}"] ?? null);
+
             $savedAttachments[$i] = [
                 'path' => $tempPath,
                 'filename' => $file->getClientOriginalName(),
                 'mime_type' => $file->getMimeType() ?? 'application/octet-stream',
                 'size' => $file->getSize(),
-                'content_id' => $payload["attachment-{$i}-content-id"] ?? null,
+                'content_id' => $contentId,
             ];
         }
 
         $payload['_saved_attachments'] = $savedAttachments;
+
+        Log::info('Email webhook: received inbound email', [
+            'sender' => $payload['sender'] ?? 'unknown',
+            'recipient' => $payload['recipient'] ?? 'unknown',
+            'subject' => $payload['subject'] ?? 'no subject',
+            'attachment_count' => $attachmentCount,
+            'saved_filenames' => collect($savedAttachments)->pluck('filename')->all(),
+        ]);
 
         ProcessInboundEmailJob::dispatch($payload);
 

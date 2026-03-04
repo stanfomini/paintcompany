@@ -77,7 +77,8 @@ new class extends Component {
             return;
         }
 
-        Job::findOrFail($jobId);
+        $job = Job::findOrFail($jobId);
+        $oldStage = $job->stage;
 
         $jobsInStage = Job::where('stage', $newStage)
             ->where('id', '!=', $jobId)
@@ -93,6 +94,11 @@ new class extends Component {
                 $updateData['stage'] = $newStage;
             }
             Job::where('id', $id)->update($updateData);
+        }
+
+        if ($oldStage !== $newStage) {
+            $job->refresh();
+            \App\Events\JobStageChanged::dispatch($job, $oldStage, $newStage);
         }
     }
 
@@ -304,7 +310,9 @@ new class extends Component {
 <script>
     let sortableInstances = [];
 
-    function initJobSortable() {
+    async function initJobSortable() {
+        const Sortable = await window.loadSortable();
+
         sortableInstances.forEach(s => s.destroy());
         sortableInstances = [];
 

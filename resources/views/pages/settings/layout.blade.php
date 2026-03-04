@@ -68,6 +68,9 @@
                 @can('messenger.manage')
                     <flux:navlist.item :href="route('messenger.edit')" wire:navigate>{{ __('Messenger') }}</flux:navlist.item>
                 @endcan
+                @can('settings.company')
+                    <flux:navlist.item :href="route('settings.color-visualizer')" wire:navigate>{{ __('Color Visualizer') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>

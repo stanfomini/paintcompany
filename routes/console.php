@@ -24,3 +24,5 @@ Schedule::job(new \App\Jobs\CheckMessengerTimeoutsJob)->everyFiveMinutes();
 Schedule::call(function () {
     app(\App\Services\PlannerDelegationService::class)->expireStale();
 })->daily()->name('planner:expire-delegations');
+Schedule::command('booking:clean-holds')->everyMinute();
+Schedule::command('booking:send-reminders')->hourly();

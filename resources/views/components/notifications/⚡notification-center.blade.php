@@ -22,6 +22,8 @@ new class extends Component {
 
         return [
             "echo-private:App.Models.User.{$userId},.Illuminate\\Notifications\\Events\\BroadcastNotificationCreated" => 'onNewNotification',
+            'toggle-notifications' => 'toggleOpen',
+            'refresh-notification-counts' => 'onNewNotification',
         ];
     }
 
@@ -165,6 +167,9 @@ new class extends Component {
             // Chat notifications → chat thread
             'UnreadChatMessage' => isset($data['chat_thread_id']) ? route('chat.show', $data['chat_thread_id']) : null,
 
+            // Email notifications → communications hub
+            'EmailReceivedNotification' => route('communications.index'),
+
             // Video call → job (calls happen in context of a job)
             'VideoCallInvitation' => isset($data['job_id']) ? route('jobs.show', $data['job_id']) : null,
 
@@ -246,6 +251,7 @@ new class extends Component {
             'CollaboratorAccessGranted' => 'user-plus',
             'InvitationViewed' => 'envelope-open',
             'UnreadChatMessage' => 'chat-bubble-left',
+            'EmailReceivedNotification' => 'envelope',
             'WorkflowNotification' => 'bolt',
             default => 'bell',
         };
@@ -290,6 +296,7 @@ new class extends Component {
             'CollaboratorAccessGranted' => __('Collaborator Added'),
             'InvitationViewed' => __('Invitation Opened'),
             'UnreadChatMessage' => __('New Message'),
+            'EmailReceivedNotification' => __('New Email'),
             'WorkflowNotification' => __('Workflow Notification'),
             default => __('Notification'),
         };
@@ -321,19 +328,21 @@ new class extends Component {
             'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => $data['title'] ?? '',
             'NewAccountCreated' => ucfirst($data['account_type'] ?? 'user') . ' — ' . ($data['user_name'] ?? ''),
             'InvitationViewed' => ($data['agent_email'] ?? '') . ' ' . __('clicked your invite'),
+            'EmailReceivedNotification' => ($data['from_name'] ?? $data['from_address'] ?? __('Someone')) . ' — ' . ($data['subject'] ?? ''),
             'WorkflowNotification' => $data['message'] ?? '',
             default => $data['customer_name'] ?? $data['estimate_number'] ?? $data['title'] ?? $data['message'] ?? '',
         };
     }
 }; ?>
 
-<div class="flex flex-col items-start gap-2 w-fit">
-    {{-- Notifications Panel (above the FAB button) --}}
+<div>
+    {{-- Notifications Panel (directly above the footer Notifications tab) --}}
     @if ($open)
         <div
             x-data
             @click.outside="$wire.set('open', false)"
-            class="w-80 max-h-[calc(100vh-8rem)] flex flex-col bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden pointer-events-auto"
+            style="position: fixed; bottom: 48px; z-index: 50;"
+            class="left-2 lg:left-[17rem] w-80 max-h-[calc(100vh-8rem)] flex flex-col bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-700 overflow-hidden"
         >
             {{-- Header with tab toggle --}}
             <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 shrink-0">
@@ -470,23 +479,7 @@ new class extends Component {
         </div>
     @endif
 
-    {{-- Floating Bell Button --}}
-    <div class="relative pointer-events-auto">
-        <button
-            wire:click="toggleOpen"
-            class="w-10 h-10 rounded-full bg-amber-500 hover:bg-amber-600 text-white shadow-md flex items-center justify-center transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 dark:focus:ring-offset-zinc-900"
-            aria-label="{{ __('Toggle notifications') }}"
-        >
-            <flux:icon name="bell" class="size-4" />
-        </button>
-
-        {{-- Unread Badge --}}
-        @if ($this->unreadCount > 0)
-            <span class="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] rounded-full min-w-4 h-4 flex items-center justify-center px-0.5 font-medium pointer-events-none">
-                {{ $this->unreadCount > 99 ? '99+' : $this->unreadCount }}
-            </span>
-        @endif
-    </div>
+    {{-- Bell button hidden - footer bar dispatches 'toggle-notifications' event instead --}}
 
     {{-- Notification Sound --}}
     <audio id="notification-sound" preload="auto">

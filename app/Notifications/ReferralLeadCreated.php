@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Referral;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class ReferralLeadCreated extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'general';
 
@@ -37,6 +40,10 @@ class ReferralLeadCreated extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -71,6 +78,15 @@ class ReferralLeadCreated extends Notification implements ShouldQueue
             'customer_name' => $this->referral->customer?->full_name,
             'type' => 'referral_lead_created',
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $customerName = $this->referral->customer?->full_name ?? 'Someone';
+
+        return new SmsMessage(
+            body: "{$customerName} used your referral link and requested an estimate!",
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

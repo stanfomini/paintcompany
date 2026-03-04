@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\InvalidatesDashboardCache;
 use App\Services\ChatService;
 use App\Services\CommissionService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 
 class Deal extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, InvalidatesDashboardCache, SoftDeletes;
 
     protected static function booted(): void
     {
@@ -39,6 +40,7 @@ class Deal extends Model
         'door_knock' => 'Door Knock',
         'repeat' => 'Repeat',
         'other' => 'Other',
+        'vendor_booking' => 'Vendor Booking',
     ];
 
     public const STAGES = [
@@ -84,6 +86,8 @@ class Deal extends Model
         'actual_end_date',
         'lead_source',
         'origin_door_knock_id',
+        'origin_vendor_id',
+        'appointment_booking_id',
         'external_id',
         'follow_up_date',
         'sort_order',
@@ -184,6 +188,16 @@ class Deal extends Model
     public function originDoorKnock(): BelongsTo
     {
         return $this->belongsTo(DoorKnock::class, 'origin_door_knock_id');
+    }
+
+    public function originVendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class, 'origin_vendor_id');
+    }
+
+    public function appointmentBooking(): BelongsTo
+    {
+        return $this->belongsTo(AppointmentBooking::class);
     }
 
     /**

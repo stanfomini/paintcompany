@@ -110,7 +110,7 @@ class extends Component {
                 <flux:select wire:model.live="listingFilter">
                     <option value="all">{{ __('All Listings') }}</option>
                     @foreach ($this->activeListings as $listing)
-                        <flux:select.option value="{{ $listing->id }}">{{ $listing->title }}</flux:select.option>
+                        <flux:select.option wire:key="listing-{{ $listing->id }}" value="{{ $listing->id }}">{{ $listing->title }}</flux:select.option>
                     @endforeach
                 </flux:select>
             </div>

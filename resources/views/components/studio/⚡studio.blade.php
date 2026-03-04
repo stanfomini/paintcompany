@@ -1056,7 +1056,9 @@ Alpine.data('studioEngine', () => ({
     },
 
     async captureHtmlOverlay(overlay) {
-        if (!window.html2canvas || overlay.type !== 'html') return;
+        if (overlay.type !== 'html') return;
+
+        const html2canvas = await window.loadHtml2canvas();
 
         // Create a temporary DOM element with the HTML content
         const container = this.$refs.htmlRenderContainer;
@@ -1072,7 +1074,7 @@ Alpine.data('studioEngine', () => ({
             // Wait for images/fonts to load
             await new Promise(r => setTimeout(r, 100));
 
-            const capturedCanvas = await window.html2canvas(wrapper, {
+            const capturedCanvas = await html2canvas(wrapper, {
                 backgroundColor: null, // Transparent background
                 scale: 2, // High-res capture
                 useCORS: true,

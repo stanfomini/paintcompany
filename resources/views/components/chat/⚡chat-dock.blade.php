@@ -30,10 +30,12 @@ new class extends Component {
 
         return [
             "echo-private:chat.user.{$userId},.thread.created" => 'onNewThread',
+            "echo-private:chat.user.{$userId},.message.sent" => 'onMessageSent',
             'message-sent' => 'onMessageSent',
             'close-chat-window' => 'closeThread',
             'minimize-chat-window' => 'minimizeThread',
             'open-chat-thread' => 'openThread',
+            'refresh-notification-counts' => 'onMessageSent',
         ];
     }
 
@@ -199,7 +201,6 @@ new class extends Component {
 ?>
 
 <div
-    wire:poll.30s
     x-data="{
         init() {
             // On hard refresh (not wire:navigate), restore state from localStorage

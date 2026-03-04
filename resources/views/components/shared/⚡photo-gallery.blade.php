@@ -354,9 +354,9 @@ new class extends Component
                         </div>
                     @endif
 
-                    {{-- Comment Count (bottom-right) --}}
+                    {{-- Comment Count (bottom-right, always visible) --}}
                     @if ($photo->comments->count() > 0)
-                        <div class="absolute bottom-2 right-2">
+                        <div class="absolute bottom-2 right-2 z-10">
                             <div class="flex items-center gap-1 bg-white/80 dark:bg-zinc-900/80 rounded-full px-2 py-0.5 text-xs font-medium text-zinc-700 dark:text-zinc-300">
                                 <flux:icon name="chat-bubble-left" class="w-3 h-3" />
                                 {{ $photo->comments->count() }}
@@ -398,13 +398,15 @@ new class extends Component
                         </div>
                     </div>
 
-                    {{-- Proposal Indicator --}}
-                    @if ($photo->show_on_proposal && $canSetProposal)
-                        <div class="absolute top-2 right-2 {{ $photo->has_annotations ? 'top-8' : '' }}">
-                            <div class="bg-amber-100/90 dark:bg-amber-900/80 rounded-full p-1">
-                                <flux:icon name="star" class="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                            </div>
-                        </div>
+                    {{-- Proposal Toggle (always visible) --}}
+                    @if ($canSetProposal)
+                        <button
+                            wire:click.stop="toggleProposal({{ $photo->id }})"
+                            class="absolute bottom-2 left-2 rounded-full p-1.5 transition-colors shadow-sm {{ $photo->show_on_proposal ? 'bg-amber-100 dark:bg-amber-900/80' : 'bg-white/80 dark:bg-zinc-800/80' }}"
+                            title="{{ $photo->show_on_proposal ? __('Visible on proposal — click to hide') : __('Hidden from proposal — click to show') }}"
+                        >
+                            <flux:icon name="star" class="w-4 h-4 {{ $photo->show_on_proposal ? 'text-amber-600 dark:text-amber-400' : 'text-zinc-400 dark:text-zinc-500' }}" />
+                        </button>
                     @endif
                 </div>
             @endforeach

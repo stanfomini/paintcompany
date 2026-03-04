@@ -26,6 +26,7 @@ class EstimateStatusChanged implements ShouldBroadcast
     {
         $channels = [
             new PrivateChannel('estimate.'.$this->estimate->id),
+            new PrivateChannel('internal-team'),
         ];
 
         if ($this->estimate->deal_id) {

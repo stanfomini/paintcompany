@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Activity;
+use App\Models\AppointmentBooking;
 use App\Models\Deal;
 use App\Models\Job;
 use App\Models\LifeCommitment;
@@ -40,6 +41,7 @@ class UnifiedCalendarService
 
         $events = $events->merge($this->getActivityEvents($user, $from, $to));
         $events = $events->merge($this->getJobEvents($user, $from, $to));
+        $events = $events->merge($this->getEstimateAppointmentEvents($user, $from, $to));
         $events = $events->merge($this->getLifeCommitmentEvents($from, $to));
         $events = $events->merge($this->getTerritoryScheduleEvents($user, $from, $to));
 
@@ -126,7 +128,7 @@ class UnifiedCalendarService
                 'color' => $this->getActivityColor($activity),
                 'subject_type' => $activity->subject_type,
                 'subject_id' => $activity->subject_id,
-                'url' => $activity->getSubjectUrl(),
+                'url' => $this->getActivityUrl($activity),
                 'meta' => [
                     'activity_id' => $activity->id,
                     'is_completed' => $activity->is_completed,
@@ -173,12 +175,65 @@ class UnifiedCalendarService
                 'color' => '#2563eb',
                 'subject_type' => Job::class,
                 'subject_id' => $job->id,
-                'url' => route('jobs.show', $job),
+                'url' => $job->deal?->customer_id
+                    ? route('customers.show', ['customer' => $job->deal->customer_id])
+                    : route('jobs.show', $job),
                 'meta' => [
                     'job_id' => $job->id,
                     'stage' => $job->stage,
                     'date_confirmed' => $job->company_date_confirmed && $job->customer_date_confirmed,
                     'has_crew' => $job->dispatched_at !== null,
+                ],
+            ];
+        });
+    }
+
+    /**
+     * Get estimate appointment events from vendor bookings.
+     *
+     * @return Collection<int, array<string, mixed>>
+     */
+    protected function getEstimateAppointmentEvents(User $user, CarbonInterface $from, CarbonInterface $to): Collection
+    {
+        $bookings = AppointmentBooking::query()
+            ->where('estimator_id', $user->id)
+            ->where('status', AppointmentBooking::STATUS_CONFIRMED)
+            ->whereDate('booked_date', '>=', $from)
+            ->whereDate('booked_date', '<=', $to)
+            ->with(['deal.customer', 'vendor'])
+            ->get();
+
+        return $bookings->map(function (AppointmentBooking $booking) {
+            $date = $booking->booked_date->format('Y-m-d');
+            $start = Carbon::parse("{$date} {$booking->booked_start_time}");
+            $end = Carbon::parse("{$date} {$booking->booked_end_time}");
+            $prospectName = $booking->getProspectFullName();
+            $vendorName = $booking->vendor?->name;
+            $title = "Estimate: {$prospectName}";
+            if ($vendorName) {
+                $title .= " (via {$vendorName})";
+            }
+
+            return [
+                'id' => "booking-{$booking->id}",
+                'title' => $title,
+                'start' => $start,
+                'end' => $end,
+                'type' => 'estimate_appointment',
+                'source' => 'booking',
+                'color' => '#10b981', // emerald
+                'subject_type' => Deal::class,
+                'subject_id' => $booking->deal_id,
+                'url' => $booking->deal?->customer_id
+                    ? route('customers.show', ['customer' => $booking->deal->customer_id, 'deal' => $booking->deal_id])
+                    : null,
+                'meta' => [
+                    'booking_id' => $booking->id,
+                    'prospect_name' => $prospectName,
+                    'prospect_address' => $booking->prospect_address,
+                    'prospect_phone' => $booking->prospect_phone,
+                    'vendor_name' => $vendorName,
+                    'estimate_preference' => $booking->estimate_preference,
                 ],
             ];
         });
@@ -318,6 +373,21 @@ class UnifiedCalendarService
                 ],
             ];
         });
+    }
+
+    /**
+     * Get the URL for an activity event, routing deal-related activities to the customer hub.
+     */
+    protected function getActivityUrl(Activity $activity): ?string
+    {
+        if ($activity->subject_type === Deal::class && $activity->subject?->customer_id) {
+            return route('customers.show', [
+                'customer' => $activity->subject->customer_id,
+                'deal' => $activity->subject_id,
+            ]);
+        }
+
+        return $activity->getSubjectUrl();
     }
 
     /**

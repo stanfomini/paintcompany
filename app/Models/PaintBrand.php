@@ -46,6 +46,22 @@ class PaintBrand extends Model
     }
 
     /**
+     * Get all colors for this brand.
+     */
+    public function colors(): HasMany
+    {
+        return $this->hasMany(PaintColor::class);
+    }
+
+    /**
+     * Get active colors for this brand.
+     */
+    public function activeColors(): HasMany
+    {
+        return $this->hasMany(PaintColor::class)->where('is_active', true);
+    }
+
+    /**
      * Scope to only active brands.
      */
     public function scopeActive(Builder $query): Builder

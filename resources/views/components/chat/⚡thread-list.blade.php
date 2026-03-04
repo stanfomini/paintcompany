@@ -2,10 +2,8 @@
 
 use App\Models\ChatThread;
 use App\Services\ChatService;
-use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -20,6 +18,19 @@ new class extends Component {
     public string $search = '';
 
     public string $filter = 'all';
+
+    public function getListeners(): array
+    {
+        $userId = auth()->id();
+
+        return [
+            "echo-private:chat.user.{$userId},.thread.created" => 'refreshThreads',
+            "echo-private:chat.user.{$userId},.message.sent" => 'refreshThreads',
+            'message-sent' => 'refreshThreads',
+            'thread-created' => 'refreshThreads',
+            'refresh-notification-counts' => 'refreshThreads',
+        ];
+    }
 
     public function mount(): void
     {
@@ -37,8 +48,6 @@ new class extends Component {
         // Filter change triggers re-render automatically
     }
 
-    #[On('message-sent')]
-    #[On('thread-created')]
     public function refreshThreads(): void
     {
         unset($this->threads);
@@ -128,7 +137,7 @@ new class extends Component {
     }
 }; ?>
 
-<div wire:poll.30s>
+<div>
     <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-3">

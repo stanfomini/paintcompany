@@ -13,6 +13,26 @@ new class extends Component {
 
     public int $activeDay = 1;
 
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:job.{$this->job->id},.task.updated" => 'onTaskUpdated',
+            "echo-private:job.{$this->job->id},.stage.changed" => 'onStageChanged',
+        ];
+    }
+
+    public function onTaskUpdated(): void
+    {
+        $this->job->refresh();
+        $this->job->load(['prepPlan.days.tasks.completedByUser']);
+        unset($this->plan, $this->progress);
+    }
+
+    public function onStageChanged(): void
+    {
+        $this->job->refresh();
+    }
+
     public function mount(Job $job): void
     {
         $this->job = $job;
@@ -44,7 +64,12 @@ new class extends Component {
     {
         $task = JobPrepTask::findOrFail($taskId);
 
-        app(JobPrepService::class)->cycleTaskStatus($task, auth()->user());
+        $newStatus = app(JobPrepService::class)->cycleTaskStatus($task, auth()->user());
+
+        if (class_exists(\App\Events\JobTaskUpdated::class)) {
+            $dayNumber = $task->day?->day_number ?? $this->activeDay;
+            broadcast(new \App\Events\JobTaskUpdated($this->job, $taskId, $newStatus, $dayNumber))->toOthers();
+        }
 
         unset($this->plan, $this->progress);
         $this->job->refresh();

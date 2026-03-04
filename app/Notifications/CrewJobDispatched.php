@@ -2,10 +2,13 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Job;
 use App\Models\ServiceCategory;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,7 +17,7 @@ use Illuminate\Notifications\Notification;
 
 class CrewJobDispatched extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only crew users should receive this */
     protected array $allowedUserTypes = ['crew'];
@@ -47,6 +50,10 @@ class CrewJobDispatched extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -91,6 +98,14 @@ class CrewJobDispatched extends Notification implements ShouldQueue
             'job_number' => $this->job->job_number,
             'service_category_id' => $this->serviceCategory?->id,
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        return new SmsMessage(
+            body: "New job #{$this->job->job_number} dispatched to you!",
+            deepLink: route('crew.jobs.available'),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

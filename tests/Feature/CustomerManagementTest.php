@@ -670,3 +670,37 @@ describe('Customer assignment', function () {
             ->assertForbidden();
     });
 });
+
+describe('Customer show page email compose', function () {
+    it('opens compose modal when clicking email button', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->create(['email' => 'test@example.com']);
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->assertSet('showCompose', false)
+            ->call('openCompose')
+            ->assertSet('showCompose', true);
+    });
+
+    it('closes compose modal on email-sent event', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->create(['email' => 'test@example.com']);
+
+        Livewire::actingAs($user)
+            ->test('customers.show', ['customer' => $customer])
+            ->call('openCompose')
+            ->assertSet('showCompose', true)
+            ->dispatch('email-sent')
+            ->assertSet('showCompose', false);
+    });
+
+    it('does not show mailto link on customer profile', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->create(['email' => 'test@example.com']);
+
+        $this->actingAs($user)
+            ->get(route('customers.show', $customer))
+            ->assertDontSee('mailto:');
+    });
+});

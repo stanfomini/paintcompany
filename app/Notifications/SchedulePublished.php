@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Schedule;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class SchedulePublished extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'jobs';
 
@@ -37,6 +40,10 @@ class SchedulePublished extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -77,6 +84,16 @@ class SchedulePublished extends Notification implements ShouldQueue
             'start_time' => $this->schedule->start_time,
             'end_time' => $this->schedule->end_time,
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $date = $this->schedule->date->format('M j, Y');
+
+        return new SmsMessage(
+            body: "Your schedule for {$date} has been published.",
+            deepLink: route('my.schedule'),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

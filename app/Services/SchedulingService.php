@@ -79,6 +79,7 @@ class SchedulingService
         $schedules = Schedule::query()
             ->forEmployee($employee->id)
             ->where('status', '!=', 'cancelled')
+            ->where('schedule_type', '!=', 'estimate')
             ->whereDate('date', '>=', $weekStart->toDateString())
             ->whereDate('date', '<=', $weekEnd->toDateString())
             ->get();

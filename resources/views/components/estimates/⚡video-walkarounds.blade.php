@@ -27,6 +27,22 @@ new class extends Component {
         }
     }
 
+    public function getListeners(): array
+    {
+        $listeners = [];
+
+        if ($this->recordableType === Estimate::class) {
+            $listeners["echo-private:estimate.{$this->recordableId},.estimate.video.updated"] = 'handleVideoUpdated';
+        }
+
+        return $listeners;
+    }
+
+    public function handleVideoUpdated(): void
+    {
+        unset($this->recordings);
+    }
+
     #[Computed]
     public function recordings()
     {
@@ -140,7 +156,7 @@ new class extends Component {
 ?>
 
 <div
-    @if ($this->hasPendingRecordings) wire:poll.2s @endif
+    @if ($this->hasPendingRecordings) wire:poll.2s.visible @endif
     @if (! $readOnly)
         x-data="walkaroundRecorder({
             recordableId: @js($recordableId),

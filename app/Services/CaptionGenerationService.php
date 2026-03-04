@@ -59,4 +59,62 @@ class CaptionGenerationService
 
         return $segments;
     }
+
+    /**
+     * Generate caption segments from a voiceover recording.
+     *
+     * @return array<int, array{text: string, start_ms: int, end_ms: int}>
+     */
+    public function generateFromVoiceover(VideoProjectScene $scene): array
+    {
+        $project = $scene->project;
+        $voiceover = $project->voiceovers()->with('recording')->first();
+
+        if (! $voiceover || ! $voiceover->recording?->getVideoUrl()) {
+            return [];
+        }
+
+        try {
+            $result = $this->python->transcribeAudio($voiceover->recording->getVideoUrl());
+        } catch (\Exception $e) {
+            report($e);
+
+            return [];
+        }
+
+        if (! isset($result['segments'])) {
+            return [];
+        }
+
+        $segments = [];
+        $voOffset = $voiceover->start_ms ?? 0;
+        $inPoint = $voiceover->in_point_ms ?? 0;
+
+        foreach ($result['segments'] as $segment) {
+            $segStartMs = (int) ($segment['start'] * 1000);
+            $segEndMs = (int) ($segment['end'] * 1000);
+
+            // Skip segments before the in_point trim
+            if ($segEndMs <= $inPoint) {
+                continue;
+            }
+
+            // If out_point is set, skip segments beyond it
+            if ($voiceover->out_point_ms && $segStartMs >= $voiceover->out_point_ms) {
+                continue;
+            }
+
+            // Adjust for in_point trim and voiceover offset on timeline
+            $startMs = $voOffset + max(0, $segStartMs - $inPoint);
+            $endMs = $voOffset + ($segEndMs - $inPoint);
+
+            $segments[] = [
+                'text' => trim($segment['text']),
+                'start_ms' => $startMs,
+                'end_ms' => $endMs,
+            ];
+        }
+
+        return $segments;
+    }
 }

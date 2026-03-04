@@ -210,6 +210,7 @@ new class extends Component {
                 'tax_rate' => (float) $package->tax_rate,
                 'tax_amount' => (float) $package->tax_amount,
                 'discount_amount' => (float) $package->discount_amount,
+                'discount_percent' => (float) $package->discount_percent,
                 'total' => (float) $package->total,
                 'warranty_price' => (float) ($package->warranty_price ?? 0),
                 'warranty_years' => $package->warranty_years,

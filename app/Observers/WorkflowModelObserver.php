@@ -2,15 +2,14 @@
 
 namespace App\Observers;
 
+use App\Jobs\EvaluateWorkflowJob;
 use App\Models\Deal;
 use App\Models\DoorKnock;
 use App\Models\Estimate;
 use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\Payment;
-use App\Services\WorkflowService;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;
 
 class WorkflowModelObserver
 {
@@ -19,7 +18,7 @@ class WorkflowModelObserver
      */
     public function created(Model $model): void
     {
-        $this->safeEvaluate($model, 'created');
+        $this->dispatchEvaluation($model, 'created');
     }
 
     /**
@@ -40,28 +39,23 @@ class WorkflowModelObserver
         $hasStatusChange = ! empty(array_intersect($changed, $statusFields));
         $event = $hasStatusChange ? 'status_changed' : 'field_changed';
 
-        $this->safeEvaluate($model, $event, $changed);
+        $this->dispatchEvaluation($model, $event, $changed);
     }
 
     /**
-     * Safely evaluate workflows, catching any errors to prevent
-     * observer failures from breaking the main operation.
+     * Dispatch workflow evaluation to the queue.
      *
      * @param  array<int, string>  $changedFields
      */
-    protected function safeEvaluate(Model $model, string $event, array $changedFields = []): void
+    protected function dispatchEvaluation(Model $model, string $event, array $changedFields = []): void
     {
-        try {
-            $modelType = $this->getModelType($model);
-
-            app(WorkflowService::class)->evaluate($modelType, $model, $event, $changedFields);
-        } catch (\Throwable $e) {
-            Log::error("WorkflowModelObserver error: {$e->getMessage()}", [
-                'model' => get_class($model),
-                'model_id' => $model->getKey(),
-                'event' => $event,
-            ]);
-        }
+        EvaluateWorkflowJob::dispatch(
+            $this->getModelType($model),
+            $model->getKey(),
+            get_class($model),
+            $event,
+            $changedFields,
+        );
     }
 
     /**

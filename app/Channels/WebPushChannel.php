@@ -2,7 +2,9 @@
 
 namespace App\Channels;
 
+use App\Models\EmailMessage;
 use App\Models\PushSubscription;
+use App\Services\ChatService;
 use Illuminate\Notifications\Notification;
 use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
@@ -19,7 +21,9 @@ class WebPushChannel
 
         /** @var WebPushMessage $message */
         $message = $notification->toWebPush($notifiable);
-        $payload = json_encode($message->toArray());
+        $data = $message->toArray();
+        $data['badge_count'] = $this->calculateBadgeCount($notifiable);
+        $payload = json_encode($data);
 
         $auth = [
             'VAPID' => [
@@ -48,5 +52,26 @@ class WebPushChannel
                 PushSubscription::where('endpoint', $report->getEndpoint())->delete();
             }
         }
+    }
+
+    private function calculateBadgeCount(object $notifiable): int
+    {
+        $count = $notifiable->unreadNotifications()->count();
+
+        if ($notifiable->can('chat.access')) {
+            $count += app(ChatService::class)->getUnreadCountForUser($notifiable);
+        }
+
+        if ($notifiable->can('email.access')) {
+            $accountIds = $notifiable->allEmailAccounts()->pluck('id');
+            if ($accountIds->isNotEmpty()) {
+                $count += EmailMessage::whereIn('email_account_id', $accountIds)
+                    ->withLabel('inbox')
+                    ->unread()
+                    ->count();
+            }
+        }
+
+        return $count;
     }
 }

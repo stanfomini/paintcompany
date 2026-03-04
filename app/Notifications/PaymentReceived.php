@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Payment;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class PaymentReceived extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'payments';
 
@@ -37,6 +40,10 @@ class PaymentReceived extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -74,6 +81,15 @@ class PaymentReceived extends Notification implements ShouldQueue
             'invoice_number' => $this->payment->invoice?->invoice_number,
             'amount' => $this->payment->amount,
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $amount = number_format((float) $this->payment->amount, 2);
+
+        return new SmsMessage(
+            body: "Payment of \${$amount} received for invoice #{$this->payment->invoice?->invoice_number}. Thank you!",
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

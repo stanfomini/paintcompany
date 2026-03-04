@@ -8,6 +8,7 @@ use App\Models\PaintProduct;
 use App\Models\ProductionRate;
 use App\Models\ServiceCategory;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -813,13 +814,15 @@ new class extends Component
     #[Computed]
     public function productionRatesByCategory(): Collection
     {
-        return ProductionRate::query()
-            ->active()
-            ->where('scope', $this->scopeType)
-            ->orderBy('surface_category')
-            ->orderBy('sort_order')
-            ->get()
-            ->groupBy('surface_category');
+        return Cache::remember("production_rates.{$this->scopeType}", 3600, function () {
+            return ProductionRate::query()
+                ->active()
+                ->where('scope', $this->scopeType)
+                ->orderBy('surface_category')
+                ->orderBy('sort_order')
+                ->get()
+                ->groupBy('surface_category');
+        });
     }
 
     /**
@@ -840,15 +843,19 @@ new class extends Component
     #[Computed]
     public function availableNestedTemplates(): Collection
     {
-        $query = NestedAreaTemplate::query()
-            ->active()
-            ->ordered();
+        $cacheKey = "nested_area_templates.{$this->scopeType}";
 
-        if ($this->scopeType !== 'both') {
-            $query->forScope($this->scopeType);
-        }
+        return Cache::remember($cacheKey, 3600, function () {
+            $query = NestedAreaTemplate::query()
+                ->active()
+                ->ordered();
 
-        return $query->get();
+            if ($this->scopeType !== 'both') {
+                $query->forScope($this->scopeType);
+            }
+
+            return $query->get();
+        });
     }
 
     /**
@@ -1117,7 +1124,9 @@ new class extends Component
     #[Computed]
     public function serviceCategories(): Collection
     {
-        return ServiceCategory::query()->active()->ordered()->get();
+        return Cache::remember('service_categories', 3600, function () {
+            return ServiceCategory::query()->active()->ordered()->get();
+        });
     }
 
     /**
@@ -1812,7 +1821,7 @@ new class extends Component
                                         <flux:select wire:model="newAddonTemplateId" size="sm">
                                             <option value="">{{ __('-- Choose Add-on --') }}</option>
                                             @foreach ($this->availableNestedTemplates as $template)
-                                                <option value="{{ $template->id }}">
+                                                <option wire:key="nested-{{ $template->id }}" value="{{ $template->id }}">
                                                     {{ __($template->name) }} (${{ number_format($template->fixed_price, 2) }})
                                                 </option>
                                             @endforeach

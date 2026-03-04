@@ -318,6 +318,49 @@ describe('CommunicationsContactService', function () {
     });
 });
 
+describe('CommunicationsContactService - Email Integration', function () {
+    it('counts email unreads for customer contacts without ambiguous column error', function () {
+        $user = User::factory()->internal()->create();
+        $customerUser = User::factory()->customer()->create();
+        $customer = \App\Models\Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        // Create a shared chat thread so the customer shows up as a contact
+        ChatThread::factory()->direct()->betweenUsers($user, $customerUser)->create([
+            'last_message_at' => now(),
+        ]);
+
+        // Create email messages linked to this customer via CRM links
+        $account = \App\Models\EmailAccount::factory()->create();
+        $inboxLabel = \App\Models\EmailLabel::factory()->system()->create([
+            'email_account_id' => $account->id,
+            'name' => 'Inbox',
+            'slug' => 'inbox',
+        ]);
+
+        $messages = \App\Models\EmailMessage::factory()->count(3)->create([
+            'email_account_id' => $account->id,
+            'is_read' => false,
+        ]);
+
+        foreach ($messages as $message) {
+            $message->labels()->attach($inboxLabel->id);
+
+            \App\Models\EmailCrmLink::factory()->create([
+                'email_message_id' => $message->id,
+                'linkable_type' => \App\Models\Customer::class,
+                'linkable_id' => $customer->id,
+            ]);
+        }
+
+        $service = app(CommunicationsContactService::class);
+        $contacts = $service->getContacts($user);
+
+        expect($contacts)->toHaveCount(1);
+        expect($contacts->first()['name'])->toBe($customerUser->name);
+        expect($contacts->first()['unread_count'])->toBe(3);
+    });
+});
+
 describe('Sidebar Navigation', function () {
     it('shows Communications item in sidebar', function () {
         $user = User::factory()->internal()->create();
@@ -346,5 +389,78 @@ describe('Unread Badge', function () {
         Livewire::actingAs($user)
             ->test('communications.unread-badge')
             ->assertDontSee('99+');
+    });
+
+    it('counts emails from shared accounts in unread badge', function () {
+        $user = User::factory()->internal()->create();
+        $user->assignRole('admin');
+
+        // Shared email account (no personal account)
+        $sharedAccount = \App\Models\EmailAccount::factory()->shared()->create();
+        $sharedLabel = \App\Models\EmailLabel::factory()->system()->create([
+            'email_account_id' => $sharedAccount->id,
+            'name' => 'Inbox',
+            'slug' => 'inbox',
+        ]);
+
+        $user->sharedEmailAccounts()->attach($sharedAccount->id, [
+            'can_send' => true,
+            'receives_notifications' => true,
+        ]);
+
+        // Create 2 unread emails in the shared account
+        $messages = \App\Models\EmailMessage::factory()->count(2)->create([
+            'email_account_id' => $sharedAccount->id,
+            'is_read' => false,
+        ]);
+        foreach ($messages as $message) {
+            $message->labels()->attach($sharedLabel->id);
+        }
+
+        Livewire::actingAs($user)
+            ->test('communications.unread-badge')
+            ->assertSee('2');
+    });
+
+    it('counts emails from both personal and shared accounts', function () {
+        $user = User::factory()->internal()->create();
+        $user->assignRole('admin');
+
+        // Personal email account
+        $personalAccount = \App\Models\EmailAccount::factory()->create(['user_id' => $user->id]);
+        $personalLabel = \App\Models\EmailLabel::factory()->system()->create([
+            'email_account_id' => $personalAccount->id,
+            'name' => 'Inbox',
+            'slug' => 'inbox',
+        ]);
+        $personalMsg = \App\Models\EmailMessage::factory()->create([
+            'email_account_id' => $personalAccount->id,
+            'is_read' => false,
+        ]);
+        $personalMsg->labels()->attach($personalLabel->id);
+
+        // Shared email account
+        $sharedAccount = \App\Models\EmailAccount::factory()->shared()->create();
+        $sharedLabel = \App\Models\EmailLabel::factory()->system()->create([
+            'email_account_id' => $sharedAccount->id,
+            'name' => 'Inbox',
+            'slug' => 'inbox',
+        ]);
+
+        $user->sharedEmailAccounts()->attach($sharedAccount->id, [
+            'can_send' => true,
+            'receives_notifications' => true,
+        ]);
+
+        $sharedMsg = \App\Models\EmailMessage::factory()->create([
+            'email_account_id' => $sharedAccount->id,
+            'is_read' => false,
+        ]);
+        $sharedMsg->labels()->attach($sharedLabel->id);
+
+        // Should count 1 personal + 1 shared = 2
+        Livewire::actingAs($user)
+            ->test('communications.unread-badge')
+            ->assertSee('2');
     });
 });

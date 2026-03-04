@@ -1,5 +1,7 @@
 <?php
 
+use App\Events\EstimateOptionsToggled;
+use App\Events\EstimateSignatureAdded;
 use App\Models\CompanySetting;
 use App\Models\Estimate;
 use App\Models\EstimateActivity;
@@ -113,6 +115,34 @@ new #[Layout('components.layouts.public')] class extends Component {
         );
     }
 
+    public function getListeners(): array
+    {
+        return [
+            "echo-private:estimate.{$this->estimate->id},.estimate.status.changed" => 'refreshProposal',
+            "echo-private:estimate.{$this->estimate->id},.estimate.area.updated" => 'refreshProposal',
+            "echo-private:estimate.{$this->estimate->id},.estimate.note.added" => 'refreshProposal',
+        ];
+    }
+
+    public function refreshProposal(): void
+    {
+        $this->estimate = $this->estimate->fresh([
+            'deal.customer',
+            'deal.agent',
+            'deal.property',
+            'items',
+            'areas.surfaces.productionRate',
+            'options.serviceCategory',
+            'packages.items.itemable',
+            'photos' => fn ($q) => $q->with(['annotations', 'comments.user', 'comments.replies.user'])->orderBy('sort_order'),
+            'estimateNotes' => fn ($q) => $q->external()->rootNotes()->with('user'),
+            'signature',
+            'createdBy.internalUser',
+        ]);
+        $this->surfacePriceCache = [];
+        $this->buildPackageScopeMap();
+    }
+
     public function toggleOption(int $optionId): void
     {
         // Cannot modify if already accepted
@@ -159,6 +189,14 @@ new #[Layout('components.layouts.public')] class extends Component {
             'signature',
             'createdBy.internalUser',
         ]);
+
+        $customerName = $this->estimate->deal?->customer?->full_name ?? $this->signerName ?: 'Customer';
+        broadcast(new EstimateOptionsToggled(
+            $this->estimate->id,
+            $optionId,
+            $option->is_selected,
+            $customerName
+        ))->toOthers();
     }
 
     public function openPhotoLightbox(int $id): void
@@ -257,6 +295,12 @@ new #[Layout('components.layouts.public')] class extends Component {
 
         // Dispatch event for any listeners
         $this->dispatch('estimate-accepted', estimateId: $this->estimate->id);
+
+        broadcast(new EstimateSignatureAdded(
+            $this->estimate,
+            $this->signerName,
+            now()->toIso8601String()
+        ))->toOthers();
 
         // Close modal and refresh
         $this->showSignatureModal = false;
@@ -699,8 +743,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 
         {{-- Photos Gallery (moved up for visual context before pricing) --}}
         @php
-            // Gather proposal photos: estimate-linked + property-level
-            $proposalPhotos = $estimate->photos;
+            // Gather proposal photos: estimate-linked (filtered) + property-level
+            $proposalPhotos = $estimate->photos->where('show_on_proposal', true);
             if ($estimate->deal?->property) {
                 $propertyPhotos = \App\Models\PropertyPhoto::where('property_id', $estimate->deal->property->id)
                     ->where('show_on_proposal', true)

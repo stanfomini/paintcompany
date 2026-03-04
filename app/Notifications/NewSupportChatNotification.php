@@ -7,10 +7,11 @@ use App\Channels\WebPushMessage;
 use App\Models\GuestChatSession;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class NewSupportChatNotification extends Notification
+class NewSupportChatNotification extends Notification implements ShouldQueue
 {
     use Queueable, RestrictsToUserTypes;
 

@@ -11,7 +11,7 @@ new class extends Component {
     #[Computed]
     public function customers()
     {
-        return Customer::query()->orderBy('first_name')->orderBy('last_name')->get();
+        return Customer::query()->select('id', 'first_name', 'last_name', 'user_id')->orderBy('first_name')->orderBy('last_name')->get();
     }
 
     #[Computed]
@@ -33,7 +33,7 @@ new class extends Component {
     #[Computed]
     public function internalUsers()
     {
-        return User::where('type', 'internal')->where('is_active', true)->orderBy('name')->get();
+        return User::query()->select('id', 'name')->where('type', 'internal')->where('is_active', true)->orderBy('name')->get();
     }
     public ?int $customerId = null;
 

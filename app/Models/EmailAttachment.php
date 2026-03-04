@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -50,11 +51,45 @@ class EmailAttachment extends Model
         return Storage::url($this->path);
     }
 
-    /**
-     * Check if this attachment is an image.
-     */
     public function isImage(): bool
     {
         return str_starts_with($this->mime_type, 'image/');
+    }
+
+    public function isPdf(): bool
+    {
+        return $this->mime_type === 'application/pdf';
+    }
+
+    public function isVideo(): bool
+    {
+        return str_starts_with($this->mime_type, 'video/');
+    }
+
+    public function isAudio(): bool
+    {
+        return str_starts_with($this->mime_type, 'audio/');
+    }
+
+    public function isText(): bool
+    {
+        return in_array($this->mime_type, ['text/plain', 'text/csv']);
+    }
+
+    protected function formattedSize(): Attribute
+    {
+        return Attribute::get(function () {
+            $bytes = $this->file_size;
+            if ($bytes >= 1048576) {
+                return round($bytes / 1048576, 1).'MB';
+            }
+
+            return round($bytes / 1024).'KB';
+        });
+    }
+
+    protected function extension(): Attribute
+    {
+        return Attribute::get(fn () => pathinfo($this->original_filename, PATHINFO_EXTENSION));
     }
 }

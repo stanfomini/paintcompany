@@ -35,11 +35,26 @@ new class extends Component {
             'job',
             'activities.user',
             'activities.assignee',
+            'appointmentBooking',
+            'originVendor',
         ]);
     }
 
-    #[On('deal-updated')]
-    #[On('estimate-created')]
+    public function getListeners(): array
+    {
+        return [
+            'deal-updated' => 'refreshDeal',
+            'estimate-created' => 'refreshDeal',
+            'note-created' => 'refreshNotes',
+            'note-updated' => 'refreshNotes',
+            'note-deleted' => 'refreshNotes',
+            "echo-private:deal.{$this->deal->id},.deal.updated" => 'refreshDeal',
+            "echo-private:deal.{$this->deal->id},.deal.note.added" => 'refreshNotes',
+            "echo-private:deal.{$this->deal->id},.estimate.status.changed" => 'refreshDeal',
+            "echo-private:deal.{$this->deal->id},.listing.scraped" => 'refreshDeal',
+        ];
+    }
+
     public function refreshDeal(): void
     {
         $this->deal = $this->deal->fresh([
@@ -52,18 +67,18 @@ new class extends Component {
             'job',
             'activities.user',
             'activities.assignee',
+            'appointmentBooking',
+            'originVendor',
         ]);
     }
 
-    #[On('note-created')]
-    #[On('note-updated')]
-    #[On('note-deleted')]
     public function refreshNotes(): void
     {
         $this->deal = $this->deal->fresh(['notes.user']);
     }
 
-    public function getStageColorProperty(): string
+    #[Computed]
+    public function stageColor(): string
     {
         return match ($this->deal->stage) {
             'lead' => 'blue',
@@ -94,10 +109,16 @@ new class extends Component {
         if ($action === 'follow_up') {
             $this->followUpDate = now()->addDay()->toDateString();
             $this->showFollowUpModal = true;
+
             return;
         }
 
         app(DealStageService::class)->transitionTo($this->deal, $action);
+
+        if (class_exists(\App\Events\DealUpdated::class)) {
+            broadcast(new \App\Events\DealUpdated($this->deal, auth()->user()->name, 'stage_changed'))->toOthers();
+        }
+
         $this->refreshDeal();
     }
 
@@ -108,6 +129,11 @@ new class extends Component {
         app(DealStageService::class)->transitionTo($this->deal, 'follow_up', $this->followUpDate);
         $this->showFollowUpModal = false;
         $this->followUpDate = null;
+
+        if (class_exists(\App\Events\DealUpdated::class)) {
+            broadcast(new \App\Events\DealUpdated($this->deal, auth()->user()->name, 'stage_changed'))->toOthers();
+        }
+
         $this->refreshDeal();
     }
 

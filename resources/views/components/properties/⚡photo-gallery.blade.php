@@ -190,7 +190,7 @@ new class extends Component {
                                 }
                             @endphp
                             @if ($previewUrl)
-                                <img src="{{ $previewUrl }}" class="h-32 w-32 object-cover rounded-lg" />
+                                <img src="{{ $previewUrl }}" class="h-32 w-32 object-cover rounded-lg" loading="lazy" />
                             @endif
                         </div>
                     @endif

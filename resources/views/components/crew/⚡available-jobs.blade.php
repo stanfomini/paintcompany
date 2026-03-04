@@ -126,7 +126,7 @@ new #[Layout('components.layouts.crew')] class extends Component
 };
 ?>
 
-<div wire:poll.120s>
+<div wire:poll.120s.visible>
     <div class="flex items-center gap-3 mb-6">
         <flux:button variant="ghost" :href="route('crew.dashboard')" icon="arrow-left" class="shrink-0">
             <span class="hidden sm:inline">{{ __('Back') }}</span>

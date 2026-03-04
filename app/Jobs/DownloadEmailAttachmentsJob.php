@@ -44,6 +44,8 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
             return;
         }
 
+        $bodyHtml = $this->message->body_html ?? '';
+
         foreach ($savedAttachments as $i => $attachmentData) {
             $tempPath = $attachmentData['path'] ?? null;
             if (! $tempPath || ! Storage::exists($tempPath)) {
@@ -61,6 +63,10 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
             $contentId = $attachmentData['content_id'] ?? null;
             $fileSize = $attachmentData['size'] ?? Storage::size($tempPath);
 
+            // Only mark as inline if the CID is actually referenced in the body HTML
+            $trimmedCid = $contentId ? trim($contentId, '<>') : null;
+            $isInline = $trimmedCid && str_contains($bodyHtml, 'cid:'.$trimmedCid);
+
             $extension = pathinfo($originalFilename, PATHINFO_EXTENSION);
             $sluggedName = Str::slug(pathinfo($originalFilename, PATHINFO_FILENAME));
             $filename = Str::uuid().'-'.$sluggedName.($extension ? '.'.$extension : '');
@@ -76,8 +82,8 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
                 'original_filename' => $originalFilename,
                 'mime_type' => $mimeType,
                 'file_size' => $fileSize,
-                'content_id' => $contentId ? trim($contentId, '<>') : null,
-                'is_inline' => (bool) $contentId,
+                'content_id' => $trimmedCid,
+                'is_inline' => $isInline,
             ]);
         }
     }

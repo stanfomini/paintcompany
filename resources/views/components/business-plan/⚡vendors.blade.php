@@ -46,6 +46,12 @@ new class extends Component
     public ?string $vendorWorkersCompExpiration = null;
     public bool $vendorRejectionForm = false;
 
+    // Booking configuration fields
+    public string $vendorBookingSlug = '';
+    public bool $vendorBookingEnabled = false;
+    public string $vendorBookingDisplayName = '';
+    public string $vendorBookingBio = '';
+
     public function boot(): void
     {
         $user = Auth::user();
@@ -123,6 +129,8 @@ new class extends Component
             'vendorW9OnFile', 'vendorHoldHarmless', 'vendorCertificateOfInsurance',
             'vendorInsuranceExpiration', 'vendorAdditionalInsured', 'vendorWorkersComp',
             'vendorWorkersCompExpiration', 'vendorRejectionForm',
+            'vendorBookingSlug', 'vendorBookingEnabled', 'vendorBookingDisplayName',
+            'vendorBookingBio',
         ]);
         $this->vendorCategory = 'supplier';
         $this->showVendorModal = true;
@@ -158,6 +166,12 @@ new class extends Component
         $this->vendorWorkersCompExpiration = $vendor->workers_comp_expiration?->format('Y-m-d');
         $this->vendorRejectionForm = (bool) $vendor->rejection_form;
 
+        // Booking fields
+        $this->vendorBookingSlug = $vendor->booking_slug ?? '';
+        $this->vendorBookingEnabled = (bool) $vendor->booking_enabled;
+        $this->vendorBookingDisplayName = $vendor->booking_display_name ?? '';
+        $this->vendorBookingBio = $vendor->booking_bio ?? '';
+
         $this->showVendorModal = true;
     }
 
@@ -190,6 +204,12 @@ new class extends Component
             'notes' => $this->vendorNotes ?: null,
         ];
 
+        // Booking configuration
+        $data['booking_slug'] = $this->vendorBookingSlug ?: null;
+        $data['booking_enabled'] = $this->vendorBookingEnabled;
+        $data['booking_display_name'] = $this->vendorBookingDisplayName ?: null;
+        $data['booking_bio'] = $this->vendorBookingBio ?: null;
+
         // Include compliance fields for subcontractors
         if ($this->vendorCategory === 'subcontractor') {
             $data = array_merge($data, [
@@ -212,6 +232,11 @@ new class extends Component
 
         $this->showVendorModal = false;
         unset($this->vendors);
+    }
+
+    public function generateBookingSlug(): void
+    {
+        $this->vendorBookingSlug = \Illuminate\Support\Str::slug($this->vendorName);
     }
 
     public function toggleActive(int $vendorId): void
@@ -463,6 +488,56 @@ new class extends Component
                             </div>
                         </div>
                     @endif
+
+                    {{-- Booking Configuration --}}
+                    <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-900/20">
+                        <flux:heading size="sm" class="mb-3 text-blue-800 dark:text-blue-300">{{ __('Booking Configuration') }}</flux:heading>
+
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between">
+                                <flux:text class="text-sm text-zinc-700 dark:text-zinc-300">{{ __('Enable Booking Page') }}</flux:text>
+                                <flux:switch wire:model="vendorBookingEnabled" />
+                            </div>
+
+                            <flux:field>
+                                <flux:label>{{ __('Booking Slug') }}</flux:label>
+                                <div class="flex items-center gap-2">
+                                    <flux:input wire:model="vendorBookingSlug" placeholder="vendor-name" class="flex-1" />
+                                    <flux:button size="sm" variant="ghost" wire:click="generateBookingSlug" type="button">
+                                        {{ __('Auto') }}
+                                    </flux:button>
+                                </div>
+                                <flux:description>{{ __('Used in the public booking URL.') }}</flux:description>
+                            </flux:field>
+
+                            @if ($vendorBookingSlug)
+                                <div class="flex items-center gap-2 rounded-md bg-white px-3 py-2 text-xs dark:bg-zinc-800">
+                                    <flux:icon name="link" class="size-3.5 text-zinc-400" />
+                                    <span class="text-zinc-600 dark:text-zinc-300" x-data x-ref="bookingUrl">{{ url('/book/' . $vendorBookingSlug) }}</span>
+                                    <button
+                                        type="button"
+                                        class="ml-auto text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                                        x-data
+                                        x-on:click="
+                                            navigator.clipboard.writeText($refs.bookingUrl.textContent.trim());
+                                            $el.textContent = '{{ __('Copied!') }}';
+                                            setTimeout(() => $el.textContent = '{{ __('Copy') }}', 1500);
+                                        "
+                                    >{{ __('Copy') }}</button>
+                                </div>
+                            @endif
+
+                            <flux:field>
+                                <flux:label>{{ __('Display Name') }}</flux:label>
+                                <flux:input wire:model="vendorBookingDisplayName" :placeholder="__('Name shown on booking page')" />
+                            </flux:field>
+
+                            <flux:field>
+                                <flux:label>{{ __('Bio') }}</flux:label>
+                                <flux:textarea wire:model="vendorBookingBio" rows="2" :placeholder="__('Short bio for the booking page...')" />
+                            </flux:field>
+                        </div>
+                    </div>
 
                     <flux:field>
                         <flux:label>{{ __('Notes') }}</flux:label>

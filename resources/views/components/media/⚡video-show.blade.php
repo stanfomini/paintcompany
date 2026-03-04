@@ -27,21 +27,35 @@ class extends Component
     </div>
 
     {{-- Video Player --}}
-    @if($recording->getVideoUrl())
+    @if($recording->getVideoUrl() || $recording->getStreamUrl())
         <div class="aspect-video bg-black rounded-lg overflow-hidden mb-6">
             <video
                 controls
                 preload="metadata"
                 class="w-full h-full"
-                src="{{ $recording->getVideoUrl() }}"
                 @if($recording->getThumbnailUrl()) poster="{{ $recording->getThumbnailUrl() }}" @endif
-            ></video>
+            >
+                @if($recording->getVideoUrl())
+                    <source src="{{ $recording->getVideoUrl() }}" type="{{ $recording->mime_type ?? 'video/mp4' }}">
+                @endif
+                @if($recording->getStreamUrl())
+                    <source src="{{ $recording->getStreamUrl() }}" type="{{ $recording->mime_type ?? 'video/mp4' }}">
+                @endif
+                {{ __('Your browser does not support the video tag.') }}
+            </video>
         </div>
     @endif
 
     {{-- Title & Meta --}}
     <div class="mb-6">
-        <flux:heading size="xl">{{ $recording->title ?? __('Untitled Video') }}</flux:heading>
+        <div class="flex items-center justify-between gap-4">
+            <flux:heading size="xl">{{ $recording->title ?? __('Untitled Video') }}</flux:heading>
+            @if($recording->getPlayablePath())
+                <flux:button variant="ghost" size="sm" icon="arrow-down-tray" :href="route('video-recordings.download', $recording)">
+                    {{ __('Download') }}
+                </flux:button>
+            @endif
+        </div>
         @if($recording->description)
             <flux:text class="mt-2 text-zinc-500">{{ $recording->description }}</flux:text>
         @endif

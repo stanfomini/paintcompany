@@ -51,6 +51,30 @@ class VideoRecordingStreamController extends Controller
         ]);
     }
 
+    public function download(VideoRecording $recording): BinaryFileResponse|StreamedResponse
+    {
+        $path = $recording->getPlayablePath();
+
+        abort_unless($path, 404);
+
+        $diskName = $recording->disk ?? config('filesystems.default');
+        $disk = Storage::disk($diskName);
+
+        abort_unless($disk->exists($path), 404);
+
+        $mimeType = $recording->mime_type ?? 'video/mp4';
+        $extension = match (true) {
+            str_contains($mimeType, 'webm') => 'webm',
+            str_contains($mimeType, 'quicktime') => 'mov',
+            default => 'mp4',
+        };
+        $filename = str($recording->title ?? 'video')->slug().".{$extension}";
+
+        return response()->download($disk->path($path), $filename, [
+            'Content-Type' => $mimeType,
+        ]);
+    }
+
     public function thumbnail(VideoRecording $recording): BinaryFileResponse|StreamedResponse|RedirectResponse
     {
         abort_unless($recording->thumbnail_path, 404);

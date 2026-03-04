@@ -84,7 +84,7 @@ class RemotionBuildCommand extends Command
 
     protected function buildPrompt(RemotionBuildRequest $request): string
     {
-        $callbackUrl = config('ai-build.prod_server_url').'/api/remotion/build-complete';
+        $callbackUrl = route('api.remotion.build-complete');
         $apiSecret = config('services.remotion.build_secret');
         $workingDir = config('ai-build.claude.working_dir');
 

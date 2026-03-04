@@ -94,6 +94,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:messenger.manage')
         ->name('messenger.edit');
 
+    Route::livewire('settings/booking', 'pages::settings.booking-config')
+        ->middleware('permission:settings.company')
+        ->name('settings.booking');
+
+    Route::livewire('settings/color-visualizer', 'pages::settings.color-visualizer')
+        ->middleware('permission:settings.company')
+        ->name('settings.color-visualizer');
+
     Route::get('settings/marketing-flyer', function () {
         $renderer = new ImageRenderer(new RendererStyle(300), new ImagickImageBackEnd);
         $qrPng = (new Writer($renderer))->writeString('https://paintingmadeeasydenver.com');

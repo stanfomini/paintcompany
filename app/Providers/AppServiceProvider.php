@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Ai\Gateway\XaiImageEditGateway;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DoorKnock;
@@ -24,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Ai\Ai;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -42,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->configureDefaults();
         $this->configureMorphMap();
+        $this->configureAiGateways();
 
         Payment::observe(PaymentObserver::class);
         OverheadEntry::observe(OverheadEntryObserver::class);
@@ -73,6 +76,26 @@ class AppServiceProvider extends ServiceProvider
             'video-recording' => \App\Models\VideoRecording::class,
             'property-photo' => \App\Models\PropertyPhoto::class,
         ]);
+    }
+
+    protected function configureAiGateways(): void
+    {
+        // AiManager is registered as "scoped" — it gets flushed after each
+        // queue job. Ai::extend() only registers on the current instance,
+        // so subsequent jobs lose the custom creator. Instead, use the
+        // container's resolving callback to apply our override every time
+        // a new AiManager is created.
+        $this->app->resolving(\Laravel\Ai\AiManager::class, function (\Laravel\Ai\AiManager $manager, $app) {
+            $manager->extend('xai', function ($app, array $config) {
+                $provider = new \Laravel\Ai\Providers\XaiProvider(
+                    new \Laravel\Ai\Gateway\Prism\PrismGateway($app['events']),
+                    $config,
+                    $app->make(\Illuminate\Contracts\Events\Dispatcher::class),
+                );
+
+                return $provider->useImageGateway(new XaiImageEditGateway);
+            });
+        });
     }
 
     protected function configureDefaults(): void

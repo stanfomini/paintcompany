@@ -87,7 +87,7 @@ class extends Component {
                     <a href="{{ route('studio.edit', $project) }}" wire:navigate class="block">
                         <div class="aspect-video bg-zinc-100 dark:bg-zinc-800 relative">
                             @if($project->thumbnail_path)
-                                <img src="{{ $project->thumbnail_path }}" alt="{{ $project->title }}" class="w-full h-full object-cover" />
+                                <img src="{{ $project->thumbnail_path }}" alt="{{ $project->title }}" class="w-full h-full object-cover" loading="lazy" />
                             @else
                                 <div class="w-full h-full flex items-center justify-center">
                                     <flux:icon name="film" class="size-10 text-zinc-400" />

@@ -41,6 +41,11 @@ new class extends Component {
             "echo-private:estimate.{$this->estimate->id},.customer.contribution" => 'refreshEstimate',
             "echo-private:estimate.{$this->estimate->id},.photo.updated" => 'refreshEstimate',
             "echo-private:estimate.{$this->estimate->id},.estimate.status.changed" => 'refreshEstimate',
+            "echo-private:estimate.{$this->estimate->id},.estimate.area.updated" => 'refreshEstimate',
+            "echo-private:estimate.{$this->estimate->id},.estimate.video.updated" => 'refreshEstimate',
+            "echo-private:estimate.{$this->estimate->id},.estimate.options.toggled" => 'refreshEstimate',
+            "echo-private:estimate.{$this->estimate->id},.estimate.signature.added" => 'refreshEstimate',
+            "echo-private:estimate.{$this->estimate->id},.estimate.note.added" => 'refreshEstimate',
         ];
 
         if ($this->estimate->deal_id) {
@@ -234,7 +239,8 @@ new class extends Component {
         session()->flash('success', __('Estimate marked as rejected.'));
     }
 
-    public function getStatusColorProperty(): string
+    #[Computed]
+    public function statusColor(): string
     {
         return match ($this->estimate->status) {
             'draft' => 'zinc',
@@ -1012,7 +1018,8 @@ new class extends Component {
                 $defaultTab = $hasProperty ? 'photos' : 'videos';
             @endphp
             <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6 print:hidden" x-data="{ mediaTab: '{{ $defaultTab }}' }">
-                <div class="flex items-center gap-6 mb-4 border-b border-zinc-200 dark:border-zinc-700">
+                <div class="flex items-center justify-between mb-4 border-b border-zinc-200 dark:border-zinc-700">
+                    <div class="flex items-center gap-6">
                     @if ($hasProperty)
                         <button
                             type="button"
@@ -1039,6 +1046,11 @@ new class extends Component {
                             <span class="text-xs bg-zinc-100 dark:bg-zinc-800 rounded-full px-1.5 py-0.5">{{ $videoCount }}</span>
                         @endif
                     </button>
+                    </div>
+                    <a href="{{ route('estimates.visualize', $estimate) }}" wire:navigate class="inline-flex items-center gap-1.5 pb-2 text-sm text-purple-600 hover:text-purple-700 dark:text-purple-400 dark:hover:text-purple-300 shrink-0">
+                        <flux:icon.sparkles class="size-4" />
+                        {{ __('Visualize Colors') }}
+                    </a>
                 </div>
 
                 @if ($hasProperty)

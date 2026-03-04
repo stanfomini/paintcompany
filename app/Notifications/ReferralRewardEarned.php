@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Referral;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class ReferralRewardEarned extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'general';
 
@@ -37,6 +40,10 @@ class ReferralRewardEarned extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -73,6 +80,15 @@ class ReferralRewardEarned extends Notification implements ShouldQueue
             'reward_amount' => $this->referral->reward_amount,
             'type' => 'referral_reward_earned',
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $amount = number_format($this->referral->reward_amount, 2);
+
+        return new SmsMessage(
+            body: "You earned \${$amount} from your referral! Thank you!",
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

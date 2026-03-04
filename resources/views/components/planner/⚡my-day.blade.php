@@ -101,11 +101,12 @@ new class extends Component
     {
         $service = app(UnifiedCalendarService::class);
         $date = Carbon::parse($this->calendarDate);
+        $user = $this->viewingUserId ? User::find($this->viewingUserId) ?? auth()->user() : auth()->user();
 
         $events = match ($this->calendarMode) {
-            'day' => $service->getEventsForDate(auth()->user(), $date),
-            'week' => $service->getEventsForWeek(auth()->user(), $date->copy()->startOfWeek()),
-            'month' => $service->getEventsForMonth(auth()->user(), $date->copy()->startOfMonth()),
+            'day' => $service->getEventsForDate($user, $date),
+            'week' => $service->getEventsForWeek($user, $date->copy()->startOfWeek()),
+            'month' => $service->getEventsForMonth($user, $date->copy()->startOfMonth()),
         };
 
         return $events->map(fn ($event) => [

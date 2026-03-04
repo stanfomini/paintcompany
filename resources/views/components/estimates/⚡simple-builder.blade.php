@@ -1,10 +1,12 @@
 <?php
 
+use App\Events\EstimateAreaUpdated;
 use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\Estimate;
 use App\Services\EstimateAmendmentService;
 use Illuminate\Contracts\View\View;
+use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 new class extends Component {
@@ -117,27 +119,32 @@ new class extends Component {
         };
     }
 
-    public function getSubtotalProperty(): float
+    #[Computed]
+    public function subtotal(): float
     {
         return $this->totalSqft * $this->ratePerSqft;
     }
 
-    public function getTaxAmountProperty(): float
+    #[Computed]
+    public function taxAmount(): float
     {
         return $this->subtotal * ($this->taxRate / 100);
     }
 
-    public function getTotalProperty(): float
+    #[Computed]
+    public function total(): float
     {
         return $this->subtotal + $this->taxAmount - $this->discountAmount;
     }
 
-    public function getDepositAmountProperty(): float
+    #[Computed]
+    public function depositAmount(): float
     {
         return $this->total * ($this->depositPercent / 100);
     }
 
-    public function getBalanceDueProperty(): float
+    #[Computed]
+    public function balanceDue(): float
     {
         return $this->total - $this->depositAmount;
     }
@@ -200,6 +207,13 @@ new class extends Component {
             $this->dispatch('estimate-created');
             session()->flash('success', __('Estimate created successfully.'));
         }
+
+        broadcast(new EstimateAreaUpdated(
+            $this->estimate->id,
+            0,
+            $this->isEditing ? 'updated' : 'created',
+            auth()->user()?->name ?? 'System'
+        ))->toOthers();
 
         $this->redirect(route('estimates.show', $this->estimate), navigate: true);
     }

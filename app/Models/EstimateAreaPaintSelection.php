@@ -27,6 +27,7 @@ class EstimateAreaPaintSelection extends Model
     protected $fillable = [
         'estimate_area_id',
         'paint_product_id',
+        'paint_color_id',
         'surface_type',
         'coats',
         'sqft_covered',
@@ -64,6 +65,14 @@ class EstimateAreaPaintSelection extends Model
     public function paintProduct(): BelongsTo
     {
         return $this->belongsTo(PaintProduct::class);
+    }
+
+    /**
+     * Get the paint color.
+     */
+    public function paintColor(): BelongsTo
+    {
+        return $this->belongsTo(PaintColor::class);
     }
 
     /**

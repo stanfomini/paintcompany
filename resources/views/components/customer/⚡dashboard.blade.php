@@ -333,6 +333,8 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
             $listeners["echo-private:customer.job.{$jobId},color.updated"] = 'refreshDashboard';
             $listeners["echo-private:customer.job.{$jobId},prep.approval.changed"] = 'refreshDashboard';
             $listeners["echo-private:customer.job.{$jobId},photo.updated"] = 'refreshDashboard';
+            $listeners["echo-private:customer.job.{$jobId},.invoice.created"] = 'refreshDashboard';
+            $listeners["echo-private:customer.job.{$jobId},.task.updated"] = 'refreshDashboard';
         }
 
         // Estimate-level events
@@ -341,7 +343,10 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
         }
 
         // Deal-level events
+        $listeners["echo-private:deal.{$deal->id},.deal.updated"] = 'refreshDashboard';
+        $listeners["echo-private:deal.{$deal->id},.deal.note.added"] = 'refreshDashboard';
         $listeners["echo-private:deal.{$deal->id},.listing.scraped"] = 'refreshDashboard';
+        $listeners["echo-private:deal.{$deal->id},.estimate.status.changed"] = 'refreshDashboard';
 
         return $listeners;
     }
@@ -757,15 +762,15 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     </flux:callout>
                 @endif
 
-                {{-- Schedule Card - Always visible, bright amber --}}
-                <div class="rounded-2xl border-2 border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-5 sm:p-6">
+                {{-- Schedule Card --}}
+                <flux:card class="!p-5 sm:!p-6">
                     <div class="flex items-center gap-3 mb-4">
-                        <div class="w-10 h-10 rounded-full bg-amber-400 flex items-center justify-center shrink-0">
-                            <flux:icon name="calendar" class="w-5 h-5 text-white" />
+                        <div class="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
+                            <flux:icon name="calendar" class="w-5 h-5 text-sky-600 dark:text-sky-400" />
                         </div>
                         <div>
                             <flux:heading size="lg">{{ __('Schedule') }}</flux:heading>
-                            <flux:text class="text-sm text-amber-700 dark:text-amber-300">
+                            <flux:text class="text-sm">
                                 {{ __('Book a time to discuss your project') }}
                             </flux:text>
                         </div>
@@ -774,7 +779,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     @if ($this->upcomingMeetings->isNotEmpty())
                         <div class="space-y-3 mb-4">
                             @foreach ($this->upcomingMeetings->take(2) as $meeting)
-                                <div class="bg-white dark:bg-zinc-800 rounded-xl p-4 border border-amber-200 dark:border-amber-700" wire:key="dash-meeting-{{ $meeting->id }}">
+                                <div class="bg-zinc-50 dark:bg-zinc-900 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700" wire:key="dash-meeting-{{ $meeting->id }}">
                                     <div class="flex items-start justify-between gap-3">
                                         <div class="min-w-0">
                                             <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">{{ $meeting->title }}</flux:text>
@@ -816,34 +821,32 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
 
                     <button
                         wire:click="$set('showScheduleModal', true)"
-                        class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                        class="w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
                     >
                         <flux:icon name="plus" class="w-5 h-5" />
                         {{ __('Propose a Meeting') }}
                     </button>
-                </div>
+                </flux:card>
 
-                {{-- Job Progress Card - Styled, above estimates --}}
+                {{-- Job Progress Card --}}
                 @if ($job)
                     @php
                         $jobStages = array_keys(\App\Models\Job::STAGES);
                         $jobCurrentIndex = array_search($job->stage, $jobStages);
                         $isCompleted = $job->isCompleted();
-                        $gradientFrom = $isCompleted ? 'from-green-600' : 'from-emerald-600';
-                        $gradientTo = $isCompleted ? 'to-emerald-700' : 'to-amber-600';
                     @endphp
-                    <div class="rounded-2xl bg-gradient-to-br {{ $gradientFrom }} {{ $gradientTo }} p-5 sm:p-6 text-white shadow-lg">
+                    <flux:card class="!p-5 sm:!p-6">
                         <div class="flex items-start justify-between gap-4 mb-4">
                             <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                                    <flux:icon name="paint-brush" class="w-5 h-5 text-white" />
+                                <div class="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
+                                    <flux:icon name="paint-brush" class="w-5 h-5 text-sky-600 dark:text-sky-400" />
                                 </div>
                                 <div>
-                                    <h3 class="text-lg sm:text-xl font-bold">{{ __('Job Progress') }}</h3>
+                                    <flux:heading size="lg">{{ __('Job Progress') }}</flux:heading>
                                     @if ($job->scheduled_date)
-                                        <p class="text-white/80 text-sm mt-0.5">
+                                        <flux:text class="text-sm mt-0.5">
                                             {{ __('Scheduled: :date', ['date' => $job->scheduled_date->format('M j, Y')]) }}
-                                        </p>
+                                        </flux:text>
                                     @endif
                                 </div>
                             </div>
@@ -857,18 +860,18 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                             @foreach ($jobStages as $index => $stage)
                                 <div
                                     wire:key="stage-bar-{{ $stage }}"
-                                    class="h-2.5 flex-1 rounded-full transition-all {{ $index <= $jobCurrentIndex ? 'bg-white/90' : 'bg-white/20' }}"
+                                    class="h-2.5 flex-1 rounded-full transition-all {{ $index <= $jobCurrentIndex ? 'bg-sky-500 dark:bg-sky-400' : 'bg-zinc-200 dark:bg-zinc-700' }}"
                                 ></div>
                             @endforeach
                         </div>
 
                         <a
                             href="{{ route('customer.jobs.show', $job) }}"
-                            class="block w-full py-3 bg-white/20 hover:bg-white/30 text-white font-bold text-base rounded-xl transition-colors text-center min-h-[48px] leading-[48px]"
+                            class="block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px] leading-[48px]"
                         >
                             {{ __('View Job Details') }} &rarr;
                         </a>
-                    </div>
+                    </flux:card>
                 @endif
 
                 {{-- Estimate CTA Cards --}}
@@ -884,11 +887,16 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                                 default => 'zinc',
                             };
                         @endphp
-                        <div wire:key="estimate-cta-{{ $estimate->id }}" class="rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 p-5 sm:p-6 text-white shadow-lg">
+                        <flux:card wire:key="estimate-cta-{{ $estimate->id }}" class="!p-5 sm:!p-6">
                             <div class="flex items-start justify-between gap-4">
-                                <div>
-                                    <h3 class="text-lg sm:text-xl font-bold">{{ __('Your Painting Estimate') }}</h3>
-                                    <p class="text-blue-100 text-sm mt-1">{{ $estimate->estimate_number }}</p>
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
+                                        <flux:icon name="document-text" class="w-5 h-5 text-sky-600 dark:text-sky-400" />
+                                    </div>
+                                    <div>
+                                        <flux:heading size="lg">{{ __('Your Painting Estimate') }}</flux:heading>
+                                        <flux:text class="text-sm mt-0.5">{{ $estimate->estimate_number }}</flux:text>
+                                    </div>
                                 </div>
                                 <flux:badge size="lg" color="{{ $badgeColor }}">
                                     {{ $estimate->status_label }}
@@ -896,18 +904,22 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                             </div>
 
                             @if ($estimate->status === 'sent' && $estimate->total)
+                                <div class="mt-4 text-center">
+                                    <p class="text-3xl font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->total, 2) }}</p>
+                                </div>
                                 <a
                                     href="{{ route('customer.estimates.show', $estimate) }}"
-                                    class="mt-4 block w-full py-4 bg-white text-blue-700 font-bold text-xl rounded-xl shadow hover:bg-blue-50 transition-colors text-center min-h-[56px]"
+                                    class="mt-4 block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px]"
                                 >
-                                    ${{ number_format($estimate->total, 2) }}
-                                    <span class="block text-sm font-medium text-blue-500 mt-0.5">{{ __('Tap to view your full proposal') }}</span>
+                                    {{ __('View Your Full Proposal') }}
                                 </a>
                             @elseif ($estimate->status === 'accepted' && $estimate->total)
-                                <p class="text-2xl font-bold mt-2">${{ number_format($estimate->total, 2) }}</p>
+                                <div class="mt-4">
+                                    <p class="text-3xl font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->total, 2) }}</p>
+                                </div>
                                 <a
                                     href="{{ route('customer.estimates.show', $estimate) }}"
-                                    class="mt-3 block w-full py-3 bg-white/20 hover:bg-white/30 text-white font-bold text-base rounded-xl transition-colors text-center min-h-[48px]"
+                                    class="mt-3 block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px]"
                                 >
                                     {{ __('View Your Estimate') }}
                                 </a>
@@ -915,13 +927,13 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                                 {{-- Draft: no pricing visible --}}
                                 <button
                                     wire:click="openEstimateOverlay({{ $estimate->id }})"
-                                    class="mt-4 w-full py-3 bg-white text-blue-700 font-bold text-base rounded-xl shadow hover:bg-blue-50 transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                                    class="mt-4 w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
                                 >
                                     <flux:icon name="eye" class="w-5 h-5" />
                                     {{ __('Help Build Your Estimate') }}
                                 </button>
                             @endif
-                        </div>
+                        </flux:card>
                     @endforeach
                 @else
                     <flux:card>
@@ -938,19 +950,19 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     $hasAnyAreas = $estimates->contains(fn ($e) => $e->areas->isNotEmpty());
                 @endphp
                 @if ($hasDraftEstimate && ! $hasAnyAreas)
-                    <div class="rounded-2xl border-2 border-dashed border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-5 sm:p-6">
+                    <div class="rounded-2xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 p-5 sm:p-6">
                         <div class="flex items-start gap-4">
-                            <div class="w-12 h-12 rounded-full bg-green-100 dark:bg-green-900/40 flex items-center justify-center shrink-0">
-                                <flux:icon name="home" class="w-6 h-6 text-green-600 dark:text-green-400" />
+                            <div class="w-12 h-12 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
+                                <flux:icon name="home" class="w-6 h-6 text-sky-600 dark:text-sky-400" />
                             </div>
                             <div class="flex-1">
-                                <flux:heading size="lg" class="text-green-800 dark:text-green-200">{{ __('Tell Us About Your Home') }}</flux:heading>
-                                <flux:text class="text-green-600 dark:text-green-400 mt-1 text-sm">
+                                <flux:heading size="lg">{{ __('Tell Us About Your Home') }}</flux:heading>
+                                <flux:text class="mt-1 text-sm">
                                     {{ __('Add the rooms you want painted, upload photos, and share any details. The more we know, the better your estimate.') }}
                                 </flux:text>
                                 <button
                                     wire:click="openEstimateOverlay({{ $estimates->first()->id }})"
-                                    class="mt-3 inline-flex items-center gap-2 px-5 py-3 bg-green-600 text-white font-bold text-sm rounded-xl hover:bg-green-700 transition-colors min-h-[48px]"
+                                    class="mt-3 inline-flex items-center gap-2 px-5 py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-sm rounded-xl shadow transition-colors min-h-[48px]"
                                 >
                                     <flux:icon name="plus" class="w-5 h-5" />
                                     {{ __('Add Rooms & Photos') }}

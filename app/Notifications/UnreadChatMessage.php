@@ -2,10 +2,13 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -14,7 +17,7 @@ use Illuminate\Support\Str;
 
 class UnreadChatMessage extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'chat';
 
@@ -37,6 +40,10 @@ class UnreadChatMessage extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -75,7 +82,7 @@ class UnreadChatMessage extends Notification implements ShouldQueue
             $mail->action(__('View Conversation'), $chatUrl);
         }
 
-        $mail->line(__('You received this email because the message was unread for 5 minutes.'));
+        $mail->line(__('You received this email because you have an unread message.'));
 
         return $mail;
     }
@@ -96,6 +103,18 @@ class UnreadChatMessage extends Notification implements ShouldQueue
             'preview' => Str::limit($this->message->content, 100),
             'message' => "New message from {$senderName}",
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $this->message->loadMissing(['user']);
+        $senderName = $this->message->user?->name ?? 'Someone';
+        $preview = Str::limit($this->message->content, 100);
+
+        return new SmsMessage(
+            body: "Message from {$senderName}: {$preview}",
+            deepLink: $this->getChatUrl($notifiable, $this->message->thread),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

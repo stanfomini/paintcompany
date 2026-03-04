@@ -26,6 +26,7 @@ class VideoProjectClipFactory extends Factory
             'source_type' => 'video-recording',
             'source_id' => VideoRecording::factory()->ready(),
             'in_point_ms' => 0,
+            'start_ms' => 0,
             'volume' => 100,
             'fit_mode' => 'cover',
             'sort_order' => 0,

@@ -15,6 +15,8 @@ class VideoProjectVoiceover extends Model
         'video_project_id',
         'video_recording_id',
         'start_ms',
+        'in_point_ms',
+        'out_point_ms',
         'volume',
         'sort_order',
     ];
@@ -23,9 +25,34 @@ class VideoProjectVoiceover extends Model
     {
         return [
             'start_ms' => 'integer',
+            'in_point_ms' => 'integer',
+            'out_point_ms' => 'integer',
             'volume' => 'integer',
             'sort_order' => 'integer',
         ];
+    }
+
+    /**
+     * Get the effective duration of this voiceover in milliseconds.
+     *
+     * Uses out_point_ms if set, otherwise falls back to the recording's
+     * duration. Returns the range from in_point_ms to the end point.
+     */
+    public function getDurationMs(): int
+    {
+        $inPoint = $this->in_point_ms ?? 0;
+
+        if ($this->out_point_ms) {
+            return $this->out_point_ms - $inPoint;
+        }
+
+        $recording = $this->recording;
+
+        if ($recording && $recording->duration_seconds) {
+            return (int) ($recording->duration_seconds * 1000) - $inPoint;
+        }
+
+        return 5000 - $inPoint;
     }
 
     public function project(): BelongsTo

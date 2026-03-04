@@ -24,7 +24,7 @@ describe('Dashboard - Estimate CTA Card', function () {
             ->test('customer.dashboard')
             ->assertSee('Your Painting Estimate')
             ->assertSee('EST-2026-00001')
-            ->assertSee('Tap to view your full proposal');
+            ->assertSee('View Your Full Proposal');
     });
 
     it('shows estimate CTA with "Help Build Your Estimate" for draft estimates', function () {
@@ -53,12 +53,12 @@ describe('Dashboard - Estimate CTA Card', function () {
             ->assertSee('$5,250.00');
     });
 
-    it('shows "Tap to view your full proposal" for sent estimates', function () {
+    it('shows "View Your Full Proposal" for sent estimates', function () {
         Estimate::factory()->forDeal($this->deal)->sent()->create(['total' => 1000.00]);
 
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.dashboard')
-            ->assertSee('Tap to view your full proposal');
+            ->assertSee('View Your Full Proposal');
     });
 
     it('opens estimate overlay on button click for draft estimates', function () {

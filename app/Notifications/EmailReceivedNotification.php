@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\EmailMessage;
+use App\Models\User;
 use Illuminate\Notifications\Notification;
 
 class EmailReceivedNotification extends Notification
@@ -14,10 +15,17 @@ class EmailReceivedNotification extends Notification
     public function __construct(public EmailMessage $message) {}
 
     /**
+     * Only send database/broadcast/push notifications for emails from known users.
+     * External senders (vendors, paint stores, etc.) only appear in the email tab.
+     *
      * @return array<int, string>
      */
     public function via(object $notifiable): array
     {
+        if (! $this->senderIsKnownUser()) {
+            return [];
+        }
+
         $channels = [];
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
@@ -28,6 +36,14 @@ class EmailReceivedNotification extends Notification
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    /**
+     * Check if the email sender matches a known user in the system.
+     */
+    private function senderIsKnownUser(): bool
+    {
+        return User::where('email', $this->message->from_address)->exists();
     }
 
     /**

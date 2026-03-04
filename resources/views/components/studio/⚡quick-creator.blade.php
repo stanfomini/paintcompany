@@ -75,6 +75,8 @@ class extends Component {
         $typeMap = [
             'property-photo' => PropertyPhoto::class,
             'video-recording' => VideoRecording::class,
+            PropertyPhoto::class => PropertyPhoto::class,
+            VideoRecording::class => VideoRecording::class,
         ];
 
         $modelClass = $typeMap[$type] ?? null;
@@ -307,144 +309,7 @@ class extends Component {
 ?>
 
 <div
-    x-data="{
-        activeClipIndex: 0,
-        showMediaBrowser: false,
-        previewUrl: null,
-        previewType: null,
-
-        // Recording state
-        recordingState: 'idle',
-        stream: null,
-        mediaRecorder: null,
-        recordedChunks: [],
-        recordedBlob: null,
-        uploadProgress: 0,
-        recordingSeconds: 0,
-        recordingTimer: null,
-        useFrontCamera: true,
-        segmentCount: 0,
-
-        // PIP state
-        pipMode: false,
-        pipBackgroundUrl: null,
-        pipBackgroundType: null,
-
-        enterPipMode(url, type) {
-            this.pipMode = true;
-            this.pipBackgroundUrl = url;
-            this.pipBackgroundType = type;
-        },
-
-        exitPipMode() {
-            this.pipMode = false;
-            this.pipBackgroundUrl = null;
-            this.pipBackgroundType = null;
-        },
-
-        setActiveClip(index, url, type) {
-            this.activeClipIndex = index;
-            this.previewUrl = url;
-            this.previewType = type;
-        },
-
-        async startCamera() {
-            try {
-                this.stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: this.useFrontCamera ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: true
-                });
-                this.recordingState = 'previewing';
-                await this.$nextTick();
-                const videoEl = this.pipMode ? this.$refs.pipCameraPreview : this.$refs.cameraPreview;
-                if (videoEl) videoEl.srcObject = this.stream;
-            } catch (e) {
-                console.error('Camera access denied:', e);
-            }
-        },
-
-        flipCamera() {
-            this.useFrontCamera = !this.useFrontCamera;
-            this.stopCamera();
-            this.startCamera();
-        },
-
-        startRecording() {
-            this.recordedChunks = [];
-            const mimeType = this.getSupportedMimeType();
-            this.mediaRecorder = new MediaRecorder(this.stream, {
-                mimeType: mimeType,
-                videoBitsPerSecond: 2500000
-            });
-            this.mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) this.recordedChunks.push(e.data);
-            };
-            this.mediaRecorder.onstop = () => {
-                this.recordedBlob = new Blob(this.recordedChunks, { type: mimeType });
-                this.uploadSegment();
-            };
-            this.mediaRecorder.start(1000);
-            this.recordingState = 'recording';
-            this.recordingSeconds = 0;
-            this.recordingTimer = setInterval(() => this.recordingSeconds++, 1000);
-        },
-
-        stopRecording() {
-            if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
-                this.mediaRecorder.stop();
-                clearInterval(this.recordingTimer);
-            }
-        },
-
-        async uploadSegment() {
-            this.recordingState = 'uploading';
-            this.uploadProgress = 0;
-            const formData = new FormData();
-            const ext = this.recordedBlob.type.includes('webm') ? 'webm' : 'mp4';
-            formData.append('file', this.recordedBlob, `segment-${++this.segmentCount}.${ext}`);
-            formData.append('title', `Recording Segment ${this.segmentCount}`);
-
-            const xhr = new XMLHttpRequest();
-            xhr.upload.onprogress = (e) => {
-                if (e.lengthComputable) this.uploadProgress = Math.round((e.loaded / e.total) * 100);
-            };
-            xhr.onload = () => {
-                if (xhr.status === 200 || xhr.status === 201) {
-                    const response = JSON.parse(xhr.responseText);
-                    $wire.addRecordedClip(response.id);
-                    this.recordingState = 'previewing';
-                    this.uploadProgress = 0;
-                }
-            };
-            xhr.onerror = () => {
-                console.error('Upload failed');
-                this.recordingState = 'previewing';
-            };
-            xhr.open('POST', '/api/video-recordings');
-            xhr.setRequestHeader('X-CSRF-TOKEN', document.querySelector('meta[name=\"csrf-token\"]').content);
-            xhr.send(formData);
-        },
-
-        stopCamera() {
-            if (this.stream) {
-                this.stream.getTracks().forEach(t => t.stop());
-                this.stream = null;
-            }
-            this.recordingState = 'idle';
-            clearInterval(this.recordingTimer);
-        },
-
-        getSupportedMimeType() {
-            const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'];
-            return types.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
-        },
-
-        formatTime(seconds) {
-            const m = Math.floor(seconds / 60);
-            const s = seconds % 60;
-            return `${m}:${s.toString().padStart(2, '0')}`;
-        }
-    }"
+    x-data="quickCreator()"
     class="flex flex-col h-[calc(100vh-4rem)] bg-zinc-950"
 >
     {{-- Top bar --}}
@@ -560,7 +425,7 @@ class extends Component {
                     <flux:icon name="photo" class="mx-auto size-12 text-zinc-600" />
                     <p class="mt-3 text-sm text-zinc-500">{{ __('Add media to get started') }}</p>
                     <button
-                        @click="showMediaBrowser = true"
+                        @click="$dispatch('open-media-browser')"
                         class="mt-3 px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-colors"
                     >
                         {{ __('Browse Media') }}
@@ -764,7 +629,7 @@ class extends Component {
 
             {{-- Add clip button --}}
             <button
-                @click="showMediaBrowser = true"
+                @click="$dispatch('open-media-browser')"
                 class="shrink-0 w-16 h-16 rounded-lg border-2 border-dashed border-zinc-700 hover:border-zinc-500 flex items-center justify-center text-zinc-500 hover:text-zinc-400 transition-colors ml-2"
             >
                 <flux:icon name="plus" class="size-6" />
@@ -847,9 +712,7 @@ class extends Component {
     @endif
 
     {{-- Media browser --}}
-    <div x-show="showMediaBrowser" x-cloak @media-selected.window="showMediaBrowser = false">
-        <livewire:studio.media-browser />
-    </div>
+    <livewire:studio.media-browser />
 
     {{-- Export modal --}}
     @if($showExportModal)

@@ -5,7 +5,7 @@ import Image from '@tiptap/extension-image';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 
-document.addEventListener('alpine:init', () => {
+function registerTiptapEditor() {
     Alpine.data('tiptapEditor', (config = {}) => ({
         editor: null,
         content: config.content || '',
@@ -93,4 +93,11 @@ document.addEventListener('alpine:init', () => {
             this.editor?.destroy();
         },
     }));
-});
+}
+
+// Register immediately if Alpine is already available (late dynamic import)
+if (window.Alpine) {
+    registerTiptapEditor();
+} else {
+    document.addEventListener('alpine:init', registerTiptapEditor);
+}

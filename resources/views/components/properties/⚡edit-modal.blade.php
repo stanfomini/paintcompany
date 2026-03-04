@@ -3,6 +3,7 @@
 use App\Models\Customer;
 use App\Models\Property;
 use Illuminate\Support\Collection;
+use Livewire\Attributes\Computed;
 use Livewire\Component;
 
 new class extends Component {
@@ -81,7 +82,8 @@ new class extends Component {
         $this->resetValidation();
     }
 
-    public function getCustomersProperty(): Collection
+    #[Computed]
+    public function customers(): Collection
     {
         return Customer::query()
             ->orderBy('first_name')

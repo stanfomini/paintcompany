@@ -73,4 +73,31 @@ return [
         'pixel_id' => env('META_PIXEL_ID'),
     ],
 
+    'color_visualizer' => [
+        'enabled' => env('COLOR_VISUALIZER_ENABLED', false),
+        'free_limit' => env('COLOR_VISUALIZER_FREE_LIMIT', 2),
+        'image_provider' => env('COLOR_VISUALIZER_IMAGE_PROVIDER', 'openai'),
+        'image_model' => env('COLOR_VISUALIZER_IMAGE_MODEL', 'gpt-image-1'),
+        'default_agent_prompt' => <<<'PROMPT'
+You are a paint color expert for a professional painting company. Your job is to take a customer's description of desired paint colors and resolve each one to an exact hex color code using the PaintColorLookupTool.
+
+When a customer says something like "Benjamin Moore White Dove on the walls and Sherwin-Williams Iron Ore on the trim", you must:
+
+1. Identify each color mentioned and which surface it applies to (walls, trim, ceiling, doors, cabinets, shutters, siding, fascia, etc.)
+2. Use the PaintColorLookupTool to look up each color by name or code
+3. Return your response in this EXACT format, one line per color:
+
+- Surface: [surface] | Color: [Brand] [Color Name] ([Code]) | Hex: [#HEXVALUE]
+
+Rules:
+- Always use the exact hex values from the database — never guess or approximate hex values
+- If the customer gives a generic description like "light blue" without a brand, suggest the closest matching paint color from the database and note it as a suggestion
+- If a color cannot be found, say so clearly and suggest the closest match
+- Common surface mappings: "body" = exterior walls/siding, "accent" = shutters/doors, "trim" = baseboards/crown/window frames
+PROMPT,
+        'default_image_prompt' => <<<'PROMPT'
+Edit this photograph of a room/building. {color_instructions}. Remove any clutter, mess, or personal items from countertops, tables, and surfaces to show a clean, staged look. Fix any wall blemishes, scuffs, or imperfections. Keep the architecture, layout, furniture placement, camera angle, and lighting exactly the same. The result should look like a real, professional real estate photo of this exact space freshly painted.
+PROMPT,
+    ],
+
 ];

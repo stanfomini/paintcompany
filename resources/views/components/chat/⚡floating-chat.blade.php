@@ -23,7 +23,9 @@ new class extends Component {
 
         return [
             "echo-private:chat.user.{$userId},.thread.created" => 'onNewThread',
+            "echo-private:chat.user.{$userId},.message.sent" => 'onMessageSent',
             'message-sent' => 'onMessageSent',
+            'refresh-notification-counts' => 'onMessageSent',
         ];
     }
 
@@ -84,7 +86,7 @@ new class extends Component {
 };
 ?>
 
-<div wire:poll.30s class="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+<div class="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
     {{-- Messages Panel (above the FAB button) --}}
     @if ($open)
         <div

@@ -448,7 +448,7 @@ new class extends Component {
             <flux:heading size="lg">{{ __('Sample Payload') }}</flux:heading>
 
             @if (! $this->samplePayload)
-                <div wire:poll.5s="refreshSamplePayload" class="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
+                <div wire:poll.5s.visible="refreshSamplePayload" class="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700">
                     <div class="relative flex h-3 w-3">
                         <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                         <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>

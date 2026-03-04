@@ -6,7 +6,6 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends Component {
@@ -30,8 +29,18 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
         // Filter change triggers re-render automatically
     }
 
-    #[On('message-sent')]
-    #[On('thread-created')]
+    public function getListeners(): array
+    {
+        $userId = auth('agent')->id();
+
+        return [
+            "echo-private:chat.user.{$userId},.thread.created" => 'refreshThreads',
+            "echo-private:chat.user.{$userId},.message.sent" => 'refreshThreads',
+            'message-sent' => 'refreshThreads',
+            'thread-created' => 'refreshThreads',
+        ];
+    }
+
     public function refreshThreads(): void
     {
         unset($this->threads);
@@ -102,7 +111,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Messages'])] class extends
     }
 }; ?>
 
-<div wire:poll.30s>
+<div wire:poll.5m.visible>
     <div class="max-w-4xl mx-auto">
         <div class="flex items-center justify-between mb-6">
             <div class="flex items-center gap-3">

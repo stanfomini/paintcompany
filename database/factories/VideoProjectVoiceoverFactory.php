@@ -27,4 +27,12 @@ class VideoProjectVoiceoverFactory extends Factory
             'sort_order' => 0,
         ];
     }
+
+    public function withTrim(int $in = 0, int $out = 5000): static
+    {
+        return $this->state(fn () => [
+            'in_point_ms' => $in,
+            'out_point_ms' => $out,
+        ]);
+    }
 }

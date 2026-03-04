@@ -32,6 +32,14 @@ describe('Landing page', function () {
             ->assertSeeLivewire('public.landing-page');
     });
 
+    it('shows the color visualizer section with link to /visualize', function () {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('See Your Home in New Colors')
+            ->assertSee('Try It Free')
+            ->assertSee(route('visualize'));
+    });
+
     it('captures referral code from URL query param', function () {
         $user = User::factory()->internal()->create();
         $user->getOrCreateReferralCode();

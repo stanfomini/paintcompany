@@ -70,6 +70,9 @@ describe('Shared Inbox - Inbound Email', function () {
         Event::fake([EmailReceived::class]);
         Notification::fake();
 
+        // Known user matching sender so notification channels are active
+        User::factory()->customer()->create(['email' => 'customer@external.com']);
+
         $shared = EmailAccount::factory()->shared()->create(['address' => 'hello']);
         $member1 = User::factory()->internal()->create();
         $member2 = User::factory()->internal()->create();
@@ -91,6 +94,9 @@ describe('Shared Inbox - Inbound Email', function () {
         Event::fake([EmailReceived::class]);
         Notification::fake();
 
+        // Known user matching sender so notification channels are active
+        User::factory()->customer()->create(['email' => 'customer@external.com']);
+
         $rep = User::factory()->internal()->create();
         $customer = Customer::factory()->create([
             'email' => 'customer@external.com',
@@ -110,10 +116,13 @@ describe('Shared Inbox - Inbound Email', function () {
         Notification::assertSentTo($otherMember, EmailReceivedNotification::class);
     });
 
-    it('uses default_notify_user when no assigned rep', function () {
+    it('uses default_notify_user when no assigned rep and sender is known', function () {
         Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
         Event::fake([EmailReceived::class]);
         Notification::fake();
+
+        // Known user matching sender
+        User::factory()->customer()->create(['email' => 'known-sender@external.com']);
 
         $defaultUser = User::factory()->internal()->create();
         $shared = EmailAccount::factory()->shared()->create([
@@ -124,19 +133,43 @@ describe('Shared Inbox - Inbound Email', function () {
         $shared->members()->attach($defaultUser, ['receives_notifications' => true]);
         $shared->members()->attach($member, ['receives_notifications' => true]);
 
-        // Sender is not a known customer
-        $payload = buildSharedPayload(['sender' => 'unknown@external.com', 'from' => 'Unknown <unknown@external.com>']);
+        $payload = buildSharedPayload(['sender' => 'known-sender@external.com', 'from' => 'Known Sender <known-sender@external.com>']);
         (new ProcessInboundEmailJob($payload))->handle(new \App\Services\EmailThreadingService);
 
         Notification::assertSentTo($defaultUser, EmailReceivedNotification::class);
-        // Other members also notified
         Notification::assertSentTo($member, EmailReceivedNotification::class);
     });
 
-    it('still works for personal accounts', function () {
+    it('skips notifications for external senders with no user account', function () {
         Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
         Event::fake([EmailReceived::class]);
         Notification::fake();
+
+        $defaultUser = User::factory()->internal()->create();
+        $shared = EmailAccount::factory()->shared()->create([
+            'address' => 'hello',
+            'default_notify_user_id' => $defaultUser->id,
+        ]);
+        $shared->members()->attach($defaultUser, ['receives_notifications' => true]);
+
+        // Sender has no user account — external vendor
+        $payload = buildSharedPayload(['sender' => 'paintstore@vendor.com', 'from' => 'Paint Store <paintstore@vendor.com>']);
+        (new ProcessInboundEmailJob($payload))->handle(new \App\Services\EmailThreadingService);
+
+        // Email still saved
+        expect(EmailMessage::count())->toBe(1);
+
+        // No notification — external sender only shows in email tab
+        Notification::assertNothingSent();
+    });
+
+    it('still works for personal accounts when sender is known user', function () {
+        Queue::fake([AutoLinkEmailJob::class, DownloadEmailAttachmentsJob::class]);
+        Event::fake([EmailReceived::class]);
+        Notification::fake();
+
+        // Known user matching sender
+        User::factory()->customer()->create(['email' => 'customer@external.com']);
 
         $account = EmailAccount::factory()->create(['address' => 'matt']);
 

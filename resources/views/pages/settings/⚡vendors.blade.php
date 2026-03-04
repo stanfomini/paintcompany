@@ -44,6 +44,12 @@ new class extends Component {
     public bool $vendorActive = true;
     public string $vendorNotes = '';
 
+    // Booking configuration
+    public string $vendorBookingSlug = '';
+    public bool $vendorBookingEnabled = false;
+    public string $vendorBookingDisplayName = '';
+    public string $vendorBookingBio = '';
+
     // Tax compliance
     public bool $w9OnFile = false;
     public bool $holdHarmless = false;
@@ -192,6 +198,10 @@ new class extends Component {
         $this->workersComp = $vendor->workers_comp;
         $this->workersCompExpiration = $vendor->workers_comp_expiration?->format('Y-m-d');
         $this->rejectionForm = $vendor->rejection_form;
+        $this->vendorBookingSlug = $vendor->booking_slug ?? '';
+        $this->vendorBookingEnabled = (bool) $vendor->booking_enabled;
+        $this->vendorBookingDisplayName = $vendor->booking_display_name ?? '';
+        $this->vendorBookingBio = $vendor->booking_bio ?? '';
         $this->showModal = true;
     }
 
@@ -231,6 +241,10 @@ new class extends Component {
             'workersComp' => ['boolean'],
             'workersCompExpiration' => ['nullable', 'date'],
             'rejectionForm' => ['boolean'],
+            'vendorBookingSlug' => ['nullable', 'string', 'max:255', 'regex:/^[a-z0-9\-]*$/'],
+            'vendorBookingEnabled' => ['boolean'],
+            'vendorBookingDisplayName' => ['nullable', 'string', 'max:255'],
+            'vendorBookingBio' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $data = [
@@ -258,6 +272,10 @@ new class extends Component {
             'workers_comp' => $this->workersComp,
             'workers_comp_expiration' => $this->workersComp ? $this->workersCompExpiration : null,
             'rejection_form' => ! $this->workersComp ? $this->rejectionForm : false,
+            'booking_slug' => $this->vendorBookingSlug ?: null,
+            'booking_enabled' => $this->vendorBookingEnabled,
+            'booking_display_name' => $this->vendorBookingDisplayName ?: null,
+            'booking_bio' => $this->vendorBookingBio ?: null,
         ];
 
         if ($this->editingId) {
@@ -466,6 +484,11 @@ new class extends Component {
         unset($this->viewingVendor);
     }
 
+    public function generateBookingSlug(): void
+    {
+        $this->vendorBookingSlug = \Illuminate\Support\Str::slug($this->vendorName);
+    }
+
     protected function resetForm(): void
     {
         $this->editingId = null;
@@ -492,6 +515,10 @@ new class extends Component {
         $this->workersComp = false;
         $this->workersCompExpiration = null;
         $this->rejectionForm = false;
+        $this->vendorBookingSlug = '';
+        $this->vendorBookingEnabled = false;
+        $this->vendorBookingDisplayName = '';
+        $this->vendorBookingBio = '';
         $this->resetValidation();
     }
 }; ?>
@@ -572,6 +599,7 @@ new class extends Component {
                             <th class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 hidden md:table-cell">{{ __('W-9') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 hidden md:table-cell">{{ __('Insurance') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 hidden md:table-cell">{{ __('Workers Comp') }}</th>
+                            <th class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 hidden lg:table-cell">{{ __('Booking') }}</th>
                             <th class="px-4 py-3 text-center text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Active') }}</th>
                             <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">{{ __('Actions') }}</th>
                         </tr>
@@ -655,6 +683,18 @@ new class extends Component {
                                     @endif
                                 </td>
 
+                                {{-- Booking --}}
+                                <td class="px-4 py-3 text-center hidden lg:table-cell">
+                                    @if ($vendor->booking_enabled && $vendor->booking_slug)
+                                        <div class="flex flex-col items-center gap-1">
+                                            <flux:badge size="sm" color="blue">{{ __('Active') }}</flux:badge>
+                                            <span class="text-xs text-zinc-400 dark:text-zinc-500">/book/{{ $vendor->booking_slug }}</span>
+                                        </div>
+                                    @else
+                                        <span class="text-xs text-zinc-400 dark:text-zinc-500">-</span>
+                                    @endif
+                                </td>
+
                                 {{-- Active Toggle --}}
                                 <td class="px-4 py-3 text-center">
                                     <flux:switch
@@ -680,7 +720,7 @@ new class extends Component {
                             </tr>
                         @empty
                             <tr>
-                                <td colspan="8" class="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
+                                <td colspan="9" class="px-4 py-8 text-center text-zinc-500 dark:text-zinc-400">
                                     {{ __('No vendors found. Add one to get started.') }}
                                 </td>
                             </tr>
@@ -850,6 +890,47 @@ new class extends Component {
                 @if (! $workersComp)
                     <flux:switch wire:model="rejectionForm" :label="__('Rejection Form')" :description="__('Workers comp rejection form on file')" />
                 @endif
+            </div>
+
+            <flux:separator />
+
+            {{-- Booking Configuration --}}
+            <div class="space-y-4">
+                <flux:heading size="sm">{{ __('Booking Configuration') }}</flux:heading>
+
+                <flux:switch wire:model.live="vendorBookingEnabled" :label="__('Enable Booking Page')" :description="__('Allow this vendor to book estimate appointments')" />
+
+                <flux:field>
+                    <flux:label>{{ __('Booking Slug') }}</flux:label>
+                    <div class="flex items-center gap-2">
+                        <flux:input wire:model="vendorBookingSlug" placeholder="vendor-name" class="flex-1" />
+                        <flux:button size="sm" variant="ghost" wire:click="generateBookingSlug" type="button">
+                            {{ __('Auto') }}
+                        </flux:button>
+                    </div>
+                    <flux:description>{{ __('Used in the public booking URL: /book/slug') }}</flux:description>
+                </flux:field>
+
+                @if ($vendorBookingSlug)
+                    <div class="flex items-center gap-2 rounded-md bg-zinc-100 px-3 py-2 text-xs dark:bg-zinc-800">
+                        <flux:icon name="link" class="size-3.5 text-zinc-400" />
+                        <span class="text-zinc-600 dark:text-zinc-300" x-data x-ref="bookingUrl">{{ url('/book/' . $vendorBookingSlug) }}</span>
+                        <button
+                            type="button"
+                            class="ml-auto text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                            x-data
+                            x-on:click="
+                                navigator.clipboard.writeText($refs.bookingUrl.textContent.trim());
+                                $el.textContent = '{{ __('Copied!') }}';
+                                setTimeout(() => $el.textContent = '{{ __('Copy') }}', 1500);
+                            "
+                        >{{ __('Copy') }}</button>
+                    </div>
+                @endif
+
+                <flux:input wire:model="vendorBookingDisplayName" :label="__('Display Name')" :placeholder="__('Name shown on booking page')" />
+
+                <flux:textarea wire:model="vendorBookingBio" :label="__('Bio')" rows="2" :placeholder="__('Short bio shown on the public booking page...')" />
             </div>
 
             <flux:separator />

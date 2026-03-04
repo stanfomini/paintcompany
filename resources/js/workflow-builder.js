@@ -1,5 +1,5 @@
 // Workflow Builder - Visual node-based workflow editor
-document.addEventListener('alpine:init', () => {
+function registerWorkflowBuilder() {
     Alpine.data('workflowBuilder', (initialNodes, initialEdges, registry) => ({
         nodes: initialNodes,
         edges: initialEdges,
@@ -603,4 +603,11 @@ document.addEventListener('alpine:init', () => {
             return parts.slice(0, 2).join(' | ') || '';
         },
     }));
-});
+}
+
+// Register immediately if Alpine is already available (late dynamic import)
+if (window.Alpine) {
+    registerWorkflowBuilder();
+} else {
+    document.addEventListener('alpine:init', registerWorkflowBuilder);
+}

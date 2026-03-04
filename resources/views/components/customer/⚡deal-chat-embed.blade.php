@@ -113,7 +113,6 @@ new class extends Component
         }
     }"
     x-init="$nextTick(() => scrollToBottom())"
-    wire:poll.30s
 >
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden bg-white dark:bg-zinc-900">
         {{-- Header --}}

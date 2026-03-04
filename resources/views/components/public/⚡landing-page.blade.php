@@ -362,6 +362,15 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             ->get()
             ->keyBy('slug');
     }
+
+    #[Computed]
+    public function showcasePhotos()
+    {
+        return \App\Models\LandingPageShowcasePhoto::query()
+            ->active()
+            ->ordered()
+            ->get();
+    }
 }; ?>
 
 <div>
@@ -531,6 +540,127 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             </div>
             <div class="bg-white border-l-4 border-blue-500 rounded-r-lg p-6 shadow-sm">
                 <p class="text-zinc-700 text-lg italic">{{ __('"We\'ve heard this story hundreds of times. That\'s why we built a system that makes sure it never happens to you."') }}</p>
+            </div>
+        </div>
+    </section>
+
+    {{-- Section 2b: Free Color Visualizer CTA --}}
+    <section class="bg-gradient-to-br from-blue-50 via-white to-purple-50 py-16 sm:py-20 overflow-hidden">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+                {{-- Left: Before/After Preview --}}
+                <div class="relative">
+                    @if($this->showcasePhotos->isNotEmpty())
+                        @php $pairs = $this->showcasePhotos; @endphp
+                        <div class="rounded-2xl overflow-hidden shadow-2xl bg-zinc-200 aspect-[4/3] flex items-center justify-center"
+                            x-data="{
+                                showAfter: true,
+                                currentPair: 0,
+                                totalPairs: {{ $pairs->count() }},
+                                init() {
+                                    setInterval(() => {
+                                        if (this.showAfter) {
+                                            this.showAfter = false;
+                                        } else {
+                                            this.showAfter = true;
+                                            this.currentPair = (this.currentPair + 1) % this.totalPairs;
+                                        }
+                                    }, 3000);
+                                }
+                            }">
+                            @foreach($pairs as $index => $pair)
+                                <div class="absolute inset-0 transition-opacity duration-700"
+                                    x-show="currentPair === {{ $index }}" x-cloak>
+                                    <img src="{{ $pair->before_url }}" alt="{{ $pair->caption ? $pair->caption . ' - ' . __('Before') : __('Before') }}"
+                                        class="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
+                                        :class="showAfter ? 'opacity-0' : 'opacity-100'" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" />
+                                    <img src="{{ $pair->after_url }}" alt="{{ $pair->caption ? $pair->caption . ' - ' . __('After') : __('After') }}"
+                                        class="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
+                                        :class="showAfter ? 'opacity-100' : 'opacity-0'" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" />
+                                </div>
+                            @endforeach
+                            {{-- Toggle label --}}
+                            <div class="absolute bottom-3 left-3 z-10">
+                                <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold shadow-lg"
+                                    :class="showAfter ? 'bg-blue-600 text-white' : 'bg-white text-zinc-700'">
+                                    <span class="w-2 h-2 rounded-full" :class="showAfter ? 'bg-blue-300' : 'bg-zinc-400'"></span>
+                                    <span x-text="showAfter ? '{{ __('After') }}' : '{{ __('Before') }}'"></span>
+                                </span>
+                            </div>
+                        </div>
+                    @else
+                        <div class="rounded-2xl overflow-hidden shadow-2xl bg-zinc-200 aspect-[4/3] flex items-center justify-center"
+                            x-data="{ showAfter: true }"
+                            x-init="setInterval(() => showAfter = !showAfter, 3000)">
+                            <div class="absolute inset-0 flex items-center justify-center transition-opacity duration-700"
+                                :class="showAfter ? 'opacity-0' : 'opacity-100'">
+                                <div class="text-center p-8">
+                                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-zinc-300 text-zinc-500 mb-4">
+                                        <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0 0 22.5 18.75V5.25A2.25 2.25 0 0 0 20.25 3H3.75A2.25 2.25 0 0 0 1.5 5.25v13.5A2.25 2.25 0 0 0 3.75 21Z" /></svg>
+                                    </div>
+                                    <p class="text-zinc-500 font-semibold text-lg">{{ __('Before') }}</p>
+                                </div>
+                            </div>
+                            <div class="absolute inset-0 flex items-center justify-center transition-opacity duration-700"
+                                :class="showAfter ? 'opacity-100' : 'opacity-0'">
+                                <div class="text-center p-8 bg-gradient-to-br from-blue-100 to-purple-100 w-full h-full flex flex-col items-center justify-center">
+                                    <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-200 text-blue-600 mb-4">
+                                        <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.395m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" /></svg>
+                                    </div>
+                                    <p class="text-blue-700 font-semibold text-lg">{{ __('After') }}</p>
+                                </div>
+                            </div>
+                            {{-- Toggle label --}}
+                            <div class="absolute bottom-3 left-3 z-10">
+                                <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold shadow-lg"
+                                    :class="showAfter ? 'bg-blue-600 text-white' : 'bg-white text-zinc-700'">
+                                    <span class="w-2 h-2 rounded-full" :class="showAfter ? 'bg-blue-300' : 'bg-zinc-400'"></span>
+                                    <span x-text="showAfter ? '{{ __('After') }}' : '{{ __('Before') }}'"></span>
+                                </span>
+                            </div>
+                        </div>
+                    @endif
+                    {{-- Color swatches decoration --}}
+                    <div class="hidden lg:flex absolute -bottom-4 -right-4 gap-2">
+                        <div class="w-10 h-10 rounded-lg shadow-lg bg-[#C0D6D2] border-2 border-white"></div>
+                        <div class="w-10 h-10 rounded-lg shadow-lg bg-[#2F4F4F] border-2 border-white"></div>
+                        <div class="w-10 h-10 rounded-lg shadow-lg bg-[#F5F0E8] border-2 border-white"></div>
+                    </div>
+                </div>
+
+                {{-- Right: Copy + CTA --}}
+                <div>
+                    <div class="inline-flex items-center gap-2 rounded-full bg-blue-100 text-blue-700 px-4 py-1.5 text-sm font-semibold mb-5">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" /></svg>
+                        {{ __('Free Color Renderings') }}
+                    </div>
+                    <h2 class="text-3xl sm:text-4xl font-bold text-zinc-900 mb-4">{{ __('See Your Home in New Colors — Before You Paint') }}</h2>
+                    <p class="text-lg text-zinc-600 mb-6">{{ __('Upload a photo of any room or exterior. Pick your colors. Our AI generates a photorealistic rendering in seconds — so you can see exactly how it\'ll look.') }}</p>
+                    <ul class="space-y-3 mb-8">
+                        <li class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <span class="text-zinc-700">{{ __('Upload any photo — interior or exterior') }}</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <span class="text-zinc-700">{{ __('Describe the colors you want (any brand, any shade)') }}</span>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <svg class="w-5 h-5 text-blue-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <span class="text-zinc-700">{{ __('Get a photorealistic rendering in under a minute') }}</span>
+                        </li>
+                    </ul>
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <a href="{{ route('visualize') }}" class="inline-flex items-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-lg hover:shadow-xl">
+                            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 0 0-5.78 1.128 2.25 2.25 0 0 1-2.4 2.245 4.5 4.5 0 0 0 8.4-2.245c0-.399-.078-.78-.22-1.128Zm0 0a15.998 15.998 0 0 0 3.388-1.62m-5.043-.025a15.994 15.994 0 0 1 1.622-3.395m3.42 3.42a15.995 15.995 0 0 0 4.764-4.648l3.876-5.814a1.151 1.151 0 0 0-1.597-1.597L14.146 6.32a15.996 15.996 0 0 0-4.649 4.763m3.42 3.42a6.776 6.776 0 0 0-3.42-3.42" /></svg>
+                            {{ __('Try It Free') }}
+                        </a>
+                        <span class="inline-flex items-center gap-1.5 text-sm text-zinc-500">
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+                            {{ __('2 free renderings — no account needed') }}
+                        </span>
+                    </div>
+                </div>
             </div>
         </div>
     </section>

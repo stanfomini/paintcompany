@@ -551,39 +551,24 @@ new class extends Component {
                                         x-data="{
                                             audioError: false,
                                             audioLoaded: false,
-                                            handleError(e) {
-                                                console.error('[AudioPlayer] Error loading audio:', e.target.error);
-                                                this.audioError = true;
-                                            },
-                                            handleLoaded() {
-                                                this.audioLoaded = true;
-                                                console.log('[AudioPlayer] Audio loaded successfully');
+                                            checkError(el) {
+                                                if (this.audioLoaded) return;
+                                                if (el.networkState === 3 || (el.error && el.readyState === 0)) {
+                                                    this.audioError = true;
+                                                }
                                             }
                                         }"
                                         class="relative"
                                     >
-                                        @php
-                                            $audioUrl = $message->metadata['audio_url'] ?? '';
-                                            $audioMime = $message->metadata['audio_mime_type'] ?? null;
-                                            $isM4a = $audioMime === 'audio/mp4' || str_ends_with($audioUrl, '.m4a');
-                                        @endphp
                                         <audio
                                             controls
                                             class="w-full max-w-[280px]"
                                             preload="metadata"
-                                            x-on:error="handleError($event)"
-                                            x-on:loadedmetadata="handleLoaded()"
+                                            x-on:loadedmetadata="audioLoaded = true; audioError = false"
+                                            x-on:error="$nextTick(() => checkError($el))"
                                             x-show="!audioError"
                                         >
-                                            @if ($isM4a)
-                                                <source src="{{ $audioUrl }}" type="audio/mp4">
-                                            @else
-                                                <source src="{{ $audioUrl }}" type="audio/webm; codecs=opus">
-                                                <source src="{{ $audioUrl }}" type="audio/webm">
-                                            @endif
-                                            {{-- Always include MP4 fallback for Safari-recorded .webm files --}}
-                                            <source src="{{ $audioUrl }}" type="audio/mp4">
-                                            <source src="{{ $audioUrl }}">
+                                            <source src="{{ $message->getAudioUrl() ?? '' }}">
                                             {{ __('Your browser does not support audio playback.') }}
                                         </audio>
 
@@ -594,7 +579,7 @@ new class extends Component {
                                             </svg>
                                             <span>{{ __('Audio unavailable') }}</span>
                                             <a
-                                                href="{{ $message->metadata['audio_url'] ?? '' }}"
+                                                href="{{ $message->getAudioUrl() ?? '' }}"
                                                 download
                                                 class="underline hover:no-underline"
                                             >{{ __('Download') }}</a>

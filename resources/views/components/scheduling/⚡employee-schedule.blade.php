@@ -32,6 +32,7 @@ new class extends Component {
             ->forEmployee($this->employeeProfile->id)
             ->upcoming()
             ->where('status', '!=', 'cancelled')
+            ->where('schedule_type', '!=', 'estimate')
             ->with('job')
             ->orderBy('date')
             ->orderBy('start_time')

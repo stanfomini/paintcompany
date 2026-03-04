@@ -7,6 +7,12 @@ import { PromoVideo } from "./promo/PromoVideo";
 import { defaultPromoProps } from "./promo/types";
 import { TOTAL_FRAMES, FPS } from "./promo/brand";
 import { PaintingTimelapse, TOTAL_TIMELAPSE_FRAMES, TIMELAPSE_FPS } from "./timelapse/PaintingTimelapse";
+import { CommsHubVideo } from "./comms-hub/CommsHubVideo";
+import { defaultCommsHubProps } from "./comms-hub/types";
+import { TOTAL_FRAMES as COMMS_TOTAL_FRAMES, FPS as COMMS_FPS } from "./comms-hub/brand";
+import { CustomerPortalVideo } from "./customer-portal/CustomerPortalVideo";
+import { defaultCustomerPortalProps } from "./customer-portal/types";
+import { TOTAL_FRAMES as PORTAL_TOTAL_FRAMES, FPS as PORTAL_FPS } from "./customer-portal/brand";
 
 // Default props for preview in Remotion Studio
 const previewProps: PropertyShowcaseProps = {
@@ -36,6 +42,28 @@ const previewProps: PropertyShowcaseProps = {
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      {/* Customer Portal Showcase */}
+      <Composition
+        id="CustomerPortal"
+        component={CustomerPortalVideo}
+        durationInFrames={PORTAL_TOTAL_FRAMES}
+        fps={PORTAL_FPS}
+        width={1920}
+        height={1080}
+        defaultProps={defaultCustomerPortalProps}
+      />
+
+      {/* Communications Hub Showcase */}
+      <Composition
+        id="CommsHub"
+        component={CommsHubVideo}
+        durationInFrames={COMMS_TOTAL_FRAMES}
+        fps={COMMS_FPS}
+        width={1920}
+        height={1080}
+        defaultProps={defaultCommsHubProps}
+      />
+
       {/* Painting Timelapse Video */}
       <Composition
         id="PaintingTimelapse"

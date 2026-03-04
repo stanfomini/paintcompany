@@ -39,6 +39,8 @@ class Vendor extends Model
         'w9_on_file', 'hold_harmless', 'certificate_of_insurance',
         'insurance_expiration', 'additional_insured', 'workers_comp',
         'workers_comp_expiration', 'rejection_form',
+        // Booking Configuration
+        'booking_slug', 'booking_enabled', 'booking_display_name', 'booking_bio',
     ];
 
     protected function casts(): array
@@ -56,6 +58,7 @@ class Vendor extends Model
             'rejection_form' => 'boolean',
             'public_token_expires_at' => 'datetime',
             'onboarding_completed_at' => 'datetime',
+            'booking_enabled' => 'boolean',
         ];
     }
 
@@ -86,6 +89,11 @@ class Vendor extends Model
         return $this->hasMany(VendorDocument::class);
     }
 
+    public function bookings(): HasMany
+    {
+        return $this->hasMany(AppointmentBooking::class);
+    }
+
     // ─── Scopes ───
 
     public function scopeActive(Builder $query): Builder
@@ -96,6 +104,11 @@ class Vendor extends Model
     public function scopeByCategory(Builder $query, string $category): Builder
     {
         return $query->where('category', $category);
+    }
+
+    public function scopeByBookingSlug(Builder $query, string $slug): Builder
+    {
+        return $query->where('booking_slug', $slug);
     }
 
     public function scopeExpiringSoon(Builder $query, int $days = 30): Builder
@@ -327,6 +340,11 @@ class Vendor extends Model
     public function hasCompletedOnboarding(): bool
     {
         return $this->onboarding_completed_at !== null;
+    }
+
+    public function getBookingUrl(): string
+    {
+        return route('booking.vendor', $this->booking_slug);
     }
 
     public function scopeByPublicToken(Builder $query, string $token): Builder

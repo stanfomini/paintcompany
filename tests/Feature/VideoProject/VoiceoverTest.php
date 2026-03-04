@@ -9,14 +9,14 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-it('can add a voiceover to a project', function () {
+it('can add a voiceover to a project via event', function () {
     $user = User::factory()->create(['type' => 'internal']);
     $project = VideoProject::factory()->create(['user_id' => $user->id]);
     $recording = VideoRecording::factory()->ready()->create();
 
     Livewire::actingAs($user)
-        ->test('studio.voiceover-recorder', ['videoProject' => $project])
-        ->call('addVoiceover', $recording->id);
+        ->test('studio.editor', ['videoProject' => $project])
+        ->dispatch('voiceover-finalized', recordingId: $recording->id);
 
     expect($project->voiceovers()->count())->toBe(1);
     $vo = $project->voiceovers->first();
@@ -32,9 +32,9 @@ it('sets sort order incrementally for voiceovers', function () {
     $recording2 = VideoRecording::factory()->ready()->create();
 
     Livewire::actingAs($user)
-        ->test('studio.voiceover-recorder', ['videoProject' => $project])
-        ->call('addVoiceover', $recording1->id)
-        ->call('addVoiceover', $recording2->id);
+        ->test('studio.editor', ['videoProject' => $project])
+        ->dispatch('voiceover-finalized', recordingId: $recording1->id)
+        ->dispatch('voiceover-finalized', recordingId: $recording2->id);
 
     $voiceovers = $project->voiceovers()->orderBy('sort_order')->get();
     expect($voiceovers)->toHaveCount(2);
@@ -42,16 +42,20 @@ it('sets sort order incrementally for voiceovers', function () {
     expect($voiceovers[1]->sort_order)->toBe(1);
 });
 
-it('prevents unauthorized users from adding voiceovers', function () {
-    $owner = User::factory()->create(['type' => 'internal']);
-    $other = User::factory()->create(['type' => 'internal']);
-    $project = VideoProject::factory()->create(['user_id' => $owner->id]);
+it('links voiceover recording to project on finalize', function () {
+    $user = User::factory()->create(['type' => 'internal']);
+    $project = VideoProject::factory()->create(['user_id' => $user->id]);
     $recording = VideoRecording::factory()->ready()->create();
 
-    Livewire::actingAs($other)
-        ->test('studio.voiceover-recorder', ['videoProject' => $project])
-        ->call('addVoiceover', $recording->id)
-        ->assertForbidden();
+    expect($recording->recordable_type)->toBeNull();
+
+    Livewire::actingAs($user)
+        ->test('studio.editor', ['videoProject' => $project])
+        ->dispatch('voiceover-finalized', recordingId: $recording->id);
+
+    $recording->refresh();
+    expect($recording->recordable_type)->toBe(VideoProject::class);
+    expect($recording->recordable_id)->toBe($project->id);
 });
 
 it('can remove a voiceover', function () {

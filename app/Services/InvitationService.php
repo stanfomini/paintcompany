@@ -202,8 +202,6 @@ class InvitationService
 
             // Handle collaborator invitation (deal_id set)
             if ($invitation->deal_id && $customer) {
-                $user->update(['needs_onboarding' => false]);
-
                 DealCollaborator::create([
                     'deal_id' => $invitation->deal_id,
                     'customer_id' => $customer->id,

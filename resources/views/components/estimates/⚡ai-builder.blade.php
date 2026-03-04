@@ -154,7 +154,7 @@ new class extends Component
         @if (config('ai-build.enabled'))
             <div class="mb-4 p-3 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
                 @if ($aiBuildInProgress)
-                    <div wire:poll.5s="pollAiBuildStatus" class="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-300">
+                    <div wire:poll.5s.visible="pollAiBuildStatus" class="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-300">
                         <flux:icon name="arrow-path" class="w-4 h-4 animate-spin" />
                         <span>{{ $aiBuildMessage ?? 'AI is working...' }}</span>
                     </div>

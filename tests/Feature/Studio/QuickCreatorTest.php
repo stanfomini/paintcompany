@@ -111,3 +111,33 @@ it('handles media-selected event', function () {
 
     expect($project->scenes()->first()->clips()->count())->toBe(1);
 });
+
+it('handles media-selected event with full class name for photos', function () {
+    $user = User::factory()->internal()->create();
+    $project = VideoProject::factory()->create(['user_id' => $user->id]);
+    $photo = PropertyPhoto::factory()->create();
+
+    Livewire::actingAs($user)
+        ->test('studio.quick-creator', ['videoProject' => $project])
+        ->dispatch('media-selected', type: PropertyPhoto::class, id: $photo->id);
+
+    $clip = $project->scenes()->first()->clips()->first();
+    expect($clip)->not->toBeNull();
+    expect($clip->source_type)->toBe(PropertyPhoto::class);
+    expect($clip->source_id)->toBe($photo->id);
+});
+
+it('handles media-selected event with full class name for videos', function () {
+    $user = User::factory()->internal()->create();
+    $project = VideoProject::factory()->create(['user_id' => $user->id]);
+    $recording = VideoRecording::factory()->create(['user_id' => $user->id, 'status' => 'ready']);
+
+    Livewire::actingAs($user)
+        ->test('studio.quick-creator', ['videoProject' => $project])
+        ->dispatch('media-selected', type: VideoRecording::class, id: $recording->id);
+
+    $clip = $project->scenes()->first()->clips()->first();
+    expect($clip)->not->toBeNull();
+    expect($clip->source_type)->toBe(VideoRecording::class);
+    expect($clip->source_id)->toBe($recording->id);
+});

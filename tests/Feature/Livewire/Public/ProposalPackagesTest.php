@@ -458,6 +458,47 @@ it('cannot modify when estimate is expired', function () {
     expect($component->instance()->canModify())->toBeFalse();
 });
 
+it('displays package discount on public proposal', function () {
+    $estimate = Estimate::factory()->create(['status' => 'sent']);
+
+    $package = EstimatePackage::factory()
+        ->forEstimate($estimate)
+        ->basic()
+        ->withPricing(2000, 0, 10) // $2000 subtotal, 0% tax, 10% discount
+        ->create([
+            'name' => 'Basic Package',
+            'warranty_price' => 0,
+        ]);
+
+    // Package should have: subtotal=2000, discount=200, total=1800
+    $component = Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->call('selectPackage', $package->id);
+
+    // Should show original price crossed out
+    $component->assertSee('$2,000.00')
+        // Should show the discounted total
+        ->assertSee('$1,800.00')
+        // Should show the discount amount and label
+        ->assertSeeHtml('-$200.00')
+        ->assertSeeHtml('10%');
+});
+
+it('does not show discount line when discount is zero', function () {
+    $estimate = Estimate::factory()->create(['status' => 'sent']);
+
+    EstimatePackage::factory()
+        ->forEstimate($estimate)
+        ->basic()
+        ->withPricing(1500, 0, 0)
+        ->create([
+            'name' => 'No Discount Package',
+            'warranty_price' => 0,
+        ]);
+
+    Livewire::test('public.proposal-packages', ['estimate' => $estimate])
+        ->assertDontSeeHtml('-$0.00');
+});
+
 it('shows tier labels correctly', function () {
     $estimate = Estimate::factory()->create(['status' => 'sent']);
 

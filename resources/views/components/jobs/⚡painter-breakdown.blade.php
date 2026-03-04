@@ -22,6 +22,29 @@ new class extends Component
 
     public Job $job;
 
+    public function getListeners(): array
+    {
+        $channelPrefix = auth('crew')->check() ? 'crew.job' : 'job';
+
+        return [
+            "echo-private:{$channelPrefix}.{$this->job->id},.task.updated" => 'onJobDataChanged',
+            "echo-private:{$channelPrefix}.{$this->job->id},.stage.changed" => 'onJobDataChanged',
+        ];
+    }
+
+    public function onJobDataChanged(): void
+    {
+        $this->job = $this->job->fresh([
+            'estimate.areas.surfaces.productionRate',
+            'estimate.areas.surfaces.paintProduct.brand',
+            'estimate.areas.addons.nestedAreaTemplate',
+            'estimate.areas.substrate',
+            'estimate.deal.property',
+            'estimate.deal.customer.user',
+            'crews.crewProfile',
+        ]);
+    }
+
     public array $expandedAreas = [];
 
     public string $activeTab = 'work-order';
@@ -224,11 +247,11 @@ new class extends Component
                 }
                 $areaLaborHours = (float) ($area->estimated_labor_hours ?? 0);
             } else {
-                $surfaceQuery = $area->surfaces()->where('is_included', true);
+                $filteredSurfaces = $area->surfaces->where('is_included', true);
                 if ($packageFilter) {
-                    $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                    $filteredSurfaces = $filteredSurfaces->whereIn('id', $packageFilter['surface_ids']);
                 }
-                $areaLaborHours = (float) $surfaceQuery->sum('labor_hours');
+                $areaLaborHours = (float) $filteredSurfaces->sum('labor_hours');
 
                 if ($areaLaborHours === 0.0 && $packageFilter) {
                     continue;
@@ -264,11 +287,11 @@ new class extends Component
         $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($estimate->areas as $area) {
-            $surfaceQuery = $area->surfaces()->where('is_included', true);
+            $filteredSurfaces = $area->surfaces->where('is_included', true);
             if ($packageFilter) {
-                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                $filteredSurfaces = $filteredSurfaces->whereIn('id', $packageFilter['surface_ids']);
             }
-            foreach ($surfaceQuery->get() as $surface) {
+            foreach ($filteredSurfaces as $surface) {
                 if ($surface->is_custom && (float) ($surface->material_cost ?? 0) > 0) {
                     $customMaterials[] = [
                         'is_custom' => true,
@@ -366,11 +389,11 @@ new class extends Component
         $packageFilter = $this->getViewingPackageFilter();
 
         foreach ($estimate->areas as $area) {
-            $surfaceQuery = $area->surfaces()->where('is_included', true);
+            $filteredSurfaces = $area->surfaces->where('is_included', true);
             if ($packageFilter) {
-                $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                $filteredSurfaces = $filteredSurfaces->whereIn('id', $packageFilter['surface_ids']);
             }
-            foreach ($surfaceQuery->get() as $surface) {
+            foreach ($filteredSurfaces as $surface) {
                 if ($surface->is_custom && (float) ($surface->material_cost ?? 0) > 0) {
                     $customMaterials[] = [
                         'surface_id' => $surface->id,
@@ -677,13 +700,11 @@ new class extends Component
                     }
                     $materialCOGS += (float) ($area->estimated_material_cost ?? 0);
                 } else {
-                    $surfaceQuery = $area->surfaces()->where('is_included', true);
+                    $filteredSurfaces = $area->surfaces->where('is_included', true);
                     if ($packageFilter) {
-                        $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                        $filteredSurfaces = $filteredSurfaces->whereIn('id', $packageFilter['surface_ids']);
                     }
-                    foreach ($surfaceQuery->get() as $surface) {
-                        $materialCOGS += (float) $surface->material_cost;
-                    }
+                    $materialCOGS += (float) $filteredSurfaces->sum('material_cost');
                 }
             }
         }
@@ -851,11 +872,11 @@ new class extends Component
                 $surfaces = [];
                 $totalLaborHours = 0;
 
-                $surfaceQuery = $area->surfaces()->where('is_included', true);
+                $filteredSurfaces = $area->surfaces->where('is_included', true);
                 if ($packageFilter) {
-                    $surfaceQuery->whereIn('id', $packageFilter['surface_ids']);
+                    $filteredSurfaces = $filteredSurfaces->whereIn('id', $packageFilter['surface_ids']);
                 }
-                foreach ($surfaceQuery->orderBy('sort_order')->get() as $surface) {
+                foreach ($filteredSurfaces->sortBy('sort_order') as $surface) {
                     $paintProduct = $surface->getEffectivePaintProduct();
                     $substrate = $area->substrate;
 

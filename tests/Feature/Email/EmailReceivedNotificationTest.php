@@ -9,8 +9,10 @@ use App\Models\User;
 use App\Notifications\EmailReceivedNotification;
 
 describe('EmailReceivedNotification', function () {
-    it('sends via WebPushChannel when user has push enabled and subscription', function () {
+    it('sends via WebPushChannel when sender is known user and push enabled', function () {
         $user = User::factory()->internal()->create();
+        $sender = User::factory()->customer()->create(['email' => 'jane@example.com']);
+
         PushSubscription::create([
             'user_id' => $user->id,
             'endpoint' => 'https://push.example.com/test',
@@ -35,12 +37,14 @@ describe('EmailReceivedNotification', function () {
         expect($channels)->toContain('broadcast');
     });
 
-    it('returns database and broadcast channels when user has no push subscription', function () {
+    it('returns database and broadcast channels when sender is known user without push', function () {
         $user = User::factory()->internal()->create();
+        $sender = User::factory()->customer()->create(['email' => 'known@example.com']);
 
         $thread = EmailThread::factory()->create();
         $message = EmailMessage::factory()->create([
             'email_thread_id' => $thread->id,
+            'from_address' => 'known@example.com',
         ]);
 
         $notification = new EmailReceivedNotification($message);
@@ -51,12 +55,29 @@ describe('EmailReceivedNotification', function () {
         expect($channels)->toContain('broadcast');
     });
 
+    it('returns empty channels when sender is external (no user account)', function () {
+        $user = User::factory()->internal()->create();
+
+        $thread = EmailThread::factory()->create();
+        $message = EmailMessage::factory()->create([
+            'email_thread_id' => $thread->id,
+            'from_address' => 'paintstore@vendor.com',
+        ]);
+
+        $notification = new EmailReceivedNotification($message);
+        $channels = $notification->via($user);
+
+        expect($channels)->toBeEmpty();
+    });
+
     it('excludes WebPush when user has push disabled for email_messages', function () {
         $user = User::factory()->internal()->create([
             'notification_preferences' => [
                 'email_messages' => ['email' => true, 'push' => false],
             ],
         ]);
+        $sender = User::factory()->customer()->create(['email' => 'known@example.com']);
+
         PushSubscription::create([
             'user_id' => $user->id,
             'endpoint' => 'https://push.example.com/test',
@@ -68,6 +89,7 @@ describe('EmailReceivedNotification', function () {
         $thread = EmailThread::factory()->create();
         $message = EmailMessage::factory()->create([
             'email_thread_id' => $thread->id,
+            'from_address' => 'known@example.com',
         ]);
 
         $notification = new EmailReceivedNotification($message);

@@ -114,8 +114,9 @@ class VideoRecordingUploadController extends Controller
     public function uploadChunk(Request $request, VideoRecording $recording): JsonResponse
     {
         $request->validate([
-            'chunk' => ['required', 'file', 'max:5120'],
+            'chunk' => ['required', 'file', 'max:102400'], // 100MB max for complete blob uploads
             'chunk_index' => ['required', 'integer', 'min:0'],
+            'replace_all' => ['nullable', 'string'],
         ]);
 
         $this->authorize('update', $recording);
@@ -139,8 +140,13 @@ class VideoRecordingUploadController extends Controller
 
         $chunkData = file_get_contents($request->file('chunk')->getRealPath());
 
-        // Append chunk to local temp file (fast, works regardless of storage driver)
-        file_put_contents($tempPath, $chunkData, FILE_APPEND);
+        // If replace_all is set, this is a complete recording replacing all previous chunks
+        if ($request->input('replace_all')) {
+            file_put_contents($tempPath, $chunkData);
+        } else {
+            // Append chunk to local temp file
+            file_put_contents($tempPath, $chunkData, FILE_APPEND);
+        }
 
         $totalSize = filesize($tempPath);
 

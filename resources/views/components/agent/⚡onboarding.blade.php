@@ -47,7 +47,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Welcome'])] class extends 
         if ($this->step === 1) {
             $this->validate([
                 'companyName' => ['nullable', 'string', 'max:255'],
-                'phone' => ['nullable', 'string', 'max:50'],
+                'phone' => ['required', 'string', 'max:50'],
                 'licenseNumber' => ['nullable', 'string', 'max:100'],
             ]);
 
@@ -194,6 +194,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Welcome'])] class extends 
                 <flux:field>
                     <flux:label>{{ __('Phone Number') }}</flux:label>
                     <flux:input wire:model="phone" placeholder="(555) 123-4567" />
+                    <flux:description>{{ __('Used for SMS listing updates and alerts.') }}</flux:description>
                     <flux:error name="phone" />
                 </flux:field>
 

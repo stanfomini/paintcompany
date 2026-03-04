@@ -168,5 +168,5 @@ new class extends Component
         </div>
     @endif
 
-    <div wire:poll.5s="$refresh" class="hidden"></div>
+    <div wire:poll.5s.visible="$refresh" class="hidden"></div>
 </div>

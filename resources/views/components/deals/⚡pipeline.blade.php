@@ -23,6 +23,11 @@ new class extends Component {
 
     public string $customerFilter = '';
 
+    // Create estimate prompt
+    public bool $showCreateEstimateModal = false;
+
+    public ?int $createEstimateDealId = null;
+
     // Triage modal state
     public bool $showTriageModal = false;
 
@@ -32,8 +37,14 @@ new class extends Component {
 
     public ?string $triageFollowUpDate = null;
 
-    #[On('deal-created')]
-    #[On('deal-updated')]
+    public function getListeners(): array
+    {
+        return [
+            'deal-created' => 'refreshPipeline',
+            'deal-updated' => 'refreshPipeline',
+        ];
+    }
+
     public function refreshPipeline(): void
     {
         // Re-render is triggered automatically
@@ -79,7 +90,8 @@ new class extends Component {
             return;
         }
 
-        Deal::findOrFail($dealId);
+        $deal = Deal::findOrFail($dealId);
+        $oldStage = $deal->stage;
 
         $dealsInStage = Deal::where('stage', $newStage)
             ->where('id', '!=', $dealId)
@@ -95,6 +107,11 @@ new class extends Component {
                 $updateData['stage'] = $newStage;
             }
             Deal::where('id', $id)->update($updateData);
+        }
+
+        if ($oldStage !== $newStage && class_exists(\App\Events\DealUpdated::class)) {
+            $deal->refresh();
+            broadcast(new \App\Events\DealUpdated($deal, auth()->user()->name, 'stage_changed'))->toOthers();
         }
     }
 
@@ -137,6 +154,11 @@ new class extends Component {
             default => null,
         };
 
+        if (class_exists(\App\Events\DealUpdated::class)) {
+            $deal->refresh();
+            broadcast(new \App\Events\DealUpdated($deal, auth()->user()->name, 'stage_changed'))->toOthers();
+        }
+
         $this->closeTriageModal();
     }
 
@@ -146,6 +168,12 @@ new class extends Component {
         $this->triageDealId = null;
         $this->triageAction = '';
         $this->triageFollowUpDate = null;
+    }
+
+    public function promptCreateEstimate(int $dealId): void
+    {
+        $this->createEstimateDealId = $dealId;
+        $this->showCreateEstimateModal = true;
     }
 
     /**
@@ -158,7 +186,7 @@ new class extends Component {
     {
         $query = Deal::query()
             ->kanban()
-            ->with(['customer', 'agent', 'assignedTo'])
+            ->with(['customer', 'agent', 'assignedTo', 'appointmentBooking', 'originVendor', 'estimates'])
             ->search($this->search)
             ->when($this->assignedToFilter, function ($query) {
                 return $query->where('assigned_to', $this->assignedToFilter);
@@ -188,6 +216,7 @@ new class extends Component {
     public function internalUsers(): Collection
     {
         return User::query()
+            ->select('id', 'name')
             ->where('type', 'internal')
             ->where('is_active', true)
             ->orderBy('name')
@@ -203,6 +232,7 @@ new class extends Component {
     public function customers(): Collection
     {
         return Customer::query()
+            ->select('id', 'first_name', 'last_name', 'user_id')
             ->orderBy('first_name')
             ->orderBy('last_name')
             ->get();
@@ -314,9 +344,16 @@ new class extends Component {
                                                                         {{ __('Agent Profile') }}
                                                                     </flux:menu.item>
                                                                 @endif
-                                                                <flux:menu.item icon="eye" href="{{ route('deals.show', $deal) }}" wire:navigate>
-                                                                    {{ __('Deal Details') }}
-                                                                </flux:menu.item>
+                                                                @php $latestEstimate = $deal->estimates->sortByDesc('created_at')->first(); @endphp
+                                                                @if ($latestEstimate)
+                                                                    <flux:menu.item icon="document-text" href="{{ route('estimates.show', $latestEstimate) }}" wire:navigate>
+                                                                        {{ __('View Estimate') }}
+                                                                    </flux:menu.item>
+                                                                @else
+                                                                    <flux:menu.item icon="plus" wire:click="promptCreateEstimate({{ $deal->id }})">
+                                                                        {{ __('Create Estimate') }}
+                                                                    </flux:menu.item>
+                                                                @endif
                                                             </flux:menu>
                                                         </flux:dropdown>
                                                     </div>
@@ -332,6 +369,32 @@ new class extends Component {
                                                         <flux:icon name="building-office" class="h-3 w-3 mr-1" />
                                                         {{ $deal->agent->name }}
                                                     </a>
+                                                @endif
+
+                                                {{-- Lead source and appointment badges --}}
+                                                <div class="flex flex-wrap items-center gap-1 mb-2">
+                                                    @if ($deal->lead_source === 'vendor_booking')
+                                                        <flux:badge size="sm" color="purple">
+                                                            <flux:icon name="calendar" class="w-3 h-3 mr-0.5" />{{ __('Vendor Booking') }}
+                                                        </flux:badge>
+                                                    @elseif ($deal->lead_source === 'door_knock')
+                                                        <flux:badge size="sm" color="amber">{{ __('Door Knock') }}</flux:badge>
+                                                    @elseif ($deal->lead_source === 'website')
+                                                        <flux:badge size="sm" color="blue">{{ __('Website') }}</flux:badge>
+                                                    @elseif ($deal->lead_source)
+                                                        <flux:badge size="sm" color="zinc">{{ __(Deal::LEAD_SOURCES[$deal->lead_source] ?? ucfirst($deal->lead_source)) }}</flux:badge>
+                                                    @endif
+                                                    @if ($deal->originVendor)
+                                                        <flux:badge size="sm" color="indigo">{{ $deal->originVendor->name }}</flux:badge>
+                                                    @endif
+                                                </div>
+
+                                                @if ($deal->appointmentBooking)
+                                                    <div class="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 mb-2 bg-emerald-50 dark:bg-emerald-900/20 rounded px-2 py-1">
+                                                        <flux:icon name="calendar-days" class="w-3.5 h-3.5 shrink-0" />
+                                                        <span class="font-medium">{{ $deal->appointmentBooking->booked_date->format('M j') }}</span>
+                                                        <span>{{ $deal->appointmentBooking->booked_start_time }}</span>
+                                                    </div>
                                                 @endif
 
                                                 <div class="flex items-center justify-between mb-2">
@@ -383,6 +446,22 @@ new class extends Component {
         </div>
     </div>
 
+    {{-- Create Estimate Prompt Modal --}}
+    <flux:modal wire:model="showCreateEstimateModal" class="max-w-sm">
+        <div class="space-y-4">
+            <flux:heading size="lg">{{ __('Create Estimate') }}</flux:heading>
+            <flux:text>{{ __('No estimate exists for this lead yet. Would you like to create one?') }}</flux:text>
+            <div class="flex justify-end gap-3">
+                <flux:button variant="ghost" wire:click="$set('showCreateEstimateModal', false)">{{ __('Cancel') }}</flux:button>
+                @if ($createEstimateDealId)
+                    <flux:button variant="primary" icon="plus" :href="route('estimates.create', $createEstimateDealId)" wire:navigate>
+                        {{ __('Create Estimate') }}
+                    </flux:button>
+                @endif
+            </div>
+        </div>
+    </flux:modal>
+
     {{-- Follow-Up / Quote Schedule Triage Modal --}}
     <flux:modal wire:model="showTriageModal" class="max-w-sm">
         <form wire:submit="executeTriage">
@@ -409,7 +488,9 @@ new class extends Component {
 <script>
     let sortableInstances = [];
 
-    function initSortable() {
+    async function initSortable() {
+        const Sortable = await window.loadSortable();
+
         // Destroy existing instances
         sortableInstances.forEach(s => s.destroy());
         sortableInstances = [];

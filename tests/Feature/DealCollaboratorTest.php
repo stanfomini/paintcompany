@@ -448,7 +448,7 @@ describe('Invitation Acceptance for Collaborators', function () {
         expect(DealCollaborator::where('deal_id', $deal->id)->where('invited_by', $ownerUser->id)->exists())->toBeTrue();
     });
 
-    it('new user accepting collaborator invitation skips onboarding', function () {
+    it('new user accepting collaborator invitation still needs onboarding', function () {
         $ownerUser = User::factory()->customer()->create();
         $ownerCustomer = Customer::factory()->create(['user_id' => $ownerUser->id]);
         $deal = Deal::factory()->forCustomer($ownerCustomer)->create();
@@ -465,7 +465,8 @@ describe('Invitation Acceptance for Collaborators', function () {
             'password' => 'password123',
         ]);
 
-        expect($user->needs_onboarding)->toBeFalse();
+        // All customers go through onboarding regardless of source
+        expect($user->needs_onboarding)->toBeTrue();
     });
 
     it('regular customer invitation still requires onboarding', function () {

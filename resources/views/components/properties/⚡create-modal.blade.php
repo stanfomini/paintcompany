@@ -162,7 +162,8 @@ new class extends Component {
         }
     }
 
-    public function getCustomersProperty(): Collection
+    #[Computed]
+    public function customers(): Collection
     {
         return Customer::query()
             ->orderBy('first_name')

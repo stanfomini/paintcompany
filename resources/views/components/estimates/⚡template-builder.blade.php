@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\EstimateAreaUpdated;
 use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -1073,7 +1074,8 @@ new class extends Component
     /**
      * Get the live price preview for the adjustment modal using PBP formula.
      */
-    public function getAdjustmentPreviewPriceProperty(): float
+    #[Computed]
+    public function adjustmentPreviewPrice(): float
     {
         if ($this->adjustingTemplateIndex === null || ! isset($this->selectedTemplates[$this->adjustingTemplateIndex])) {
             return 0;
@@ -1102,7 +1104,8 @@ new class extends Component
      *
      * @return array{labor_hours: float, labor_cost: float, cleanup_hours: float, cleanup_cost: float, sundries_cost: float, material_cost: float, base_total: float, with_margins: float}
      */
-    public function getAdjustmentPreviewBreakdownProperty(): array
+    #[Computed]
+    public function adjustmentPreviewBreakdown(): array
     {
         if ($this->adjustingTemplateIndex === null || ! isset($this->selectedTemplates[$this->adjustingTemplateIndex])) {
             return [
@@ -1384,7 +1387,8 @@ new class extends Component
     /**
      * Calculate the subtotal from all areas or selected templates.
      */
-    public function getSubtotalProperty(): float
+    #[Computed]
+    public function subtotal(): float
     {
         // Use areas if available, otherwise fall back to selectedTemplates
         if (! empty($this->areas)) {
@@ -1929,7 +1933,8 @@ new class extends Component
     /**
      * Calculate the tax amount.
      */
-    public function getTaxAmountProperty(): float
+    #[Computed]
+    public function taxAmount(): float
     {
         return $this->subtotal * (($this->taxRate ?? 0) / 100);
     }
@@ -1937,7 +1942,8 @@ new class extends Component
     /**
      * Calculate the total.
      */
-    public function getTotalProperty(): float
+    #[Computed]
+    public function total(): float
     {
         return $this->subtotal + $this->taxAmount - ($this->discountAmount ?? 0);
     }
@@ -1945,7 +1951,8 @@ new class extends Component
     /**
      * Calculate the deposit amount.
      */
-    public function getDepositAmountProperty(): float
+    #[Computed]
+    public function depositAmount(): float
     {
         return $this->total * (($this->depositPercent ?? 0) / 100);
     }
@@ -1953,7 +1960,8 @@ new class extends Component
     /**
      * Calculate the balance due.
      */
-    public function getBalanceDueProperty(): float
+    #[Computed]
+    public function balanceDue(): float
     {
         return $this->total - $this->depositAmount;
     }
@@ -2103,6 +2111,13 @@ new class extends Component
                 $package->save();
             }
         }
+
+        broadcast(new EstimateAreaUpdated(
+            $this->estimate->id,
+            0,
+            $this->isEditing ? 'updated' : 'created',
+            auth()->user()?->name ?? 'System'
+        ))->toOthers();
 
         $this->redirect(route('estimates.show', $this->estimate), navigate: true);
     }

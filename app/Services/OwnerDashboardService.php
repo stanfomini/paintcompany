@@ -10,6 +10,7 @@ use App\Models\Job;
 use App\Models\JobPayable;
 use App\Models\Payment;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class OwnerDashboardService
 {
@@ -20,68 +21,74 @@ class OwnerDashboardService
      */
     public function getAlerts(): Collection
     {
-        $alerts = collect();
+        return Cache::remember('dashboard.alerts', 300, function () {
+            $alerts = collect();
 
-        // Overdue invoices
-        $overdueCount = Invoice::where('status', Invoice::STATUS_OVERDUE)->count();
-        $overdueCount += Invoice::where('status', Invoice::STATUS_SENT)
-            ->where('due_date', '<', now())
-            ->count();
-        if ($overdueCount > 0) {
-            $alerts->push([
-                'type' => 'overdue_invoices',
-                'severity' => 'red',
-                'message' => "{$overdueCount} overdue invoice(s)",
-                'count' => $overdueCount,
-                'route' => 'invoices.index',
-                'icon' => 'exclamation-triangle',
-            ]);
-        }
+            // Overdue invoices - consolidated into single query
+            $overdueCount = Invoice::where(function ($q) {
+                $q->where('status', Invoice::STATUS_OVERDUE)
+                    ->orWhere(function ($q2) {
+                        $q2->where('status', Invoice::STATUS_SENT)
+                            ->where('due_date', '<', now());
+                    });
+            })->count();
 
-        // Pending payable approvals
-        $pendingPayables = JobPayable::pending()->count();
-        if ($pendingPayables > 0) {
-            $alerts->push([
-                'type' => 'pending_payables',
-                'severity' => 'amber',
-                'message' => "{$pendingPayables} payable(s) awaiting approval",
-                'count' => $pendingPayables,
-                'route' => 'ar.index',
-                'icon' => 'banknotes',
-            ]);
-        }
+            if ($overdueCount > 0) {
+                $alerts->push([
+                    'type' => 'overdue_invoices',
+                    'severity' => 'red',
+                    'message' => "{$overdueCount} overdue invoice(s)",
+                    'count' => $overdueCount,
+                    'route' => 'invoices.index',
+                    'icon' => 'exclamation-triangle',
+                ]);
+            }
 
-        // Pending commission approvals
-        $pendingCommissions = CommissionEntry::pending()->count();
-        if ($pendingCommissions > 0) {
-            $alerts->push([
-                'type' => 'pending_commissions',
-                'severity' => 'amber',
-                'message' => "{$pendingCommissions} commission(s) awaiting approval",
-                'count' => $pendingCommissions,
-                'route' => 'payroll.commissions',
-                'icon' => 'currency-dollar',
-            ]);
-        }
+            // Pending payable approvals
+            $pendingPayables = JobPayable::pending()->count();
+            if ($pendingPayables > 0) {
+                $alerts->push([
+                    'type' => 'pending_payables',
+                    'severity' => 'amber',
+                    'message' => "{$pendingPayables} payable(s) awaiting approval",
+                    'count' => $pendingPayables,
+                    'route' => 'ar.index',
+                    'icon' => 'banknotes',
+                ]);
+            }
 
-        // Expired crew insurance/compliance
-        $complianceIssues = CrewProfile::query()
-            ->whereHas('user', fn ($q) => $q->where('is_active', true))
-            ->get()
-            ->filter(fn ($cp) => $cp->hasComplianceWarnings())
-            ->count();
-        if ($complianceIssues > 0) {
-            $alerts->push([
-                'type' => 'crew_compliance',
-                'severity' => 'red',
-                'message' => "{$complianceIssues} crew(s) with compliance warnings",
-                'count' => $complianceIssues,
-                'route' => 'crews.index',
-                'icon' => 'shield-exclamation',
-            ]);
-        }
+            // Pending commission approvals
+            $pendingCommissions = CommissionEntry::pending()->count();
+            if ($pendingCommissions > 0) {
+                $alerts->push([
+                    'type' => 'pending_commissions',
+                    'severity' => 'amber',
+                    'message' => "{$pendingCommissions} commission(s) awaiting approval",
+                    'count' => $pendingCommissions,
+                    'route' => 'payroll.commissions',
+                    'icon' => 'currency-dollar',
+                ]);
+            }
 
-        return $alerts;
+            // Expired crew insurance/compliance
+            $complianceIssues = CrewProfile::query()
+                ->whereHas('user', fn ($q) => $q->where('is_active', true))
+                ->get()
+                ->filter(fn ($cp) => $cp->hasComplianceWarnings())
+                ->count();
+            if ($complianceIssues > 0) {
+                $alerts->push([
+                    'type' => 'crew_compliance',
+                    'severity' => 'red',
+                    'message' => "{$complianceIssues} crew(s) with compliance warnings",
+                    'count' => $complianceIssues,
+                    'route' => 'crews.index',
+                    'icon' => 'shield-exclamation',
+                ]);
+            }
+
+            return $alerts;
+        });
     }
 
     /**
@@ -91,28 +98,30 @@ class OwnerDashboardService
      */
     public function getCashFlowSnapshot(): array
     {
-        $collectedMtd = (float) Payment::where('status', 'completed')
-            ->whereMonth('received_at', now()->month)
-            ->whereYear('received_at', now()->year)
-            ->sum('amount');
-
-        $paidOutMtd = (float) JobPayable::paid()
-            ->whereMonth('paid_at', now()->month)
-            ->whereYear('paid_at', now()->year)
-            ->sum('amount');
-
-        return [
-            'outstanding_ar' => (float) Invoice::whereIn('status', ['sent', 'partially_paid', 'overdue'])
-                ->sum('balance_due'),
-            'outstanding_ap' => (float) JobPayable::whereIn('status', ['pending', 'approved'])
-                ->sum('amount'),
-            'collected_mtd' => $collectedMtd,
-            'collected_ytd' => (float) Payment::where('status', 'completed')
+        return Cache::remember('dashboard.cash_flow', 300, function () {
+            $collectedMtd = (float) Payment::where('status', 'completed')
+                ->whereMonth('received_at', now()->month)
                 ->whereYear('received_at', now()->year)
-                ->sum('amount'),
-            'paid_out_mtd' => $paidOutMtd,
-            'net_mtd' => $collectedMtd - $paidOutMtd,
-        ];
+                ->sum('amount');
+
+            $paidOutMtd = (float) JobPayable::paid()
+                ->whereMonth('paid_at', now()->month)
+                ->whereYear('paid_at', now()->year)
+                ->sum('amount');
+
+            return [
+                'outstanding_ar' => (float) Invoice::whereIn('status', ['sent', 'partially_paid', 'overdue'])
+                    ->sum('balance_due'),
+                'outstanding_ap' => (float) JobPayable::whereIn('status', ['pending', 'approved'])
+                    ->sum('amount'),
+                'collected_mtd' => $collectedMtd,
+                'collected_ytd' => (float) Payment::where('status', 'completed')
+                    ->whereYear('received_at', now()->year)
+                    ->sum('amount'),
+                'paid_out_mtd' => $paidOutMtd,
+                'net_mtd' => $collectedMtd - $paidOutMtd,
+            ];
+        });
     }
 
     /**
@@ -122,28 +131,32 @@ class OwnerDashboardService
      */
     public function getPipelineSnapshot(): array
     {
-        $stages = Deal::query()
-            ->active()
-            ->selectRaw('stage, COUNT(*) as count')
-            ->groupBy('stage')
-            ->pluck('count', 'stage')
-            ->toArray();
+        return Cache::remember('dashboard.pipeline', 300, function () {
+            // Combine stage counts and pipeline value into one query
+            $pipelineData = Deal::query()
+                ->active()
+                ->selectRaw('stage, COUNT(*) as count, SUM(estimated_value) as total_value')
+                ->groupBy('stage')
+                ->get();
 
-        $pipelineValue = (float) Deal::active()->sum('estimated_value');
+            $stages = $pipelineData->pluck('count', 'stage')->toArray();
+            $pipelineValue = (float) $pipelineData->sum('total_value');
 
-        // Calculate close rate (last 90 days)
-        $recent = Deal::where('updated_at', '>=', now()->subDays(90))
-            ->whereIn('stage', ['signed', 'completed', 'lost', 'cancelled'])
-            ->count();
-        $won = Deal::where('updated_at', '>=', now()->subDays(90))
-            ->whereIn('stage', ['signed', 'completed'])
-            ->count();
+            // Calculate close rate (last 90 days) - consolidated into single query
+            $closeRateData = Deal::where('updated_at', '>=', now()->subDays(90))
+                ->whereIn('stage', ['signed', 'completed', 'lost', 'cancelled'])
+                ->selectRaw("COUNT(*) as total, SUM(CASE WHEN stage IN ('signed', 'completed') THEN 1 ELSE 0 END) as won")
+                ->first();
 
-        return [
-            'stages' => $stages,
-            'total_pipeline_value' => $pipelineValue,
-            'close_rate' => $recent > 0 ? round(($won / $recent) * 100, 1) : 0,
-        ];
+            $recent = (int) $closeRateData->total;
+            $won = (int) $closeRateData->won;
+
+            return [
+                'stages' => $stages,
+                'total_pipeline_value' => $pipelineValue,
+                'close_rate' => $recent > 0 ? round(($won / $recent) * 100, 1) : 0,
+            ];
+        });
     }
 
     /**
@@ -153,22 +166,24 @@ class OwnerDashboardService
      */
     public function getJobsSnapshot(): array
     {
-        $byStage = Job::query()
-            ->where('stage', '!=', 'completed')
-            ->selectRaw('stage, COUNT(*) as count')
-            ->groupBy('stage')
-            ->pluck('count', 'stage')
-            ->toArray();
+        return Cache::remember('dashboard.jobs', 300, function () {
+            // Get all stats in one query using conditional aggregation
+            $stats = Job::query()
+                ->where('stage', '!=', 'completed')
+                ->selectRaw('stage, COUNT(*) as count')
+                ->selectRaw('SUM(CASE WHEN scheduled_date < ? THEN 1 ELSE 0 END) as overdue', [now()])
+                ->selectRaw('SUM(CASE WHEN scheduled_date BETWEEN ? AND ? THEN 1 ELSE 0 END) as upcoming', [now(), now()->addDays(7)])
+                ->groupBy('stage')
+                ->get();
 
-        return [
-            'by_stage' => $byStage,
-            'active_count' => Job::where('stage', '!=', 'completed')->count(),
-            'overdue' => Job::where('stage', '!=', 'completed')
-                ->where('scheduled_date', '<', now())
-                ->count(),
-            'upcoming_7_days' => Job::where('stage', '!=', 'completed')
-                ->whereBetween('scheduled_date', [now(), now()->addDays(7)])
-                ->count(),
-        ];
+            $byStage = $stats->pluck('count', 'stage')->toArray();
+
+            return [
+                'by_stage' => $byStage,
+                'active_count' => array_sum($byStage),
+                'overdue' => (int) $stats->sum('overdue'),
+                'upcoming_7_days' => (int) $stats->sum('upcoming'),
+            ];
+        });
     }
 }
