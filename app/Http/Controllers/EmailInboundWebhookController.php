@@ -13,12 +13,8 @@ class EmailInboundWebhookController extends Controller
 {
     public function handle(Request $request): JsonResponse
     {
-        // Get only non-file input (UploadedFile objects cannot be serialized to queue)
-        $payload = $request->except(
-            collect(range(1, (int) ($request->input('attachment-count', 0))))
-                ->map(fn ($i) => "attachment-{$i}")
-                ->all()
-        );
+        // Use input() which returns ONLY non-file data (UploadedFile objects cannot be serialized to queue)
+        $payload = $request->input();
 
         // Save uploaded attachment files to storage before dispatching the job,
         // since file uploads are lost after the request ends.
