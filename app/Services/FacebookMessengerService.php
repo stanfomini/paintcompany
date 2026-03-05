@@ -4,9 +4,9 @@ namespace App\Services;
 
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
-use App\Models\MessengerBotFlow;
 use App\Models\MessengerConversation;
 use App\Models\MessengerSetting;
+use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -208,25 +208,8 @@ class FacebookMessengerService
             return;
         }
 
-        // Check if there's an active bot flow to start
-        $activeFlow = MessengerBotFlow::active()->first();
-
-        if ($activeFlow) {
-            MessengerConversation::create([
-                'flow_id' => $activeFlow->id,
-                'thread_id' => $thread->id,
-                'facebook_psid' => $psid,
-                'status' => 'in_progress',
-                'answers' => [],
-                'started_at' => now(),
-                'last_activity_at' => now(),
-            ]);
-
-            // Send greeting message if configured
-            if ($activeFlow->greeting_message) {
-                $this->sendTextMessage($psid, $activeFlow->greeting_message);
-            }
-        }
+        // Start bot flow if one is active (sends greeting + first question)
+        app(MessengerBotFlowService::class)->startConversation($thread, $psid);
     }
 
     /**
@@ -252,6 +235,20 @@ class FacebookMessengerService
         ]);
 
         $thread->update(['last_message_at' => now()]);
+
+        // Check for active bot conversation and route the response
+        $conversation = MessengerConversation::where('facebook_psid', $psid)
+            ->inProgress()
+            ->first();
+
+        if ($conversation) {
+            app(MessengerBotFlowService::class)->processResponse($conversation, $postback['title'] ?? $payload);
+
+            return;
+        }
+
+        // "Get Started" or similar postbacks should start a bot flow
+        app(MessengerBotFlowService::class)->startConversation($thread, $psid);
     }
 
     /**
@@ -280,7 +277,7 @@ class FacebookMessengerService
             ->whereNotNull('customer_id')
             ->first();
 
-        return ChatThread::create([
+        $thread = ChatThread::create([
             'type' => ChatThread::TYPE_SUPPORT,
             'channel' => ChatThread::CHANNEL_FACEBOOK,
             'external_contact_id' => $psid,
@@ -288,6 +285,17 @@ class FacebookMessengerService
             'subject' => $displayName,
             'last_message_at' => now(),
         ]);
+
+        // Add the default assigned user as a participant so the thread is discoverable
+        $settings = MessengerSetting::getInstance();
+        if ($settings->default_assigned_to) {
+            $assignedUser = User::find($settings->default_assigned_to);
+            if ($assignedUser) {
+                $thread->addParticipant($assignedUser);
+            }
+        }
+
+        return $thread;
     }
 
     /**

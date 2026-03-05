@@ -39,6 +39,9 @@ new class extends Component
     public ?int $setterSessionId = null;
     public ?int $setterThreadId = null;
 
+    // Messenger contact state
+    public ?int $messengerThreadId = null;
+
     // Email thread viewer state
     public ?int $viewingEmailThreadId = null;
 
@@ -79,7 +82,7 @@ new class extends Component
 
     public function onNewMessage(): void
     {
-        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function onThreadMessage(): void
@@ -104,17 +107,32 @@ new class extends Component
 
     public function refreshData(): void
     {
-        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     #[Computed]
     public function contacts()
     {
-        return app(CommunicationsContactService::class)->getContacts(
+        $service = app(CommunicationsContactService::class);
+
+        $contacts = $service->getContacts(
             auth()->user(),
             $this->search ?: null,
             $this->typeFilter
         );
+
+        // Merge messenger contacts (unless filtered to a non-messenger type)
+        if (in_array($this->typeFilter, ['all', 'messenger'])) {
+            $messengerContacts = $service->getMessengerContacts(
+                auth()->user(),
+                $this->search ?: null
+            );
+            $contacts = $contacts->merge($messengerContacts)
+                ->sortByDesc(fn ($c) => $c['last_activity_at'] ?? '1970-01-01')
+                ->values();
+        }
+
+        return $contacts;
     }
 
     /**
@@ -138,10 +156,31 @@ new class extends Component
         return $this->contacts->firstWhere('id', $this->contactId);
     }
 
+    /**
+     * Whether the currently selected contact is a Facebook Messenger contact.
+     */
+    public function isMessengerContact(): bool
+    {
+        return $this->contactId && str_starts_with($this->contactId, 'messenger-');
+    }
+
+    /**
+     * Get the selected messenger contact's data from the contacts list.
+     */
+    #[Computed]
+    public function selectedMessengerData(): ?array
+    {
+        if (! $this->isMessengerContact()) {
+            return null;
+        }
+
+        return $this->contacts->firstWhere('id', $this->contactId);
+    }
+
     #[Computed]
     public function selectedContact(): ?User
     {
-        if (! $this->contactId || $this->isSetterContact()) {
+        if (! $this->contactId || $this->isSetterContact() || $this->isMessengerContact()) {
             return null;
         }
 
@@ -178,6 +217,33 @@ new class extends Component
             ]]);
         }
 
+        if ($this->isMessengerContact()) {
+            // For messenger contacts, show their single Facebook thread
+            if (! $this->messengerThreadId) {
+                return collect();
+            }
+            $thread = ChatThread::with(['latestMessage.user'])->find($this->messengerThreadId);
+            if (! $thread) {
+                return collect();
+            }
+            return collect([[
+                'type' => 'chat',
+                'channel' => 'facebook',
+                'thread_type' => 'support',
+                'icon' => 'chat-bubble-oval-left',
+                'label' => 'Messenger',
+                'preview' => $thread->latestMessage
+                    ? ($thread->latestMessage->user?->name ?? ($thread->subject ?? 'Messenger User')).': '.\Illuminate\Support\Str::limit($thread->latestMessage->content, 80)
+                    : 'No messages yet',
+                'sender' => $thread->latestMessage?->user?->name,
+                'date' => $thread->last_message_at ?? $thread->created_at,
+                'thread_id' => $thread->id,
+                'url' => route('chat.show', $thread),
+                'message_id' => null,
+                'direction' => null,
+            ]]);
+        }
+
         if (! $this->selectedContact) {
             return collect();
         }
@@ -192,6 +258,17 @@ new class extends Component
     #[Computed]
     public function tabUnreadCounts(): array
     {
+        if ($this->isMessengerContact()) {
+            $unread = 0;
+            if ($this->messengerThreadId) {
+                $thread = ChatThread::find($this->messengerThreadId);
+                if ($thread) {
+                    $unread = $thread->getUnreadCountFor(auth()->user());
+                }
+            }
+            return ['all' => $unread, 'messenger' => $unread, 'direct' => 0, 'deals' => 0, 'emails' => 0];
+        }
+
         if ($this->isSetterContact()) {
             $unread = 0;
             if ($this->setterThreadId) {
@@ -253,6 +330,7 @@ new class extends Component
         $this->expandedThreadId = null;
         $this->setterSessionId = null;
         $this->setterThreadId = null;
+        $this->messengerThreadId = null;
 
         // If this is a setter contact, extract the session/thread info
         if (str_starts_with($contactId, 'setter-')) {
@@ -266,10 +344,17 @@ new class extends Component
             }
         }
 
+        // If this is a messenger contact, extract the thread ID
+        if (str_starts_with($contactId, 'messenger-')) {
+            $threadId = (int) str_replace('messenger-', '', $contactId);
+            $this->messengerThreadId = $threadId;
+            $this->expandedThreadId = $threadId;
+        }
+
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
-        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function clearContact(): void
@@ -279,11 +364,12 @@ new class extends Component
         $this->expandedThreadId = null;
         $this->setterSessionId = null;
         $this->setterThreadId = null;
+        $this->messengerThreadId = null;
 
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
-        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function setTab(string $tab): void
@@ -519,6 +605,7 @@ new class extends Component
                     <option value="agent">{{ __('Agents') }}</option>
                     <option value="crew">{{ __('Crew') }}</option>
                     <option value="internal">{{ __('Internal') }}</option>
+                    <option value="messenger">{{ __('Messenger') }}</option>
                 </flux:select>
             </div>
         </div>
@@ -670,6 +757,94 @@ new class extends Component
                     @if ($setterThread)
                         <div class="border-t border-zinc-200 dark:border-zinc-700 p-3 sm:p-4 shrink-0 bg-white dark:bg-zinc-900">
                             @livewire('chat.message-composer', ['thread' => $setterThread], key('composer-setter-' . $setterThread->id))
+                        </div>
+                    @endif
+                </div>
+            @endif
+        @elseif ($this->isMessengerContact() && $this->selectedMessengerData)
+            {{-- MESSENGER CONTACT --}}
+            @php $messenger = $this->selectedMessengerData; @endphp
+            <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">
+                <button wire:click="clearContact" class="md:hidden shrink-0 p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <flux:icon name="arrow-left" class="size-5" />
+                </button>
+                <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center shrink-0">
+                    <flux:icon name="chat-bubble-oval-left" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <flux:heading size="sm" class="truncate">{{ $messenger['name'] }}</flux:heading>
+                        <flux:badge size="sm" class="hidden sm:inline-flex" color="blue">{{ __('Messenger') }}</flux:badge>
+                    </div>
+                    <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Facebook Messenger conversation') }}</flux:text>
+                </div>
+            </div>
+
+            {{-- Messenger thread as full messenger view --}}
+            @if ($messengerThreadId)
+                <div class="flex flex-col flex-1 min-h-0">
+                    <div
+                        x-data="{
+                            scrollToBottom() { this.$el.scrollTop = this.$el.scrollHeight },
+                            init() {
+                                this.$nextTick(() => this.scrollToBottom());
+                                new MutationObserver(() => this.scrollToBottom()).observe(this.$el, { childList: true, subtree: true });
+                            }
+                        }"
+                        class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3"
+                    >
+                        @forelse ($this->threadMessages as $msg)
+                            @php $isOwn = $msg->user_id === auth()->id(); @endphp
+                            <div wire:key="msg-messenger-{{ $msg->id }}" class="flex {{ $isOwn ? 'justify-end' : 'justify-start' }}">
+                                <div class="max-w-[80%] sm:max-w-[70%]">
+                                    @if (! $isOwn)
+                                        <p class="text-[11px] text-zinc-400 mb-0.5 px-1">{{ $msg->user?->name ?? ($messenger['name'] ?? 'Messenger User') }}</p>
+                                    @endif
+                                    <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
+                                        @if ($msg->isAudio())
+                                            @include('components.communications._audio-message', ['message' => $msg, 'isOwn' => $isOwn])
+                                        @elseif ($msg->needsTranslationFor(app()->getLocale()))
+                                            <span class="whitespace-pre-wrap break-words">{{ $msg->getTranslation(app()->getLocale()) }}</span>
+                                        @else
+                                            <span class="whitespace-pre-wrap break-words">{{ $msg->content }}</span>
+                                        @endif
+                                    </div>
+                                    @if (! $msg->isAudio() && $msg->needsTranslationFor(app()->getLocale()))
+                                        <div x-data="{ showOriginal: false }" class="px-1 mt-0.5">
+                                            <button @click="showOriginal = !showOriginal" class="text-[10px] underline opacity-70 hover:opacity-100 text-zinc-400">
+                                                <span x-show="!showOriginal">{{ __('Show original') }}</span>
+                                                <span x-show="showOriginal" x-cloak>{{ __('Hide original') }}</span>
+                                            </button>
+                                            <div x-show="showOriginal" x-cloak class="mt-0.5 text-xs italic text-zinc-500">
+                                                {{ $msg->content }}
+                                                <span class="opacity-60">({{ strtoupper($msg->getDetectedLanguage()) }})</span>
+                                            </div>
+                                        </div>
+                                    @endif
+                                    <div class="flex items-center gap-1 mt-0.5 px-1 {{ $isOwn ? 'justify-end' : '' }}">
+                                        <p class="text-[10px] text-zinc-400">
+                                            {{ $msg->created_at->format('M j, g:i A') }}
+                                        </p>
+                                        @if (! $msg->isSystem() && ! $msg->getDetectedLanguage())
+                                            <button wire:click="translateMessage({{ $msg->id }})" class="text-[10px] text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" title="{{ __('Translate') }}">
+                                                <flux:icon name="language" class="size-3" />
+                                            </button>
+                                        @endif
+                                    </div>
+                                </div>
+                            </div>
+                        @empty
+                            <div class="text-center py-8">
+                                <flux:text size="sm" class="text-zinc-400">{{ __('No messages in this conversation yet.') }}</flux:text>
+                            </div>
+                        @endforelse
+                    </div>
+
+                    {{-- Reply input --}}
+                    @php $messengerThread = ChatThread::find($messengerThreadId); @endphp
+                    @if ($messengerThread)
+                        <div class="border-t border-zinc-200 dark:border-zinc-700 p-3 sm:p-4 shrink-0 bg-white dark:bg-zinc-900">
+                            @livewire('chat.message-composer', ['thread' => $messengerThread], key('composer-messenger-' . $messengerThread->id))
                         </div>
                     @endif
                 </div>

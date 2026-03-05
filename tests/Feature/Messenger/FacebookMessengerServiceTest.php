@@ -5,6 +5,7 @@ use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\MessengerBotFlow;
+use App\Models\MessengerBotStep;
 use App\Models\MessengerConversation;
 use App\Models\MessengerSetting;
 use App\Models\User;
@@ -226,6 +227,13 @@ describe('processIncomingMessage', function () {
             'greeting_message' => 'Welcome! How can I help?',
         ]);
 
+        // Flow needs at least one step so conversation stays in_progress
+        MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'What is your name?',
+        ]);
+
         $service = app(FacebookMessengerService::class);
         $service->processIncomingMessage([
             'id' => '123456',
@@ -243,11 +251,19 @@ describe('processIncomingMessage', function () {
         expect($conversation)->not->toBeNull();
         expect($conversation->status)->toBe('in_progress');
         expect($conversation->flow_id)->toBe($flow->id);
+        // Should now be on the first step
+        expect($conversation->current_step_id)->not->toBeNull();
 
         // Greeting message should have been sent
         Http::assertSent(function ($request) {
             return str_contains($request->url(), 'me/messages')
                 && ($request['message']['text'] ?? '') === 'Welcome! How can I help?';
+        });
+
+        // First step question should also have been sent
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'me/messages')
+                && ($request['message']['text'] ?? '') === 'What is your name?';
         });
     });
 
@@ -642,5 +658,193 @@ describe('ChatService Facebook sync', function () {
         expect($conversation->status)->toBe('completed');
 
         Queue::assertPushed(SendFacebookMessageJob::class);
+    });
+});
+
+describe('handleMessage sends first question after greeting', function () {
+    it('sends greeting AND first step question when new user messages', function () {
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
+                'first_name' => 'New',
+                'last_name' => 'Lead',
+            ]),
+        ]);
+
+        $flow = MessengerBotFlow::factory()->active()->create([
+            'greeting_message' => 'Welcome!',
+        ]);
+
+        $step1 = MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'What is your name?',
+        ]);
+
+        $service = app(FacebookMessengerService::class);
+        $service->processIncomingMessage([
+            'messaging' => [[
+                'sender' => ['id' => '11110001'],
+                'message' => ['mid' => 'mid.first', 'text' => 'Hi there'],
+            ]],
+        ]);
+
+        $conversation = MessengerConversation::where('facebook_psid', '11110001')->first();
+        expect($conversation)->not->toBeNull();
+        expect($conversation->status)->toBe('in_progress');
+        expect($conversation->current_step_id)->toBe($step1->id);
+
+        // Both greeting and first question should have been sent
+        $sentMessages = collect(Http::recorded())
+            ->filter(fn ($pair) => str_contains($pair[0]->url(), 'me/messages'))
+            ->map(fn ($pair) => $pair[0]['message']['text'] ?? null)
+            ->filter()
+            ->values();
+
+        expect($sentMessages)->toContain('Welcome!');
+        expect($sentMessages)->toContain('What is your name?');
+    });
+});
+
+describe('postback routes to bot flow', function () {
+    it('routes quick reply postback to active bot conversation', function () {
+        Http::fake([
+            'graph.facebook.com/*' => Http::response(['message_id' => 'mid.test']),
+        ]);
+
+        $flow = MessengerBotFlow::factory()->active()->create();
+
+        $step1 = MessengerBotStep::factory()->quickReply(
+            [['title' => 'Interior', 'payload' => 'interior'], ['title' => 'Exterior', 'payload' => 'exterior']],
+            'deal.description'
+        )->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'What type of painting?',
+        ]);
+
+        $step2 = MessengerBotStep::factory()->textQuestion('customer.email')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 2,
+            'message_text' => 'What is your email?',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('22220001')->create();
+
+        $conversation = MessengerConversation::create([
+            'flow_id' => $flow->id,
+            'thread_id' => $thread->id,
+            'facebook_psid' => '22220001',
+            'status' => 'in_progress',
+            'current_step_id' => $step1->id,
+            'answers' => [],
+            'started_at' => now(),
+            'last_activity_at' => now(),
+        ]);
+
+        // Simulate a quick reply postback
+        $service = app(FacebookMessengerService::class);
+        $service->processPostback('22220001', [
+            'title' => 'Interior',
+            'payload' => 'interior',
+        ]);
+
+        $conversation->refresh();
+        expect($conversation->answers)->toHaveKey("step_{$step1->id}", 'Interior');
+        expect($conversation->current_step_id)->toBe($step2->id);
+    });
+
+    it('starts bot flow on Get Started postback for new user', function () {
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
+                'first_name' => 'Postback',
+                'last_name' => 'User',
+            ]),
+        ]);
+
+        $flow = MessengerBotFlow::factory()->active()->create([
+            'greeting_message' => 'Hello!',
+        ]);
+
+        MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'What is your name?',
+        ]);
+
+        $service = app(FacebookMessengerService::class);
+        $service->processPostback('33330001', [
+            'title' => 'Get Started',
+            'payload' => 'GET_STARTED',
+        ]);
+
+        $conversation = MessengerConversation::where('facebook_psid', '33330001')->first();
+        expect($conversation)->not->toBeNull();
+        expect($conversation->status)->toBe('in_progress');
+
+        // Should have sent greeting + first question
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), 'me/messages')
+                && ($request['message']['text'] ?? '') === 'Hello!';
+        });
+    });
+});
+
+describe('findOrCreateThread adds participant', function () {
+    it('adds default_assigned_to user as participant on new facebook thread', function () {
+        $admin = User::factory()->internal()->create();
+
+        MessengerSetting::clearInstanceCache();
+        MessengerSetting::getInstance()->update(['default_assigned_to' => $admin->id]);
+        MessengerSetting::clearInstanceCache();
+
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
+                'first_name' => 'New',
+                'last_name' => 'Contact',
+            ]),
+        ]);
+
+        $service = app(FacebookMessengerService::class);
+        $service->processIncomingMessage([
+            'messaging' => [[
+                'sender' => ['id' => '44440001'],
+                'message' => ['mid' => 'mid.participant', 'text' => 'Hello'],
+            ]],
+        ]);
+
+        $thread = ChatThread::where('external_contact_id', '44440001')
+            ->where('channel', ChatThread::CHANNEL_FACEBOOK)
+            ->first();
+
+        expect($thread)->not->toBeNull();
+        expect($thread->hasParticipant($admin))->toBeTrue();
+    });
+
+    it('does not add participant when default_assigned_to is not set', function () {
+        MessengerSetting::clearInstanceCache();
+        MessengerSetting::getInstance()->update(['default_assigned_to' => null]);
+        MessengerSetting::clearInstanceCache();
+
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
+                'first_name' => 'Solo',
+                'last_name' => 'User',
+            ]),
+        ]);
+
+        $service = app(FacebookMessengerService::class);
+        $service->processIncomingMessage([
+            'messaging' => [[
+                'sender' => ['id' => '55550001'],
+                'message' => ['mid' => 'mid.noassign', 'text' => 'Hello'],
+            ]],
+        ]);
+
+        $thread = ChatThread::where('external_contact_id', '55550001')
+            ->where('channel', ChatThread::CHANNEL_FACEBOOK)
+            ->first();
+
+        expect($thread)->not->toBeNull();
+        expect($thread->participants()->count())->toBe(0);
     });
 });

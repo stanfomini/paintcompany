@@ -285,6 +285,55 @@ class CommunicationsContactService
     }
 
     /**
+     * Get messenger contacts (Facebook threads) visible to the viewer.
+     * These are not system Users — they use 'messenger-{threadId}' as their ID.
+     *
+     * @return Collection<int, array{id: string, name: string, type: string, avatar_url: ?string, initials: string, last_activity_at: ?\Carbon\Carbon, last_message_preview: ?string, unread_count: int, has_unread: bool, is_support_only: bool}>
+     */
+    public function getMessengerContacts(User $viewer, ?string $search = null): Collection
+    {
+        $threads = ChatThread::query()
+            ->where('channel', ChatThread::CHANNEL_FACEBOOK)
+            ->forUser($viewer)
+            ->with(['latestMessage.user'])
+            ->latestActivity()
+            ->get();
+
+        if ($search) {
+            $threads = $threads->filter(
+                fn (ChatThread $t) => str_contains(strtolower($t->subject ?? ''), strtolower($search))
+            );
+        }
+
+        return $threads->map(function (ChatThread $thread) use ($viewer) {
+            $preview = null;
+            if ($thread->latestMessage) {
+                $senderName = $thread->latestMessage->user?->name ?? ($thread->subject ?? 'Messenger User');
+                $preview = $senderName.': '.Str::limit($thread->latestMessage->content, 80);
+            }
+
+            $unread = $thread->getUnreadCountFor($viewer);
+            $initials = collect(explode(' ', $thread->subject ?? 'M'))
+                ->map(fn ($w) => strtoupper(mb_substr($w, 0, 1)))
+                ->take(2)
+                ->join('');
+
+            return [
+                'id' => 'messenger-'.$thread->id,
+                'name' => $thread->subject ?? 'Messenger User',
+                'type' => 'messenger',
+                'avatar_url' => null,
+                'initials' => $initials ?: 'M',
+                'last_activity_at' => $thread->last_message_at ?? $thread->created_at,
+                'last_message_preview' => $preview,
+                'unread_count' => $unread,
+                'has_unread' => $unread > 0,
+                'is_support_only' => false,
+            ];
+        })->values();
+    }
+
+    /**
      * Get combined unread total for a user across chat and email channels.
      */
     public function getUnreadTotalForUser(User $user): int
