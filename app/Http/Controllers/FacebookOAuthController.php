@@ -27,9 +27,11 @@ class FacebookOAuthController extends Controller
         $state = csrf_token();
         session(['fb_oauth_state' => $state]);
 
+        $callbackUrl = $request->schemeAndHttpHost().'/settings/messenger/callback';
+
         $params = http_build_query([
             'client_id' => $settings->app_id,
-            'redirect_uri' => route('facebook.oauth.callback'),
+            'redirect_uri' => $callbackUrl,
             'scope' => 'pages_messaging,pages_manage_metadata,pages_show_list',
             'response_type' => 'code',
             'state' => $state,
@@ -63,12 +65,13 @@ class FacebookOAuthController extends Controller
         }
 
         $settings = MessengerSetting::getInstance();
+        $callbackUrl = $request->schemeAndHttpHost().'/settings/messenger/callback';
 
         // Step 1: Exchange code for short-lived user access token
         $tokenResponse = Http::get(self::GRAPH_API_URL.'/oauth/access_token', [
             'client_id' => $settings->app_id,
             'client_secret' => $settings->app_secret,
-            'redirect_uri' => route('facebook.oauth.callback'),
+            'redirect_uri' => $callbackUrl,
             'code' => $code,
         ]);
 
