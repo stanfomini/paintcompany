@@ -127,15 +127,30 @@ class FacebookOAuthController extends Controller
         $pageAccessToken = $page['access_token'];
         $pageName = $page['name'];
 
-        // Step 4: Subscribe the app to the page's webhook events
+        // Step 4a: Set up app-level webhook subscription (tells Facebook WHERE to send events)
+        $webhookUrl = $request->schemeAndHttpHost().'/webhook/facebook/receive';
+        $appToken = $settings->app_id.'|'.$settings->app_secret;
+        $appWebhookResponse = Http::post(self::GRAPH_API_URL."/{$settings->app_id}/subscriptions", [
+            'access_token' => $appToken,
+            'object' => 'page',
+            'callback_url' => $webhookUrl,
+            'verify_token' => $settings->verify_token,
+            'fields' => 'messages,messaging_postbacks,messaging_optins',
+        ]);
+
+        if (! $appWebhookResponse->successful()) {
+            Log::warning('Facebook OAuth: app webhook subscription failed', ['body' => $appWebhookResponse->body()]);
+        }
+
+        // Step 4b: Subscribe the page to receive events (tells Facebook WHICH page events to forward)
         $subscribeResponse = Http::post(self::GRAPH_API_URL."/{$pageId}/subscribed_apps", [
             'access_token' => $pageAccessToken,
             'subscribed_fields' => 'messages,messaging_postbacks,messaging_optins',
         ]);
 
-        $webhookSubscribed = $subscribeResponse->successful();
-        if (! $webhookSubscribed) {
-            Log::warning('Facebook OAuth: webhook subscription failed', ['body' => $subscribeResponse->body()]);
+        $webhookSubscribed = $appWebhookResponse->successful() && $subscribeResponse->successful();
+        if (! $subscribeResponse->successful()) {
+            Log::warning('Facebook OAuth: page webhook subscription failed', ['body' => $subscribeResponse->body()]);
         }
 
         // Step 5: Save everything
