@@ -37,9 +37,24 @@ class ProcessInboundEmailJob implements ShouldQueue
      */
     public function handle(EmailThreadingService $threadingService): void
     {
+        // DEBUG: Temporary error-level log to trace job execution on production
+        Log::error('[DEBUG] ProcessInboundEmailJob started', [
+            'payload_keys' => array_keys($this->payload),
+            'has_timestamp' => isset($this->payload['timestamp']),
+            'has_token' => isset($this->payload['token']),
+            'has_signature' => isset($this->payload['signature']),
+            'recipient' => $this->payload['recipient'] ?? 'MISSING',
+            'sender' => $this->payload['sender'] ?? 'MISSING',
+            'attachment_count' => $this->payload['attachment-count'] ?? 'MISSING',
+        ]);
+
         // 1. Verify Mailgun signature
         if (! $this->verifySignature()) {
-            Log::warning('Email webhook: invalid Mailgun signature');
+            Log::error('[DEBUG] Email webhook: invalid Mailgun signature', [
+                'timestamp' => $this->payload['timestamp'] ?? 'MISSING',
+                'token' => $this->payload['token'] ?? 'MISSING',
+                'signature' => $this->payload['signature'] ?? 'MISSING',
+            ]);
 
             return;
         }
