@@ -48,6 +48,10 @@ class EmailAttachment extends Model
      */
     public function getUrl(): string
     {
+        if (config('filesystems.default') === 's3') {
+            return Storage::temporaryUrl($this->path, now()->addHour());
+        }
+
         return Storage::url($this->path);
     }
 

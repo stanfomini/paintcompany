@@ -42,7 +42,8 @@ class EmailInboundWebhookController extends Controller
             }
 
             $tempPath = 'email-attachments/pending/'.Str::uuid().'_'.$file->getClientOriginalName();
-            Storage::put($tempPath, $file->getContent());
+            // Always save temp files to local disk (fast, avoids S3 latency during webhook)
+            Storage::disk('local')->put($tempPath, $file->getContent());
 
             // Use per-field content-id first, then fall back to content-id-map
             $contentId = $payload["attachment-{$i}-content-id"]

@@ -31,6 +31,9 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
 
     /**
      * Process email attachments that were pre-saved by the webhook controller.
+     *
+     * Temp files are saved to the local disk by the webhook controller (fast, avoids
+     * S3 latency). This job reads from local and stores to the default disk (S3 on prod).
      */
     public function handle(): void
     {
@@ -44,11 +47,13 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
             return;
         }
 
+        $localDisk = Storage::disk('local');
+        $finalDisk = Storage::disk();
         $bodyHtml = $this->message->body_html ?? '';
 
         foreach ($savedAttachments as $i => $attachmentData) {
             $tempPath = $attachmentData['path'] ?? null;
-            if (! $tempPath || ! Storage::exists($tempPath)) {
+            if (! $tempPath || ! $localDisk->exists($tempPath)) {
                 Log::warning('Email attachment: temp file not found', [
                     'message_id' => $this->message->id,
                     'attachment' => $i,
@@ -61,7 +66,7 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
             $originalFilename = $attachmentData['filename'] ?? "attachment-{$i}";
             $mimeType = $attachmentData['mime_type'] ?? 'application/octet-stream';
             $contentId = $attachmentData['content_id'] ?? null;
-            $fileSize = $attachmentData['size'] ?? Storage::size($tempPath);
+            $fileSize = $attachmentData['size'] ?? $localDisk->size($tempPath);
 
             // Only mark as inline if the CID is actually referenced in the body HTML
             $trimmedCid = $contentId ? trim($contentId, '<>') : null;
@@ -72,8 +77,11 @@ class DownloadEmailAttachmentsJob implements ShouldQueue
             $filename = Str::uuid().'-'.$sluggedName.($extension ? '.'.$extension : '');
             $finalPath = 'email-attachments/'.$this->message->id.'/'.$filename;
 
-            // Move from pending to final location
-            Storage::move($tempPath, $finalPath);
+            // Copy from local temp to final disk (S3 on prod, local on dev)
+            $finalDisk->put($finalPath, $localDisk->get($tempPath));
+
+            // Clean up local temp file
+            $localDisk->delete($tempPath);
 
             EmailAttachment::create([
                 'email_message_id' => $this->message->id,
