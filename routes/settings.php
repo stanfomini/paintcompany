@@ -94,6 +94,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:messenger.manage')
         ->name('messenger.edit');
 
+    Route::get('settings/messenger/connect', [\App\Http\Controllers\FacebookOAuthController::class, 'redirect'])
+        ->middleware('permission:messenger.manage')
+        ->name('facebook.oauth.redirect');
+
+    Route::get('settings/messenger/callback', [\App\Http\Controllers\FacebookOAuthController::class, 'callback'])
+        ->middleware('permission:messenger.manage')
+        ->name('facebook.oauth.callback');
+
     Route::livewire('settings/booking', 'pages::settings.booking-config')
         ->middleware('permission:settings.company')
         ->name('settings.booking');

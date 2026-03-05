@@ -15,6 +15,7 @@ class MessengerSetting extends Model
     protected static ?self $resolvedInstance = null;
 
     protected $fillable = [
+        'app_id',
         'page_id',
         'page_access_token',
         'app_secret',

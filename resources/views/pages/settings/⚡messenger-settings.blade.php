@@ -17,6 +17,7 @@ new class extends Component {
     }
 
     // Connection Settings
+    public string $appId = '';
     public string $pageId = '';
     public string $pageAccessToken = '';
     public string $appSecret = '';
@@ -44,6 +45,7 @@ new class extends Component {
 
         $settings = MessengerSetting::getInstance();
 
+        $this->appId = $settings->app_id ?? '';
         $this->pageId = $settings->page_id ?? '';
         $this->pageAccessToken = $settings->page_access_token ?? '';
         $this->appSecret = $settings->app_secret ?? '';
@@ -88,6 +90,7 @@ new class extends Component {
         }
 
         $validated = $this->validate([
+            'appId' => ['nullable', 'string', 'max:255'],
             'pageId' => ['nullable', 'string', 'max:255'],
             'pageAccessToken' => ['nullable', 'string', 'max:1000'],
             'appSecret' => ['nullable', 'string', 'max:500'],
@@ -95,6 +98,7 @@ new class extends Component {
 
         $settings = MessengerSetting::getInstance();
         $settings->update([
+            'app_id' => $validated['appId'] ?: null,
             'page_id' => $validated['pageId'] ?: null,
             'page_access_token' => $validated['pageAccessToken'] ?: null,
             'app_secret' => $validated['appSecret'] ?: null,
@@ -220,16 +224,51 @@ new class extends Component {
             </div>
         </div>
 
+        {{-- Flash Messages --}}
+        @if (session('success'))
+            <flux:callout variant="success" class="mb-4">{{ session('success') }}</flux:callout>
+        @endif
+        @if (session('error'))
+            <flux:callout variant="danger" class="mb-4">{{ session('error') }}</flux:callout>
+        @endif
+
+        {{-- Quick Connect --}}
+        <div class="my-6 w-full space-y-4">
+            <flux:heading size="sm">{{ __('Quick Connect') }}</flux:heading>
+            <flux:text class="text-sm text-zinc-500">
+                {{ __('Enter your App ID and App Secret below, save, then click "Connect with Facebook" to automatically set up your Page Access Token and webhook subscription.') }}
+            </flux:text>
+
+            @if ($this->isConnected)
+                <flux:callout variant="success">
+                    {{ __('Connected and ready to receive messages.') }}
+                </flux:callout>
+            @endif
+
+            <flux:button variant="primary" href="/settings/messenger/connect" icon="link">
+                {{ __('Connect with Facebook') }}
+            </flux:button>
+        </div>
+
+        <flux:separator />
+
         {{-- Connection Settings --}}
         <form wire:submit="saveConnectionSettings" class="my-6 w-full space-y-6">
-            <flux:heading size="sm">{{ __('Facebook Connection') }}</flux:heading>
-            <flux:text class="text-sm text-zinc-500">{{ __('Enter your Facebook Page credentials to enable Messenger integration.') }}</flux:text>
+            <flux:heading size="sm">{{ __('Facebook App Credentials') }}</flux:heading>
+            <flux:text class="text-sm text-zinc-500">{{ __('These come from your Facebook App Dashboard at developers.facebook.com.') }}</flux:text>
+
+            <flux:input wire:model="appId" :label="__('App ID')" type="text" placeholder="2005322070020060" />
+
+            <flux:input wire:model="appSecret" :label="__('App Secret')" type="password" placeholder="Enter app secret..." />
+
+            <flux:separator />
+
+            <flux:heading size="sm">{{ __('Manual Override (optional)') }}</flux:heading>
+            <flux:text class="text-sm text-zinc-500">{{ __('These are set automatically when you use Connect with Facebook. Only edit manually if needed.') }}</flux:text>
 
             <flux:input wire:model="pageId" :label="__('Facebook Page ID')" type="text" placeholder="123456789012345" />
 
             <flux:textarea wire:model="pageAccessToken" :label="__('Page Access Token')" rows="3" placeholder="EAABsbCS..." />
-
-            <flux:input wire:model="appSecret" :label="__('App Secret')" type="password" placeholder="Enter app secret..." />
 
             <flux:separator />
 
