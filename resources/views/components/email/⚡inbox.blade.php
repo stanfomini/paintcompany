@@ -195,7 +195,7 @@ new class extends Component {
 };
 ?>
 
-<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row"
+<div class="relative flex h-[calc(100dvh-6.75rem)] flex-col overflow-hidden md:h-[calc(100dvh-7.75rem)] md:flex-row"
     x-data="{
         toastVisible: $wire.entangle('showNewEmailToast'),
         showMobileFolders: false,
