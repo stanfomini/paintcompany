@@ -132,3 +132,76 @@ it('lists internal users for estimator selection', function () {
         ->test('pages::settings.booking-config')
         ->assertSee('Test Estimator');
 });
+
+it('saves business hours', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.booking-config')
+        ->set('businessHoursStart', '09:00')
+        ->set('businessHoursEnd', '18:00')
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertSet('saved', true);
+
+    CompanySetting::clearInstanceCache();
+    $settings = CompanySetting::getInstance();
+    expect($settings->business_hours_start)->toBe('09:00')
+        ->and($settings->business_hours_end)->toBe('18:00');
+});
+
+it('saves business days including weekends', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.booking-config')
+        ->set('businessDays', [1, 2, 3, 4, 5, 6, 7])
+        ->call('save')
+        ->assertHasNoErrors()
+        ->assertSet('saved', true);
+
+    CompanySetting::clearInstanceCache();
+    $settings = CompanySetting::getInstance();
+    expect($settings->business_days)->toBe([1, 2, 3, 4, 5, 6, 7]);
+});
+
+it('validates end time must be after start time', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.booking-config')
+        ->set('businessHoursStart', '17:00')
+        ->set('businessHoursEnd', '09:00')
+        ->call('save')
+        ->assertHasErrors('businessHoursEnd');
+});
+
+it('requires at least one business day', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.booking-config')
+        ->set('businessDays', [])
+        ->call('save')
+        ->assertHasErrors('businessDays');
+});
+
+it('can toggle business days on and off', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.booking-config')
+        ->assertSet('businessDays', [1, 2, 3, 4, 5])
+        ->call('toggleDay', 6) // add Saturday
+        ->assertSet('businessDays', [1, 2, 3, 4, 5, 6])
+        ->call('toggleDay', 3) // remove Wednesday
+        ->assertSet('businessDays', [1, 2, 4, 5, 6])
+        ->call('toggleDay', 7) // add Sunday
+        ->assertSet('businessDays', [1, 2, 4, 5, 6, 7]);
+});
+
+it('loads saved business hours on mount', function () {
+    $settings = CompanySetting::getInstance();
+    $settings->update([
+        'business_hours_start' => '07:30',
+        'business_hours_end' => '19:00',
+        'business_days' => [1, 3, 5],
+    ]);
+    CompanySetting::clearInstanceCache();
+
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.booking-config')
+        ->assertSet('businessHoursStart', '07:30')
+        ->assertSet('businessHoursEnd', '19:00')
+        ->assertSet('businessDays', [1, 3, 5]);
+});

@@ -12,6 +12,19 @@ new class extends Component {
     public int $lookaheadDays = 30;
     public int $minNoticeHours = 24;
     public array $bookableEstimatorIds = [];
+    public string $businessHoursStart = '08:00';
+    public string $businessHoursEnd = '17:00';
+    public array $businessDays = [1, 2, 3, 4, 5];
+
+    public function toggleDay(int $day): void
+    {
+        if (in_array($day, $this->businessDays)) {
+            $this->businessDays = array_values(array_diff($this->businessDays, [$day]));
+        } else {
+            $this->businessDays[] = $day;
+            sort($this->businessDays);
+        }
+    }
 
     public bool $saved = false;
 
@@ -32,6 +45,9 @@ new class extends Component {
         $this->lookaheadDays = $settings->getBookingLookaheadDays();
         $this->minNoticeHours = $settings->getBookingMinNoticeHours();
         $this->bookableEstimatorIds = $settings->getBookableEstimatorIds();
+        $this->businessHoursStart = $settings->business_hours_start ?? '08:00';
+        $this->businessHoursEnd = $settings->business_hours_end ?? '17:00';
+        $this->businessDays = $settings->business_days ?? [1, 2, 3, 4, 5];
     }
 
     #[Computed]
@@ -52,6 +68,10 @@ new class extends Component {
             'minNoticeHours' => 'required|integer|min:1|max:168',
             'bookableEstimatorIds' => 'array',
             'bookableEstimatorIds.*' => 'exists:users,id',
+            'businessHoursStart' => 'required|date_format:H:i',
+            'businessHoursEnd' => 'required|date_format:H:i|after:businessHoursStart',
+            'businessDays' => 'required|array|min:1',
+            'businessDays.*' => 'integer|between:1,7',
         ]);
 
         $settings = CompanySetting::getInstance();
@@ -62,6 +82,9 @@ new class extends Component {
             'booking_lookahead_days' => $this->lookaheadDays,
             'booking_min_notice_hours' => $this->minNoticeHours,
             'bookable_estimator_ids' => $this->bookableEstimatorIds,
+            'business_hours_start' => $this->businessHoursStart,
+            'business_hours_end' => $this->businessHoursEnd,
+            'business_days' => array_map('intval', $this->businessDays),
         ]);
 
         CompanySetting::clearInstanceCache();
@@ -129,6 +152,48 @@ new class extends Component {
                         <flux:description>{{ __('Minimum lead time before an appointment.') }}</flux:description>
                         <flux:error name="minNoticeHours" />
                     </flux:field>
+                </div>
+            </div>
+
+            {{-- Business Hours --}}
+            <div class="space-y-4">
+                <flux:heading size="sm">{{ __('Business Hours') }}</flux:heading>
+                <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('Set your operating hours and days for appointment availability.') }}</flux:text>
+
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <flux:field>
+                        <flux:label>{{ __('Start Time') }}</flux:label>
+                        <flux:input wire:model="businessHoursStart" type="time" />
+                        <flux:description>{{ __('When your business day begins.') }}</flux:description>
+                        <flux:error name="businessHoursStart" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>{{ __('End Time') }}</flux:label>
+                        <flux:input wire:model="businessHoursEnd" type="time" />
+                        <flux:description>{{ __('When your business day ends.') }}</flux:description>
+                        <flux:error name="businessHoursEnd" />
+                    </flux:field>
+                </div>
+
+                <div>
+                    <flux:label class="mb-2">{{ __('Operating Days') }}</flux:label>
+                    <div class="flex flex-wrap gap-2">
+                        @foreach ([1 => 'Mon', 2 => 'Tue', 3 => 'Wed', 4 => 'Thu', 5 => 'Fri', 6 => 'Sat', 7 => 'Sun'] as $dayNum => $dayLabel)
+                            <button
+                                wire:key="day-{{ $dayNum }}"
+                                wire:click="toggleDay({{ $dayNum }})"
+                                type="button"
+                                class="rounded-lg border px-3 py-1.5 text-sm font-medium transition
+                                    {{ in_array($dayNum, $businessDays)
+                                        ? 'border-blue-500 bg-blue-50 text-blue-700 dark:border-blue-400 dark:bg-blue-900/30 dark:text-blue-300'
+                                        : 'border-zinc-300 text-zinc-600 dark:border-zinc-600 dark:text-zinc-400 hover:border-zinc-400 dark:hover:border-zinc-500' }}"
+                            >
+                                {{ __($dayLabel) }}
+                            </button>
+                        @endforeach
+                    </div>
+                    <flux:error name="businessDays" />
                 </div>
             </div>
 

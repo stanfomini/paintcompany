@@ -63,7 +63,7 @@ class AppointmentAvailabilityService
         }
 
         $businessDays = $settings->business_days ?? [1, 2, 3, 4, 5];
-        if (! in_array($date->dayOfWeek, $businessDays)) {
+        if (! in_array($date->dayOfWeekIso, $businessDays)) {
             return [];
         }
 
@@ -167,7 +167,7 @@ class AppointmentAvailabilityService
         $settings = CompanySetting::getInstance();
 
         $businessDays = $settings->business_days ?? [1, 2, 3, 4, 5];
-        if (! in_array($date->dayOfWeek, $businessDays)) {
+        if (! in_array($date->dayOfWeekIso, $businessDays)) {
             return false;
         }
 
