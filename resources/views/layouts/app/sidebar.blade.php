@@ -15,7 +15,7 @@
             </div>
 
             <flux:sidebar.nav>
-                <flux:sidebar.group :heading="__('Platform')" class="grid">
+                <flux:sidebar.group :heading="__('Platform')" expandable :expanded="true" class="grid">
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
@@ -89,7 +89,7 @@
                 </flux:sidebar.group>
 
                 @canany(['sales_territories.view', 'door_knocks.record', 'territory_dispatch.claim'])
-                    <flux:sidebar.group :heading="__('Sales')" class="grid">
+                    <flux:sidebar.group :heading="__('Sales')" expandable :expanded="false" class="grid">
                         @can('territory_dispatch.claim')
                             <flux:sidebar.item icon="signal" :href="route('territory-queue')" :current="request()->routeIs('territory-queue')" wire:navigate>
                                 {{ __('Territory Queue') }}
@@ -123,7 +123,7 @@
                     </flux:sidebar.group>
                 @endcanany
 
-                <flux:sidebar.group :heading="__('Team')" class="grid">
+                <flux:sidebar.group :heading="__('Team')" expandable :expanded="false" class="grid">
                     @can('employees.view')
                         <flux:sidebar.item icon="users" :href="route('employees.index')" :current="request()->routeIs('employees.*')" wire:navigate>
                             {{ __('Employees') }}
@@ -175,7 +175,7 @@
                 </flux:sidebar.group>
 
                 @if(auth()->user()?->employeeProfile)
-                    <flux:sidebar.group :heading="__('My Work')" class="grid">
+                    <flux:sidebar.group :heading="__('My Work')" expandable :expanded="false" class="grid">
                         <flux:sidebar.item icon="user" :href="route('my.profile')" :current="request()->routeIs('my.profile')" wire:navigate>
                             {{ __('My Profile') }}
                         </flux:sidebar.item>
@@ -209,7 +209,7 @@
                 @endif
 
                 @canany(['ar.view', 'invoices.view'])
-                    <flux:sidebar.group :heading="__('Accounting')" class="grid">
+                    <flux:sidebar.group :heading="__('Accounting')" expandable :expanded="false" class="grid">
                         @can('ar.view')
                             <flux:sidebar.item icon="banknotes" :href="route('ar.index')" :current="request()->routeIs('ar.*')" wire:navigate>
                                 {{ __('AR Portal') }}
@@ -234,7 +234,7 @@
                 @endcanany
 
                 @canany(['settings.company', 'team.manage_roles'])
-                    <flux:sidebar.group :heading="__('Settings')" class="grid">
+                    <flux:sidebar.group :heading="__('Settings')" expandable :expanded="false" class="grid">
                         @can('settings.company')
                             <flux:sidebar.item icon="cog-6-tooth" :href="route('company.edit')" :current="request()->routeIs('company.edit')" wire:navigate>
                                 {{ __('Company') }}
@@ -370,6 +370,63 @@
                     });
                 });
             });
+        </script>
+
+        <script>
+            (function() {
+                const STORAGE_KEY = 'sidebar-collapsed';
+
+                function applySidebarState() {
+                    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                    if (Object.keys(saved).length === 0) return;
+
+                    const disclosures = document.querySelectorAll('ui-disclosure[data-flux-sidebar-group]');
+
+                    disclosures.forEach(function(d) {
+                        const btn = d.querySelector(':scope > button');
+                        const heading = btn?.textContent?.trim();
+                        if (!heading || !(heading in saved)) return;
+
+                        if (saved[heading]) {
+                            d.removeAttribute('open');
+                            const content = d.querySelector(':scope > div[data-open]');
+                            if (content) content.removeAttribute('data-open');
+                        } else {
+                            d.setAttribute('open', '');
+                            const content = d.querySelector(':scope > div:not(:first-child)');
+                            if (content) content.setAttribute('data-open', '');
+                        }
+                    });
+
+                    bindToggleListeners();
+                }
+
+                function bindToggleListeners() {
+                    document.querySelectorAll('ui-disclosure[data-flux-sidebar-group]').forEach(function(d) {
+                        const btn = d.querySelector(':scope > button');
+                        if (!btn || btn._sidebarBound) return;
+                        btn._sidebarBound = true;
+
+                        btn.addEventListener('click', function() {
+                            const heading = btn.textContent?.trim();
+                            if (!heading) return;
+                            setTimeout(function() {
+                                const current = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+                                current[heading] = !d.hasAttribute('open');
+                                localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
+                            }, 50);
+                        });
+                    });
+                }
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', function() { applySidebarState(); });
+                } else {
+                    applySidebarState();
+                }
+
+                document.addEventListener('livewire:navigated', applySidebarState);
+            })();
         </script>
 
         @livewire('shared.toast-container')
