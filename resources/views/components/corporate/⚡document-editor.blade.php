@@ -198,7 +198,7 @@ new class extends Component
         <div class="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
             <iframe
                 src="{{ route('corporate.document.view', $this->document) }}#toolbar=1&navpanes=1&view=FitH"
-                class="h-[85vh] w-full"
+                class="h-[calc(100vh-12rem)] min-h-[600px] w-full"
                 title="{{ $this->document->title }}"
                 type="application/pdf"
             ></iframe>
