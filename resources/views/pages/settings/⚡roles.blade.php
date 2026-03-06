@@ -14,7 +14,8 @@ new class extends Component
 {
     public ?int $editingUserId = null;
 
-    public string $selectedRole = '';
+    /** @var array<string> */
+    public array $selectedRoles = [];
 
     // Custom role creation
     public bool $showCreateRole = false;
@@ -110,6 +111,28 @@ new class extends Component
         return Permission::where('guard_name', 'web')->count();
     }
 
+    /**
+     * Roles that only the owner can assign.
+     *
+     * @return array<string>
+     */
+    public function restrictedRoles(): array
+    {
+        return ['owner', 'admin'];
+    }
+
+    /**
+     * Whether the current user can assign a given role.
+     */
+    public function canAssignRole(string $roleName): bool
+    {
+        if (in_array($roleName, $this->restrictedRoles())) {
+            return Auth::user()?->hasRole('owner') === true;
+        }
+
+        return true;
+    }
+
     // --- Team Members ---
 
     public function startEditing(int $userId): void
@@ -126,13 +149,13 @@ new class extends Component
         }
 
         $this->editingUserId = $userId;
-        $this->selectedRole = $user->roles->first()?->name ?? '';
+        $this->selectedRoles = $user->roles->pluck('name')->toArray();
     }
 
     public function cancelEditing(): void
     {
         $this->editingUserId = null;
-        $this->selectedRole = '';
+        $this->selectedRoles = [];
     }
 
     public function saveRole(): void
@@ -146,36 +169,48 @@ new class extends Component
             return;
         }
 
-        $role = Role::where('name', $this->selectedRole)->where('guard_name', 'web')->first();
-        if (! $role && $this->selectedRole !== '') {
-            session()->flash('error', __('Invalid role selected.'));
+        // Validate all selected roles exist
+        $validRoles = Role::where('guard_name', 'web')
+            ->whereIn('name', $this->selectedRoles)
+            ->pluck('name')
+            ->toArray();
+
+        if (count($validRoles) !== count($this->selectedRoles) && count($this->selectedRoles) > 0) {
+            session()->flash('error', __('One or more invalid roles selected.'));
 
             return;
         }
 
-        if ($this->selectedRole) {
-            $user->syncRoles([$this->selectedRole]);
+        // Only owner can assign owner/admin roles
+        $restricted = $this->restrictedRoles();
+        $isOwner = Auth::user()?->hasRole('owner');
+        foreach ($validRoles as $roleName) {
+            if (in_array($roleName, $restricted) && ! $isOwner) {
+                session()->flash('error', __('Only the owner can assign the :role role.', ['role' => $roleName]));
 
-            // Auto-create EmployeeProfile if missing
-            if (! $user->employeeProfile) {
-                EmployeeProfile::create([
-                    'user_id' => $user->id,
-                    'employee_number' => EmployeeProfile::generateEmployeeNumber(),
-                    'hire_date' => now()->format('Y-m-d'),
-                    'employment_status' => 'active',
-                    'pay_rate' => 0,
-                    'pay_type' => 'hourly',
-                ]);
+                return;
             }
-        } else {
-            $user->syncRoles([]);
+        }
+
+        $user->syncRoles($validRoles);
+
+        // Auto-create EmployeeProfile if missing and roles assigned
+        if (count($validRoles) > 0 && ! $user->employeeProfile) {
+            EmployeeProfile::create([
+                'user_id' => $user->id,
+                'employee_number' => EmployeeProfile::generateEmployeeNumber(),
+                'hire_date' => now()->format('Y-m-d'),
+                'employment_status' => 'active',
+                'pay_rate' => 0,
+                'pay_type' => 'hourly',
+            ]);
         }
 
         $this->editingUserId = null;
-        $this->selectedRole = '';
+        $this->selectedRoles = [];
         unset($this->internalUsers);
 
-        session()->flash('success', __('Role updated for :name.', ['name' => $user->name]));
+        session()->flash('success', __('Roles updated for :name.', ['name' => $user->name]));
     }
 
     public function removeRole(int $userId): void
@@ -402,20 +437,27 @@ new class extends Component
 
                         <div class="flex items-center gap-3">
                             @if ($this->editingUserId === $user->id)
-                                <flux:select wire:model="selectedRole" class="w-40">
-                                    <option value="">{{ __('No Role') }}</option>
+                                <div class="flex flex-wrap gap-2">
                                     @foreach ($this->roles as $role)
-                                        <option value="{{ $role->name }}">
-                                            {{ ucfirst(str_replace('_', ' ', $role->name)) }}
-                                        </option>
+                                        @php $canAssign = $this->canAssignRole($role->name); @endphp
+                                        <label class="inline-flex items-center gap-1.5 {{ $canAssign ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed' }}">
+                                            <flux:checkbox
+                                                wire:model="selectedRoles"
+                                                value="{{ $role->name }}"
+                                                :disabled="!$canAssign"
+                                            />
+                                            <flux:text class="text-sm">{{ ucfirst(str_replace('_', ' ', $role->name)) }}</flux:text>
+                                        </label>
                                     @endforeach
-                                </flux:select>
-                                <flux:button size="sm" variant="primary" wire:click="saveRole">
-                                    {{ __('Save') }}
-                                </flux:button>
-                                <flux:button size="sm" variant="ghost" wire:click="cancelEditing">
-                                    {{ __('Cancel') }}
-                                </flux:button>
+                                </div>
+                                <div class="flex gap-2">
+                                    <flux:button size="sm" variant="primary" wire:click="saveRole">
+                                        {{ __('Save') }}
+                                    </flux:button>
+                                    <flux:button size="sm" variant="ghost" wire:click="cancelEditing">
+                                        {{ __('Cancel') }}
+                                    </flux:button>
+                                </div>
                             @else
                                 @if ($user->roles->isNotEmpty())
                                     @foreach ($user->roles as $role)

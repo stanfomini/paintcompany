@@ -131,14 +131,31 @@ it('can assign a role to a user', function () {
     Livewire::actingAs($owner)
         ->test('pages::settings.roles')
         ->call('startEditing', $teamMember->id)
-        ->set('selectedRole', 'estimator')
+        ->set('selectedRoles', ['estimator'])
         ->call('saveRole');
 
     $teamMember->refresh();
     expect($teamMember->hasRole('estimator'))->toBeTrue();
 });
 
-it('can change a user role', function () {
+it('can assign multiple roles to a user', function () {
+    $owner = User::factory()->internal()->withFullAccess()->create();
+    $owner->assignRole('owner');
+
+    $teamMember = User::factory()->internal()->withFullAccess()->create();
+
+    Livewire::actingAs($owner)
+        ->test('pages::settings.roles')
+        ->call('startEditing', $teamMember->id)
+        ->set('selectedRoles', ['estimator', 'manager'])
+        ->call('saveRole');
+
+    $teamMember->refresh();
+    expect($teamMember->hasRole('estimator'))->toBeTrue();
+    expect($teamMember->hasRole('manager'))->toBeTrue();
+});
+
+it('can change user roles', function () {
     $owner = User::factory()->internal()->withFullAccess()->create();
     $owner->assignRole('owner');
 
@@ -148,7 +165,7 @@ it('can change a user role', function () {
     Livewire::actingAs($owner)
         ->test('pages::settings.roles')
         ->call('startEditing', $teamMember->id)
-        ->set('selectedRole', 'admin')
+        ->set('selectedRoles', ['admin'])
         ->call('saveRole');
 
     $teamMember->refresh();
@@ -227,4 +244,72 @@ it('shows link to invitations page', function () {
     Livewire::actingAs($owner)
         ->test('pages::settings.roles')
         ->assertSee('Manage Invitations');
+});
+
+it('owner can assign owner and admin roles', function () {
+    $owner = User::factory()->internal()->withFullAccess()->create();
+    $owner->assignRole('owner');
+
+    $teamMember = User::factory()->internal()->withFullAccess()->create();
+
+    Livewire::actingAs($owner)
+        ->test('pages::settings.roles')
+        ->call('startEditing', $teamMember->id)
+        ->set('selectedRoles', ['owner', 'admin'])
+        ->call('saveRole');
+
+    $teamMember->refresh();
+    expect($teamMember->hasRole('owner'))->toBeTrue();
+    expect($teamMember->hasRole('admin'))->toBeTrue();
+});
+
+it('non-owner cannot assign owner or admin roles', function () {
+    $manager = User::factory()->internal()->create();
+    $manager->givePermissionTo('team.manage_roles');
+    $manager->assignRole('manager');
+
+    $teamMember = User::factory()->internal()->create();
+
+    Livewire::actingAs($manager)
+        ->test('pages::settings.roles')
+        ->call('startEditing', $teamMember->id)
+        ->set('selectedRoles', ['admin'])
+        ->call('saveRole');
+
+    $teamMember->refresh();
+    expect($teamMember->hasRole('admin'))->toBeFalse();
+});
+
+it('non-owner can assign non-restricted roles', function () {
+    $manager = User::factory()->internal()->create();
+    $manager->givePermissionTo('team.manage_roles');
+    $manager->assignRole('manager');
+
+    $teamMember = User::factory()->internal()->create();
+
+    Livewire::actingAs($manager)
+        ->test('pages::settings.roles')
+        ->call('startEditing', $teamMember->id)
+        ->set('selectedRoles', ['estimator'])
+        ->call('saveRole');
+
+    $teamMember->refresh();
+    expect($teamMember->hasRole('estimator'))->toBeTrue();
+});
+
+it('loads existing roles when starting to edit', function () {
+    $owner = User::factory()->internal()->withFullAccess()->create();
+    $owner->assignRole('owner');
+
+    $teamMember = User::factory()->internal()->create();
+    $teamMember->assignRole('estimator');
+    $teamMember->assignRole('manager');
+
+    $component = Livewire::actingAs($owner)
+        ->test('pages::settings.roles')
+        ->call('startEditing', $teamMember->id);
+
+    $selectedRoles = $component->get('selectedRoles');
+    sort($selectedRoles);
+    expect($selectedRoles)->toBe(['estimator', 'manager']);
 });
