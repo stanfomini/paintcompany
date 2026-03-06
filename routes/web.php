@@ -5,6 +5,7 @@ use App\Http\Controllers\ActivityCalendarFeedController;
 use App\Http\Controllers\Api\VideoDataController;
 use App\Http\Controllers\CalendarFeedController;
 use App\Http\Controllers\ContractPdfController;
+use App\Http\Controllers\CorporateDocumentPdfController;
 use App\Http\Controllers\CrewDocumentPdfController;
 use App\Http\Controllers\EstimateBreakdownExportController;
 use App\Http\Controllers\EstimatePdfController;
@@ -447,6 +448,23 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/business-plan', 'business-plan.index')
         ->name('business-plan.index')
         ->middleware('permission:business_plan.view');
+
+    // Corporate document PDF routes
+    Route::middleware(['permission:business_plan.view'])->prefix('corporate')->group(function () {
+        Route::get('/documents/{corporateDocument}/pdf', [CorporateDocumentPdfController::class, 'download'])
+            ->name('corporate.document.pdf');
+        Route::get('/documents/{corporateDocument}/view', [CorporateDocumentPdfController::class, 'view'])
+            ->name('corporate.document.view');
+        Route::get('/minutes/{meetingMinutes}/pdf', [CorporateDocumentPdfController::class, 'downloadMinutes'])
+            ->name('corporate.minutes.pdf');
+        Route::get('/minutes/{meetingMinutes}/audio', [CorporateDocumentPdfController::class, 'streamAudio'])
+            ->name('corporate.minutes.audio');
+        Route::get('/packet/download', [CorporateDocumentPdfController::class, 'downloadPacket'])
+            ->name('corporate.packet.download');
+        Route::post('/packet/send', [CorporateDocumentPdfController::class, 'sendPacket'])
+            ->middleware('permission:business_plan.manage')
+            ->name('corporate.packet.send');
+    });
 
     // Media Hub routes
     Route::middleware(['permission:media.view'])->group(function () {

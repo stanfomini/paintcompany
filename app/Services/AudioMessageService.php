@@ -41,13 +41,13 @@ class AudioMessageService
      *
      * Transcribes locally first (for speed), then stores on the default disk (which may be S3).
      *
-     * @return array{audio_url: string, audio_path: string, audio_duration: float|null, transcription: string|null, transcription_status: string}
+     * @return array{audio_url: string, audio_path: string, audio_duration: float|null, transcription: string|null, transcription_status: string, segments: array|null}
      */
-    public function processAudioMessage(UploadedFile $audio): array
+    public function processAudioMessage(UploadedFile $audio, string $storagePrefix = 'chat-audio'): array
     {
         $extension = $this->getExtension($audio);
         $filename = Str::uuid().'.'.$extension;
-        $storagePath = 'chat-audio/'.$filename;
+        $storagePath = $storagePrefix.'/'.$filename;
 
         // Write to a local temp file with correct extension (Python needs it for format detection)
         $tempFile = tempnam(sys_get_temp_dir(), 'audio_').'.'.$extension;
@@ -68,6 +68,7 @@ class AudioMessageService
             'audio_path' => $storagePath,
             'audio_duration' => $transcription['duration'] ?? null,
             'transcription' => $transcription['text'] ?? null,
+            'segments' => $transcription['segments'] ?? null,
             'transcription_status' => ($transcription['success'] ?? false) ? 'completed' : 'failed',
         ];
     }

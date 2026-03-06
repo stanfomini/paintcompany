@@ -406,6 +406,107 @@ class PythonBridgeService
     }
 
     /**
+     * Parse a PDF document into structured sections.
+     *
+     * @param  string  $filePath  Absolute path to the PDF file
+     * @return array Parsed sections or error response
+     */
+    public function parsePdf(string $filePath): array
+    {
+        $this->ensureEnabled();
+
+        if (! file_exists($filePath)) {
+            return [
+                'success' => false,
+                'error' => 'PDF file not found',
+            ];
+        }
+
+        try {
+            $request = Http::baseUrl($this->baseUrl)
+                ->timeout(120)
+                ->retry($this->retryAttempts, $this->retryDelay);
+
+            $apiKey = config('python.api_key');
+            if ($apiKey) {
+                $request->withHeaders(['X-API-Key' => $apiKey]);
+            }
+
+            $response = $request
+                ->attach('file', file_get_contents($filePath), basename($filePath))
+                ->post('/documents/parse');
+
+            return $this->handleResponse($response);
+        } catch (RequestException $e) {
+            return $this->handleException($e, 'POST', '/documents/parse');
+        } catch (\Exception $e) {
+            Log::error('PDF parsing failed', [
+                'file' => $filePath,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'Failed to parse PDF',
+                'message' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Apply text edits to a PDF, preserving original formatting.
+     *
+     * @return string|null Modified PDF bytes, or null on failure
+     */
+    public function applyDocumentEdits(
+        string $filePath,
+        array $originalSections,
+        array $editedSections
+    ): ?string {
+        $this->ensureEnabled();
+
+        if (! file_exists($filePath)) {
+            Log::error('PDF file not found for editing', ['file' => $filePath]);
+
+            return null;
+        }
+
+        try {
+            $request = Http::baseUrl($this->baseUrl)
+                ->timeout(60)
+                ->retry(2, 1000);
+
+            $apiKey = config('python.api_key');
+            if ($apiKey) {
+                $request->withHeaders(['X-API-Key' => $apiKey]);
+            }
+
+            $response = $request
+                ->attach('file', file_get_contents($filePath), basename($filePath))
+                ->post('/documents/apply-edits', [
+                    'original_sections' => json_encode($originalSections),
+                    'edited_sections' => json_encode($editedSections),
+                ]);
+
+            if ($response->successful()) {
+                return $response->body();
+            }
+
+            Log::warning('Python PDF edit returned non-success', [
+                'status' => $response->status(),
+            ]);
+
+            return null;
+        } catch (\Exception $e) {
+            Log::warning('PDF edit via Python service failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
      * Make a GET request to the Python service.
      */
     protected function get(string $endpoint): array

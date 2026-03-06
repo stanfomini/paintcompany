@@ -55,7 +55,7 @@ describe('EmailReceivedNotification', function () {
         expect($channels)->toContain('broadcast');
     });
 
-    it('returns empty channels when sender is external (no user account)', function () {
+    it('sends notifications even when sender is external (no user account)', function () {
         $user = User::factory()->internal()->create();
 
         $thread = EmailThread::factory()->create();
@@ -67,7 +67,8 @@ describe('EmailReceivedNotification', function () {
         $notification = new EmailReceivedNotification($message);
         $channels = $notification->via($user);
 
-        expect($channels)->toBeEmpty();
+        expect($channels)->toContain('database');
+        expect($channels)->toContain('broadcast');
     });
 
     it('excludes WebPush when user has push disabled for email_messages', function () {

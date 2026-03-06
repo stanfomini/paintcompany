@@ -80,6 +80,7 @@ new class extends Component
             'chart-of-accounts' => ['label' => __('Chart of Accounts'), 'icon' => 'list-bullet'],
             'journal-entries' => ['label' => __('Journal'), 'icon' => 'book-open'],
             'financial-reports' => ['label' => __('Reports'), 'icon' => 'chart-bar-square'],
+            'corporate' => ['label' => __('Corporate'), 'icon' => 'building-library'],
         ];
     }
 
@@ -319,6 +320,8 @@ new class extends Component
             <livewire:dynamic-component :component="'business-plan.journal-entries'" :key="'journal-tab'" />
         @elseif ($activeTab === 'financial-reports')
             <livewire:dynamic-component :component="'business-plan.financial-reports'" :key="'reports-tab'" />
+        @elseif ($activeTab === 'corporate')
+            <livewire:dynamic-component :component="'business-plan.corporate'" :key="'corporate-tab'" />
         @endif
     </div>
 </div>

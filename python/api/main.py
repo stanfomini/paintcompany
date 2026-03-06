@@ -13,7 +13,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 from api.config import get_settings
-from api.routers import health, images, media, scraping, streaming
+from api.routers import documents, health, images, media, scraping, streaming
 
 settings = get_settings()
 
@@ -83,6 +83,7 @@ app.include_router(images.router, prefix="/images", tags=["Images"])
 app.include_router(scraping.router, prefix="/scrape", tags=["Scraping"])
 app.include_router(media.router, prefix="/media", tags=["Media"])
 app.include_router(streaming.router, prefix="/streaming", tags=["Streaming"])
+app.include_router(documents.router, prefix="/documents", tags=["Documents"])
 
 
 @app.get("/")
