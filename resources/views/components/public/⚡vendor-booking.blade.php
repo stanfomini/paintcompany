@@ -19,6 +19,8 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
     public ?string $slug = null;
 
     // Calendar state
+    public string $view = 'date'; // 'date' or 'time'
+
     public ?string $selectedDate = null;
 
     public ?array $selectedSlot = null;
@@ -143,6 +145,13 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
 
         $service = app(AppointmentAvailabilityService::class);
         $this->availableSlots = $service->getAvailableSlotsForDate(Carbon::parse($date));
+
+        $this->view = 'time';
+    }
+
+    public function showDatePicker(): void
+    {
+        $this->view = 'date';
     }
 
     public function selectSlot(int $index): void
@@ -172,6 +181,7 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
         if ($this->step === 2) {
             $this->step = 1;
             $this->selectedSlot = null;
+            $this->view = 'time';
         }
     }
 
@@ -241,6 +251,7 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
             $this->errorMessage = __('That time slot is no longer available. Please select a different time.');
             $this->step = 1;
             $this->selectedSlot = null;
+            $this->view = 'date';
             $this->availableDates = app(AppointmentAvailabilityService::class)->getAvailableDates();
             $this->loadDateScheduleInfo();
         }
@@ -325,134 +336,166 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                     <flux:text class="mt-1">{{ __('Select an available date, then pick a time slot.') }}</flux:text>
                 </div>
 
-                {{-- Available dates grouped by week --}}
-                @if (count($availableDates) > 0)
-                    <div class="space-y-4">
-                        @php
-                            $grouped = collect($availableDates)->groupBy(fn ($d) => Carbon::parse($d['date'])->startOfWeek()->format('M j'));
-                        @endphp
-
-                        @foreach ($grouped as $weekLabel => $dates)
-                            <div>
-                                <p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-2">
-                                    {{ __('Week of') }} {{ $weekLabel }}
-                                </p>
-                                <div class="grid grid-cols-3 sm:grid-cols-5 gap-2">
-                                    @foreach ($dates as $dateInfo)
-                                        @php
-                                            $dt = Carbon::parse($dateInfo['date']);
-                                            $isSelected = $selectedDate === $dateInfo['date'];
-                                            $schedInfo = $dateScheduleInfo[$dateInfo['date']] ?? [];
-                                            $hasScheduled = collect($schedInfo)->contains('scheduled', true);
-                                            $scheduledCount = collect($schedInfo)->where('scheduled', true)->count();
-                                            $totalEstimators = count($schedInfo);
-                                        @endphp
-                                        <button
-                                            wire:click="selectDate('{{ $dateInfo['date'] }}')"
-                                            wire:key="date-{{ $dateInfo['date'] }}"
-                                            type="button"
-                                            class="relative flex flex-col items-center p-3 rounded-lg border-2 transition-all text-center
-                                                {{ $isSelected
-                                                    ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30'
-                                                    : 'border-zinc-200 dark:border-zinc-600 hover:border-blue-400 dark:hover:border-blue-500 bg-white dark:bg-zinc-800' }}"
-                                        >
-                                            <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase">{{ $dt->format('D') }}</span>
-                                            <span class="text-lg font-bold {{ $isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-900 dark:text-white' }}">{{ $dt->format('j') }}</span>
-                                            <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ $dt->format('M') }}</span>
-                                            {{-- Schedule indicator --}}
-                                            @if ($hasScheduled)
-                                                <span class="mt-1 inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
-                                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                                    {{ $scheduledCount }}/{{ $totalEstimators }}
-                                                </span>
-                                            @else
-                                                <span class="mt-1 inline-flex items-center gap-0.5 text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
-                                                    <span class="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600"></span>
-                                                    {{ __('Open') }}
-                                                </span>
-                                            @endif
-                                        </button>
-                                    @endforeach
-                                </div>
-                            </div>
-                        @endforeach
-                    </div>
-
-                    {{-- Legend --}}
-                    <div class="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
-                        <div class="flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            {{ __('Estimator scheduled') }}
-                        </div>
-                        <div class="flex items-center gap-1.5">
-                            <span class="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-600"></span>
-                            {{ __('Open - no one scheduled yet') }}
-                        </div>
-                    </div>
-                @else
-                    <div class="text-center py-8">
-                        <flux:icon name="calendar" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                        <flux:text>{{ __('No available dates at this time. Please check back later.') }}</flux:text>
+                {{-- Pill toggle (shown when a date has been selected) --}}
+                @if ($selectedDate)
+                    <div class="flex items-center gap-1 p-1 rounded-full bg-zinc-100 dark:bg-zinc-900 w-fit">
+                        <button
+                            wire:click="showDatePicker"
+                            type="button"
+                            class="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all
+                                {{ $view === 'date'
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200' }}"
+                        >
+                            <flux:icon name="calendar" variant="mini" class="w-4 h-4" />
+                            {{ Carbon::parse($selectedDate)->format('M j') }}
+                        </button>
+                        <button
+                            wire:click="$set('view', 'time')"
+                            type="button"
+                            class="flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-all
+                                {{ $view === 'time'
+                                    ? 'bg-blue-600 text-white shadow-sm'
+                                    : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200' }}"
+                        >
+                            <flux:icon name="clock" variant="mini" class="w-4 h-4" />
+                            {{ count($availableSlots) }} {{ __('slots') }}
+                        </button>
                     </div>
                 @endif
 
-                {{-- Time slots for selected date --}}
-                @if ($selectedDate && count($availableSlots) > 0)
-                    <div class="border-t border-zinc-200 dark:border-zinc-700 pt-6">
-                        <div class="flex items-center justify-between mb-3">
-                            <flux:heading size="md">
-                                {{ __('Available Times for') }} {{ Carbon::parse($selectedDate)->format('l, F j') }}
-                            </flux:heading>
-                            <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                                {{ count($availableSlots) }} {{ __('slots available') }}
-                            </span>
-                        </div>
+                {{-- Date view --}}
+                @if ($view === 'date')
+                    @if (count($availableDates) > 0)
+                        <div class="space-y-4">
+                            @php
+                                $grouped = collect($availableDates)->groupBy(fn ($d) => Carbon::parse($d['date'])->startOfWeek()->format('M j'));
+                            @endphp
 
-                        {{-- Estimator schedule info for selected date --}}
-                        @php $schedInfo = $dateScheduleInfo[$selectedDate] ?? []; @endphp
-                        @if (count($schedInfo) > 0)
-                            <div class="mb-4 p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
-                                <p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase mb-2">{{ __('Estimator Status') }}</p>
-                                <div class="flex flex-wrap gap-2">
-                                    @foreach ($schedInfo as $est)
-                                        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium
-                                            {{ $est['scheduled']
-                                                ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
-                                                : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400' }}">
-                                            <span class="w-1.5 h-1.5 rounded-full {{ $est['scheduled'] ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-500' }}"></span>
-                                            {{ $est['name'] }}
-                                            <span class="text-[10px]">{{ $est['scheduled'] ? __('Scheduled') : __('Not scheduled') }}</span>
-                                        </span>
-                                    @endforeach
+                            @foreach ($grouped as $weekLabel => $dates)
+                                <div>
+                                    <p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide mb-2">
+                                        {{ __('Week of') }} {{ $weekLabel }}
+                                    </p>
+                                    <div class="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                                        @foreach ($dates as $dateInfo)
+                                            @php
+                                                $dt = Carbon::parse($dateInfo['date']);
+                                                $isSelected = $selectedDate === $dateInfo['date'];
+                                                $schedInfo = $dateScheduleInfo[$dateInfo['date']] ?? [];
+                                                $hasScheduled = collect($schedInfo)->contains('scheduled', true);
+                                                $scheduledCount = collect($schedInfo)->where('scheduled', true)->count();
+                                                $totalEstimators = count($schedInfo);
+                                            @endphp
+                                            <button
+                                                wire:click="selectDate('{{ $dateInfo['date'] }}')"
+                                                wire:key="date-{{ $dateInfo['date'] }}"
+                                                type="button"
+                                                class="relative flex flex-col items-center p-3 rounded-lg border-2 transition-all text-center
+                                                    {{ $isSelected
+                                                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-900/30'
+                                                        : 'border-zinc-200 dark:border-zinc-600 hover:border-blue-400 dark:hover:border-blue-500 bg-white dark:bg-zinc-800' }}"
+                                            >
+                                                <span class="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase">{{ $dt->format('D') }}</span>
+                                                <span class="text-lg font-bold {{ $isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-900 dark:text-white' }}">{{ $dt->format('j') }}</span>
+                                                <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ $dt->format('M') }}</span>
+                                                {{-- Schedule indicator --}}
+                                                @if ($hasScheduled)
+                                                    <span class="mt-1 inline-flex items-center gap-0.5 text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                        {{ $scheduledCount }}/{{ $totalEstimators }}
+                                                    </span>
+                                                @else
+                                                    <span class="mt-1 inline-flex items-center gap-0.5 text-[10px] text-zinc-400 dark:text-zinc-500 font-medium">
+                                                        <span class="w-1.5 h-1.5 rounded-full bg-zinc-300 dark:bg-zinc-600"></span>
+                                                        {{ __('Open') }}
+                                                    </span>
+                                                @endif
+                                            </button>
+                                        @endforeach
+                                    </div>
                                 </div>
-                            </div>
-                        @endif
-
-                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            @foreach ($availableSlots as $index => $slot)
-                                <button
-                                    wire:click="selectSlot({{ $index }})"
-                                    wire:key="slot-{{ $index }}"
-                                    type="button"
-                                    class="group py-3 px-4 rounded-lg border border-zinc-200 dark:border-zinc-600 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all text-center"
-                                >
-                                    <span class="text-sm font-semibold text-zinc-900 dark:text-white">
-                                        {{ Carbon::parse($slot['start'])->format('g:i A') }}
-                                    </span>
-                                    <span class="text-xs text-zinc-500 dark:text-zinc-400 block">
-                                        {{ Carbon::parse($slot['end'])->format('g:i A') }}
-                                    </span>
-                                    <span class="text-[10px] text-zinc-400 dark:text-zinc-500 group-hover:text-blue-500 block mt-1">
-                                        {{ $slot['estimator_name'] }}
-                                    </span>
-                                </button>
                             @endforeach
                         </div>
-                    </div>
-                @elseif ($selectedDate && count($availableSlots) === 0)
-                    <div class="border-t border-zinc-200 dark:border-zinc-700 pt-6 text-center py-4">
-                        <flux:icon name="clock" class="w-8 h-8 mx-auto text-zinc-300 dark:text-zinc-600 mb-2" />
-                        <flux:text>{{ __('No available time slots for this date. Please choose another date.') }}</flux:text>
+
+                        {{-- Legend --}}
+                        <div class="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                {{ __('Estimator scheduled') }}
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-zinc-300 dark:bg-zinc-600"></span>
+                                {{ __('Open - no one scheduled yet') }}
+                            </div>
+                        </div>
+                    @else
+                        <div class="text-center py-8">
+                            <flux:icon name="calendar" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                            <flux:text>{{ __('No available dates at this time. Please check back later.') }}</flux:text>
+                        </div>
+                    @endif
+                @endif
+
+                {{-- Time view --}}
+                @if ($view === 'time' && $selectedDate)
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <flux:heading size="md">
+                                {{ Carbon::parse($selectedDate)->format('l, F j') }}
+                            </flux:heading>
+                            <button wire:click="showDatePicker" type="button" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                                {{ __('Change date') }}
+                            </button>
+                        </div>
+
+                        @if (count($availableSlots) > 0)
+                            {{-- Estimator schedule info for selected date --}}
+                            @php $schedInfo = $dateScheduleInfo[$selectedDate] ?? []; @endphp
+                            @if (count($schedInfo) > 0)
+                                <div class="p-3 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
+                                    <p class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase mb-2">{{ __('Estimator Status') }}</p>
+                                    <div class="flex flex-wrap gap-2">
+                                        @foreach ($schedInfo as $est)
+                                            <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium
+                                                {{ $est['scheduled']
+                                                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                                                    : 'bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-400' }}">
+                                                <span class="w-1.5 h-1.5 rounded-full {{ $est['scheduled'] ? 'bg-emerald-500' : 'bg-zinc-400 dark:bg-zinc-500' }}"></span>
+                                                {{ $est['name'] }}
+                                                <span class="text-[10px]">{{ $est['scheduled'] ? __('Scheduled') : __('Not scheduled') }}</span>
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+
+                            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                @foreach ($availableSlots as $index => $slot)
+                                    <button
+                                        wire:click="selectSlot({{ $index }})"
+                                        wire:key="slot-{{ $index }}"
+                                        type="button"
+                                        class="group py-3 px-4 rounded-lg border border-zinc-200 dark:border-zinc-600 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all text-center"
+                                    >
+                                        <span class="text-sm font-semibold text-zinc-900 dark:text-white">
+                                            {{ Carbon::parse($slot['start'])->format('g:i A') }}
+                                        </span>
+                                        <span class="text-xs text-zinc-500 dark:text-zinc-400 block">
+                                            {{ Carbon::parse($slot['end'])->format('g:i A') }}
+                                        </span>
+                                        <span class="text-[10px] text-zinc-400 dark:text-zinc-500 group-hover:text-blue-500 block mt-1">
+                                            {{ $slot['estimator_name'] }}
+                                        </span>
+                                    </button>
+                                @endforeach
+                            </div>
+                        @else
+                            <div class="text-center py-4">
+                                <flux:icon name="clock" class="w-8 h-8 mx-auto text-zinc-300 dark:text-zinc-600 mb-2" />
+                                <flux:text>{{ __('No available time slots for this date. Please choose another date.') }}</flux:text>
+                            </div>
+                        @endif
                     </div>
                 @endif
 
