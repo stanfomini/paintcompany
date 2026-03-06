@@ -1542,3 +1542,123 @@ describe('Employee create-modal component', function () {
             ->assertHasErrors(['pay_rate']);
     });
 });
+
+describe('Employee create-modal existing user mode', function () {
+    it('can switch to existing user mode', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->assertSet('mode', 'new')
+            ->set('mode', 'existing')
+            ->assertSet('mode', 'existing');
+    });
+
+    it('shows only internal users without employee profiles in dropdown', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+
+        // Internal user without profile - should appear
+        $available = User::factory()->internal()->create(['name' => 'Available User']);
+
+        // Internal user WITH profile - should NOT appear
+        $withProfile = User::factory()->internal()->create(['name' => 'Has Profile']);
+        EmployeeProfile::factory()->create(['user_id' => $withProfile->id]);
+
+        // Non-internal user - should NOT appear
+        $customer = User::factory()->customer()->create(['name' => 'Customer User']);
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->set('mode', 'existing')
+            ->assertSee('Available User')
+            ->assertDontSee('Has Profile')
+            ->assertDontSee('Customer User');
+    });
+
+    it('creates employee profile for existing user', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $existingUser = User::factory()->internal()->create(['name' => 'Existing Person']);
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->set('mode', 'existing')
+            ->set('existing_user_id', $existingUser->id)
+            ->set('job_title', 'Owner')
+            ->set('pay_type', 'salary')
+            ->set('pay_rate', '80000')
+            ->call('save')
+            ->assertSet('show', false)
+            ->assertDispatched('employee-created');
+
+        $profile = $existingUser->fresh()->employeeProfile;
+        expect($profile)->not->toBeNull();
+        expect($profile->job_title)->toBe('Owner');
+        expect($profile->pay_type)->toBe('salary');
+        expect($profile->employee_number)->toMatch('/^EMP-\d{3}$/');
+    });
+
+    it('validates existing_user_id required in existing mode', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->set('mode', 'existing')
+            ->set('existing_user_id', '')
+            ->set('job_title', 'Painter')
+            ->set('pay_rate', '20')
+            ->call('save')
+            ->assertHasErrors(['existing_user_id']);
+    });
+
+    it('does not require name email password in existing mode', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $existingUser = User::factory()->internal()->create();
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->set('mode', 'existing')
+            ->set('existing_user_id', $existingUser->id)
+            ->set('name', '')
+            ->set('email', '')
+            ->set('password', '')
+            ->set('job_title', 'Painter')
+            ->set('pay_rate', '20')
+            ->call('save')
+            ->assertHasNoErrors(['name', 'email', 'password'])
+            ->assertSet('show', false);
+    });
+
+    it('prevents duplicate employee profile for same user', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $existingUser = User::factory()->internal()->create();
+        EmployeeProfile::factory()->create(['user_id' => $existingUser->id]);
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->set('mode', 'existing')
+            ->set('existing_user_id', $existingUser->id)
+            ->set('job_title', 'Painter')
+            ->set('pay_rate', '20')
+            ->call('save')
+            ->assertHasErrors(['existing_user_id']);
+    });
+
+    it('resets mode when modal reopened', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+
+        Livewire::actingAs($user)
+            ->test('employees.create-modal')
+            ->dispatch('open-create-employee-modal')
+            ->set('mode', 'existing')
+            ->call('close')
+            ->dispatch('open-create-employee-modal')
+            ->assertSet('mode', 'new')
+            ->assertSet('existing_user_id', '');
+    });
+});

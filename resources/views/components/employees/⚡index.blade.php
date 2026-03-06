@@ -229,4 +229,8 @@ class extends Component {
             </div>
         @endif
     </div>
+
+    @can('employees.create')
+        @livewire('employees.create-modal')
+    @endcan
 </div>
