@@ -26,6 +26,8 @@ class CorporateDocument extends Model
         'parse_error',
         'file_size',
         'page_count',
+        'source',
+        'template_data',
     ];
 
     protected function casts(): array
@@ -33,6 +35,7 @@ class CorporateDocument extends Model
         return [
             'parsed_content' => 'array',
             'edited_content' => 'array',
+            'template_data' => 'array',
         ];
     }
 
@@ -41,9 +44,16 @@ class CorporateDocument extends Model
         'articles_of_incorporation' => 'Articles of Incorporation',
         'bylaws' => 'Bylaws',
         'resolution' => 'Resolution',
+        'board_resolution' => 'Board Resolution',
+        'stock_ledger' => 'Stock Ledger',
         'amendment' => 'Amendment',
         'annual_report' => 'Annual Report',
         'other' => 'Other',
+    ];
+
+    public const TEMPLATE_TYPES = [
+        'board_resolution' => 'Board Resolution to Issue Shares',
+        'stock_ledger' => 'Stock Ledger',
     ];
 
     public const STATUSES = [
@@ -70,6 +80,11 @@ class CorporateDocument extends Model
     public function children(): HasMany
     {
         return $this->hasMany(self::class, 'parent_document_id');
+    }
+
+    public function isTemplateGenerated(): bool
+    {
+        return $this->source === 'template';
     }
 
     /**

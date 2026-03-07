@@ -15,6 +15,8 @@ new class extends Component
     public int $corporationId;
     public string $filterType = '';
     public bool $showUploadForm = false;
+    public bool $showTemplateForm = false;
+    public string $templateType = '';
     public bool $showEditor = false;
     public ?int $editingDocumentId = null;
     public array $expandedVersions = [];
@@ -23,6 +25,25 @@ new class extends Component
     public string $uploadTitle = '';
     public string $uploadType = 'operating_agreement';
     public $uploadFile = null;
+
+    // Template form - Board Resolution
+    public string $tplDirectorName = '';
+    public string $tplResolutionDate = '';
+    public string $tplShareholderName = '';
+    public string $tplShareholderEntityType = '';
+    public string $tplShareholderEin = '';
+    public string $tplShareClass = 'Common';
+    public int $tplShareCount = 0;
+    public string $tplConsideration = '';
+
+    // Template form - Stock Ledger
+    public string $tplDateIssued = '';
+    public string $tplLedgerShareholderName = '';
+    public string $tplShareholderAddress = '';
+    public string $tplLedgerShareClass = 'Common';
+    public int $tplSharesIssued = 0;
+    public string $tplLedgerConsideration = '';
+    public int $tplAuthorizedShares = 0;
 
     public function boot(): void
     {
@@ -103,6 +124,123 @@ new class extends Component
         unset($this->documents);
     }
 
+    public function showTemplate(string $type): void
+    {
+        $this->showUploadForm = false;
+        $this->showTemplateForm = true;
+        $this->templateType = $type;
+        $this->resetTemplateForm();
+    }
+
+    public function resetTemplateForm(): void
+    {
+        $this->tplDirectorName = '';
+        $this->tplResolutionDate = '';
+        $this->tplShareholderName = '';
+        $this->tplShareholderEntityType = '';
+        $this->tplShareholderEin = '';
+        $this->tplShareClass = 'Common';
+        $this->tplShareCount = 0;
+        $this->tplConsideration = '';
+        $this->tplDateIssued = '';
+        $this->tplLedgerShareholderName = '';
+        $this->tplShareholderAddress = '';
+        $this->tplLedgerShareClass = 'Common';
+        $this->tplSharesIssued = 0;
+        $this->tplLedgerConsideration = '';
+        $this->tplAuthorizedShares = 0;
+        $this->resetErrorBag();
+    }
+
+    public function cancelTemplate(): void
+    {
+        $this->showTemplateForm = false;
+        $this->templateType = '';
+        $this->resetTemplateForm();
+    }
+
+    public function generateFromTemplate(): void
+    {
+        if (! $this->canManage) {
+            abort(403);
+        }
+
+        if ($this->templateType === 'board_resolution') {
+            $this->validate([
+                'tplDirectorName' => ['required', 'string', 'max:255'],
+                'tplResolutionDate' => ['required', 'string', 'max:255'],
+                'tplShareholderName' => ['required', 'string', 'max:255'],
+                'tplShareClass' => ['required', 'string', 'max:50'],
+                'tplShareCount' => ['required', 'integer', 'min:1'],
+                'tplConsideration' => ['required', 'string', 'max:500'],
+            ]);
+
+            $templateData = [
+                'corporation_name' => $this->corporation->name,
+                'state' => $this->corporation->state_of_formation ?? 'Colorado',
+                'director_name' => $this->tplDirectorName,
+                'resolution_date' => $this->tplResolutionDate,
+                'shareholder_name' => $this->tplShareholderName,
+                'shareholder_entity_type' => $this->tplShareholderEntityType,
+                'shareholder_ein' => $this->tplShareholderEin,
+                'share_class' => $this->tplShareClass,
+                'share_count' => $this->tplShareCount,
+                'consideration' => $this->tplConsideration,
+                'certificated' => false,
+            ];
+
+            $title = 'Board Resolution - Issue Shares';
+        } elseif ($this->templateType === 'stock_ledger') {
+            $this->validate([
+                'tplDateIssued' => ['required', 'string', 'max:255'],
+                'tplLedgerShareholderName' => ['required', 'string', 'max:255'],
+                'tplLedgerShareClass' => ['required', 'string', 'max:50'],
+                'tplSharesIssued' => ['required', 'integer', 'min:1'],
+                'tplLedgerConsideration' => ['required', 'string', 'max:500'],
+                'tplAuthorizedShares' => ['required', 'integer', 'min:1'],
+            ]);
+
+            $templateData = [
+                'corporation_name' => $this->corporation->name,
+                'authorized_shares' => [
+                    ['class' => $this->tplLedgerShareClass, 'authorized' => $this->tplAuthorizedShares],
+                ],
+                'entries' => [[
+                    'date' => $this->tplDateIssued,
+                    'shareholder' => $this->tplLedgerShareholderName,
+                    'address' => $this->tplShareholderAddress,
+                    'class' => $this->tplLedgerShareClass,
+                    'shares' => $this->tplSharesIssued,
+                    'certificate_number' => 'Uncertificated',
+                    'consideration' => $this->tplLedgerConsideration,
+                ]],
+            ];
+
+            $title = 'Stock Ledger';
+        } else {
+            return;
+        }
+
+        try {
+            app(CorporateDocumentService::class)->createFromTemplate(
+                $this->corporation,
+                $this->templateType,
+                $title,
+                $templateData,
+                Auth::user(),
+            );
+        } catch (\Throwable $e) {
+            $this->addError('templateType', __('Generation failed: :message', ['message' => $e->getMessage()]));
+
+            return;
+        }
+
+        $this->showTemplateForm = false;
+        $this->templateType = '';
+        $this->resetTemplateForm();
+        unset($this->documents);
+    }
+
     public function openEditor(int $documentId): void
     {
         $this->editingDocumentId = $documentId;
@@ -178,9 +316,28 @@ new class extends Component
                     @endforeach
                 </flux:select>
                 @if ($this->canManage)
-                    <flux:button variant="primary" size="sm" wire:click="toggleUploadForm" icon="{{ $showUploadForm ? 'x-mark' : 'arrow-up-tray' }}">
-                        {{ $showUploadForm ? __('Cancel') : __('Upload') }}
-                    </flux:button>
+                    @if ($showUploadForm || $showTemplateForm)
+                        <flux:button variant="ghost" size="sm" wire:click="{{ $showUploadForm ? 'toggleUploadForm' : 'cancelTemplate' }}" icon="x-mark">
+                            {{ __('Cancel') }}
+                        </flux:button>
+                    @else
+                        <flux:dropdown>
+                            <flux:button variant="primary" size="sm" icon="plus">
+                                {{ __('Add Document') }}
+                            </flux:button>
+                            <flux:menu>
+                                <flux:menu.item wire:click="toggleUploadForm" icon="arrow-up-tray">
+                                    {{ __('Upload PDF') }}
+                                </flux:menu.item>
+                                <flux:separator />
+                                @foreach (CorporateDocument::TEMPLATE_TYPES as $key => $label)
+                                    <flux:menu.item wire:click="showTemplate('{{ $key }}')" icon="document-text">
+                                        {{ __('Generate: :type', ['type' => $label]) }}
+                                    </flux:menu.item>
+                                @endforeach
+                            </flux:menu>
+                        </flux:dropdown>
+                    @endif
                 @endif
             </div>
         </div>
@@ -229,6 +386,104 @@ new class extends Component
             </div>
         @endif
 
+        {{-- Template Form --}}
+        @if ($showTemplateForm)
+            <div class="mb-6 rounded-lg border border-green-200 bg-green-50/50 p-5 dark:border-green-800 dark:bg-green-900/20">
+                <flux:heading size="sm" class="mb-4">
+                    {{ __('Generate: :type', ['type' => CorporateDocument::TEMPLATE_TYPES[$templateType] ?? $templateType]) }}
+                </flux:heading>
+                <flux:error name="templateType" />
+
+                @if ($templateType === 'board_resolution')
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <flux:field>
+                            <flux:label>{{ __('Director Name') }}</flux:label>
+                            <flux:input wire:model="tplDirectorName" placeholder="Matt Stanford" />
+                            <flux:error name="tplDirectorName" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Resolution Date') }}</flux:label>
+                            <flux:input wire:model="tplResolutionDate" placeholder="March 3, 2026" />
+                            <flux:error name="tplResolutionDate" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Shareholder Name') }}</flux:label>
+                            <flux:input wire:model="tplShareholderName" placeholder="Quick Technologies" />
+                            <flux:error name="tplShareholderName" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Entity Type (optional)') }}</flux:label>
+                            <flux:input wire:model="tplShareholderEntityType" placeholder="Wyoming C-Corp" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Shareholder EIN (optional)') }}</flux:label>
+                            <flux:input wire:model="tplShareholderEin" placeholder="39-3345899" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Share Class') }}</flux:label>
+                            <flux:input wire:model="tplShareClass" placeholder="Common" />
+                            <flux:error name="tplShareClass" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Number of Shares') }}</flux:label>
+                            <flux:input wire:model="tplShareCount" type="number" placeholder="2000000" />
+                            <flux:error name="tplShareCount" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Consideration') }}</flux:label>
+                            <flux:input wire:model="tplConsideration" placeholder="$2,000 cash" />
+                            <flux:error name="tplConsideration" />
+                        </flux:field>
+                    </div>
+                @elseif ($templateType === 'stock_ledger')
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <flux:field>
+                            <flux:label>{{ __('Authorized Shares') }}</flux:label>
+                            <flux:input wire:model="tplAuthorizedShares" type="number" placeholder="5000000" />
+                            <flux:error name="tplAuthorizedShares" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Share Class') }}</flux:label>
+                            <flux:input wire:model="tplLedgerShareClass" placeholder="Common" />
+                            <flux:error name="tplLedgerShareClass" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Date Issued') }}</flux:label>
+                            <flux:input wire:model="tplDateIssued" placeholder="March 3, 2026" />
+                            <flux:error name="tplDateIssued" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Shareholder Name') }}</flux:label>
+                            <flux:input wire:model="tplLedgerShareholderName" placeholder="Quick Technologies" />
+                            <flux:error name="tplLedgerShareholderName" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Shareholder Address (optional)') }}</flux:label>
+                            <flux:input wire:model="tplShareholderAddress" placeholder="1500 N Grant St, Denver, CO" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Shares Issued') }}</flux:label>
+                            <flux:input wire:model="tplSharesIssued" type="number" placeholder="2000000" />
+                            <flux:error name="tplSharesIssued" />
+                        </flux:field>
+                        <flux:field class="sm:col-span-2">
+                            <flux:label>{{ __('Consideration') }}</flux:label>
+                            <flux:input wire:model="tplLedgerConsideration" placeholder="$2,000 cash" />
+                            <flux:error name="tplLedgerConsideration" />
+                        </flux:field>
+                    </div>
+                @endif
+
+                <div class="mt-4 flex items-center justify-end gap-2">
+                    <flux:button variant="ghost" size="sm" wire:click="cancelTemplate">{{ __('Cancel') }}</flux:button>
+                    <flux:button variant="primary" size="sm" wire:click="generateFromTemplate" wire:loading.attr="disabled" wire:target="generateFromTemplate">
+                        <span wire:loading.remove wire:target="generateFromTemplate">{{ __('Generate Document') }}</span>
+                        <span wire:loading wire:target="generateFromTemplate">{{ __('Generating...') }}</span>
+                    </flux:button>
+                </div>
+            </div>
+        @endif
+
         {{-- Document List --}}
         @if ($this->documents->isEmpty())
             <div class="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-900">
@@ -252,6 +507,9 @@ new class extends Component
                                     <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">{{ $doc->title }}</flux:text>
                                     <flux:badge size="sm" color="blue">{{ CorporateDocument::TYPES[$doc->type] ?? $doc->type }}</flux:badge>
                                     <flux:badge size="sm" variant="outline">v{{ $latest->version }}</flux:badge>
+                                    @if ($doc->source === 'template')
+                                        <flux:badge size="sm" color="green">{{ __('Generated') }}</flux:badge>
+                                    @endif
                                     @if ($latest->status === 'processing')
                                         <flux:badge size="sm" color="amber">
                                             <span class="flex items-center gap-1">

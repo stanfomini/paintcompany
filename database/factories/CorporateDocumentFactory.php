@@ -54,4 +54,21 @@ class CorporateDocumentFactory extends Factory
             'parse_error' => 'Failed to parse document: '.fake()->sentence(),
         ]);
     }
+
+    public function fromTemplate(string $type = 'board_resolution'): static
+    {
+        return $this->state(fn () => [
+            'type' => $type,
+            'source' => 'template',
+            'status' => 'ready',
+            'template_data' => [
+                'corporation_name' => 'Test Corporation',
+                'director_name' => 'John Doe',
+            ],
+            'parsed_content' => [
+                ['type' => 'heading', 'level' => 1, 'text' => 'Board Resolution'],
+                ['type' => 'paragraph', 'text' => 'Template-generated document.'],
+            ],
+        ]);
+    }
 }
