@@ -43,11 +43,10 @@ it('fills resolution sections correctly', function () {
         'type' => 'resolution',
         'status' => 'ready',
         'parsed_content' => [
-            ['type' => 'heading', 'level' => 1, 'text' => '______________________________________________________________'],
-            ['type' => 'paragraph', 'text' => 'Incorporated in the State of ________'],
-            ['type' => 'paragraph', 'text' => 'President: ____________________'],
-            ['type' => 'paragraph', 'text' => 'Director: ____________________'],
-            ['type' => 'paragraph', 'text' => 'Date: ____________________'],
+            ['type' => 'paragraph', 'text' => 'President: __________________________ Director: __________________________'],
+            ['type' => 'paragraph', 'text' => 'that _________________________ was incorporated on ______________'],
+            ['type' => 'paragraph', 'text' => 'in the State of ___________________ with assigned filing number _____________.'],
+            ['type' => 'paragraph', 'text' => '___________________________ Incorporator'],
         ],
     ]);
 
@@ -60,11 +59,13 @@ it('fills resolution sections correctly', function () {
 
     $sections = $v2->edited_content;
 
-    expect($sections[0]['text'])->toBe('Painting Made Easy Denver Inc.');
-    expect($sections[1]['text'])->toBe('Incorporated in the State of Colorado');
-    expect($sections[2]['text'])->toBe('President: Matt Stanford');
-    expect($sections[3]['text'])->toBe('Director: Matt Stanford');
-    expect($sections[4]['text'])->toBe('Date: March 3, 2026');
+    expect($sections[0]['text'])->toContain('President: Matt Stanford');
+    expect($sections[0]['text'])->toContain('Director: Matt Stanford');
+    expect($sections[1]['text'])->toContain('Painting Made Easy Denver Inc.');
+    expect($sections[1]['text'])->toContain('March 3, 2026');
+    expect($sections[2]['text'])->toContain('State of Colorado');
+    expect($sections[2]['text'])->toContain('20261275863');
+    expect($sections[3]['text'])->toContain('Colorado Registered Agents Inc.');
 });
 
 it('creates V2 versions', function () {
@@ -139,7 +140,7 @@ it('processes all fillable documents when no document option is given', function
         'type' => 'resolution',
         'status' => 'ready',
         'parsed_content' => [
-            ['type' => 'paragraph', 'text' => 'President: ____________________'],
+            ['type' => 'paragraph', 'text' => 'President: __________________________'],
         ],
     ]);
 
@@ -167,7 +168,7 @@ it('skips documents that are not ready', function () {
     expect(CorporateDocument::where('parent_document_id', $doc->id)->count())->toBe(0);
 });
 
-it('fills remaining underscore blanks with corp name as fallback', function () {
+it('leaves unknown blanks untouched', function () {
     $doc = CorporateDocument::factory()->for($this->corporation)->create([
         'type' => 'bylaws',
         'status' => 'ready',
@@ -177,10 +178,9 @@ it('fills remaining underscore blanks with corp name as fallback', function () {
     ]);
 
     $this->artisan('corporate:fill-documents', ['--document' => $doc->id])
-        ->assertExitCode(0);
+        ->assertExitCode(0)
+        ->expectsOutputToContain('No blanks found');
 
-    $v2 = CorporateDocument::where('parent_document_id', $doc->id)->first();
-
-    expect($v2)->not->toBeNull();
-    expect($v2->edited_content[0]['text'])->not->toContain('____');
+    // No new version created since no known patterns matched
+    expect(CorporateDocument::where('parent_document_id', $doc->id)->count())->toBe(0);
 });

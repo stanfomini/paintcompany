@@ -23,43 +23,44 @@ class FillCorporateDocumentsCommand extends Command
     {
         $replacements = [
             'bylaws' => [
+                // Section 2: Corporation name heading
                 '______________________________________________________________' => 'Painting Made Easy Denver Inc.',
+                // Section 4: State of formation
                 'State of ________' => 'State of Colorado',
-                '________________________, at the hour of ______________' => 'March 1st, at the hour of 10:00 AM',
+                // Section 80: Annual meeting date placeholder
+                'held each year on ______________' => 'held each year on the first Monday of March',
+                // Section 198: Adoption date
                 '____ day of __________, 20____' => '3rd day of March, 2026',
+                // Section 199: Director signature
                 '____________________________________________ Director' => 'Matt Stanford, Director',
+                // Section 200: Bank resolution corp name
+                'Corporate Resolution to Open a Bank Account ___________________________________________________________________________________' => 'Corporate Resolution to Open a Bank Account - Painting Made Easy Denver Inc.',
+                // Section 205: Board meeting date
+                'held on ____________, 20___,' => 'held on March 3, 2026,',
+                // Section 213: Agreement date
+                '______ day of ___________________________, 20________' => '3rd day of March, 2026',
             ],
             'resolution' => [
-                // Incorporator
-                'Incorporator: ____________________' => 'Incorporator: Colorado Registered Agents Inc.',
-                'Incorporator:____________________' => 'Incorporator: Colorado Registered Agents Inc.',
-                'incorporator, ____________________' => 'incorporator, Colorado Registered Agents Inc.',
-                // Address patterns
-                'Address: ____________________' => 'Address: 1500 N Grant St Ste R, Denver, CO 80203',
-                'address: ____________________' => 'address: 1500 N Grant St Ste R, Denver, CO 80203',
-                // Corporation name (long blanks)
-                '______________________________________________________________' => 'Painting Made Easy Denver Inc.',
-                // State
-                'State of ________' => 'State of Colorado',
-                'state of ________' => 'state of Colorado',
-                // Filing number
-                'Filing Number: ____________________' => 'Filing Number: 20261275863',
-                'Filing Number:____________________' => 'Filing Number: 20261275863',
-                'filing number ____________________' => 'filing number 20261275863',
-                // Officer/Director titles
-                'President: ____________________' => 'President: Matt Stanford',
-                'Director: ____________________' => 'Director: Matt Stanford',
-                'Treasurer: ____________________' => 'Treasurer: Matt Stanford',
-                'Secretary: ____________________' => 'Secretary: Matt Stanford',
-                'President:____________________' => 'President: Matt Stanford',
-                'Director:____________________' => 'Director: Matt Stanford',
-                'Treasurer:____________________' => 'Treasurer: Matt Stanford',
-                'Secretary:____________________' => 'Secretary: Matt Stanford',
-                // Date patterns
-                '____ day of __________, 20____' => '3rd day of March, 2026',
-                'Date: ____________________' => 'Date: March 3, 2026',
-                'Date:____________________' => 'Date: March 3, 2026',
-                'Dated: ____________________' => 'Dated: March 3, 2026',
+                // Section 1: Incorporator, address, corp name, state
+                'I, ___________________,' => 'I, Colorado Registered Agents Inc.,',
+                'of _______________________________________' => 'of 1500 N Grant St Ste R, Denver, CO 80203',
+                'Incorporator of __________________________________,' => 'Incorporator of Painting Made Easy Denver Inc.,',
+                'State of ________________,' => 'State of Colorado,',
+                // Section 4: Officers/Directors - use regex for these
+                'President: __________________________' => 'President: Matt Stanford',
+                'Treasurer: __________________________' => 'Treasurer: Matt Stanford',
+                'Secretary: __________________________' => 'Secretary: Matt Stanford',
+                'Director: __________________________' => 'Director: Matt Stanford',
+                // Section 6: Corp name and date
+                'that _________________________ was' => 'that Painting Made Easy Denver Inc. was',
+                'incorporated on ______________' => 'incorporated on March 3, 2026',
+                // Section 7: State and filing number
+                'State of ___________________' => 'State of Colorado',
+                'filing number _____________.' => 'filing number 20261275863.',
+                // Section 14: Incorporator signature
+                '___________________________ Incorporator' => 'Colorado Registered Agents Inc., Incorporator',
+                // Section 15: Date
+                '___________________________ Date' => 'March 3, 2026 Date',
             ],
         ];
 
@@ -149,9 +150,6 @@ class FillCorporateDocumentsCommand extends Command
                     $newText = str_replace($search, $replace, $newText);
                 }
 
-                // Replace any remaining long underscore blanks (4+ underscores)
-                $newText = $this->fillRemainingBlanks($newText, $document->type);
-
                 if ($newText !== $originalText) {
                     $hasChanges = true;
                     $filledSection['text'] = $newText;
@@ -185,18 +183,6 @@ class FillCorporateDocumentsCommand extends Command
         $this->info("  Created V{$newVersion->version} (document #{$newVersion->id})");
 
         return true;
-    }
-
-    /**
-     * Fill remaining underscore blanks that weren't caught by explicit replacements.
-     */
-    private function fillRemainingBlanks(string $text, string $type): string
-    {
-        $corpName = 'Painting Made Easy Denver Inc.';
-        $directorName = 'Matt Stanford';
-
-        // Replace any remaining runs of 4+ underscores with corp name as a sensible default
-        return preg_replace('/_{4,}/', $corpName, $text) ?? $text;
     }
 
     private function truncate(string $text, int $length = 120): string
