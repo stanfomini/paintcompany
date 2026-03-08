@@ -83,24 +83,25 @@ it('passes correct arguments to python bridge', function () {
     );
 });
 
-it('throws when python service is disabled', function () {
+it('throws when both python http and cli fallback fail', function () {
     $mock = Mockery::mock(PythonBridgeService::class);
     $mock->shouldReceive('isEnabled')->andReturn(false);
     app()->instance(PythonBridgeService::class, $mock);
 
     $service = app(CorporateDocumentService::class);
     $service->applySignatures($this->document, [['type' => 'signature', 'page' => 1, 'x' => 0.1, 'y' => 0.9, 'width' => 0.2]]);
-})->throws(\RuntimeException::class, 'Python service is not enabled');
+})->throws(\RuntimeException::class, 'Failed to stamp signatures on PDF');
 
-it('throws when python service fails', function () {
+it('falls back to cli when python http service returns null', function () {
     $mock = Mockery::mock(PythonBridgeService::class);
     $mock->shouldReceive('isEnabled')->andReturn(true);
     $mock->shouldReceive('applySignaturesToPdf')->andReturn(null);
     app()->instance(PythonBridgeService::class, $mock);
 
     $service = app(CorporateDocumentService::class);
+    // With fake PDF, CLI will also fail
     $service->applySignatures($this->document, [['type' => 'signature', 'page' => 1, 'x' => 0.1, 'y' => 0.9, 'width' => 0.2]]);
-})->throws(\RuntimeException::class, 'Python service failed');
+})->throws(\RuntimeException::class, 'Failed to stamp signatures on PDF');
 
 it('throws when document PDF does not exist in storage', function () {
     $docNoPdf = CorporateDocument::factory()->for($this->corporation)->create([

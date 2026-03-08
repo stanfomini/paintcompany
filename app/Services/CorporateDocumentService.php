@@ -141,22 +141,12 @@ class CorporateDocumentService
         file_put_contents($tempFile, Storage::get($pdfPath));
 
         try {
-            $python = app(PythonBridgeService::class);
-
-            if (! $python->isEnabled()) {
-                throw new \RuntimeException('Python service is not enabled.');
-            }
-
-            $modifiedPdfBytes = $python->applySignaturesToPdf(
-                $tempFile,
-                $placements,
-                $signatureData,
-                $signatureType,
-                $userName,
+            $modifiedPdfBytes = $this->stampSignaturesViaPython(
+                $tempFile, $placements, $signatureData, $signatureType, $userName
             );
 
             if (! $modifiedPdfBytes) {
-                throw new \RuntimeException('Python service failed to stamp signatures.');
+                throw new \RuntimeException('Failed to stamp signatures on PDF.');
             }
 
             $parentId = $document->parent_document_id ?? $document->id;
@@ -188,6 +178,101 @@ class CorporateDocumentService
             ]);
         } finally {
             @unlink($tempFile);
+        }
+    }
+
+    /**
+     * Stamp signatures via Python - tries HTTP service first, falls back to CLI.
+     */
+    private function stampSignaturesViaPython(
+        string $tempFile,
+        array $placements,
+        ?string $signatureData,
+        ?string $signatureType,
+        ?string $userName,
+    ): ?string {
+        // Try the HTTP service first
+        try {
+            $python = app(PythonBridgeService::class);
+
+            if ($python->isEnabled()) {
+                $result = $python->applySignaturesToPdf(
+                    $tempFile, $placements, $signatureData, $signatureType, $userName,
+                );
+
+                if ($result) {
+                    return $result;
+                }
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Signature stamping via Python HTTP service failed, trying CLI fallback', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        // Fallback: call the Python CLI script directly
+        return $this->stampSignaturesViaCli(
+            $tempFile, $placements, $signatureData, $signatureType, $userName
+        );
+    }
+
+    /**
+     * Stamp signatures by calling the Python CLI script directly.
+     */
+    private function stampSignaturesViaCli(
+        string $inputFile,
+        array $placements,
+        ?string $signatureData,
+        ?string $signatureType,
+        ?string $userName,
+    ): ?string {
+        $outputFile = tempnam(sys_get_temp_dir(), 'corp_signed_').'.pdf';
+        $scriptPath = base_path('python/stamp_signatures_cli.py');
+        $venvPython = base_path('python/venv/bin/python');
+
+        // Use venv python if available, otherwise system python3
+        $pythonBin = file_exists($venvPython) ? $venvPython : 'python3';
+
+        $command = [
+            $pythonBin,
+            $scriptPath,
+            $inputFile,
+            $outputFile,
+            json_encode($placements),
+            $signatureData ?? '',
+            $signatureType ?? '',
+            $userName ?? '',
+        ];
+
+        try {
+            $process = new \Symfony\Component\Process\Process($command);
+            $process->setTimeout(60);
+            $process->run();
+
+            if (! $process->isSuccessful()) {
+                \Illuminate\Support\Facades\Log::error('Python CLI signature stamping failed', [
+                    'exit_code' => $process->getExitCode(),
+                    'stderr' => $process->getErrorOutput(),
+                ]);
+
+                return null;
+            }
+
+            if (! file_exists($outputFile)) {
+                return null;
+            }
+
+            $result = file_get_contents($outputFile);
+
+            return $result ?: null;
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Python CLI signature stamping exception', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        } finally {
+            @unlink($outputFile);
         }
     }
 

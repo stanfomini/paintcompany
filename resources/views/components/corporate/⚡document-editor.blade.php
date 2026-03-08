@@ -541,6 +541,17 @@ new class extends Component
                     {{ __('Date') }}
                 </button>
 
+                <div class="mx-1 h-6 w-px bg-green-300 dark:bg-green-700"></div>
+
+                <button
+                    type="button"
+                    x-on:click="selectTool('text')"
+                    :class="activeTool === 'text' ? 'bg-purple-600 text-white' : 'bg-white text-purple-700 hover:bg-purple-100 dark:bg-zinc-800 dark:text-purple-300'"
+                    class="rounded-md px-3 py-1.5 text-sm font-medium transition"
+                >
+                    {{ __('Text Field') }}
+                </button>
+
                 <div class="ml-auto flex items-center gap-2">
                     <span class="text-xs text-green-600 dark:text-green-400" x-text="placements.length + ' item(s) placed'"></span>
                     <button
@@ -553,7 +564,7 @@ new class extends Component
                     <button
                         type="button"
                         x-on:click="saveSigning()"
-                        :disabled="placements.length === 0 || !sigData"
+                        :disabled="placements.length === 0 || (hasSignaturePlacements() && !sigData)"
                         class="rounded-md bg-green-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50"
                     >
                         {{ __('Save Signed Document') }}
@@ -582,42 +593,84 @@ new class extends Component
                         <template x-for="(p, pi) in getPagePlacements(pageIndex)" :key="p.id">
                             <div
                                 class="group absolute cursor-move select-none"
-                                :style="getPlacementStyle(p, pageData)"
+                                :style="getPlacementStyle(p, pageData) + 'width:' + (p.boxWidth || 150) + 'px; height:' + (p.boxHeight || 40) + 'px;'"
                                 x-on:mousedown="startDrag($event, p)"
                                 x-on:touchstart.prevent="startDrag($event, p)"
                             >
-                                {{-- Remove button --}}
+                                {{-- Delete button --}}
                                 <button
                                     type="button"
                                     x-on:click.stop="removePlacement(p.id)"
-                                    class="absolute -right-2 -top-2 z-20 hidden size-5 items-center justify-center rounded-full bg-red-500 text-xs text-white shadow group-hover:flex"
+                                    class="absolute -right-2 -top-2 z-30 flex size-5 items-center justify-center rounded-full bg-red-500 text-xs text-white shadow-md hover:bg-red-600"
                                 >
                                     &times;
                                 </button>
 
-                                {{-- Signature preview --}}
+                                {{-- Resize handle --}}
+                                <div
+                                    x-on:mousedown.stop.prevent="startResize($event, p, pageData)"
+                                    x-on:touchstart.stop.prevent="startResize($event, p, pageData)"
+                                    class="absolute -bottom-1 -right-1 z-30 flex size-4 cursor-nwse-resize items-center justify-center rounded-sm bg-white shadow ring-1 ring-zinc-300"
+                                >
+                                    <svg class="size-2.5 text-zinc-500" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M22 22H20V20H22V22ZM22 18H18V22H16V16H22V18ZM22 14H14V22H12V12H22V14Z"/>
+                                    </svg>
+                                </div>
+
+                                {{-- Signature --}}
                                 <template x-if="p.type === 'signature'">
-                                    <div class="rounded border border-green-400/50 bg-green-50/80 px-2 py-1">
-                                        <template x-if="sigType === 'drawn'">
-                                            <img :src="sigData" class="h-10 max-w-full" />
+                                    <div class="flex size-full items-center justify-center overflow-hidden rounded border border-green-400/50 bg-green-50/80 px-2 py-1">
+                                        <template x-if="sigType === 'drawn' && sigData">
+                                            <img :src="sigData" class="max-h-full max-w-full object-contain" />
                                         </template>
-                                        <template x-if="sigType !== 'drawn'">
-                                            <span class="text-xl" style="font-family: 'Brush Script MT', 'Segoe Script', cursive;" x-text="sigData"></span>
+                                        <template x-if="sigType !== 'drawn' && sigData">
+                                            <span
+                                                class="whitespace-nowrap text-zinc-800"
+                                                style="font-family: 'Brush Script MT', 'Segoe Script', cursive;"
+                                                :style="'font-size:' + Math.min(Math.max((p.boxHeight || 45) * 0.6, 10), 36) + 'px;'"
+                                                x-text="sigData"
+                                            ></span>
+                                        </template>
+                                        <template x-if="!sigData">
+                                            <span class="text-xs italic text-green-600">Signature</span>
                                         </template>
                                     </div>
                                 </template>
 
-                                {{-- Initials preview --}}
+                                {{-- Initials --}}
                                 <template x-if="p.type === 'initials'">
-                                    <div class="rounded border border-blue-400/50 bg-blue-50/80 px-2 py-1">
-                                        <span class="text-lg font-semibold" style="font-family: 'Brush Script MT', 'Segoe Script', cursive;" x-text="getInitials()"></span>
+                                    <div class="flex size-full items-center justify-center overflow-hidden rounded border border-blue-400/50 bg-blue-50/80 px-2 py-1">
+                                        <span
+                                            class="font-semibold text-zinc-800"
+                                            style="font-family: 'Brush Script MT', 'Segoe Script', cursive;"
+                                            :style="'font-size:' + Math.min(Math.max((p.boxHeight || 35) * 0.6, 10), 28) + 'px;'"
+                                            x-text="getInitials()"
+                                        ></span>
                                     </div>
                                 </template>
 
-                                {{-- Date preview --}}
+                                {{-- Date --}}
                                 <template x-if="p.type === 'date'">
-                                    <div class="rounded border border-amber-400/50 bg-amber-50/80 px-2 py-1">
-                                        <span class="text-sm" x-text="currentDate"></span>
+                                    <div class="flex size-full items-center overflow-hidden rounded border border-amber-400/50 bg-amber-50/80 px-2 py-1">
+                                        <span
+                                            class="whitespace-nowrap text-zinc-800"
+                                            :style="'font-size:' + Math.min(Math.max((p.boxHeight || 22) * 0.6, 8), 14) + 'px;'"
+                                            x-text="currentDate"
+                                        ></span>
+                                    </div>
+                                </template>
+
+                                {{-- Text field --}}
+                                <template x-if="p.type === 'text'">
+                                    <div class="size-full overflow-hidden rounded border border-purple-400/50 bg-purple-50/80">
+                                        <textarea
+                                            x-on:mousedown.stop
+                                            x-on:touchstart.stop
+                                            x-on:click.stop
+                                            x-model="p.text"
+                                            class="block size-full resize-none border-none bg-transparent px-2 py-1 text-xs text-zinc-800 placeholder-purple-400 focus:outline-none focus:ring-0"
+                                            placeholder="Type text here..."
+                                        ></textarea>
                                     </div>
                                 </template>
                             </div>
@@ -680,26 +733,18 @@ new class extends Component
                 const pdf = await pdfjsLib.getDocument(this.pdfUrl).promise;
                 const scale = 1.5;
 
-                // Phase 1: collect all page dimensions so Alpine creates all canvases
-                const pageObjects = [];
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const viewport = page.getViewport({ scale });
-                    pageObjects.push({ page, viewport });
+
                     this.pages.push({
                         width: Math.round(viewport.width),
                         height: Math.round(viewport.height),
                     });
-                }
 
-                // Wait for Alpine to render all canvas elements
-                await this.$nextTick();
-                await new Promise(r => requestAnimationFrame(r));
+                    await this.$nextTick();
 
-                // Phase 2: render each page to its canvas
-                for (let i = 0; i < pageObjects.length; i++) {
-                    const { page, viewport } = pageObjects[i];
-                    const canvas = document.getElementById('pdf-page-' + i);
+                    const canvas = document.getElementById('pdf-page-' + (i - 1));
                     if (canvas) {
                         canvas.width = viewport.width;
                         canvas.height = viewport.height;
@@ -730,16 +775,30 @@ new class extends Component
             const x = (event.clientX - rect.left) / pageData.width;
             const y = (event.clientY - rect.top) / pageData.height;
 
-            const widths = { signature: 0.25, initials: 0.08, date: 0.15 };
+            const defaults = {
+                signature: { w: 150, h: 45 },
+                initials:  { w: 50,  h: 35 },
+                date:      { w: 130, h: 22 },
+                text:      { w: 220, h: 70 },
+            };
+            const size = defaults[this.activeTool] || { w: 150, h: 40 };
 
-            this.placements.push({
+            const placement = {
                 id: this.nextId++,
                 type: this.activeTool,
                 page: pageIndex + 1,
                 x: Math.max(0, Math.min(x, 1)),
                 y: Math.max(0, Math.min(y, 1)),
-                width: widths[this.activeTool] || 0.2,
-            });
+                width: size.w / pageData.width,
+                boxWidth: size.w,
+                boxHeight: size.h,
+            };
+
+            if (this.activeTool === 'text') {
+                placement.text = '';
+            }
+
+            this.placements.push(placement);
         },
 
         getPagePlacements(pageIndex) {
@@ -794,17 +853,42 @@ new class extends Component
         },
 
         saveSigning() {
-            if (this.placements.length === 0 || !this.sigData) return;
+            if (this.placements.length === 0) return;
 
-            const data = this.placements.map(p => ({
-                type: p.type,
-                page: p.page,
-                x: p.x,
-                y: p.y,
-                width: p.width,
-            }));
+            // Check if any signature placements exist and require sigData
+            if (this.hasSignaturePlacements() && !this.sigData) return;
+
+            // Filter out empty text placements
+            const validPlacements = this.placements.filter(p => {
+                if (p.type === 'text') return p.text && p.text.trim().length > 0;
+                return true;
+            });
+
+            if (validPlacements.length === 0) return;
+
+            const data = validPlacements.map(p => {
+                const pg = this.pages[p.page - 1];
+                const item = {
+                    type: p.type,
+                    page: p.page,
+                    x: p.x,
+                    y: p.y,
+                    width: p.boxWidth && pg ? p.boxWidth / pg.width : p.width,
+                };
+                if (pg && p.boxHeight) {
+                    item.height = p.boxHeight / pg.height;
+                }
+                if (p.type === 'text') {
+                    item.text = p.text;
+                }
+                return item;
+            });
 
             this.$wire.saveSignatures(data, this.sigData, this.sigType, this.signerName);
+        },
+
+        hasSignaturePlacements() {
+            return this.placements.some(p => p.type === 'signature');
         },
 
         getInitials() {
@@ -874,6 +958,43 @@ new class extends Component
                 this.sigPadEmpty = true;
                 this.sigData = '';
             }
+        },
+
+        startResize(event, placement, pageData) {
+            const isTouch = event.type === 'touchstart';
+            const startX = isTouch ? event.touches[0].clientX : event.clientX;
+            const startY = isTouch ? event.touches[0].clientY : event.clientY;
+            const origW = placement.boxWidth || 150;
+            const origH = placement.boxHeight || 40;
+
+            const mins = {
+                signature: { w: 60, h: 20 },
+                initials:  { w: 25, h: 18 },
+                date:      { w: 60, h: 14 },
+                text:      { w: 80, h: 24 },
+            };
+            const min = mins[placement.type] || { w: 40, h: 16 };
+
+            const onMove = (e) => {
+                const clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+                const clientY = e.type.includes('touch') ? e.touches[0].clientY : e.clientY;
+
+                placement.boxWidth = Math.max(min.w, origW + (clientX - startX));
+                placement.boxHeight = Math.max(min.h, origH + (clientY - startY));
+                placement.width = placement.boxWidth / pageData.width;
+            };
+
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onUp);
+            };
+
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+            document.addEventListener('touchmove', onMove);
+            document.addEventListener('touchend', onUp);
         },
     }));
 </script>
