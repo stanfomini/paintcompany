@@ -92,61 +92,99 @@ class CorporateDocumentService
     }
 
     /**
-     * Generate a modified PDF from the original file with text edits applied.
+     * Generate a PDF from the document's edited content using Blade templates.
      */
     private function generateEditedPdf(CorporateDocument $document, array $editedSections): void
     {
-        // Get the root parent's original uploaded PDF and parsed content
-        $parent = CorporateDocument::find($document->parent_document_id);
+        try {
+            $document->load('corporation');
 
-        if (! $parent) {
-            return;
+            $pdf = $this->exportToPdf($document);
+            $pdfContent = $pdf->output();
+
+            $editedPath = "corporate-documents/{$document->corporation_id}/edited-v{$document->version}-"
+                .Str::uuid().'.pdf';
+            Storage::put($editedPath, $pdfContent);
+
+            $document->update([
+                'original_file_path' => $editedPath,
+                'file_size' => strlen($pdfContent),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Failed to generate edited PDF', [
+                'document_id' => $document->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Apply signature/initials/date placements to a document's PDF.
+     * Creates a new version with the stamped PDF.
+     *
+     * @param  array<int, array{type: string, page: int, x: float, y: float, width: float}>  $placements
+     */
+    public function applySignatures(
+        CorporateDocument $document,
+        array $placements,
+        ?string $signatureData = null,
+        ?string $signatureType = null,
+        ?string $userName = null,
+    ): CorporateDocument {
+        $pdfPath = $document->original_file_path;
+
+        if (! $pdfPath || ! Storage::exists($pdfPath)) {
+            throw new \RuntimeException('Document has no PDF file to stamp.');
         }
 
-        $originalStoragePath = $parent->original_file_path;
-        $parsedContent = $parent->parsed_content;
-
-        if (! $originalStoragePath || ! $parsedContent) {
-            return;
-        }
-
-        if (! Storage::exists($originalStoragePath)) {
-            return;
-        }
-
-        // Download to a temp file so Python can read it (works with any disk driver)
-        $tempFile = tempnam(sys_get_temp_dir(), 'corp_edit_').'.pdf';
-        file_put_contents($tempFile, Storage::get($originalStoragePath));
+        $tempFile = tempnam(sys_get_temp_dir(), 'corp_sign_').'.pdf';
+        file_put_contents($tempFile, Storage::get($pdfPath));
 
         try {
             $python = app(PythonBridgeService::class);
 
             if (! $python->isEnabled()) {
-                return;
+                throw new \RuntimeException('Python service is not enabled.');
             }
 
-            $modifiedPdfBytes = $python->applyDocumentEdits(
+            $modifiedPdfBytes = $python->applySignaturesToPdf(
                 $tempFile,
-                $parsedContent,
-                $editedSections,
+                $placements,
+                $signatureData,
+                $signatureType,
+                $userName,
             );
 
             if (! $modifiedPdfBytes) {
-                return;
+                throw new \RuntimeException('Python service failed to stamp signatures.');
             }
 
-            // Store the modified PDF
-            $editedPath = "corporate-documents/{$document->corporation_id}/edited-v{$document->version}-"
-                .Str::uuid().'.pdf';
-            Storage::put($editedPath, $modifiedPdfBytes);
+            $parentId = $document->parent_document_id ?? $document->id;
+            $parent = $document->parent_document_id
+                ? CorporateDocument::find($parentId)
+                : $document;
 
-            // Point this version to the modified PDF
-            $document->update(['original_file_path' => $editedPath]);
-        } catch (\Throwable $e) {
-            // Non-critical: fall back to template-generated PDF
-            \Illuminate\Support\Facades\Log::warning('Failed to generate edited PDF', [
-                'document_id' => $document->id,
-                'error' => $e->getMessage(),
+            $latestVersion = CorporateDocument::where('parent_document_id', $parentId)
+                ->max('version') ?? $parent->version;
+
+            $signedPath = "corporate-documents/{$document->corporation_id}/signed-v"
+                .($latestVersion + 1).'-'.Str::uuid().'.pdf';
+            Storage::put($signedPath, $modifiedPdfBytes);
+
+            return CorporateDocument::create([
+                'corporation_id' => $document->corporation_id,
+                'parent_document_id' => $parentId,
+                'uploaded_by' => $document->uploaded_by,
+                'title' => $document->title,
+                'type' => $document->type,
+                'original_file_path' => $signedPath,
+                'original_filename' => $document->original_filename,
+                'version' => $latestVersion + 1,
+                'status' => 'ready',
+                'parsed_content' => $parent->parsed_content ?? $document->parsed_content,
+                'edited_content' => $document->edited_content,
+                'file_size' => strlen($modifiedPdfBytes),
+                'page_count' => $document->page_count,
             ]);
         } finally {
             @unlink($tempFile);
@@ -172,8 +210,11 @@ class CorporateDocumentService
 
         $parsedContent = $this->buildSectionsForTemplate($type, $templateData);
 
-        // Render PDF
-        $pdf = Pdf::loadView($view, ['data' => $templateData]);
+        // Render PDF with corporation data for header
+        $pdf = Pdf::loadView($view, [
+            'data' => $templateData,
+            'corporation' => $corporation,
+        ]);
         $pdfContent = $pdf->output();
 
         // Store PDF
@@ -301,13 +342,15 @@ class CorporateDocumentService
             $view = $viewMap[$document->type] ?? 'pdf.corporate-document';
 
             if (isset($viewMap[$document->type])) {
-                return Pdf::loadView($view, ['data' => $document->template_data]);
+                return Pdf::loadView($view, [
+                    'data' => $document->template_data,
+                    'corporation' => $document->corporation,
+                ]);
             }
         }
 
         return Pdf::loadView('pdf.corporate-document', [
             'document' => $document,
-            'settings' => \App\Models\CompanySetting::getInstance(),
         ]);
     }
 

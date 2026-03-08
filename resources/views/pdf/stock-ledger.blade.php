@@ -7,16 +7,19 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Helvetica', 'Arial', sans-serif; font-size: 11px; line-height: 1.5; color: #111; }
         .container { padding: 50px 50px; }
-        .title { text-align: center; font-size: 18px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 1px; }
-        .corporation-name { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 6px; color: #1e40af; }
+
+        .corp-header { text-align: center; margin-bottom: 30px; padding-bottom: 15px; border-bottom: 2px solid #333; }
+        .corp-name { font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .corp-details { font-size: 10px; color: #555; line-height: 1.5; }
+
+        .title { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 4px; letter-spacing: 1px; }
         .subtitle { text-align: center; font-size: 11px; color: #666; margin-bottom: 30px; }
-        .section-title { font-size: 13px; font-weight: bold; color: #374151; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #3b82f6; }
+        .section-title { font-size: 13px; font-weight: bold; color: #374151; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid #333; }
         table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
         th { background-color: #f3f4f6; color: #374151; font-weight: 600; text-align: left; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #d1d5db; }
         td { padding: 8px 10px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
         tr:nth-child(even) td { background-color: #f9fafb; }
         .summary-table td { font-weight: 500; }
-        .summary-label { color: #6b7280; }
         .number { text-align: right; font-variant-numeric: tabular-nums; }
         .footer { margin-top: 40px; text-align: center; color: #9ca3af; font-size: 9px; }
         .empty-notice { text-align: center; padding: 20px; color: #9ca3af; font-style: italic; }
@@ -24,7 +27,31 @@
 </head>
 <body>
     <div class="container">
-        <div class="corporation-name">{{ $data['corporation_name'] }}</div>
+        {{-- Corporation Header --}}
+        @if (!empty($corporation))
+            <div class="corp-header">
+                <div class="corp-name">{{ $corporation->name }}</div>
+                <div class="corp-details">
+                    @if ($corporation->entity_type)
+                        {{ App\Models\Corporation::ENTITY_TYPES[$corporation->entity_type] ?? $corporation->entity_type }}
+                    @endif
+                    @if ($corporation->state_of_formation)
+                        &bull; {{ $corporation->state_of_formation }}
+                    @endif
+                    @if ($corporation->ein)
+                        &bull; EIN: {{ $corporation->ein }}
+                    @endif
+                    @if ($corporation->address_line_1)
+                        <br>{{ $corporation->address_line_1 }}@if ($corporation->city || $corporation->state), {{ collect([$corporation->city, $corporation->state])->filter()->implode(', ') }} {{ $corporation->zip }}@endif
+                    @endif
+                </div>
+            </div>
+        @else
+            <div class="corp-header">
+                <div class="corp-name">{{ $data['corporation_name'] }}</div>
+            </div>
+        @endif
+
         <div class="title">Stock Ledger</div>
         <div class="subtitle">As of {{ now()->format('F j, Y') }}</div>
 
@@ -93,7 +120,7 @@
         @endif
 
         <div class="footer">
-            <p>Generated on {{ now()->format('M j, Y g:i A') }}</p>
+            <p>Generated on {{ now()->format('F j, Y') }}</p>
         </div>
     </div>
 </body>

@@ -507,6 +507,73 @@ class PythonBridgeService
     }
 
     /**
+     * Apply signature/initials/date placements to a PDF via Python service.
+     *
+     * @param  array<int, array{type: string, page: int, x: float, y: float, width: float}>  $placements
+     * @return string|null Modified PDF bytes, or null on failure
+     */
+    public function applySignaturesToPdf(
+        string $filePath,
+        array $placements,
+        ?string $signatureData = null,
+        ?string $signatureType = null,
+        ?string $userName = null,
+    ): ?string {
+        $this->ensureEnabled();
+
+        if (! file_exists($filePath)) {
+            Log::error('PDF file not found for signature stamping', ['file' => $filePath]);
+
+            return null;
+        }
+
+        try {
+            $request = Http::baseUrl($this->baseUrl)
+                ->timeout(60)
+                ->retry(2, 1000);
+
+            $apiKey = config('python.api_key');
+            if ($apiKey) {
+                $request->withHeaders(['X-API-Key' => $apiKey]);
+            }
+
+            $formData = [
+                'placements' => json_encode($placements),
+            ];
+
+            if ($signatureData !== null) {
+                $formData['signature_data'] = $signatureData;
+            }
+            if ($signatureType !== null) {
+                $formData['signature_type'] = $signatureType;
+            }
+            if ($userName !== null) {
+                $formData['user_name'] = $userName;
+            }
+
+            $response = $request
+                ->attach('file', file_get_contents($filePath), basename($filePath))
+                ->post('/documents/apply-signatures', $formData);
+
+            if ($response->successful()) {
+                return $response->body();
+            }
+
+            Log::warning('Python signature stamping returned non-success', [
+                'status' => $response->status(),
+            ]);
+
+            return null;
+        } catch (\Exception $e) {
+            Log::warning('Signature stamping via Python service failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    /**
      * Make a GET request to the Python service.
      */
     protected function get(string $endpoint): array

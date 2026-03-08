@@ -7,14 +7,17 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Times New Roman', 'Georgia', serif; font-size: 12px; line-height: 1.8; color: #111; }
         .container { padding: 60px 70px; }
+
+        .corp-header { text-align: center; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #333; }
+        .corp-name { font-size: 18px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+        .corp-details { font-size: 10px; color: #555; line-height: 1.5; }
+
         .title { text-align: center; font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 1px; }
         .subtitle { text-align: center; font-size: 13px; font-weight: bold; margin-bottom: 30px; }
-        .corporation-name { text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 4px; }
         .section { margin-bottom: 16px; }
-        .recital { margin-bottom: 12px; text-indent: 40px; }
-        .resolved { margin-bottom: 12px; text-indent: 40px; }
+        .recital { margin-bottom: 12px; text-indent: 40px; text-align: justify; }
+        .resolved { margin-bottom: 12px; text-indent: 40px; text-align: justify; }
         .bold { font-weight: bold; }
-        .underline { text-decoration: underline; }
         .signature-block { margin-top: 60px; }
         .signature-line { margin-top: 40px; width: 300px; }
         .signature-line-rule { border-top: 1px solid #333; padding-top: 4px; }
@@ -23,7 +26,31 @@
 </head>
 <body>
     <div class="container">
-        <div class="corporation-name">{{ $data['corporation_name'] }}</div>
+        {{-- Corporation Header --}}
+        @if (!empty($corporation))
+            <div class="corp-header">
+                <div class="corp-name">{{ $corporation->name }}</div>
+                <div class="corp-details">
+                    @if ($corporation->entity_type)
+                        {{ App\Models\Corporation::ENTITY_TYPES[$corporation->entity_type] ?? $corporation->entity_type }}
+                    @endif
+                    @if ($corporation->state_of_formation)
+                        &bull; {{ $corporation->state_of_formation }}
+                    @endif
+                    @if ($corporation->ein)
+                        &bull; EIN: {{ $corporation->ein }}
+                    @endif
+                    @if ($corporation->address_line_1)
+                        <br>{{ $corporation->address_line_1 }}@if ($corporation->city || $corporation->state), {{ collect([$corporation->city, $corporation->state])->filter()->implode(', ') }} {{ $corporation->zip }}@endif
+                    @endif
+                </div>
+            </div>
+        @else
+            <div class="corp-header">
+                <div class="corp-name">{{ $data['corporation_name'] }}</div>
+            </div>
+        @endif
+
         <div class="title">Resolution of the Board of Directors</div>
         <div class="subtitle">Authorization to Issue Shares of Stock</div>
 
@@ -109,7 +136,7 @@
         </div>
 
         <div class="footer">
-            <p>Generated on {{ now()->format('M j, Y g:i A') }}</p>
+            <p>Generated on {{ now()->format('F j, Y') }}</p>
         </div>
     </div>
 </body>

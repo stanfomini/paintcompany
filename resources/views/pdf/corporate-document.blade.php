@@ -2,168 +2,164 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ $document->title }}</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
+        * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
-            font-family: 'Helvetica', 'Arial', sans-serif;
+            font-family: 'Times New Roman', 'Georgia', serif;
             font-size: 12px;
-            line-height: 1.5;
-            color: #333;
+            line-height: 1.8;
+            color: #111;
         }
+        .container { padding: 60px 70px; }
 
-        .container {
-            padding: 40px;
+        /* Corporation header */
+        .corp-header {
+            text-align: center;
+            margin-bottom: 40px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #333;
         }
-
-        .company-name {
-            font-size: 24px;
-            font-weight: bold;
-            color: #1e40af;
-            margin-bottom: 5px;
-        }
-
-        .section {
-            margin-bottom: 30px;
-        }
-
-        .section-title {
-            font-size: 14px;
-            font-weight: bold;
-            color: #374151;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 9999px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
-        .badge-blue {
-            background-color: #dbeafe;
-            color: #1e40af;
-        }
-
-        .badge-gray {
-            background-color: #f3f4f6;
-            color: #374151;
-        }
-
-        .document-title {
-            font-size: 20px;
-            font-weight: bold;
-            color: #111827;
-            margin-bottom: 8px;
-        }
-
-        .content-heading-1 {
+        .corp-name {
             font-size: 18px;
             font-weight: bold;
-            color: #111827;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 4px;
+        }
+        .corp-details {
+            font-size: 10px;
+            color: #555;
+            line-height: 1.5;
+        }
+
+        /* Document title area */
+        .doc-title {
+            text-align: center;
+            font-size: 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        .doc-subtitle {
+            text-align: center;
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .version-badge {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .version-badge span {
+            display: inline-block;
+            padding: 2px 10px;
+            border: 1px solid #999;
+            border-radius: 3px;
+            font-size: 9px;
+            color: #666;
+            font-family: 'Helvetica', sans-serif;
+        }
+
+        /* Content sections */
+        .content-heading-1 {
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            text-transform: uppercase;
+            margin-top: 24px;
+            margin-bottom: 12px;
+        }
+        .content-heading-2 {
+            font-size: 14px;
+            font-weight: bold;
             margin-top: 20px;
             margin-bottom: 8px;
         }
-
-        .content-heading-2 {
-            font-size: 15px;
+        .content-heading-3 {
+            font-size: 12px;
             font-weight: bold;
-            color: #1f2937;
             margin-top: 16px;
             margin-bottom: 6px;
         }
-
-        .content-heading-3 {
-            font-size: 13px;
-            font-weight: bold;
-            color: #374151;
-            margin-top: 12px;
-            margin-bottom: 4px;
-        }
-
         .content-paragraph {
-            margin-bottom: 10px;
-            line-height: 1.6;
+            margin-bottom: 12px;
+            text-align: justify;
+            text-indent: 40px;
         }
-
+        .content-paragraph-no-indent {
+            margin-bottom: 12px;
+            text-align: justify;
+        }
         .content-list-item {
-            margin-left: 24px;
-            margin-bottom: 4px;
-            line-height: 1.6;
+            margin-left: 60px;
+            margin-bottom: 6px;
+            text-indent: -20px;
+            padding-left: 20px;
+        }
+        .content-list-item::before {
+            content: "\2022\00a0\00a0";
         }
 
-        .content-list-item::before {
-            content: "\2022  ";
+        /* Signature block */
+        .signature-block {
+            margin-top: 60px;
+        }
+        .signature-line {
+            margin-top: 40px;
+            width: 300px;
+        }
+        .signature-line-rule {
+            border-top: 1px solid #333;
+            padding-top: 4px;
+            font-size: 11px;
         }
 
         .footer {
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #e5e7eb;
+            margin-top: 50px;
             text-align: center;
-            color: #9ca3af;
-            font-size: 10px;
+            color: #999;
+            font-size: 9px;
+            font-family: 'Helvetica', sans-serif;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        {{-- Company Header --}}
-        <table style="width: 100%; margin-bottom: 40px; border-bottom: 2px solid #3b82f6; padding-bottom: 20px;">
-            <tr>
-                <td style="vertical-align: top;">
-                    <div class="company-name">{{ $settings->company_name ?? config('app.name') }}</div>
-                    @if ($settings->address_line_1)
-                        <div style="color: #6b7280;">{{ $settings->address_line_1 }}</div>
+        {{-- Corporation Header --}}
+        @php
+            $corp = $document->corporation;
+        @endphp
+        @if ($corp)
+            <div class="corp-header">
+                <div class="corp-name">{{ $corp->name }}</div>
+                <div class="corp-details">
+                    @if ($corp->entity_type)
+                        {{ App\Models\Corporation::ENTITY_TYPES[$corp->entity_type] ?? $corp->entity_type }}
                     @endif
-                    @if ($settings->city || $settings->state || $settings->zip_code)
-                        <div style="color: #6b7280;">{{ collect([$settings->city, $settings->state])->filter()->implode(', ') }} {{ $settings->zip_code }}</div>
+                    @if ($corp->state_of_formation)
+                        &bull; {{ $corp->state_of_formation }}
                     @endif
-                </td>
-                <td style="text-align: right; vertical-align: top;">
-                    @if ($settings->company_phone)
-                        <div style="color: #6b7280;">{{ $settings->company_phone }}</div>
+                    @if ($corp->ein)
+                        &bull; EIN: {{ $corp->ein }}
                     @endif
-                    @if ($settings->company_email)
-                        <div style="color: #6b7280;">{{ $settings->company_email }}</div>
+                    @if ($corp->address_line_1)
+                        <br>{{ $corp->address_line_1 }}@if ($corp->city || $corp->state), {{ collect([$corp->city, $corp->state])->filter()->implode(', ') }} {{ $corp->zip }}@endif
                     @endif
-                </td>
-            </tr>
-        </table>
-
-        {{-- Corporation Info --}}
-        @if ($document->corporation)
-            <div style="margin-bottom: 10px; color: #6b7280; font-size: 13px;">
-                {{ $document->corporation->name }}
-                @if ($document->corporation->entity_type)
-                    &mdash; {{ $document->corporation->entity_type }}
-                @endif
+                </div>
             </div>
         @endif
 
-        {{-- Document Title + Version + Type --}}
-        <div style="margin-bottom: 24px;">
-            <div class="document-title">
-                {{ $document->title }}
-                @if ($document->version)
-                    <span class="badge badge-blue">Version {{ $document->version }}</span>
-                @endif
-            </div>
-            @if ($document->type && isset(App\Models\CorporateDocument::TYPES[$document->type]))
-                <span class="badge badge-gray">{{ App\Models\CorporateDocument::TYPES[$document->type] }}</span>
-            @endif
-        </div>
+        {{-- Document Title --}}
+        <div class="doc-title">{{ $document->title }}</div>
+        @if ($document->type && isset(App\Models\CorporateDocument::TYPES[$document->type]))
+            <div class="doc-subtitle">{{ App\Models\CorporateDocument::TYPES[$document->type] }}</div>
+        @endif
+
+        @if ($document->version > 1)
+            <div class="version-badge"><span>Version {{ $document->version }}</span></div>
+        @endif
 
         {{-- Document Content --}}
         @php
@@ -171,33 +167,31 @@
         @endphp
 
         @if ($sections)
-            <div class="section">
-                @foreach ($sections as $section)
-                    @if (($section['type'] ?? '') === 'heading')
-                        @php $level = $section['level'] ?? 1; @endphp
-                        @if ($level === 1)
-                            <div class="content-heading-1">{{ $section['text'] ?? '' }}</div>
-                        @elseif ($level === 2)
-                            <div class="content-heading-2">{{ $section['text'] ?? '' }}</div>
-                        @else
-                            <div class="content-heading-3">{{ $section['text'] ?? '' }}</div>
-                        @endif
-                    @elseif (($section['type'] ?? '') === 'paragraph')
-                        <div class="content-paragraph">{{ $section['text'] ?? '' }}</div>
-                    @elseif (($section['type'] ?? '') === 'list_item')
-                        <div class="content-list-item">{{ $section['text'] ?? '' }}</div>
+            @foreach ($sections as $section)
+                @if (($section['type'] ?? '') === 'heading')
+                    @php $level = $section['level'] ?? 1; @endphp
+                    @if ($level === 1)
+                        <div class="content-heading-1">{{ $section['text'] ?? '' }}</div>
+                    @elseif ($level === 2)
+                        <div class="content-heading-2">{{ $section['text'] ?? '' }}</div>
+                    @else
+                        <div class="content-heading-3">{{ $section['text'] ?? '' }}</div>
                     @endif
-                @endforeach
-            </div>
+                @elseif (($section['type'] ?? '') === 'paragraph')
+                    <div class="content-paragraph">{{ $section['text'] ?? '' }}</div>
+                @elseif (($section['type'] ?? '') === 'list_item')
+                    <div class="content-list-item">{{ $section['text'] ?? '' }}</div>
+                @endif
+            @endforeach
         @else
-            <div class="section">
-                <p style="color: #9ca3af; font-style: italic;">No content available for this document.</p>
-            </div>
+            <p style="color: #999; font-style: italic; text-align: center; margin-top: 40px;">
+                No content available for this document.
+            </p>
         @endif
 
         {{-- Footer --}}
         <div class="footer">
-            <p>Generated on {{ now()->format('M j, Y g:i A') }}</p>
+            <p>Generated on {{ now()->format('F j, Y') }}</p>
         </div>
     </div>
 </body>

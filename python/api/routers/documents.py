@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from ..services.documents.pdf_editor import PdfEditorService
 from ..services.documents.pdf_parser import PdfParserError, PdfParserService
+from ..services.documents.signature_stamper import SignatureStamperService
 
 router = APIRouter()
 
@@ -168,4 +169,61 @@ async def apply_edits(
         raise HTTPException(
             status_code=500,
             detail=f"Failed to apply edits: {str(e)}",
+        )
+
+
+@router.post("/apply-signatures")
+async def apply_signatures(
+    file: UploadFile = File(...),
+    placements: str = Form(...),
+    signature_data: Optional[str] = Form(None),
+    signature_type: Optional[str] = Form(None),
+    user_name: Optional[str] = Form(None),
+):
+    """
+    Stamp signature, initials, and date placements onto a PDF.
+
+    Accepts the PDF file, a JSON array of placements, and optional
+    signature data (base64 PNG or typed text).
+    """
+    try:
+        pdf_bytes = await file.read()
+
+        if len(pdf_bytes) == 0:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        parsed_placements = json.loads(placements)
+
+        logger.info(
+            f"Applying {len(parsed_placements)} signature placement(s) to PDF: "
+            f"{len(pdf_bytes)} bytes"
+        )
+
+        stamper = SignatureStamperService()
+        modified_bytes = stamper.apply_signatures(
+            pdf_bytes,
+            parsed_placements,
+            signature_data=signature_data,
+            signature_type=signature_type,
+            user_name=user_name,
+        )
+
+        return Response(
+            content=modified_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "inline"},
+        )
+
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid JSON in placements: {str(e)}",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Signature stamping failed: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to apply signatures: {str(e)}",
         )
