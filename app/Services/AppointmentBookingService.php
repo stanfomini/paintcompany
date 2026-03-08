@@ -69,6 +69,8 @@ class AppointmentBookingService
                     'created_by' => $estimatorId,
                 ]
             );
+
+            app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         }
 
         // 4. Find or create Property

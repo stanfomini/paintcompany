@@ -1,6 +1,9 @@
 <?php
 
+use App\Jobs\ProcessFacebookMessageJob;
 use App\Models\MessengerSetting;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 beforeEach(function () {
     MessengerSetting::clearInstanceCache();
@@ -85,13 +88,7 @@ describe('Webhook Verification (GET)', function () {
 
 describe('Webhook Receive (POST)', function () {
     it('accepts messages with valid signature and returns EVENT_RECEIVED', function () {
-        Illuminate\Support\Facades\Http::fake([
-            'graph.facebook.com/*' => Illuminate\Support\Facades\Http::response([
-                'first_name' => 'Test',
-                'last_name' => 'User',
-                'profile_pic' => 'https://example.com/pic.jpg',
-            ]),
-        ]);
+        Queue::fake();
 
         $payload = json_encode([
             'object' => 'page',
@@ -125,16 +122,48 @@ describe('Webhook Receive (POST)', function () {
         expect($response->getContent())->toBe('EVENT_RECEIVED');
     });
 
-    it('creates a chat thread and message from incoming webhook', function () {
-        Illuminate\Support\Facades\Http::fake([
-            'graph.facebook.com/*' => Illuminate\Support\Facades\Http::response([
+    it('dispatches ProcessFacebookMessageJob for async processing', function () {
+        Queue::fake();
+
+        $payload = json_encode([
+            'object' => 'page',
+            'entry' => [
+                [
+                    'id' => '123456',
+                    'time' => time(),
+                    'messaging' => [
+                        [
+                            'sender' => ['id' => '5551234'],
+                            'recipient' => ['id' => '123456'],
+                            'message' => ['mid' => 'mid.abc123', 'text' => 'I need a quote'],
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $signature = 'sha256='.hash_hmac('sha256', $payload, 'test-app-secret');
+
+        $this->call('POST', '/webhook/facebook/receive', [], [], [], [
+            'HTTP_X_Hub_Signature_256' => $signature,
+            'CONTENT_TYPE' => 'application/json',
+        ], $payload);
+
+        Queue::assertPushed(ProcessFacebookMessageJob::class, function ($job) {
+            return ! empty($job->webhookPayload['entry']);
+        });
+    });
+
+    it('creates a chat thread and message when job is processed', function () {
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
                 'first_name' => 'John',
                 'last_name' => 'Doe',
                 'profile_pic' => 'https://example.com/john.jpg',
             ]),
         ]);
 
-        $payload = json_encode([
+        $payload = [
             'object' => 'page',
             'entry' => [
                 [
@@ -153,14 +182,11 @@ describe('Webhook Receive (POST)', function () {
                     ],
                 ],
             ],
-        ]);
+        ];
 
-        $signature = 'sha256='.hash_hmac('sha256', $payload, 'test-app-secret');
-
-        $this->call('POST', '/webhook/facebook/receive', [], [], [], [
-            'HTTP_X_Hub_Signature_256' => $signature,
-            'CONTENT_TYPE' => 'application/json',
-        ], $payload);
+        // Dispatch and process the job directly
+        $job = new ProcessFacebookMessageJob($payload);
+        $job->handle(app(\App\Services\FacebookMessengerService::class));
 
         $thread = App\Models\ChatThread::where('external_contact_id', '5551234')
             ->where('channel', App\Models\ChatThread::CHANNEL_FACEBOOK)
@@ -199,14 +225,14 @@ describe('Webhook Receive (POST)', function () {
     });
 
     it('handles multiple messaging events in a single entry', function () {
-        Illuminate\Support\Facades\Http::fake([
-            'graph.facebook.com/*' => Illuminate\Support\Facades\Http::response([
+        Http::fake([
+            'graph.facebook.com/*' => Http::response([
                 'first_name' => 'Multi',
                 'last_name' => 'User',
             ]),
         ]);
 
-        $payload = json_encode([
+        $payload = [
             'object' => 'page',
             'entry' => [
                 [
@@ -226,14 +252,11 @@ describe('Webhook Receive (POST)', function () {
                     ],
                 ],
             ],
-        ]);
+        ];
 
-        $signature = 'sha256='.hash_hmac('sha256', $payload, 'test-app-secret');
-
-        $this->call('POST', '/webhook/facebook/receive', [], [], [], [
-            'HTTP_X_Hub_Signature_256' => $signature,
-            'CONTENT_TYPE' => 'application/json',
-        ], $payload);
+        // Process job directly to test message handling
+        $job = new ProcessFacebookMessageJob($payload);
+        $job->handle(app(\App\Services\FacebookMessengerService::class));
 
         $thread = App\Models\ChatThread::where('external_contact_id', '1111111')
             ->where('channel', App\Models\ChatThread::CHANNEL_FACEBOOK)

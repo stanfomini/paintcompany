@@ -20,6 +20,7 @@ class MeetingMinutes extends Model
         'audio_duration',
         'transcript',
         'transcript_segments',
+        'transcript_status',
         'executive_summary',
         'summary_status',
         'attendees',
@@ -40,6 +41,13 @@ class MeetingMinutes extends Model
         'special' => 'Special Meeting',
         'board' => 'Board Meeting',
         'emergency' => 'Emergency Meeting',
+    ];
+
+    public const TRANSCRIPT_STATUSES = [
+        'none' => 'No Audio',
+        'processing' => 'Processing',
+        'completed' => 'Completed',
+        'failed' => 'Failed',
     ];
 
     public const SUMMARY_STATUSES = [

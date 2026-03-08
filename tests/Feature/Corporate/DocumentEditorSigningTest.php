@@ -50,14 +50,14 @@ it('hides sign document button for non-managers', function () {
         ->assertDontSee('Sign Document');
 });
 
-it('hides sign document button when user has no signature', function () {
+it('shows sign document button even without stored signature', function () {
     $this->user->internalUser->update([
         'signature_data' => null,
         'signature_type' => null,
     ]);
 
     Livewire::test('corporate.document-editor', ['documentId' => $this->document->id])
-        ->assertDontSee('Sign Document');
+        ->assertSee('Sign Document');
 });
 
 it('enters signing mode', function () {
@@ -87,7 +87,7 @@ it('saves signatures and creates new version', function () {
 
     Livewire::test('corporate.document-editor', ['documentId' => $this->document->id])
         ->call('enterSigningMode')
-        ->call('saveSignatures', $placements)
+        ->call('saveSignatures', $placements, 'Matt Stanford', 'typed', 'Matt Stanford, Director')
         ->assertSet('signingMode', false);
 
     $newVersion = CorporateDocument::where('parent_document_id', $this->document->id)->first();
@@ -115,7 +115,8 @@ it('prevents non-managers from entering signing mode', function () {
 });
 
 it('derives initials correctly', function () {
-    $component = Livewire::test('corporate.document-editor', ['documentId' => $this->document->id]);
+    $component = Livewire::test('corporate.document-editor', ['documentId' => $this->document->id])
+        ->call('enterSigningMode');
 
     $preview = $component->get('signaturePreview');
     expect($preview)->toHaveKey('initials');

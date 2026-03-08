@@ -46,12 +46,102 @@
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://apexnegotiations.com/areas/aurora</loc>
+    <loc>https://apexnegotiations.com/areas/arvada-co</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://apexnegotiations.com/areas/zephyr-hills</loc>
+    <loc>https://apexnegotiations.com/areas/aurora-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/boulder-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/brighton-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/broomfield-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/castle-rock-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/centennial-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/commerce-city-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/denver-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/englewood-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/federal-heights-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/golden-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/lakewood-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/littleton-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/longmont-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/northglenn-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/parker-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/thornton-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/westminster-co</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://apexnegotiations.com/areas/wheat-ridge-co</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>

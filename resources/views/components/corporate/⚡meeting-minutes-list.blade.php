@@ -39,6 +39,13 @@ new class extends Component
         return $query->get();
     }
 
+    #[Computed]
+    public function hasProcessing(): bool
+    {
+        return $this->minutes->contains(fn ($m) => in_array($m->transcript_status, ['processing'])
+            || in_array($m->summary_status, ['pending', 'processing']));
+    }
+
     public function openRecorder(): void
     {
         $this->showRecorder = true;
@@ -80,7 +87,7 @@ new class extends Component
 };
 ?>
 
-<div>
+<div @if ($this->hasProcessing) wire:poll.3s="$refresh" @endif>
     @if ($showRecorder)
         <div class="mb-4">
             <flux:button size="sm" variant="ghost" icon="arrow-left" wire:click="closeRecorder">
@@ -150,22 +157,38 @@ new class extends Component
                                 </flux:text>
 
                                 {{-- Status indicators --}}
-                                <div class="mt-2 flex gap-2">
-                                    @if ($min->audio_path)
-                                        <flux:badge size="sm" color="green" variant="outline">{{ __('Audio') }}</flux:badge>
-                                    @endif
-                                    @if ($min->transcript)
-                                        <flux:badge size="sm" color="green" variant="outline">{{ __('Transcript') }}</flux:badge>
-                                    @endif
-                                    @if ($min->summary_status === 'completed')
-                                        <flux:badge size="sm" color="green" variant="outline">{{ __('Summary') }}</flux:badge>
-                                    @elseif ($min->summary_status === 'processing')
+                                <div class="mt-2 flex flex-wrap gap-2">
+                                    {{-- Audio/Transcript status --}}
+                                    @if ($min->transcript_status === 'processing')
                                         <flux:badge size="sm" color="amber">
                                             <span class="flex items-center gap-1">
                                                 <span class="size-1.5 animate-pulse rounded-full bg-amber-500"></span>
-                                                {{ __('Generating Summary') }}
+                                                {{ __('Transcribing Audio') }}
                                             </span>
                                         </flux:badge>
+                                    @else
+                                        @if ($min->audio_path)
+                                            <flux:badge size="sm" color="green" variant="outline">{{ __('Audio') }}</flux:badge>
+                                        @endif
+                                        @if ($min->transcript)
+                                            <flux:badge size="sm" color="green" variant="outline">{{ __('Transcript') }}</flux:badge>
+                                        @elseif ($min->transcript_status === 'failed')
+                                            <flux:badge size="sm" color="red" variant="outline">{{ __('Transcription Failed') }}</flux:badge>
+                                        @endif
+                                    @endif
+
+                                    {{-- Summary status --}}
+                                    @if ($min->summary_status === 'completed')
+                                        <flux:badge size="sm" color="green" variant="outline">{{ __('Summary') }}</flux:badge>
+                                    @elseif (in_array($min->summary_status, ['pending', 'processing']))
+                                        @if ($min->transcript_status !== 'processing')
+                                            <flux:badge size="sm" color="amber">
+                                                <span class="flex items-center gap-1">
+                                                    <span class="size-1.5 animate-pulse rounded-full bg-amber-500"></span>
+                                                    {{ __('Generating Summary') }}
+                                                </span>
+                                            </flux:badge>
+                                        @endif
                                     @elseif ($min->summary_status === 'failed')
                                         <flux:badge size="sm" color="red" variant="outline">{{ __('Summary Failed') }}</flux:badge>
                                     @endif

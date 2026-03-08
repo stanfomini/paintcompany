@@ -847,7 +847,28 @@ class ChatService
             ->first();
 
         if ($activeConversation) {
-            $activeConversation->update(['status' => 'human_takeover']);
+            $activeConversation->update([
+                'status' => 'human_takeover',
+                'taken_over_by' => $sender->id,
+            ]);
+        }
+
+        // Handle messenger responder thread claiming and deal assignment
+        $assignmentService = app(\App\Services\MessengerLeadAssignmentService::class);
+        if ($assignmentService->isActiveResponder($sender)) {
+            $assignmentService->claimThread($thread, $sender);
+
+            // Check if this responder is an estimator and can self-claim the deal
+            $role = $assignmentService->getResponderRole($sender);
+            if (in_array($role, ['estimator', 'both'])) {
+                $conversation = $thread->messengerConversation;
+                if ($conversation?->deal_id) {
+                    $deal = \App\Models\Deal::find($conversation->deal_id);
+                    if ($deal && $deal->assigned_to === null) {
+                        $assignmentService->assignToEstimator($deal, $sender);
+                    }
+                }
+            }
         }
     }
 }

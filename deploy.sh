@@ -17,10 +17,23 @@ composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
 # Database migrations
 php artisan migrate --force
 
-# Python service (setup venv + deps, restart if systemd is installed)
+# Python service (setup venv + deps, restart)
 if [ -f "python/setup.sh" ]; then
     echo "==> Setting up Python service..."
     bash python/setup.sh
+fi
+
+# Restart Python service if running (works even without sudo systemctl access)
+if pgrep -f "uvicorn api.main" > /dev/null 2>&1; then
+    echo "==> Restarting Python service..."
+    pkill -f "uvicorn api.main" || true
+    sleep 3
+    # systemd Restart=always will bring it back automatically
+    if pgrep -f "uvicorn api.main" > /dev/null 2>&1; then
+        echo "==> Python service restarted successfully."
+    else
+        echo "==> WARNING: Python service did not restart. Check systemd: sudo systemctl status apex-python"
+    fi
 fi
 
 # Frontend assets

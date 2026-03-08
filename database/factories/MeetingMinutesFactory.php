@@ -43,6 +43,14 @@ class MeetingMinutesFactory extends Factory
                 ['start' => 30, 'end' => 60, 'text' => fake()->sentence()],
                 ['start' => 60, 'end' => 90, 'text' => fake()->sentence()],
             ],
+            'transcript_status' => 'completed',
+        ]);
+    }
+
+    public function transcribing(): static
+    {
+        return $this->withAudio()->state(fn () => [
+            'transcript_status' => 'processing',
         ]);
     }
 

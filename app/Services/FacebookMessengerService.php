@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\MessengerAdFlowMapping;
+use App\Models\MessengerBotFlow;
 use App\Models\MessengerConversation;
 use App\Models\MessengerSetting;
 use App\Models\User;
@@ -157,10 +159,13 @@ class FacebookMessengerService
                 continue;
             }
 
+            // Extract referral data (present when message originates from an ad)
+            $referral = $event['referral'] ?? $event['message']['referral'] ?? $event['postback']['referral'] ?? null;
+
             if (isset($event['message'])) {
-                $this->handleMessage($psid, $event['message']);
+                $this->handleMessage($psid, $event['message'], $referral);
             } elseif (isset($event['postback'])) {
-                $this->processPostback($psid, $event['postback']);
+                $this->processPostback($psid, $event['postback'], $referral);
             }
         }
     }
@@ -168,14 +173,14 @@ class FacebookMessengerService
     /**
      * Handle a text/attachment message from a user.
      */
-    protected function handleMessage(string $psid, array $message): void
+    protected function handleMessage(string $psid, array $message, ?array $referral = null): void
     {
         $text = $message['text'] ?? '';
         $quickReplyPayload = $message['quick_reply']['payload'] ?? null;
 
         // If this is a quick reply, route to postback handler
         if ($quickReplyPayload) {
-            $this->processPostback($psid, ['payload' => $quickReplyPayload]);
+            $this->processPostback($psid, ['payload' => $quickReplyPayload], $referral);
 
             return;
         }
@@ -208,14 +213,15 @@ class FacebookMessengerService
             return;
         }
 
-        // Start bot flow if one is active (sends greeting + first question)
-        app(MessengerBotFlowService::class)->startConversation($thread, $psid);
+        // Resolve flow from ad mapping or fall back to default
+        $flow = $this->resolveFlowFromReferral($referral);
+        app(MessengerBotFlowService::class)->startConversation($thread, $psid, $flow);
     }
 
     /**
      * Handle a postback (button click or quick reply).
      */
-    public function processPostback(string $psid, array $postback): void
+    public function processPostback(string $psid, array $postback, ?array $referral = null): void
     {
         $payload = $postback['payload'] ?? '';
 
@@ -247,8 +253,27 @@ class FacebookMessengerService
             return;
         }
 
-        // "Get Started" or similar postbacks should start a bot flow
-        app(MessengerBotFlowService::class)->startConversation($thread, $psid);
+        // Resolve flow from ad mapping or fall back to default
+        $flow = $this->resolveFlowFromReferral($referral);
+        app(MessengerBotFlowService::class)->startConversation($thread, $psid, $flow);
+    }
+
+    /**
+     * Resolve a bot flow from ad referral data.
+     */
+    protected function resolveFlowFromReferral(?array $referral): ?MessengerBotFlow
+    {
+        if (! $referral || empty($referral['ad_id'])) {
+            return null;
+        }
+
+        $mapping = MessengerAdFlowMapping::where('facebook_ad_id', $referral['ad_id'])->first();
+
+        if (! $mapping) {
+            return null;
+        }
+
+        return $mapping->flow;
     }
 
     /**
@@ -286,12 +311,22 @@ class FacebookMessengerService
             'last_message_at' => now(),
         ]);
 
-        // Add the default assigned user as a participant so the thread is discoverable
-        $settings = MessengerSetting::getInstance();
-        if ($settings->default_assigned_to) {
-            $assignedUser = User::find($settings->default_assigned_to);
-            if ($assignedUser) {
-                $thread->addParticipant($assignedUser);
+        // Add all active messenger responders as participants so the thread is discoverable
+        $responders = \App\Models\MessengerResponder::query()->active()->with('user')->get();
+        foreach ($responders as $responder) {
+            if ($responder->user) {
+                $thread->addParticipant($responder->user);
+            }
+        }
+
+        // Fallback: if no responders in roster, add default assigned user
+        if ($responders->isEmpty()) {
+            $settings = MessengerSetting::getInstance();
+            if ($settings->default_assigned_to) {
+                $assignedUser = User::find($settings->default_assigned_to);
+                if ($assignedUser) {
+                    $thread->addParticipant($assignedUser);
+                }
             }
         }
 

@@ -19,7 +19,7 @@ class NewMessengerLead extends Notification implements ShouldQueue
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
 
-    public string $pushCategory = 'deals';
+    public string $pushCategory = 'messenger';
 
     public function __construct(
         public Customer $customer,
@@ -72,6 +72,22 @@ class NewMessengerLead extends Notification implements ShouldQueue
             $message->line('This lead is incomplete and needs follow-up.');
         }
 
+        $pendingFlags = $this->customer->pendingDuplicateFlags()
+            ->with('duplicateCustomer')
+            ->get();
+
+        if ($pendingFlags->isNotEmpty()) {
+            $matchNames = $pendingFlags
+                ->filter(fn ($f) => $f->duplicateCustomer)
+                ->map(fn ($f) => $f->duplicateCustomer->full_name)
+                ->unique()
+                ->implode(', ');
+
+            if ($matchNames) {
+                $message->line("⚠ Possible duplicate of: {$matchNames}");
+            }
+        }
+
         $message->action('View Deal', url("/deals/{$this->deal->id}"))
             ->line('This lead was created from a Facebook Messenger conversation.');
 
@@ -93,6 +109,14 @@ class NewMessengerLead extends Notification implements ShouldQueue
             'message' => $this->isIncomplete
                 ? "Incomplete Messenger lead: {$this->customer->full_name} - needs follow-up"
                 : "New Messenger lead: {$this->customer->full_name}",
+            'has_duplicate' => $this->customer->pendingDuplicateFlags()->exists(),
+            'duplicate_names' => $this->customer->pendingDuplicateFlags()
+                ->with('duplicateCustomer')
+                ->get()
+                ->filter(fn ($f) => $f->duplicateCustomer)
+                ->map(fn ($f) => $f->duplicateCustomer->full_name)
+                ->unique()
+                ->implode(', '),
         ];
     }
 

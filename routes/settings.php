@@ -94,6 +94,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:messenger.manage')
         ->name('messenger.edit');
 
+    Route::livewire('settings/messenger/flows/create', 'pages::settings.bot-flow-builder')
+        ->middleware('permission:messenger.manage')
+        ->name('messenger.flows.create');
+
+    Route::livewire('settings/messenger/flows/{flow}/edit', 'pages::settings.bot-flow-builder')
+        ->middleware('permission:messenger.manage')
+        ->name('messenger.flows.edit');
+
     Route::get('settings/messenger/connect', [\App\Http\Controllers\FacebookOAuthController::class, 'redirect'])
         ->middleware('permission:messenger.manage')
         ->name('facebook.oauth.redirect');

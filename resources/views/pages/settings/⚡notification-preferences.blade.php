@@ -77,6 +77,7 @@ new class extends Component {
         return [
             'estimates' => __('Estimates'),
             'chat' => __('Chat Messages'),
+            'messenger' => __('Messenger Leads'),
             'email_messages' => __('Email'),
             'jobs' => __('Jobs & Scheduling'),
             'tasks' => __('Tasks'),

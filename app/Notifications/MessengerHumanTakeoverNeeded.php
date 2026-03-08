@@ -18,7 +18,7 @@ class MessengerHumanTakeoverNeeded extends Notification implements ShouldQueue
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
 
-    public string $pushCategory = 'chat';
+    public string $pushCategory = 'messenger';
 
     public function __construct(
         public MessengerConversation $conversation

@@ -218,6 +218,8 @@ new class extends Component {
             'status' => 'active',
         ]);
 
+        app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
+
         if ($this->leadSource) {
             $customer->update(['source' => $this->leadSource]);
         }

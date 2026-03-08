@@ -44,6 +44,9 @@ new class extends Component
         if ($min->summary_status === 'completed' && empty($this->executive_summary) && $min->executive_summary) {
             $this->executive_summary = $min->executive_summary;
         }
+        if ($min->transcript_status === 'completed' && empty($this->transcript) && $min->transcript) {
+            $this->transcript = $min->transcript;
+        }
     }
 
     #[Computed]
@@ -132,7 +135,11 @@ new class extends Component
 };
 ?>
 
-<div>
+<div
+    @if ($this->minutes->transcript_status === 'processing' || in_array($this->minutes->summary_status, ['pending', 'processing']))
+        wire:poll.3s="$refresh"
+    @endif
+>
     <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
         <div class="mb-4 flex items-center justify-between">
             <flux:heading size="lg">{{ __('Edit Meeting Minutes') }}</flux:heading>
@@ -147,6 +154,16 @@ new class extends Component
                 @endif
             </div>
         </div>
+
+        @if ($this->minutes->transcript_status === 'processing')
+            <div class="mb-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                <span class="size-5 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></span>
+                <div>
+                    <flux:text class="text-sm font-medium text-blue-700 dark:text-blue-400">{{ __('Transcribing audio...') }}</flux:text>
+                    <flux:text class="text-xs text-blue-600 dark:text-blue-500">{{ __('The transcript and summary will appear automatically when ready.') }}</flux:text>
+                </div>
+            </div>
+        @endif
 
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div class="sm:col-span-2">

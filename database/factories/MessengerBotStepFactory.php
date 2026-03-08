@@ -21,6 +21,7 @@ class MessengerBotStepFactory extends Factory
             'field_mapping' => null,
             'is_required' => true,
             'delay_seconds' => null,
+            'next_step_id' => null,
         ];
     }
 
@@ -66,6 +67,21 @@ class MessengerBotStepFactory extends Factory
         return $this->state([
             'step_type' => MessengerBotStep::TYPE_HANDOFF,
             'field_mapping' => null,
+        ]);
+    }
+
+    public function nextStep(int $stepId): static
+    {
+        return $this->state([
+            'next_step_id' => $stepId,
+        ]);
+    }
+
+    public function branchingQuickReply(array $options): static
+    {
+        return $this->state([
+            'step_type' => MessengerBotStep::TYPE_QUICK_REPLY,
+            'quick_reply_options' => $options,
         ]);
     }
 }

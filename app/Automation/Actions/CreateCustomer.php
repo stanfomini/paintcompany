@@ -152,6 +152,8 @@ class CreateCustomer implements ActionInterface
 
             $customer = Customer::create($attributes);
             $created = true;
+
+            app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         }
 
         // Swap run subject to the customer for downstream actions

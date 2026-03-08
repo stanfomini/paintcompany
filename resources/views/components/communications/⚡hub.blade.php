@@ -6,9 +6,12 @@ use App\Models\EmailAccount;
 use App\Models\EmailMessage;
 use App\Models\Customer;
 use App\Models\GuestChatSession;
+use App\Models\MessengerConversation;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
+use App\Services\FacebookMessengerService;
+use App\Services\MessengerLeadCreationService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -46,6 +49,18 @@ new class extends Component
     public ?int $viewingEmailThreadId = null;
 
     public bool $composingReply = false;
+
+    // Convert to Customer modal state
+    public bool $showConvertModal = false;
+    public string $convertFirstName = '';
+    public string $convertLastName = '';
+    public string $convertEmail = '';
+    public string $convertPhone = '';
+    public string $convertAddress = '';
+    public string $convertCity = '';
+    public string $convertState = '';
+    public string $convertZip = '';
+    public string $convertNotes = '';
 
     // Reply state (used for both modal and inline)
     public bool $showReplyModal = false;
@@ -588,6 +603,136 @@ new class extends Component
         $this->replyBody = '';
         $this->replyAccountId = null;
     }
+
+    /**
+     * Get the MessengerConversation for the currently selected messenger thread.
+     */
+    private function getSelectedMessengerConversation(): ?MessengerConversation
+    {
+        if (! $this->messengerThreadId) {
+            return null;
+        }
+
+        return MessengerConversation::where('thread_id', $this->messengerThreadId)->latest()->first();
+    }
+
+    /**
+     * Check if the currently selected messenger conversation can be converted (no customer yet).
+     */
+    #[Computed]
+    public function canConvertMessenger(): bool
+    {
+        if (! $this->isMessengerContact() || ! $this->messengerThreadId) {
+            return false;
+        }
+
+        $conversation = $this->getSelectedMessengerConversation();
+
+        return $conversation && ! $conversation->customer_id;
+    }
+
+    /**
+     * Open the convert-to-customer modal pre-filled with conversation data.
+     */
+    public function openConvertModal(): void
+    {
+        $conversation = $this->getSelectedMessengerConversation();
+        if (! $conversation) {
+            return;
+        }
+
+        $collected = $conversation->getCollectedData();
+        $fbName = $conversation->getFbName();
+
+        $this->convertFirstName = $collected['customer.first_name'] ?? $fbName['first_name'] ?? '';
+        $this->convertLastName = $collected['customer.last_name'] ?? $fbName['last_name'] ?? '';
+        $this->convertEmail = $collected['customer.email'] ?? '';
+        $this->convertPhone = $collected['customer.phone'] ?? '';
+        $this->convertAddress = $collected['customer.address'] ?? '';
+        $this->convertCity = $collected['customer.city'] ?? '';
+        $this->convertState = $collected['customer.state'] ?? '';
+        $this->convertZip = $collected['customer.zip'] ?? '';
+        $this->convertNotes = $collected['deal.description'] ?? '';
+
+        $this->showConvertModal = true;
+    }
+
+    /**
+     * Submit the convert-to-customer form.
+     */
+    public function submitConvertToCustomer(): void
+    {
+        $this->validate([
+            'convertFirstName' => 'required|string|max:100',
+            'convertLastName' => 'nullable|string|max:100',
+            'convertEmail' => 'nullable|email|max:255',
+            'convertPhone' => 'nullable|string|max:30',
+            'convertAddress' => 'nullable|string|max:255',
+            'convertCity' => 'nullable|string|max:100',
+            'convertState' => 'nullable|string|max:50',
+            'convertZip' => 'nullable|string|max:20',
+            'convertNotes' => 'nullable|string|max:2000',
+        ]);
+
+        $conversation = $this->getSelectedMessengerConversation();
+        if (! $conversation || $conversation->customer_id) {
+            $this->showConvertModal = false;
+
+            return;
+        }
+
+        $service = app(MessengerLeadCreationService::class);
+        $service->createFromManualConversion($conversation, [
+            'first_name' => $this->convertFirstName,
+            'last_name' => $this->convertLastName,
+            'email' => $this->convertEmail,
+            'phone' => $this->convertPhone,
+            'address' => $this->convertAddress,
+            'city' => $this->convertCity,
+            'state' => $this->convertState,
+            'zip' => $this->convertZip,
+            'notes' => $this->convertNotes,
+        ]);
+
+        $this->showConvertModal = false;
+        unset($this->contacts, $this->canConvertMessenger);
+        session()->flash('message', __('Customer created successfully.'));
+    }
+
+    /**
+     * Send a booking link to the messenger user via Facebook.
+     */
+    public function sendBookingLink(): void
+    {
+        $conversation = $this->getSelectedMessengerConversation();
+        if (! $conversation || $conversation->customer_id) {
+            return;
+        }
+
+        $conversation->generateBookingToken();
+        $url = $conversation->getBookingUrl();
+
+        $messenger = app(FacebookMessengerService::class);
+        $messenger->sendTextMessage(
+            $conversation->facebook_psid,
+            "We'd love to help you with your painting project! Please fill out this quick form so we can prepare your free estimate:\n\n{$url}"
+        );
+
+        // Store a record in the chat thread
+        if ($conversation->thread_id) {
+            ChatMessage::create([
+                'thread_id' => $conversation->thread_id,
+                'user_id' => auth()->id(),
+                'content' => "Booking link sent: {$url}",
+                'type' => ChatMessage::TYPE_SYSTEM,
+            ]);
+
+            ChatThread::where('id', $conversation->thread_id)->update(['last_message_at' => now()]);
+        }
+
+        unset($this->threadMessages);
+        session()->flash('message', __('Booking link sent via Messenger.'));
+    }
 };
 ?>
 
@@ -623,6 +768,9 @@ new class extends Component
                             <flux:avatar name="{{ $contact['name'] }}" size="sm" />
                             @if ($contact['has_unread'])
                                 <span class="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white dark:border-zinc-900"></span>
+                            @endif
+                            @if ($contact['has_duplicate_flag'] ?? false)
+                                <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white dark:border-zinc-900" title="{{ __('Possible duplicate') }}"></span>
                             @endif
                         </div>
                         <div class="flex-1 min-w-0">
@@ -778,6 +926,16 @@ new class extends Component
                     </div>
                     <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Facebook Messenger conversation') }}</flux:text>
                 </div>
+                @if ($this->canConvertMessenger)
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <flux:button size="sm" variant="primary" wire:click="openConvertModal" icon="user-plus">
+                            <span class="hidden sm:inline">{{ __('Convert') }}</span>
+                        </flux:button>
+                        <flux:button size="sm" wire:click="sendBookingLink" icon="link" wire:confirm="{{ __('Send a booking form link to this Messenger user?') }}">
+                            <span class="hidden sm:inline">{{ __('Send Link') }}</span>
+                        </flux:button>
+                    </div>
+                @endif
             </div>
 
             {{-- Messenger thread as full messenger view --}}
@@ -1326,4 +1484,75 @@ new class extends Component
             </div>
         @endif
     </div>
+
+    {{-- Convert to Customer Modal --}}
+    <flux:modal wire:model="showConvertModal" class="max-w-lg">
+        <div class="space-y-4">
+            <flux:heading size="lg">{{ __('Convert to Customer') }}</flux:heading>
+            <flux:text size="sm" class="text-zinc-500">{{ __('Create a customer record, deal, and draft estimate from this Messenger conversation.') }}</flux:text>
+
+            <form wire:submit="submitConvertToCustomer" class="space-y-4">
+                <div class="grid grid-cols-2 gap-3">
+                    <flux:field>
+                        <flux:label>{{ __('First Name') }} *</flux:label>
+                        <flux:input wire:model="convertFirstName" required />
+                        <flux:error name="convertFirstName" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('Last Name') }}</flux:label>
+                        <flux:input wire:model="convertLastName" />
+                        <flux:error name="convertLastName" />
+                    </flux:field>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <flux:field>
+                        <flux:label>{{ __('Email') }}</flux:label>
+                        <flux:input wire:model="convertEmail" type="email" />
+                        <flux:error name="convertEmail" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('Phone') }}</flux:label>
+                        <flux:input wire:model="convertPhone" type="tel" />
+                        <flux:error name="convertPhone" />
+                    </flux:field>
+                </div>
+
+                <flux:field>
+                    <flux:label>{{ __('Address') }}</flux:label>
+                    <flux:input wire:model="convertAddress" />
+                    <flux:error name="convertAddress" />
+                </flux:field>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <flux:field>
+                        <flux:label>{{ __('City') }}</flux:label>
+                        <flux:input wire:model="convertCity" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('State') }}</flux:label>
+                        <flux:input wire:model="convertState" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('Zip') }}</flux:label>
+                        <flux:input wire:model="convertZip" />
+                    </flux:field>
+                </div>
+
+                <flux:field>
+                    <flux:label>{{ __('Notes') }}</flux:label>
+                    <flux:textarea wire:model="convertNotes" rows="2" />
+                    <flux:error name="convertNotes" />
+                </flux:field>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <flux:button wire:click="$set('showConvertModal', false)">{{ __('Cancel') }}</flux:button>
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
+                        <span wire:loading.remove wire:target="submitConvertToCustomer">{{ __('Create Customer') }}</span>
+                        <span wire:loading wire:target="submitConvertToCustomer">{{ __('Creating...') }}</span>
+                    </flux:button>
+                </div>
+            </form>
+        </div>
+    </flux:modal>
 </div>

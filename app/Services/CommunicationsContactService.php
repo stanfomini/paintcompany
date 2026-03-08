@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ChatParticipant;
 use App\Models\ChatThread;
 use App\Models\Customer;
+use App\Models\CustomerDuplicateFlag;
 use App\Models\Deal;
 use App\Models\EmailCrmLink;
 use App\Models\EmailMessage;
@@ -205,8 +206,27 @@ class CommunicationsContactService
                     'unread_count' => $unreadCount,
                     'has_unread' => $unreadCount > 0,
                     'is_support_only' => $isSupportOnly,
+                    'has_duplicate_flag' => false,
                 ];
             });
+
+            // Enrich with duplicate flag status (bulk query to avoid N+1)
+            $customerContactUserIds = $contacts->where('type', 'customer')->pluck('id')->filter()->all();
+            if (! empty($customerContactUserIds)) {
+                $flaggedCustomerUserIds = Customer::query()
+                    ->whereIn('user_id', $customerContactUserIds)
+                    ->whereHas('pendingDuplicateFlags')
+                    ->pluck('user_id')
+                    ->all();
+
+                $contacts = $contacts->map(function ($contact) use ($flaggedCustomerUserIds) {
+                    if ($contact['type'] === 'customer' && in_array($contact['id'], $flaggedCustomerUserIds)) {
+                        $contact['has_duplicate_flag'] = true;
+                    }
+
+                    return $contact;
+                });
+            }
 
             // Step 4b: Filter contacts by viewer's permissions
             $contacts = $this->filterContactsByPermissions($contacts, $viewer, $threadsByContact);
@@ -329,6 +349,8 @@ class CommunicationsContactService
                 'unread_count' => $unread,
                 'has_unread' => $unread > 0,
                 'is_support_only' => false,
+                'has_duplicate_flag' => $thread->customer_id
+                    && CustomerDuplicateFlag::where('customer_id', $thread->customer_id)->where('status', 'pending')->exists(),
             ];
         })->values();
     }

@@ -115,6 +115,10 @@ Route::livewire('/book/{slug}', 'public.vendor-booking')
     ->name('booking.vendor')
     ->middleware('throttle:60,1');
 
+Route::livewire('/book/messenger/{token}', 'public.messenger-booking')
+    ->name('booking.messenger')
+    ->middleware('throttle:60,1');
+
 Route::livewire('/booking/{token}/confirmed', 'public.booking-confirmed')
     ->name('booking.confirmed')
     ->middleware('throttle:60,1');
@@ -307,6 +311,7 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
         Route::livewire('/people', 'people.index')->name('people.index');
         Route::livewire('/customers', 'customers.index')->name('customers.index');
         Route::livewire('/customers/{customer}', 'customers.show')->name('customers.show');
+        Route::livewire('/customers/{customer}/merge/{duplicate}', 'customers.merge')->name('customers.merge');
         Route::livewire('/customers/{customer}/communications', 'customers.communications-hub')->name('customers.communications');
         Route::livewire('/agents', 'agents.index')->name('agents.index');
         Route::livewire('/agents/{user}', 'agents.show')->name('agents.show');

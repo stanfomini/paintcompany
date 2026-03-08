@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Jobs\ProcessFacebookMessageJob;
 use App\Models\MessengerSetting;
 use App\Services\FacebookMessengerService;
 use Illuminate\Http\Request;
@@ -60,19 +61,8 @@ class FacebookWebhookController extends Controller
 
         $data = $request->json()->all();
 
-        // Process each entry (Facebook may batch multiple events)
-        $entries = $data['entry'] ?? [];
-
-        foreach ($entries as $entry) {
-            try {
-                $this->messenger->processIncomingMessage($entry);
-            } catch (\Throwable $e) {
-                Log::error('FacebookWebhook: Error processing entry', [
-                    'error' => $e->getMessage(),
-                    'entry_id' => $entry['id'] ?? null,
-                ]);
-            }
-        }
+        // Dispatch async processing and return 200 immediately
+        ProcessFacebookMessageJob::dispatch($data);
 
         return response('EVENT_RECEIVED', 200);
     }

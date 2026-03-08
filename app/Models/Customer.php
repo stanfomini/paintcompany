@@ -262,6 +262,30 @@ class Customer extends Model
     }
 
     /**
+     * Get all duplicate flags for this customer.
+     */
+    public function duplicateFlags(): HasMany
+    {
+        return $this->hasMany(CustomerDuplicateFlag::class);
+    }
+
+    /**
+     * Get pending duplicate flags for this customer.
+     */
+    public function pendingDuplicateFlags(): HasMany
+    {
+        return $this->hasMany(CustomerDuplicateFlag::class)->where('status', 'pending');
+    }
+
+    /**
+     * Check if the customer has any pending duplicate flags.
+     */
+    public function hasPendingDuplicates(): bool
+    {
+        return $this->pendingDuplicateFlags()->exists();
+    }
+
+    /**
      * Check if the customer has portal access.
      */
     public function hasPortalAccess(): bool

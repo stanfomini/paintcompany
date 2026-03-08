@@ -57,6 +57,8 @@ class ReferralService
             'created_by' => $createdBy,
         ]);
 
+        app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
+
         // Find auto-created property (from Customer model saved hook) or create if needed
         $property = null;
         if (! empty($data['address']) && ! empty($data['city'])) {

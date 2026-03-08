@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 class MessengerConversation extends Model
 {
@@ -14,11 +15,15 @@ class MessengerConversation extends Model
         'flow_id',
         'thread_id',
         'facebook_psid',
+        'fb_profile_data',
         'current_step_id',
         'status',
         'answers',
         'customer_id',
         'deal_id',
+        'booking_token',
+        'booking_token_expires_at',
+        'taken_over_by',
         'started_at',
         'completed_at',
         'last_activity_at',
@@ -28,6 +33,8 @@ class MessengerConversation extends Model
     {
         return [
             'answers' => 'array',
+            'fb_profile_data' => 'array',
+            'booking_token_expires_at' => 'datetime',
             'started_at' => 'datetime',
             'completed_at' => 'datetime',
             'last_activity_at' => 'datetime',
@@ -112,5 +119,64 @@ class MessengerConversation extends Model
     public function isInProgress(): bool
     {
         return $this->status === 'in_progress';
+    }
+
+    /**
+     * Get Facebook profile name as first/last name array.
+     *
+     * @return array{first_name: string|null, last_name: string|null}
+     */
+    public function getFbName(): array
+    {
+        $profile = $this->fb_profile_data ?? [];
+
+        return [
+            'first_name' => $profile['first_name'] ?? null,
+            'last_name' => $profile['last_name'] ?? null,
+        ];
+    }
+
+    /**
+     * Generate a booking token for the public booking link.
+     */
+    public function generateBookingToken(int $expiryDays = 7): string
+    {
+        $this->booking_token = Str::random(64);
+        $this->booking_token_expires_at = now()->addDays($expiryDays);
+        $this->save();
+
+        return $this->booking_token;
+    }
+
+    /**
+     * Get the public booking URL for this conversation.
+     */
+    public function getBookingUrl(): ?string
+    {
+        if (! $this->booking_token) {
+            return null;
+        }
+
+        return route('booking.messenger', ['token' => $this->booking_token]);
+    }
+
+    /**
+     * Check if the booking token is still valid.
+     */
+    public function isBookingTokenValid(): bool
+    {
+        return $this->booking_token
+            && $this->booking_token_expires_at
+            && $this->booking_token_expires_at->isFuture();
+    }
+
+    /**
+     * Invalidate the booking token after use.
+     */
+    public function invalidateBookingToken(): void
+    {
+        $this->booking_token = null;
+        $this->booking_token_expires_at = null;
+        $this->save();
     }
 }

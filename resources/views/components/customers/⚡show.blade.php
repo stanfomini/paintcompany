@@ -5,13 +5,16 @@ use App\Models\Activity;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\Customer;
+use App\Models\CustomerDuplicateFlag;
 use App\Models\Deal;
 use App\Models\EstimateActivity;
 use App\Models\Job;
 use App\Models\Property;
 use App\Models\User;
+use App\Services\CustomerDuplicateService;
 use App\Services\DealStageService;
 use App\Services\InvitationService;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -682,6 +685,21 @@ new class extends Component
     {
         $this->showCompose = false;
     }
+
+    #[Computed]
+    public function pendingDuplicateFlags(): Collection
+    {
+        return $this->customer->pendingDuplicateFlags()
+            ->with(['duplicateCustomer', 'duplicateUser'])
+            ->get();
+    }
+
+    public function dismissDuplicateFlag(int $flagId): void
+    {
+        $flag = CustomerDuplicateFlag::findOrFail($flagId);
+        app(CustomerDuplicateService::class)->dismiss($flag, auth()->user());
+        unset($this->pendingDuplicateFlags);
+    }
 }; ?>
 
 <div>
@@ -736,6 +754,40 @@ new class extends Component
                 </div>
             </div>
         </div>
+
+        {{-- Duplicate detection banners --}}
+        @foreach ($this->pendingDuplicateFlags as $flag)
+            <div wire:key="dup-flag-{{ $flag->id }}" class="rounded-lg border border-amber-300 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+                        <svg class="w-5 h-5 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                        @if ($flag->isStaffMatch())
+                            {{ __('Possible staff match: This customer may be existing :type :name.', [
+                                'type' => $flag->duplicateUser?->type ?? 'user',
+                                'name' => $flag->duplicateUser?->name ?? 'Unknown',
+                            ]) }}
+                        @else
+                            {{ __('Possible duplicate: Matches :name (:match).', [
+                                'name' => $flag->duplicateCustomer?->full_name ?? 'Unknown',
+                                'match' => $flag->match_type,
+                            ]) }}
+                        @endif
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        @if (! $flag->isStaffMatch() && $flag->duplicate_customer_id && Route::has('customers.merge'))
+                            <flux:button size="sm" variant="primary"
+                                :href="route('customers.merge', ['customer' => $this->customer->id, 'duplicate' => $flag->duplicate_customer_id])"
+                                wire:navigate>
+                                {{ __('Review & Merge') }}
+                            </flux:button>
+                        @endif
+                        <flux:button size="sm" variant="ghost" wire:click="dismissDuplicateFlag({{ $flag->id }})">
+                            {{ __('Dismiss') }}
+                        </flux:button>
+                    </div>
+                </div>
+            </div>
+        @endforeach
 
         {{-- Customer Meta Bar --}}
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-zinc-500 dark:text-zinc-400 mb-3 sm:pl-12">

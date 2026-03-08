@@ -90,7 +90,7 @@ it('returns all default categories', function () {
     $defaults = User::defaultNotificationPreferences();
 
     expect($defaults)->toHaveKeys([
-        'estimates', 'chat', 'email_messages', 'jobs',
+        'estimates', 'chat', 'messenger', 'email_messages', 'jobs',
         'tasks', 'payments', 'documents', 'general',
     ]);
 

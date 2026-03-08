@@ -1,10 +1,11 @@
 <?php
 
-use App\Jobs\GenerateMeetingSummaryJob;
+use App\Jobs\ProcessMeetingAudioJob;
 use App\Models\Corporation;
 use App\Models\MeetingMinutes;
-use App\Services\AudioMessageService;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -26,8 +27,8 @@ new class extends Component
     // Audio file uploaded via Livewire temp upload
     public $audioFile = null;
 
-    // Audio state
-    public bool $isProcessing = false;
+    // Save state
+    public bool $isSaving = false;
 
     public function boot(): void
     {
@@ -71,81 +72,36 @@ new class extends Component
             'audioFile' => ['required', 'file', 'max:51200'],
         ]);
 
-        $this->isProcessing = true;
+        $this->isSaving = true;
 
-        try {
-            $audioService = app(AudioMessageService::class);
-            $audioResult = $audioService->processAudioMessage($this->audioFile, 'meeting-audio');
+        // Store the uploaded audio to a temp location so the job can access it
+        $extension = $this->audioFile->getClientOriginalExtension() ?: 'webm';
+        $tempPath = 'meeting-audio-pending/'.Str::uuid().'.'.$extension;
+        Storage::put($tempPath, file_get_contents($this->audioFile->getRealPath()));
 
-            // Tag segments with the recorder's name
-            $segments = $audioResult['segments'] ?? [];
-            $speakerName = Auth::user()->name ?? 'Unknown';
-            $segments = $this->tagSegmentsWithSpeaker($segments, $speakerName);
+        // Create the meeting record immediately
+        $minutes = MeetingMinutes::create([
+            'corporation_id' => $this->corporationId,
+            'recorded_by' => Auth::id(),
+            'title' => $this->title,
+            'meeting_date' => $this->meeting_date,
+            'meeting_type' => $this->meeting_type,
+            'attendees' => $this->attendees ?: null,
+            'notes' => $this->notes ?: null,
+            'transcript_status' => 'processing',
+            'summary_status' => 'pending',
+        ]);
 
-            $minutes = MeetingMinutes::create([
-                'corporation_id' => $this->corporationId,
-                'recorded_by' => Auth::id(),
-                'title' => $this->title,
-                'meeting_date' => $this->meeting_date,
-                'meeting_type' => $this->meeting_type,
-                'audio_path' => $audioResult['audio_path'],
-                'audio_duration' => $audioResult['audio_duration'],
-                'transcript' => $audioResult['transcription'],
-                'transcript_segments' => $segments ?: null,
-                'attendees' => $this->attendees ?: null,
-                'notes' => $this->notes ?: null,
-                'summary_status' => $audioResult['transcription'] ? 'pending' : 'failed',
-            ]);
+        // Dispatch the audio processing job
+        ProcessMeetingAudioJob::dispatch(
+            $minutes,
+            $tempPath,
+            Auth::user()->name ?? 'Unknown',
+        );
 
-            if ($audioResult['transcription']) {
-                GenerateMeetingSummaryJob::dispatch($minutes);
-            }
-
-            $this->audioFile = null;
-            $this->dispatch('recorder-saved');
-        } finally {
-            $this->isProcessing = false;
-        }
-    }
-
-    /**
-     * Merge consecutive segments into groups based on pauses, then tag with speaker.
-     * A gap > 2 seconds between segments starts a new group.
-     */
-    private function tagSegmentsWithSpeaker(array $segments, string $speakerName): array
-    {
-        if (empty($segments)) {
-            return [];
-        }
-
-        $grouped = [];
-        $currentGroup = [
-            'start' => $segments[0]['start'] ?? 0,
-            'end' => $segments[0]['end'] ?? 0,
-            'text' => trim($segments[0]['text'] ?? ''),
-            'speaker' => $speakerName,
-        ];
-
-        for ($i = 1; $i < count($segments); $i++) {
-            $gap = ($segments[$i]['start'] ?? 0) - ($currentGroup['end']);
-
-            if ($gap > 2.0) {
-                $grouped[] = $currentGroup;
-                $currentGroup = [
-                    'start' => $segments[$i]['start'] ?? 0,
-                    'end' => $segments[$i]['end'] ?? 0,
-                    'text' => trim($segments[$i]['text'] ?? ''),
-                    'speaker' => $speakerName,
-                ];
-            } else {
-                $currentGroup['end'] = $segments[$i]['end'] ?? $currentGroup['end'];
-                $currentGroup['text'] .= ' ' . trim($segments[$i]['text'] ?? '');
-            }
-        }
-
-        $grouped[] = $currentGroup;
-
-        return $grouped;
+        $this->audioFile = null;
+        $this->isSaving = false;
+        $this->dispatch('recorder-saved');
     }
 
     public function saveWithoutAudio(): void
@@ -164,6 +120,7 @@ new class extends Component
             'meeting_type' => $this->meeting_type,
             'attendees' => $this->attendees ?: null,
             'notes' => $this->notes ?: null,
+            'transcript_status' => 'none',
             'summary_status' => 'pending',
         ]);
 
@@ -349,19 +306,16 @@ new class extends Component
 
         {{-- Actions --}}
         <div class="mt-6 flex items-center justify-end gap-2">
-            @if ($isProcessing)
-                <div class="flex items-center gap-2">
-                    <span class="size-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent"></span>
-                    <flux:text class="text-sm text-zinc-500">{{ __('Processing audio and generating transcript...') }}</flux:text>
-                </div>
-            @else
-                <flux:button variant="ghost" wire:click="saveWithoutAudio">
-                    {{ __('Save Without Audio') }}
-                </flux:button>
-                <flux:button variant="primary" @click="confirmRecording()" x-show="audioUrl" x-cloak>
-                    {{ __('Save with Recording') }}
-                </flux:button>
-            @endif
+            <flux:button variant="ghost" wire:click="saveWithoutAudio" wire:loading.attr="disabled">
+                {{ __('Save Without Audio') }}
+            </flux:button>
+            <flux:button variant="primary" @click="confirmRecording()" x-show="audioUrl" x-cloak wire:loading.attr="disabled">
+                <span wire:loading.remove wire:target="saveWithAudio">{{ __('Save with Recording') }}</span>
+                <span wire:loading wire:target="saveWithAudio" class="flex items-center gap-2">
+                    <span class="size-4 animate-spin rounded-full border-2 border-white border-t-transparent"></span>
+                    {{ __('Saving...') }}
+                </span>
+            </flux:button>
         </div>
     </div>
 </div>

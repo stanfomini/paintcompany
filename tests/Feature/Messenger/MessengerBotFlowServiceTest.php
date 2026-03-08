@@ -317,11 +317,7 @@ describe('completeConversation', function () {
 });
 
 describe('abandonConversation', function () {
-    it('marks status as abandoned and creates partial lead', function () {
-        $this->mock(MessengerLeadCreationService::class, function ($mock) {
-            $mock->shouldReceive('createPartialLead')->once();
-        });
-
+    it('marks status as abandoned without creating a customer', function () {
         $flow = MessengerBotFlow::factory()->active()->create();
         $thread = ChatThread::factory()->facebook('99990000')->create();
 
@@ -340,6 +336,8 @@ describe('abandonConversation', function () {
 
         $conversation->refresh();
         expect($conversation->status)->toBe('abandoned');
+        expect($conversation->customer_id)->toBeNull();
+        expect($conversation->deal_id)->toBeNull();
     });
 });
 
@@ -374,10 +372,6 @@ describe('triggerHumanTakeover', function () {
 
 describe('checkTimeouts', function () {
     it('finds and abandons stale conversations', function () {
-        $this->mock(MessengerLeadCreationService::class, function ($mock) {
-            $mock->shouldReceive('createPartialLead')->once();
-        });
-
         $flow = MessengerBotFlow::factory()->active()->create([
             'timeout_minutes' => 30,
         ]);

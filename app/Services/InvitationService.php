@@ -252,6 +252,8 @@ class InvitationService
                 'status' => 'active',
                 'source' => 'invite_link',
             ]);
+
+            app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         } else {
             if (empty($customer->source)) {
                 $customer->update(['user_id' => $user->id, 'source' => 'invite_link']);

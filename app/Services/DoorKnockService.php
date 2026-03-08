@@ -91,6 +91,8 @@ class DoorKnockService
                 'status' => 'active',
                 'created_by' => $knock->user_id,
             ]);
+
+            app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         }
 
         // Find or create property

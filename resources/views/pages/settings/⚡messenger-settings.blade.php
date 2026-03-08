@@ -1,11 +1,11 @@
 <?php
 
 use App\Models\MessengerBotFlow;
+use App\Models\MessengerResponder;
 use App\Models\MessengerSetting;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -23,8 +23,10 @@ new class extends Component {
     public string $appSecret = '';
     public string $verifyToken = '';
 
-    // Default Settings
-    public ?int $defaultAssignedTo = null;
+    // Responder Roster
+    public array $responders = [];
+    public ?int $newResponderId = null;
+    public string $newResponderRole = 'estimator';
 
     // Widget Settings
     public bool $websiteWidgetEnabled = false;
@@ -34,8 +36,11 @@ new class extends Component {
 
     // Bot Flow Management
     public array $flows = [];
-    public ?int $editingFlowId = null;
-    public bool $showFlowEditor = false;
+
+    // Ad Routing
+    public string $adAccountId = '';
+    public array $adMappings = [];
+    public bool $syncing = false;
 
     public function mount(): void
     {
@@ -50,13 +55,16 @@ new class extends Component {
         $this->pageAccessToken = $settings->page_access_token ?? '';
         $this->appSecret = $settings->app_secret ?? '';
         $this->verifyToken = $settings->verify_token ?? '';
-        $this->defaultAssignedTo = $settings->default_assigned_to;
         $this->websiteWidgetEnabled = (bool) $settings->website_widget_enabled;
         $this->widgetGreetingLoggedIn = $settings->widget_greeting_logged_in ?? '';
         $this->widgetGreetingLoggedOut = $settings->widget_greeting_logged_out ?? '';
         $this->widgetThemeColor = $settings->widget_theme_color ?? '#0084ff';
 
+        $this->adAccountId = $settings->ad_account_id ?? '';
+
+        $this->loadResponders();
         $this->loadFlows();
+        $this->loadAdMappings();
     }
 
     #[Computed]
@@ -68,7 +76,7 @@ new class extends Component {
     #[Computed]
     public function isConnected(): bool
     {
-        return MessengerSetting::getInstance()->is_connected;
+        return (bool) MessengerSetting::getInstance()->is_connected;
     }
 
     #[Computed]
@@ -81,6 +89,89 @@ new class extends Component {
     public function internalUsers(): \Illuminate\Database\Eloquent\Collection
     {
         return User::where('type', 'internal')->orderBy('name')->get();
+    }
+
+    #[Computed]
+    public function availableUsers(): \Illuminate\Database\Eloquent\Collection
+    {
+        $existingUserIds = MessengerResponder::pluck('user_id');
+
+        return User::where('type', 'internal')
+            ->whereNotIn('id', $existingUserIds)
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function loadResponders(): void
+    {
+        $this->responders = MessengerResponder::query()
+            ->with('user')
+            ->orderBy('sort_order')
+            ->orderBy('created_at')
+            ->get()
+            ->toArray();
+    }
+
+    public function addResponder(): void
+    {
+        $this->validate([
+            'newResponderId' => ['required', 'exists:users,id'],
+            'newResponderRole' => ['required', 'in:appointment_booker,estimator,both'],
+        ]);
+
+        $user = User::findOrFail($this->newResponderId);
+
+        if ($user->type !== 'internal') {
+            $this->addError('newResponderId', 'Only internal users can be responders.');
+            return;
+        }
+
+        if (MessengerResponder::where('user_id', $user->id)->exists()) {
+            $this->addError('newResponderId', 'This user is already a responder.');
+            return;
+        }
+
+        $maxOrder = MessengerResponder::max('sort_order') ?? 0;
+
+        MessengerResponder::create([
+            'user_id' => $user->id,
+            'role' => $this->newResponderRole,
+            'is_active' => true,
+            'sort_order' => $maxOrder + 1,
+        ]);
+
+        $this->newResponderId = null;
+        $this->newResponderRole = 'estimator';
+        $this->loadResponders();
+        unset($this->availableUsers);
+        $this->dispatch('messenger-settings-saved');
+    }
+
+    public function removeResponder(int $id): void
+    {
+        MessengerResponder::findOrFail($id)->delete();
+        $this->loadResponders();
+        unset($this->availableUsers);
+        $this->dispatch('messenger-settings-saved');
+    }
+
+    public function updateResponderRole(int $id, string $role): void
+    {
+        if (! in_array($role, ['appointment_booker', 'estimator', 'both'])) {
+            return;
+        }
+
+        MessengerResponder::findOrFail($id)->update(['role' => $role]);
+        $this->loadResponders();
+        $this->dispatch('messenger-settings-saved');
+    }
+
+    public function toggleResponderActive(int $id): void
+    {
+        $responder = MessengerResponder::findOrFail($id);
+        $responder->update(['is_active' => ! $responder->is_active]);
+        $this->loadResponders();
+        $this->dispatch('messenger-settings-saved');
     }
 
     public function saveConnectionSettings(): void
@@ -102,24 +193,6 @@ new class extends Component {
             'page_id' => $validated['pageId'] ?: null,
             'page_access_token' => $validated['pageAccessToken'] ?: null,
             'app_secret' => $validated['appSecret'] ?: null,
-        ]);
-
-        $this->dispatch('messenger-settings-saved');
-    }
-
-    public function saveDefaultSettings(): void
-    {
-        if (Auth::user()->type !== 'internal') {
-            abort(403);
-        }
-
-        $validated = $this->validate([
-            'defaultAssignedTo' => ['nullable', 'exists:users,id'],
-        ]);
-
-        $settings = MessengerSetting::getInstance();
-        $settings->update([
-            'default_assigned_to' => $validated['defaultAssignedTo'] ?: null,
         ]);
 
         $this->dispatch('messenger-settings-saved');
@@ -160,24 +233,6 @@ new class extends Component {
         $this->dispatch('messenger-settings-saved');
     }
 
-    public function createFlow(): void
-    {
-        $this->editingFlowId = null;
-        $this->showFlowEditor = true;
-    }
-
-    public function editFlow(int $flowId): void
-    {
-        $this->editingFlowId = $flowId;
-        $this->showFlowEditor = true;
-    }
-
-    public function closeFlowEditor(): void
-    {
-        $this->showFlowEditor = false;
-        $this->editingFlowId = null;
-    }
-
     public function deleteFlow(int $flowId): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -188,18 +243,70 @@ new class extends Component {
         $this->loadFlows();
     }
 
-    #[On('flow-saved')]
-    public function refreshFlows(): void
-    {
-        $this->loadFlows();
-    }
-
     protected function loadFlows(): void
     {
         $this->flows = MessengerBotFlow::withCount('steps')
             ->orderByDesc('updated_at')
             ->get()
             ->toArray();
+    }
+
+    public function loadAdMappings(): void
+    {
+        $this->adMappings = \App\Models\MessengerAdFlowMapping::query()
+            ->orderBy('facebook_campaign_name')
+            ->orderBy('facebook_ad_name')
+            ->get()
+            ->toArray();
+    }
+
+    public function saveAdAccountId(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $this->validate([
+            'adAccountId' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $settings = MessengerSetting::getInstance();
+        $settings->update([
+            'ad_account_id' => $this->adAccountId ?: null,
+        ]);
+
+        $this->dispatch('messenger-settings-saved');
+    }
+
+    public function syncAds(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $service = app(\App\Services\FacebookMarketingService::class);
+        $count = $service->syncAds();
+
+        $this->loadAdMappings();
+        $this->dispatch('messenger-settings-saved');
+        session()->flash('ad-sync-message', __(':count ads synced from Facebook.', ['count' => $count]));
+    }
+
+    public function updateAdFlowMapping(int $mappingId, string $flowId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $mapping = \App\Models\MessengerAdFlowMapping::findOrFail($mappingId);
+
+        if ($flowId === '') {
+            $mapping->update(['flow_id' => null]);
+        } else {
+            $mapping->update(['flow_id' => (int) $flowId]);
+        }
+
+        $this->loadAdMappings();
     }
 }; ?>
 
@@ -313,24 +420,92 @@ new class extends Component {
 
         <flux:separator />
 
-        {{-- Default Settings --}}
-        <form wire:submit="saveDefaultSettings" class="my-6 w-full space-y-6">
-            <flux:heading size="sm">{{ __('Default Settings') }}</flux:heading>
-
-            <flux:select wire:model="defaultAssignedTo" :label="__('Default Assigned User')" placeholder="Select a user...">
-                <flux:select.option value="">{{ __('Unassigned') }}</flux:select.option>
-                @foreach ($this->internalUsers as $user)
-                    <flux:select.option value="{{ $user->id }}">{{ $user->name }}</flux:select.option>
-                @endforeach
-            </flux:select>
-
-            <div class="flex items-center gap-4">
-                <flux:button type="submit" variant="primary">{{ __('Save Default Settings') }}</flux:button>
-                <x-action-message class="me-3" on="messenger-settings-saved">
-                    {{ __('Saved.') }}
-                </x-action-message>
+        {{-- Messenger Responders Roster --}}
+        <div class="my-6 w-full space-y-6">
+            <div>
+                <flux:heading size="sm">{{ __('Messenger Responders') }}</flux:heading>
+                <flux:text class="text-sm text-zinc-500">
+                    {{ __('Employees who receive and answer Facebook Messenger leads. Estimators are assigned leads in round-robin order.') }}
+                </flux:text>
             </div>
-        </form>
+
+            {{-- Add Responder Form --}}
+            <form wire:submit="addResponder" class="flex items-end gap-3">
+                <div class="flex-1">
+                    <flux:select wire:model="newResponderId" :label="__('Employee')" placeholder="Select an employee...">
+                        <flux:select.option value="">{{ __('Select an employee...') }}</flux:select.option>
+                        @foreach ($this->availableUsers as $user)
+                            <flux:select.option value="{{ $user->id }}">{{ $user->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                </div>
+                <div class="w-48">
+                    <flux:select wire:model="newResponderRole" :label="__('Role')">
+                        <flux:select.option value="estimator">{{ __('Estimator') }}</flux:select.option>
+                        <flux:select.option value="appointment_booker">{{ __('Appt Booker') }}</flux:select.option>
+                        <flux:select.option value="both">{{ __('Both') }}</flux:select.option>
+                    </flux:select>
+                </div>
+                <flux:button type="submit" variant="primary" icon="plus">
+                    {{ __('Add') }}
+                </flux:button>
+            </form>
+
+            @error('newResponderId')
+                <flux:text class="text-sm text-red-500">{{ $message }}</flux:text>
+            @enderror
+
+            {{-- Responder List --}}
+            @if (count($responders) > 0)
+                <div class="space-y-2">
+                    @foreach ($responders as $responder)
+                        <div wire:key="responder-{{ $responder['id'] }}" class="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
+                            <div class="flex items-center gap-3">
+                                <div class="flex items-center gap-2">
+                                    @if ($responder['is_active'])
+                                        <div class="h-2.5 w-2.5 rounded-full bg-green-500"></div>
+                                    @else
+                                        <div class="h-2.5 w-2.5 rounded-full bg-zinc-400"></div>
+                                    @endif
+                                    <flux:text class="font-medium text-sm">{{ $responder['user']['name'] ?? 'Unknown' }}</flux:text>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <flux:select
+                                    size="sm"
+                                    wire:change="updateResponderRole({{ $responder['id'] }}, $event.target.value)"
+                                    class="w-40"
+                                >
+                                    <flux:select.option value="estimator" :selected="$responder['role'] === 'estimator'">{{ __('Estimator') }}</flux:select.option>
+                                    <flux:select.option value="appointment_booker" :selected="$responder['role'] === 'appointment_booker'">{{ __('Appt Booker') }}</flux:select.option>
+                                    <flux:select.option value="both" :selected="$responder['role'] === 'both'">{{ __('Both') }}</flux:select.option>
+                                </flux:select>
+                                <flux:switch
+                                    wire:click="toggleResponderActive({{ $responder['id'] }})"
+                                    :checked="$responder['is_active']"
+                                />
+                                <flux:button
+                                    size="sm"
+                                    variant="ghost"
+                                    wire:click="removeResponder({{ $responder['id'] }})"
+                                    wire:confirm="{{ __('Remove this responder?') }}"
+                                    icon="x-mark"
+                                    class="text-red-500 hover:text-red-700"
+                                />
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <div class="rounded-lg border border-dashed border-zinc-300 py-8 text-center dark:border-zinc-600">
+                    <flux:text class="text-sm text-zinc-500">{{ __('No responders added yet. Add employees to receive Messenger leads.') }}</flux:text>
+                </div>
+            @endif
+
+            <x-action-message class="me-3" on="messenger-settings-saved">
+                {{ __('Saved.') }}
+            </x-action-message>
+        </div>
 
         <flux:separator />
 
@@ -364,9 +539,11 @@ new class extends Component {
                     <flux:heading size="sm">{{ __('Bot Flows') }}</flux:heading>
                     <flux:text class="text-sm text-zinc-500">{{ __('Define automated conversation flows for lead qualification.') }}</flux:text>
                 </div>
-                <flux:button variant="primary" size="sm" wire:click="createFlow" icon="plus">
-                    {{ __('Create Flow') }}
-                </flux:button>
+                <a href="{{ route('messenger.flows.create') }}" wire:navigate>
+                    <flux:button variant="primary" size="sm" icon="plus">
+                        {{ __('Create Flow') }}
+                    </flux:button>
+                </a>
             </div>
 
             @if (count($flows) > 0)
@@ -388,7 +565,9 @@ new class extends Component {
                                 <flux:badge size="sm" :color="match($flow['status']) { 'active' => 'green', 'inactive' => 'red', default => 'zinc' }">
                                     {{ ucfirst($flow['status']) }}
                                 </flux:badge>
-                                <flux:button size="sm" variant="ghost" wire:click="editFlow({{ $flow['id'] }})" icon="pencil-square" />
+                                <a href="{{ route('messenger.flows.edit', $flow['id']) }}" wire:navigate>
+                                    <flux:button size="sm" variant="ghost" icon="pencil-square" />
+                                </a>
                                 <flux:button size="sm" variant="ghost" wire:click="deleteFlow({{ $flow['id'] }})" wire:confirm="{{ __('Are you sure you want to delete this flow?') }}" icon="trash" class="text-red-500 hover:text-red-700" />
                             </div>
                         </div>
@@ -400,12 +579,101 @@ new class extends Component {
                 </div>
             @endif
 
-            {{-- Flow Editor Modal --}}
-            <flux:modal name="flow-editor" variant="flyout" class="max-w-xl" wire:model="showFlowEditor">
-                @if ($showFlowEditor)
-                    <livewire:settings.bot-flow-editor :flow-id="$editingFlowId" :key="'flow-editor-' . ($editingFlowId ?? 'new')" />
+            {{-- Flow editor is now a full-page component at /settings/messenger/flows --}}
+        </div>
+
+        <flux:separator />
+
+        {{-- Ad Routing --}}
+        <div class="my-6 w-full space-y-6">
+            <div>
+                <flux:heading size="sm">{{ __('Ad Routing') }}</flux:heading>
+                <flux:text class="text-sm text-zinc-500">
+                    {{ __('Assign different bot flows to different Facebook ads. Ads without an assignment use the default active flow.') }}
+                </flux:text>
+            </div>
+
+            {{-- Ad Account ID --}}
+            <div class="flex items-end gap-3">
+                <div class="flex-1">
+                    <flux:input wire:model="adAccountId" :label="__('Ad Account ID')" placeholder="act_123456789"
+                        :description="__('Found in Facebook Ads Manager under Account Settings.')" />
+                </div>
+                <flux:button wire:click="saveAdAccountId" variant="primary">{{ __('Save') }}</flux:button>
+                @if ($adAccountId)
+                    <flux:button wire:click="syncAds" wire:loading.attr="disabled" wire:target="syncAds">
+                        <span wire:loading.remove wire:target="syncAds">{{ __('Sync Ads') }}</span>
+                        <span wire:loading wire:target="syncAds">{{ __('Syncing...') }}</span>
+                    </flux:button>
                 @endif
-            </flux:modal>
+            </div>
+
+            @if (session('ad-sync-message'))
+                <flux:callout variant="success">{{ session('ad-sync-message') }}</flux:callout>
+            @endif
+
+            <x-action-message class="me-3" on="messenger-settings-saved">
+                {{ __('Saved.') }}
+            </x-action-message>
+
+            {{-- Ad list grouped by campaign --}}
+            @if (count($adMappings) > 0)
+                @php
+                    $grouped = collect($adMappings)->groupBy('facebook_campaign_name');
+                @endphp
+
+                <div class="space-y-4">
+                    @foreach ($grouped as $campaignName => $ads)
+                        <div class="rounded-lg border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                            <div class="bg-zinc-50 dark:bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                {{ $campaignName ?: __('Unknown Campaign') }}
+                            </div>
+                            <div class="divide-y divide-zinc-200 dark:divide-zinc-700">
+                                @foreach ($ads as $mapping)
+                                    <div wire:key="ad-{{ $mapping['id'] }}" class="flex items-center justify-between px-4 py-3">
+                                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                                            <flux:badge size="sm" :color="$mapping['facebook_ad_status'] === 'ACTIVE' ? 'green' : 'zinc'">
+                                                {{ $mapping['facebook_ad_status'] ?? 'UNKNOWN' }}
+                                            </flux:badge>
+                                            <div class="min-w-0">
+                                                <div class="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+                                                    {{ $mapping['facebook_ad_name'] ?? $mapping['facebook_ad_id'] }}
+                                                </div>
+                                                @if ($mapping['facebook_adset_name'])
+                                                    <div class="text-xs text-zinc-400 truncate">{{ $mapping['facebook_adset_name'] }}</div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                        <div class="w-52 shrink-0">
+                                            <flux:select
+                                                size="sm"
+                                                wire:change="updateAdFlowMapping({{ $mapping['id'] }}, $event.target.value)"
+                                            >
+                                                <flux:select.option value="" :selected="empty($mapping['flow_id'])">{{ __('Default (active flow)') }}</flux:select.option>
+                                                @foreach ($flows as $flow)
+                                                    <flux:select.option value="{{ $flow['id'] }}" :selected="($mapping['flow_id'] ?? null) == $flow['id']">
+                                                        {{ $flow['name'] }}
+                                                    </flux:select.option>
+                                                @endforeach
+                                            </flux:select>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endforeach
+                </div>
+
+                @if (($lastSync = collect($adMappings)->max('last_synced_at')))
+                    <flux:text size="xs" class="text-zinc-400">
+                        {{ __('Last synced: :time', ['time' => \Carbon\Carbon::parse($lastSync)->diffForHumans()]) }}
+                    </flux:text>
+                @endif
+            @elseif ($adAccountId)
+                <div class="rounded-lg border border-dashed border-zinc-300 py-8 text-center dark:border-zinc-600">
+                    <flux:text class="text-sm text-zinc-500">{{ __('No ads synced yet. Click "Sync Ads" to pull your ads from Facebook.') }}</flux:text>
+                </div>
+            @endif
         </div>
 
     </x-pages::settings.layout>

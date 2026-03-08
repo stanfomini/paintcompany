@@ -86,7 +86,7 @@ class WebhookLeadProcessingService
 
         $phone = $data['phone'] ?? null;
 
-        return Customer::create([
+        $customer = Customer::create([
             'first_name' => $data['first_name'] ?? 'Unknown',
             'last_name' => $data['last_name'] ?? '',
             'email' => $email,
@@ -101,6 +101,10 @@ class WebhookLeadProcessingService
             'assigned_to' => $endpoint->default_assigned_to ?? $endpoint->created_by,
             'status' => 'active',
         ]);
+
+        app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
+
+        return $customer;
     }
 
     protected function createDeal(Customer $customer, array $data, WebhookEndpoint $endpoint): Deal

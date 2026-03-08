@@ -17,6 +17,7 @@ class MessengerSetting extends Model
     protected $fillable = [
         'app_id',
         'page_id',
+        'ad_account_id',
         'page_access_token',
         'app_secret',
         'verify_token',

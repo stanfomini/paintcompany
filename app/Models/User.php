@@ -439,6 +439,7 @@ class User extends Authenticatable
         return [
             'estimates' => ['email' => true, 'push' => true, 'sms' => true],
             'chat' => ['email' => true, 'push' => true, 'sms' => true],
+            'messenger' => ['email' => true, 'push' => true, 'sms' => true],
             'email_messages' => ['email' => true, 'push' => true, 'sms' => false],
             'jobs' => ['email' => true, 'push' => true, 'sms' => true],
             'tasks' => ['email' => true, 'push' => true, 'sms' => false],

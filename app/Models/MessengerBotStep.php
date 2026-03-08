@@ -29,6 +29,7 @@ class MessengerBotStep extends Model
         'field_mapping',
         'is_required',
         'delay_seconds',
+        'next_step_id',
     ];
 
     protected function casts(): array
@@ -38,12 +39,27 @@ class MessengerBotStep extends Model
             'is_required' => 'boolean',
             'sort_order' => 'integer',
             'delay_seconds' => 'integer',
+            'next_step_id' => 'integer',
         ];
     }
 
     public function flow(): BelongsTo
     {
         return $this->belongsTo(MessengerBotFlow::class, 'flow_id');
+    }
+
+    public function nextStep(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'next_step_id');
+    }
+
+    /**
+     * Check if any quick reply option has branching configured.
+     */
+    public function hasBranching(): bool
+    {
+        return collect($this->quick_reply_options ?? [])
+            ->contains(fn (array $opt) => ! empty($opt['next_step_id']));
     }
 
     /**
