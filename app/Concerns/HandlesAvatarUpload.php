@@ -47,63 +47,74 @@ trait HandlesAvatarUpload
 
     /**
      * Resize the avatar to a square 256x256 image using GD.
+     * Works with both local and cloud (S3) disks.
      */
     protected function resizeAvatar(string $path): void
     {
-        $fullPath = Storage::disk(config('filesystems.default'))->path($path);
+        $disk = Storage::disk(config('filesystems.default'));
 
-        if (! file_exists($fullPath)) {
+        // Download to a temp file (works for both local and S3)
+        $contents = $disk->get($path);
+        if (! $contents) {
             return;
         }
 
-        $imageInfo = @getimagesize($fullPath);
-        if (! $imageInfo) {
-            return;
-        }
+        $tempFile = tempnam(sys_get_temp_dir(), 'avatar_resize_');
+        file_put_contents($tempFile, $contents);
 
-        $mime = $imageInfo['mime'];
-        $source = match ($mime) {
-            'image/jpeg' => @imagecreatefromjpeg($fullPath),
-            'image/png' => @imagecreatefrompng($fullPath),
-            'image/webp' => @imagecreatefromwebp($fullPath),
-            default => null,
-        };
+        try {
+            $imageInfo = @getimagesize($tempFile);
+            if (! $imageInfo) {
+                return;
+            }
 
-        if (! $source) {
-            return;
-        }
+            $mime = $imageInfo['mime'];
+            $source = match ($mime) {
+                'image/jpeg' => @imagecreatefromjpeg($tempFile),
+                'image/png' => @imagecreatefrompng($tempFile),
+                'image/webp' => @imagecreatefromwebp($tempFile),
+                default => null,
+            };
 
-        $size = 256;
-        $width = imagesx($source);
-        $height = imagesy($source);
+            if (! $source) {
+                return;
+            }
 
-        // Already small enough and square - skip
-        if ($width <= $size && $height <= $size && $width === $height) {
+            $size = 256;
+            $width = imagesx($source);
+            $height = imagesy($source);
+
+            // Already small enough and square - skip
+            if ($width <= $size && $height <= $size && $width === $height) {
+                imagedestroy($source);
+
+                return;
+            }
+
+            // Center-crop to square, then resize
+            $cropSize = min($width, $height);
+            $cropX = (int) (($width - $cropSize) / 2);
+            $cropY = (int) (($height - $cropSize) / 2);
+
+            $resized = imagecreatetruecolor($size, $size);
+
+            // Preserve transparency for PNG/WebP
+            if (in_array($mime, ['image/png', 'image/webp'])) {
+                imagealphablending($resized, false);
+                imagesavealpha($resized, true);
+            }
+
+            imagecopyresampled($resized, $source, 0, 0, $cropX, $cropY, $size, $size, $cropSize, $cropSize);
+
+            // Save resized to temp file and re-upload
+            imagejpeg($resized, $tempFile, 90);
+            $disk->put($path, file_get_contents($tempFile));
+
             imagedestroy($source);
-
-            return;
+            imagedestroy($resized);
+        } finally {
+            @unlink($tempFile);
         }
-
-        // Center-crop to square, then resize
-        $cropSize = min($width, $height);
-        $cropX = (int) (($width - $cropSize) / 2);
-        $cropY = (int) (($height - $cropSize) / 2);
-
-        $resized = imagecreatetruecolor($size, $size);
-
-        // Preserve transparency for PNG/WebP
-        if (in_array($mime, ['image/png', 'image/webp'])) {
-            imagealphablending($resized, false);
-            imagesavealpha($resized, true);
-        }
-
-        imagecopyresampled($resized, $source, 0, 0, $cropX, $cropY, $size, $size, $cropSize, $cropSize);
-
-        // Save as JPEG for consistent output
-        imagejpeg($resized, $fullPath, 90);
-
-        imagedestroy($source);
-        imagedestroy($resized);
     }
 
     /**

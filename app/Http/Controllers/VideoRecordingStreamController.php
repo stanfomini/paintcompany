@@ -70,6 +70,19 @@ class VideoRecordingStreamController extends Controller
         };
         $filename = str($recording->title ?? 'video')->slug().".{$extension}";
 
+        // For cloud disks (S3, etc.), stream the download
+        if (method_exists($disk, 'temporaryUrl')) {
+            try {
+                $url = $disk->temporaryUrl($path, now()->addMinutes(60), [
+                    'ResponseContentDisposition' => "attachment; filename=\"{$filename}\"",
+                ]);
+
+                return redirect()->away($url);
+            } catch (\RuntimeException $e) {
+                // Falls through to direct serving
+            }
+        }
+
         return response()->download($disk->path($path), $filename, [
             'Content-Type' => $mimeType,
         ]);
