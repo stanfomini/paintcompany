@@ -74,10 +74,10 @@ new class extends Component
 
         $this->isSaving = true;
 
-        // Store the uploaded audio to a temp location so the job can access it
+        // Store the uploaded audio to a temp local location so the job can access it
         $extension = $this->audioFile->getClientOriginalExtension() ?: 'webm';
         $tempPath = 'meeting-audio-pending/'.Str::uuid().'.'.$extension;
-        Storage::put($tempPath, file_get_contents($this->audioFile->getRealPath()));
+        Storage::disk('local')->put($tempPath, file_get_contents($this->audioFile->getRealPath()));
 
         // Create the meeting record immediately
         $minutes = MeetingMinutes::create([

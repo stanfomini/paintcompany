@@ -80,7 +80,7 @@ self.addEventListener('push', (event) => {
     };
 
     event.waitUntil(
-        self.registration.showNotification(data.title || 'Apex CRM', options).then(() => {
+        self.registration.showNotification(data.title || 'Painting Made Easy Denver', options).then(() => {
             // Set app badge count if supported
             if (data.badge_count !== undefined && navigator.setAppBadge) {
                 navigator.setAppBadge(data.badge_count).catch(() => {});

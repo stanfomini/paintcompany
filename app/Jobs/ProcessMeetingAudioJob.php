@@ -33,7 +33,7 @@ class ProcessMeetingAudioJob implements ShouldQueue
             $audioService = app(AudioMessageService::class);
             $audioResult = $audioService->processAudioMessage(
                 new \Illuminate\Http\UploadedFile(
-                    Storage::path($this->tempAudioPath),
+                    Storage::disk('local')->path($this->tempAudioPath),
                     basename($this->tempAudioPath),
                 ),
                 'meeting-audio',
@@ -67,7 +67,7 @@ class ProcessMeetingAudioJob implements ShouldQueue
 
             throw $e;
         } finally {
-            Storage::delete($this->tempAudioPath);
+            Storage::disk('local')->delete($this->tempAudioPath);
         }
     }
 
@@ -122,6 +122,6 @@ class ProcessMeetingAudioJob implements ShouldQueue
             'summary_status' => 'failed',
         ]);
 
-        Storage::delete($this->tempAudioPath);
+        Storage::disk('local')->delete($this->tempAudioPath);
     }
 }

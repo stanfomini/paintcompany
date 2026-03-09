@@ -1,7 +1,7 @@
 {
-    "name": "Apex CRM",
-    "short_name": "Apex",
-    "description": "Painting company CRM",
+    "name": "Painting Made Easy Denver",
+    "short_name": "PME Denver",
+    "description": "Painting Made Easy Denver CRM",
     "start_url": "/?source=pwa",
     "scope": "/",
     "display": "standalone",

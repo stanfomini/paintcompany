@@ -106,7 +106,7 @@ new class extends Component {
                     <flux:icon name="device-phone-mobile" class="size-6 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div class="min-w-0 flex-1">
-                    <p class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Install Apex CRM') }}</p>
+                    <p class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Install Painting Made Easy Denver') }}</p>
                     <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">{{ __('Get push notifications and quick access from your home screen.') }}</p>
                     <div class="mt-3 flex items-center gap-2">
                         <flux:button size="sm" variant="primary" @click="install()">{{ __('Install') }}</flux:button>
@@ -126,7 +126,7 @@ new class extends Component {
                     <flux:icon name="device-phone-mobile" class="size-6 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div class="min-w-0 flex-1">
-                    <p class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Install Apex CRM') }}</p>
+                    <p class="text-sm font-semibold text-zinc-900 dark:text-white">{{ __('Install Painting Made Easy Denver') }}</p>
                     <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
                         {{ __('Tap') }}
                         <svg class="inline size-4 align-text-bottom" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" /></svg>
