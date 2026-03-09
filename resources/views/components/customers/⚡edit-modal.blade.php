@@ -66,9 +66,9 @@ new class extends Component {
         $this->customerId = $customerId;
         $customer = Customer::findOrFail($customerId);
 
-        $this->firstName = $customer->first_name;
-        $this->lastName = $customer->last_name;
-        $this->email = $customer->email;
+        $this->firstName = $customer->first_name ?? '';
+        $this->lastName = $customer->last_name ?? '';
+        $this->email = $customer->email ?? '';
         $this->phone = $customer->phone ?? '';
         $this->address = $customer->address ?? '';
         $this->city = $customer->city ?? '';
@@ -117,7 +117,7 @@ new class extends Component {
             'customerId' => ['required', 'exists:customers,id'],
             'firstName' => ['required', 'string', 'max:255'],
             'lastName' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:customers,email,'.$this->customerId],
+            'email' => ['nullable', 'email', 'max:255', 'unique:customers,email,'.$this->customerId],
             'phone' => ['nullable', 'string', 'max:50'],
             'address' => ['nullable', 'string', 'max:255'],
             'city' => ['nullable', 'string', 'max:100'],
@@ -135,7 +135,7 @@ new class extends Component {
         $customer->update([
             'first_name' => $this->firstName,
             'last_name' => $this->lastName,
-            'email' => $this->email,
+            'email' => $this->email ?: null,
             'phone' => $this->phone ?: null,
             'address' => $this->address ?: null,
             'city' => $this->city ?: null,

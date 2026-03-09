@@ -1,10 +1,12 @@
 <?php
 
 use App\Models\AppointmentBooking;
+use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\EmailAccount;
 use App\Models\EmailMessage;
+use App\Services\FacebookMessengerService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -318,6 +320,45 @@ new class extends Component
         $this->replyToMessageId = null;
     }
 
+    /**
+     * Send a booking link to the messenger user via Facebook.
+     */
+    public function sendBookingLink(int $threadId): void
+    {
+        $thread = ChatThread::find($threadId);
+        if (! $thread) {
+            return;
+        }
+
+        $conversation = $thread->messengerConversation;
+        if (! $conversation) {
+            return;
+        }
+
+        $conversation->generateBookingToken();
+        $url = $conversation->getBookingUrl();
+
+        $messenger = app(FacebookMessengerService::class);
+        $messenger->sendTextMessage(
+            $conversation->facebook_psid,
+            "We'd love to help you with your painting project! Please fill out this quick form so we can prepare your free estimate:\n\n{$url}"
+        );
+
+        // Store a record in the chat thread
+        ChatMessage::create([
+            'thread_id' => $thread->id,
+            'user_id' => auth()->id(),
+            'content' => "Booking link sent: {$url}",
+            'type' => ChatMessage::TYPE_SYSTEM,
+        ]);
+
+        $thread->update(['last_message_at' => now()]);
+
+        // Refresh data
+        unset($this->messengerThreads, $this->allItems);
+        session()->flash('success', __('Booking link sent via Messenger.'));
+    }
+
     private function getThreadIcon(ChatThread $thread): string
     {
         if ($thread->channel === 'facebook') {
@@ -492,9 +533,7 @@ new class extends Component
                 @else
                     <div class="space-y-2">
                         @foreach ($this->messengerThreads as $thread)
-                            <a
-                                href="{{ route('chat.show', $thread) }}"
-                                wire:navigate
+                            <div
                                 wire:key="messenger-{{ $thread->id }}"
                                 class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                             >
@@ -503,7 +542,7 @@ new class extends Component
                                         <flux:icon name="chat-bubble-oval-left" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
                                     </div>
                                 </div>
-                                <div class="flex-1 min-w-0">
+                                <a href="{{ route('chat.show', $thread) }}" wire:navigate class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <flux:text class="font-medium text-sm">{{ $thread->subject ?? $customer->full_name }}</flux:text>
                                         @if ($thread->messengerConversation?->bot_enabled)
@@ -517,13 +556,18 @@ new class extends Component
                                     @else
                                         <flux:text size="sm" class="text-zinc-400 mt-0.5">{{ __('No messages yet') }}</flux:text>
                                     @endif
-                                </div>
-                                <div class="shrink-0">
+                                </a>
+                                <div class="shrink-0 flex flex-col items-end gap-1.5">
                                     <flux:text size="xs" class="text-zinc-400">
                                         {{ ($thread->last_message_at ?? $thread->created_at)->diffForHumans() }}
                                     </flux:text>
+                                    @if ($thread->messengerConversation)
+                                        <flux:button size="xs" wire:click="sendBookingLink({{ $thread->id }})" icon="link" wire:confirm="{{ __('Send a booking form link to this Messenger user?') }}">
+                                            {{ __('Send Link') }}
+                                        </flux:button>
+                                    @endif
                                 </div>
-                            </a>
+                            </div>
                         @endforeach
                     </div>
                 @endif

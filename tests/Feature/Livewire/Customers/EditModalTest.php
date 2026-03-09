@@ -74,7 +74,7 @@ describe('EditModal component', function () {
             ->set('lastName', '')
             ->set('email', '')
             ->call('save')
-            ->assertHasErrors(['firstName', 'lastName', 'email']);
+            ->assertHasErrors(['firstName', 'lastName']);
     });
 
     it('validates email format', function () {
@@ -143,6 +143,43 @@ describe('EditModal component', function () {
         expect($customer->state)->toBe('NY');
         expect($customer->zip)->toBe('10001');
         expect($customer->notes)->toBe('Updated notes');
+    });
+
+    it('loads customer with null email without crashing', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->create([
+            'first_name' => 'Messenger',
+            'last_name' => 'Lead',
+            'email' => null,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
+            ->assertSet('firstName', 'Messenger')
+            ->assertSet('lastName', 'Lead')
+            ->assertSet('email', '')
+            ->assertStatus(200);
+    });
+
+    it('saves customer with null email', function () {
+        $user = User::factory()->internal()->withFullAccess()->create();
+        $customer = Customer::factory()->create([
+            'first_name' => 'Messenger',
+            'last_name' => 'Lead',
+            'email' => null,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('customers.edit-modal', ['customerId' => $customer->id])
+            ->set('firstName', 'Updated')
+            ->set('lastName', 'Name')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertDispatched('customer-updated');
+
+        $customer->refresh();
+        expect($customer->first_name)->toBe('Updated');
+        expect($customer->email)->toBeNull();
     });
 
     it('clears optional fields when set to empty', function () {

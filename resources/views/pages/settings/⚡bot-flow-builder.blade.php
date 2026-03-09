@@ -559,6 +559,39 @@ new class extends Component {
                                     default => '',
                                 }" />
 
+                            {{-- Variable Insertion Helper --}}
+                            <div class="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 px-3 py-2">
+                                <div class="flex items-center gap-1.5 mb-1.5">
+                                    <flux:icon name="code-bracket" class="size-3.5 text-blue-600 dark:text-blue-400" />
+                                    <span class="text-xs font-medium text-blue-700 dark:text-blue-300">{{ __('Variables') }}</span>
+                                    <span class="text-xs text-blue-500 dark:text-blue-400">{{ __('(click to insert)') }}</span>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    @foreach (\App\Services\MessengerBotFlowService::getAvailableVariables() as $var => $desc)
+                                        <flux:tooltip :content="$desc">
+                                            <button type="button"
+                                                x-on:click="
+                                                    const container = $el.closest('.space-y-4');
+                                                    const textarea = container.querySelector('textarea');
+                                                    if (!textarea) return;
+                                                    const start = textarea.selectionStart;
+                                                    const end = textarea.selectionEnd;
+                                                    const text = textarea.value;
+                                                    const insert = @js('{{ ' . $var . ' }}');
+                                                    textarea.value = text.substring(0, start) + insert + text.substring(end);
+                                                    textarea.selectionStart = textarea.selectionEnd = start + insert.length;
+                                                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                                                    textarea.focus();
+                                                "
+                                                class="inline-flex items-center gap-1 rounded-md bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-700 px-2 py-0.5 text-xs font-mono text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                                            >
+                                                {!! e('{{ ' . $var . ' }}') !!}
+                                            </button>
+                                        </flux:tooltip>
+                                    @endforeach
+                                </div>
+                            </div>
+
                             {{-- Quick Reply Options --}}
                             @if ($step['step_type'] === 'quick_reply')
                                 <div class="space-y-3">

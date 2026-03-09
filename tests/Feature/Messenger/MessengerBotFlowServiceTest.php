@@ -561,3 +561,113 @@ describe('end-to-end bot conversation via webhook', function () {
         expect($conversation->answers)->toHaveKey("step_{$step1->id}", 'Jane');
     });
 });
+
+describe('message variable substitution', function () {
+    it('replaces booking_link variable with actual URL', function () {
+        $service = app(MessengerBotFlowService::class);
+        $conversation = MessengerConversation::factory()->create();
+
+        $result = $service->replaceMessageVariables(
+            'Book here: {{ booking_link }}',
+            $conversation
+        );
+
+        expect($result)->toContain('/book/messenger/');
+        $conversation->refresh();
+        expect($conversation->booking_token)->not->toBeNull();
+    });
+
+    it('replaces first_name and last_name from FB profile', function () {
+        $service = app(MessengerBotFlowService::class);
+        $conversation = MessengerConversation::factory()->create([
+            'fb_profile_data' => ['first_name' => 'John', 'last_name' => 'Doe'],
+        ]);
+
+        $result = $service->replaceMessageVariables(
+            'Hi {{ first_name }} {{ last_name }}!',
+            $conversation
+        );
+
+        expect($result)->toBe('Hi John Doe!');
+    });
+
+    it('leaves unknown variables untouched', function () {
+        $service = app(MessengerBotFlowService::class);
+        $conversation = MessengerConversation::factory()->create();
+
+        $result = $service->replaceMessageVariables(
+            'Hello {{ unknown_var }}!',
+            $conversation
+        );
+
+        expect($result)->toBe('Hello {{ unknown_var }}!');
+    });
+
+    it('handles messages without variables efficiently', function () {
+        $service = app(MessengerBotFlowService::class);
+        $conversation = MessengerConversation::factory()->create();
+
+        $result = $service->replaceMessageVariables(
+            'Just a plain message',
+            $conversation
+        );
+
+        expect($result)->toBe('Just a plain message');
+    });
+
+    it('reuses existing valid booking token', function () {
+        $service = app(MessengerBotFlowService::class);
+        $conversation = MessengerConversation::factory()->create();
+        $conversation->generateBookingToken();
+        $originalToken = $conversation->booking_token;
+
+        $result = $service->replaceMessageVariables(
+            '{{ booking_link }}',
+            $conversation
+        );
+
+        expect($result)->toContain($originalToken);
+    });
+
+    it('sends step message with variables replaced', function () {
+        $flow = MessengerBotFlow::factory()->active()->create();
+        $step = MessengerBotStep::factory()->create([
+            'flow_id' => $flow->id,
+            'step_type' => 'greeting',
+            'message_text' => 'Hi {{ first_name }}, book here: {{ booking_link }}',
+            'sort_order' => 1,
+        ]);
+
+        $thread = ChatThread::factory()->facebook()->create();
+        $conversation = MessengerConversation::factory()->create([
+            'flow_id' => $flow->id,
+            'thread_id' => $thread->id,
+            'fb_profile_data' => ['first_name' => 'Alice'],
+        ]);
+
+        $service = app(MessengerBotFlowService::class);
+        $service->advanceToNextStep($conversation);
+
+        // Verify the message was sent with variables replaced
+        Http::assertSent(function ($request) {
+            $body = json_decode($request->body(), true);
+            $text = $body['message']['text'] ?? '';
+
+            return str_contains($text, 'Hi Alice') && str_contains($text, '/book/messenger/');
+        });
+    });
+
+    it('replaces variables with empty string when FB profile data missing', function () {
+        $service = app(MessengerBotFlowService::class);
+        $conversation = MessengerConversation::factory()->create([
+            'fb_profile_data' => null,
+        ]);
+
+        $result = $service->replaceMessageVariables(
+            'Hi {{ first_name }}!',
+            $conversation
+        );
+
+        expect($result)->toBe('Hi !');
+    });
+});

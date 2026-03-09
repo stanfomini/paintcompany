@@ -42,7 +42,7 @@ class MessengerBotFlowService
 
         // Send greeting if flow has one
         if ($flow->greeting_message) {
-            $this->messengerService->sendTextMessage($psid, $flow->greeting_message);
+            $this->messengerService->sendTextMessage($psid, $this->replaceMessageVariables($flow->greeting_message, $conversation));
         }
 
         // Advance to first step
@@ -104,14 +104,16 @@ class MessengerBotFlowService
 
         $psid = $conversation->facebook_psid;
 
+        $messageText = $this->replaceMessageVariables($nextStep->message_text, $conversation);
+
         switch ($nextStep->step_type) {
             case MessengerBotStep::TYPE_GREETING:
-                $this->messengerService->sendTextMessage($psid, $nextStep->message_text);
+                $this->messengerService->sendTextMessage($psid, $messageText);
                 $this->advanceToNextStep($conversation);
                 break;
 
             case MessengerBotStep::TYPE_TEXT_QUESTION:
-                $this->messengerService->sendTextMessage($psid, $nextStep->message_text);
+                $this->messengerService->sendTextMessage($psid, $messageText);
                 break;
 
             case MessengerBotStep::TYPE_QUICK_REPLY:
@@ -125,20 +127,20 @@ class MessengerBotFlowService
                     ->all();
 
                 if (! empty($options)) {
-                    $this->messengerService->sendQuickReply($psid, $nextStep->message_text, $options);
+                    $this->messengerService->sendQuickReply($psid, $messageText, $options);
                 } else {
-                    $this->messengerService->sendTextMessage($psid, $nextStep->message_text);
+                    $this->messengerService->sendTextMessage($psid, $messageText);
                 }
                 break;
 
             case MessengerBotStep::TYPE_DELAY:
                 $this->messengerService->sendTypingIndicator($psid, true);
-                $this->messengerService->sendTextMessage($psid, $nextStep->message_text);
+                $this->messengerService->sendTextMessage($psid, $messageText);
                 $this->advanceToNextStep($conversation);
                 break;
 
             case MessengerBotStep::TYPE_HANDOFF:
-                $this->messengerService->sendTextMessage($psid, $nextStep->message_text);
+                $this->messengerService->sendTextMessage($psid, $messageText);
                 $this->triggerHumanTakeover($conversation);
                 break;
         }
@@ -306,6 +308,51 @@ class MessengerBotFlowService
         });
 
         return $matched['next_step_id'] ?? null;
+    }
+
+    /**
+     * Replace {{ variable }} placeholders in a bot message with actual values.
+     */
+    public function replaceMessageVariables(string $text, MessengerConversation $conversation): string
+    {
+        if (! str_contains($text, '{{')) {
+            return $text;
+        }
+
+        return preg_replace_callback('/\{\{\s*(\w+)\s*\}\}/', function ($matches) use ($conversation) {
+            $variable = $matches[1];
+
+            return match ($variable) {
+                'booking_link' => $this->resolveBookingLink($conversation),
+                'first_name' => $conversation->fb_profile_data['first_name'] ?? '',
+                'last_name' => $conversation->fb_profile_data['last_name'] ?? '',
+                default => $matches[0], // Leave unknown variables as-is
+            };
+        }, $text);
+    }
+
+    /**
+     * Generate (or reuse) a booking link for the conversation.
+     */
+    private function resolveBookingLink(MessengerConversation $conversation): string
+    {
+        if (! $conversation->isBookingTokenValid()) {
+            $conversation->generateBookingToken();
+        }
+
+        return $conversation->getBookingUrl();
+    }
+
+    /**
+     * Get the list of available message variables for the flow builder UI.
+     */
+    public static function getAvailableVariables(): array
+    {
+        return [
+            'first_name' => __('Messenger name (first)'),
+            'last_name' => __('Messenger name (last)'),
+            'booking_link' => __('Booking form link'),
+        ];
     }
 
     /**
