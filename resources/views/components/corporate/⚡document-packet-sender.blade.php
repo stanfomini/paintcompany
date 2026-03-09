@@ -2,7 +2,6 @@
 
 use App\Models\CorporateDocument;
 use App\Models\Corporation;
-use App\Models\MeetingMinutes;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -110,28 +109,17 @@ new class extends Component
         $this->sending = true;
 
         try {
-            $documents = CorporateDocument::with('corporation')
-                ->whereIn('id', $this->selectedDocumentIds)
-                ->get();
-
-            $minutes = MeetingMinutes::with('corporation')
-                ->whereIn('id', $this->selectedMinutesIds)
-                ->get();
-
-            $settings = \App\Models\CompanySetting::getInstance();
-
-            $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.document-packet', [
-                'documents' => $documents,
-                'minutes' => $minutes,
-                'settings' => $settings,
-            ]);
+            $pdfContent = app(\App\Services\CorporateDocumentService::class)->buildMergedPacketPdf(
+                $this->selectedDocumentIds,
+                $this->selectedMinutesIds,
+            );
 
             \Illuminate\Support\Facades\Mail::raw(
                 $this->message ?: 'Please find the attached corporate document packet.',
-                function ($mail) use ($pdf) {
+                function ($mail) use ($pdfContent) {
                     $mail->to($this->email)
                         ->subject($this->subject)
-                        ->attachData($pdf->output(), 'corporate-document-packet.pdf', [
+                        ->attachData($pdfContent, 'corporate-document-packet.pdf', [
                             'mime' => 'application/pdf',
                         ]);
                 }

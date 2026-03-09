@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\CorporateDocument;
 use App\Models\MeetingMinutes;
 use App\Services\CorporateDocumentService;
-use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Mail;
@@ -71,12 +70,15 @@ class CorporateDocumentPdfController extends Controller
             'minutes_ids.*' => ['integer', 'exists:meeting_minutes,id'],
         ]);
 
-        $pdf = $this->buildPacketPdf(
+        $pdfContent = $this->service->buildMergedPacketPdf(
             $request->input('document_ids', []),
             $request->input('minutes_ids', []),
         );
 
-        return $pdf->download('corporate-document-packet.pdf');
+        return new Response($pdfContent, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'attachment; filename="corporate-document-packet.pdf"',
+        ]);
     }
 
     public function sendPacket(Request $request): \Illuminate\Http\JsonResponse
@@ -93,12 +95,10 @@ class CorporateDocumentPdfController extends Controller
             'message' => ['nullable', 'string', 'max:5000'],
         ]);
 
-        $pdf = $this->buildPacketPdf(
+        $pdfContent = $this->service->buildMergedPacketPdf(
             $validated['document_ids'] ?? [],
             $validated['minutes_ids'] ?? [],
         );
-
-        $pdfContent = $pdf->output();
 
         Mail::raw($validated['message'] ?? 'Please find the attached corporate document packet.', function ($mail) use ($validated, $pdfContent) {
             $mail->to($validated['email'])
@@ -141,25 +141,6 @@ class CorporateDocumentPdfController extends Controller
             'Accept-Ranges' => 'bytes',
             'Cache-Control' => 'public, max-age=86400',
             'Content-Disposition' => 'inline; filename="'.Str::slug($meetingMinutes->title).'.'.pathinfo($filename, PATHINFO_EXTENSION).'"',
-        ]);
-    }
-
-    private function buildPacketPdf(array $documentIds, array $minutesIds): \Barryvdh\DomPDF\PDF
-    {
-        $documents = CorporateDocument::with('corporation')
-            ->whereIn('id', $documentIds)
-            ->get();
-
-        $minutes = MeetingMinutes::with('corporation')
-            ->whereIn('id', $minutesIds)
-            ->get();
-
-        $settings = \App\Models\CompanySetting::getInstance();
-
-        return Pdf::loadView('pdf.document-packet', [
-            'documents' => $documents,
-            'minutes' => $minutes,
-            'settings' => $settings,
         ]);
     }
 }

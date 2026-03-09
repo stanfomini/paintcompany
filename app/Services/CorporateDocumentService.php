@@ -9,8 +9,10 @@ use App\Models\MeetingMinutes;
 use App\Models\User;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use setasign\Fpdi\Tcpdf\Fpdi;
 
 class CorporateDocumentService
 {
@@ -466,5 +468,129 @@ class CorporateDocumentService
             'audio_duration' => $result['audio_duration'],
             'transcript' => $result['transcription'],
         ];
+    }
+
+    /**
+     * Build a merged PDF packet from actual stored PDFs and meeting minutes.
+     *
+     * Uses FPDI to merge actual stored PDF files instead of re-rendering from parsed text.
+     * Falls back to DomPDF generation when stored files are missing or encrypted.
+     *
+     * @return string Raw PDF bytes
+     */
+    public function buildMergedPacketPdf(array $documentIds, array $minutesIds): string
+    {
+        $documents = CorporateDocument::with('corporation')
+            ->whereIn('id', $documentIds)
+            ->get();
+
+        $minutes = MeetingMinutes::with('corporation')
+            ->whereIn('id', $minutesIds)
+            ->get();
+
+        $settings = \App\Models\CompanySetting::getInstance();
+
+        $tempFiles = [];
+
+        try {
+            // 1. Generate cover page + TOC via DomPDF
+            $coverPdf = Pdf::loadView('pdf.document-packet-cover', [
+                'documents' => $documents,
+                'minutes' => $minutes,
+                'settings' => $settings,
+            ]);
+            $coverTemp = tempnam(sys_get_temp_dir(), 'pkt_cover_').'.pdf';
+            file_put_contents($coverTemp, $coverPdf->output());
+            $tempFiles[] = $coverTemp;
+
+            // 2. Collect document PDFs
+            foreach ($documents as $document) {
+                $tempFiles[] = $this->getDocumentTempPdf($document);
+            }
+
+            // 3. Collect meeting minutes PDFs
+            foreach ($minutes as $minute) {
+                $minutesPdf = $this->exportMinutesToPdf($minute);
+                $minuteTemp = tempnam(sys_get_temp_dir(), 'pkt_min_').'.pdf';
+                file_put_contents($minuteTemp, $minutesPdf->output());
+                $tempFiles[] = $minuteTemp;
+            }
+
+            // 4. Merge all PDFs with FPDI
+            return $this->mergeAllPdfs($tempFiles);
+        } finally {
+            foreach ($tempFiles as $file) {
+                @unlink($file);
+            }
+        }
+    }
+
+    /**
+     * Get a temp PDF file path for a document, using the stored file or falling back to DomPDF.
+     */
+    private function getDocumentTempPdf(CorporateDocument $document): string
+    {
+        // Try to use the actual stored PDF file
+        if ($document->original_file_path && Storage::exists($document->original_file_path)) {
+            $temp = tempnam(sys_get_temp_dir(), 'pkt_doc_').'.pdf';
+            file_put_contents($temp, Storage::get($document->original_file_path));
+
+            return $temp;
+        }
+
+        // Fallback: generate via DomPDF from parsed content
+        Log::info('Packet merge: stored PDF missing, falling back to DomPDF', [
+            'document_id' => $document->id,
+            'path' => $document->original_file_path,
+        ]);
+
+        $fallbackPdf = $this->exportToPdf($document);
+        $temp = tempnam(sys_get_temp_dir(), 'pkt_fb_').'.pdf';
+        file_put_contents($temp, $fallbackPdf->output());
+
+        return $temp;
+    }
+
+    /**
+     * Merge multiple PDF files into a single PDF using FPDI.
+     *
+     * @param  list<string>  $pdfFiles  Array of temp file paths
+     * @return string Raw PDF bytes
+     */
+    private function mergeAllPdfs(array $pdfFiles): string
+    {
+        $pdf = new Fpdi('P', 'pt');
+        $pdf->SetAutoPageBreak(false, 0);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+
+        foreach ($pdfFiles as $file) {
+            try {
+                $this->importAllPages($pdf, $file);
+            } catch (\Exception $e) {
+                Log::warning('FPDI import failed for file, skipping', [
+                    'file' => basename($file),
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $pdf->Output('', 'S');
+    }
+
+    /**
+     * Import all pages from a PDF file into an FPDI instance.
+     */
+    private function importAllPages(Fpdi $pdf, string $filePath): void
+    {
+        $pageCount = $pdf->setSourceFile($filePath);
+
+        for ($i = 1; $i <= $pageCount; $i++) {
+            $templateId = $pdf->importPage($i);
+            $size = $pdf->getTemplateSize($templateId);
+
+            $pdf->AddPage($size['orientation'], [$size['width'], $size['height']]);
+            $pdf->useTemplate($templateId);
+        }
     }
 }

@@ -205,3 +205,120 @@ it('sends a packet email with valid data', function () {
         ->assertSuccessful()
         ->assertJson(['success' => true]);
 });
+
+// -- Merged Packet PDF Tests --
+
+function createRealPdf(string $text = 'Test PDF'): string
+{
+    $pdf = new \setasign\Fpdi\Tcpdf\Fpdi('P', 'pt');
+    $pdf->SetAutoPageBreak(false, 0);
+    $pdf->setPrintHeader(false);
+    $pdf->setPrintFooter(false);
+    $pdf->AddPage();
+    $pdf->SetFont('helvetica', '', 12);
+    $pdf->Cell(0, 20, $text);
+
+    return $pdf->Output('', 'S');
+}
+
+it('downloads a merged packet with stored PDFs', function () {
+    \Illuminate\Support\Facades\Storage::fake();
+
+    $pdfContent = createRealPdf('Document Content');
+    \Illuminate\Support\Facades\Storage::put('corporate-documents/real.pdf', $pdfContent);
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $doc = CorporateDocument::factory()->for($this->corporation)->withParsedContent()->create([
+        'original_file_path' => 'corporate-documents/real.pdf',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('corporate.packet.download').'?'.http_build_query([
+            'document_ids' => [$doc->id],
+        ]));
+
+    $response->assertSuccessful();
+    $response->assertHeader('Content-Type', 'application/pdf');
+
+    // Verify output starts with PDF magic bytes
+    expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
+});
+
+it('falls back to DomPDF when stored file is missing in packet', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $doc = CorporateDocument::factory()->for($this->corporation)->withParsedContent()->create([
+        'original_file_path' => 'nonexistent/missing.pdf',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('corporate.packet.download').'?'.http_build_query([
+            'document_ids' => [$doc->id],
+        ]));
+
+    $response->assertSuccessful();
+    $response->assertHeader('Content-Type', 'application/pdf');
+    expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
+});
+
+it('includes meeting minutes in merged packet', function () {
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $minutes = MeetingMinutes::factory()->for($this->corporation)->withSummary()->create();
+
+    $response = $this->actingAs($user)
+        ->get(route('corporate.packet.download').'?'.http_build_query([
+            'minutes_ids' => [$minutes->id],
+        ]));
+
+    $response->assertSuccessful();
+    $response->assertHeader('Content-Type', 'application/pdf');
+    expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
+});
+
+it('merges multiple documents into a single packet', function () {
+    \Illuminate\Support\Facades\Storage::fake();
+
+    $pdf1 = createRealPdf('First Document');
+    $pdf2 = createRealPdf('Second Document');
+    \Illuminate\Support\Facades\Storage::put('corporate-documents/doc1.pdf', $pdf1);
+    \Illuminate\Support\Facades\Storage::put('corporate-documents/doc2.pdf', $pdf2);
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $doc1 = CorporateDocument::factory()->for($this->corporation)->create([
+        'original_file_path' => 'corporate-documents/doc1.pdf',
+    ]);
+    $doc2 = CorporateDocument::factory()->for($this->corporation)->create([
+        'original_file_path' => 'corporate-documents/doc2.pdf',
+    ]);
+
+    $response = $this->actingAs($user)
+        ->get(route('corporate.packet.download').'?'.http_build_query([
+            'document_ids' => [$doc1->id, $doc2->id],
+        ]));
+
+    $response->assertSuccessful();
+    $response->assertHeader('Content-Type', 'application/pdf');
+    expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
+});
+
+it('sends email with merged PDF attachment', function () {
+    \Illuminate\Support\Facades\Mail::fake();
+    \Illuminate\Support\Facades\Storage::fake();
+
+    $pdfContent = createRealPdf('Email Attachment');
+    \Illuminate\Support\Facades\Storage::put('corporate-documents/email-doc.pdf', $pdfContent);
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $doc = CorporateDocument::factory()->for($this->corporation)->create([
+        'original_file_path' => 'corporate-documents/email-doc.pdf',
+    ]);
+
+    $this->actingAs($user)
+        ->postJson(route('corporate.packet.send'), [
+            'email' => 'recipient@example.com',
+            'subject' => 'Your Documents',
+            'message' => 'Here are your documents.',
+            'document_ids' => [$doc->id],
+        ])
+        ->assertSuccessful()
+        ->assertJson(['success' => true]);
+});
