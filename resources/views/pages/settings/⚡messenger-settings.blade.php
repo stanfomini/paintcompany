@@ -34,6 +34,9 @@ new class extends Component {
     public string $widgetGreetingLoggedOut = '';
     public string $widgetThemeColor = '#0084ff';
 
+    // Bot Test Mode
+    public bool $botTestMode = false;
+
     // Bot Flow Management
     public array $flows = [];
 
@@ -61,6 +64,7 @@ new class extends Component {
         $this->widgetThemeColor = $settings->widget_theme_color ?? '#0084ff';
 
         $this->adAccountId = $settings->ad_account_id ?? '';
+        $this->botTestMode = (bool) $settings->bot_test_mode;
 
         $this->loadResponders();
         $this->loadFlows();
@@ -231,6 +235,12 @@ new class extends Component {
 
         $this->verifyToken = $settings->fresh()->verify_token;
         $this->dispatch('messenger-settings-saved');
+    }
+
+    public function toggleTestMode(): void
+    {
+        $this->botTestMode = ! $this->botTestMode;
+        MessengerSetting::getInstance()->update(['bot_test_mode' => $this->botTestMode]);
     }
 
     public function deleteFlow(int $flowId): void
@@ -529,6 +539,22 @@ new class extends Component {
                 </x-action-message>
             </div>
         </form>
+
+        <flux:separator />
+
+        {{-- Bot Test Mode --}}
+        <div class="my-6 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/50">
+            <div>
+                <div class="flex items-center gap-2">
+                    <flux:icon name="beaker" class="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <flux:heading size="sm">{{ __('Bot Test Mode') }}</flux:heading>
+                </div>
+                <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                    {{ __('When enabled, returning customers can re-trigger the bot flow. Disable after testing.') }}
+                </flux:text>
+            </div>
+            <flux:switch wire:click="toggleTestMode" :checked="$botTestMode" />
+        </div>
 
         <flux:separator />
 

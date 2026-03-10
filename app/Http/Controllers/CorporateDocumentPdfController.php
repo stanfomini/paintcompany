@@ -70,14 +70,31 @@ class CorporateDocumentPdfController extends Controller
             'minutes_ids.*' => ['integer', 'exists:meeting_minutes,id'],
         ]);
 
-        $pdfContent = $this->service->buildMergedPacketPdf(
+        $attachments = $this->service->getDocumentAttachments(
             $request->input('document_ids', []),
             $request->input('minutes_ids', []),
         );
 
-        return new Response($pdfContent, 200, [
-            'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'attachment; filename="corporate-document-packet.pdf"',
+        if (count($attachments) === 1) {
+            return new Response($attachments[0]['content'], 200, [
+                'Content-Type' => 'application/pdf',
+                'Content-Disposition' => 'attachment; filename="'.$attachments[0]['filename'].'"',
+            ]);
+        }
+
+        $zipPath = tempnam(sys_get_temp_dir(), 'corp_packet_').'.zip';
+        $zip = new \ZipArchive;
+        $zip->open($zipPath, \ZipArchive::CREATE);
+        foreach ($attachments as $att) {
+            $zip->addFromString($att['filename'], $att['content']);
+        }
+        $zip->close();
+        $zipContent = file_get_contents($zipPath);
+        @unlink($zipPath);
+
+        return new Response($zipContent, 200, [
+            'Content-Type' => 'application/zip',
+            'Content-Disposition' => 'attachment; filename="corporate-documents.zip"',
         ]);
     }
 
@@ -95,17 +112,18 @@ class CorporateDocumentPdfController extends Controller
             'message' => ['nullable', 'string', 'max:5000'],
         ]);
 
-        $pdfContent = $this->service->buildMergedPacketPdf(
+        $attachments = $this->service->getDocumentAttachments(
             $validated['document_ids'] ?? [],
             $validated['minutes_ids'] ?? [],
         );
 
-        Mail::raw($validated['message'] ?? 'Please find the attached corporate document packet.', function ($mail) use ($validated, $pdfContent) {
-            $mail->to($validated['email'])
-                ->subject($validated['subject'])
-                ->attachData($pdfContent, 'corporate-document-packet.pdf', [
-                    'mime' => 'application/pdf',
+        Mail::raw($validated['message'] ?? 'Please find the attached corporate documents.', function ($mail) use ($validated, $attachments) {
+            $mail->to($validated['email'])->subject($validated['subject']);
+            foreach ($attachments as $attachment) {
+                $mail->attachData($attachment['content'], $attachment['filename'], [
+                    'mime' => $attachment['mime'],
                 ]);
+            }
         });
 
         return response()->json(['success' => true]);

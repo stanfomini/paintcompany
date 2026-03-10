@@ -26,10 +26,10 @@ describe('Customer Dashboard Layout', function () {
             ->assertDontSee('Send a Message');
     });
 
-    it('shows the deal chat embed with Project Chat heading', function () {
+    it('does not embed chat directly - chat dock is in the layout', function () {
         Livewire::actingAs($this->customerUser, 'customer')
             ->test('customer.dashboard')
-            ->assertSeeLivewire('customer.deal-chat-embed');
+            ->assertDontSee('Project Chat');
     });
 
     it('shows Add Rooms CTA when estimate exists but has no areas', function () {

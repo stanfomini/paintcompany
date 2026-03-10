@@ -51,14 +51,26 @@ class AppointmentBookingService
             throw new SlotUnavailableException;
         }
 
-        // 3. Find or create Customer
-        $customer = null;
+        // 3. Find or create Property
+        $property = Property::firstOrCreate(
+            ['address' => $prospectData['address']],
+            [
+                'city' => $prospectData['city'] ?? null,
+                'state' => $prospectData['state'] ?? null,
+                'zip' => $prospectData['zip'] ?? null,
+            ]
+        );
+
+        // 4. Resolve customer + deal via dedup service
+        $dedup = app(LeadDeduplicationService::class);
+        $result = null;
+
         if (! empty($prospectData['email'])) {
-            $customer = Customer::firstOrCreate(
-                ['email' => $prospectData['email']],
-                [
+            $result = $dedup->resolveOrCreate(
+                customerData: [
                     'first_name' => $prospectData['first_name'],
                     'last_name' => $prospectData['last_name'],
+                    'email' => $prospectData['email'],
                     'phone' => $prospectData['phone'] ?? null,
                     'address' => $prospectData['address'],
                     'city' => $prospectData['city'] ?? null,
@@ -67,47 +79,56 @@ class AppointmentBookingService
                     'source' => 'vendor_booking',
                     'status' => 'active',
                     'created_by' => $estimatorId,
-                ]
+                ],
+                dealData: [
+                    'property_id' => $property->id,
+                    'title' => 'Vendor Booking - '.$prospectData['address'],
+                    'stage' => 'lead',
+                    'lead_source' => 'vendor_booking',
+                    'assigned_to' => $estimatorId,
+                    'created_by' => $estimatorId,
+                    'origin_vendor_id' => $vendor?->id,
+                    'expected_start_date' => $date->toDateString(),
+                ],
+                options: [
+                    'create_estimate' => true,
+                    'estimate_data' => ['estimator_mode' => Estimate::MODE_TEMPLATE],
+                    'source_label' => 'Booking Page',
+                ],
             );
 
-            app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
+            $customer = $result->customer;
+            $deal = $result->deal;
+
+            // Link property to customer if not set
+            if (! $property->customer_id) {
+                $property->update(['customer_id' => $customer->id]);
+            }
+        } else {
+            // No email — can't deduplicate, create deal directly
+            $customer = null;
+            $deal = Deal::create([
+                'property_id' => $property->id,
+                'title' => 'Vendor Booking - '.$prospectData['address'],
+                'stage' => 'lead',
+                'lead_source' => 'vendor_booking',
+                'assigned_to' => $estimatorId,
+                'created_by' => $estimatorId,
+                'origin_vendor_id' => $vendor?->id,
+                'expected_start_date' => $date->toDateString(),
+            ]);
+
+            Estimate::create([
+                'deal_id' => $deal->id,
+                'created_by' => $estimatorId,
+                'title' => $deal->title,
+                'status' => 'draft',
+                'estimator_mode' => Estimate::MODE_TEMPLATE,
+                'subtotal' => 0,
+                'tax_amount' => 0,
+                'total' => 0,
+            ]);
         }
-
-        // 4. Find or create Property
-        $property = Property::firstOrCreate(
-            ['address' => $prospectData['address']],
-            [
-                'city' => $prospectData['city'] ?? null,
-                'state' => $prospectData['state'] ?? null,
-                'zip' => $prospectData['zip'] ?? null,
-                'customer_id' => $customer?->id,
-            ]
-        );
-
-        // 5. Create Deal
-        $deal = Deal::create([
-            'customer_id' => $customer?->id,
-            'property_id' => $property->id,
-            'title' => 'Vendor Booking - '.$prospectData['address'],
-            'stage' => 'lead',
-            'lead_source' => 'vendor_booking',
-            'assigned_to' => $estimatorId,
-            'created_by' => $estimatorId,
-            'origin_vendor_id' => $vendor?->id,
-            'expected_start_date' => $date->toDateString(),
-        ]);
-
-        // 5b. Create draft Estimate for the deal
-        Estimate::create([
-            'deal_id' => $deal->id,
-            'created_by' => $estimatorId,
-            'title' => $deal->title,
-            'status' => 'draft',
-            'estimator_mode' => Estimate::MODE_TEMPLATE,
-            'subtotal' => 0,
-            'tax_amount' => 0,
-            'total' => 0,
-        ]);
 
         // 6. Create AppointmentBooking record
         $estimator = User::findOrFail($estimatorId);
@@ -148,8 +169,9 @@ class AppointmentBookingService
         }
         $estimator->notify(new NewAppointmentNotification($booking));
 
-        // 10. Send customer invitation if applicable
-        if (! empty($prospectData['email']) && $customer) {
+        // 10. Send customer invitation if applicable (skip if deal was reused — invitation already sent)
+        $dealWasExisting = $result?->dealWasExisting ?? false;
+        if (! $dealWasExisting && ! empty($prospectData['email']) && $customer) {
             $this->sendCustomerInvitation($prospectData['email'], $customer, $deal);
         }
 

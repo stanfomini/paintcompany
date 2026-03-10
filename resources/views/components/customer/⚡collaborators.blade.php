@@ -137,45 +137,46 @@ new class extends Component
                     @foreach ($this->deal->activeCollaborators as $collab)
                         <div
                             wire:key="collab-{{ $collab->id }}"
-                            class="flex items-center justify-between gap-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800"
+                            class="rounded-lg bg-zinc-50 p-3 dark:bg-zinc-800"
                         >
-                            <div class="flex items-center gap-3 min-w-0">
-                                <flux:avatar size="sm" :initials="substr($collab->customer->first_name, 0, 1) . substr($collab->customer->last_name, 0, 1)" class="bg-zinc-200 dark:bg-zinc-700 shrink-0" />
-                                <div class="min-w-0">
-                                    <flux:text class="font-medium truncate">{{ $collab->customer->full_name }}</flux:text>
-                                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 truncate">{{ $collab->customer->email }}</flux:text>
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-3 min-w-0">
+                                    <flux:avatar size="sm" :initials="substr($collab->customer->first_name, 0, 1) . substr($collab->customer->last_name, 0, 1)" class="bg-zinc-200 dark:bg-zinc-700 shrink-0" />
+                                    <div class="min-w-0">
+                                        <flux:text class="font-medium truncate">{{ $collab->customer->full_name }}</flux:text>
+                                        <flux:text class="text-xs text-zinc-500 dark:text-zinc-400 truncate sm:text-sm">{{ $collab->customer->email }}</flux:text>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-1 shrink-0">
+                                    <flux:button
+                                        wire:click="extend({{ $collab->id }})"
+                                        wire:confirm="{{ __('Extend access by 30 more days?') }}"
+                                        variant="ghost"
+                                        size="sm"
+                                        icon="arrow-path"
+                                    />
+                                    <flux:button
+                                        wire:click="revoke({{ $collab->id }})"
+                                        wire:confirm="{{ __('Are you sure you want to revoke access?') }}"
+                                        variant="ghost"
+                                        size="sm"
+                                        icon="x-mark"
+                                        class="text-red-500 hover:text-red-700"
+                                    />
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2 shrink-0">
+                            <div class="mt-1.5 ml-11">
                                 <flux:badge size="sm" color="blue">
                                     {{ __(':count days left', ['count' => $collab->daysRemaining()]) }}
                                 </flux:badge>
-                                <flux:button
-                                    wire:click="extend({{ $collab->id }})"
-                                    wire:confirm="{{ __('Extend access by 30 more days?') }}"
-                                    variant="ghost"
-                                    size="sm"
-                                    icon="arrow-path"
-                                />
-                                <flux:button
-                                    wire:click="revoke({{ $collab->id }})"
-                                    wire:confirm="{{ __('Are you sure you want to revoke access?') }}"
-                                    variant="ghost"
-                                    size="sm"
-                                    icon="x-mark"
-                                    class="text-red-500 hover:text-red-700"
-                                />
                             </div>
                         </div>
                     @endforeach
                 </div>
             @else
-                <div class="py-4 text-center">
-                    <flux:icon name="user-group" class="mx-auto h-8 w-8 text-zinc-300 dark:text-zinc-600 mb-2" />
-                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">
-                        {{ __('No one else has access to this project. Invite someone to share it.') }}
-                    </flux:text>
-                </div>
+                <flux:text class="py-2 text-sm text-zinc-500 dark:text-zinc-400 text-center">
+                    {{ __('No one has shared access yet.') }}
+                </flux:text>
             @endif
         </flux:card>
 

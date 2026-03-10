@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Services\CustomerDeletionService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -22,6 +23,12 @@ new class extends Component {
 
     public int $perPage = 15;
 
+    public ?int $deletingCustomerId = null;
+
+    public bool $showDeleteConfirm = false;
+
+    public array $deletionSummary = [];
+
     #[On('customer-created')]
     #[On('customer-updated')]
     public function refreshList(): void
@@ -37,6 +44,40 @@ new class extends Component {
     public function updatedStatusFilter(): void
     {
         $this->resetPage();
+    }
+
+    public function viewCustomer(int $id): mixed
+    {
+        return $this->redirect(route('customers.show', $id), navigate: true);
+    }
+
+    public function confirmDelete(int $id): void
+    {
+        if (! auth()->user()?->can('people.delete')) {
+            abort(403);
+        }
+
+        $customer = Customer::withTrashed()->findOrFail($id);
+        $this->deletingCustomerId = $id;
+        $this->deletionSummary = app(CustomerDeletionService::class)->getDeletionSummary($customer);
+        $this->showDeleteConfirm = true;
+    }
+
+    public function deleteCustomer(): void
+    {
+        if (! auth()->user()?->can('people.delete')) {
+            abort(403);
+        }
+
+        $customer = Customer::withTrashed()->findOrFail($this->deletingCustomerId);
+
+        app(CustomerDeletionService::class)->forceDelete($customer);
+
+        $this->showDeleteConfirm = false;
+        $this->deletingCustomerId = null;
+        $this->deletionSummary = [];
+
+        session()->flash('success', __('Customer permanently deleted.'));
     }
 
     #[Computed]
@@ -135,9 +176,11 @@ new class extends Component {
                                     <flux:dropdown>
                                         <flux:button variant="ghost" size="sm" icon="ellipsis-horizontal" />
                                         <flux:menu>
-                                            <flux:menu.item icon="eye">{{ __('View') }}</flux:menu.item>
-                                            <flux:menu.item icon="pencil">{{ __('Edit') }}</flux:menu.item>
-                                            <flux:menu.item icon="trash" variant="danger">{{ __('Delete') }}</flux:menu.item>
+                                            <flux:menu.item icon="eye" wire:click="viewCustomer({{ $customer->id }})">{{ __('View') }}</flux:menu.item>
+                                            <flux:menu.item icon="pencil" :href="route('customers.show', $customer)" wire:navigate>{{ __('Edit') }}</flux:menu.item>
+                                            @can('people.delete')
+                                                <flux:menu.item icon="trash" variant="danger" wire:click="confirmDelete({{ $customer->id }})">{{ __('Delete') }}</flux:menu.item>
+                                            @endcan
                                         </flux:menu>
                                     </flux:dropdown>
                                 </td>
@@ -164,4 +207,35 @@ new class extends Component {
             </div>
         @endif
     </div>
+
+    {{-- Delete confirmation modal --}}
+    <flux:modal wire:model="showDeleteConfirm" class="max-w-md">
+        <div class="space-y-4">
+            <flux:heading size="lg">{{ __('Permanently Delete Customer') }}</flux:heading>
+            <flux:text class="text-zinc-600 dark:text-zinc-400">
+                {{ __('This action cannot be undone. The following data will be permanently deleted:') }}
+            </flux:text>
+            <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-1">
+                @if (($deletionSummary['deals'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['deals'] }} {{ Str::plural('deal', $deletionSummary['deals']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['estimates'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['estimates'] }} {{ Str::plural('estimate', $deletionSummary['estimates']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['properties'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['properties'] }} {{ Str::plural('property', $deletionSummary['properties']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['jobs'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['jobs'] }} {{ Str::plural('job', $deletionSummary['jobs']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['deals'] ?? 0) === 0 && ($deletionSummary['estimates'] ?? 0) === 0 && ($deletionSummary['properties'] ?? 0) === 0 && ($deletionSummary['jobs'] ?? 0) === 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ __('No related records found.') }}</flux:text>
+                @endif
+            </div>
+            <div class="flex justify-end gap-3">
+                <flux:button variant="ghost" wire:click="$set('showDeleteConfirm', false)">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="danger" wire:click="deleteCustomer">{{ __('Permanently Delete') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>

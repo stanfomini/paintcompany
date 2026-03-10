@@ -103,6 +103,7 @@
         });
     </script>
 
+    @livewire('customer.chat-dock')
     @livewire('shared.toast-container')
     @fluxScripts
 </body>

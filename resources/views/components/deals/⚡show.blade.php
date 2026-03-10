@@ -1,13 +1,12 @@
 <?php
 
-use App\Models\Activity;
 use App\Models\Deal;
 use App\Services\DealStageService;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public function boot(): void
     {
         if (! auth()->user()?->can('deals.view')) {
@@ -38,6 +37,11 @@ new class extends Component {
             'appointmentBooking',
             'originVendor',
         ]);
+
+        // Clear merge indicator when deal is viewed
+        if ($this->deal->last_merged_at) {
+            $this->deal->update(['last_merged_at' => null, 'last_merged_source' => null]);
+        }
     }
 
     public function getListeners(): array

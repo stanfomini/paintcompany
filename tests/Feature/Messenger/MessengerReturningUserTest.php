@@ -115,6 +115,43 @@ it('still starts bot flow for brand new PSID', function () {
     expect(MessengerConversation::where('facebook_psid', 'PSID_BRAND_NEW')->count())->toBe(1);
 });
 
+it('bypasses returning customer check when bot_test_mode is enabled', function () {
+    Notification::fake();
+
+    $customer = Customer::factory()->create();
+    $thread = ChatThread::factory()->facebook()->create([
+        'external_contact_id' => 'PSID_TEST_MODE',
+        'customer_id' => $customer->id,
+    ]);
+
+    MessengerConversation::factory()->completed()->create([
+        'facebook_psid' => 'PSID_TEST_MODE',
+        'customer_id' => $customer->id,
+        'thread_id' => $thread->id,
+    ]);
+
+    // Enable test mode
+    MessengerSetting::getInstance()->update(['bot_test_mode' => true]);
+    MessengerSetting::clearInstanceCache();
+
+    $flow = MessengerBotFlow::factory()->active()->create();
+    MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 0,
+    ]);
+
+    $service = app(FacebookMessengerService::class);
+    $service->processIncomingMessage([
+        'messaging' => [[
+            'sender' => ['id' => 'PSID_TEST_MODE'],
+            'message' => ['text' => 'Testing the bot again', 'mid' => 'mid.testmode'],
+        ]],
+    ]);
+
+    // Should have created a second conversation (bot started fresh)
+    expect(MessengerConversation::where('facebook_psid', 'PSID_TEST_MODE')->count())->toBe(2);
+});
+
 it('still starts bot flow for PSID with completed conversation but no customer', function () {
     Notification::fake();
 

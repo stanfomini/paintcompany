@@ -221,7 +221,7 @@ function createRealPdf(string $text = 'Test PDF'): string
     return $pdf->Output('', 'S');
 }
 
-it('downloads a merged packet with stored PDFs', function () {
+it('downloads a single document as PDF directly', function () {
     \Illuminate\Support\Facades\Storage::fake();
 
     $pdfContent = createRealPdf('Document Content');
@@ -240,7 +240,7 @@ it('downloads a merged packet with stored PDFs', function () {
     $response->assertSuccessful();
     $response->assertHeader('Content-Type', 'application/pdf');
 
-    // Verify output starts with PDF magic bytes
+    // Single document returns PDF directly
     expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
 });
 
@@ -274,7 +274,7 @@ it('includes meeting minutes in merged packet', function () {
     expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
 });
 
-it('merges multiple documents into a single packet', function () {
+it('downloads multiple documents as a zip file', function () {
     \Illuminate\Support\Facades\Storage::fake();
 
     $pdf1 = createRealPdf('First Document');
@@ -296,20 +296,29 @@ it('merges multiple documents into a single packet', function () {
         ]));
 
     $response->assertSuccessful();
-    $response->assertHeader('Content-Type', 'application/pdf');
-    expect(str_starts_with($response->getContent(), '%PDF'))->toBeTrue();
+    $response->assertHeader('Content-Type', 'application/zip');
+
+    // Verify output starts with ZIP magic bytes (PK)
+    expect(str_starts_with($response->getContent(), 'PK'))->toBeTrue();
 });
 
-it('sends email with merged PDF attachment', function () {
+it('sends email with individual PDF attachments', function () {
     \Illuminate\Support\Facades\Mail::fake();
     \Illuminate\Support\Facades\Storage::fake();
 
-    $pdfContent = createRealPdf('Email Attachment');
-    \Illuminate\Support\Facades\Storage::put('corporate-documents/email-doc.pdf', $pdfContent);
+    $pdf1 = createRealPdf('First Attachment');
+    $pdf2 = createRealPdf('Second Attachment');
+    \Illuminate\Support\Facades\Storage::put('corporate-documents/doc1.pdf', $pdf1);
+    \Illuminate\Support\Facades\Storage::put('corporate-documents/doc2.pdf', $pdf2);
 
     $user = User::factory()->internal()->withFullAccess()->create();
-    $doc = CorporateDocument::factory()->for($this->corporation)->create([
-        'original_file_path' => 'corporate-documents/email-doc.pdf',
+    $doc1 = CorporateDocument::factory()->for($this->corporation)->create([
+        'title' => 'Bylaws',
+        'original_file_path' => 'corporate-documents/doc1.pdf',
+    ]);
+    $doc2 = CorporateDocument::factory()->for($this->corporation)->create([
+        'title' => 'Articles',
+        'original_file_path' => 'corporate-documents/doc2.pdf',
     ]);
 
     $this->actingAs($user)
@@ -317,7 +326,7 @@ it('sends email with merged PDF attachment', function () {
             'email' => 'recipient@example.com',
             'subject' => 'Your Documents',
             'message' => 'Here are your documents.',
-            'document_ids' => [$doc->id],
+            'document_ids' => [$doc1->id, $doc2->id],
         ])
         ->assertSuccessful()
         ->assertJson(['success' => true]);

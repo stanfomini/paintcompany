@@ -270,9 +270,14 @@ class FacebookMessengerService
 
     /**
      * Check if this PSID belongs to a returning customer who already completed a bot flow.
+     * Bypassed when bot_test_mode is enabled in MessengerSetting.
      */
     protected function isReturningCustomer(string $psid): bool
     {
+        if (MessengerSetting::getInstance()->bot_test_mode) {
+            return false;
+        }
+
         return MessengerConversation::where('facebook_psid', $psid)
             ->whereNotNull('customer_id')
             ->exists();

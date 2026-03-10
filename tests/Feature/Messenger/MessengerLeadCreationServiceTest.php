@@ -246,14 +246,30 @@ describe('createFromConversation', function () {
         expect($result['customer']->fresh()->phone)->toBe('555-000-1111');
     });
 
-    it('creates new deal even for existing customer', function () {
+    it('reuses active deal for existing customer (cross-source dedup)', function () {
         Notification::fake();
 
         $existingCustomer = Customer::factory()->create(['email' => 'returning@example.com']);
-        $existingDeal = Deal::factory()->create(['customer_id' => $existingCustomer->id]);
+        $existingDeal = Deal::factory()->create(['customer_id' => $existingCustomer->id, 'stage' => 'lead']);
 
         $flow = createFlowWithSteps(['customer.email', 'customer.first_name']);
         $conversation = createConversationWithAnswers($flow, ['returning@example.com', $existingCustomer->first_name]);
+
+        $service = new MessengerLeadCreationService;
+        $result = $service->createFromConversation($conversation);
+
+        expect($result['deal']->id)->toBe($existingDeal->id);
+        expect($existingCustomer->deals()->count())->toBe(1);
+    });
+
+    it('creates new deal for existing customer with only terminal deals', function () {
+        Notification::fake();
+
+        $existingCustomer = Customer::factory()->create(['email' => 'completed@example.com']);
+        $existingDeal = Deal::factory()->completed()->create(['customer_id' => $existingCustomer->id]);
+
+        $flow = createFlowWithSteps(['customer.email', 'customer.first_name']);
+        $conversation = createConversationWithAnswers($flow, ['completed@example.com', $existingCustomer->first_name]);
 
         $service = new MessengerLeadCreationService;
         $result = $service->createFromConversation($conversation);

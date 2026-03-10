@@ -64,14 +64,10 @@ class MessengerLeadCreationService
             app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         }
 
-        // Check for existing active messenger deal for this customer
+        // Check for existing active deal for this customer (cross-source)
         $existingDeal = null;
         if (! $isNewCustomer) {
-            $existingDeal = Deal::where('customer_id', $customer->id)
-                ->where('lead_source', 'Facebook Messenger')
-                ->whereNotIn('stage', ['lost', 'completed'])
-                ->latest()
-                ->first();
+            $existingDeal = app(LeadDeduplicationService::class)->findActiveDeal($customer);
         }
 
         // Reuse existing deal or create new one
@@ -82,6 +78,13 @@ class MessengerLeadCreationService
         if ($existingDeal) {
             $deal = $existingDeal;
             $estimate = $existingDeal->estimates()->latest()->first();
+
+            // Merge new data into existing deal
+            app(LeadDeduplicationService::class)->mergeDealData(
+                $existingDeal,
+                ['description' => $dealData['description'] ?? null],
+                'Facebook Messenger'
+            );
         } else {
             $firstName = $customerData['first_name'] ?? 'Unknown';
             $lastName = $customerData['last_name'] ?? '';
@@ -202,32 +205,47 @@ class MessengerLeadCreationService
             app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         }
 
-        $firstName = $customerData['first_name'] ?? 'Unknown';
-        $lastName = $customerData['last_name'] ?? '';
-        $titleName = trim("{$firstName} {$lastName}") ?: 'Facebook Lead';
-        $dealTitle = "{$titleName} - Facebook Lead";
+        // Check for existing active deal (cross-source)
+        $dedup = app(LeadDeduplicationService::class);
+        $existingDeal = $dedup->findActiveDeal($customer);
 
-        $leadSource = $this->getOrCreateLeadSource();
+        if ($existingDeal) {
+            $deal = $existingDeal;
+            $estimate = $existingDeal->estimates()->latest()->first();
 
-        $deal = Deal::create([
-            'customer_id' => $customer->id,
-            'title' => $dealTitle,
-            'description' => $formData['notes'] ?? null,
-            'stage' => 'lead',
-            'lead_source' => 'Facebook Messenger',
-            'lead_source_id' => $leadSource->id,
-            'created_by' => $assignmentService->getCreatedByUser()?->id,
-        ]);
+            $dedup->mergeDealData(
+                $existingDeal,
+                ['description' => $formData['notes'] ?? null],
+                'Facebook Messenger'
+            );
+        } else {
+            $firstName = $customerData['first_name'] ?? 'Unknown';
+            $lastName = $customerData['last_name'] ?? '';
+            $titleName = trim("{$firstName} {$lastName}") ?: 'Facebook Lead';
+            $dealTitle = "{$titleName} - Facebook Lead";
 
-        $estimate = Estimate::create([
-            'deal_id' => $deal->id,
-            'created_by' => $assignmentService->getCreatedByUser()?->id,
-            'title' => $dealTitle,
-            'status' => 'draft',
-            'subtotal' => 0,
-            'tax_amount' => 0,
-            'total' => 0,
-        ]);
+            $leadSource = $this->getOrCreateLeadSource();
+
+            $deal = Deal::create([
+                'customer_id' => $customer->id,
+                'title' => $dealTitle,
+                'description' => $formData['notes'] ?? null,
+                'stage' => 'lead',
+                'lead_source' => 'Facebook Messenger',
+                'lead_source_id' => $leadSource->id,
+                'created_by' => $assignmentService->getCreatedByUser()?->id,
+            ]);
+
+            $estimate = Estimate::create([
+                'deal_id' => $deal->id,
+                'created_by' => $assignmentService->getCreatedByUser()?->id,
+                'title' => $dealTitle,
+                'status' => 'draft',
+                'subtotal' => 0,
+                'tax_amount' => 0,
+                'total' => 0,
+            ]);
+        }
 
         // Link conversation to customer and deal
         $conversation->update([
@@ -240,11 +258,11 @@ class MessengerLeadCreationService
             $conversation->thread->update(['customer_id' => $customer->id]);
         }
 
-        // Assign via round-robin
-        $assignmentService->assignViaRoundRobin($deal);
-
-        // Notify
-        $this->notifyResponders($customer, $deal, false);
+        // Only assign and notify for new deals
+        if (! $existingDeal) {
+            $assignmentService->assignViaRoundRobin($deal);
+            $this->notifyResponders($customer, $deal, false);
+        }
 
         return [
             'customer' => $customer,

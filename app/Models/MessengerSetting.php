@@ -29,6 +29,7 @@ class MessengerSetting extends Model
         'widget_theme_color',
         'is_connected',
         'connected_at',
+        'bot_test_mode',
     ];
 
     protected function casts(): array
@@ -39,6 +40,7 @@ class MessengerSetting extends Model
             'website_widget_enabled' => 'boolean',
             'is_connected' => 'boolean',
             'connected_at' => 'datetime',
+            'bot_test_mode' => 'boolean',
         ];
     }
 

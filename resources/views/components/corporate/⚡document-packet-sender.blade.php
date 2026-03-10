@@ -109,19 +109,20 @@ new class extends Component
         $this->sending = true;
 
         try {
-            $pdfContent = app(\App\Services\CorporateDocumentService::class)->buildMergedPacketPdf(
+            $attachments = app(\App\Services\CorporateDocumentService::class)->getDocumentAttachments(
                 $this->selectedDocumentIds,
                 $this->selectedMinutesIds,
             );
 
             \Illuminate\Support\Facades\Mail::raw(
-                $this->message ?: 'Please find the attached corporate document packet.',
-                function ($mail) use ($pdfContent) {
-                    $mail->to($this->email)
-                        ->subject($this->subject)
-                        ->attachData($pdfContent, 'corporate-document-packet.pdf', [
-                            'mime' => 'application/pdf',
+                $this->message ?: 'Please find the attached corporate documents.',
+                function ($mail) use ($attachments) {
+                    $mail->to($this->email)->subject($this->subject);
+                    foreach ($attachments as $attachment) {
+                        $mail->attachData($attachment['content'], $attachment['filename'], [
+                            'mime' => $attachment['mime'],
                         ]);
+                    }
                 }
             );
 

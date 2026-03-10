@@ -450,7 +450,9 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                                 @endforeach
                             </select>
                         </div>
-                        <flux:button href="{{ route('customer.onboarding', ['new_project' => true]) }}" variant="ghost" size="sm" icon="plus" class="shrink-0" />
+                        <flux:button href="{{ route('customer.onboarding', ['new_project' => true]) }}" variant="ghost" size="sm" icon="plus" class="shrink-0">
+                            {{ __('New') }}
+                        </flux:button>
                     </div>
 
                     @if ($this->selectedDeal)
@@ -592,6 +594,31 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                 @endif
             </flux:card>
 
+            {{-- Property & Contact Info --}}
+            @if ($this->selectedDeal?->property)
+                @php $property = $this->selectedDeal->property; @endphp
+                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 px-4 py-3">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <flux:icon name="map-pin" class="w-4 h-4 text-zinc-400 shrink-0" />
+                        <span class="text-sm text-zinc-700 dark:text-zinc-300 truncate">
+                            {{ $property->address }}@if ($property->city), {{ $property->city }}@endif @if ($property->state){{ $property->state }}@endif
+                        </span>
+                    </div>
+                    @if ($this->selectedDeal->customer?->email)
+                        <div class="flex items-center gap-2 min-w-0">
+                            <flux:icon name="envelope" class="w-4 h-4 text-zinc-400 shrink-0" />
+                            <span class="text-sm text-zinc-500 dark:text-zinc-400 truncate">{{ $this->selectedDeal->customer->email }}</span>
+                        </div>
+                    @endif
+                    @if ($this->selectedDeal->customer?->phone)
+                        <div class="flex items-center gap-2 min-w-0">
+                            <flux:icon name="phone" class="w-4 h-4 text-zinc-400 shrink-0" />
+                            <span class="text-sm text-zinc-500 dark:text-zinc-400">{{ $this->selectedDeal->customer->phone }}</span>
+                        </div>
+                    @endif
+                </div>
+            @endif
+
             @if ($this->selectedDeal && $this->customer && !in_array($this->selectedDeal->customer_id, $this->customerIds))
                 <flux:callout variant="info">
                     <flux:callout.heading>{{ __('Shared Project') }}</flux:callout.heading>
@@ -659,80 +686,125 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                 @endphp
 
                 {{-- Status Timeline --}}
+                @php
+                    $estimateLink = ($sentEstimate) ? route('customer.estimates.show', $sentEstimate) : (($acceptedEstimate) ? route('customer.estimates.show', $acceptedEstimate) : null);
+                    $jobLink = $job ? route('customer.jobs.show', $job) : null;
+                    $invoiceLink = ($job && $job->relationLoaded('invoices') && $job->invoices->isNotEmpty()) ? route('customer.invoices.index') : null;
+                @endphp
                 <flux:card class="!px-2 sm:!px-6">
                     <div class="flex items-center justify-between gap-2 sm:gap-4">
                         {{-- Estimate Stage --}}
-                        <div class="flex flex-1 flex-col items-center text-center">
-                            @php
-                                $estColor = match($estimateStatus) {
-                                    'completed' => 'text-green-500 dark:text-green-400',
-                                    'in_progress' => 'text-blue-500 dark:text-blue-400',
-                                    'attention' => 'text-amber-500 dark:text-amber-400',
-                                    default => 'text-zinc-300 dark:text-zinc-600',
-                                };
-                                $estBg = match($estimateStatus) {
-                                    'completed' => 'bg-green-100 dark:bg-green-900',
-                                    'in_progress' => 'bg-blue-100 dark:bg-blue-900',
-                                    'attention' => 'bg-amber-100 dark:bg-amber-900',
-                                    default => 'bg-zinc-100 dark:bg-zinc-800',
-                                };
-                            @endphp
-                            <div class="rounded-full p-2 sm:p-3 {{ $estBg }}">
-                                <flux:icon name="document-text" class="h-5 w-5 sm:h-6 sm:w-6 {{ $estColor }}" />
+                        @php
+                            $estColor = match($estimateStatus) {
+                                'completed' => 'text-green-500 dark:text-green-400',
+                                'in_progress' => 'text-blue-500 dark:text-blue-400',
+                                'attention' => 'text-amber-500 dark:text-amber-400',
+                                default => 'text-zinc-300 dark:text-zinc-600',
+                            };
+                            $estBg = match($estimateStatus) {
+                                'completed' => 'bg-green-100 dark:bg-green-900',
+                                'in_progress' => 'bg-blue-100 dark:bg-blue-900',
+                                'attention' => 'bg-amber-100 dark:bg-amber-900',
+                                default => 'bg-zinc-100 dark:bg-zinc-800',
+                            };
+                        @endphp
+                        @if ($estimateLink)
+                            <a href="{{ $estimateLink }}" class="group flex flex-1 flex-col items-center text-center">
+                                <div class="rounded-full p-2 sm:p-3 {{ $estBg }} group-hover:ring-2 group-hover:ring-offset-1 group-hover:ring-current transition">
+                                    <flux:icon name="document-text" class="h-5 w-5 sm:h-6 sm:w-6 {{ $estColor }}" />
+                                </div>
+                                <flux:text class="mt-1.5 text-xs sm:text-sm font-medium group-hover:underline">{{ __('Estimate') }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $estimateLabel }}</flux:text>
+                                @if ($estimateStatus === 'completed' && $acceptedEstimate?->accepted_at)
+                                    <flux:text class="text-[11px] text-zinc-400 dark:text-zinc-500">{{ $acceptedEstimate->accepted_at->format('M j') }}</flux:text>
+                                @endif
+                            </a>
+                        @else
+                            <div class="flex flex-1 flex-col items-center text-center">
+                                <div class="rounded-full p-2 sm:p-3 {{ $estBg }}">
+                                    <flux:icon name="document-text" class="h-5 w-5 sm:h-6 sm:w-6 {{ $estColor }}" />
+                                </div>
+                                <flux:text class="mt-1.5 text-xs sm:text-sm font-medium">{{ __('Estimate') }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $estimateLabel }}</flux:text>
                             </div>
-                            <flux:text class="mt-1.5 text-xs sm:text-sm font-medium">{{ __('Estimate') }}</flux:text>
-                            <flux:text class="text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400">{{ $estimateLabel }}</flux:text>
-                        </div>
+                        @endif
 
                         {{-- Connector --}}
                         <div class="h-0.5 flex-1 max-w-8 sm:max-w-12 {{ $estimateStatus === 'completed' ? 'bg-green-300 dark:bg-green-700' : 'bg-zinc-200 dark:bg-zinc-700' }}"></div>
 
                         {{-- Job Stage --}}
-                        <div class="flex flex-1 flex-col items-center text-center">
-                            @php
-                                $jobColor = match($jobStatus) {
-                                    'completed' => 'text-green-500 dark:text-green-400',
-                                    'in_progress' => 'text-blue-500 dark:text-blue-400',
-                                    default => 'text-zinc-300 dark:text-zinc-600',
-                                };
-                                $jobBg = match($jobStatus) {
-                                    'completed' => 'bg-green-100 dark:bg-green-900',
-                                    'in_progress' => 'bg-blue-100 dark:bg-blue-900',
-                                    default => 'bg-zinc-100 dark:bg-zinc-800',
-                                };
-                            @endphp
-                            <div class="rounded-full p-2 sm:p-3 {{ $jobBg }}">
-                                <flux:icon name="paint-brush" class="h-5 w-5 sm:h-6 sm:w-6 {{ $jobColor }}" />
+                        @php
+                            $jobColor = match($jobStatus) {
+                                'completed' => 'text-green-500 dark:text-green-400',
+                                'in_progress' => 'text-blue-500 dark:text-blue-400',
+                                default => 'text-zinc-300 dark:text-zinc-600',
+                            };
+                            $jobBg = match($jobStatus) {
+                                'completed' => 'bg-green-100 dark:bg-green-900',
+                                'in_progress' => 'bg-blue-100 dark:bg-blue-900',
+                                default => 'bg-zinc-100 dark:bg-zinc-800',
+                            };
+                        @endphp
+                        @if ($jobLink)
+                            <a href="{{ $jobLink }}" class="group flex flex-1 flex-col items-center text-center">
+                                <div class="rounded-full p-2 sm:p-3 {{ $jobBg }} group-hover:ring-2 group-hover:ring-offset-1 group-hover:ring-current transition">
+                                    <flux:icon name="paint-brush" class="h-5 w-5 sm:h-6 sm:w-6 {{ $jobColor }}" />
+                                </div>
+                                <flux:text class="mt-1.5 text-xs sm:text-sm font-medium group-hover:underline">{{ __('Painting') }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $jobLabel }}</flux:text>
+                                @if ($jobStatus === 'completed' && $job->updated_at)
+                                    <flux:text class="text-[11px] text-zinc-400 dark:text-zinc-500">{{ $job->updated_at->format('M j') }}</flux:text>
+                                @endif
+                            </a>
+                        @else
+                            <div class="flex flex-1 flex-col items-center text-center">
+                                <div class="rounded-full p-2 sm:p-3 {{ $jobBg }}">
+                                    <flux:icon name="paint-brush" class="h-5 w-5 sm:h-6 sm:w-6 {{ $jobColor }}" />
+                                </div>
+                                <flux:text class="mt-1.5 text-xs sm:text-sm font-medium">{{ __('Painting') }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $jobLabel }}</flux:text>
                             </div>
-                            <flux:text class="mt-1.5 text-xs sm:text-sm font-medium">{{ __('Painting') }}</flux:text>
-                            <flux:text class="text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400">{{ $jobLabel }}</flux:text>
-                        </div>
+                        @endif
 
                         {{-- Connector --}}
                         <div class="h-0.5 flex-1 max-w-8 sm:max-w-12 {{ $jobStatus === 'completed' ? 'bg-green-300 dark:bg-green-700' : 'bg-zinc-200 dark:bg-zinc-700' }}"></div>
 
                         {{-- Invoice Stage --}}
-                        <div class="flex flex-1 flex-col items-center text-center">
-                            @php
-                                $invColor = match($invoiceStatus) {
-                                    'completed' => 'text-green-500 dark:text-green-400',
-                                    'in_progress' => 'text-blue-500 dark:text-blue-400',
-                                    'attention' => 'text-red-500 dark:text-red-400',
-                                    default => 'text-zinc-300 dark:text-zinc-600',
-                                };
-                                $invBg = match($invoiceStatus) {
-                                    'completed' => 'bg-green-100 dark:bg-green-900',
-                                    'in_progress' => 'bg-blue-100 dark:bg-blue-900',
-                                    'attention' => 'bg-red-100 dark:bg-red-900',
-                                    default => 'bg-zinc-100 dark:bg-zinc-800',
-                                };
-                            @endphp
-                            <div class="rounded-full p-2 sm:p-3 {{ $invBg }}">
-                                <flux:icon name="credit-card" class="h-5 w-5 sm:h-6 sm:w-6 {{ $invColor }}" />
+                        @php
+                            $invColor = match($invoiceStatus) {
+                                'completed' => 'text-green-500 dark:text-green-400',
+                                'in_progress' => 'text-blue-500 dark:text-blue-400',
+                                'attention' => 'text-red-500 dark:text-red-400',
+                                default => 'text-zinc-300 dark:text-zinc-600',
+                            };
+                            $invBg = match($invoiceStatus) {
+                                'completed' => 'bg-green-100 dark:bg-green-900',
+                                'in_progress' => 'bg-blue-100 dark:bg-blue-900',
+                                'attention' => 'bg-red-100 dark:bg-red-900',
+                                default => 'bg-zinc-100 dark:bg-zinc-800',
+                            };
+                            $paidInvoice = ($invoiceStatus === 'completed' && $job) ? $job->invoices->firstWhere('status', 'paid') : null;
+                        @endphp
+                        @if ($invoiceLink)
+                            <a href="{{ $invoiceLink }}" class="group flex flex-1 flex-col items-center text-center">
+                                <div class="rounded-full p-2 sm:p-3 {{ $invBg }} group-hover:ring-2 group-hover:ring-offset-1 group-hover:ring-current transition">
+                                    <flux:icon name="credit-card" class="h-5 w-5 sm:h-6 sm:w-6 {{ $invColor }}" />
+                                </div>
+                                <flux:text class="mt-1.5 text-xs sm:text-sm font-medium group-hover:underline">{{ __('Invoice') }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $invoiceLabel }}</flux:text>
+                                @if ($paidInvoice?->paid_at)
+                                    <flux:text class="text-[11px] text-zinc-400 dark:text-zinc-500">{{ $paidInvoice->paid_at->format('M j') }}</flux:text>
+                                @endif
+                            </a>
+                        @else
+                            <div class="flex flex-1 flex-col items-center text-center">
+                                <div class="rounded-full p-2 sm:p-3 {{ $invBg }}">
+                                    <flux:icon name="credit-card" class="h-5 w-5 sm:h-6 sm:w-6 {{ $invColor }}" />
+                                </div>
+                                <flux:text class="mt-1.5 text-xs sm:text-sm font-medium">{{ __('Invoice') }}</flux:text>
+                                <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">{{ $invoiceLabel }}</flux:text>
                             </div>
-                            <flux:text class="mt-1.5 text-xs sm:text-sm font-medium">{{ __('Invoice') }}</flux:text>
-                            <flux:text class="text-[10px] sm:text-xs text-zinc-500 dark:text-zinc-400">{{ $invoiceLabel }}</flux:text>
-                        </div>
+                        @endif
                     </div>
                 </flux:card>
 
@@ -762,73 +834,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     </flux:callout>
                 @endif
 
-                {{-- Schedule Card --}}
-                <flux:card class="!p-5 sm:!p-6">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
-                            <flux:icon name="calendar" class="w-5 h-5 text-sky-600 dark:text-sky-400" />
-                        </div>
-                        <div>
-                            <flux:heading size="lg">{{ __('Schedule') }}</flux:heading>
-                            <flux:text class="text-sm">
-                                {{ __('Book a time to discuss your project') }}
-                            </flux:text>
-                        </div>
-                    </div>
-
-                    @if ($this->upcomingMeetings->isNotEmpty())
-                        <div class="space-y-3 mb-4">
-                            @foreach ($this->upcomingMeetings->take(2) as $meeting)
-                                <div class="bg-zinc-50 dark:bg-zinc-900 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700" wire:key="dash-meeting-{{ $meeting->id }}">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">{{ $meeting->title }}</flux:text>
-                                            @if ($meeting->due_at)
-                                                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
-                                                    {{ $meeting->due_at->format('l, M j \a\t g:i A') }}
-                                                </flux:text>
-                                            @endif
-                                        </div>
-                                        <flux:badge size="sm" :color="match($meeting->meeting_status) {
-                                            'proposed' => 'yellow',
-                                            'confirmed' => 'green',
-                                            default => 'zinc',
-                                        }">
-                                            {{ __(ucfirst($meeting->meeting_status ?? 'pending')) }}
-                                        </flux:badge>
-                                    </div>
-                                    @if ($meeting->meeting_status === 'proposed' && ! $meeting->customer_confirmed_at)
-                                        <div class="flex items-center gap-2 mt-3">
-                                            <flux:button size="sm" variant="primary" wire:click="confirmMeeting({{ $meeting->id }})">
-                                                {{ __('Confirm') }}
-                                            </flux:button>
-                                            <flux:button size="sm" variant="ghost" wire:click="declineMeeting({{ $meeting->id }})">
-                                                {{ __('Decline') }}
-                                            </flux:button>
-                                        </div>
-                                    @endif
-                                    @if ($meeting->meeting_status === 'confirmed' && $meeting->isVirtualMeeting() && $meeting->videoCall)
-                                        <div class="mt-3">
-                                            <flux:button size="sm" variant="primary" icon="video-camera" :href="route('video-call.test', $meeting->videoCall->room_id)">
-                                                {{ __('Join Video Call') }}
-                                            </flux:button>
-                                        </div>
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
-                    @endif
-
-                    <button
-                        wire:click="$set('showScheduleModal', true)"
-                        class="w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
-                    >
-                        <flux:icon name="plus" class="w-5 h-5" />
-                        {{ __('Propose a Meeting') }}
-                    </button>
-                </flux:card>
-
-                {{-- Job Progress Card --}}
+                {{-- Job Progress Card (high priority when active) --}}
                 @if ($job)
                     @php
                         $jobStages = array_keys(\App\Models\Job::STAGES);
@@ -874,75 +880,146 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                     </flux:card>
                 @endif
 
-                {{-- Estimate CTA Cards --}}
-                @if ($estimates->isNotEmpty())
-                    @foreach ($estimates as $estimate)
-                        @php
-                            $badgeColor = match($estimate->status) {
-                                'draft' => 'zinc',
-                                'sent' => 'blue',
-                                'accepted' => 'green',
-                                'rejected' => 'red',
-                                'expired' => 'zinc',
-                                default => 'zinc',
-                            };
-                        @endphp
-                        <flux:card wire:key="estimate-cta-{{ $estimate->id }}" class="!p-5 sm:!p-6">
-                            <div class="flex items-start justify-between gap-4">
-                                <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
-                                        <flux:icon name="document-text" class="w-5 h-5 text-sky-600 dark:text-sky-400" />
-                                    </div>
-                                    <div>
-                                        <flux:heading size="lg">{{ __('Your Painting Estimate') }}</flux:heading>
-                                        <flux:text class="text-sm mt-0.5">{{ $estimate->estimate_number }}</flux:text>
-                                    </div>
-                                </div>
-                                <flux:badge size="lg" color="{{ $badgeColor }}">
-                                    {{ $estimate->status_label }}
-                                </flux:badge>
+                {{-- Schedule + Estimate Cards: 2-column grid on medium screens --}}
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                    {{-- Schedule Card --}}
+                    <flux:card class="!p-5 sm:!p-6">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-sky-100 dark:bg-sky-900/50 flex items-center justify-center shrink-0">
+                                <flux:icon name="calendar" class="w-5 h-5 text-sky-600 dark:text-sky-400" />
                             </div>
-
-                            @if ($estimate->status === 'sent' && $estimate->total)
-                                <div class="mt-4 text-center">
-                                    <p class="text-3xl font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->total, 2) }}</p>
-                                </div>
-                                <a
-                                    href="{{ route('customer.estimates.show', $estimate) }}"
-                                    class="mt-4 block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px]"
-                                >
-                                    {{ __('View Your Full Proposal') }}
-                                </a>
-                            @elseif ($estimate->status === 'accepted' && $estimate->total)
-                                <div class="mt-4">
-                                    <p class="text-3xl font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->total, 2) }}</p>
-                                </div>
-                                <a
-                                    href="{{ route('customer.estimates.show', $estimate) }}"
-                                    class="mt-3 block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px]"
-                                >
-                                    {{ __('View Your Estimate') }}
-                                </a>
-                            @else
-                                {{-- Draft: no pricing visible --}}
-                                <button
-                                    wire:click="openEstimateOverlay({{ $estimate->id }})"
-                                    class="mt-4 w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
-                                >
-                                    <flux:icon name="eye" class="w-5 h-5" />
-                                    {{ __('Help Build Your Estimate') }}
-                                </button>
-                            @endif
-                        </flux:card>
-                    @endforeach
-                @else
-                    <flux:card>
-                        <div class="py-8 text-center">
-                            <flux:icon name="document-text" class="mx-auto h-12 w-12 text-zinc-300 dark:text-zinc-600" />
-                            <flux:text class="mt-3 text-zinc-500 dark:text-zinc-400">{{ __('No estimates yet for this project.') }}</flux:text>
+                            <div>
+                                <flux:heading size="lg">{{ __('Schedule') }}</flux:heading>
+                                <flux:text class="text-sm">
+                                    {{ __('Book a time to discuss your project') }}
+                                </flux:text>
+                            </div>
                         </div>
+
+                        @if ($this->upcomingMeetings->isNotEmpty())
+                            <div class="space-y-3 mb-4">
+                                @foreach ($this->upcomingMeetings->take(2) as $meeting)
+                                    <div class="bg-zinc-50 dark:bg-zinc-900 rounded-xl p-4 border border-zinc-200 dark:border-zinc-700" wire:key="dash-meeting-{{ $meeting->id }}">
+                                        <div class="flex items-start justify-between gap-3">
+                                            <div class="min-w-0">
+                                                <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">{{ $meeting->title }}</flux:text>
+                                                @if ($meeting->due_at)
+                                                    <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">
+                                                        {{ $meeting->due_at->format('l, M j \a\t g:i A') }}
+                                                    </flux:text>
+                                                @endif
+                                            </div>
+                                            <flux:badge size="sm" :color="match($meeting->meeting_status) {
+                                                'proposed' => 'yellow',
+                                                'confirmed' => 'green',
+                                                default => 'zinc',
+                                            }">
+                                                {{ __(ucfirst($meeting->meeting_status ?? 'pending')) }}
+                                            </flux:badge>
+                                        </div>
+                                        @if ($meeting->meeting_status === 'proposed' && ! $meeting->customer_confirmed_at)
+                                            <div class="flex items-center gap-2 mt-3">
+                                                <flux:button size="sm" variant="primary" wire:click="confirmMeeting({{ $meeting->id }})">
+                                                    {{ __('Confirm') }}
+                                                </flux:button>
+                                                <flux:button size="sm" variant="ghost" wire:click="declineMeeting({{ $meeting->id }})">
+                                                    {{ __('Decline') }}
+                                                </flux:button>
+                                            </div>
+                                        @endif
+                                        @if ($meeting->meeting_status === 'confirmed' && $meeting->isVirtualMeeting() && $meeting->videoCall)
+                                            <div class="mt-3">
+                                                <flux:button size="sm" variant="primary" icon="video-camera" :href="route('video-call.test', $meeting->videoCall->room_id)">
+                                                    {{ __('Join Video Call') }}
+                                                </flux:button>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        @endif
+
+                        <button
+                            wire:click="$set('showScheduleModal', true)"
+                            class="w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                        >
+                            <flux:icon name="plus" class="w-5 h-5" />
+                            {{ __('Propose a Meeting') }}
+                        </button>
                     </flux:card>
-                @endif
+
+                    {{-- Estimate CTA Cards --}}
+                    <div class="space-y-4">
+                        @if ($estimates->isNotEmpty())
+                            @foreach ($estimates as $estimate)
+                                @php
+                                    $badgeColor = match($estimate->status) {
+                                        'draft' => 'zinc',
+                                        'sent' => 'blue',
+                                        'accepted' => 'green',
+                                        'rejected' => 'red',
+                                        'expired' => 'zinc',
+                                        default => 'zinc',
+                                    };
+                                @endphp
+                                <flux:card wire:key="estimate-cta-{{ $estimate->id }}" class="!p-5 sm:!p-6 {{ $estimate->status === 'sent' ? 'border-l-4 border-l-amber-400 dark:border-l-amber-500' : '' }}">
+                                    <div class="flex items-start justify-between gap-4">
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 rounded-full {{ $estimate->status === 'sent' ? 'bg-amber-100 dark:bg-amber-900/50' : 'bg-sky-100 dark:bg-sky-900/50' }} flex items-center justify-center shrink-0">
+                                                <flux:icon name="document-text" class="w-5 h-5 {{ $estimate->status === 'sent' ? 'text-amber-600 dark:text-amber-400' : 'text-sky-600 dark:text-sky-400' }}" />
+                                            </div>
+                                            <div>
+                                                <flux:heading size="lg">{{ __('Your Painting Estimate') }}</flux:heading>
+                                                <flux:text class="text-sm mt-0.5">{{ $estimate->estimate_number }}</flux:text>
+                                            </div>
+                                        </div>
+                                        <flux:badge size="lg" color="{{ $badgeColor }}">
+                                            {{ $estimate->status_label }}
+                                        </flux:badge>
+                                    </div>
+
+                                    @if ($estimate->status === 'sent' && $estimate->total)
+                                        <div class="mt-4 text-center">
+                                            <p class="text-3xl font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->total, 2) }}</p>
+                                        </div>
+                                        <a
+                                            href="{{ route('customer.estimates.show', $estimate) }}"
+                                            class="mt-4 block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px]"
+                                        >
+                                            {{ __('View Your Full Proposal') }}
+                                        </a>
+                                    @elseif ($estimate->status === 'accepted' && $estimate->total)
+                                        <div class="mt-4">
+                                            <p class="text-3xl font-bold text-zinc-900 dark:text-zinc-100">${{ number_format($estimate->total, 2) }}</p>
+                                        </div>
+                                        <a
+                                            href="{{ route('customer.estimates.show', $estimate) }}"
+                                            class="mt-3 block w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors text-center min-h-[48px]"
+                                        >
+                                            {{ __('View Your Estimate') }}
+                                        </a>
+                                    @else
+                                        {{-- Draft: no pricing visible --}}
+                                        <button
+                                            wire:click="openEstimateOverlay({{ $estimate->id }})"
+                                            class="mt-4 w-full py-3 bg-sky-600 hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-400 text-white font-bold text-base rounded-xl shadow transition-colors flex items-center justify-center gap-2 min-h-[48px]"
+                                        >
+                                            <flux:icon name="eye" class="w-5 h-5" />
+                                            {{ __('Help Build Your Estimate') }}
+                                        </button>
+                                    @endif
+                                </flux:card>
+                            @endforeach
+                        @else
+                            <flux:card>
+                                <div class="py-8 text-center">
+                                    <flux:icon name="document-text" class="mx-auto h-12 w-12 text-zinc-300 dark:text-zinc-600" />
+                                    <flux:text class="mt-3 text-zinc-500 dark:text-zinc-400">{{ __('No estimates yet for this project.') }}</flux:text>
+                                </div>
+                            </flux:card>
+                        @endif
+                    </div>
+                </div>
 
                 {{-- Add Rooms CTA --}}
                 @php
@@ -970,11 +1047,6 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                             </div>
                         </div>
                     </div>
-                @endif
-
-                {{-- Deal Chat Embed --}}
-                @if ($this->selectedDealId)
-                    <livewire:customer.deal-chat-embed :deal-id="$this->selectedDealId" :key="'deal-chat-'.$this->selectedDealId" />
                 @endif
 
                 {{-- Collaborators / Shared Access --}}

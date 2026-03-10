@@ -11,6 +11,7 @@ use App\Models\EstimateActivity;
 use App\Models\Job;
 use App\Models\Property;
 use App\Models\User;
+use App\Services\CustomerDeletionService;
 use App\Services\CustomerDuplicateService;
 use App\Services\DealStageService;
 use App\Services\InvitationService;
@@ -34,6 +35,11 @@ new class extends Component
 
     #[Url(as: 'deal')]
     public ?int $focusDealId = null;
+
+    // Delete confirmation
+    public bool $showDeleteConfirm = false;
+
+    public array $deletionSummary = [];
 
     // Quick add property form
     public bool $showAddProperty = false;
@@ -519,6 +525,25 @@ new class extends Component
         session()->flash('success', __('Customer status updated.'));
     }
 
+    public function confirmDelete(): void
+    {
+        abort_unless(auth()->user()->can('people.delete'), 403);
+
+        $this->deletionSummary = app(CustomerDeletionService::class)->getDeletionSummary($this->customer);
+        $this->showDeleteConfirm = true;
+    }
+
+    public function deleteCustomer(): mixed
+    {
+        abort_unless(auth()->user()->can('people.delete'), 403);
+
+        app(CustomerDeletionService::class)->forceDelete($this->customer);
+
+        session()->flash('success', __('Customer permanently deleted.'));
+
+        return $this->redirect(route('customers.index'), navigate: true);
+    }
+
     public function sendPortalInvite(): void
     {
         abort_unless(auth()->user()->can('people.edit'), 403);
@@ -747,6 +772,11 @@ new class extends Component
                                 @endif
                                 <flux:menu.item wire:click="toggleStatus" wire:confirm="{{ __('Change customer status to') }} {{ $customer->status === 'active' ? __('inactive') : __('active') }}?">
                                     {{ $customer->status === 'active' ? __('Deactivate') : __('Reactivate') }}
+                                </flux:menu.item>
+                            @endcan
+                            @can('people.delete')
+                                <flux:menu.item icon="trash" variant="danger" wire:click="confirmDelete">
+                                    {{ __('Delete Customer') }}
                                 </flux:menu.item>
                             @endcan
                         </flux:menu>
@@ -1295,6 +1325,11 @@ new class extends Component
                                     {{ $customer->status === 'active' ? __('Deactivate') : __('Reactivate') }}
                                 </flux:button>
                             @endcan
+                            @can('people.delete')
+                                <flux:button variant="ghost" icon="trash" wire:click="confirmDelete" class="w-full justify-start text-red-600 hover:text-red-700 dark:text-red-400" size="sm">
+                                    {{ __('Delete Customer') }}
+                                </flux:button>
+                            @endcan
                         </div>
                     </div>
                 @endif
@@ -1585,4 +1620,35 @@ new class extends Component
 
     {{-- Communications Drawer --}}
     <livewire:customers.communications-drawer :customer="$customer" />
+
+    {{-- Delete confirmation modal --}}
+    <flux:modal wire:model="showDeleteConfirm" class="max-w-md">
+        <div class="space-y-4">
+            <flux:heading size="lg">{{ __('Permanently Delete Customer') }}</flux:heading>
+            <flux:text class="text-zinc-600 dark:text-zinc-400">
+                {{ __('This action cannot be undone. The following data will be permanently deleted:') }}
+            </flux:text>
+            <div class="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4 space-y-1">
+                @if (($deletionSummary['deals'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['deals'] }} {{ Str::plural('deal', $deletionSummary['deals']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['estimates'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['estimates'] }} {{ Str::plural('estimate', $deletionSummary['estimates']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['properties'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['properties'] }} {{ Str::plural('property', $deletionSummary['properties']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['jobs'] ?? 0) > 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ $deletionSummary['jobs'] }} {{ Str::plural('job', $deletionSummary['jobs']) }}</flux:text>
+                @endif
+                @if (($deletionSummary['deals'] ?? 0) === 0 && ($deletionSummary['estimates'] ?? 0) === 0 && ($deletionSummary['properties'] ?? 0) === 0 && ($deletionSummary['jobs'] ?? 0) === 0)
+                    <flux:text class="text-red-700 dark:text-red-300">{{ __('No related records found.') }}</flux:text>
+                @endif
+            </div>
+            <div class="flex justify-end gap-3">
+                <flux:button variant="ghost" wire:click="$set('showDeleteConfirm', false)">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="danger" wire:click="deleteCustomer">{{ __('Permanently Delete') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
 </div>

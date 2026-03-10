@@ -47,8 +47,47 @@ class WebhookLeadProcessingService
                 }
             }
 
-            $customer = $this->findOrCreateCustomer($customerData, $endpoint);
-            $deal = $this->createDeal($customer, $dealData, $endpoint);
+            $dedup = app(LeadDeduplicationService::class);
+            $result = $dedup->resolveOrCreate(
+                customerData: array_merge([
+                    'first_name' => $customerData['first_name'] ?? 'Unknown',
+                    'last_name' => $customerData['last_name'] ?? '',
+                    'email' => $customerData['email'] ?? null,
+                    'phone' => isset($customerData['phone']) ? preg_replace('/[^0-9]/', '', $customerData['phone']) : null,
+                    'address' => $customerData['address'] ?? null,
+                    'city' => $customerData['city'] ?? null,
+                    'state' => $customerData['state'] ?? null,
+                    'zip' => $customerData['zip'] ?? null,
+                    'source' => $endpoint->leadSource?->slug,
+                    'lead_source_id' => $endpoint->lead_source_id,
+                    'created_by' => $endpoint->created_by,
+                    'assigned_to' => $endpoint->default_assigned_to ?? $endpoint->created_by,
+                    'status' => 'active',
+                ]),
+                dealData: [
+                    'property_id' => null,
+                    'created_by' => $endpoint->created_by,
+                    'assigned_to' => $endpoint->default_assigned_to ?? $endpoint->created_by,
+                    'title' => $dealData['title'] ?? 'Webhook Lead',
+                    'description' => $dealData['description'] ?? null,
+                    'stage' => 'lead',
+                    'lead_source' => $endpoint->leadSource?->slug,
+                    'lead_source_id' => $endpoint->lead_source_id,
+                    'external_id' => $dealData['external_id'] ?? null,
+                    'sort_order' => Deal::where('stage', 'lead')->max('sort_order') + 1,
+                ],
+                options: [
+                    'source_label' => $endpoint->leadSource?->name ?? 'Webhook',
+                ],
+            );
+
+            $customer = $result->customer;
+            $deal = $result->deal;
+
+            // Link property from customer if deal doesn't have one
+            if (! $deal->property_id && $customer->properties()->exists()) {
+                $deal->update(['property_id' => $customer->properties()->first()->id]);
+            }
 
             $log->update([
                 'status' => 'processed',

@@ -38,49 +38,55 @@ class ReferralService
     public function createFromLeadForm(array $data, ?string $referralCode = null): array
     {
         $settings = CompanySetting::getInstance();
+        $dedup = app(LeadDeduplicationService::class);
 
         // Public leads have no authenticated user - attribute to first internal user
         $createdBy = User::where('type', 'internal')->first()?->id;
 
-        $customer = Customer::create([
-            'first_name' => $data['first_name'],
-            'last_name' => $data['last_name'],
-            'email' => $data['email'],
-            'phone' => $data['phone'] ?? null,
-            'address' => $data['address'] ?? null,
-            'city' => $data['city'] ?? null,
-            'state' => $data['state'] ?? null,
-            'zip' => $data['zip'] ?? null,
-            'source' => $referralCode ? 'referral' : 'online',
-            'estimate_preference' => $data['estimate_preference'] ?? null,
-            'status' => 'active',
-            'created_by' => $createdBy,
-        ]);
+        $result = $dedup->resolveOrCreate(
+            customerData: [
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
+                'email' => $data['email'],
+                'phone' => $data['phone'] ?? null,
+                'address' => $data['address'] ?? null,
+                'city' => $data['city'] ?? null,
+                'state' => $data['state'] ?? null,
+                'zip' => $data['zip'] ?? null,
+                'source' => $referralCode ? 'referral' : 'online',
+                'estimate_preference' => $data['estimate_preference'] ?? null,
+                'status' => 'active',
+                'created_by' => $createdBy,
+            ],
+            dealData: [
+                'title' => 'Painting Estimate - '.trim(($data['first_name'] ?? '').' '.($data['last_name'] ?? '')),
+                'description' => $data['description'] ?? null,
+                'stage' => 'lead',
+                'lead_source' => $referralCode ? 'referral' : 'website',
+                'created_by' => $createdBy,
+            ],
+            options: [
+                'source_label' => 'Website Lead Form',
+            ],
+        );
 
-        app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
+        $customer = $result->customer;
+        $deal = $result->deal;
 
-        // Find auto-created property (from Customer model saved hook) or create if needed
-        $property = null;
-        if (! empty($data['address']) && ! empty($data['city'])) {
+        // Find auto-created property and link to deal if not already set
+        if (! $deal->property_id && ! empty($data['address']) && ! empty($data['city'])) {
             $property = $customer->properties()
                 ->where('address', $data['address'])
                 ->where('city', $data['city'])
                 ->first();
+            if ($property) {
+                $deal->update(['property_id' => $property->id]);
+            }
         }
 
-        $deal = Deal::create([
-            'customer_id' => $customer->id,
-            'property_id' => $property?->id,
-            'title' => "Painting Estimate - {$customer->full_name}",
-            'description' => $data['description'] ?? null,
-            'stage' => 'lead',
-            'lead_source' => $referralCode ? 'referral' : 'website',
-            'created_by' => $createdBy,
-        ]);
-
+        // Only create referral for new deals
         $referral = null;
-
-        if ($referralCode && $settings->referral_program_enabled) {
+        if (! $result->dealWasExisting && $referralCode && $settings->referral_program_enabled) {
             $referrer = $this->resolveReferrer($referralCode);
             if ($referrer) {
                 $referral = Referral::create([
@@ -96,14 +102,16 @@ class ReferralService
         }
 
         // Link any active guest chat sessions with matching email
-        GuestChatSession::where('email', $data['email'])
-            ->where('status', 'active')
-            ->each(function (GuestChatSession $session) use ($customer) {
-                $session->update([
-                    'status' => 'converted',
-                    'user_id' => $customer->user_id ?? null,
-                ]);
-            });
+        if (! empty($data['email'])) {
+            GuestChatSession::where('email', $data['email'])
+                ->where('status', 'active')
+                ->each(function (GuestChatSession $session) use ($customer) {
+                    $session->update([
+                        'status' => 'converted',
+                        'user_id' => $customer->user_id ?? null,
+                    ]);
+                });
+        }
 
         return [
             'customer' => $customer,

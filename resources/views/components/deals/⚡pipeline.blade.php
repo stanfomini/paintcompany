@@ -7,10 +7,10 @@ use App\Models\User;
 use App\Services\DealStageService;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Computed;
-use Livewire\Attributes\On;
 use Livewire\Component;
 
-new class extends Component {
+new class extends Component
+{
     public function boot(): void
     {
         if (! auth()->user()?->can('deals.view')) {
@@ -269,7 +269,6 @@ new class extends Component {
 
         return $deal && in_array($deal->customer_id, $flaggedCustomerIds);
     }
-
 }; ?>
 
 <div>
@@ -409,6 +408,11 @@ new class extends Component {
                                                     @endif
                                                     @if ($deal->originVendor)
                                                         <flux:badge size="sm" color="indigo">{{ $deal->originVendor->name }}</flux:badge>
+                                                    @endif
+                                                    @if ($deal->last_merged_at)
+                                                        <flux:badge size="sm" color="sky" title="{{ __('Updated from') }} {{ $deal->last_merged_source }}">
+                                                            {{ __('New Info') }}
+                                                        </flux:badge>
                                                     @endif
                                                     @if ($this->hasDuplicateFlag($deal->id))
                                                         <flux:badge size="sm" color="amber" title="{{ __('Possible duplicate customer') }}">{{ __('Duplicate?') }}</flux:badge>

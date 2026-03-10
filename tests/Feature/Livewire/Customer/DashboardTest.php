@@ -329,7 +329,7 @@ describe('Customer Dashboard component', function () {
             ->assertSee('Solo Project');
     });
 
-    it('shows the contact card', function () {
+    it('does not show contact card or inline chat embed', function () {
         $customerUser = User::factory()->customer()->create();
         $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
 
@@ -340,7 +340,7 @@ describe('Customer Dashboard component', function () {
 
         Livewire::actingAs($customerUser, 'customer')
             ->test('customer.dashboard')
-            ->assertSee('Need Help?')
-            ->assertSee('Send a Message');
+            ->assertDontSee('Need Help?')
+            ->assertDontSee('Send a Message');
     });
 });

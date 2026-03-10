@@ -66,35 +66,6 @@ class DoorKnockService
         $hasPhone = ! empty($knock->phone);
         $hasEmail = ! empty($knock->email);
 
-        // Find or create customer
-        $customer = null;
-        if ($hasName || $hasEmail || $hasPhone) {
-            $nameParts = explode(' ', $knock->customer_name ?? 'Unknown', 2);
-            $firstName = $nameParts[0];
-            $lastName = $nameParts[1] ?? '';
-
-            // Use email as unique key if available, otherwise phone
-            $lookupKey = $hasEmail
-                ? ['email' => $knock->email]
-                : ['phone' => $knock->phone];
-
-            $customer = Customer::firstOrCreate($lookupKey, [
-                'first_name' => $firstName,
-                'last_name' => $lastName,
-                'phone' => $knock->phone,
-                'email' => $knock->email,
-                'address' => $knock->address,
-                'city' => $knock->city,
-                'state' => $knock->state,
-                'zip' => $knock->zip,
-                'source' => 'door_knock',
-                'status' => 'active',
-                'created_by' => $knock->user_id,
-            ]);
-
-            app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
-        }
-
         // Find or create property
         $property = Property::firstOrCreate(
             ['address' => $knock->address],
@@ -104,7 +75,6 @@ class DoorKnockService
                 'zip' => $knock->zip,
                 'latitude' => $knock->lat,
                 'longitude' => $knock->lng,
-                'customer_id' => $customer?->id,
             ]
         );
 
@@ -120,18 +90,68 @@ class DoorKnockService
             ]
         );
 
-        // Create deal
-        $deal = Deal::create([
-            'customer_id' => $customer?->id,
-            'property_id' => $property->id,
-            'title' => 'Door Knock Lead - '.$knock->address,
-            'stage' => 'lead',
-            'lead_source' => 'door_knock',
-            'lead_source_id' => $personalLeadSource->id,
-            'lead_generator_id' => $knock->user_id,
-            'assigned_to' => $knock->user_id,
-            'origin_door_knock_id' => $knock->id,
-        ]);
+        // Use dedup service if we have contact info
+        $customer = null;
+        $dealWasExisting = false;
+
+        if ($hasName || $hasEmail || $hasPhone) {
+            $nameParts = explode(' ', $knock->customer_name ?? 'Unknown', 2);
+            $firstName = $nameParts[0];
+            $lastName = $nameParts[1] ?? '';
+
+            $dedup = app(LeadDeduplicationService::class);
+            $result = $dedup->resolveOrCreate(
+                customerData: [
+                    'first_name' => $firstName,
+                    'last_name' => $lastName,
+                    'phone' => $knock->phone,
+                    'email' => $knock->email,
+                    'address' => $knock->address,
+                    'city' => $knock->city,
+                    'state' => $knock->state,
+                    'zip' => $knock->zip,
+                    'source' => 'door_knock',
+                    'status' => 'active',
+                    'created_by' => $knock->user_id,
+                ],
+                dealData: [
+                    'property_id' => $property->id,
+                    'title' => 'Door Knock Lead - '.$knock->address,
+                    'stage' => 'lead',
+                    'lead_source' => 'door_knock',
+                    'lead_source_id' => $personalLeadSource->id,
+                    'lead_generator_id' => $knock->user_id,
+                    'assigned_to' => $knock->user_id,
+                    'origin_door_knock_id' => $knock->id,
+                    'created_by' => $knock->user_id,
+                ],
+                options: [
+                    'source_label' => 'Door Knock',
+                ],
+            );
+
+            $customer = $result->customer;
+            $deal = $result->deal;
+            $dealWasExisting = $result->dealWasExisting;
+
+            // Link property to customer if not set
+            if (! $property->customer_id) {
+                $property->update(['customer_id' => $customer->id]);
+            }
+        } else {
+            // No contact info — just create property + deal (no customer)
+            $deal = Deal::create([
+                'property_id' => $property->id,
+                'title' => 'Door Knock Lead - '.$knock->address,
+                'stage' => 'lead',
+                'lead_source' => 'door_knock',
+                'lead_source_id' => $personalLeadSource->id,
+                'lead_generator_id' => $knock->user_id,
+                'assigned_to' => $knock->user_id,
+                'origin_door_knock_id' => $knock->id,
+                'created_by' => $knock->user_id,
+            ]);
+        }
 
         // Update knock with links
         $knock->update([
@@ -140,8 +160,8 @@ class DoorKnockService
             'property_id' => $property->id,
         ]);
 
-        // Send invitation if we have an email and no existing user account
-        if ($hasEmail && $customer) {
+        // Send invitation if we have an email, not a reused deal, and no existing user account
+        if (! $dealWasExisting && $hasEmail && $customer) {
             $this->sendCustomerInvitation($knock, $customer, $deal);
         }
 

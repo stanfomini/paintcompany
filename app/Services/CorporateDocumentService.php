@@ -471,6 +471,49 @@ class CorporateDocumentService
     }
 
     /**
+     * Get individual PDF attachments for documents and minutes.
+     *
+     * Returns each document as a separate attachment (preserving signatures/annotations),
+     * instead of merging via FPDI which strips annotation layers.
+     *
+     * @return array<int, array{content: string, filename: string, mime: string}>
+     */
+    public function getDocumentAttachments(array $documentIds, array $minutesIds): array
+    {
+        $attachments = [];
+
+        $documents = CorporateDocument::with('corporation')
+            ->whereIn('id', $documentIds)->get();
+
+        foreach ($documents as $doc) {
+            if ($doc->original_file_path && Storage::exists($doc->original_file_path)) {
+                $content = Storage::get($doc->original_file_path);
+            } else {
+                $content = $this->exportToPdf($doc)->output();
+            }
+
+            $attachments[] = [
+                'content' => $content,
+                'filename' => Str::slug($doc->title).'-v'.$doc->version.'.pdf',
+                'mime' => 'application/pdf',
+            ];
+        }
+
+        $minutes = MeetingMinutes::with('corporation')
+            ->whereIn('id', $minutesIds)->get();
+
+        foreach ($minutes as $minute) {
+            $attachments[] = [
+                'content' => $this->exportMinutesToPdf($minute)->output(),
+                'filename' => Str::slug($minute->title).'-minutes.pdf',
+                'mime' => 'application/pdf',
+            ];
+        }
+
+        return $attachments;
+    }
+
+    /**
      * Build a merged PDF packet from actual stored PDFs and meeting minutes.
      *
      * Uses FPDI to merge actual stored PDF files instead of re-rendering from parsed text.
