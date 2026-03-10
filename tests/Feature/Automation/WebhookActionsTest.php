@@ -683,6 +683,64 @@ it('has correct metadata for LeadSourceIs', function () {
 });
 
 // ============================================================================
+// WorkflowEngine: Webhook-triggered with no authenticated user
+// ============================================================================
+
+it('resolves triggered_by from webhook creator when no auth user', function () {
+    $webhookOwner = User::factory()->internal()->create();
+    $webhook = AutomationWebhook::factory()->create(['created_by' => $webhookOwner->id]);
+
+    // Build a minimal workflow with trigger -> CreateCustomer action
+    $workflow = \App\Models\Workflow::factory()->published()->create(['is_active' => true]);
+
+    $triggerNode = \App\Models\WorkflowNode::factory()->create([
+        'workflow_id' => $workflow->id,
+        'type' => 'trigger',
+        'node_class' => \App\Automation\Triggers\WebhookReceived::class,
+        'is_enabled' => true,
+    ]);
+
+    $actionNode = \App\Models\WorkflowNode::factory()->create([
+        'workflow_id' => $workflow->id,
+        'type' => 'action',
+        'node_class' => CreateCustomer::class,
+        'is_enabled' => true,
+        'config' => [
+            'first_name' => 'Marissa',
+            'last_name' => 'Hodgson',
+            'email' => 'marissa@example.com',
+        ],
+    ]);
+
+    \App\Models\WorkflowEdge::factory()->create([
+        'workflow_id' => $workflow->id,
+        'from_node_id' => $triggerNode->id,
+        'to_node_id' => $actionNode->id,
+    ]);
+
+    // No authenticated user (simulating anonymous webhook request)
+    auth()->logout();
+
+    $engine = app(\App\Services\WorkflowEngine::class);
+    $run = $engine->startWorkflow($workflow, $triggerNode, $webhook, [
+        'payload' => ['first_name' => 'Marissa', 'last_name' => 'Hodgson', 'email' => 'marissa@example.com'],
+    ]);
+
+    // triggered_by should fall back to webhook creator
+    expect($run->triggered_by)->toBe($webhookOwner->id);
+
+    // Customer should be created successfully (not crash on null created_by)
+    $customer = Customer::where('email', 'marissa@example.com')->first();
+    expect($customer)->not->toBeNull()
+        ->and($customer->first_name)->toBe('Marissa')
+        ->and($customer->created_by)->toBe($webhookOwner->id);
+
+    // Workflow should complete, not fail
+    $run->refresh();
+    expect($run->status)->toBe('completed');
+});
+
+// ============================================================================
 // End-to-End: Webhook -> CreateCustomer -> CreateDeal chain
 // ============================================================================
 

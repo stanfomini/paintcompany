@@ -69,7 +69,7 @@ class WorkflowEngine
             'context' => $context,
             'current_node_id' => $triggerNode->id,
             'triggered_at' => now(),
-            'triggered_by' => $triggeredBy ?? auth()->id(),
+            'triggered_by' => $triggeredBy ?? auth()->id() ?? $this->resolveSystemUser($subject),
         ]);
 
         // Record trigger step as completed
@@ -544,6 +544,20 @@ class WorkflowEngine
             'completed_at' => in_array($status, ['completed', 'skipped', 'failed']) ? now() : null,
             'error_message' => $errorMessage,
         ]);
+    }
+
+    /**
+     * Resolve a system user for unauthenticated triggers (e.g. webhooks).
+     */
+    private function resolveSystemUser(Model $subject): ?int
+    {
+        // For webhook-triggered workflows, use the webhook creator as the acting user
+        if ($subject instanceof \App\Models\AutomationWebhook) {
+            return $subject->created_by;
+        }
+
+        // Fallback: first internal user (system admin)
+        return \App\Models\User::where('type', 'internal')->first()?->id;
     }
 
     /**
