@@ -417,8 +417,8 @@ new class extends Component {
 
         $webhook->update([
             'auth_type' => $this->webhookAuthType,
-            'auth_header' => $this->webhookAuthType === 'api_key' ? $this->webhookAuthHeader : null,
-            'auth_value' => in_array($this->webhookAuthType, ['api_key', 'bearer']) ? $this->webhookAuthValue : null,
+            'auth_header' => in_array($this->webhookAuthType, ['api_key', 'query_param']) ? $this->webhookAuthHeader : null,
+            'auth_value' => in_array($this->webhookAuthType, ['api_key', 'query_param', 'bearer']) ? $this->webhookAuthValue : null,
         ]);
     }
 
