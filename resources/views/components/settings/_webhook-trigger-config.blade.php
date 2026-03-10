@@ -1,36 +1,41 @@
 {{-- InboundWebhook Trigger Config Partial --}}
 <flux:separator />
 
-@if ($webhookUrl)
-    <flux:field>
-        <flux:label>Webhook URL</flux:label>
-        <flux:description>Send a POST request with JSON data to this URL.</flux:description>
-        <div class="flex items-center gap-2">
-            <flux:input readonly :value="$webhookUrl" class="flex-1 font-mono text-sm" />
-            <flux:button
-                variant="ghost"
-                icon="clipboard-document"
-                x-on:click="navigator.clipboard.writeText('{{ $webhookUrl }}').then(() => $flux.toast('Copied!'))"
-                title="Copy URL"
-            />
-        </div>
-    </flux:field>
-@endif
-
-<flux:separator />
-
 {{-- Authentication --}}
 <flux:field>
     <flux:label>Authentication</flux:label>
-    <flux:description>Require authentication from the external service sending webhooks.</flux:description>
+    <flux:description>How the external service will authenticate when sending webhooks.</flux:description>
     <flux:select wire:model.live="webhookAuthType">
         <flux:select.option value="none">None (public)</flux:select.option>
-        <flux:select.option value="api_key">API Key (custom header)</flux:select.option>
+        <flux:select.option value="query_param">API Key in URL (most common)</flux:select.option>
+        <flux:select.option value="api_key">API Key in header</flux:select.option>
         <flux:select.option value="bearer">Bearer Token</flux:select.option>
     </flux:select>
 </flux:field>
 
-@if ($webhookAuthType === 'api_key')
+@if ($webhookAuthType === 'query_param')
+    <flux:field>
+        <flux:label>Parameter Name</flux:label>
+        <flux:description>The URL parameter name (e.g. api_key, key, token).</flux:description>
+        <flux:input wire:model.blur="webhookAuthHeader" placeholder="api_key" />
+    </flux:field>
+    <flux:field>
+        <flux:label>API Key Value</flux:label>
+        <flux:description>The secret key value. This will be appended to the webhook URL.</flux:description>
+        <div class="flex items-center gap-2">
+            <flux:input wire:model.blur="webhookAuthValue" placeholder="Your secret API key" class="flex-1" />
+            <flux:button
+                variant="ghost"
+                icon="clipboard-document"
+                x-on:click="
+                    const input = $el.closest('.flex').querySelector('input');
+                    navigator.clipboard.writeText(input.value).then(() => $flux.toast('Copied!'));
+                "
+                title="Copy API key"
+            />
+        </div>
+    </flux:field>
+@elseif ($webhookAuthType === 'api_key')
     <flux:field>
         <flux:label>Header Name</flux:label>
         <flux:description>The HTTP header the external service will send the API key in (e.g. X-Api-Key).</flux:description>
@@ -38,7 +43,7 @@
     </flux:field>
     <flux:field>
         <flux:label>API Key</flux:label>
-        <flux:description>The secret value the external service must send. Share this with the service.</flux:description>
+        <flux:description>The secret value the external service must send.</flux:description>
         <div class="flex items-center gap-2">
             <flux:input wire:model="webhookAuthValue" type="password" placeholder="Your secret API key" class="flex-1" />
             <flux:button
@@ -68,6 +73,44 @@
                 title="Copy token"
             />
         </div>
+    </flux:field>
+@endif
+
+<flux:separator />
+
+{{-- Webhook URL --}}
+@if ($webhookUrl)
+    <flux:field>
+        <flux:label>Webhook URL</flux:label>
+        <flux:description>
+            @if ($webhookAuthType === 'query_param' && $webhookAuthHeader && $webhookAuthValue)
+                Give this full URL (with API key) to the external service.
+            @else
+                Give this URL to the external service. They will POST lead data here.
+            @endif
+        </flux:description>
+        @php
+            $displayUrl = $webhookUrl;
+            if ($webhookAuthType === 'query_param' && $webhookAuthHeader && $webhookAuthValue) {
+                $displayUrl .= (str_contains($displayUrl, '?') ? '&' : '?')
+                    . urlencode($webhookAuthHeader) . '=' . urlencode($webhookAuthValue);
+            }
+        @endphp
+        <div class="flex items-center gap-2">
+            <flux:input readonly :value="$displayUrl" class="flex-1 font-mono text-sm" />
+            <flux:button
+                variant="ghost"
+                icon="clipboard-document"
+                x-on:click="navigator.clipboard.writeText(@js($displayUrl)).then(() => $flux.toast('Copied!'))"
+                title="Copy URL"
+            />
+        </div>
+        @if ($webhookAuthType === 'query_param' && $webhookAuthHeader && $webhookAuthValue)
+            <flux:description class="mt-1">
+                <strong>URL only</strong> (without API key): <code class="text-xs">{{ $webhookUrl }}</code><br>
+                <strong>API Key parameter</strong>: <code class="text-xs">{{ $webhookAuthHeader }}={{ $webhookAuthValue }}</code>
+            </flux:description>
+        @endif
     </flux:field>
 @endif
 

@@ -43,4 +43,13 @@ class AutomationWebhookFactory extends Factory
             'auth_value' => $value,
         ]);
     }
+
+    public function withQueryParamAuth(string $param = 'api_key', string $value = 'test-api-key'): static
+    {
+        return $this->state(fn () => [
+            'auth_type' => 'query_param',
+            'auth_header' => $param,
+            'auth_value' => $value,
+        ]);
+    }
 }

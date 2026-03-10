@@ -55,6 +55,21 @@ class AutomationWebhook extends Model
         return route('webhook.automation', $this->token);
     }
 
+    /**
+     * Get the full webhook URL including API key as query parameter when applicable.
+     */
+    public function getFullWebhookUrl(): string
+    {
+        $url = $this->getWebhookUrl();
+
+        if ($this->auth_type === 'query_param' && $this->auth_header && $this->auth_value) {
+            $url .= (str_contains($url, '?') ? '&' : '?')
+                .urlencode($this->auth_header).'='.urlencode($this->auth_value);
+        }
+
+        return $url;
+    }
+
     public function validateAuth(Request $request): bool
     {
         return match ($this->auth_type) {
@@ -62,6 +77,8 @@ class AutomationWebhook extends Model
             'api_key' => $this->auth_header
                 && $request->header($this->auth_header) === $this->auth_value,
             'bearer' => $request->bearerToken() === $this->auth_value,
+            'query_param' => $this->auth_header
+                && $request->query($this->auth_header) === $this->auth_value,
             default => false,
         };
     }

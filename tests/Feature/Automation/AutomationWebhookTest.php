@@ -122,3 +122,44 @@ it('generates correct webhook url', function () {
 
     expect($webhook->getWebhookUrl())->toContain("/webhooks/automation/{$webhook->token}");
 });
+
+it('returns 401 for failed query param auth', function () {
+    $webhook = AutomationWebhook::factory()->withQueryParamAuth('api_key', 'correct-key')->create([
+        'created_by' => $this->user->id,
+    ]);
+
+    $this->postJson("/webhooks/automation/{$webhook->token}?api_key=wrong-key", [
+        'test' => true,
+    ])->assertUnauthorized();
+});
+
+it('accepts valid query param auth', function () {
+    Event::fake([WebhookReceived::class]);
+
+    $webhook = AutomationWebhook::factory()->withQueryParamAuth('api_key', 'correct-key')->create([
+        'created_by' => $this->user->id,
+    ]);
+
+    $this->postJson("/webhooks/automation/{$webhook->token}?api_key=correct-key", [
+        'test' => true,
+    ])->assertSuccessful();
+
+    Event::assertDispatched(WebhookReceived::class);
+});
+
+it('generates full webhook url with query param auth', function () {
+    $webhook = AutomationWebhook::factory()->withQueryParamAuth('api_key', 'my-secret')->create([
+        'created_by' => $this->user->id,
+    ]);
+
+    $fullUrl = $webhook->getFullWebhookUrl();
+    expect($fullUrl)->toContain("/webhooks/automation/{$webhook->token}?api_key=my-secret");
+});
+
+it('generates plain webhook url when no query param auth', function () {
+    $webhook = AutomationWebhook::factory()->create([
+        'created_by' => $this->user->id,
+    ]);
+
+    expect($webhook->getFullWebhookUrl())->toBe($webhook->getWebhookUrl());
+});
