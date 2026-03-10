@@ -46,6 +46,9 @@ new class extends Component {
     public ?int $webhookModelId = null;
     public ?array $webhookSamplePayload = null;
     public ?array $webhookAvailableFields = null;
+    public string $webhookAuthType = 'none';
+    public string $webhookAuthHeader = '';
+    public string $webhookAuthValue = '';
 
     // API source config state
     public ?int $apiSourceModelId = null;
@@ -240,6 +243,9 @@ new class extends Component {
         $this->webhookModelId = null;
         $this->webhookSamplePayload = null;
         $this->webhookAvailableFields = null;
+        $this->webhookAuthType = 'none';
+        $this->webhookAuthHeader = '';
+        $this->webhookAuthValue = '';
         $this->apiSourceModelId = null;
         $this->apiSourceUrl = null;
         $this->apiSourceSamplePayload = null;
@@ -276,6 +282,11 @@ new class extends Component {
             'config' => $this->nodeConfig,
         ]);
 
+        // Save webhook auth config if applicable
+        if ($this->nodeClass === InboundWebhook::class && $this->webhookModelId) {
+            $this->saveWebhookAuthConfig();
+        }
+
         // Save API source config if applicable
         if ($this->nodeClass === ExternalApiPoll::class && $this->apiSourceModelId) {
             $this->saveApiSourceConfig();
@@ -287,6 +298,9 @@ new class extends Component {
         $this->webhookModelId = null;
         $this->webhookSamplePayload = null;
         $this->webhookAvailableFields = null;
+        $this->webhookAuthType = 'none';
+        $this->webhookAuthHeader = '';
+        $this->webhookAuthValue = '';
         $this->apiSourceModelId = null;
         $this->apiSourceUrl = null;
         $this->apiSourceSamplePayload = null;
@@ -388,7 +402,24 @@ new class extends Component {
 
         $this->webhookModelId = $webhook->id;
         $this->webhookUrl = $webhook->getWebhookUrl();
+        $this->webhookAuthType = $webhook->auth_type ?? 'none';
+        $this->webhookAuthHeader = $webhook->auth_header ?? '';
+        $this->webhookAuthValue = $webhook->auth_value ?? '';
         $this->loadWebhookPayloadFromModel($webhook);
+    }
+
+    public function saveWebhookAuthConfig(): void
+    {
+        $webhook = AutomationWebhook::find($this->webhookModelId);
+        if (! $webhook) {
+            return;
+        }
+
+        $webhook->update([
+            'auth_type' => $this->webhookAuthType,
+            'auth_header' => $this->webhookAuthType === 'api_key' ? $this->webhookAuthHeader : null,
+            'auth_value' => in_array($this->webhookAuthType, ['api_key', 'bearer']) ? $this->webhookAuthValue : null,
+        ]);
     }
 
     public function refreshWebhookPayload(): void

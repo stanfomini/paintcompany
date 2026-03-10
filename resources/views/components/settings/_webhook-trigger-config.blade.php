@@ -19,6 +19,60 @@
 
 <flux:separator />
 
+{{-- Authentication --}}
+<flux:field>
+    <flux:label>Authentication</flux:label>
+    <flux:description>Require authentication from the external service sending webhooks.</flux:description>
+    <flux:select wire:model.live="webhookAuthType">
+        <flux:select.option value="none">None (public)</flux:select.option>
+        <flux:select.option value="api_key">API Key (custom header)</flux:select.option>
+        <flux:select.option value="bearer">Bearer Token</flux:select.option>
+    </flux:select>
+</flux:field>
+
+@if ($webhookAuthType === 'api_key')
+    <flux:field>
+        <flux:label>Header Name</flux:label>
+        <flux:description>The HTTP header the external service will send the API key in (e.g. X-Api-Key).</flux:description>
+        <flux:input wire:model="webhookAuthHeader" placeholder="X-Api-Key" />
+    </flux:field>
+    <flux:field>
+        <flux:label>API Key</flux:label>
+        <flux:description>The secret value the external service must send. Share this with the service.</flux:description>
+        <div class="flex items-center gap-2">
+            <flux:input wire:model="webhookAuthValue" type="password" placeholder="Your secret API key" class="flex-1" />
+            <flux:button
+                variant="ghost"
+                icon="clipboard-document"
+                x-on:click="
+                    const input = $el.closest('.flex').querySelector('input');
+                    navigator.clipboard.writeText(input.value).then(() => $flux.toast('Copied!'));
+                "
+                title="Copy API key"
+            />
+        </div>
+    </flux:field>
+@elseif ($webhookAuthType === 'bearer')
+    <flux:field>
+        <flux:label>Bearer Token</flux:label>
+        <flux:description>The token the external service must send in the Authorization header.</flux:description>
+        <div class="flex items-center gap-2">
+            <flux:input wire:model="webhookAuthValue" type="password" placeholder="Your bearer token" class="flex-1" />
+            <flux:button
+                variant="ghost"
+                icon="clipboard-document"
+                x-on:click="
+                    const input = $el.closest('.flex').querySelector('input');
+                    navigator.clipboard.writeText(input.value).then(() => $flux.toast('Copied!'));
+                "
+                title="Copy token"
+            />
+        </div>
+    </flux:field>
+@endif
+
+<flux:separator />
+
 @if (! $webhookSamplePayload)
     <div wire:poll.5s.visible="refreshWebhookPayload" class="flex items-center gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
         <div class="relative flex h-3 w-3">
