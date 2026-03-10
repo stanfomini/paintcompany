@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Customer;
+use App\Models\CustomerDuplicateFlag;
 use App\Models\Deal;
 use App\Models\User;
 use App\Services\DealStageService;
@@ -247,6 +248,28 @@ new class extends Component {
         return array_intersect_key(Deal::STAGES, array_flip(Deal::KANBAN_STAGES));
     }
 
+    /**
+     * Check if a deal's customer has pending duplicate flags.
+     */
+    public function hasDuplicateFlag(int $dealId): bool
+    {
+        static $flaggedCustomerIds = null;
+
+        if ($flaggedCustomerIds === null) {
+            $flaggedCustomerIds = CustomerDuplicateFlag::query()
+                ->where('status', 'pending')
+                ->get(['customer_id', 'duplicate_customer_id'])
+                ->flatMap(fn ($flag) => [$flag->customer_id, $flag->duplicate_customer_id])
+                ->filter()
+                ->unique()
+                ->all();
+        }
+
+        $deal = collect($this->dealsByStage)->flatten(1)->firstWhere('id', $dealId);
+
+        return $deal && in_array($deal->customer_id, $flaggedCustomerIds);
+    }
+
 }; ?>
 
 <div>
@@ -386,6 +409,9 @@ new class extends Component {
                                                     @endif
                                                     @if ($deal->originVendor)
                                                         <flux:badge size="sm" color="indigo">{{ $deal->originVendor->name }}</flux:badge>
+                                                    @endif
+                                                    @if ($this->hasDuplicateFlag($deal->id))
+                                                        <flux:badge size="sm" color="amber" title="{{ __('Possible duplicate customer') }}">{{ __('Duplicate?') }}</flux:badge>
                                                     @endif
                                                 </div>
 
