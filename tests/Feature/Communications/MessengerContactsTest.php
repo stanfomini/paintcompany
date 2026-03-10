@@ -2,6 +2,7 @@
 
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\Customer;
 use App\Models\MessengerSetting;
 use App\Models\User;
 use App\Services\CommunicationsContactService;
@@ -127,6 +128,47 @@ describe('CommunicationsContactService::getMessengerContacts', function () {
         $contacts = $service->getMessengerContacts($viewer);
 
         expect($contacts->first()['last_message_preview'])->toContain('I need a painting estimate');
+    });
+
+    it('excludes messenger contacts whose customer appears in main contacts', function () {
+        $viewer = User::factory()->internal()->create();
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        // Create a direct chat thread so customer appears in main contacts
+        $directThread = ChatThread::factory()->create(['type' => 'direct']);
+        $directThread->addParticipant($viewer);
+        $directThread->addParticipant($customerUser);
+
+        // Messenger thread linked to same customer
+        $messengerThread = ChatThread::factory()->facebook()->create([
+            'external_contact_id' => 'PSID_DEDUP',
+            'customer_id' => $customer->id,
+            'subject' => $customer->full_name,
+        ]);
+        $messengerThread->addParticipant($viewer);
+
+        $service = new CommunicationsContactService;
+        $messengerContacts = $service->getMessengerContacts($viewer);
+
+        // Should NOT include the messenger contact since customer is in main contacts
+        expect($messengerContacts->where('id', 'messenger-'.$messengerThread->id)->count())->toBe(0);
+    });
+
+    it('keeps messenger contacts with no linked customer', function () {
+        $viewer = User::factory()->internal()->create();
+
+        $messengerThread = ChatThread::factory()->facebook()->create([
+            'external_contact_id' => 'PSID_STANDALONE',
+            'customer_id' => null,
+            'subject' => 'Unknown Messenger User',
+        ]);
+        $messengerThread->addParticipant($viewer);
+
+        $service = new CommunicationsContactService;
+        $messengerContacts = $service->getMessengerContacts($viewer);
+
+        expect($messengerContacts->where('id', 'messenger-'.$messengerThread->id)->count())->toBe(1);
     });
 });
 

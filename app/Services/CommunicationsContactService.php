@@ -325,6 +325,18 @@ class CommunicationsContactService
             );
         }
 
+        // Exclude messenger threads whose customer already appears in main contacts (has portal user)
+        $threads = $threads->filter(function (ChatThread $thread) {
+            if (! $thread->customer_id) {
+                return true; // Keep standalone messenger contacts
+            }
+
+            // If customer has a portal User account, they appear in main contacts already
+            $customer = Customer::find($thread->customer_id);
+
+            return ! $customer?->user_id;
+        });
+
         return $threads->map(function (ChatThread $thread) use ($viewer) {
             $preview = null;
             if ($thread->latestMessage) {
