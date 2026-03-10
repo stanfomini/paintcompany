@@ -203,10 +203,10 @@ if (document.querySelector('[x-data*="tiptapEditor"]')) {
     import('./tiptap-editor');
 }
 
-// Lazy-load workflow builder — only imported on workflow settings page
-if (document.querySelector('[x-data*="workflowBuilder"]')) {
-    import('./workflow-builder');
-}
+// Workflow builder — static import ensures Alpine.data() is registered before Alpine.start().
+// Dynamic import() had a race condition: the async chunk fetch could resolve AFTER Alpine
+// processed the DOM, leaving the workflowBuilder x-data uninitialized (frozen UI).
+import './workflow-builder';
 
 // Territory System - Leaflet Map Component
 document.addEventListener('alpine:init', () => {

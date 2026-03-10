@@ -605,9 +605,8 @@ function registerWorkflowBuilder() {
     }));
 }
 
-// Register immediately if Alpine is already available (late dynamic import)
-if (window.Alpine) {
-    registerWorkflowBuilder();
-} else {
-    document.addEventListener('alpine:init', registerWorkflowBuilder);
-}
+// Export for external use and self-register via alpine:init.
+// Static import from app.js ensures this runs before DOMContentLoaded,
+// so the alpine:init listener is always registered in time.
+export { registerWorkflowBuilder };
+document.addEventListener('alpine:init', registerWorkflowBuilder);
