@@ -75,9 +75,11 @@ class CreateDeal implements ActionInterface
         $description = $registry->resolveDynamicValues($config['description'] ?? '', $run);
 
         $customer = $this->resolveCustomer($run);
+        $propertyId = $run->context['property_id'] ?? null;
 
         $deal = Deal::create(array_filter([
             'customer_id' => $customer?->id,
+            'property_id' => $propertyId,
             'title' => $title,
             'stage' => $stage,
             'lead_source' => $leadSource ?: null,

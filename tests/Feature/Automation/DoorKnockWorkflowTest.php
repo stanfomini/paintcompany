@@ -318,6 +318,34 @@ it('FieldValue is_not_empty returns false for null', function () {
     expect($condition->evaluate($run, ['field' => 'email', 'operator' => 'is_not_empty']))->toBeFalse();
 });
 
+// --- CreateDeal auto-links property_id from context ---
+
+it('CreateDeal sets property_id from workflow context', function () {
+    $user = User::factory()->internal()->create();
+    $customer = Customer::factory()->create();
+    $property = Property::factory()->create(['customer_id' => $customer->id]);
+
+    $run = WorkflowRun::factory()->create([
+        'subject_type' => Customer::class,
+        'subject_id' => $customer->id,
+        'context' => [
+            'customer_id' => $customer->id,
+            'property_id' => $property->id,
+        ],
+        'triggered_by' => $user->id,
+    ]);
+
+    $action = new \App\Automation\Actions\CreateDeal;
+    $result = $action->execute($run, [
+        'title' => 'Property Lead',
+        'stage' => 'lead',
+    ]);
+
+    $deal = Deal::find($result['deal_id']);
+    expect($deal->property_id)->toBe($property->id)
+        ->and($deal->customer_id)->toBe($customer->id);
+});
+
 // --- CreateDeal links DoorKnock ---
 
 it('CreateDeal links DoorKnock record when doorknock_id in context', function () {
