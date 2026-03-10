@@ -213,6 +213,11 @@ class FacebookMessengerService
             return;
         }
 
+        // Returning customer — skip bot, let message sit for human follow-up
+        if ($this->isReturningCustomer($psid)) {
+            return;
+        }
+
         // Resolve flow from ad mapping or fall back to default
         $flow = $this->resolveFlowFromReferral($referral);
         app(MessengerBotFlowService::class)->startConversation($thread, $psid, $flow);
@@ -253,9 +258,24 @@ class FacebookMessengerService
             return;
         }
 
+        // Returning customer — skip bot, let message sit for human follow-up
+        if ($this->isReturningCustomer($psid)) {
+            return;
+        }
+
         // Resolve flow from ad mapping or fall back to default
         $flow = $this->resolveFlowFromReferral($referral);
         app(MessengerBotFlowService::class)->startConversation($thread, $psid, $flow);
+    }
+
+    /**
+     * Check if this PSID belongs to a returning customer who already completed a bot flow.
+     */
+    protected function isReturningCustomer(string $psid): bool
+    {
+        return MessengerConversation::where('facebook_psid', $psid)
+            ->whereNotNull('customer_id')
+            ->exists();
     }
 
     /**
