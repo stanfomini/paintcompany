@@ -39,7 +39,7 @@ class MessengerLeadCreationService
         $settings = MessengerSetting::getInstance();
         $assignmentService = app(MessengerLeadAssignmentService::class);
         $isNewCustomer = false;
-        $customer = $this->findExistingCustomer($customerData);
+        $customer = $this->findExistingCustomer($customerData, $conversation->facebook_psid);
 
         if ($customer) {
             // Update existing customer with any new non-null fields
@@ -64,46 +64,62 @@ class MessengerLeadCreationService
             app(\App\Services\CustomerDuplicateService::class)->checkAndFlagDuplicates($customer);
         }
 
-        // Create deal
-        $isIncomplete = in_array($conversation->status, ['abandoned', 'human_takeover']);
-
-        $firstName = $customerData['first_name'] ?? 'Unknown';
-        $lastName = $customerData['last_name'] ?? '';
-        $titleName = trim("{$firstName} {$lastName}") ?: 'Facebook Lead';
-        $dealTitle = "{$titleName} - Facebook Lead".($isIncomplete ? ' (Incomplete)' : '');
-
-        $leadSource = $this->getOrCreateLeadSource();
-
-        // Determine deal assignment: if conversation was taken over by an estimator, assign directly
-        $assignedTo = null;
-        if ($conversation->taken_over_by) {
-            $takeoverRole = $assignmentService->getResponderRole(User::find($conversation->taken_over_by));
-            if ($takeoverRole && in_array($takeoverRole, ['estimator', 'both'])) {
-                $assignedTo = $conversation->taken_over_by;
-            }
+        // Check for existing active messenger deal for this customer
+        $existingDeal = null;
+        if (! $isNewCustomer) {
+            $existingDeal = Deal::where('customer_id', $customer->id)
+                ->where('lead_source', 'Facebook Messenger')
+                ->whereNotIn('stage', ['lost', 'completed'])
+                ->latest()
+                ->first();
         }
 
-        $deal = Deal::create([
-            'customer_id' => $customer->id,
-            'title' => $dealData['title'] ?? $dealTitle,
-            'description' => $dealData['description'] ?? null,
-            'stage' => 'lead',
-            'lead_source' => 'Facebook Messenger',
-            'lead_source_id' => $leadSource->id,
-            'assigned_to' => $assignedTo,
-            'created_by' => $assignmentService->getCreatedByUser()?->id,
-        ]);
+        // Reuse existing deal or create new one
+        $isIncomplete = in_array($conversation->status, ['abandoned', 'human_takeover']);
+        $estimate = null;
+        $assignedTo = null;
 
-        // Auto-create draft estimate
-        $estimate = Estimate::create([
-            'deal_id' => $deal->id,
-            'created_by' => $assignmentService->getCreatedByUser()?->id,
-            'title' => $dealData['title'] ?? $dealTitle,
-            'status' => 'draft',
-            'subtotal' => 0,
-            'tax_amount' => 0,
-            'total' => 0,
-        ]);
+        if ($existingDeal) {
+            $deal = $existingDeal;
+            $estimate = $existingDeal->estimates()->latest()->first();
+        } else {
+            $firstName = $customerData['first_name'] ?? 'Unknown';
+            $lastName = $customerData['last_name'] ?? '';
+            $titleName = trim("{$firstName} {$lastName}") ?: 'Facebook Lead';
+            $dealTitle = "{$titleName} - Facebook Lead".($isIncomplete ? ' (Incomplete)' : '');
+
+            $leadSource = $this->getOrCreateLeadSource();
+
+            // Determine deal assignment: if conversation was taken over by an estimator, assign directly
+            if ($conversation->taken_over_by) {
+                $takeoverRole = $assignmentService->getResponderRole(User::find($conversation->taken_over_by));
+                if ($takeoverRole && in_array($takeoverRole, ['estimator', 'both'])) {
+                    $assignedTo = $conversation->taken_over_by;
+                }
+            }
+
+            $deal = Deal::create([
+                'customer_id' => $customer->id,
+                'title' => $dealData['title'] ?? $dealTitle,
+                'description' => $dealData['description'] ?? null,
+                'stage' => 'lead',
+                'lead_source' => 'Facebook Messenger',
+                'lead_source_id' => $leadSource->id,
+                'assigned_to' => $assignedTo,
+                'created_by' => $assignmentService->getCreatedByUser()?->id,
+            ]);
+
+            // Auto-create draft estimate
+            $estimate = Estimate::create([
+                'deal_id' => $deal->id,
+                'created_by' => $assignmentService->getCreatedByUser()?->id,
+                'title' => $dealData['title'] ?? $dealTitle,
+                'status' => 'draft',
+                'subtotal' => 0,
+                'tax_amount' => 0,
+                'total' => 0,
+            ]);
+        }
 
         // Link conversation to customer and deal
         $conversation->update([
@@ -116,13 +132,16 @@ class MessengerLeadCreationService
             $conversation->thread->update(['customer_id' => $customer->id]);
         }
 
-        // Assign via round-robin if not already assigned by takeover
-        if (! $assignedTo) {
-            $assignmentService->assignViaRoundRobin($deal);
-        }
+        // Only assign and notify for new deals
+        if (! $existingDeal) {
+            // Assign via round-robin if not already assigned by takeover
+            if (! $assignedTo) {
+                $assignmentService->assignViaRoundRobin($deal);
+            }
 
-        // Notify responders
-        $this->notifyResponders($customer, $deal, $isIncomplete);
+            // Notify responders
+            $this->notifyResponders($customer, $deal, $isIncomplete);
+        }
 
         return [
             'customer' => $customer,
@@ -162,7 +181,7 @@ class MessengerLeadCreationService
 
         $assignmentService = app(MessengerLeadAssignmentService::class);
         $isNewCustomer = false;
-        $customer = $this->findExistingCustomer($customerData);
+        $customer = $this->findExistingCustomer($customerData, $conversation->facebook_psid);
 
         if ($customer) {
             $customer->update($customerData);
@@ -276,11 +295,23 @@ class MessengerLeadCreationService
     }
 
     /**
-     * Find existing customer by email or phone match.
+     * Find existing customer by PSID, email, or phone match.
      */
-    private function findExistingCustomer(array $customerData): ?Customer
+    private function findExistingCustomer(array $customerData, ?string $psid = null): ?Customer
     {
-        // Try email match first
+        // Try PSID match first — most reliable for messenger
+        if ($psid) {
+            $existingConversation = MessengerConversation::where('facebook_psid', $psid)
+                ->whereNotNull('customer_id')
+                ->latest()
+                ->first();
+
+            if ($existingConversation?->customer_id) {
+                return Customer::find($existingConversation->customer_id);
+            }
+        }
+
+        // Try email match
         if (! empty($customerData['email'])) {
             $customer = Customer::where('email', $customerData['email'])->first();
             if ($customer) {

@@ -426,6 +426,67 @@ describe('createFromConversation', function () {
         expect(LeadSource::where('name', 'Facebook Messenger')->count())->toBe(1);
         expect($result['customer']->lead_source_id)->toBe($existingSource->id);
     });
+
+    it('finds existing customer by PSID match from previous conversation', function () {
+        Notification::fake();
+
+        $existingCustomer = Customer::factory()->create([
+            'first_name' => 'Jane',
+            'last_name' => 'Messenger',
+        ]);
+
+        // Previous conversation linked this PSID to the customer
+        $thread = ChatThread::factory()->facebook()->create(['external_contact_id' => 'PSID_JANE']);
+        MessengerConversation::factory()->completed()->create([
+            'facebook_psid' => 'PSID_JANE',
+            'customer_id' => $existingCustomer->id,
+            'thread_id' => $thread->id,
+        ]);
+
+        // New conversation from same PSID, no email/phone collected
+        $flow = createFlowWithSteps(['customer.first_name']);
+        $newConversation = createConversationWithAnswers($flow, ['Jane']);
+        $newConversation->update(['facebook_psid' => 'PSID_JANE']);
+
+        $service = new MessengerLeadCreationService;
+        $result = $service->createFromConversation($newConversation);
+
+        expect($result['is_new_customer'])->toBeFalse();
+        expect($result['customer']->id)->toBe($existingCustomer->id);
+        expect(Customer::count())->toBe(1);
+    });
+
+    it('does not create duplicate deal when returning customer already has active messenger deal', function () {
+        Notification::fake();
+
+        $existingCustomer = Customer::factory()->create(['email' => 'returning-deal@test.com']);
+        $existingDeal = Deal::factory()->create([
+            'customer_id' => $existingCustomer->id,
+            'stage' => 'lead',
+            'lead_source' => 'Facebook Messenger',
+        ]);
+
+        // Previous conversation linked
+        $thread = ChatThread::factory()->facebook()->create(['external_contact_id' => 'PSID_DEAL']);
+        MessengerConversation::factory()->completed()->create([
+            'facebook_psid' => 'PSID_DEAL',
+            'customer_id' => $existingCustomer->id,
+            'deal_id' => $existingDeal->id,
+            'thread_id' => $thread->id,
+        ]);
+
+        // New conversation same PSID
+        $flow = createFlowWithSteps(['customer.email']);
+        $newConversation = createConversationWithAnswers($flow, ['returning-deal@test.com']);
+        $newConversation->update(['facebook_psid' => 'PSID_DEAL']);
+
+        $service = new MessengerLeadCreationService;
+        $result = $service->createFromConversation($newConversation);
+
+        // Should reuse existing deal, not create a new one
+        expect($result['deal']->id)->toBe($existingDeal->id);
+        expect(Deal::where('customer_id', $existingCustomer->id)->count())->toBe(1);
+    });
 });
 
 describe('notifications', function () {
