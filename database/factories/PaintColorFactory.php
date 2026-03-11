@@ -33,6 +33,7 @@ class PaintColorFactory extends Factory
             'rgb_g' => $g,
             'rgb_b' => $b,
             'color_family' => fake()->randomElement(['white', 'gray', 'beige', 'blue', 'green', 'red', 'yellow', 'brown', 'black', 'purple']),
+            'intended_use' => 'both',
             'is_popular' => false,
             'is_active' => true,
         ];
@@ -60,6 +61,22 @@ class PaintColorFactory extends Factory
     public function forBrand(PaintBrand $brand): static
     {
         return $this->state(fn (array $attributes) => ['paint_brand_id' => $brand->id]);
+    }
+
+    /**
+     * Mark as interior-only.
+     */
+    public function interior(): static
+    {
+        return $this->state(fn (array $attributes) => ['intended_use' => 'interior']);
+    }
+
+    /**
+     * Mark as exterior-only.
+     */
+    public function exterior(): static
+    {
+        return $this->state(fn (array $attributes) => ['intended_use' => 'exterior']);
     }
 
     /**
