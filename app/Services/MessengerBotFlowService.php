@@ -42,7 +42,7 @@ class MessengerBotFlowService
 
         // Send greeting if flow has one
         if ($flow->greeting_message) {
-            $this->messengerService->sendTextMessage($psid, $this->replaceMessageVariables($flow->greeting_message, $conversation));
+            $this->messengerService->sendTextMessage($psid, $this->sanitizeForSending($this->replaceMessageVariables($flow->greeting_message, $conversation)));
         }
 
         // Advance to first step
@@ -104,7 +104,7 @@ class MessengerBotFlowService
 
         $psid = $conversation->facebook_psid;
 
-        $messageText = $this->replaceMessageVariables($nextStep->message_text, $conversation);
+        $messageText = $this->sanitizeForSending($this->replaceMessageVariables($nextStep->message_text, $conversation));
 
         switch ($nextStep->step_type) {
             case MessengerBotStep::TYPE_GREETING:
@@ -308,6 +308,15 @@ class MessengerBotFlowService
         });
 
         return $matched['next_step_id'] ?? null;
+    }
+
+    /**
+     * Strip any PHP/HTML tags from text before sending to Facebook.
+     * Defense-in-depth against Blade double-compilation or other injection.
+     */
+    private function sanitizeForSending(string $text): string
+    {
+        return strip_tags($text);
     }
 
     /**

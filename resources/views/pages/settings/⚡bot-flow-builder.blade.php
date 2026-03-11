@@ -568,6 +568,7 @@ new class extends Component {
                                 </div>
                                 <div class="flex flex-wrap gap-1.5">
                                     @foreach (\App\Services\MessengerBotFlowService::getAvailableVariables() as $var => $desc)
+                                        @php $varPlaceholder = '{{ ' . $var . ' }}'; @endphp
                                         <flux:tooltip :content="$desc">
                                             <button type="button"
                                                 x-on:click="
@@ -577,7 +578,7 @@ new class extends Component {
                                                     const start = textarea.selectionStart;
                                                     const end = textarea.selectionEnd;
                                                     const text = textarea.value;
-                                                    const insert = @js('{{ ' . $var . ' }}');
+                                                    const insert = @js($varPlaceholder);
                                                     textarea.value = text.substring(0, start) + insert + text.substring(end);
                                                     textarea.selectionStart = textarea.selectionEnd = start + insert.length;
                                                     textarea.dispatchEvent(new Event('input', { bubbles: true }));
@@ -585,7 +586,7 @@ new class extends Component {
                                                 "
                                                 class="inline-flex items-center gap-1 rounded-md bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-700 px-2 py-0.5 text-xs font-mono text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
                                             >
-                                                {!! e('{{ ' . $var . ' }}') !!}
+                                                {{ $varPlaceholder }}
                                             </button>
                                         </flux:tooltip>
                                     @endforeach

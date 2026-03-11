@@ -562,6 +562,74 @@ describe('end-to-end bot conversation via webhook', function () {
     });
 });
 
+describe('message sanitization', function () {
+    it('strips PHP tags from message text before sending', function () {
+        $flow = MessengerBotFlow::factory()->active()->create();
+
+        MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'Hi <?php echo e(first_name); ?>! How can we help?',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('sanitize-1')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        $conversation = $service->startConversation($thread, 'sanitize-1');
+
+        Http::assertSent(function ($request) {
+            $text = $request['message']['text'] ?? '';
+
+            return ! str_contains($text, '<?php')
+                && ! str_contains($text, '?>')
+                && str_contains($text, 'How can we help?');
+        });
+    });
+
+    it('strips PHP tags from greeting message before sending', function () {
+        $flow = MessengerBotFlow::factory()->active()->create([
+            'greeting_message' => 'Welcome <?php echo e(first_name); ?>!',
+        ]);
+
+        MessengerBotStep::factory()->textQuestion()->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+        ]);
+
+        $thread = ChatThread::factory()->facebook('sanitize-2')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        $service->startConversation($thread, 'sanitize-2');
+
+        Http::assertSent(function ($request) {
+            $text = $request['message']['text'] ?? '';
+
+            return str_contains($text, 'Welcome') && ! str_contains($text, '<?php');
+        });
+    });
+
+    it('does not strip normal text or URLs', function () {
+        $flow = MessengerBotFlow::factory()->active()->create();
+
+        MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'Visit https://example.com/book?ref=test for details!',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('sanitize-3')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        $service->startConversation($thread, 'sanitize-3');
+
+        Http::assertSent(function ($request) {
+            $text = $request['message']['text'] ?? '';
+
+            return str_contains($text, 'https://example.com/book?ref=test');
+        });
+    });
+});
+
 describe('message variable substitution', function () {
     it('replaces booking_link variable with actual URL', function () {
         $service = app(MessengerBotFlowService::class);
