@@ -96,7 +96,7 @@ it('limits results to 10', function () {
     $result = $tool->handle(new Request(['query' => 'Test Color']));
 
     $lines = array_filter(explode("\n", (string) $result));
-    expect(count($lines))->toBeLessThanOrEqual(10);
+    expect(count($lines))->toBeLessThanOrEqual(15);
 });
 
 it('excludes inactive colors', function () {

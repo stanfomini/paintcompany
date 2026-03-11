@@ -50,8 +50,8 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
             ->with('brand')
             ->active()
             ->search($this->colorSearch)
-            ->orderByRaw('CASE WHEN name LIKE ? THEN 0 ELSE 1 END', [$this->colorSearch . '%'])
-            ->limit(8)
+            ->orderByRaw('CASE WHEN name LIKE ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END', [$this->colorSearch . '%', '%' . $this->colorSearch . '%'])
+            ->limit(12)
             ->get();
     }
 

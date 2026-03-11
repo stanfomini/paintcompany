@@ -746,12 +746,15 @@ Alpine.data('quickRecorder', (config) => ({
     },
 
     getSupportedMimeType() {
+        // Prefer MP4 first — native on Safari/iOS, produces cleaner output
+        // that needs less transcoding. Chrome doesn't support MP4 recording
+        // and will fall through to WebM as before.
         const types = [
+            'video/mp4;codecs=h264,aac',
+            'video/mp4',
             'video/webm;codecs=vp8,opus',
             'video/webm;codecs=vp9,opus',
             'video/webm',
-            'video/mp4;codecs=h264,aac',
-            'video/mp4',
         ];
         for (const type of types) {
             if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(type)) return type;

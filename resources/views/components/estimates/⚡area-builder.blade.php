@@ -709,7 +709,7 @@ new class extends Component
         // This prevents data loss when Livewire morphing triggers spurious updates.
         $currentRateId = $this->surfaces[$index]['production_rate_id'] ?? null;
         if ($currentRateId) {
-            $rate = ProductionRate::find($currentRateId);
+            $rate = $this->productionRatesByCategory->flatten()->firstWhere('id', $currentRateId);
             if ($rate && $rate->surface_category === $category) {
                 return;
             }
@@ -735,8 +735,6 @@ new class extends Component
 
         $this->surfaces[$index]['surface_type'] = $surfaceType;
         $this->surfaces[$index]['quantity_source'] = $quantitySource;
-
-        unset($this->productionRatesByCategory);
     }
 
     // ===== ADDON MANAGEMENT =====
@@ -919,6 +917,22 @@ new class extends Component
             // Use effective hourly rate (base wage × payroll burden) for COGS
             $hourlyWage = $this->getEffectiveRateForScope($this->scopeType);
 
+            // Batch-load all production rates in a single query
+            $rateIds = array_filter(array_column($this->surfaces, 'production_rate_id'));
+            $ratesById = $rateIds
+                ? ProductionRate::whereIn('id', $rateIds)->get()->keyBy('id')
+                : collect();
+
+            // Batch-load all paint products in a single query
+            $paintProductIds = collect([$this->defaultPaintProductId])
+                ->merge(array_values($this->paintByCategory ?? []))
+                ->filter()
+                ->unique()
+                ->values();
+            $paintProductsById = $paintProductIds->isNotEmpty()
+                ? PaintProduct::whereIn('id', $paintProductIds)->get()->keyBy('id')
+                : collect();
+
             foreach ($this->surfaces as $index => $surface) {
                 if (! $surface['is_required'] && ! $surface['is_default_enabled']) {
                     continue;
@@ -949,7 +963,7 @@ new class extends Component
                 $coats = $surface['default_coats'] ?? $this->defaultCoats;
 
                 $rate = $surface['production_rate_id']
-                    ? ProductionRate::find($surface['production_rate_id'])
+                    ? $ratesById->get($surface['production_rate_id'])
                     : null;
 
                 $coatMultiplier = $this->getCoatMultiplier($coats);
@@ -974,7 +988,8 @@ new class extends Component
                         $coats,
                         $surfaceCategory,
                         $fallbackCostPerUnit,
-                        $coatMultiplier
+                        $coatMultiplier,
+                        $paintProductsById
                     );
                 }
 
@@ -1080,7 +1095,8 @@ new class extends Component
         int $coats,
         string $surfaceCategory,
         ?float $fallbackCostPerUnit,
-        float $coatMultiplier
+        float $coatMultiplier,
+        ?Collection $paintProductsById = null
     ): float {
         // Determine paint product ID based on paint mode
         $paintProductId = null;
@@ -1094,7 +1110,7 @@ new class extends Component
         }
 
         if ($paintProductId) {
-            $paintProduct = PaintProduct::find($paintProductId);
+            $paintProduct = $paintProductsById?->get($paintProductId) ?? PaintProduct::find($paintProductId);
             if ($paintProduct) {
                 $settings = CompanySetting::getInstance();
                 $costCalc = $paintProduct->calculateCost(
@@ -1611,7 +1627,7 @@ new class extends Component
                                                             <span class="px-1.5 py-0.5 text-xs font-medium rounded bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300">{{ __('Req') }}</span>
                                                         @endif
                                                         @if ($surface['production_rate_id'])
-                                                            @php $selectedRate = \App\Models\ProductionRate::find($surface['production_rate_id']); @endphp
+                                                            @php $selectedRate = $this->productionRatesByCategory->flatten()->firstWhere('id', $surface['production_rate_id']); @endphp
                                                             @if ($selectedRate)
                                                                 <span class="px-1.5 py-0.5 text-xs font-medium rounded bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300">
                                                                     {{ number_format($selectedRate->production_rate, 0) }} {{ $selectedRate->rate_type_label }}

@@ -33,48 +33,16 @@ class VideoProcessor:
         video_path = os.path.join(output_dir, "output.mp4")
         thumbnail_path = os.path.join(output_dir, "thumbnail.jpg")
 
-        # 1. Probe input dimensions to build a safe scale filter
-        logger.info(f"Probing input dimensions for {input_path}")
-        probe_input_cmd = [
-            "ffprobe", "-v", "quiet",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height",
-            "-of", "json",
-            input_path,
-        ]
-        probe_proc = await asyncio.create_subprocess_exec(
-            *probe_input_cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        # 1. Transcode to MP4 with Safari/iOS-compatible settings
+        # Use FFmpeg's built-in scaling with SAR normalization to avoid
+        # non-standard properties that Safari's hardware decoder rejects.
+        vf_filter = (
+            "scale='min(1920,iw)':'min(1080,ih)'"
+            ":force_original_aspect_ratio=decrease"
+            ":force_divisible_by=2"
+            ",setsar=1"
         )
-        probe_stdout, _ = await probe_proc.communicate()
 
-        # Default: just ensure even dimensions
-        vf_filter = "pad=ceil(iw/2)*2:ceil(ih/2)*2"
-
-        if probe_proc.returncode == 0 and probe_stdout:
-            try:
-                probe_info = json.loads(probe_stdout.decode())
-                streams = probe_info.get("streams", [])
-                if streams:
-                    iw = streams[0].get("width", 0)
-                    ih = streams[0].get("height", 0)
-                    # Calculate target dimensions: fit within 1920x1080, preserve aspect ratio
-                    if iw > 0 and ih > 0:
-                        scale_w = min(1920 / iw, 1.0)
-                        scale_h = min(1080 / ih, 1.0)
-                        scale_factor = min(scale_w, scale_h)
-                        tw = int(iw * scale_factor)
-                        th = int(ih * scale_factor)
-                        # Ensure even dimensions (libx264 requirement)
-                        tw = tw - (tw % 2)
-                        th = th - (th % 2)
-                        vf_filter = f"scale={tw}:{th}"
-                        logger.info(f"Input {iw}x{ih} -> target {tw}x{th}")
-            except (json.JSONDecodeError, ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse input probe, using safe filter: {e}")
-
-        # 1. Transcode to MP4
         logger.info(f"Transcoding {input_path} to {video_path}")
         transcode_cmd = [
             "ffmpeg", "-i", input_path,
@@ -82,6 +50,9 @@ class VideoProcessor:
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             "-vf", vf_filter,
+            "-r", "30",
+            "-pix_fmt", "yuv420p",
+            "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
             "-y", video_path,
         ]
 

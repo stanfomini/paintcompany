@@ -15,7 +15,7 @@ class PaintColorLookupTool implements Tool
      */
     public function description(): Stringable|string
     {
-        return 'Look up paint color hex values by name or code. Searches the paint color database for matches across Sherwin-Williams, Benjamin Moore, Behr, and PPG brands. Returns the color name, code, and hex value for accurate color visualization.';
+        return 'Look up paint color hex values by name or code. Searches the paint color database for matches across Sherwin-Williams, Benjamin Moore, Behr, and PPG brands. You can include brand names in the query (e.g., "BM White Dove", "SW-7069"). Handles grey/gray variants and hyphen/space normalization in codes. Returns the color name, code, and hex value for accurate color visualization.';
     }
 
     /**
@@ -29,17 +29,14 @@ class PaintColorLookupTool implements Tool
         $colors = PaintColor::query()
             ->with('brand')
             ->active()
-            ->where(function ($q) use ($query) {
-                $q->where('name', 'like', "%{$query}%")
-                    ->orWhere('code', 'like', "%{$query}%");
-            })
+            ->search($query)
             ->when($brand, function ($q) use ($brand) {
                 $q->whereHas('brand', function ($bq) use ($brand) {
                     $bq->where('name', 'like', "%{$brand}%")
                         ->orWhere('code', 'like', "%{$brand}%");
                 });
             })
-            ->limit(10)
+            ->limit(15)
             ->get();
 
         if ($colors->isEmpty()) {
