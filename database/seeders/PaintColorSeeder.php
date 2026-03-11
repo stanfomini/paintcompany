@@ -84,6 +84,7 @@ class PaintColorSeeder extends Seeder
                         'color_family' => $color['family'] ?? null,
                         'is_popular' => $color['popular'] ?? false,
                         'is_active' => true,
+                        'intended_use' => $color['intended_use'] ?? 'both',
                     ]
                 );
 
