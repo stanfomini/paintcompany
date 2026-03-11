@@ -36,12 +36,16 @@ it('renders with estimate context', function () {
         ->assertSuccessful();
 });
 
-it('loads popular colors', function () {
+it('loads popular colors after brand selection', function () {
     $brand = PaintBrand::factory()->create(['name' => 'Sherwin-Williams']);
-    PaintColor::factory()->forBrand($brand)->popular()->create(['name' => 'Alabaster']);
+    PaintColor::factory()->forBrand($brand)->popular()->create([
+        'name' => 'Alabaster',
+        'intended_use' => 'both',
+    ]);
 
     Livewire::actingAs($this->internalUser)
         ->test('estimates.color-visualizer')
+        ->call('selectBrand', $brand->id)
         ->assertSee('Alabaster');
 });
 
