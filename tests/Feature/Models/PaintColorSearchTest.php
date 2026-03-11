@@ -173,3 +173,51 @@ it('handles multi-word search with words across name and code', function () {
 
     expect($results->pluck('name'))->toContain('Iron Ore');
 });
+
+it('filters by intended use with forIntendedUse scope', function () {
+    PaintColor::factory()->forBrand($this->sw)->popular()->create([
+        'name' => 'Agreeable Gray Interior',
+        'intended_use' => 'interior',
+    ]);
+    PaintColor::factory()->forBrand($this->sw)->popular()->create([
+        'name' => 'Iron Ore Exterior',
+        'intended_use' => 'exterior',
+    ]);
+    PaintColor::factory()->forBrand($this->sw)->popular()->create([
+        'name' => 'Alabaster Both',
+        'intended_use' => 'both',
+    ]);
+
+    $interiorResults = PaintColor::active()->forIntendedUse('interior')->pluck('name');
+    expect($interiorResults)->toContain('Agreeable Gray Interior', 'Alabaster Both')
+        ->not->toContain('Iron Ore Exterior');
+
+    $exteriorResults = PaintColor::active()->forIntendedUse('exterior')->pluck('name');
+    expect($exteriorResults)->toContain('Iron Ore Exterior', 'Alabaster Both')
+        ->not->toContain('Agreeable Gray Interior');
+});
+
+it('gets cached popular colors filtered by intended use', function () {
+    PaintColor::factory()->forBrand($this->sw)->popular()->create([
+        'name' => 'Interior Only',
+        'intended_use' => 'interior',
+    ]);
+    PaintColor::factory()->forBrand($this->sw)->popular()->create([
+        'name' => 'Exterior Only',
+        'intended_use' => 'exterior',
+    ]);
+    PaintColor::factory()->forBrand($this->sw)->popular()->create([
+        'name' => 'Works Everywhere',
+        'intended_use' => 'both',
+    ]);
+
+    $interiorColors = PaintColor::getCachedPopularColors($this->sw->id, 'interior');
+    expect($interiorColors->pluck('name')->toArray())
+        ->toContain('Interior Only', 'Works Everywhere')
+        ->not->toContain('Exterior Only');
+
+    $exteriorColors = PaintColor::getCachedPopularColors($this->sw->id, 'exterior');
+    expect($exteriorColors->pluck('name')->toArray())
+        ->toContain('Exterior Only', 'Works Everywhere')
+        ->not->toContain('Interior Only');
+});

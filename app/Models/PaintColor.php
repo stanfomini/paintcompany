@@ -16,7 +16,7 @@ class PaintColor extends Model
     protected $fillable = [
         'paint_brand_id', 'name', 'code', 'hex_value',
         'rgb_r', 'rgb_g', 'rgb_b', 'color_family',
-        'is_popular', 'is_active',
+        'intended_use', 'is_popular', 'is_active',
     ];
 
     protected function casts(): array
@@ -25,6 +25,7 @@ class PaintColor extends Model
             'rgb_r' => 'integer',
             'rgb_g' => 'integer',
             'rgb_b' => 'integer',
+            'intended_use' => 'string',
             'is_popular' => 'boolean',
             'is_active' => 'boolean',
         ];
@@ -154,6 +155,11 @@ class PaintColor extends Model
         return $query->where('color_family', $family);
     }
 
+    public function scopeForIntendedUse(Builder $query, string $use): Builder
+    {
+        return $query->whereIn('intended_use', [$use, 'both']);
+    }
+
     public function getFullNameAttribute(): string
     {
         return $this->brand ? "{$this->brand->name} {$this->name}" : $this->name;
@@ -167,18 +173,22 @@ class PaintColor extends Model
     /**
      * Get popular colors, cached for 24 hours.
      */
-    public static function getCachedPopularColors(?int $brandId = null): Collection
+    public static function getCachedPopularColors(?int $brandId = null, ?string $intendedUse = null): Collection
     {
-        $key = $brandId ? "paint_colors:popular:{$brandId}" : 'paint_colors:popular:all';
+        $key = 'paint_colors:popular:'.($brandId ?? 'all').':'.($intendedUse ?? 'all');
 
-        return Cache::remember($key, 86400, function () use ($brandId) {
+        return Cache::remember($key, 86400, function () use ($brandId, $intendedUse) {
             $query = static::active()->popular()->with('brand')->orderBy('name');
 
             if ($brandId) {
                 $query->where('paint_brand_id', $brandId);
             }
 
-            return $query->get();
+            if ($intendedUse) {
+                $query->forIntendedUse($intendedUse);
+            }
+
+            return $query->limit(10)->get();
         });
     }
 
@@ -201,11 +211,16 @@ class PaintColor extends Model
      */
     public static function clearCache(): void
     {
-        Cache::forget('paint_colors:popular:all');
+        $uses = ['all', 'interior', 'exterior'];
+
         Cache::forget('paint_colors:families');
 
-        PaintBrand::pluck('id')->each(function (int $id): void {
-            Cache::forget("paint_colors:popular:{$id}");
-        });
+        $brandIds = PaintBrand::pluck('id')->push('all');
+
+        foreach ($brandIds as $brandId) {
+            foreach ($uses as $use) {
+                Cache::forget("paint_colors:popular:{$brandId}:{$use}");
+            }
+        }
     }
 }
