@@ -45,6 +45,9 @@ new class extends Component
     // Messenger contact state
     public ?int $messengerThreadId = null;
 
+    // SMS contact state
+    public ?int $smsThreadId = null;
+
     // Email thread viewer state
     public ?int $viewingEmailThreadId = null;
 
@@ -97,7 +100,7 @@ new class extends Component
 
     public function onNewMessage(): void
     {
-        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->selectedSmsData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function onThreadMessage(): void
@@ -122,7 +125,7 @@ new class extends Component
 
     public function refreshData(): void
     {
-        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contacts, $this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->selectedSmsData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     #[Computed]
@@ -142,12 +145,21 @@ new class extends Component
                 auth()->user(),
                 $this->search ?: null
             );
-            $contacts = $contacts->merge($messengerContacts)
-                ->sortByDesc(fn ($c) => $c['last_activity_at'] ?? '1970-01-01')
-                ->values();
+            $contacts = $contacts->merge($messengerContacts);
         }
 
-        return $contacts;
+        // Merge SMS inbound contacts (support threads from guest SMS senders)
+        if (in_array($this->typeFilter, ['all', 'customer'])) {
+            $smsContacts = $service->getSmsContacts(
+                auth()->user(),
+                $this->search ?: null
+            );
+            $contacts = $contacts->merge($smsContacts);
+        }
+
+        return $contacts
+            ->sortByDesc(fn ($c) => $c['last_activity_at'] ?? '1970-01-01')
+            ->values();
     }
 
     /**
@@ -165,6 +177,27 @@ new class extends Component
     public function selectedSetterData(): ?array
     {
         if (! $this->isSetterContact()) {
+            return null;
+        }
+
+        return $this->contacts->firstWhere('id', $this->contactId);
+    }
+
+    /**
+     * Whether the currently selected contact is an SMS inbound contact.
+     */
+    public function isSmsContact(): bool
+    {
+        return $this->contactId && str_starts_with($this->contactId, 'sms-');
+    }
+
+    /**
+     * Get the selected SMS contact's data from the contacts list.
+     */
+    #[Computed]
+    public function selectedSmsData(): ?array
+    {
+        if (! $this->isSmsContact()) {
             return null;
         }
 
@@ -195,7 +228,7 @@ new class extends Component
     #[Computed]
     public function selectedContact(): ?User
     {
-        if (! $this->contactId || $this->isSetterContact() || $this->isMessengerContact()) {
+        if (! $this->contactId || $this->isSetterContact() || $this->isMessengerContact() || $this->isSmsContact()) {
             return null;
         }
 
@@ -222,6 +255,33 @@ new class extends Component
                 'label' => $thread->subject ?? 'Setter Support',
                 'preview' => $thread->latestMessage
                     ? ($thread->latestMessage->user?->name ?? 'Guest').': '.\Illuminate\Support\Str::limit($thread->latestMessage->content, 80)
+                    : 'No messages yet',
+                'sender' => $thread->latestMessage?->user?->name,
+                'date' => $thread->last_message_at ?? $thread->created_at,
+                'thread_id' => $thread->id,
+                'url' => route('chat.show', $thread),
+                'message_id' => null,
+                'direction' => null,
+            ]]);
+        }
+
+        if ($this->isSmsContact()) {
+            // For SMS contacts, show their single SMS thread
+            if (! $this->smsThreadId) {
+                return collect();
+            }
+            $thread = ChatThread::with(['latestMessage.user'])->find($this->smsThreadId);
+            if (! $thread) {
+                return collect();
+            }
+            return collect([[
+                'type' => 'chat',
+                'channel' => null,
+                'thread_type' => 'support',
+                'icon' => 'device-phone-mobile',
+                'label' => $thread->subject ?? 'SMS Chat',
+                'preview' => $thread->latestMessage
+                    ? ($thread->latestMessage->user?->name ?? 'SMS').': '.\Illuminate\Support\Str::limit($thread->latestMessage->content, 80)
                     : 'No messages yet',
                 'sender' => $thread->latestMessage?->user?->name,
                 'date' => $thread->last_message_at ?? $thread->created_at,
@@ -282,6 +342,17 @@ new class extends Component
                 }
             }
             return ['all' => $unread, 'messenger' => $unread, 'direct' => 0, 'deals' => 0, 'emails' => 0];
+        }
+
+        if ($this->isSmsContact()) {
+            $unread = 0;
+            if ($this->smsThreadId) {
+                $thread = ChatThread::find($this->smsThreadId);
+                if ($thread) {
+                    $unread = $thread->getUnreadCountFor(auth()->user());
+                }
+            }
+            return ['all' => $unread, 'direct' => $unread, 'messenger' => 0, 'deals' => 0, 'emails' => 0];
         }
 
         if ($this->isSetterContact()) {
@@ -346,6 +417,14 @@ new class extends Component
         $this->setterSessionId = null;
         $this->setterThreadId = null;
         $this->messengerThreadId = null;
+        $this->smsThreadId = null;
+
+        // If this is an SMS contact, extract the thread ID
+        if (str_starts_with($contactId, 'sms-')) {
+            $threadId = (int) str_replace('sms-', '', $contactId);
+            $this->smsThreadId = $threadId;
+            $this->expandedThreadId = $threadId;
+        }
 
         // If this is a setter contact, extract the session/thread info
         if (str_starts_with($contactId, 'setter-')) {
@@ -369,7 +448,7 @@ new class extends Component
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
-        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->selectedSmsData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function clearContact(): void
@@ -380,11 +459,12 @@ new class extends Component
         $this->setterSessionId = null;
         $this->setterThreadId = null;
         $this->messengerThreadId = null;
+        $this->smsThreadId = null;
 
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
-        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->selectedSmsData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
     }
 
     public function setTab(string $tab): void
@@ -786,8 +866,8 @@ new class extends Component
                                 @if ($contact['is_support_only'] ?? false)
                                     <flux:badge size="sm" color="amber">{{ __('Support Chat') }}</flux:badge>
                                 @else
-                                    <flux:badge size="sm" color="{{ match($contact['type']) { 'customer' => 'green', 'agent' => 'blue', 'crew' => 'purple', default => 'zinc' } }}">
-                                        {{ ucfirst($contact['type']) }}
+                                    <flux:badge size="sm" color="{{ match($contact['type']) { 'customer' => 'green', 'agent' => 'blue', 'crew' => 'purple', 'sms' => 'green', 'messenger' => 'indigo', default => 'zinc' } }}">
+                                        {{ match($contact['type']) { 'sms' => 'SMS', default => ucfirst($contact['type']) } }}
                                     </flux:badge>
                                 @endif
                                 @if ($contact['unread_count'] > 0)
@@ -821,7 +901,72 @@ new class extends Component
 
     {{-- Right Panel --}}
     <div class="{{ $contactId ? 'flex' : 'hidden md:flex' }} flex-1 flex-col min-w-0 h-full">
-        @if ($this->isSetterContact() && $this->selectedSetterData)
+        @if ($this->isSmsContact() && $this->selectedSmsData)
+            {{-- SMS INBOUND CONTACT --}}
+            @php $smsContact = $this->selectedSmsData; @endphp
+            <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">
+                <button wire:click="clearContact" class="md:hidden shrink-0 p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <flux:icon name="arrow-left" class="size-5" />
+                </button>
+                <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center shrink-0">
+                    <flux:icon name="device-phone-mobile" class="w-4 h-4 text-green-600 dark:text-green-400" />
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2">
+                        <flux:heading size="sm" class="truncate">{{ $smsContact['name'] }}</flux:heading>
+                        <flux:badge size="sm" class="hidden sm:inline-flex" color="green">{{ __('SMS') }}</flux:badge>
+                    </div>
+                    <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Inbound SMS conversation') }}</flux:text>
+                </div>
+            </div>
+
+            {{-- SMS thread as full messenger view --}}
+            @if ($smsThreadId)
+                <div class="flex flex-col flex-1 min-h-0">
+                    <div
+                        x-data="{
+                            scrollToBottom() { this.$el.scrollTop = this.$el.scrollHeight },
+                            init() {
+                                this.$nextTick(() => this.scrollToBottom());
+                                new MutationObserver(() => this.scrollToBottom()).observe(this.$el, { childList: true, subtree: true });
+                            }
+                        }"
+                        class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3"
+                    >
+                        @forelse ($this->threadMessages as $msg)
+                            @php $isOwn = $msg->user_id === auth()->id(); @endphp
+                            <div wire:key="msg-sms-{{ $msg->id }}" class="flex {{ $isOwn ? 'justify-end' : 'justify-start' }}">
+                                <div class="max-w-[80%] sm:max-w-[70%]">
+                                    @if (! $isOwn)
+                                        <p class="text-[11px] text-zinc-400 mb-0.5 px-1">{{ $msg->user?->name ?? ($smsContact['name'] ?? 'SMS') }}</p>
+                                    @endif
+                                    <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
+                                        <span class="whitespace-pre-wrap break-words">{{ $msg->content }}</span>
+                                    </div>
+                                    <p class="text-[10px] text-zinc-400 mt-0.5 px-1 {{ $isOwn ? 'text-right' : '' }}">
+                                        {{ $msg->created_at->format('M j, g:i A') }}
+                                    </p>
+                                </div>
+                            </div>
+                        @empty
+                            <div class="flex items-center justify-center h-full">
+                                <flux:text size="sm" class="text-zinc-400">{{ __('No messages in this SMS thread yet.') }}</flux:text>
+                            </div>
+                        @endforelse
+                    </div>
+
+                    {{-- Composer --}}
+                    <div class="border-t border-zinc-200 dark:border-zinc-700 shrink-0">
+                        @php $smsThread = ChatThread::find($smsThreadId); @endphp
+                        @if ($smsThread)
+                            <div class="p-2">
+                                @livewire('chat.message-composer', ['thread' => $smsThread], key('composer-sms-' . $smsThread->id))
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+        @elseif ($this->isSetterContact() && $this->selectedSetterData)
             {{-- SETTER SUPPORT CONTACT --}}
             @php $setter = $this->selectedSetterData; @endphp
             <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">

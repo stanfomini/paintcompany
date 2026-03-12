@@ -368,6 +368,56 @@ class CommunicationsContactService
     }
 
     /**
+     * Get SMS inbound contacts (support threads from unknown/guest SMS senders).
+     * These are not system Users — they use 'sms-{threadId}' as their ID.
+     *
+     * @return Collection<int, array{id: string, name: string, type: string, avatar_url: ?string, initials: string, last_activity_at: ?\Carbon\Carbon, last_message_preview: ?string, unread_count: int, has_unread: bool, is_support_only: bool}>
+     */
+    public function getSmsContacts(User $viewer, ?string $search = null): Collection
+    {
+        $threads = ChatThread::query()
+            ->where('source', ChatThread::SOURCE_SMS_INBOUND)
+            ->forUser($viewer)
+            ->with(['latestMessage.user'])
+            ->latestActivity()
+            ->get();
+
+        if ($search) {
+            $threads = $threads->filter(
+                fn (ChatThread $t) => str_contains(strtolower($t->subject ?? ''), strtolower($search))
+            );
+        }
+
+        return $threads->map(function (ChatThread $thread) use ($viewer) {
+            $preview = null;
+            if ($thread->latestMessage) {
+                $senderName = $thread->latestMessage->user?->name ?? 'SMS';
+                $preview = $senderName.': '.Str::limit($thread->latestMessage->content, 80);
+            }
+
+            $unread = $thread->getUnreadCountFor($viewer);
+
+            // Extract phone from subject "SMS from +1234567890"
+            $phone = str_replace('SMS from ', '', $thread->subject ?? '');
+            $initials = 'SM';
+
+            return [
+                'id' => 'sms-'.$thread->id,
+                'name' => $phone ?: ($thread->subject ?? 'SMS Contact'),
+                'type' => 'sms',
+                'avatar_url' => null,
+                'initials' => $initials,
+                'last_activity_at' => $thread->last_message_at ?? $thread->created_at,
+                'last_message_preview' => $preview,
+                'unread_count' => $unread,
+                'has_unread' => $unread > 0,
+                'is_support_only' => true,
+                'has_duplicate_flag' => false,
+            ];
+        })->values();
+    }
+
+    /**
      * Get combined unread total for a user across chat and email channels.
      */
     public function getUnreadTotalForUser(User $user): int
