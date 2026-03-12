@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NewThreadNotification;
 use App\Models\AgentProfile;
 use App\Models\ChatThread;
 use App\Models\CrewProfile;
@@ -26,7 +27,7 @@ class TwilioWebhookController extends Controller
     public function receive(Request $request): Response
     {
         if (! $this->twilio->validateWebhookSignature($request)) {
-            Log::warning('Twilio webhook: invalid signature');
+            Log::error('Twilio webhook: invalid signature');
 
             return response('Forbidden', 403);
         }
@@ -142,7 +143,7 @@ class TwilioWebhookController extends Controller
                 ?? User::where('type', 'internal')->where('is_active', true)->first();
 
             if (! $internalUser) {
-                Log::warning('Twilio webhook: no internal user to route customer SMS to', ['phone' => $phone]);
+                Log::error('Twilio webhook: no internal user to route customer SMS to', ['phone' => $phone]);
 
                 return;
             }
@@ -156,6 +157,8 @@ class TwilioWebhookController extends Controller
             // Known non-customer user (crew, agent, etc.) — create support thread
             $thread = $this->createSmsSupporThread($phone);
             $thread->addParticipant($sender);
+
+            event(new NewThreadNotification($thread));
         }
 
         $this->chatService->sendMessage(
@@ -186,6 +189,8 @@ class TwilioWebhookController extends Controller
     private function routeUnknownNumber(string $phone, string $body): void
     {
         $thread = $this->createSmsSupporThread($phone);
+
+        event(new NewThreadNotification($thread));
 
         $this->chatService->sendGuestMessage(
             thread: $thread,
@@ -223,6 +228,13 @@ class TwilioWebhookController extends Controller
             ->where('is_active', true)
             ->permission('chat.view_website_leads')
             ->get();
+
+        // Fallback: if no users matched permission scope, add all active internal users
+        if ($internalUsers->isEmpty()) {
+            $internalUsers = User::where('type', 'internal')
+                ->where('is_active', true)
+                ->get();
+        }
 
         foreach ($internalUsers as $user) {
             $thread->addParticipant($user);

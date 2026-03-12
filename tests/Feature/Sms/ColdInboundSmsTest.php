@@ -1,10 +1,12 @@
 <?php
 
+use App\Events\NewThreadNotification;
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\SmsSession;
 use App\Models\User;
 use App\Services\TwilioService;
+use Illuminate\Support\Facades\Event;
 
 beforeEach(function () {
     $this->mock(TwilioService::class, function ($mock) {
@@ -200,5 +202,66 @@ describe('metadata tracking', function () {
         $message = $thread->messages()->latest()->first();
 
         expect($message->metadata['source'])->toBe('sms');
+    });
+});
+
+describe('NewThreadNotification broadcast', function () {
+    it('fires NewThreadNotification when unknown number creates a support thread', function () {
+        Event::fake([NewThreadNotification::class]);
+
+        $internal = User::factory()->internal()->create();
+        $internal->assignRole('admin');
+
+        $this->post(route('webhooks.twilio.sms'), [
+            'Body' => 'Hello from a stranger',
+            'From' => '+15557770001',
+        ]);
+
+        Event::assertDispatched(NewThreadNotification::class, function ($event) {
+            return $event->thread->type === ChatThread::TYPE_SUPPORT
+                && $event->thread->source === ChatThread::SOURCE_SMS_INBOUND;
+        });
+    });
+
+    it('fires NewThreadNotification when known non-customer creates a support thread', function () {
+        Event::fake([NewThreadNotification::class]);
+
+        $internal = User::factory()->internal()->create();
+        $internal->assignRole('admin');
+
+        $crewUser = User::factory()->crew()->create();
+        $crewUser->crewProfile()->update(['phone' => '5557770002']);
+
+        $this->post(route('webhooks.twilio.sms'), [
+            'Body' => 'On my way to the job',
+            'From' => '+15557770002',
+        ]);
+
+        Event::assertDispatched(NewThreadNotification::class, function ($event) use ($crewUser) {
+            return $event->thread->type === ChatThread::TYPE_SUPPORT
+                && $event->thread->hasParticipant($crewUser);
+        });
+    });
+});
+
+describe('participant fallback', function () {
+    it('adds all active internal users when no users have chat.view_website_leads permission', function () {
+        // Create internal users WITHOUT the specific permission
+        $internal1 = User::factory()->internal()->create();
+        $internal2 = User::factory()->internal()->create();
+
+        $this->post(route('webhooks.twilio.sms'), [
+            'Body' => 'Need help',
+            'From' => '+15557770003',
+        ]);
+
+        $thread = ChatThread::where('type', ChatThread::TYPE_SUPPORT)
+            ->where('source', ChatThread::SOURCE_SMS_INBOUND)
+            ->latest()
+            ->first();
+
+        expect($thread)->not->toBeNull();
+        expect($thread->hasParticipant($internal1))->toBeTrue();
+        expect($thread->hasParticipant($internal2))->toBeTrue();
     });
 });
