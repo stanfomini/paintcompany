@@ -691,10 +691,10 @@ class ChatService
 
             SendUnreadChatEmailJob::dispatch($message, $user);
 
-            // Also dispatch SMS notification (non-blocking — never let SMS errors prevent other notifications)
+            // Delay SMS so online users have time to read before we text them
             try {
                 if ($user->wantsSms('chat')) {
-                    SendUnreadChatSmsJob::dispatch($message, $user);
+                    SendUnreadChatSmsJob::dispatch($message, $user)->delay(now()->addMinutes(2));
                 }
             } catch (\Throwable $e) {
                 Log::warning('Failed to dispatch SMS notification', ['user_id' => $user->id, 'error' => $e->getMessage()]);
@@ -746,10 +746,10 @@ class ChatService
 
             SendUnreadChatEmailJob::dispatch($message, $participant->user);
 
-            // Also dispatch SMS notification (non-blocking — never let SMS errors prevent other notifications)
+            // Delay SMS so online users have time to read before we text them
             try {
                 if ($participant->user->wantsSms('chat')) {
-                    SendUnreadChatSmsJob::dispatch($message, $participant->user);
+                    SendUnreadChatSmsJob::dispatch($message, $participant->user)->delay(now()->addMinutes(2));
                 }
             } catch (\Throwable $e) {
                 Log::warning('Failed to dispatch SMS notification', ['user_id' => $participant->user->id, 'error' => $e->getMessage()]);
