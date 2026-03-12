@@ -10,6 +10,7 @@ use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateSignature;
 use App\Models\EstimateView;
+use App\Models\LandingPageVideoSection;
 use App\Models\VideoRecording;
 use App\Services\EstimateAmendmentService;
 use App\Services\EstimateCalculationService;
@@ -57,6 +58,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 
     public bool $preview = false;
 
+    public ?string $selectedTier = null;
+
     public function mount(string $token): void
     {
         $estimate = Estimate::byPublicToken($token)
@@ -100,9 +103,22 @@ new #[Layout('components.layouts.public')] class extends Component {
         // Auto-select the pre-selected or recommended package
         if ($estimate->selected_package_id) {
             $this->selectedPackageId = $estimate->selected_package_id;
+
+            // Resolve the initial tier from the selected package
+            $selectedPkg = $estimate->packages->find($estimate->selected_package_id);
+            if ($selectedPkg) {
+                $this->selectedTier = $selectedPkg->getPaintTier();
+            }
         } elseif ($estimate->packages->isNotEmpty()) {
             $recommended = $estimate->packages->firstWhere('is_recommended', true);
-            $this->selectedPackageId = $recommended?->id ?? $estimate->packages->first()->id;
+            $pkg = $recommended ?? $estimate->packages->first();
+            $this->selectedPackageId = $pkg->id;
+            $this->selectedTier = $pkg->getPaintTier();
+        }
+
+        // For template-based packages (no legacy packages), default to 'good' tier
+        if (! $this->selectedTier && $estimate->hasPaintTiers()) {
+            $this->selectedTier = 'good';
         }
 
         // Skip view tracking and activity logging in preview mode
@@ -345,11 +361,12 @@ new #[Layout('components.layouts.public')] class extends Component {
     /**
      * Get an area's customer-facing price (with margins applied).
      * Uses EstimateArea::getCustomerPrice() which applies scope-specific margin.
+     * Passes the selected tier for tier-aware pricing.
      */
     public function getAreaDisplayTotal(object $area): float
     {
         if ($area instanceof \App\Models\EstimateArea) {
-            return $area->getCustomerPrice();
+            return $area->getCustomerPrice($this->selectedTier);
         }
 
         // Fallback for non-model objects
@@ -359,16 +376,17 @@ new #[Layout('components.layouts.public')] class extends Component {
     /**
      * Get a surface's customer-facing price (proportionally allocated from area total).
      * Ensures surface prices sum exactly to the area customer price.
+     * Passes the selected tier for tier-aware pricing.
      */
     public function getSurfaceDisplayTotal(object $surface): float
     {
         if ($surface instanceof \App\Models\EstimateAreaSurface && $surface->area) {
             // Use proportional allocation from area's customer price
             if (! isset($this->surfacePriceCache[$surface->area_id])) {
-                $this->surfacePriceCache[$surface->area_id] = $surface->area->getSurfaceCustomerPrices();
+                $this->surfacePriceCache[$surface->area_id] = $surface->area->getSurfaceCustomerPrices($this->selectedTier);
             }
 
-            return $this->surfacePriceCache[$surface->area_id][$surface->id] ?? $surface->getCustomerPrice();
+            return $this->surfacePriceCache[$surface->area_id][$surface->id] ?? $surface->getCustomerPrice($this->selectedTier);
         }
 
         // Fallback for non-model objects
@@ -391,6 +409,21 @@ new #[Layout('components.layouts.public')] class extends Component {
             ->get();
     }
 
+    #[Computed]
+    public function companyMediaSections()
+    {
+        return LandingPageVideoSection::query()
+            ->active()
+            ->showOnProposal()
+            ->where(fn ($q) => $q->has('videos')->orHas('photos'))
+            ->with([
+                'videos' => fn ($q) => $q->where('status', 'ready')->orderByPivot('sort_order'),
+                'photos',
+            ])
+            ->orderBy('sort_order')
+            ->get();
+    }
+
     public function canAccept(): bool
     {
         return in_array($this->estimate->status, ['sent', 'draft'])
@@ -403,6 +436,19 @@ new #[Layout('components.layouts.public')] class extends Component {
     public function handlePackageSelected(int $packageId): void
     {
         $this->selectedPackageId = $packageId;
+        $this->surfacePriceCache = [];
+
+        // Resolve the tier from the selected package for tier-aware pricing
+        $package = $this->estimate->packages->find($packageId);
+        if ($package) {
+            $this->selectedTier = $package->getPaintTier();
+        }
+    }
+
+    #[On('tier-selected')]
+    public function handleTierSelected(string $tier): void
+    {
+        $this->selectedTier = $tier;
         $this->surfacePriceCache = [];
     }
 
@@ -495,6 +541,11 @@ new #[Layout('components.layouts.public')] class extends Component {
     {
         $areas = $this->estimate->areas;
 
+        // Filter by tier visibility when a tier is selected
+        if ($this->selectedTier) {
+            $areas = $areas->filter(fn ($area) => $area->isIncludedInTier($this->selectedTier));
+        }
+
         $scopeMap = $this->getPackageScopeMap();
 
         if (! $this->selectedPackageId || empty($scopeMap)) {
@@ -542,6 +593,7 @@ new #[Layout('components.layouts.public')] class extends Component {
     /**
      * Get the area display total for the selected package context.
      * If only some surfaces are included, uses getPartialCustomerPrice.
+     * Passes the selected tier for tier-aware pricing.
      */
     public function getPackageAreaDisplayTotal(object $area): float
     {
@@ -555,7 +607,7 @@ new #[Layout('components.layouts.public')] class extends Component {
             return $this->getAreaDisplayTotal($area);
         }
 
-        return $area->getPartialCustomerPrice($surfaceIds);
+        return $area->getPartialCustomerPrice($surfaceIds, $this->selectedTier);
     }
 
     /**
@@ -918,7 +970,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                         @endphp
                         <div
                             x-data="{ expanded: false }"
-                            wire:key="area-{{ $area->id }}-pkg-{{ $this->selectedPackageId }}"
+                            wire:key="area-{{ $area->id }}-pkg-{{ $this->selectedPackageId }}-tier-{{ $this->selectedTier }}"
                             class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden transition-shadow hover:shadow-sm"
                         >
                             {{-- Area Header (Always Visible) --}}
@@ -1005,6 +1057,81 @@ new #[Layout('components.layouts.public')] class extends Component {
                     @endforeach
                 </div>
             </flux:card>
+        @endif
+
+        {{-- Company Media Sections (from landing page, toggled per section) --}}
+        @if($this->companyMediaSections->isNotEmpty())
+            @foreach($this->companyMediaSections as $mediaSection)
+                <flux:card class="p-6 mb-6">
+                    <flux:heading size="lg" class="mb-4">{{ $mediaSection->title }}</flux:heading>
+                    @if($mediaSection->subtitle)
+                        <flux:text class="text-zinc-500 mb-4">{{ $mediaSection->subtitle }}</flux:text>
+                    @endif
+
+                    {{-- Videos --}}
+                    @if($mediaSection->videos->isNotEmpty())
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            @foreach($mediaSection->videos as $video)
+                                <div wire:key="proposal-media-video-{{ $video->id }}" class="group">
+                                    <div class="aspect-video bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                        <template x-if="!playing">
+                                            <div class="w-full h-full relative">
+                                                @if($video->getThumbnailUrl())
+                                                    <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                                @else
+                                                    <div class="w-full h-full flex items-center justify-center bg-zinc-200 dark:bg-zinc-800">
+                                                        <svg class="w-10 h-10 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                                    </div>
+                                                @endif
+                                                <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                                    <div class="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                        <svg class="w-5 h-5 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                                    </div>
+                                                </div>
+                                                @if($video->formatted_duration)
+                                                    <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                                @endif
+                                            </div>
+                                        </template>
+                                        <template x-if="playing">
+                                            <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                        </template>
+                                    </div>
+                                    <p class="mt-2 font-medium text-zinc-900 dark:text-zinc-100 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</p>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+
+                    {{-- Photos --}}
+                    @if($mediaSection->photos->isNotEmpty())
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 {{ $mediaSection->videos->isNotEmpty() ? 'mt-4' : '' }}" x-data="{ lightboxOpen: false, lightboxSrc: '', lightboxCaption: '' }">
+                            @foreach($mediaSection->photos as $photo)
+                                <div wire:key="proposal-media-photo-{{ $photo->id }}" class="group cursor-pointer" x-on:click="lightboxSrc = '{{ $photo->url }}'; lightboxCaption = '{{ addslashes($photo->caption ?? '') }}'; lightboxOpen = true">
+                                    <div class="aspect-[4/3] bg-zinc-200 dark:bg-zinc-800 rounded-xl overflow-hidden relative">
+                                        <img src="{{ $photo->thumbnail_url }}" alt="{{ $photo->caption ?? '' }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+                                    </div>
+                                    @if($photo->caption)
+                                        <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{{ $photo->caption }}</p>
+                                    @endif
+                                </div>
+                            @endforeach
+                            <template x-teleport="body">
+                                <div x-show="lightboxOpen" x-cloak x-on:click.self="lightboxOpen = false" x-on:keydown.escape.window="lightboxOpen = false" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4" x-transition.opacity>
+                                    <button x-on:click="lightboxOpen = false" class="absolute top-4 right-4 text-white hover:text-zinc-300 z-10">
+                                        <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                    </button>
+                                    <div class="max-w-4xl max-h-[90vh] w-full">
+                                        <img x-bind:src="lightboxSrc" x-bind:alt="lightboxCaption" class="w-full h-auto max-h-[85vh] object-contain rounded-lg" />
+                                        <p x-show="lightboxCaption" x-text="lightboxCaption" class="text-white text-center mt-3 text-sm"></p>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    @endif
+                </flux:card>
+            @endforeach
         @endif
 
         {{-- Line Items (only shown when NOT using packages - packages already include these) --}}

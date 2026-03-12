@@ -356,8 +356,11 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
     {
         return \App\Models\LandingPageVideoSection::query()
             ->active()
-            ->has('videos')
-            ->with(['videos' => fn ($q) => $q->where('status', 'ready')->orderByPivot('sort_order')])
+            ->where(fn ($q) => $q->has('videos')->orHas('photos'))
+            ->with([
+                'videos' => fn ($q) => $q->where('status', 'ready')->orderByPivot('sort_order'),
+                'photos',
+            ])
             ->orderBy('sort_order')
             ->get()
             ->keyBy('slug');
@@ -824,37 +827,66 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                         <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $videoSection->subtitle }}</p>
                     @endif
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    @foreach($videoSection->videos as $video)
-                        <div wire:key="lp-video-{{ $video->id }}" class="group">
-                            <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
-                                <template x-if="!playing">
-                                    <div class="w-full h-full relative">
-                                        @if($video->getThumbnailUrl())
-                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
-                                        @else
-                                            <div class="w-full h-full flex items-center justify-center bg-zinc-200">
-                                                <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                @if($videoSection->videos->isNotEmpty())
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        @foreach($videoSection->videos as $video)
+                            <div wire:key="lp-video-{{ $video->id }}" class="group">
+                                <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                    <template x-if="!playing">
+                                        <div class="w-full h-full relative">
+                                            @if($video->getThumbnailUrl())
+                                                <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                            @else
+                                                <div class="w-full h-full flex items-center justify-center bg-zinc-200">
+                                                    <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                                </div>
+                                            @endif
+                                            <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                                <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                    <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                                </div>
                                             </div>
-                                        @endif
-                                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                                            <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                            </div>
+                                            @if($video->formatted_duration)
+                                                <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                            @endif
                                         </div>
-                                        @if($video->formatted_duration)
-                                            <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
-                                        @endif
-                                    </div>
-                                </template>
-                                <template x-if="playing">
-                                    <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
-                                </template>
+                                    </template>
+                                    <template x-if="playing">
+                                        <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                    </template>
+                                </div>
+                                <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
                             </div>
-                            <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
-                        </div>
-                    @endforeach
-                </div>
+                        @endforeach
+                    </div>
+                @endif
+                @if($videoSection->photos->isNotEmpty())
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 {{ $videoSection->videos->isNotEmpty() ? 'mt-6' : '' }}" x-data="{ lightboxOpen: false, lightboxSrc: '', lightboxCaption: '' }">
+                        @foreach($videoSection->photos as $photo)
+                            <div wire:key="lp-photo-tutorials-{{ $photo->id }}" class="group cursor-pointer" x-on:click="lightboxSrc = '{{ $photo->url }}'; lightboxCaption = '{{ addslashes($photo->caption ?? '') }}'; lightboxOpen = true">
+                                <div class="aspect-[4/3] bg-zinc-200 rounded-xl overflow-hidden relative">
+                                    <img src="{{ $photo->thumbnail_url }}" alt="{{ $photo->caption ?? '' }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+                                </div>
+                                @if($photo->caption)
+                                    <p class="mt-2 text-sm text-zinc-600">{{ $photo->caption }}</p>
+                                @endif
+                            </div>
+                        @endforeach
+                        {{-- Lightbox --}}
+                        <template x-teleport="body">
+                            <div x-show="lightboxOpen" x-cloak x-on:click.self="lightboxOpen = false" x-on:keydown.escape.window="lightboxOpen = false" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4" x-transition.opacity>
+                                <button x-on:click="lightboxOpen = false" class="absolute top-4 right-4 text-white hover:text-zinc-300 z-10">
+                                    <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                                <div class="max-w-4xl max-h-[90vh] w-full">
+                                    <img x-bind:src="lightboxSrc" x-bind:alt="lightboxCaption" class="w-full h-auto max-h-[85vh] object-contain rounded-lg" />
+                                    <p x-show="lightboxCaption" x-text="lightboxCaption" class="text-white text-center mt-3 text-sm"></p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                @endif
             </div>
         </section>
     @endif
@@ -924,37 +956,65 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                         <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $videoSection->subtitle }}</p>
                     @endif
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    @foreach($videoSection->videos as $video)
-                        <div wire:key="lp-video-{{ $video->id }}" class="group">
-                            <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
-                                <template x-if="!playing">
-                                    <div class="w-full h-full relative">
-                                        @if($video->getThumbnailUrl())
-                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
-                                        @else
-                                            <div class="w-full h-full flex items-center justify-center bg-zinc-200">
-                                                <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                @if($videoSection->videos->isNotEmpty())
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        @foreach($videoSection->videos as $video)
+                            <div wire:key="lp-video-{{ $video->id }}" class="group">
+                                <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                    <template x-if="!playing">
+                                        <div class="w-full h-full relative">
+                                            @if($video->getThumbnailUrl())
+                                                <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                            @else
+                                                <div class="w-full h-full flex items-center justify-center bg-zinc-200">
+                                                    <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                                </div>
+                                            @endif
+                                            <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                                <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                    <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                                </div>
                                             </div>
-                                        @endif
-                                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                                            <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                            </div>
+                                            @if($video->formatted_duration)
+                                                <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                            @endif
                                         </div>
-                                        @if($video->formatted_duration)
-                                            <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
-                                        @endif
-                                    </div>
-                                </template>
-                                <template x-if="playing">
-                                    <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
-                                </template>
+                                    </template>
+                                    <template x-if="playing">
+                                        <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                    </template>
+                                </div>
+                                <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
                             </div>
-                            <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
-                        </div>
-                    @endforeach
-                </div>
+                        @endforeach
+                    </div>
+                @endif
+                @if($videoSection->photos->isNotEmpty())
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 {{ $videoSection->videos->isNotEmpty() ? 'mt-6' : '' }}" x-data="{ lightboxOpen: false, lightboxSrc: '', lightboxCaption: '' }">
+                        @foreach($videoSection->photos as $photo)
+                            <div wire:key="lp-photo-showcases-{{ $photo->id }}" class="group cursor-pointer" x-on:click="lightboxSrc = '{{ $photo->url }}'; lightboxCaption = '{{ addslashes($photo->caption ?? '') }}'; lightboxOpen = true">
+                                <div class="aspect-[4/3] bg-zinc-200 rounded-xl overflow-hidden relative">
+                                    <img src="{{ $photo->thumbnail_url }}" alt="{{ $photo->caption ?? '' }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+                                </div>
+                                @if($photo->caption)
+                                    <p class="mt-2 text-sm text-zinc-600">{{ $photo->caption }}</p>
+                                @endif
+                            </div>
+                        @endforeach
+                        <template x-teleport="body">
+                            <div x-show="lightboxOpen" x-cloak x-on:click.self="lightboxOpen = false" x-on:keydown.escape.window="lightboxOpen = false" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4" x-transition.opacity>
+                                <button x-on:click="lightboxOpen = false" class="absolute top-4 right-4 text-white hover:text-zinc-300 z-10">
+                                    <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                                <div class="max-w-4xl max-h-[90vh] w-full">
+                                    <img x-bind:src="lightboxSrc" x-bind:alt="lightboxCaption" class="w-full h-auto max-h-[85vh] object-contain rounded-lg" />
+                                    <p x-show="lightboxCaption" x-text="lightboxCaption" class="text-white text-center mt-3 text-sm"></p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                @endif
             </div>
         </section>
     @endif
@@ -1042,37 +1102,65 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                         <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ $videoSection->subtitle }}</p>
                     @endif
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                    @foreach($videoSection->videos as $video)
-                        <div wire:key="lp-video-{{ $video->id }}" class="group">
-                            <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
-                                <template x-if="!playing">
-                                    <div class="w-full h-full relative">
-                                        @if($video->getThumbnailUrl())
-                                            <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
-                                        @else
-                                            <div class="w-full h-full flex items-center justify-center bg-zinc-200">
-                                                <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                @if($videoSection->videos->isNotEmpty())
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        @foreach($videoSection->videos as $video)
+                            <div wire:key="lp-video-{{ $video->id }}" class="group">
+                                <div class="aspect-video bg-zinc-200 rounded-xl overflow-hidden relative cursor-pointer" x-data="{ playing: false }" x-on:click="playing = !playing">
+                                    <template x-if="!playing">
+                                        <div class="w-full h-full relative">
+                                            @if($video->getThumbnailUrl())
+                                                <img src="{{ $video->getThumbnailUrl() }}" alt="{{ $video->description ?: $video->title }}" class="w-full h-full object-cover" />
+                                            @else
+                                                <div class="w-full h-full flex items-center justify-center bg-zinc-200">
+                                                    <svg class="w-12 h-12 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                                                </div>
+                                            @endif
+                                            <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                                                <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                                                    <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                                </div>
                                             </div>
-                                        @endif
-                                        <div class="absolute inset-0 bg-black/20 group-hover:bg-black/30 transition-colors flex items-center justify-center">
-                                            <div class="w-14 h-14 rounded-full bg-white/90 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                                                <svg class="w-6 h-6 text-zinc-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                                            </div>
+                                            @if($video->formatted_duration)
+                                                <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
+                                            @endif
                                         </div>
-                                        @if($video->formatted_duration)
-                                            <span class="absolute bottom-2 right-2 bg-black/75 text-white text-xs px-1.5 py-0.5 rounded">{{ $video->formatted_duration }}</span>
-                                        @endif
-                                    </div>
-                                </template>
-                                <template x-if="playing">
-                                    <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
-                                </template>
+                                    </template>
+                                    <template x-if="playing">
+                                        <video class="w-full h-full object-cover" src="{{ $video->getVideoUrl() }}" controls autoplay x-init="$el.play()"></video>
+                                    </template>
+                                </div>
+                                <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
                             </div>
-                            <h3 class="mt-3 font-semibold text-zinc-900 text-sm">{{ $video->description ?: $video->title ?? __('Video') }}</h3>
-                        </div>
-                    @endforeach
-                </div>
+                        @endforeach
+                    </div>
+                @endif
+                @if($videoSection->photos->isNotEmpty())
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 {{ $videoSection->videos->isNotEmpty() ? 'mt-6' : '' }}" x-data="{ lightboxOpen: false, lightboxSrc: '', lightboxCaption: '' }">
+                        @foreach($videoSection->photos as $photo)
+                            <div wire:key="lp-photo-testimonials-{{ $photo->id }}" class="group cursor-pointer" x-on:click="lightboxSrc = '{{ $photo->url }}'; lightboxCaption = '{{ addslashes($photo->caption ?? '') }}'; lightboxOpen = true">
+                                <div class="aspect-[4/3] bg-zinc-200 rounded-xl overflow-hidden relative">
+                                    <img src="{{ $photo->thumbnail_url }}" alt="{{ $photo->caption ?? '' }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors"></div>
+                                </div>
+                                @if($photo->caption)
+                                    <p class="mt-2 text-sm text-zinc-600">{{ $photo->caption }}</p>
+                                @endif
+                            </div>
+                        @endforeach
+                        <template x-teleport="body">
+                            <div x-show="lightboxOpen" x-cloak x-on:click.self="lightboxOpen = false" x-on:keydown.escape.window="lightboxOpen = false" class="fixed inset-0 z-[999] flex items-center justify-center bg-black/80 p-4" x-transition.opacity>
+                                <button x-on:click="lightboxOpen = false" class="absolute top-4 right-4 text-white hover:text-zinc-300 z-10">
+                                    <svg class="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                                <div class="max-w-4xl max-h-[90vh] w-full">
+                                    <img x-bind:src="lightboxSrc" x-bind:alt="lightboxCaption" class="w-full h-auto max-h-[85vh] object-contain rounded-lg" />
+                                    <p x-show="lightboxCaption" x-text="lightboxCaption" class="text-white text-center mt-3 text-sm"></p>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                @endif
             </div>
         </section>
     @endif
