@@ -383,17 +383,19 @@ class EstimateArea extends Model
      *
      * @param  string|null  $tier  Paint quality tier (good/better/best) or null for default
      */
-    public function getFullCOGS(?string $tier = null): float
+    public function getFullCOGS(?string $tier = null, bool $bypassCache = false): float
     {
         // Use cached COGS when available (snapshot from template/area builder)
-        if ($tier === null || $tier === 'good') {
-            if ($this->cached_cogs !== null) {
-                return (float) $this->cached_cogs;
-            }
-        } elseif ($this->cached_tier_prices !== null) {
-            $tierCogs = $this->cached_tier_prices[$tier]['cogs'] ?? null;
-            if ($tierCogs !== null) {
-                return (float) $tierCogs;
+        if (! $bypassCache) {
+            if ($tier === null || $tier === 'good') {
+                if ($this->cached_cogs !== null) {
+                    return (float) $this->cached_cogs;
+                }
+            } elseif ($this->cached_tier_prices !== null) {
+                $tierCogs = $this->cached_tier_prices[$tier]['cogs'] ?? null;
+                if ($tierCogs !== null) {
+                    return (float) $tierCogs;
+                }
             }
         }
 
@@ -737,12 +739,12 @@ class EstimateArea extends Model
 
         $allSurfaces = $this->surfaces()->where('is_included', true)->get();
 
-        // For tier pricing, calculate COGS using tier-specific labor and material costs
+        // Use full surface COGS (includes cleanup + sundries) for accurate proportioning
         if ($tier !== null) {
             $totalCogs = 0.0;
             $includedCogs = 0.0;
             foreach ($allSurfaces as $surface) {
-                $surfaceCogs = $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
+                $surfaceCogs = $surface->getFullCOGS($tier);
                 $totalCogs += $surfaceCogs;
                 if (in_array($surface->id, $includedSurfaceIds)) {
                     $includedCogs += $surfaceCogs;
@@ -788,7 +790,7 @@ class EstimateArea extends Model
             $totalCogs = 0.0;
             $includedCogs = 0.0;
             foreach ($allSurfaces as $surface) {
-                $surfaceCogs = $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
+                $surfaceCogs = $surface->getFullCOGS($tier);
                 $totalCogs += $surfaceCogs;
                 if (in_array($surface->id, $includedSurfaceIds)) {
                     $includedCogs += $surfaceCogs;

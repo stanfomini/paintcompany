@@ -625,13 +625,12 @@ class EstimateAreaSurface extends Model
         $settings = CompanySetting::getInstance();
         $scopeType = $this->area?->scope_type ?? 'interior';
 
-        $laborHours = (float) $this->labor_hours;
-        $laborCost = (float) $this->labor_cost;
+        // Use tier-specific labor when tier_overrides exist
+        $laborHours = $this->getLaborHoursForTier($tier);
+        $laborCost = $this->getLaborCostForTier($tier);
         $materialCost = $this->getMaterialCostForTier($tier);
 
-        // This surface's proportional share of cleanup and sundries
-        // Use effective rate (with payroll burden) to match area-level calculation
-        // Cleanup and sundries are the SAME across all tiers (labor doesn't change)
+        // Cleanup and sundries based on tier-specific labor hours
         $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
         $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scopeType);
         $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);

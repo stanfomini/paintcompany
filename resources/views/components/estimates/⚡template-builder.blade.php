@@ -1879,13 +1879,23 @@ new class extends Component
                     continue;
                 }
 
-                $quantity = match ($surface['quantity_source'] ?? 'wall_sqft') {
-                    'wall_sqft' => $areaData['wall_sqft'] ?? 0,
-                    'ceiling_sqft' => $areaData['ceiling_sqft'] ?? 0,
-                    'perimeter_lnft' => $areaData['perimeter_lnft'] ?? 0,
-                    default => $surface['quantity_override'] ?? 1,
-                };
-                $coats = $surface['default_coats'] ?? $templateData['coats'] ?? 2;
+                // Use tier-specific quantity override if set
+                $tierQuantityOverride = $surface['tier_overrides'][$tier]['quantity_override'] ?? null;
+                if ($tierQuantityOverride !== null && $tierQuantityOverride > 0) {
+                    $quantity = (float) $tierQuantityOverride;
+                } else {
+                    $quantity = match ($surface['quantity_source'] ?? 'wall_sqft') {
+                        'wall_sqft' => $areaData['wall_sqft'] ?? 0,
+                        'ceiling_sqft' => $areaData['ceiling_sqft'] ?? 0,
+                        'perimeter_lnft' => $areaData['perimeter_lnft'] ?? 0,
+                        default => $surface['quantity_override'] ?? 1,
+                    };
+                }
+                // Use tier-specific coats from tier_overrides when available
+                $coats = $surface['tier_overrides'][$tier]['default_coats']
+                    ?? $surface['default_coats']
+                    ?? $templateData['coats']
+                    ?? 2;
                 $coatMultiplier = match ($coats) {
                     1 => 1.0, 2 => 1.8, 3 => 2.5, 4 => 3.1,
                     default => 1.0 + (($coats - 1) * 0.7),

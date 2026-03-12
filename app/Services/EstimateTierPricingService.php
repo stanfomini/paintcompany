@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CompanySetting;
 use App\Models\Estimate;
 
 class EstimateTierPricingService
@@ -40,10 +41,13 @@ class EstimateTierPricingService
                         continue;
                     }
 
+                    // Use tier-specific coats from tier_overrides when available
+                    $tierCoats = $surface->tier_overrides[$tier]['default_coats'] ?? $surface->coats ?? 2;
+
                     // Calculate material cost for this tier
                     $costCalc = $paintProduct->calculateCost(
                         (float) $surface->quantity,
-                        $surface->coats ?? 2,
+                        $tierCoats,
                         $surface->application_method ?? 'brush_roll'
                     );
 
@@ -65,7 +69,69 @@ class EstimateTierPricingService
             }
         }
 
+        // After updating surface material costs, refresh area cached_tier_prices
+        // so getCustomerPrice($tier) returns correct values
+        if ($updated > 0) {
+            $this->refreshAreaCachedTierPrices($estimate);
+        }
+
         return $updated;
+    }
+
+    /**
+     * Refresh cached_tier_prices on each area after surface material costs change.
+     * Recalculates COGS and customer price per tier from the now-correct surface data.
+     */
+    protected function refreshAreaCachedTierPrices(Estimate $estimate): void
+    {
+        $settings = CompanySetting::getInstance();
+
+        foreach ($estimate->areas()->with('surfaces')->get() as $area) {
+            if ($area->is_fixed_price) {
+                continue;
+            }
+
+            $scope = $area->scope_type ?? 'interior';
+            $cached = [];
+
+            foreach (['good', 'better', 'best'] as $tier) {
+                if (! $area->isIncludedInTier($tier)) {
+                    continue;
+                }
+
+                // Recalculate COGS from current surface data (bypass cache)
+                $cogs = $area->getFullCOGS($tier, bypassCache: true);
+
+                if ($cogs <= 0) {
+                    $cached[$tier] = ['cogs' => 0.0, 'price' => 0.0];
+
+                    continue;
+                }
+
+                $estimateModel = $area->getEstimateForPricing();
+                if ($estimateModel && $estimateModel->hasMarginDiscount()) {
+                    $price = $estimateModel->calculateOTDFromCOGS($cogs, $scope);
+                } else {
+                    $price = $settings->calculateOTDFromCOGS($cogs, $scope);
+                }
+
+                $cached[$tier] = [
+                    'cogs' => round($cogs, 2),
+                    'price' => round($price, 2),
+                ];
+            }
+
+            if (! empty($cached)) {
+                $area->cached_tier_prices = $cached;
+
+                if (isset($cached['good'])) {
+                    $area->cached_cogs = $cached['good']['cogs'];
+                    $area->cached_customer_price = $cached['good']['price'];
+                }
+
+                $area->saveQuietly();
+            }
+        }
     }
 
     /**

@@ -421,6 +421,138 @@ it('does not restore is_included for items excluded by area package_tiers', func
     }
 });
 
+// =========================================================================
+// INTEGRATION: FULL SAVE → PACKAGE FLOW
+// =========================================================================
+
+it('produces correct tier-specific package totals through full save flow', function () {
+    $goodTemplate = PackageTemplate::factory()->create([
+        'tier' => 'good', 'name' => 'Good', 'is_active' => true, 'sort_order' => 0,
+    ]);
+    $bestTemplate = PackageTemplate::factory()->create([
+        'tier' => 'best', 'name' => 'Best', 'is_active' => true, 'sort_order' => 2,
+    ]);
+
+    // Set up tier pricing on estimate
+    $this->estimate->update([
+        'paint_tiers' => [
+            'good' => ['default_paint_product_id' => null],
+            'better' => ['default_paint_product_id' => null],
+            'best' => ['default_paint_product_id' => null],
+        ],
+    ]);
+
+    $hourlyRate = 21.00 * 1.35;
+
+    // Area with tier-specific labor overrides
+    $area = EstimateArea::factory()->create([
+        'estimate_id' => $this->estimate->id,
+        'scope_type' => 'interior',
+        'cached_cogs' => null,
+        'cached_customer_price' => null,
+        'cached_tier_prices' => null,
+    ]);
+
+    EstimateAreaSurface::factory()->create([
+        'area_id' => $area->id,
+        'labor_hours' => 2.00,
+        'labor_cost' => 2.00 * $hourlyRate,
+        'material_cost' => 30.00,
+        'total' => (2.00 * $hourlyRate) + 30.00,
+        'is_included' => true,
+        'tier_overrides' => [
+            'good' => ['labor_hours' => 1.00, 'labor_cost' => 1.00 * $hourlyRate],
+            'best' => ['labor_hours' => 3.00, 'labor_cost' => 3.00 * $hourlyRate],
+        ],
+    ]);
+
+    // Run tier cost recalculation (as save flow does)
+    app(\App\Services\EstimateTierPricingService::class)->recalculateTierCosts($this->estimate);
+
+    $this->estimate->refresh();
+    $this->estimate->calculateTotals();
+    $this->estimate->save();
+
+    // Generate packages
+    $service = app(EstimatePackageGeneratorService::class);
+    $packages = $service->generateFromTemplates($this->estimate);
+
+    foreach ($packages as $package) {
+        $package->calculateTotals();
+        $package->save();
+    }
+
+    $goodPackage = $packages->firstWhere('tier', EstimatePackage::TIER_BASIC);
+    $bestPackage = $packages->firstWhere('tier', EstimatePackage::TIER_PREMIUM);
+
+    if ($goodPackage && $bestPackage) {
+        // Good (1 hour labor) should be cheaper than Best (3 hours labor)
+        expect($goodPackage->subtotal)->toBeLessThan($bestPackage->subtotal);
+        expect($goodPackage->subtotal)->toBeGreaterThan(0);
+        expect($bestPackage->subtotal)->toBeGreaterThan(0);
+    }
+});
+
+it('surface getFullCOGS uses tier-specific labor hours', function () {
+    $area = EstimateArea::factory()->create([
+        'estimate_id' => $this->estimate->id,
+        'scope_type' => 'interior',
+    ]);
+
+    $hourlyRate = 21.00 * 1.35;
+
+    $surface = EstimateAreaSurface::factory()->create([
+        'area_id' => $area->id,
+        'labor_hours' => 2.00,
+        'labor_cost' => 2.00 * $hourlyRate,
+        'material_cost' => 30.00,
+        'total' => (2.00 * $hourlyRate) + 30.00,
+        'is_included' => true,
+        'tier_overrides' => [
+            'good' => ['labor_hours' => 1.00, 'labor_cost' => 1.00 * $hourlyRate],
+            'best' => ['labor_hours' => 3.00, 'labor_cost' => 3.00 * $hourlyRate],
+        ],
+    ]);
+
+    $baseCogs = $surface->getFullCOGS(null);
+    $goodCogs = $surface->getFullCOGS('good');
+    $bestCogs = $surface->getFullCOGS('best');
+
+    expect($goodCogs)->toBeLessThan($baseCogs);
+    expect($bestCogs)->toBeGreaterThan($baseCogs);
+});
+
+it('area getFullCOGS bypassCache recalculates from surfaces', function () {
+    $area = EstimateArea::factory()->create([
+        'estimate_id' => $this->estimate->id,
+        'scope_type' => 'interior',
+        'cached_cogs' => 999.99,
+        'cached_tier_prices' => [
+            'good' => ['cogs' => 999.99, 'price' => 1999.99],
+            'best' => ['cogs' => 999.99, 'price' => 1999.99],
+        ],
+    ]);
+
+    $hourlyRate = 21.00 * 1.35;
+
+    EstimateAreaSurface::factory()->create([
+        'area_id' => $area->id,
+        'labor_hours' => 2.00,
+        'labor_cost' => 2.00 * $hourlyRate,
+        'material_cost' => 30.00,
+        'total' => (2.00 * $hourlyRate) + 30.00,
+        'is_included' => true,
+    ]);
+
+    // Without bypass: returns cached value
+    expect($area->getFullCOGS(null))->toBe(999.99);
+
+    // With bypass: recalculates from actual surface data (should be much less than 999.99)
+    $recalculated = $area->getFullCOGS(null, bypassCache: true);
+    expect($recalculated)->toBeLessThan(999.99);
+    expect($recalculated)->toBeGreaterThan(0);
+});
+
 it('calculates areas subtotal for tier excluding non-visible areas', function () {
     $allArea = EstimateArea::factory()->create([
         'estimate_id' => $this->estimate->id,
