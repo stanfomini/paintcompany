@@ -200,6 +200,14 @@ class Customer extends Model
     }
 
     /**
+     * Get the appointment bookings for this customer.
+     */
+    public function appointmentBookings(): HasMany
+    {
+        return $this->hasMany(AppointmentBooking::class);
+    }
+
+    /**
      * Get the activities for this customer.
      */
     public function activities(): MorphMany
