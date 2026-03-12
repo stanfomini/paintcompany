@@ -79,6 +79,7 @@ new class extends Component {
             'chat' => __('Chat Messages'),
             'messenger' => __('Messenger Leads'),
             'email_messages' => __('Email'),
+            'appointments' => __('Appointments'),
             'jobs' => __('Jobs & Scheduling'),
             'tasks' => __('Tasks'),
             'payments' => __('Payments'),

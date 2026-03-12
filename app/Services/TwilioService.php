@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -129,14 +130,18 @@ class TwilioService
      */
     public function prependConsentIfNeeded(int $userId, string $body): string
     {
-        $consentKey = "sms_consent:{$userId}";
+        $user = User::find($userId);
 
-        if (Cache::has($consentKey)) {
+        if (! $user) {
+            return $body;
+        }
+
+        if ($user->sms_consented_at !== null) {
             return $body;
         }
 
         $appName = config('app.name');
-        Cache::put($consentKey, true, now()->addYears(2));
+        $user->update(['sms_consented_at' => now()]);
 
         return "{$appName} alerts. Reply STOP to opt out. Msg&data rates may apply.\n\n{$body}";
     }

@@ -720,6 +720,7 @@ class ChatService
         return match ($thread->source) {
             ChatThread::SOURCE_WEBSITE_LEAD => $user->can('chat.view_website_leads'),
             ChatThread::SOURCE_SETTER_SUPPORT => $user->can('chat.view_setter_support'),
+            ChatThread::SOURCE_SMS_INBOUND => $user->can('chat.view_website_leads'),
             default => true,
         };
     }

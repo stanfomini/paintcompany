@@ -2,10 +2,13 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\CompanySetting;
 use App\Models\EmployeeContract;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -13,7 +16,7 @@ use Illuminate\Notifications\Notification;
 
 class ContractSentForSigning extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'documents';
 
@@ -38,6 +41,10 @@ class ContractSentForSigning extends Notification implements ShouldQueue
 
         if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
         }
 
         $channels[] = 'database';
@@ -69,6 +76,14 @@ class ContractSentForSigning extends Notification implements ShouldQueue
             'title' => $this->contract->title,
             'token' => $this->contract->token,
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        return new SmsMessage(
+            body: "You have a contract to sign: {$this->contract->title}",
+            deepLink: route('contracts.sign', $this->contract->token),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage

@@ -46,6 +46,7 @@ class User extends Authenticatable
         'follow_up_status',
         'notification_preferences',
         'sms_opted_out_at',
+        'sms_consented_at',
     ];
 
     /**
@@ -75,6 +76,7 @@ class User extends Authenticatable
             'referral_terms_accepted_at' => 'datetime',
             'notification_preferences' => 'array',
             'sms_opted_out_at' => 'datetime',
+            'sms_consented_at' => 'datetime',
         ];
     }
 
@@ -441,6 +443,7 @@ class User extends Authenticatable
             'chat' => ['email' => true, 'push' => true, 'sms' => true],
             'messenger' => ['email' => true, 'push' => true, 'sms' => true],
             'email_messages' => ['email' => true, 'push' => true, 'sms' => false],
+            'appointments' => ['email' => true, 'push' => true, 'sms' => true],
             'jobs' => ['email' => true, 'push' => true, 'sms' => true],
             'tasks' => ['email' => true, 'push' => true, 'sms' => false],
             'payments' => ['email' => true, 'push' => true, 'sms' => true],

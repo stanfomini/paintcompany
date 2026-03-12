@@ -2,6 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AgentProfile;
+use App\Models\ChatThread;
+use App\Models\CrewProfile;
+use App\Models\Customer;
+use App\Models\CustomerProfile;
+use App\Models\EmployeeProfile;
 use App\Models\SmsSession;
 use App\Models\User;
 use App\Services\ChatService;
@@ -56,37 +62,173 @@ class TwilioWebhookController extends Controller
 
         $session = SmsSession::findActiveByPhone($formattedPhone);
 
-        if (! $session) {
-            Log::info('Twilio webhook: no active session for phone', ['from' => $formattedPhone]);
-
-            return $this->twimlResponse();
-        }
-
-        try {
-            $session->load(['user', 'thread']);
-
-            if (! $session->user || ! $session->thread) {
-                return $this->twimlResponse();
-            }
-
-            // Post the reply into the chat thread
-            $this->chatService->sendMessage(
-                thread: $session->thread,
-                sender: $session->user,
-                content: $body,
-                options: ['metadata' => ['source' => 'sms']],
-            );
-
-            // Extend session TTL
-            $session->update(['expires_at' => now()->addHours(24)]);
-        } catch (\Exception $e) {
-            Log::error('Twilio webhook: failed to process reply', [
-                'from' => $formattedPhone,
-                'error' => $e->getMessage(),
-            ]);
+        if ($session) {
+            $this->routeToExistingSession($session, $body, $formattedPhone);
+        } else {
+            $this->routeColdInbound($formattedPhone, $body);
         }
 
         return $this->twimlResponse();
+    }
+
+    /**
+     * Route a reply to an existing active SMS session.
+     */
+    private function routeToExistingSession(SmsSession $session, string $body, string $phone): void
+    {
+        try {
+            $session->load(['user', 'thread']);
+
+            if (! $session->thread) {
+                return;
+            }
+
+            if ($session->user) {
+                $this->chatService->sendMessage(
+                    thread: $session->thread,
+                    sender: $session->user,
+                    content: $body,
+                    options: ['metadata' => ['source' => 'sms']],
+                );
+            } else {
+                $this->chatService->sendGuestMessage(
+                    thread: $session->thread,
+                    content: $body,
+                    metadata: ['source' => 'sms', 'phone' => $phone],
+                );
+            }
+
+            $session->update(['expires_at' => now()->addHours(24)]);
+        } catch (\Exception $e) {
+            Log::error('Twilio webhook: failed to process reply', [
+                'from' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Route a cold inbound SMS (no active session) into the chat system.
+     */
+    private function routeColdInbound(string $phone, string $body): void
+    {
+        try {
+            $users = $this->findUsersByPhone($phone);
+            $sender = $users->first();
+
+            if ($sender) {
+                $this->routeKnownUser($sender, $phone, $body);
+            } else {
+                $this->routeUnknownNumber($phone, $body);
+            }
+        } catch (\Exception $e) {
+            Log::error('Twilio webhook: failed to route cold inbound', [
+                'from' => $phone,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
+     * Route an SMS from a known user into a chat thread.
+     */
+    private function routeKnownUser(User $sender, string $phone, string $body): void
+    {
+        // Check if sender is a customer with an assigned internal contact
+        $customer = Customer::where('user_id', $sender->id)->first();
+
+        if ($customer) {
+            $internalUser = $customer->assignedTo
+                ?? User::where('type', 'internal')->where('is_active', true)->first();
+
+            if (! $internalUser) {
+                Log::warning('Twilio webhook: no internal user to route customer SMS to', ['phone' => $phone]);
+
+                return;
+            }
+
+            $thread = $this->chatService->getOrCreateDirectThread(
+                $sender,
+                $internalUser,
+                'SMS conversation',
+            );
+        } else {
+            // Known non-customer user (crew, agent, etc.) — create support thread
+            $thread = $this->createSmsSupporThread($phone);
+            $thread->addParticipant($sender);
+        }
+
+        $this->chatService->sendMessage(
+            thread: $thread,
+            sender: $sender,
+            content: $body,
+            options: ['metadata' => ['source' => 'sms']],
+        );
+
+        SmsSession::updateOrCreate(
+            ['phone_number' => $phone, 'thread_id' => $thread->id],
+            [
+                'user_id' => $sender->id,
+                'expires_at' => now()->addHours(24),
+            ]
+        );
+
+        Log::info('Twilio webhook: routed cold inbound from known user', [
+            'from' => $phone,
+            'user_id' => $sender->id,
+            'thread_id' => $thread->id,
+        ]);
+    }
+
+    /**
+     * Route an SMS from an unknown number into a support thread.
+     */
+    private function routeUnknownNumber(string $phone, string $body): void
+    {
+        $thread = $this->createSmsSupporThread($phone);
+
+        $this->chatService->sendGuestMessage(
+            thread: $thread,
+            content: $body,
+            metadata: ['source' => 'sms', 'phone' => $phone],
+        );
+
+        SmsSession::create([
+            'user_id' => null,
+            'thread_id' => $thread->id,
+            'phone_number' => $phone,
+            'expires_at' => now()->addHours(24),
+        ]);
+
+        Log::info('Twilio webhook: routed cold inbound from unknown number', [
+            'from' => $phone,
+            'thread_id' => $thread->id,
+        ]);
+    }
+
+    /**
+     * Create a support thread for inbound SMS and add internal users with chat.view_website_leads.
+     */
+    private function createSmsSupporThread(string $phone): ChatThread
+    {
+        $thread = ChatThread::create([
+            'type' => ChatThread::TYPE_SUPPORT,
+            'source' => ChatThread::SOURCE_SMS_INBOUND,
+            'subject' => "SMS from {$phone}",
+            'last_message_at' => now(),
+        ]);
+
+        // Add internal users who can view website leads (same permission gates SMS threads)
+        $internalUsers = User::where('type', 'internal')
+            ->where('is_active', true)
+            ->permission('chat.view_website_leads')
+            ->get();
+
+        foreach ($internalUsers as $user) {
+            $thread->addParticipant($user);
+        }
+
+        return $thread;
     }
 
     private function handleOptOut(string $phone): void
@@ -124,15 +266,40 @@ class TwilioWebhookController extends Controller
     }
 
     /**
-     * Find users who have this phone number in their SMS sessions.
+     * Find users who have this phone number in sessions or profiles.
      */
     private function findUsersByPhone(string $phone): \Illuminate\Support\Collection
     {
-        $userIds = SmsSession::where('phone_number', $phone)
-            ->distinct()
-            ->pluck('user_id');
+        // Strip to last 10 digits for profile matching (US numbers, stored in various formats)
+        $digits = preg_replace('/\D/', '', $phone);
+        $last10 = substr($digits, -10);
+        $phoneLike = '%'.$last10;
 
-        return User::whereIn('id', $userIds)->get();
+        // Collect user IDs from SMS sessions
+        $userIds = SmsSession::where('phone_number', $phone)
+            ->whereNotNull('user_id')
+            ->distinct()
+            ->pluck('user_id')
+            ->toArray();
+
+        // Search users.phone directly
+        $directUserIds = User::where('phone', 'LIKE', $phoneLike)
+            ->pluck('id')
+            ->toArray();
+
+        // Search profile tables
+        $profileUserIds = collect()
+            ->merge(CustomerProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->merge(AgentProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->merge(CrewProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->merge(EmployeeProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->toArray();
+
+        $allUserIds = collect(array_merge($userIds, $directUserIds, $profileUserIds))
+            ->unique()
+            ->values();
+
+        return User::whereIn('id', $allUserIds)->get();
     }
 
     private function twimlResponse(): Response

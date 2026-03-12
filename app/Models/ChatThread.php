@@ -25,6 +25,8 @@ class ChatThread extends Model
 
     public const SOURCE_SETTER_SUPPORT = 'setter_support';
 
+    public const SOURCE_SMS_INBOUND = 'sms_inbound';
+
     public const CHANNEL_INTERNAL = 'internal';
 
     public const CHANNEL_FACEBOOK = 'facebook';

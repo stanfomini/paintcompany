@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use App\Services\TwilioService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -159,32 +160,40 @@ describe('sendSms', function () {
 describe('prependConsentIfNeeded', function () {
     it('prepends consent message on first SMS to user', function () {
         Config::set('app.name', 'Apex');
-        Cache::flush();
+        $user = User::factory()->customer()->create();
 
-        $result = $this->service->prependConsentIfNeeded(999, 'Hello there');
+        $result = $this->service->prependConsentIfNeeded($user->id, 'Hello there');
 
         expect($result)->toBe("Apex alerts. Reply STOP to opt out. Msg&data rates may apply.\n\nHello there");
+        expect($user->fresh()->sms_consented_at)->not->toBeNull();
     });
 
     it('does not prepend consent on second SMS to same user', function () {
         Config::set('app.name', 'Apex');
-        Cache::flush();
+        $user = User::factory()->customer()->create();
 
-        // First call sets the consent cache
-        $this->service->prependConsentIfNeeded(999, 'First message');
+        // First call sets the consent
+        $this->service->prependConsentIfNeeded($user->id, 'First message');
 
         // Second call should skip consent
-        $result = $this->service->prependConsentIfNeeded(999, 'Second message');
+        $result = $this->service->prependConsentIfNeeded($user->id, 'Second message');
 
         expect($result)->toBe('Second message');
     });
 
     it('skips consent message for returning users', function () {
-        // Pre-set the consent key as if user already received consent
-        Cache::put('sms_consent:888', true, now()->addYears(2));
+        $user = User::factory()->customer()->create([
+            'sms_consented_at' => now()->subMonth(),
+        ]);
 
-        $result = $this->service->prependConsentIfNeeded(888, 'Hello again');
+        $result = $this->service->prependConsentIfNeeded($user->id, 'Hello again');
 
         expect($result)->toBe('Hello again');
+    });
+
+    it('returns body unchanged for non-existent user', function () {
+        $result = $this->service->prependConsentIfNeeded(99999, 'Hello');
+
+        expect($result)->toBe('Hello');
     });
 });

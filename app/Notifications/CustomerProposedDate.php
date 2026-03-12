@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Job;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,7 +16,7 @@ use Illuminate\Notifications\Notification;
 
 class CustomerProposedDate extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
@@ -48,6 +51,10 @@ class CustomerProposedDate extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
@@ -78,6 +85,16 @@ class CustomerProposedDate extends Notification implements ShouldQueue
             'proposed_date' => $this->proposedDate,
             'message' => __('Customer proposed date: :date', ['date' => $this->proposedDate]),
         ];
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $customerName = $this->job->getCustomer()?->first_name ?? 'Customer';
+
+        return new SmsMessage(
+            body: "{$customerName} proposed {$this->proposedDate} for job #{$this->job->job_number}.",
+            deepLink: url("/jobs/{$this->job->id}"),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage
