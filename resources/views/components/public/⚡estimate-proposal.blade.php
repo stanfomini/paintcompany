@@ -55,6 +55,7 @@ new #[Layout('components.layouts.public')] class extends Component {
 
     public string $amendmentInitials = '';
 
+    public bool $preview = false;
 
     public function mount(string $token): void
     {
@@ -84,6 +85,7 @@ new #[Layout('components.layouts.public')] class extends Component {
 
         $this->estimate = $estimate;
         $this->token = $token;
+        $this->preview = request()->routeIs('estimates.preview');
 
         // Pre-fill signer info from customer if available
         if ($estimate->deal?->customer) {
@@ -103,16 +105,17 @@ new #[Layout('components.layouts.public')] class extends Component {
             $this->selectedPackageId = $recommended?->id ?? $estimate->packages->first()->id;
         }
 
-        // Record view
-        EstimateView::record($estimate);
+        // Skip view tracking and activity logging in preview mode
+        if (! $this->preview) {
+            EstimateView::record($estimate);
 
-        // Log activity
-        EstimateActivity::log(
-            $estimate,
-            'viewed',
-            'Proposal viewed via public link',
-            ['ip_address' => request()->ip()]
-        );
+            EstimateActivity::log(
+                $estimate,
+                'viewed',
+                'Proposal viewed via public link',
+                ['ip_address' => request()->ip()]
+            );
+        }
     }
 
     public function getListeners(): array

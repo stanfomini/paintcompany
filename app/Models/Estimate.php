@@ -812,6 +812,19 @@ class Estimate extends Model
     }
 
     /**
+     * Ensure the estimate has a valid public token, generating one if needed.
+     * Does NOT change estimate status — useful for preview without sending.
+     */
+    public function ensurePublicToken(int $expiryDays = 30): string
+    {
+        if (! $this->public_token || ! $this->isPublicTokenValid()) {
+            $this->generatePublicToken($expiryDays);
+        }
+
+        return $this->public_token;
+    }
+
+    /**
      * Get the public URL for this estimate.
      */
     public function getPublicUrl(): ?string
@@ -821,6 +834,18 @@ class Estimate extends Model
         }
 
         return route('estimates.public', ['token' => $this->public_token]);
+    }
+
+    /**
+     * Get the preview URL for this estimate (auth-protected).
+     */
+    public function getPreviewUrl(): ?string
+    {
+        if (! $this->public_token) {
+            return null;
+        }
+
+        return route('estimates.preview', ['token' => $this->public_token]);
     }
 
     /**

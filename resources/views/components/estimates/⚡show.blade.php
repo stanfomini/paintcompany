@@ -73,6 +73,13 @@ new class extends Component {
         $this->publicUrl = $this->estimate->getPublicUrl();
     }
 
+    public function getPreviewUrl(): string
+    {
+        $this->estimate->ensurePublicToken();
+
+        return route('estimates.preview', ['token' => $this->estimate->public_token]);
+    }
+
     public function openSendModal(): void
     {
         abort_unless(auth()->user()->can('estimates.send'), 403);
@@ -407,6 +414,15 @@ new class extends Component {
 
             {{-- Right: Actions --}}
             <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+                {{-- Preview button --}}
+                <div class="lg:hidden">
+                    <flux:button :href="$this->getPreviewUrl()" icon="eye" target="_blank" />
+                </div>
+                <div class="hidden lg:block">
+                    <flux:button :href="$this->getPreviewUrl()" icon="eye" target="_blank">
+                        {{ __('Preview') }}
+                    </flux:button>
+                </div>
                 @can('estimates.edit')
                     @if ($estimate->isEditable())
                         {{-- Mobile: icon-only edit button --}}

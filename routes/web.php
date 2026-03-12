@@ -86,6 +86,11 @@ Route::livewire('/open-house/{property}', 'public.open-house-signup')
     ->name('open-house.signup')
     ->middleware('throttle:60,1');
 
+// Authenticated estimate preview (no view tracking)
+Route::livewire('/proposal/preview/{token}', 'public.estimate-proposal')
+    ->name('estimates.preview')
+    ->middleware(['auth', 'throttle:60,1']);
+
 // Public estimate proposal route
 Route::livewire('/proposal/{token}', 'public.estimate-proposal')
     ->name('estimates.public')
