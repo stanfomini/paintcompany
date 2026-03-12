@@ -286,7 +286,9 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
     <div class="mx-auto max-w-5xl">
         {{-- Header --}}
         <div class="text-center mb-8">
-            <flux:heading size="xl">{{ $this->companySettings->company_name ?? config('app.name') }}</flux:heading>
+            <a href="{{ route('home') }}" class="inline-block">
+                <flux:heading size="xl" class="hover:text-blue-600 dark:hover:text-blue-400 transition-colors">{{ $this->companySettings->company_name ?? config('app.name') }}</flux:heading>
+            </a>
             @if ($this->vendor)
                 <flux:text class="mt-1">{{ __('Referred by') }} {{ $this->vendor->booking_display_name ?? $this->vendor->name }}</flux:text>
             @endif
@@ -643,6 +645,19 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                     <a href="{{ route('booking.cancel', $bookingResult['token']) }}"
                         class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
                         {{ __('Cancel or Reschedule') }}
+                    </a>
+                </div>
+
+                {{-- Color Visualizer promo --}}
+                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6 text-center">
+                    <flux:icon name="paint-brush" class="w-8 h-8 mx-auto text-blue-500 mb-3" />
+                    <flux:heading size="md">{{ __('While You Wait...') }}</flux:heading>
+                    <flux:text class="mt-2 text-zinc-600 dark:text-zinc-300 text-sm">
+                        {{ __('Try our free Color Visualizer! Upload a photo of your space, pick your colors, and see what your project could look like before we arrive.') }}
+                    </flux:text>
+                    <a href="{{ route('visualize') }}" class="mt-4 inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors">
+                        <flux:icon name="camera" variant="mini" class="w-4 h-4" />
+                        {{ __('Try the Color Visualizer') }}
                     </a>
                 </div>
 
