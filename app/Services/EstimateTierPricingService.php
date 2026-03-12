@@ -108,9 +108,8 @@ class EstimateTierPricingService
                     continue;
                 }
 
-                $estimateModel = $area->getEstimateForPricing();
-                if ($estimateModel && $estimateModel->hasMarginDiscount()) {
-                    $price = $estimateModel->calculateOTDFromCOGS($cogs, $scope);
+                if ($estimate->hasMarginDiscount()) {
+                    $price = $estimate->calculateOTDFromCOGS($cogs, $scope);
                 } else {
                     $price = $settings->calculateOTDFromCOGS($cogs, $scope);
                 }
