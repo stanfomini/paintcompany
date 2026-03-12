@@ -736,7 +736,7 @@ new class extends Component
 };
 ?>
 
-<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row" wire:poll.60s.visible="refreshData">
+<div class="relative flex h-[calc(100vh-4rem)] flex-col overflow-hidden md:h-[calc(100vh-5rem)] md:flex-row" wire:poll.15s.visible="refreshData">
     {{-- Left Sidebar: Contact List --}}
     <div class="{{ $contactId ? 'hidden md:flex' : 'flex' }} w-full md:w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-700 flex-col h-full">
         {{-- Header --}}

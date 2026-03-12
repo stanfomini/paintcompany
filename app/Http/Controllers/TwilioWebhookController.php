@@ -157,8 +157,7 @@ class TwilioWebhookController extends Controller
             // Known non-customer user (crew, agent, etc.) — create support thread
             $thread = $this->createSmsSupporThread($phone);
             $thread->addParticipant($sender);
-
-            event(new NewThreadNotification($thread));
+            $isNewSupportThread = true;
         }
 
         $this->chatService->sendMessage(
@@ -176,6 +175,11 @@ class TwilioWebhookController extends Controller
             ]
         );
 
+        // Broadcast new thread notification AFTER message is saved (non-critical)
+        if (! empty($isNewSupportThread)) {
+            $this->safeBroadcastNewThread($thread);
+        }
+
         Log::info('Twilio webhook: routed cold inbound from known user', [
             'from' => $phone,
             'user_id' => $sender->id,
@@ -190,8 +194,6 @@ class TwilioWebhookController extends Controller
     {
         $thread = $this->createSmsSupporThread($phone);
 
-        event(new NewThreadNotification($thread));
-
         $this->chatService->sendGuestMessage(
             thread: $thread,
             content: $body,
@@ -204,6 +206,9 @@ class TwilioWebhookController extends Controller
             'phone_number' => $phone,
             'expires_at' => now()->addHours(24),
         ]);
+
+        // Broadcast new thread notification AFTER message is saved (non-critical)
+        $this->safeBroadcastNewThread($thread);
 
         Log::info('Twilio webhook: routed cold inbound from unknown number', [
             'from' => $phone,
@@ -312,6 +317,21 @@ class TwilioWebhookController extends Controller
             ->values();
 
         return User::whereIn('id', $allUserIds)->get();
+    }
+
+    /**
+     * Safely broadcast NewThreadNotification, catching any broadcast failures.
+     */
+    private function safeBroadcastNewThread(ChatThread $thread): void
+    {
+        try {
+            event(new NewThreadNotification($thread));
+        } catch (\Throwable $e) {
+            Log::warning('Twilio webhook: broadcast failed', [
+                'thread_id' => $thread->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function twimlResponse(): Response
