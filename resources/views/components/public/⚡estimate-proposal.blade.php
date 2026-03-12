@@ -743,16 +743,16 @@ new #[Layout('components.layouts.public')] class extends Component {
 
         {{-- Photos Gallery (moved up for visual context before pricing) --}}
         @php
-            // Gather proposal photos: estimate-linked (filtered) + property-level
-            $proposalPhotos = $estimate->photos->where('show_on_proposal', true);
+            // Gather all proposal photos for this property (regardless of which estimate uploaded them)
+            $proposalPhotos = collect();
             if ($estimate->deal?->property) {
-                $propertyPhotos = \App\Models\PropertyPhoto::where('property_id', $estimate->deal->property->id)
+                $proposalPhotos = \App\Models\PropertyPhoto::where('property_id', $estimate->deal->property->id)
                     ->where('show_on_proposal', true)
-                    ->whereNull('estimate_id')
                     ->with(['annotations', 'comments.user', 'comments.replies.user'])
                     ->orderBy('sort_order')
                     ->get();
-                $proposalPhotos = $proposalPhotos->merge($propertyPhotos)->unique('id');
+            } else {
+                $proposalPhotos = $estimate->photos->where('show_on_proposal', true);
             }
         @endphp
         @if ($proposalPhotos->isNotEmpty())

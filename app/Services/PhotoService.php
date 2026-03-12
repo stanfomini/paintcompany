@@ -268,12 +268,6 @@ class PhotoService
     {
         $query = PropertyPhoto::where('property_id', $property->id);
 
-        if ($estimateId) {
-            $query->where(function ($q) use ($estimateId) {
-                $q->where('estimate_id', $estimateId)->orWhereNull('estimate_id');
-            });
-        }
-
         if ($job) {
             $query->where(function ($q) use ($job) {
                 $q->where('job_id', $job->id)->orWhereNull('job_id');

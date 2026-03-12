@@ -86,6 +86,10 @@ new class extends Component
     // Service category
     public ?int $serviceCategoryId = null;
 
+    public bool $useTierPricing = false;
+
+    public ?string $editingTier = null;
+
     public bool $showNewCategoryForm = false;
 
     public string $newCategoryName = '';
@@ -135,9 +139,12 @@ new class extends Component
         array $paintByCategory = [],
         float $marginDiscountPercent = 0,
         ?float $hourlyRateOverride = null,
+        bool $useTierPricing = false,
     ): void {
         $this->marginDiscountPercent = $marginDiscountPercent;
         $this->hourlyRateOverride = $hourlyRateOverride;
+        $this->useTierPricing = $useTierPricing;
+        $this->editingTier = null;
         $template = EstimateTemplate::with(['surfaces.productionRate', 'nestedOptions.nestedAreaTemplate'])
             ->find($templateId);
 
@@ -192,9 +199,12 @@ new class extends Component
         array $paintByCategory = [],
         float $marginDiscountPercent = 0,
         ?float $hourlyRateOverride = null,
+        bool $useTierPricing = false,
     ): void {
         $this->marginDiscountPercent = $marginDiscountPercent;
         $this->hourlyRateOverride = $hourlyRateOverride;
+        $this->useTierPricing = $useTierPricing;
+        $this->editingTier = null;
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = null;
@@ -234,9 +244,12 @@ new class extends Component
         array $paintByCategory = [],
         float $marginDiscountPercent = 0,
         ?float $hourlyRateOverride = null,
+        bool $useTierPricing = false,
     ): void {
         $this->marginDiscountPercent = $marginDiscountPercent;
         $this->hourlyRateOverride = $hourlyRateOverride;
+        $this->useTierPricing = $useTierPricing;
+        $this->editingTier = null;
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = $editingIndex;
@@ -273,6 +286,7 @@ new class extends Component
             $loadedSurfaces[$i]['material_cost'] = $surfaceData['material_cost'] ?? null;
             $loadedSurfaces[$i]['sale_price'] = $surfaceData['sale_price'] ?? null;
             $loadedSurfaces[$i]['crew_price'] = $surfaceData['crew_price'] ?? null;
+            $loadedSurfaces[$i]['tier_overrides'] = $surfaceData['tier_overrides'] ?? null;
         }
         $this->surfaces = $loadedSurfaces;
 
@@ -316,6 +330,7 @@ new class extends Component
                     'material_cost' => null,
                     'sale_price' => null,
                     'crew_price' => null,
+                    'tier_overrides' => null,
                 ];
             }
 
@@ -349,6 +364,7 @@ new class extends Component
                 'material_cost' => null,
                 'sale_price' => null,
                 'crew_price' => null,
+                'tier_overrides' => null,
             ];
         }
     }
@@ -499,6 +515,7 @@ new class extends Component
             'material_cost' => null,
             'sale_price' => null,
             'crew_price' => null,
+            'tier_overrides' => null,
         ];
 
         // Add ceiling/eaves surface
@@ -519,6 +536,7 @@ new class extends Component
             'material_cost' => null,
             'sale_price' => null,
             'crew_price' => null,
+            'tier_overrides' => null,
         ];
 
         // Add trim surface
@@ -539,6 +557,7 @@ new class extends Component
             'material_cost' => null,
             'sale_price' => null,
             'crew_price' => null,
+            'tier_overrides' => null,
         ];
     }
 
@@ -673,6 +692,7 @@ new class extends Component
             'material_cost' => null,
             'sale_price' => null,
             'crew_price' => null,
+            'tier_overrides' => null,
         ];
     }
 
@@ -1250,6 +1270,101 @@ new class extends Component
         }
     }
 
+    // ===== TIER CONFIGURATION =====
+
+    public function switchTier(?string $tier): void
+    {
+        if ($this->editingTier === $tier) {
+            return;
+        }
+
+        // Save current field values to tier_overrides for the current tier
+        if ($this->editingTier !== null) {
+            $this->saveTierSnapshot($this->editingTier);
+        }
+
+        // On first tier click, snapshot base values
+        $this->ensureBaseSnapshot();
+
+        $this->editingTier = $tier;
+
+        if ($tier !== null) {
+            $this->loadTierSnapshot($tier);
+        } else {
+            $this->loadBaseValues();
+        }
+    }
+
+    protected function ensureBaseSnapshot(): void
+    {
+        foreach ($this->surfaces as $index => $surface) {
+            if (isset($surface['tier_overrides']['_base'])) {
+                continue;
+            }
+            $this->surfaces[$index]['tier_overrides'] = $this->surfaces[$index]['tier_overrides'] ?? [];
+            $this->surfaces[$index]['tier_overrides']['_base'] = [
+                'production_rate_id' => $surface['production_rate_id'],
+                'default_coats' => $surface['default_coats'],
+                'quantity_source' => $surface['quantity_source'],
+                'quantity_override' => $surface['quantity_override'],
+                'is_custom' => $surface['is_custom'] ?? false,
+                'labor_hours' => $surface['labor_hours'],
+                'material_cost' => $surface['material_cost'],
+                'sale_price' => $surface['sale_price'],
+                'crew_price' => $surface['crew_price'],
+                'fixed_price' => $surface['fixed_price'],
+            ];
+        }
+    }
+
+    protected function saveTierSnapshot(string $tier): void
+    {
+        foreach ($this->surfaces as $index => $surface) {
+            $this->surfaces[$index]['tier_overrides'] = $this->surfaces[$index]['tier_overrides'] ?? [];
+            $this->surfaces[$index]['tier_overrides'][$tier] = [
+                'production_rate_id' => $surface['production_rate_id'],
+                'default_coats' => $surface['default_coats'],
+                'quantity_source' => $surface['quantity_source'],
+                'quantity_override' => $surface['quantity_override'],
+                'is_custom' => $surface['is_custom'] ?? false,
+                'labor_hours' => $surface['labor_hours'],
+                'material_cost' => $surface['material_cost'],
+                'sale_price' => $surface['sale_price'],
+                'crew_price' => $surface['crew_price'],
+                'fixed_price' => $surface['fixed_price'],
+            ];
+        }
+    }
+
+    protected function loadTierSnapshot(string $tier): void
+    {
+        foreach ($this->surfaces as $index => $surface) {
+            $overrides = $surface['tier_overrides'][$tier] ?? null;
+            if ($overrides) {
+                foreach ($overrides as $key => $value) {
+                    if (array_key_exists($key, $this->surfaces[$index])) {
+                        $this->surfaces[$index][$key] = $value;
+                    }
+                }
+            }
+            // If no overrides yet for this tier, keep current (base) values — user starts fresh
+        }
+    }
+
+    protected function loadBaseValues(): void
+    {
+        foreach ($this->surfaces as $index => $surface) {
+            $base = $surface['tier_overrides']['_base'] ?? null;
+            if ($base) {
+                foreach ($base as $key => $value) {
+                    if (array_key_exists($key, $this->surfaces[$index])) {
+                        $this->surfaces[$index][$key] = $value;
+                    }
+                }
+            }
+        }
+    }
+
     // ===== ACTIONS =====
 
     /**
@@ -1328,9 +1443,46 @@ new class extends Component
 
         $preview = $this->previewCalculation;
 
+        // Save current tier's snapshot before computing
+        if ($this->editingTier !== null) {
+            $this->saveTierSnapshot($this->editingTier);
+        }
+
+        // If tier pricing was used, annotate each customized tier
+        if ($this->useTierPricing) {
+            // First restore base values for the main annotation
+            if ($this->editingTier !== null) {
+                $this->loadBaseValues();
+            }
+        }
+
         // Annotate surfaces with per-surface computed values so template-builder
         // save uses exact same numbers as the area-builder calculated
         $annotatedSurfaces = $this->annotateComputedSurfaceValues();
+
+        // Annotate tier-specific computed values
+        if ($this->useTierPricing) {
+            foreach (['good', 'better', 'best'] as $tier) {
+                $hasTierData = false;
+                foreach ($annotatedSurfaces as $s) {
+                    if (isset($s['tier_overrides'][$tier])) {
+                        $hasTierData = true;
+                        break;
+                    }
+                }
+                if ($hasTierData) {
+                    $this->loadTierSnapshot($tier);
+                    $tierAnnotated = $this->annotateComputedSurfaceValues();
+                    foreach ($tierAnnotated as $i => $s) {
+                        $annotatedSurfaces[$i]['tier_overrides'][$tier]['labor_hours'] = $s['labor_hours'];
+                        $annotatedSurfaces[$i]['tier_overrides'][$tier]['labor_cost'] = $s['labor_cost'];
+                        $annotatedSurfaces[$i]['tier_overrides'][$tier]['material_cost'] = $s['material_cost'];
+                    }
+                }
+            }
+            // Restore base values
+            $this->loadBaseValues();
+        }
 
         $areaData = [
             'name' => $this->name,
@@ -1349,6 +1501,7 @@ new class extends Component
             'direct_lnft' => $this->directLnft,
             'direct_ceiling_sqft' => $this->directCeilingSqft,
             'service_category_id' => $this->serviceCategoryId,
+            'package_tiers' => null, // Set by template-builder's toggleAreaTier
             'surfaces' => $annotatedSurfaces,
             'addons' => $this->addons,
             'labor_hours' => $preview['totals']['labor_hours'] ?? 0,
@@ -1383,6 +1536,8 @@ new class extends Component
         $this->serviceCategoryId = null;
         $this->showNewCategoryForm = false;
         $this->newCategoryName = '';
+        $this->editingTier = null;
+        $this->useTierPricing = false;
     }
 }; ?>
 
@@ -1608,6 +1763,23 @@ new class extends Component
                                     {{ __('Add') }}
                                 </flux:button>
                             </div>
+                            @if ($useTierPricing)
+                                <div class="flex gap-1 mb-3 px-3 pt-3">
+                                    <button wire:click="switchTier(null)" type="button"
+                                        class="{{ $editingTier === null ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700' : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700' }} px-3 py-1 text-xs font-semibold rounded-full border transition-colors">
+                                        {{ __('All Tiers') }}
+                                    </button>
+                                    @foreach (['good' => 'Good', 'better' => 'Better', 'best' => 'Best'] as $tier => $label)
+                                        <button wire:click="switchTier('{{ $tier }}')" type="button"
+                                            class="{{ $editingTier === $tier ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300 dark:border-blue-700' : 'bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700' }} px-3 py-1 text-xs font-semibold rounded-full border transition-colors">
+                                            {{ __($label) }}
+                                            @if (!empty($surfaces) && isset($surfaces[0]['tier_overrides'][$tier]))
+                                                <span class="ml-1 w-1.5 h-1.5 rounded-full bg-blue-500 inline-block"></span>
+                                            @endif
+                                        </button>
+                                    @endforeach
+                                </div>
+                            @endif
                             <div class="p-3">
                                 @if (count($surfaces) === 0)
                                     <div class="text-center py-6 text-zinc-500 dark:text-zinc-400">

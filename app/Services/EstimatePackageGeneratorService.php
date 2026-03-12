@@ -188,18 +188,24 @@ class EstimatePackageGeneratorService
     {
         $areas = $estimate->areas()->with('surfaces')->orderBy('sort_order')->get();
 
+        // Determine paint tier for area visibility filtering
+        $paintTier = $package->getPaintTier();
+
         $sortOrder = 0;
         foreach ($areas as $area) {
+            // Check area-level visibility for this package tier
+            $areaInTier = ($paintTier === null) || $area->isIncludedInTier($paintTier);
+
             if ($area->is_fixed_price) {
                 // Fixed-price areas are added as whole-area items (no surfaces)
-                EstimatePackageItem::withoutEvents(function () use ($package, $area, &$sortOrder) {
+                EstimatePackageItem::withoutEvents(function () use ($package, $area, &$sortOrder, $areaInTier) {
                     EstimatePackageItem::create([
                         'package_id' => $package->id,
                         'itemable_type' => EstimateArea::class,
                         'itemable_id' => $area->id,
                         'quantity' => 1,
                         'price_override' => null,
-                        'is_included' => true,
+                        'is_included' => $areaInTier,
                         'customer_approved' => true,
                         'customer_approved_at' => now(),
                         'sort_order' => $sortOrder++,
@@ -211,14 +217,14 @@ class EstimatePackageGeneratorService
 
             foreach ($area->surfaces()->orderBy('sort_order')->get() as $surface) {
                 // Disable auto-calculation during creation to avoid issues
-                EstimatePackageItem::withoutEvents(function () use ($package, $surface, &$sortOrder) {
+                EstimatePackageItem::withoutEvents(function () use ($package, $surface, &$sortOrder, $areaInTier) {
                     EstimatePackageItem::create([
                         'package_id' => $package->id,
                         'itemable_type' => EstimateAreaSurface::class,
                         'itemable_id' => $surface->id,
                         'quantity' => 1,
                         'price_override' => null, // Use surface's calculated price
-                        'is_included' => $surface->is_included, // Respect surface's inclusion status
+                        'is_included' => $surface->is_included && $areaInTier,
                         'customer_approved' => true, // Painting work is always approved
                         'customer_approved_at' => now(),
                         'sort_order' => $sortOrder++,
@@ -383,6 +389,7 @@ class EstimatePackageGeneratorService
 
         foreach ($packages as $package) {
             $needsRecalc = false;
+            $paintTier = $package->getPaintTier();
 
             foreach ($package->items as $item) {
                 $key = $this->buildSnapshotKey($package, $item);
@@ -393,7 +400,23 @@ class EstimatePackageGeneratorService
                 $saved = $snapshot[$key];
                 $updates = [];
 
-                if ((bool) $item->is_included !== $saved['is_included']) {
+                // Don't restore is_included if the area is excluded from this tier
+                // (area-level package_tiers takes precedence over snapshot)
+                $areaExcluded = false;
+                if ($paintTier !== null) {
+                    $itemable = $item->itemable;
+                    $area = null;
+                    if ($itemable instanceof EstimateArea) {
+                        $area = $itemable;
+                    } elseif ($itemable instanceof EstimateAreaSurface) {
+                        $area = $itemable->area;
+                    }
+                    if ($area && ! $area->isIncludedInTier($paintTier)) {
+                        $areaExcluded = true;
+                    }
+                }
+
+                if (! $areaExcluded && (bool) $item->is_included !== $saved['is_included']) {
                     $updates['is_included'] = $saved['is_included'];
                 }
 

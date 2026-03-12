@@ -621,6 +621,10 @@ class Estimate extends Model
     {
         $total = 0.0;
         foreach ($this->areas as $area) {
+            // Skip areas not included in this tier
+            if (! $area->isIncludedInTier($tier)) {
+                continue;
+            }
             $total += $area->getCustomerPrice($tier);
         }
 

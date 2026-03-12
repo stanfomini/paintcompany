@@ -45,6 +45,7 @@ class EstimateAreaSurface extends Model
         'paint_product_id_best',
         'sale_price',
         'crew_price',
+        'tier_overrides',
     ];
 
     protected function casts(): array
@@ -69,6 +70,7 @@ class EstimateAreaSurface extends Model
             'material_cost_best' => 'decimal:2',
             'sale_price' => 'decimal:2',
             'crew_price' => 'decimal:2',
+            'tier_overrides' => 'array',
         ];
     }
 
@@ -431,7 +433,81 @@ class EstimateAreaSurface extends Model
     }
 
     // =========================================================================
-    // TIER PRICING METHODS
+    // PER-TIER CONFIGURATION METHODS
+    // =========================================================================
+
+    /**
+     * Get the overridden settings for a specific tier.
+     * Returns an empty array if no overrides exist (use base fields).
+     *
+     * @return array<string, mixed>
+     */
+    public function getSettingsForTier(?string $tier): array
+    {
+        if ($tier === null || $this->tier_overrides === null) {
+            return [];
+        }
+
+        return $this->tier_overrides[$tier] ?? [];
+    }
+
+    /**
+     * Check if this surface has per-tier configuration overrides.
+     */
+    public function hasTierOverrides(): bool
+    {
+        return $this->tier_overrides !== null && ! empty($this->tier_overrides);
+    }
+
+    /**
+     * Get the labor hours for a specific tier.
+     * Falls back to base labor_hours if no tier override exists.
+     */
+    public function getLaborHoursForTier(?string $tier): float
+    {
+        if ($tier === null || $this->tier_overrides === null) {
+            return (float) $this->labor_hours;
+        }
+
+        return (float) ($this->tier_overrides[$tier]['labor_hours'] ?? $this->labor_hours);
+    }
+
+    /**
+     * Get the labor cost for a specific tier.
+     * Falls back to base labor_cost if no tier override exists.
+     */
+    public function getLaborCostForTier(?string $tier): float
+    {
+        if ($tier === null || $this->tier_overrides === null) {
+            return (float) $this->labor_cost;
+        }
+
+        return (float) ($this->tier_overrides[$tier]['labor_cost'] ?? $this->labor_cost);
+    }
+
+    /**
+     * Get the full COGS for a specific tier, factoring in tier-specific labor and material.
+     */
+    public function getFullCOGSForTier(?string $tier): float
+    {
+        $settings = CompanySetting::getInstance();
+        $scopeType = $this->area?->scope_type ?? 'interior';
+
+        $laborHours = $this->getLaborHoursForTier($tier);
+        $laborCost = $this->getLaborCostForTier($tier);
+        $materialCost = $this->getMaterialCostForTier($tier);
+
+        $cleanupHours = $settings->calculateCleanupHours($laborHours, $scopeType);
+        $cleanupCost = $cleanupHours * $settings->getEffectiveHourlyRateForScope($scopeType);
+        $sundriesCost = $settings->calculateSundriesCost($laborHours, $scopeType);
+
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
+
+        return $cogsResult['cogs'];
+    }
+
+    // =========================================================================
+    // TIER PRICING METHODS (paint product per tier)
     // =========================================================================
 
     /**

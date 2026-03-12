@@ -299,6 +299,7 @@ new class extends Component
                         'material_cost' => (float) ($area->estimated_material_cost ?? 0),
                         'base_total' => (float) $area->fixed_price_amount,
                         'with_margins' => (float) $area->fixed_price_amount,
+                        'package_tiers' => $area->package_tiers,
                         'sizes' => null,
                         'selected_size' => null,
                         'surface_ratios' => null,
@@ -379,6 +380,7 @@ new class extends Component
                         'direct_ceiling_sqft' => $area->direct_ceiling_sqft,
                         'surfaces' => $surfaces,
                         'addons' => $addons,
+                        'package_tiers' => $area->package_tiers,
                     ],
                     ...$this->restoreTierDataFromArea($area),
                 ];
@@ -485,6 +487,7 @@ new class extends Component
                     'direct_ceiling_sqft' => $area->direct_ceiling_sqft,
                     'surfaces' => $surfaces,
                     'addons' => $addons,
+                    'package_tiers' => $area->package_tiers,
                 ];
 
                 // Restore cached tier prices from previous save
@@ -580,6 +583,7 @@ new class extends Component
                     'direct_ceiling_sqft' => $area->direct_ceiling_sqft,
                     'surfaces' => $surfaces,
                     'addons' => $addons,
+                    'package_tiers' => $area->package_tiers,
                 ],
                 ...$this->restoreTierDataFromArea($area),
             ];
@@ -777,6 +781,7 @@ new class extends Component
                 'labor_hours' => (float) ($surface->labor_hours ?? 0),
                 'labor_cost' => (float) ($surface->labor_cost ?? 0),
                 'material_cost' => (float) ($surface->material_cost ?? 0),
+                'tier_overrides' => $surface->tier_overrides,
             ];
 
             if ($surface->is_included) {
@@ -1045,6 +1050,11 @@ new class extends Component
         }
 
         $templateData = $this->selectedTemplates[$index];
+
+        // Fixed-price and custom area items don't use template-based recalculation
+        if (! empty($templateData['is_fixed_price']) || empty($templateData['template_id'])) {
+            return;
+        }
 
         // Pass current substrate and paint product overrides
         $options = [
@@ -1365,6 +1375,11 @@ new class extends Component
 
         // Recalculate selectedTemplates
         foreach ($this->selectedTemplates as $index => $templateData) {
+            // Fixed-price items don't use margin-based pricing
+            if (! empty($templateData['is_fixed_price'])) {
+                continue;
+            }
+
             $cogs = $templateData['base_total'] ?? 0;
             if ($cogs <= 0) {
                 continue;
@@ -1446,6 +1461,7 @@ new class extends Component
             paintByCategory: $this->paintByCategory,
             marginDiscountPercent: $this->marginDiscountPercent ?? 0,
             hourlyRateOverride: $this->hourlyRateOverride,
+            useTierPricing: $this->useTierPricing,
         )->to(ref: 'area-builder');
     }
 
@@ -1461,15 +1477,15 @@ new class extends Component
         $templateData = $this->selectedTemplates[$index];
 
         // If we have saved area_data from a previous edit, use that
-        if (! empty($templateData['area_data'])) {
+        if (! empty($templateData['area_data']) && isset($templateData['area_data']['width'])) {
             $areaData = [
                 'name' => $templateData['name'],
                 'scope_type' => $templateData['scope_type'],
                 'source_template_id' => $templateData['template_id'],
                 'default_coats' => $templateData['coats'] ?? 2,
-                'length' => $templateData['area_data']['length'],
+                'length' => $templateData['area_data']['length'] ?? null,
                 'width' => $templateData['area_data']['width'],
-                'height' => $templateData['area_data']['height'],
+                'height' => $templateData['area_data']['height'] ?? 0,
                 'measurement_type' => $templateData['area_data']['measurement_type'] ?? 'dimensions',
                 'wall_count' => $templateData['area_data']['wall_count'] ?? 4,
                 'direct_sqft' => $templateData['area_data']['direct_sqft'] ?? null,
@@ -1478,6 +1494,7 @@ new class extends Component
                 'service_category_id' => $templateData['service_category_id'] ?? null,
                 'surfaces' => $templateData['area_data']['surfaces'] ?? [],
                 'addons' => $templateData['area_data']['addons'] ?? [],
+                'package_tiers' => $templateData['area_data']['package_tiers'] ?? null,
             ];
             $this->dispatch(
                 'open-area-builder-edit',
@@ -1488,6 +1505,7 @@ new class extends Component
                 paintByCategory: $this->paintByCategory,
                 marginDiscountPercent: $this->marginDiscountPercent ?? 0,
                 hourlyRateOverride: $this->hourlyRateOverride,
+                useTierPricing: $this->useTierPricing,
             )->to(ref: 'area-builder');
         } elseif ($templateData['template_id']) {
             // Open AreaBuilder with the original template, passing index for update
@@ -1500,6 +1518,7 @@ new class extends Component
                 paintByCategory: $this->paintByCategory,
                 marginDiscountPercent: $this->marginDiscountPercent ?? 0,
                 hourlyRateOverride: $this->hourlyRateOverride,
+                useTierPricing: $this->useTierPricing,
             )->to(ref: 'area-builder');
         }
     }
@@ -1546,6 +1565,7 @@ new class extends Component
                 'direct_ceiling_sqft' => $areaData['direct_ceiling_sqft'] ?? null,
                 'surfaces' => $areaData['surfaces'],
                 'addons' => $areaData['addons'],
+                'package_tiers' => $areaData['package_tiers'] ?? null,
             ],
             'sizes' => null,
             'selected_size' => null,
@@ -1565,6 +1585,46 @@ new class extends Component
         $this->computeTierPricesForTemplate($targetIndex);
 
         $this->dispatch('template-added');
+        $this->dispatchLiveTierTotals();
+    }
+
+    /**
+     * Toggle a tier for an area card's visibility.
+     * Controls which Good/Better/Best packages include this area.
+     */
+    public function toggleAreaTier(int $index, string $tier): void
+    {
+        if (! isset($this->selectedTemplates[$index])) {
+            return;
+        }
+
+        $isFixedPrice = ! empty($this->selectedTemplates[$index]['is_fixed_price']);
+
+        $currentTiers = $isFixedPrice
+            ? ($this->selectedTemplates[$index]['package_tiers'] ?? ['good', 'better', 'best'])
+            : ($this->selectedTemplates[$index]['area_data']['package_tiers'] ?? ['good', 'better', 'best']);
+
+        if (in_array($tier, $currentTiers)) {
+            $currentTiers = array_values(array_diff($currentTiers, [$tier]));
+        } else {
+            $currentTiers[] = $tier;
+            sort($currentTiers);
+        }
+
+        // Must have at least one tier
+        if (empty($currentTiers)) {
+            $currentTiers = [$tier];
+        }
+
+        $result = count($currentTiers) === 3 ? null : $currentTiers;
+
+        if ($isFixedPrice) {
+            $this->selectedTemplates[$index]['package_tiers'] = $result;
+        } else {
+            $this->selectedTemplates[$index]['area_data']['package_tiers'] = $result;
+        }
+
+        $this->computeTierPricesForTemplate($index);
         $this->dispatchLiveTierTotals();
     }
 
@@ -1598,8 +1658,8 @@ new class extends Component
         } else {
             // Standard dimensions mode (L x W x H)
             $length = $areaData['length'] ?? null;
-            $width = $areaData['width'];
-            $height = $areaData['height'];
+            $width = $areaData['width'] ?? 0;
+            $height = $areaData['height'] ?? 0;
             $wallCount = max(1, min(4, $areaData['wall_count'] ?? 4));
             $wallRatio = $wallCount / 4;
 
@@ -1836,8 +1896,41 @@ new class extends Component
                 );
             }
 
+            // Check if any surface has tier_overrides for this tier
+            $tierLaborCost = (float) ($templateData['labor_cost'] ?? 0);
+            $tierLaborHours = (float) ($templateData['labor_hours'] ?? 0);
+            $hasTierLabor = false;
+            foreach ($areaData['surfaces'] as $surface) {
+                if (isset($surface['tier_overrides'][$tier]['labor_hours'])) {
+                    $hasTierLabor = true;
+                    break;
+                }
+            }
+            if ($hasTierLabor) {
+                $tierLaborCost = 0.0;
+                $tierLaborHours = 0.0;
+                $hourlyWage = $this->getEffectiveRateForScope($scopeType);
+                foreach ($areaData['surfaces'] as $surface) {
+                    if (! ($surface['is_required'] ?? false) && ! ($surface['is_default_enabled'] ?? true)) {
+                        continue;
+                    }
+                    $sLaborHours = (float) ($surface['tier_overrides'][$tier]['labor_hours'] ?? $surface['labor_hours'] ?? 0);
+                    $tierLaborHours += $sLaborHours;
+                    $tierLaborCost += (float) ($surface['tier_overrides'][$tier]['labor_cost'] ?? ($sLaborHours * $hourlyWage));
+                }
+            }
+
+            $tierCleanupCost = (float) ($templateData['cleanup_cost'] ?? 0);
+            $tierSundriesCost = (float) ($templateData['sundries_cost'] ?? 0);
+            if ($hasTierLabor) {
+                $hourlyWage = $this->getEffectiveRateForScope($scopeType);
+                $tierCleanupHours = $settings->calculateCleanupHours($tierLaborHours, $scopeType);
+                $tierCleanupCost = $tierCleanupHours * $hourlyWage;
+                $tierSundriesCost = $settings->calculateSundriesCost($tierLaborHours, $scopeType);
+            }
+
             $tierCogsResult = $settings->calculateCOGS(
-                $laborCost, $cleanupCost, $sundriesCost,
+                $tierLaborCost, $tierCleanupCost, $tierSundriesCost,
                 $tierMaterialCost + $addonCost
             );
             $tierCogsVal = $tierCogsResult['cogs'];
@@ -1869,17 +1962,28 @@ new class extends Component
         $totals = ['good' => 0.0, 'better' => 0.0, 'best' => 0.0];
 
         foreach ($this->selectedTemplates as $templateData) {
+            // Determine which tiers this area belongs to
+            $areaTiers = ! empty($templateData['is_fixed_price'])
+                ? ($templateData['package_tiers'] ?? null)
+                : ($templateData['area_data']['package_tiers'] ?? null);
+
             if (isset($templateData['tier_prices'])) {
                 // Use pre-computed tier prices (from recalculateSelectedTemplatePrice)
                 foreach (['good', 'better', 'best'] as $tier) {
+                    if ($areaTiers !== null && ! in_array($tier, $areaTiers)) {
+                        continue;
+                    }
                     $totals[$tier] += (float) ($templateData['tier_prices'][$tier] ?? 0);
                 }
             } else {
                 // No tier prices computed — use card price for all tiers
                 $price = (float) ($templateData['price'] ?? 0);
-                $totals['good'] += $price;
-                $totals['better'] += $price;
-                $totals['best'] += $price;
+                foreach (['good', 'better', 'best'] as $tier) {
+                    if ($areaTiers !== null && ! in_array($tier, $areaTiers)) {
+                        continue;
+                    }
+                    $totals[$tier] += $price;
+                }
             }
         }
 
@@ -1920,9 +2024,14 @@ new class extends Component
     protected function recalculateAllPrices(): void
     {
         foreach ($this->selectedTemplates as $index => $templateData) {
+            // Fixed-price items don't need recalculation
+            if (! empty($templateData['is_fixed_price'])) {
+                continue;
+            }
+
             if (! empty($templateData['area_data'])) {
                 $this->recalculateSelectedTemplatePrice($index);
-            } else {
+            } elseif (! empty($templateData['template_id'])) {
                 $this->recalculatePrice($index);
             }
         }
@@ -2400,6 +2509,7 @@ new class extends Component
                 'fixed_price_amount' => $unitPrice,
                 'estimated_labor_hours' => $templateData['labor_hours'] ?? null,
                 'estimated_material_cost' => $templateData['material_cost'] ?? null,
+                'package_tiers' => $templateData['package_tiers'] ?? null,
                 'sort_order' => $sortOrder,
             ]);
 
@@ -2442,6 +2552,7 @@ new class extends Component
             'cached_cogs' => $templateData['base_total'] ?? null,
             'cached_customer_price' => $templateData['price'] ?? null,
             'cached_tier_prices' => $this->buildCachedTierPrices($templateData),
+            'package_tiers' => $areaData['package_tiers'] ?? null,
             'sort_order' => $sortOrder,
         ]);
 
@@ -2576,6 +2687,7 @@ new class extends Component
                 'is_custom' => $isCustom,
                 'sale_price' => $isCustom && ($surfaceData['sale_price'] ?? '') !== '' ? (float) $surfaceData['sale_price'] : null,
                 'crew_price' => $isCustom && ($surfaceData['crew_price'] ?? '') !== '' ? (float) $surfaceData['crew_price'] : null,
+                'tier_overrides' => ! empty($surfaceData['tier_overrides']) ? $surfaceData['tier_overrides'] : null,
                 'sort_order' => $surfaceSortOrder,
             ]);
         }
@@ -3047,6 +3159,17 @@ new class extends Component
                                                     </div>
                                                 </div>
                                                 <div class="flex items-center gap-3">
+                                                    @if ($useTierPricing)
+                                                        <div class="flex gap-0.5">
+                                                            @foreach (['good' => 'G', 'better' => 'B', 'best' => 'B+'] as $tier => $label)
+                                                                @php $inTier = ($templateData['package_tiers'] ?? null) === null || in_array($tier, $templateData['package_tiers'] ?? []); @endphp
+                                                                <button wire:click="toggleAreaTier({{ $index }}, '{{ $tier }}')" type="button"
+                                                                    class="{{ $inTier ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500' }} w-7 h-6 text-[10px] font-bold rounded border transition-colors flex items-center justify-center">
+                                                                    {{ $label }}
+                                                                </button>
+                                                            @endforeach
+                                                        </div>
+                                                    @endif
                                                     {{-- Quantity Spinner --}}
                                                     <div class="flex items-center gap-1">
                                                         <button
@@ -3104,10 +3227,21 @@ new class extends Component
                                                             {{ __('Service') }}
                                                         </span>
                                                     @endif
+                                                    @if ($useTierPricing)
+                                                        <div class="flex gap-0.5 ml-1">
+                                                            @foreach (['good' => 'G', 'better' => 'B', 'best' => 'B+'] as $tier => $label)
+                                                                @php $inTier = ($templateData['area_data']['package_tiers'] ?? null) === null || in_array($tier, $templateData['area_data']['package_tiers'] ?? []); @endphp
+                                                                <button wire:click="toggleAreaTier({{ $index }}, '{{ $tier }}')" type="button"
+                                                                    class="{{ $inTier ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500' }} w-7 h-6 text-[10px] font-bold rounded border transition-colors flex items-center justify-center">
+                                                                    {{ $label }}
+                                                                </button>
+                                                            @endforeach
+                                                        </div>
+                                                    @endif
                                                 </div>
                                                 <div class="flex flex-wrap items-center gap-x-2 text-sm text-zinc-500 dark:text-zinc-400">
                                                     {{-- Dimension inputs if area_data exists --}}
-                                                    @if (!empty($templateData['area_data']))
+                                                    @if (!empty($templateData['area_data']) && isset($templateData['area_data']['width']))
                                                         @php
                                                             $areaData = $templateData['area_data'];
                                                             $hasLength = isset($areaData['length']) && $areaData['length'] > 0;
@@ -3136,7 +3270,7 @@ new class extends Component
                                                         <span class="text-xs text-zinc-400">× H:</span>
                                                         <input
                                                             type="number"
-                                                            value="{{ $areaData['height'] }}"
+                                                            value="{{ $areaData['height'] ?? 0 }}"
                                                             wire:change="updateAreaDimension({{ $index }}, 'height', $event.target.value)"
                                                             class="w-12 text-sm bg-white dark:bg-zinc-700 border border-zinc-300 dark:border-zinc-600 rounded px-1 py-0.5 text-center"
                                                             min="1"

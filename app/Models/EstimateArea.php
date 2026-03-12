@@ -66,6 +66,7 @@ class EstimateArea extends Model
         'direct_lnft',
         'direct_ceiling_sqft',
         'service_category_id',
+        'package_tiers',
     ];
 
     protected function casts(): array
@@ -96,6 +97,7 @@ class EstimateArea extends Model
             'direct_lnft' => 'decimal:2',
             'direct_ceiling_sqft' => 'decimal:2',
             'paint_tier_overrides' => 'array',
+            'package_tiers' => 'array',
         ];
     }
 
@@ -331,6 +333,23 @@ class EstimateArea extends Model
     }
 
     // =========================================================================
+    // PER-TIER VISIBILITY
+    // =========================================================================
+
+    /**
+     * Check if this area is included in a specific package tier.
+     * Returns true if package_tiers is null (all tiers) or if tier is in the list.
+     */
+    public function isIncludedInTier(string $tier): bool
+    {
+        if ($this->package_tiers === null) {
+            return true;
+        }
+
+        return in_array($tier, $this->package_tiers, true);
+    }
+
+    // =========================================================================
     // PRICING METHODS - CLEAR SEPARATION OF COGS vs CUSTOMER PRICE
     // =========================================================================
     // ARCHITECTURE: Areas calculate COGS from surfaces. Customer prices
@@ -407,18 +426,21 @@ class EstimateArea extends Model
             return (float) $this->fixed_price_amount;
         }
 
-        // Sum from surfaces - labor is the same, only material changes by tier
+        // Sum from surfaces - use tier-specific labor/material when overrides exist
         $surfaces = $this->surfaces()->where('is_included', true);
-        $laborHours = (float) $surfaces->sum('labor_hours');
-        $laborCost = (float) $surfaces->sum('labor_cost');
 
-        // Material cost: use tier-specific if available, otherwise standard
         if ($tier !== null) {
+            $laborHours = 0.0;
+            $laborCost = 0.0;
             $materialCost = 0.0;
             foreach ($surfaces->get() as $surface) {
+                $laborHours += $surface->getLaborHoursForTier($tier);
+                $laborCost += $surface->getLaborCostForTier($tier);
                 $materialCost += $surface->getMaterialCostForTier($tier);
             }
         } else {
+            $laborHours = (float) $surfaces->sum('labor_hours');
+            $laborCost = (float) $surfaces->sum('labor_cost');
             $materialCost = (float) $surfaces->sum('material_cost');
         }
 
@@ -555,13 +577,13 @@ class EstimateArea extends Model
         $totalLaborHours = 0.0;
 
         foreach ($surfaces as $surface) {
-            $totalLaborHours += (float) $surface->labor_hours;
+            $totalLaborHours += $surface->getLaborHoursForTier($tier);
 
             if ($surface->is_custom && $surface->sale_price !== null) {
                 $customSaleTotal += (float) $surface->sale_price;
             } else {
-                $nonCustomLaborHours += (float) $surface->labor_hours;
-                $nonCustomLaborCost += (float) $surface->labor_cost;
+                $nonCustomLaborHours += $surface->getLaborHoursForTier($tier);
+                $nonCustomLaborCost += $surface->getLaborCostForTier($tier);
                 $nonCustomMaterialCost += $surface->getMaterialCostForTier($tier);
             }
         }
@@ -618,7 +640,7 @@ class EstimateArea extends Model
             if ($tier !== null) {
                 $totalCogs = 0.0;
                 foreach ($surfaces as $surface) {
-                    $totalCogs += (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                    $totalCogs += $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
                 }
             } else {
                 $totalCogs = (float) $surfaces->sum('total');
@@ -637,7 +659,7 @@ class EstimateArea extends Model
                     $prices[$surface->id] = round($customerPrice - $allocated, 2);
                 } else {
                     if ($tier !== null) {
-                        $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                        $surfaceCogs = $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
                     } else {
                         $surfaceCogs = (float) $surface->total;
                     }
@@ -663,7 +685,7 @@ class EstimateArea extends Model
             } else {
                 $nonCustomSurfaces[] = $surface;
                 if ($tier !== null) {
-                    $nonCustomCogs += (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                    $nonCustomCogs += $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
                 } else {
                     $nonCustomCogs += (float) $surface->total;
                 }
@@ -682,7 +704,7 @@ class EstimateArea extends Model
                     $prices[$surface->id] = round($remainingPrice - $allocated, 2);
                 } else {
                     if ($tier !== null) {
-                        $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                        $surfaceCogs = $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
                     } else {
                         $surfaceCogs = (float) $surface->total;
                     }
@@ -715,12 +737,12 @@ class EstimateArea extends Model
 
         $allSurfaces = $this->surfaces()->where('is_included', true)->get();
 
-        // For tier pricing, calculate COGS using tier-specific material costs
+        // For tier pricing, calculate COGS using tier-specific labor and material costs
         if ($tier !== null) {
             $totalCogs = 0.0;
             $includedCogs = 0.0;
             foreach ($allSurfaces as $surface) {
-                $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                $surfaceCogs = $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
                 $totalCogs += $surfaceCogs;
                 if (in_array($surface->id, $includedSurfaceIds)) {
                     $includedCogs += $surfaceCogs;
@@ -766,7 +788,7 @@ class EstimateArea extends Model
             $totalCogs = 0.0;
             $includedCogs = 0.0;
             foreach ($allSurfaces as $surface) {
-                $surfaceCogs = (float) $surface->labor_cost + $surface->getMaterialCostForTier($tier);
+                $surfaceCogs = $surface->getLaborCostForTier($tier) + $surface->getMaterialCostForTier($tier);
                 $totalCogs += $surfaceCogs;
                 if (in_array($surface->id, $includedSurfaceIds)) {
                     $includedCogs += $surfaceCogs;
