@@ -139,20 +139,36 @@ class TwilioWebhookController extends Controller
         $customer = Customer::where('user_id', $sender->id)->first();
 
         if ($customer) {
-            $internalUser = $customer->assignedTo
-                ?? User::where('type', 'internal')->where('is_active', true)->first();
+            // Check for active deal with existing chat thread first (context lives there)
+            $activeDeal = $customer->deals()
+                ->active()
+                ->whereHas('chatThread')
+                ->latest()
+                ->first();
 
-            if (! $internalUser) {
-                Log::error('Twilio webhook: no internal user to route customer SMS to', ['phone' => $phone]);
+            if ($activeDeal && $activeDeal->chatThread) {
+                $thread = $activeDeal->chatThread;
+                // Ensure customer is a participant
+                if (! $thread->hasParticipant($sender)) {
+                    $thread->addParticipant($sender);
+                }
+            } else {
+                // Fall back to direct thread with assigned contact
+                $internalUser = $customer->assignedTo
+                    ?? User::where('type', 'internal')->where('is_active', true)->first();
 
-                return;
+                if (! $internalUser) {
+                    Log::error('Twilio webhook: no internal user to route customer SMS to', ['phone' => $phone]);
+
+                    return;
+                }
+
+                $thread = $this->chatService->getOrCreateDirectThread(
+                    $sender,
+                    $internalUser,
+                    'SMS conversation',
+                );
             }
-
-            $thread = $this->chatService->getOrCreateDirectThread(
-                $sender,
-                $internalUser,
-                'SMS conversation',
-            );
         } else {
             // Known non-customer user (crew, agent, etc.) — create support thread
             $thread = $this->createSmsSupporThread($phone);
@@ -312,7 +328,13 @@ class TwilioWebhookController extends Controller
             ->merge(EmployeeProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
             ->toArray();
 
-        $allUserIds = collect(array_merge($userIds, $directUserIds, $profileUserIds))
+        // Search customers table (CRM phone field, may differ from profile phone)
+        $customerUserIds = Customer::where('phone', 'LIKE', $phoneLike)
+            ->whereNotNull('user_id')
+            ->pluck('user_id')
+            ->toArray();
+
+        $allUserIds = collect(array_merge($userIds, $directUserIds, $profileUserIds, $customerUserIds))
             ->unique()
             ->values();
 

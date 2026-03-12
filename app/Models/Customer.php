@@ -38,6 +38,23 @@ class Customer extends Model
                     ]);
                 }
             }
+
+        });
+
+        // Sync CRM phone → customer_profiles.phone so SMS lookups find the number
+        static::created(function (Customer $customer) {
+            if ($customer->phone && $customer->user_id) {
+                $profile = $customer->user?->customerProfile;
+                if ($profile && ! $profile->phone) {
+                    $profile->update(['phone' => $customer->phone]);
+                }
+            }
+        });
+
+        static::updated(function (Customer $customer) {
+            if ($customer->wasChanged('phone') && $customer->phone && $customer->user_id) {
+                $customer->user?->customerProfile?->update(['phone' => $customer->phone]);
+            }
         });
     }
 

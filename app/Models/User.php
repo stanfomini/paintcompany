@@ -121,6 +121,14 @@ class User extends Authenticatable
         return $this->hasOne(EmployeeProfile::class);
     }
 
+    /**
+     * Get the CRM customer record linked to this user.
+     */
+    public function customer(): HasOne
+    {
+        return $this->hasOne(Customer::class);
+    }
+
     public function emailAccount(): HasOne
     {
         return $this->hasOne(EmailAccount::class);
@@ -526,9 +534,9 @@ class User extends Authenticatable
      */
     public function routeNotificationForTwilio(): ?string
     {
-        // Check profile phone first, fall back to users.phone
+        // Check profile phone first, then CRM customer phone, fall back to users.phone
         $phone = match ($this->type) {
-            'customer' => $this->customerProfile?->phone,
+            'customer' => $this->customerProfile?->phone ?? $this->customer?->phone,
             'agent' => $this->agentProfile?->phone,
             'crew' => $this->crewProfile?->phone,
             'internal' => $this->employeeProfile?->phone,
