@@ -4,6 +4,7 @@ use App\Jobs\GenerateColorVisualizationJob;
 use App\Models\ColorVisualization;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\PaintBrand;
 use App\Models\PaintColor;
 use App\Models\User;
 use App\Services\ColorVisualizationService;
@@ -19,6 +20,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
     public $uploadedPhoto;
     public string $prompt = '';
     public string $colorSearch = '';
+    public ?int $selectedBrandId = null;
     public ?int $visualizationId = null;
     public bool $isGenerating = false;
     public bool $showLeadForm = false;
@@ -46,10 +48,16 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
             return collect();
         }
 
-        return PaintColor::query()
+        $query = PaintColor::query()
             ->with('brand')
             ->active()
-            ->search($this->colorSearch)
+            ->search($this->colorSearch);
+
+        if ($this->selectedBrandId) {
+            $query->where('paint_brand_id', $this->selectedBrandId);
+        }
+
+        return $query
             ->orderByRaw('CASE WHEN name LIKE ? THEN 0 WHEN name LIKE ? THEN 1 ELSE 2 END', [$this->colorSearch . '%', '%' . $this->colorSearch . '%'])
             ->limit(12)
             ->get();
@@ -61,10 +69,36 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
         $this->colorSearch = '';
     }
 
-    #[Computed]
-    public function popularColors()
+    public function selectBrand(int $brandId): void
     {
-        return PaintColor::getCachedPopularColors();
+        $this->selectedBrandId = $this->selectedBrandId === $brandId ? null : $brandId;
+        unset($this->interiorPopularColors, $this->exteriorPopularColors, $this->colorSearchResults);
+    }
+
+    #[Computed]
+    public function availableBrands()
+    {
+        return PaintBrand::active()->ordered()->get();
+    }
+
+    #[Computed]
+    public function interiorPopularColors()
+    {
+        if (! $this->selectedBrandId) {
+            return collect();
+        }
+
+        return PaintColor::getCachedPopularColors($this->selectedBrandId, 'interior');
+    }
+
+    #[Computed]
+    public function exteriorPopularColors()
+    {
+        if (! $this->selectedBrandId) {
+            return collect();
+        }
+
+        return PaintColor::getCachedPopularColors($this->selectedBrandId, 'exterior');
     }
 
     #[Computed]
@@ -358,7 +392,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                             wire:model.live.debounce.300ms="colorSearch"
                             x-on:focus="open = true"
                             x-on:input="open = true"
-                            placeholder="Search 12,000+ colors by name or code..."
+                            placeholder="{{ $selectedBrandId ? __('Search :brand colors...', ['brand' => $this->availableBrands->firstWhere('id', $selectedBrandId)?->code ?? '']) : __('Search 12,000+ colors by name or code...') }}"
                             icon="magnifying-glass"
                         />
                     </div>
@@ -393,10 +427,28 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                             @endforeach
                         </div>
                     @endif
+
+                    @if ($this->colorSearchResults->isEmpty() && strlen($colorSearch) >= 2)
+                        <div
+                            x-show="open"
+                            class="absolute z-50 mt-1 w-full bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 shadow-lg p-4 text-center"
+                        >
+                            <p class="text-sm text-zinc-500 dark:text-zinc-400">
+                                @if ($selectedBrandId)
+                                    {{ __('No colors found for ":query" in :brand', ['query' => $colorSearch, 'brand' => $this->availableBrands->firstWhere('id', $selectedBrandId)?->name ?? '']) }}
+                                @else
+                                    {{ __('No colors found for ":query"', ['query' => $colorSearch]) }}
+                                @endif
+                            </p>
+                        </div>
+                    @endif
                 </div>
 
                 {{-- Color description --}}
                 <div>
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                        {{ __('Tip: "Paint [surface] [color name]" — e.g. "Paint walls Agreeable Gray"') }}
+                    </p>
                     <flux:textarea wire:model="prompt" label="Describe the colors you want" rows="3"
                         placeholder="e.g., Paint the walls Benjamin Moore White Dove and the trim Sherwin-Williams Iron Ore" />
                     @error('prompt')
@@ -404,24 +456,90 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                     @enderror
                 </div>
 
-                {{-- Popular colors --}}
-                @if($this->popularColors->isNotEmpty())
+                {{-- Brand Selector --}}
                 <div>
-                    <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">Popular Colors <span class="font-normal text-zinc-400">(click to add)</span></p>
+                    <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Paint Brand') }}</p>
                     <div class="flex flex-wrap gap-2">
-                        @foreach($this->popularColors as $color)
-                            <button type="button"
-                                    wire:click="insertColorName({{ $color->id }})"
-                                    wire:key="color-{{ $color->id }}"
-                                    title="{{ $color->brand->name }} {{ $color->name }} ({{ $color->code }})"
-                                    class="group flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-xs transition hover:border-blue-300 hover:bg-blue-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-blue-600 dark:hover:bg-blue-950/30">
-                                <span class="h-3.5 w-3.5 rounded-full border border-zinc-300 dark:border-zinc-600"
-                                      style="background-color: {{ $color->hex_value }}"></span>
-                                <span class="text-zinc-600 group-hover:text-blue-700 dark:text-zinc-400 dark:group-hover:text-blue-300">{{ $color->name }}</span>
+                        @foreach ($this->availableBrands as $brand)
+                            <button
+                                type="button"
+                                wire:key="brand-{{ $brand->id }}"
+                                wire:click="selectBrand({{ $brand->id }})"
+                                class="px-4 py-2 rounded-lg text-sm font-medium transition-all
+                                    {{ $selectedBrandId === $brand->id
+                                        ? 'bg-blue-600 text-white shadow-md'
+                                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
+                            >
+                                {{ $brand->name }}
                             </button>
                         @endforeach
                     </div>
                 </div>
+
+                {{-- Popular Colors Carousels --}}
+                @if ($selectedBrandId)
+                    @foreach (['interior' => 'Interior Popular', 'exterior' => 'Exterior Popular'] as $useType => $label)
+                        @php $colors = $useType === 'interior' ? $this->interiorPopularColors : $this->exteriorPopularColors; @endphp
+                        @if ($colors->isNotEmpty())
+                            <div>
+                                <p class="mb-2 text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __($label) }} <span class="font-normal text-zinc-400">({{ __('click to add') }})</span></p>
+                                <div
+                                    x-data="{ scrollContainer: null }"
+                                    x-init="scrollContainer = $refs.pub_carousel_{{ $useType }}"
+                                    class="relative group"
+                                >
+                                    @if ($colors->count() > 2)
+                                    <button
+                                        type="button"
+                                        x-on:click="scrollContainer.scrollBy({ left: -280, behavior: 'smooth' })"
+                                        class="hidden sm:flex absolute -left-3 top-1/2 -translate-y-1/2 z-10 items-center justify-center size-8 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <flux:icon.chevron-left class="size-4" />
+                                    </button>
+                                    @endif
+
+                                    <div
+                                        x-ref="pub_carousel_{{ $useType }}"
+                                        class="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-1"
+                                        style="-ms-overflow-style: none; scrollbar-width: none;"
+                                    >
+                                        @foreach ($colors as $color)
+                                            <button
+                                                type="button"
+                                                wire:key="popular-{{ $useType }}-{{ $color->id }}"
+                                                wire:click="insertColorName({{ $color->id }})"
+                                                x-data="{ tapped: false }"
+                                                x-on:click="tapped = true; setTimeout(() => tapped = false, 600)"
+                                                class="snap-start shrink-0 w-32 rounded-lg border-2 overflow-hidden transition-all hover:shadow-md cursor-pointer"
+                                                :class="tapped ? 'border-green-500 shadow-lg' : 'border-zinc-200 dark:border-zinc-700'"
+                                                title="{{ $color->brand->name }} {{ $color->name }} ({{ $color->code }})"
+                                            >
+                                                <div class="h-20 w-full" style="background-color: {{ $color->hex_value }}"></div>
+                                                <div class="p-2 bg-white dark:bg-zinc-800">
+                                                    <div class="text-xs font-medium text-zinc-900 dark:text-zinc-100 truncate">{{ $color->name }}</div>
+                                                    <div class="text-[10px] text-zinc-500 dark:text-zinc-400">{{ $color->code }}</div>
+                                                </div>
+                                            </button>
+                                        @endforeach
+                                    </div>
+
+                                    @if ($colors->count() > 2)
+                                    <button
+                                        type="button"
+                                        x-on:click="scrollContainer.scrollBy({ left: 280, behavior: 'smooth' })"
+                                        class="hidden sm:flex absolute -right-3 top-1/2 -translate-y-1/2 z-10 items-center justify-center size-8 rounded-full bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 shadow-md opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <flux:icon.chevron-right class="size-4" />
+                                    </button>
+                                    @endif
+                                </div>
+                            </div>
+                        @endif
+                    @endforeach
+                @else
+                    <div class="text-center py-4 text-sm text-zinc-500 dark:text-zinc-400">
+                        {{ __('Select a brand to see popular colors') }}
+                    </div>
                 @endif
 
                 {{-- Submit --}}
