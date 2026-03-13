@@ -60,10 +60,19 @@ class TwilioService
         }
 
         try {
-            $message = $this->getClient()->messages->create($formatted, [
+            $options = [
                 'from' => config('services.twilio.from'),
                 'body' => $body,
-            ]);
+            ];
+
+            // Add delivery status callback so we catch carrier-level failures (e.g., 30034)
+            try {
+                $options['statusCallback'] = route('webhooks.twilio.status');
+            } catch (\Throwable) {
+                // Route may not exist in test environments
+            }
+
+            $message = $this->getClient()->messages->create($formatted, $options);
 
             // Increment rate counters
             Cache::put($rateLimitKey, $currentCount + 1, now()->addHour());

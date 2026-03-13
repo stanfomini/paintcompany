@@ -464,3 +464,187 @@ describe('Unread Badge', function () {
             ->assertSee('2');
     });
 });
+
+describe('SMS Contact Merging', function () {
+    it('excludes SMS threads from getSmsContacts when customer has portal user', function () {
+        $viewer = User::factory()->internal()->create();
+        $viewer->assignRole('admin');
+
+        $customerUser = User::factory()->customer()->create();
+        $customer = \App\Models\Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        $smsThread = ChatThread::factory()->smsInbound()->forCustomer($customer)->create([
+            'subject' => 'SMS from +15551234567',
+            'last_message_at' => now(),
+        ]);
+        $smsThread->addParticipant($viewer);
+
+        $service = app(CommunicationsContactService::class);
+        $smsContacts = $service->getSmsContacts($viewer);
+
+        expect($smsContacts)->toHaveCount(0);
+    });
+
+    it('shows customer name on SMS contacts when customer has no portal user', function () {
+        $viewer = User::factory()->internal()->create();
+        $viewer->assignRole('admin');
+
+        $customer = \App\Models\Customer::factory()->create([
+            'user_id' => null,
+            'first_name' => 'Jane',
+            'last_name' => 'Doe',
+        ]);
+
+        $smsThread = ChatThread::factory()->smsInbound()->forCustomer($customer)->create([
+            'subject' => 'SMS from +15559876543',
+            'last_message_at' => now(),
+        ]);
+        $smsThread->addParticipant($viewer);
+
+        $service = app(CommunicationsContactService::class);
+        $smsContacts = $service->getSmsContacts($viewer);
+
+        expect($smsContacts)->toHaveCount(1);
+        expect($smsContacts->first()['name'])->toBe('Jane Doe');
+        expect($smsContacts->first()['initials'])->toBe('JD');
+    });
+
+    it('shows phone number for unlinked SMS threads', function () {
+        $viewer = User::factory()->internal()->create();
+        $viewer->assignRole('admin');
+
+        $smsThread = ChatThread::factory()->smsInbound()->create([
+            'customer_id' => null,
+            'subject' => 'SMS from +15550001111',
+            'last_message_at' => now(),
+        ]);
+        $smsThread->addParticipant($viewer);
+
+        $service = app(CommunicationsContactService::class);
+        $smsContacts = $service->getSmsContacts($viewer);
+
+        expect($smsContacts)->toHaveCount(1);
+        expect($smsContacts->first()['name'])->toBe('+15550001111');
+        expect($smsContacts->first()['initials'])->toBe('SM');
+    });
+
+    it('includes SMS thread unreads in the user contact unread count', function () {
+        $viewer = User::factory()->internal()->create();
+        $customerUser = User::factory()->customer()->create();
+        $customer = \App\Models\Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        // Direct chat thread so customer shows in contacts
+        ChatThread::factory()->direct()->betweenUsers($viewer, $customerUser)->create([
+            'last_message_at' => now()->subHour(),
+        ]);
+
+        // SMS thread linked to same customer
+        $smsThread = ChatThread::factory()->smsInbound()->forCustomer($customer)->create([
+            'subject' => 'SMS from +15551234567',
+            'last_message_at' => now(),
+        ]);
+        $smsThread->addParticipant($viewer);
+
+        // Add unread message to SMS thread
+        $smsThread->messages()->create([
+            'user_id' => null,
+            'content' => 'Hi via SMS',
+            'type' => 'text',
+        ]);
+
+        $service = app(CommunicationsContactService::class);
+        $contacts = $service->getContacts($viewer);
+
+        $contact = $contacts->firstWhere('id', $customerUser->id);
+        expect($contact)->not->toBeNull();
+        expect($contact['unread_count'])->toBe(1);
+    });
+
+    it('avoids duplicate contacts when customer has both chat and SMS threads', function () {
+        $viewer = User::factory()->internal()->create();
+        $customerUser = User::factory()->customer()->create();
+        $customer = \App\Models\Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        // Direct chat thread
+        ChatThread::factory()->direct()->betweenUsers($viewer, $customerUser)->create([
+            'last_message_at' => now()->subHour(),
+        ]);
+
+        // SMS thread linked to same customer
+        $smsThread = ChatThread::factory()->smsInbound()->forCustomer($customer)->create([
+            'subject' => 'SMS from +15551234567',
+            'last_message_at' => now(),
+        ]);
+        $smsThread->addParticipant($viewer);
+
+        $service = app(CommunicationsContactService::class);
+
+        // User contacts: customer should appear once
+        $contacts = $service->getContacts($viewer);
+        $customerContacts = $contacts->where('id', $customerUser->id);
+        expect($customerContacts)->toHaveCount(1);
+
+        // SMS contacts: should NOT include this thread (customer has portal)
+        $smsContacts = $service->getSmsContacts($viewer);
+        expect($smsContacts)->toHaveCount(0);
+    });
+});
+
+describe('Messenger Contact Customer Name', function () {
+    it('shows customer name on messenger contacts when linked to customer without portal', function () {
+        $viewer = User::factory()->internal()->create();
+
+        $customer = \App\Models\Customer::factory()->create([
+            'user_id' => null,
+            'first_name' => 'Bob',
+            'last_name' => 'Builder',
+        ]);
+
+        $thread = ChatThread::factory()->facebook()->forCustomer($customer)->create([
+            'subject' => 'Facebook User',
+            'last_message_at' => now(),
+        ]);
+        $thread->addParticipant($viewer);
+
+        $service = app(CommunicationsContactService::class);
+        $contacts = $service->getMessengerContacts($viewer);
+
+        expect($contacts)->toHaveCount(1);
+        expect($contacts->first()['name'])->toBe('Bob Builder');
+        expect($contacts->first()['initials'])->toBe('BB');
+    });
+});
+
+describe('Tab Unread Counts with SMS', function () {
+    it('includes sms key in getTabUnreadCounts', function () {
+        $viewer = User::factory()->internal()->create();
+        $contact = User::factory()->customer()->create();
+        $customer = \App\Models\Customer::factory()->create(['user_id' => $contact->id]);
+
+        // Direct thread so they share a connection
+        ChatThread::factory()->direct()->betweenUsers($viewer, $contact)->create([
+            'last_message_at' => now(),
+        ]);
+
+        // SMS thread linked via customer
+        $smsThread = ChatThread::factory()->smsInbound()->forCustomer($customer)->create([
+            'subject' => 'SMS from +15551234567',
+            'last_message_at' => now(),
+        ]);
+        $smsThread->addParticipant($viewer);
+
+        // Add unread message to SMS thread
+        $smsThread->messages()->create([
+            'user_id' => null,
+            'content' => 'SMS unread message',
+            'type' => 'text',
+        ]);
+
+        $service = app(CommunicationsContactService::class);
+        $counts = $service->getTabUnreadCounts($viewer, $contact);
+
+        expect($counts)->toHaveKey('sms');
+        expect($counts['sms'])->toBe(1);
+        expect($counts['all'])->toBeGreaterThanOrEqual(1);
+    });
+});

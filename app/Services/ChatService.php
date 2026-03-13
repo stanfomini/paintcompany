@@ -296,6 +296,12 @@ class ChatService
                 $this->syncToFacebookMessenger($thread, $sender, $message, $content);
             }
 
+            // If this is an SMS inbound thread and an internal user is replying,
+            // send the reply back to the originating phone via Twilio
+            if ($sender->isInternal() && $thread->source === ChatThread::SOURCE_SMS_INBOUND) {
+                $this->dispatchSmsThreadReply($thread, $message);
+            }
+
             return $message;
         });
     }

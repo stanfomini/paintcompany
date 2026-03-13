@@ -751,4 +751,9 @@ Route::post('/webhooks/twilio/sms', [\App\Http\Controllers\TwilioWebhookControll
     ->name('webhooks.twilio.sms')
     ->middleware('throttle:120,1');
 
+// Twilio delivery status callback (no auth - verified by Twilio signature)
+Route::post('/webhooks/twilio/status', [\App\Http\Controllers\TwilioWebhookController::class, 'deliveryStatus'])
+    ->name('webhooks.twilio.status')
+    ->middleware('throttle:120,1');
+
 require __DIR__.'/settings.php';

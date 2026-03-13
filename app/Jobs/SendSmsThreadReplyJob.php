@@ -111,7 +111,7 @@ class SendSmsThreadReplyJob implements ShouldQueue
                 'message_id' => $this->message->id,
             ]);
         } else {
-            Log::warning('SendSmsThreadReplyJob: failed to send', [
+            Log::error('SendSmsThreadReplyJob: failed to send', [
                 'thread_id' => $this->thread->id,
                 'phone' => $phone,
                 'error' => $result['error'] ?? 'unknown',

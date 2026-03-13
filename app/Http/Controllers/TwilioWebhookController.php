@@ -315,6 +315,36 @@ class TwilioWebhookController extends Controller
         return $thread;
     }
 
+    /**
+     * Handle Twilio delivery status callbacks.
+     * Logs carrier-level failures (e.g., error 30034 = message blocked by carrier).
+     */
+    public function deliveryStatus(Request $request): Response
+    {
+        if (! $this->twilio->validateWebhookSignature($request)) {
+            Log::error('Twilio status webhook: invalid signature');
+
+            return response('Forbidden', 403);
+        }
+
+        $status = $request->input('MessageStatus', '');
+        $errorCode = $request->input('ErrorCode');
+        $sid = $request->input('MessageSid', '');
+        $to = $request->input('To', '');
+
+        if (in_array($status, ['undelivered', 'failed'])) {
+            Log::error('Twilio SMS delivery failure', [
+                'sid' => $sid,
+                'to' => $to,
+                'status' => $status,
+                'error_code' => $errorCode,
+                'error_message' => $request->input('ErrorMessage', ''),
+            ]);
+        }
+
+        return response('OK', 200);
+    }
+
     private function handleOptOut(string $phone): void
     {
         $formattedPhone = $this->twilio->formatE164($phone);

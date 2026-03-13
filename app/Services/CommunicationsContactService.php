@@ -86,11 +86,44 @@ class CommunicationsContactService
                 }
             }
 
-            // Step 4: Batch-load email data for all contacts upfront to avoid N+1
+            // Step 3b: Merge SMS/messenger threads linked via customer_id into user contacts
             $customerUserIds = $users->where('type', 'customer')->pluck('id');
             $customersMap = $customerUserIds->isNotEmpty()
                 ? Customer::whereIn('user_id', $customerUserIds)->get()->keyBy('user_id')
                 : collect();
+
+            if ($customersMap->isNotEmpty()) {
+                $customerIdToUserId = $customersMap->mapWithKeys(fn ($c, $userId) => [$c->id => $userId]);
+                $linkedCustomerIds = $customerIdToUserId->keys();
+
+                $linkedChannelThreads = ChatThread::query()
+                    ->whereIn('customer_id', $linkedCustomerIds)
+                    ->where(function ($q) {
+                        $q->where('source', ChatThread::SOURCE_SMS_INBOUND)
+                            ->orWhere('channel', ChatThread::CHANNEL_FACEBOOK);
+                    })
+                    ->forUser($viewer)
+                    ->with(['latestMessage.user'])
+                    ->get();
+
+                foreach ($linkedChannelThreads as $thread) {
+                    $userId = $customerIdToUserId->get($thread->customer_id);
+                    if (! $userId) {
+                        continue;
+                    }
+
+                    if (! $threadsByContact->has($userId)) {
+                        $threadsByContact[$userId] = collect();
+                    }
+
+                    // Deduplicate by thread ID
+                    if (! $threadsByContact[$userId]->contains(fn ($t) => $t->id === $thread->id)) {
+                        $threadsByContact[$userId]->push($thread);
+                    }
+                }
+            }
+
+            // Step 4: Batch-load email data for all contacts upfront to avoid N+1
 
             // Batch-load linked email message IDs for all customers
             $customerIds = $customersMap->pluck('id');
@@ -315,26 +348,21 @@ class CommunicationsContactService
         $threads = ChatThread::query()
             ->where('channel', ChatThread::CHANNEL_FACEBOOK)
             ->forUser($viewer)
-            ->with(['latestMessage.user'])
+            ->with(['latestMessage.user', 'customer'])
             ->latestActivity()
             ->get();
 
         if ($search) {
-            $threads = $threads->filter(
-                fn (ChatThread $t) => str_contains(strtolower($t->subject ?? ''), strtolower($search))
-            );
+            $threads = $threads->filter(function (ChatThread $t) use ($search) {
+                $name = $t->customer?->full_name ?? $t->subject ?? '';
+
+                return str_contains(strtolower($name), strtolower($search));
+            });
         }
 
         // Exclude messenger threads whose customer already appears in main contacts (has portal user)
         $threads = $threads->filter(function (ChatThread $thread) {
-            if (! $thread->customer_id) {
-                return true; // Keep standalone messenger contacts
-            }
-
-            // If customer has a portal User account, they appear in main contacts already
-            $customer = Customer::find($thread->customer_id);
-
-            return ! $customer?->user_id;
+            return ! $thread->customer?->user_id;
         });
 
         return $threads->map(function (ChatThread $thread) use ($viewer) {
@@ -345,14 +373,17 @@ class CommunicationsContactService
             }
 
             $unread = $thread->getUnreadCountFor($viewer);
-            $initials = collect(explode(' ', $thread->subject ?? 'M'))
+
+            // Use customer name when linked, otherwise use thread subject
+            $displayName = $thread->customer?->full_name ?? $thread->subject ?? 'Messenger User';
+            $initials = collect(explode(' ', $displayName))
                 ->map(fn ($w) => strtoupper(mb_substr($w, 0, 1)))
                 ->take(2)
                 ->join('');
 
             return [
                 'id' => 'messenger-'.$thread->id,
-                'name' => $thread->subject ?? 'Messenger User',
+                'name' => $displayName,
                 'type' => 'messenger',
                 'avatar_url' => null,
                 'initials' => $initials ?: 'M',
@@ -378,14 +409,21 @@ class CommunicationsContactService
         $threads = ChatThread::query()
             ->where('source', ChatThread::SOURCE_SMS_INBOUND)
             ->forUser($viewer)
-            ->with(['latestMessage.user'])
+            ->with(['latestMessage.user', 'customer'])
             ->latestActivity()
             ->get();
 
+        // Exclude SMS threads whose customer has a portal user (they appear in main contacts)
+        $threads = $threads->filter(function (ChatThread $thread) {
+            return ! $thread->customer?->user_id;
+        });
+
         if ($search) {
-            $threads = $threads->filter(
-                fn (ChatThread $t) => str_contains(strtolower($t->subject ?? ''), strtolower($search))
-            );
+            $threads = $threads->filter(function (ChatThread $t) use ($search) {
+                $name = $t->customer?->full_name ?? $t->subject ?? '';
+
+                return str_contains(strtolower($name), strtolower($search));
+            });
         }
 
         return $threads->map(function (ChatThread $thread) use ($viewer) {
@@ -397,16 +435,25 @@ class CommunicationsContactService
 
             $unread = $thread->getUnreadCountFor($viewer);
 
-            // Extract phone from subject "SMS from +1234567890"
-            $phone = str_replace('SMS from ', '', $thread->subject ?? '');
-            $initials = 'SM';
+            // Use customer name when linked, otherwise extract phone from subject
+            if ($thread->customer) {
+                $name = $thread->customer->full_name;
+                $initials = collect(explode(' ', $name))
+                    ->map(fn ($w) => strtoupper(mb_substr($w, 0, 1)))
+                    ->take(2)
+                    ->join('');
+            } else {
+                $name = str_replace('SMS from ', '', $thread->subject ?? '');
+                $name = $name ?: ($thread->subject ?? 'SMS Contact');
+                $initials = 'SM';
+            }
 
             return [
                 'id' => 'sms-'.$thread->id,
-                'name' => $phone ?: ($thread->subject ?? 'SMS Contact'),
+                'name' => $name,
                 'type' => 'sms',
                 'avatar_url' => null,
-                'initials' => $initials,
+                'initials' => $initials ?: 'SM',
                 'last_activity_at' => $thread->last_message_at ?? $thread->created_at,
                 'last_message_preview' => $preview,
                 'unread_count' => $unread,
@@ -447,7 +494,7 @@ class CommunicationsContactService
      */
     public function getTabUnreadCounts(User $viewer, User $contact): array
     {
-        $counts = ['all' => 0, 'messenger' => 0, 'deals' => 0, 'direct' => 0, 'emails' => 0];
+        $counts = ['all' => 0, 'messenger' => 0, 'deals' => 0, 'direct' => 0, 'sms' => 0, 'emails' => 0];
 
         // Chat thread unread counts by type
         $threads = $this->getSharedChatThreads($viewer, $contact);
@@ -459,7 +506,9 @@ class CommunicationsContactService
 
             $counts['all'] += $unread;
 
-            if ($thread->channel === 'facebook') {
+            if ($thread->source === ChatThread::SOURCE_SMS_INBOUND) {
+                $counts['sms'] += $unread;
+            } elseif ($thread->channel === 'facebook') {
                 $counts['messenger'] += $unread;
             } elseif ($thread->type === 'deal') {
                 $counts['deals'] += $unread;
@@ -647,6 +696,7 @@ class CommunicationsContactService
             'type' => 'chat',
             'channel' => $thread->channel,
             'thread_type' => $thread->type,
+            'source' => $thread->source,
             'icon' => $this->getThreadIcon($thread),
             'label' => $this->getThreadLabel($thread),
             'preview' => $thread->latestMessage
@@ -762,6 +812,7 @@ class CommunicationsContactService
     {
         return match ($tab) {
             'messenger' => $item['channel'] === 'facebook',
+            'sms' => ($item['source'] ?? null) === ChatThread::SOURCE_SMS_INBOUND,
             'deals' => $item['thread_type'] === 'deal',
             'direct' => in_array($item['thread_type'], ['direct', 'support']),
             default => true, // 'all' shows everything
