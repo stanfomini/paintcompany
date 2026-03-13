@@ -83,6 +83,16 @@ class ChatThreadFactory extends Factory
     }
 
     /**
+     * Set source to sms_inbound (SMS support thread).
+     */
+    public function smsInbound(): static
+    {
+        return $this->support()->state(fn (array $attributes) => [
+            'source' => ChatThread::SOURCE_SMS_INBOUND,
+        ]);
+    }
+
+    /**
      * Set channel to Facebook (Messenger thread).
      */
     public function facebook(?string $psid = null): static

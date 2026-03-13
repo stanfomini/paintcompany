@@ -120,7 +120,14 @@ class TwilioWebhookController extends Controller
             if ($sender) {
                 $this->routeKnownUser($sender, $phone, $body);
             } else {
-                $this->routeUnknownNumber($phone, $body);
+                // Check if phone matches a Customer record without a user account
+                $customer = $this->findCustomerByPhone($phone);
+
+                if ($customer) {
+                    $this->routeKnownCustomerWithoutAccount($customer, $phone, $body);
+                } else {
+                    $this->routeUnknownNumber($phone, $body);
+                }
             }
         } catch (\Exception $e) {
             Log::error('Twilio webhook: failed to route cold inbound', [
@@ -169,6 +176,11 @@ class TwilioWebhookController extends Controller
                     'SMS conversation',
                 );
             }
+
+            // Ensure customer_id is set on the thread for communications hub lookup
+            if (! $thread->customer_id) {
+                $thread->update(['customer_id' => $customer->id]);
+            }
         } else {
             // Known non-customer user (crew, agent, etc.) — create support thread
             $thread = $this->createSmsSupporThread($phone);
@@ -187,6 +199,7 @@ class TwilioWebhookController extends Controller
             ['phone_number' => $phone, 'thread_id' => $thread->id],
             [
                 'user_id' => $sender->id,
+                'customer_id' => $customer?->id,
                 'expires_at' => now()->addHours(24),
             ]
         );
@@ -208,16 +221,21 @@ class TwilioWebhookController extends Controller
      */
     private function routeUnknownNumber(string $phone, string $body): void
     {
-        $thread = $this->createSmsSupporThread($phone);
+        // Check if phone matches any Customer record (with or without user_id)
+        $customer = $this->findCustomerByPhone($phone)
+            ?? $this->findCustomerByPhoneIncludingLinked($phone);
+
+        $thread = $this->createSmsSupporThread($phone, $customer);
 
         $this->chatService->sendGuestMessage(
             thread: $thread,
             content: $body,
-            metadata: ['source' => 'sms', 'phone' => $phone],
+            metadata: ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer?->id],
         );
 
         SmsSession::create([
             'user_id' => null,
+            'customer_id' => $customer?->id,
             'thread_id' => $thread->id,
             'phone_number' => $phone,
             'expires_at' => now()->addHours(24),
@@ -229,17 +247,50 @@ class TwilioWebhookController extends Controller
         Log::info('Twilio webhook: routed cold inbound from unknown number', [
             'from' => $phone,
             'thread_id' => $thread->id,
+            'customer_id' => $customer?->id,
+        ]);
+    }
+
+    /**
+     * Route an SMS from a known Customer who has no user account.
+     */
+    private function routeKnownCustomerWithoutAccount(Customer $customer, string $phone, string $body): void
+    {
+        $thread = $this->createSmsSupporThread($phone, $customer);
+
+        $this->chatService->sendGuestMessage(
+            thread: $thread,
+            content: $body,
+            metadata: ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer->id],
+        );
+
+        SmsSession::create([
+            'user_id' => null,
+            'customer_id' => $customer->id,
+            'thread_id' => $thread->id,
+            'phone_number' => $phone,
+            'expires_at' => now()->addHours(24),
+        ]);
+
+        // Broadcast new thread notification AFTER message is saved (non-critical)
+        $this->safeBroadcastNewThread($thread);
+
+        Log::info('Twilio webhook: routed cold inbound from known customer without account', [
+            'from' => $phone,
+            'customer_id' => $customer->id,
+            'thread_id' => $thread->id,
         ]);
     }
 
     /**
      * Create a support thread for inbound SMS and add internal users with chat.view_website_leads.
      */
-    private function createSmsSupporThread(string $phone): ChatThread
+    private function createSmsSupporThread(string $phone, ?Customer $customer = null): ChatThread
     {
         $thread = ChatThread::create([
             'type' => ChatThread::TYPE_SUPPORT,
             'source' => ChatThread::SOURCE_SMS_INBOUND,
+            'customer_id' => $customer?->id,
             'subject' => "SMS from {$phone}",
             'last_message_at' => now(),
         ]);
@@ -354,6 +405,33 @@ class TwilioWebhookController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Find a Customer record by phone that has NO user account.
+     */
+    private function findCustomerByPhone(string $phone): ?Customer
+    {
+        $digits = preg_replace('/\D/', '', $phone);
+        $last10 = substr($digits, -10);
+        $phoneLike = '%'.$last10;
+
+        return Customer::where('phone', 'LIKE', $phoneLike)
+            ->whereNull('user_id')
+            ->first();
+    }
+
+    /**
+     * Find a Customer record by phone including those with user accounts.
+     * Used as a fallback in routeUnknownNumber to link threads to customers.
+     */
+    private function findCustomerByPhoneIncludingLinked(string $phone): ?Customer
+    {
+        $digits = preg_replace('/\D/', '', $phone);
+        $last10 = substr($digits, -10);
+        $phoneLike = '%'.$last10;
+
+        return Customer::where('phone', 'LIKE', $phoneLike)->first();
     }
 
     private function twimlResponse(): Response

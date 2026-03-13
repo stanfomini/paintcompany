@@ -49,11 +49,21 @@ class Customer extends Model
                     $profile->update(['phone' => $customer->phone]);
                 }
             }
+
+            // Auto-link unlinked SMS threads matching this phone
+            if ($customer->phone) {
+                static::autoLinkSmsThreads($customer);
+            }
         });
 
         static::updated(function (Customer $customer) {
             if ($customer->wasChanged('phone') && $customer->phone && $customer->user_id) {
                 $customer->user?->customerProfile?->update(['phone' => $customer->phone]);
+            }
+
+            // Auto-link unlinked SMS threads when phone changes
+            if ($customer->wasChanged('phone') && $customer->phone) {
+                static::autoLinkSmsThreads($customer);
             }
         });
     }
@@ -324,5 +334,29 @@ class Customer extends Model
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    /**
+     * Auto-link unlinked SMS support threads whose subject matches this customer's phone.
+     */
+    private static function autoLinkSmsThreads(Customer $customer): void
+    {
+        $digits = preg_replace('/\D/', '', $customer->phone);
+        $last10 = substr($digits, -10);
+
+        if (strlen($last10) < 10) {
+            return;
+        }
+
+        ChatThread::where('type', ChatThread::TYPE_SUPPORT)
+            ->where('source', ChatThread::SOURCE_SMS_INBOUND)
+            ->whereNull('customer_id')
+            ->where('subject', 'LIKE', "%{$last10}%")
+            ->update(['customer_id' => $customer->id]);
+
+        // Also update SmsSession records
+        SmsSession::where('phone_number', 'LIKE', "%{$last10}%")
+            ->whereNull('customer_id')
+            ->update(['customer_id' => $customer->id]);
     }
 }

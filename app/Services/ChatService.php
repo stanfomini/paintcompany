@@ -6,6 +6,7 @@ use App\Events\MessageRead;
 use App\Events\MessageSent;
 use App\Events\NewThreadNotification;
 use App\Jobs\SendFacebookMessageJob;
+use App\Jobs\SendSmsThreadReplyJob;
 use App\Jobs\SendUnreadChatEmailJob;
 use App\Jobs\SendUnreadChatSmsJob;
 use App\Jobs\TranslateChatMessageJob;
@@ -227,6 +228,12 @@ class ChatService
 
         // Sync to Facebook Messenger if applicable
         $this->syncToFacebookMessenger($thread, $sender, $message, $content);
+
+        // If this is an SMS inbound thread and an internal user is replying,
+        // send the reply back to the originating phone via Twilio
+        if ($sender->isInternal() && $thread->source === ChatThread::SOURCE_SMS_INBOUND) {
+            $this->dispatchSmsThreadReply($thread, $message);
+        }
 
         return $message;
     }
@@ -754,6 +761,21 @@ class ChatService
             } catch (\Throwable $e) {
                 Log::warning('Failed to dispatch SMS notification', ['user_id' => $participant->user->id, 'error' => $e->getMessage()]);
             }
+        }
+    }
+
+    /**
+     * Dispatch an SMS reply to the originating phone for SMS inbound threads.
+     */
+    private function dispatchSmsThreadReply(ChatThread $thread, ChatMessage $message): void
+    {
+        try {
+            SendSmsThreadReplyJob::dispatch($message, $thread);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to dispatch SMS thread reply', [
+                'thread_id' => $thread->id,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 

@@ -62,6 +62,7 @@ new class extends Component
         // Clear computed caches when switching tabs
         unset(
             $this->allItems,
+            $this->smsThreads,
             $this->messengerThreads,
             $this->dealThreads,
             $this->directThreads,
@@ -112,6 +113,7 @@ new class extends Component
                 'type' => 'chat',
                 'channel' => $thread->channel,
                 'thread_type' => $thread->type,
+                'source' => $thread->source,
                 'icon' => $this->getThreadIcon($thread),
                 'label' => $this->getThreadLabel($thread),
                 'preview' => $thread->latestMessage
@@ -207,6 +209,16 @@ new class extends Component
                     ->whereNull('left_at');
             })
             ->with(['latestMessage.user', 'activeParticipants.user'])
+            ->latestActivity()
+            ->get();
+    }
+
+    #[Computed]
+    public function smsThreads()
+    {
+        return $this->customerThreadQuery()
+            ->where('source', ChatThread::SOURCE_SMS_INBOUND)
+            ->with(['latestMessage.user'])
             ->latestActivity()
             ->get();
     }
@@ -396,10 +408,15 @@ new class extends Component
             <flux:button variant="ghost" :href="route('customers.show', $customer)" icon="arrow-left" wire:navigate class="shrink-0" size="sm">
                 <span class="hidden sm:inline">{{ __('Back') }}</span>
             </flux:button>
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
                 <flux:heading size="xl" class="truncate">{{ __('Communications') }}</flux:heading>
                 <flux:text size="sm" class="text-zinc-500 truncate">{{ $customer->full_name }}</flux:text>
             </div>
+            @if ($customer->phone)
+                <flux:button size="sm" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')" variant="primary" class="shrink-0">
+                    {{ __('Send SMS') }}
+                </flux:button>
+            @endif
         </div>
 
         {{-- Appointments --}}
@@ -460,6 +477,7 @@ new class extends Component
             @php
                 $tabs = [
                     'all' => __('View All'),
+                    'sms' => __('SMS'),
                     'messenger' => __('Messenger'),
                     'deals' => __('Deal Chats'),
                     'direct' => __('Direct'),
@@ -493,15 +511,15 @@ new class extends Component
                                 class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                             >
                                 <div class="shrink-0 mt-0.5">
-                                    <div class="w-8 h-8 rounded-full flex items-center justify-center {{ $item['type'] === 'email' ? 'bg-amber-100 dark:bg-amber-900/30' : ($item['channel'] === 'facebook' ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-zinc-100 dark:bg-zinc-800') }}">
-                                        <flux:icon :name="$item['icon']" class="w-4 h-4 {{ $item['type'] === 'email' ? 'text-amber-600 dark:text-amber-400' : ($item['channel'] === 'facebook' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500') }}" />
+                                    <div class="w-8 h-8 rounded-full flex items-center justify-center {{ $item['type'] === 'email' ? 'bg-amber-100 dark:bg-amber-900/30' : ($item['channel'] === 'facebook' ? 'bg-blue-100 dark:bg-blue-900/30' : (($item['source'] ?? null) === 'sms_inbound' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-zinc-100 dark:bg-zinc-800')) }}">
+                                        <flux:icon :name="$item['icon']" class="w-4 h-4 {{ $item['type'] === 'email' ? 'text-amber-600 dark:text-amber-400' : ($item['channel'] === 'facebook' ? 'text-blue-600 dark:text-blue-400' : (($item['source'] ?? null) === 'sms_inbound' ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-500')) }}" />
                                     </div>
                                 </div>
                                 <a href="{{ $item['url'] }}" wire:navigate class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
                                         <flux:text class="font-medium text-sm">{{ $item['label'] }}</flux:text>
-                                        <flux:badge size="sm" color="{{ $item['type'] === 'email' ? 'amber' : ($item['channel'] === 'facebook' ? 'blue' : 'zinc') }}">
-                                            {{ $item['type'] === 'email' ? __('Email') : ($item['channel'] === 'facebook' ? __('Messenger') : ucfirst($item['thread_type'] ?? __('Chat'))) }}
+                                        <flux:badge size="sm" color="{{ $item['type'] === 'email' ? 'amber' : ($item['channel'] === 'facebook' ? 'blue' : (($item['source'] ?? null) === 'sms_inbound' ? 'green' : 'zinc')) }}">
+                                            {{ $item['type'] === 'email' ? __('Email') : ($item['channel'] === 'facebook' ? __('Messenger') : (($item['source'] ?? null) === 'sms_inbound' ? __('SMS') : ucfirst($item['thread_type'] ?? __('Chat')))) }}
                                         </flux:badge>
                                     </div>
                                     <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">{{ $item['preview'] }}</flux:text>
@@ -664,6 +682,54 @@ new class extends Component
                     </div>
                 @endif
 
+            @elseif ($activeTab === 'sms')
+                @if ($this->smsThreads->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="phone" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500 mb-3">{{ __('No SMS conversations with this customer.') }}</flux:text>
+                        @if ($customer->phone)
+                            <flux:button size="sm" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')">
+                                {{ __('Send SMS') }}
+                            </flux:button>
+                        @endif
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->smsThreads as $thread)
+                            <a
+                                href="{{ route('chat.show', $thread) }}"
+                                wire:navigate
+                                wire:key="sms-{{ $thread->id }}"
+                                class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <div class="shrink-0 mt-0.5">
+                                    <div class="w-8 h-8 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
+                                        <flux:icon name="phone" class="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                    </div>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <flux:text class="font-medium text-sm">{{ $thread->subject ?? __('SMS Conversation') }}</flux:text>
+                                        <flux:badge size="sm" color="green">{{ __('SMS') }}</flux:badge>
+                                    </div>
+                                    @if ($thread->latestMessage)
+                                        <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">
+                                            {{ $thread->latestMessage->user?->name ?? __('Unknown') }}: {{ Str::limit($thread->latestMessage->content, 80) }}
+                                        </flux:text>
+                                    @else
+                                        <flux:text size="sm" class="text-zinc-400 mt-0.5">{{ __('No messages yet') }}</flux:text>
+                                    @endif
+                                </div>
+                                <div class="shrink-0">
+                                    <flux:text size="xs" class="text-zinc-400">
+                                        {{ ($thread->last_message_at ?? $thread->created_at)->diffForHumans() }}
+                                    </flux:text>
+                                </div>
+                            </a>
+                        @endforeach
+                    </div>
+                @endif
+
             @elseif ($activeTab === 'emails')
                 @if ($this->emailLinks->isEmpty())
                     <div class="text-center py-12">
@@ -715,6 +781,8 @@ new class extends Component
             @endif
         </div>
     </div>
+
+    @livewire('customers.send-sms-modal', ['customer' => $customer], key('hub-send-sms-' . $customer->id))
 
     {{-- Reply Modal --}}
     <flux:modal wire:model="showReplyModal" class="max-w-5xl w-[75vw]">

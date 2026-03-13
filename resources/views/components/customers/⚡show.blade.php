@@ -1216,10 +1216,15 @@ new class extends Component
                         <flux:heading size="sm" class="mb-3">{{ __('Contact') }}</flux:heading>
                         <div class="space-y-2.5">
                             @if ($customer->phone)
-                                <a href="tel:{{ $customer->phone }}" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
-                                    <flux:icon name="phone" class="w-4 h-4 shrink-0" />
-                                    <span class="truncate">{{ $customer->phone }}</span>
-                                </a>
+                                <div class="flex items-center gap-2">
+                                    <a href="tel:{{ $customer->phone }}" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
+                                        <flux:icon name="phone" class="w-4 h-4 shrink-0" />
+                                        <span class="truncate">{{ $customer->phone }}</span>
+                                    </a>
+                                    <flux:button size="xs" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')" variant="ghost" class="shrink-0">
+                                        {{ __('SMS') }}
+                                    </flux:button>
+                                </div>
                             @endif
                             @if ($customer->email)
                                 <button wire:click="openCompose" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
@@ -1651,4 +1656,6 @@ new class extends Component
             </div>
         </div>
     </flux:modal>
+
+    @livewire('customers.send-sms-modal', ['customer' => $customer], key('send-sms-' . $customer->id))
 </div>

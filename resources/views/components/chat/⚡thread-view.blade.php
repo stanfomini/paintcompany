@@ -2,6 +2,8 @@
 
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\Customer;
+use App\Models\SmsSession;
 use App\Models\User;
 use App\Services\ChatService;
 use Stichoza\GoogleTranslate\GoogleTranslate;
@@ -28,6 +30,10 @@ new class extends Component {
     public ?int $beforeMessageId = null;
 
     public ?int $replyingToMessageId = null;
+
+    public string $customerSearchQuery = '';
+
+    public bool $showLinkCustomerModal = false;
 
     public function mount(ChatThread $thread, bool $embedded = false): void
     {
@@ -252,6 +258,53 @@ new class extends Component {
         return null;
     }
 
+    #[Computed]
+    public function customerSearchResults(): Collection
+    {
+        if (strlen($this->customerSearchQuery) < 2) {
+            return collect();
+        }
+
+        return Customer::query()
+            ->search($this->customerSearchQuery)
+            ->limit(10)
+            ->get();
+    }
+
+    public function openLinkCustomerModal(): void
+    {
+        $this->showLinkCustomerModal = true;
+        $this->customerSearchQuery = '';
+    }
+
+    public function linkToCustomer(int $customerId): void
+    {
+        abort_unless(auth()->user()->isInternal(), 403);
+
+        $customer = Customer::findOrFail($customerId);
+
+        $this->thread->update(['customer_id' => $customerId]);
+
+        // Also update SmsSession if exists
+        SmsSession::where('thread_id', $this->thread->id)
+            ->whereNull('customer_id')
+            ->update(['customer_id' => $customerId]);
+
+        // Post system message
+        ChatMessage::create([
+            'thread_id' => $this->thread->id,
+            'user_id' => auth()->id(),
+            'content' => __('Linked to customer: :name', ['name' => $customer->full_name]),
+            'type' => ChatMessage::TYPE_SYSTEM,
+        ]);
+
+        $this->thread->update(['last_message_at' => now()]);
+
+        $this->showLinkCustomerModal = false;
+        $this->customerSearchQuery = '';
+        unset($this->messages, $this->threadContext, $this->customerSearchResults);
+    }
+
     private function getProfileUrl(User $user): ?string
     {
         return match ($user->type) {
@@ -302,22 +355,31 @@ new class extends Component {
                         </div>
                     </div>
 
-                    {{-- Participants avatars --}}
-                    <div class="flex -space-x-2">
-                        @foreach ($this->participants->take(5) as $participant)
-                            <flux:tooltip content="{{ $participant->name }}">
-                                <flux:avatar
-                                    name="{{ $participant->name }}"
-                                    size="sm"
-                                    class="ring-2 ring-white dark:ring-zinc-900"
-                                />
-                            </flux:tooltip>
-                        @endforeach
-                        @if ($this->participants->count() > 5)
-                            <div class="flex items-center justify-center w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 ring-2 ring-white dark:ring-zinc-900 text-xs font-medium">
-                                +{{ $this->participants->count() - 5 }}
-                            </div>
+                    <div class="flex items-center gap-3">
+                        {{-- Link to Customer button (internal users, SMS threads without customer) --}}
+                        @if (auth()->user()->isInternal() && $thread->type === 'support' && $thread->source === 'sms_inbound' && !$thread->customer_id)
+                            <flux:button size="sm" icon="link" wire:click="openLinkCustomerModal" variant="ghost" class="shrink-0">
+                                {{ __('Link to Customer') }}
+                            </flux:button>
                         @endif
+
+                        {{-- Participants avatars --}}
+                        <div class="flex -space-x-2">
+                            @foreach ($this->participants->take(5) as $participant)
+                                <flux:tooltip content="{{ $participant->name }}">
+                                    <flux:avatar
+                                        name="{{ $participant->name }}"
+                                        size="sm"
+                                        class="ring-2 ring-white dark:ring-zinc-900"
+                                    />
+                                </flux:tooltip>
+                            @endforeach
+                            @if ($this->participants->count() > 5)
+                                <div class="flex items-center justify-center w-8 h-8 rounded-full bg-zinc-200 dark:bg-zinc-700 ring-2 ring-white dark:ring-zinc-900 text-xs font-medium">
+                                    +{{ $this->participants->count() - 5 }}
+                                </div>
+                            @endif
+                        </div>
                     </div>
                 </div>
             </div>
@@ -757,4 +819,36 @@ new class extends Component {
             @livewire('chat.message-composer', ['thread' => $thread], key('composer-' . $thread->id))
         </div>
     </div>
+
+    {{-- Link to Customer Modal --}}
+    @if (auth()->user()->isInternal() && $thread->type === 'support' && $thread->source === 'sms_inbound' && !$thread->customer_id)
+        <flux:modal wire:model="showLinkCustomerModal" class="max-w-md">
+            <div class="space-y-4">
+                <flux:heading size="lg">{{ __('Link to Customer') }}</flux:heading>
+                <flux:input wire:model.live.debounce.300ms="customerSearchQuery" placeholder="{{ __('Search by name, email, or phone...') }}" icon="magnifying-glass" />
+
+                @if (strlen($customerSearchQuery) >= 2)
+                    <div class="max-h-60 overflow-y-auto space-y-1">
+                        @forelse ($this->customerSearchResults as $result)
+                            <button
+                                wire:click="linkToCustomer({{ $result->id }})"
+                                wire:key="search-customer-{{ $result->id }}"
+                                class="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors text-left"
+                            >
+                                <flux:avatar name="{{ $result->full_name }}" size="sm" />
+                                <div class="min-w-0 flex-1">
+                                    <div class="font-medium text-sm truncate text-zinc-900 dark:text-zinc-100">{{ $result->full_name }}</div>
+                                    <div class="text-xs text-zinc-500 truncate">{{ $result->email ?? $result->phone ?? '' }}</div>
+                                </div>
+                            </button>
+                        @empty
+                            <flux:text class="text-zinc-500 text-center py-4">{{ __('No customers found.') }}</flux:text>
+                        @endforelse
+                    </div>
+                @else
+                    <flux:text class="text-zinc-500 text-center py-4">{{ __('Type at least 2 characters to search.') }}</flux:text>
+                @endif
+            </div>
+        </flux:modal>
+    @endif
 </div>
