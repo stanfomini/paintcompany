@@ -26,3 +26,4 @@ Schedule::call(function () {
 })->daily()->name('planner:expire-delegations');
 Schedule::command('booking:clean-holds')->everyMinute();
 Schedule::command('booking:send-reminders')->hourly();
+Schedule::command('video:cleanup-abandoned')->hourly();

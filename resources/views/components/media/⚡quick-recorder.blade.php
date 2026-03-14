@@ -319,7 +319,7 @@ Alpine.data('quickRecorder', (config) => ({
     useChunkedUpload: true,
 
     init() {
-        this._beforeUnloadHandler = (e) => {
+        this._attemptAutoFinalize = () => {
             if (this.useChunkedUpload && this.recordingId && (this.stage === 'review' || this.stage === 'recording')) {
                 navigator.sendBeacon(
                     `/api/video-recordings/${this.recordingId}/finalize`,
@@ -327,11 +327,26 @@ Alpine.data('quickRecorder', (config) => ({
                 );
             }
         };
+
+        this._beforeUnloadHandler = () => this._attemptAutoFinalize();
+
+        this._visibilityChangeHandler = () => {
+            if (document.visibilityState === 'hidden') {
+                this._attemptAutoFinalize();
+            }
+        };
+
         window.addEventListener('beforeunload', this._beforeUnloadHandler);
+        document.addEventListener('visibilitychange', this._visibilityChangeHandler);
+
+        // Livewire in-app navigation
+        document.addEventListener('livewire:navigating', this._attemptAutoFinalize);
     },
 
     destroy() {
         window.removeEventListener('beforeunload', this._beforeUnloadHandler);
+        document.removeEventListener('visibilitychange', this._visibilityChangeHandler);
+        document.removeEventListener('livewire:navigating', this._attemptAutoFinalize);
         this.cleanupStream();
     },
 
