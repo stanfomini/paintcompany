@@ -28,11 +28,11 @@ class extends Component
 
     {{-- Video Player --}}
     @if($recording->getVideoUrl() || $recording->getStreamUrl())
-        <div class="aspect-video bg-black rounded-lg overflow-hidden mb-6">
+        <div class="bg-black rounded-lg overflow-hidden mb-6" style="max-height: 80vh;">
             <video
                 controls
                 preload="metadata"
-                class="w-full h-full"
+                class="w-full h-full object-contain"
                 @if($recording->getThumbnailUrl()) poster="{{ $recording->getThumbnailUrl() }}" @endif
             >
                 @if($recording->getVideoUrl())

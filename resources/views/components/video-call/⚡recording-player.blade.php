@@ -150,13 +150,13 @@ new class extends Component {
                             }
                         }
                     }"
-                    class="aspect-video bg-black"
+                    class="bg-black" style="max-height: 80vh;"
                 >
                     <video
                         x-ref="videoPlayer"
                         controls
                         autoplay
-                        class="w-full h-full"
+                        class="w-full h-full object-contain"
                     ></video>
                 </div>
             </div>

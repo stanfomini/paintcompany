@@ -651,9 +651,9 @@ Alpine.data('walkaroundRecorder', (config) => ({
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: this.useFrontCamera ? 'user' : 'environment',
-                    width: { ideal: 1280, max: 1280 },
-                    height: { ideal: 720, max: 720 },
-                    frameRate: { ideal: 30, max: 30 },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 },
                 },
                 audio: true,
             });

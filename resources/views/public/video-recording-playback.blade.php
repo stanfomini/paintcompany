@@ -43,7 +43,7 @@
             </div>
 
             {{-- Video Player --}}
-            <div class="aspect-video bg-black rounded-xl overflow-hidden">
+            <div class="bg-black rounded-xl overflow-hidden" style="max-height: 80vh;">
                 <video
                     src="{{ $recording->getVideoUrl() }}"
                     controls
@@ -51,7 +51,7 @@
                     playsinline
                     data-track-id="{{ $recording->id }}"
                     data-track-source="{{ request()->query('ref') === 'email' ? 'email' : 'link' }}"
-                    class="w-full h-full"
+                    class="w-full h-full object-contain"
                     @if ($recording->getThumbnailUrl())
                         poster="{{ $recording->getThumbnailUrl() }}"
                     @endif

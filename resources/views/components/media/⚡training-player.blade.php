@@ -91,10 +91,10 @@ class extends Component {
     </div>
 
     {{-- Video Player --}}
-    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-black overflow-hidden mb-6">
+    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-black overflow-hidden mb-6" style="max-height: 80vh;">
         @if($step->video?->getVideoUrl())
             <video
-                class="w-full aspect-video"
+                class="w-full h-full object-contain"
                 controls
                 preload="metadata"
                 @if($step->video->getThumbnailUrl()) poster="{{ $step->video->getThumbnailUrl() }}" @endif

@@ -53,7 +53,7 @@ class extends Component {
 
         <div class="lg:grid lg:grid-cols-3 lg:gap-8">
             <div class="lg:col-span-2">
-                <div class="rounded-lg overflow-hidden bg-black aspect-video">
+                <div class="rounded-lg overflow-hidden bg-black" style="max-height: 80vh;">
                     <video
                         controls
                         data-track-id="{{ $recording->id }}"
@@ -61,7 +61,7 @@ class extends Component {
                         @if($recording->getThumbnailUrl())
                             poster="{{ $recording->getThumbnailUrl() }}"
                         @endif
-                        class="w-full h-full"
+                        class="w-full h-full object-contain"
                         preload="metadata"
                     >
                         @if($recording->getVideoUrl())

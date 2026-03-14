@@ -37,7 +37,7 @@ class VideoProcessor:
         # Use FFmpeg's built-in scaling with SAR normalization to avoid
         # non-standard properties that Safari's hardware decoder rejects.
         vf_filter = (
-            "scale='min(1920,iw)':'min(1080,ih)'"
+            "scale='if(gte(iw,ih),min(1920,iw),-2)':'if(gte(iw,ih),-2,min(1920,ih))'"
             ":force_original_aspect_ratio=decrease"
             ":force_divisible_by=2"
             ",setsar=1"
@@ -50,7 +50,6 @@ class VideoProcessor:
             "-c:a", "aac", "-b:a", "128k",
             "-movflags", "+faststart",
             "-vf", vf_filter,
-            "-r", "30",
             "-pix_fmt", "yuv420p",
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
             "-y", video_path,
