@@ -10,7 +10,6 @@ use App\Models\User;
 use App\Notifications\EstimateAccepted;
 use App\Notifications\EstimateRejected;
 use App\Notifications\JobCreated;
-use App\Notifications\MeetingProposed;
 use App\Notifications\TaskAssigned;
 
 it('EstimateAccepted returns valid WebPushMessage', function () {
@@ -75,22 +74,6 @@ it('TaskAssigned returns valid WebPushMessage', function () {
     expect($message->body)->toContain($activity->title);
     expect($message->url)->toBe('/planner');
     expect($message->tag)->toBe("task-{$activity->id}");
-});
-
-it('MeetingProposed returns valid WebPushMessage', function () {
-    $proposer = User::factory()->internal()->create(['name' => 'Jane Sales']);
-    $activity = Activity::factory()->scheduledMeeting()->create();
-
-    $notification = new MeetingProposed($activity, $proposer);
-    $user = User::factory()->internal()->create();
-
-    $message = $notification->toWebPush($user);
-
-    expect($message)->toBeInstanceOf(WebPushMessage::class);
-    expect($message->title)->toBe('Meeting Proposed');
-    expect($message->body)->toContain('Jane Sales');
-    expect($message->url)->toBe('/dashboard');
-    expect($message->tag)->toBe("meeting-{$activity->id}");
 });
 
 it('WebPushMessage toArray returns correct structure', function () {

@@ -1,15 +1,11 @@
 <?php
 
 use App\Events\AgentContributionAdded;
-use App\Models\Activity;
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
 use App\Models\Estimate;
 use App\Models\PackageTemplate;
-use App\Models\User;
 use App\Services\ChatService;
-use App\Services\MeetingService;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -35,12 +31,6 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
 
     /** @var array<int, array<string>> */
     public array $areaAgentChecklists = [];
-
-    public string $meetingTitle = '';
-    public string $meetingDateTime = '';
-    public string $meetingType = 'in_person';
-    public string $meetingDescription = '';
-    public ?int $meetingTeamMember = null;
 
     /** @var array<string, array<string, string>> */
     private const AGENT_CHECKLIST_GROUPS = [
@@ -250,74 +240,6 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
             $user->name,
             'Updated area checklist',
         );
-    }
-
-    #[Computed]
-    public function meetingActivities()
-    {
-        return $this->estimate->deal?->activities()
-            ->where('type', 'meeting')
-            ->whereNotNull('meeting_type')
-            ->with(['proposedBy', 'videoCall'])
-            ->orderBy('due_at')
-            ->get() ?? collect();
-    }
-
-    #[Computed]
-    public function teamMembers()
-    {
-        return User::where('type', 'internal')->orderBy('name')->get(['id', 'name']);
-    }
-
-    public function proposeMeeting(): void
-    {
-        $this->validate([
-            'meetingTitle' => 'required|string|max:255',
-            'meetingDateTime' => 'required|date|after:now',
-            'meetingType' => 'required|in:in_person,virtual',
-            'meetingDescription' => 'nullable|string|max:1000',
-        ]);
-
-        $user = Auth::guard('agent')->user();
-        $deal = $this->estimate->deal;
-
-        app(MeetingService::class)->proposeMeeting(
-            deal: $deal,
-            proposer: $user,
-            title: $this->meetingTitle,
-            dateTime: Carbon::parse($this->meetingDateTime),
-            meetingType: $this->meetingType,
-            teamMemberId: $this->meetingTeamMember,
-            description: $this->meetingDescription ?: null,
-            estimateId: $this->estimate->id,
-        );
-
-        $this->reset(['meetingTitle', 'meetingDateTime', 'meetingType', 'meetingDescription', 'meetingTeamMember']);
-        unset($this->meetingActivities);
-
-        session()->flash('success', __('Meeting proposed successfully.'));
-    }
-
-    public function confirmMeeting(int $activityId): void
-    {
-        $activity = Activity::findOrFail($activityId);
-        $user = Auth::guard('agent')->user();
-
-        app(MeetingService::class)->confirmMeeting($activity, $user);
-        unset($this->meetingActivities);
-
-        session()->flash('success', __('Meeting confirmed.'));
-    }
-
-    public function declineMeeting(int $activityId): void
-    {
-        $activity = Activity::findOrFail($activityId);
-        $user = Auth::guard('agent')->user();
-
-        app(MeetingService::class)->declineMeeting($activity, $user);
-        unset($this->meetingActivities);
-
-        session()->flash('success', __('Meeting declined.'));
     }
 
     /**
@@ -636,14 +558,6 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
                     </button>
                 @endif
 
-                {{-- Schedule --}}
-                <button
-                    wire:click="$set('activeTab', 'schedule')"
-                    class="flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md transition-colors {{ $activeTab === 'schedule' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
-                >
-                    <flux:icon name="calendar" class="w-4 h-4" />
-                    {{ __('Schedule') }}
-                </button>
             </div>
         </div>
 
@@ -984,157 +898,6 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
                     </div>
                 @endif
             </div>
-
-        {{-- ============================================================== --}}
-        {{-- TAB: Schedule --}}
-        {{-- ============================================================== --}}
-        @elseif ($activeTab === 'schedule')
-            <div class="space-y-6">
-                {{-- Propose Meeting Form --}}
-                <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
-                    <flux:heading size="sm" class="mb-4">{{ __('Propose a Meeting') }}</flux:heading>
-                    <form wire:submit="proposeMeeting" class="space-y-4">
-                        <flux:field>
-                            <flux:label>{{ __('Title') }}</flux:label>
-                            <flux:input wire:model="meetingTitle" :placeholder="__('e.g., Property walk-through')" required />
-                            <flux:error name="meetingTitle" />
-                        </flux:field>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <flux:field>
-                                <flux:label>{{ __('Date & Time') }}</flux:label>
-                                <flux:input wire:model="meetingDateTime" type="datetime-local" required />
-                                <flux:error name="meetingDateTime" />
-                            </flux:field>
-
-                            <flux:field>
-                                <flux:label>{{ __('Meeting Type') }}</flux:label>
-                                <flux:select wire:model="meetingType">
-                                    <option value="in_person">{{ __('In Person') }}</option>
-                                    <option value="virtual">{{ __('Virtual') }}</option>
-                                </flux:select>
-                            </flux:field>
-                        </div>
-
-                        @if (! $estimate->deal?->assigned_to)
-                            <flux:field>
-                                <flux:label>{{ __('Team Member') }}</flux:label>
-                                <flux:select wire:model="meetingTeamMember">
-                                    <option value="">{{ __('Any available') }}</option>
-                                    @foreach ($this->teamMembers as $member)
-                                        <option value="{{ $member->id }}">{{ $member->name }}</option>
-                                    @endforeach
-                                </flux:select>
-                            </flux:field>
-                        @endif
-
-                        <flux:field>
-                            <flux:label>{{ __('Description') }} <span class="text-zinc-400 font-normal">({{ __('optional') }})</span></flux:label>
-                            <flux:textarea wire:model="meetingDescription" rows="2" :placeholder="__('Any details about the meeting...')" />
-                            <flux:error name="meetingDescription" />
-                        </flux:field>
-
-                        <flux:button type="submit" variant="primary" wire:loading.attr="disabled">
-                            <span wire:loading.remove wire:target="proposeMeeting">{{ __('Propose Meeting') }}</span>
-                            <span wire:loading wire:target="proposeMeeting">{{ __('Proposing...') }}</span>
-                        </flux:button>
-                    </form>
-                </div>
-
-                {{-- Existing Meetings --}}
-                @if ($this->meetingActivities->count() > 0)
-                    @foreach ($this->meetingActivities as $meeting)
-                        <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6" wire:key="meeting-{{ $meeting->id }}">
-                            <div class="flex items-start justify-between mb-3">
-                                <div class="flex items-start gap-3">
-                                    <div class="flex items-center justify-center w-10 h-10 rounded-full {{ $meeting->meeting_type === 'virtual' ? 'bg-purple-100 dark:bg-purple-900/30' : 'bg-blue-100 dark:bg-blue-900/30' }} shrink-0">
-                                        <flux:icon :name="$meeting->meeting_type === 'virtual' ? 'video-camera' : 'calendar'" class="w-5 h-5 {{ $meeting->meeting_type === 'virtual' ? 'text-purple-600 dark:text-purple-400' : 'text-blue-600 dark:text-blue-400' }}" />
-                                    </div>
-                                    <div>
-                                        <div class="flex items-center gap-2">
-                                            <flux:text class="font-medium">{{ $meeting->title }}</flux:text>
-                                            <flux:badge size="sm" :color="$meeting->meeting_type === 'virtual' ? 'purple' : 'blue'">
-                                                {{ $meeting->meeting_type === 'virtual' ? __('Virtual') : __('In Person') }}
-                                            </flux:badge>
-                                        </div>
-                                        @if ($meeting->due_at)
-                                            <flux:text class="text-sm text-zinc-500 mt-1">
-                                                {{ $meeting->due_at->format('l, F j, Y \a\t g:i A') }}
-                                            </flux:text>
-                                        @endif
-                                        @if ($meeting->description)
-                                            <flux:text class="text-sm text-zinc-500 mt-2">{{ $meeting->description }}</flux:text>
-                                        @endif
-                                        @if ($meeting->proposedBy)
-                                            <flux:text class="text-xs text-zinc-400 mt-1">
-                                                {{ __('Proposed by :name', ['name' => $meeting->proposedBy->name]) }}
-                                            </flux:text>
-                                        @endif
-                                    </div>
-                                </div>
-                                <flux:badge size="sm" :color="match($meeting->meeting_status) {
-                                    'proposed' => 'yellow',
-                                    'confirmed' => 'green',
-                                    'declined' => 'red',
-                                    'cancelled' => 'zinc',
-                                    default => 'zinc',
-                                }">
-                                    {{ __(ucfirst($meeting->meeting_status ?? 'pending')) }}
-                                </flux:badge>
-                            </div>
-
-                            {{-- Confirmation Status --}}
-                            @if ($meeting->meeting_status === 'proposed' || $meeting->meeting_status === 'confirmed')
-                                <div class="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 text-xs">
-                                    <div class="flex items-center gap-1">
-                                        <flux:icon :name="$meeting->team_confirmed_at ? 'check-circle' : 'clock'" class="w-4 h-4 {{ $meeting->team_confirmed_at ? 'text-green-500' : 'text-zinc-400' }}" />
-                                        <span class="{{ $meeting->team_confirmed_at ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ __('Team') }}</span>
-                                    </div>
-                                    @if ($estimate->deal?->customer_id)
-                                        <div class="flex items-center gap-1">
-                                            <flux:icon :name="$meeting->customer_confirmed_at ? 'check-circle' : 'clock'" class="w-4 h-4 {{ $meeting->customer_confirmed_at ? 'text-green-500' : 'text-zinc-400' }}" />
-                                            <span class="{{ $meeting->customer_confirmed_at ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ __('Customer') }}</span>
-                                        </div>
-                                    @endif
-                                    <div class="flex items-center gap-1">
-                                        <flux:icon :name="$meeting->agent_confirmed_at ? 'check-circle' : 'clock'" class="w-4 h-4 {{ $meeting->agent_confirmed_at ? 'text-green-500' : 'text-zinc-400' }}" />
-                                        <span class="{{ $meeting->agent_confirmed_at ? 'text-green-600 dark:text-green-400' : 'text-zinc-500' }}">{{ __('You') }}</span>
-                                    </div>
-                                </div>
-                            @endif
-
-                            {{-- Actions --}}
-                            @if ($meeting->meeting_status === 'proposed' && ! $meeting->agent_confirmed_at)
-                                <div class="flex items-center gap-2 mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                                    <flux:button size="sm" variant="primary" wire:click="confirmMeeting({{ $meeting->id }})">
-                                        {{ __('Confirm') }}
-                                    </flux:button>
-                                    <flux:button size="sm" variant="ghost" wire:click="declineMeeting({{ $meeting->id }})">
-                                        {{ __('Decline') }}
-                                    </flux:button>
-                                </div>
-                            @endif
-
-                            @if ($meeting->meeting_status === 'confirmed' && $meeting->isVirtualMeeting() && $meeting->videoCall)
-                                <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-                                    <flux:button size="sm" variant="primary" icon="video-camera" :href="route('video-call.test', $meeting->videoCall->room_id)">
-                                        {{ __('Join Video Call') }}
-                                    </flux:button>
-                                </div>
-                            @endif
-                        </div>
-                    @endforeach
-                @else
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-8 text-center">
-                        <flux:icon name="calendar" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
-                        <flux:heading size="sm" class="mb-1">{{ __('No Meetings Yet') }}</flux:heading>
-                        <flux:text class="text-zinc-500 text-sm max-w-md mx-auto">
-                            {{ __('Use the form above to propose a meeting for this project.') }}
-                        </flux:text>
-                    </div>
-                @endif
-            </div>
-        @endif
 
         {{-- ============================================================== --}}
         {{-- Persistent Chat Section (below tabs) --}}

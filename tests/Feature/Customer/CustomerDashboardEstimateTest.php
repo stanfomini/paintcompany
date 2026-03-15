@@ -1,6 +1,5 @@
 <?php
 
-use App\Models\Activity;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Estimate;
@@ -81,52 +80,6 @@ describe('Dashboard - Estimate CTA Card', function () {
             ->call('closeEstimateOverlay')
             ->assertSet('showAreaCarousel', false)
             ->assertSet('carouselEstimateId', null);
-    });
-});
-
-describe('Dashboard - Schedule Card', function () {
-    it('shows schedule section even without estimates', function () {
-        Livewire::actingAs($this->customerUser, 'customer')
-            ->test('customer.dashboard')
-            ->assertSee('Schedule')
-            ->assertSee('Book a time to discuss your project')
-            ->assertSee('Propose a Meeting');
-    });
-
-    it('shows schedule section with an estimate', function () {
-        Estimate::factory()->forDeal($this->deal)->sent()->create();
-
-        Livewire::actingAs($this->customerUser, 'customer')
-            ->test('customer.dashboard')
-            ->assertSee('Schedule')
-            ->assertSee('Propose a Meeting');
-    });
-
-    it('shows upcoming meetings in schedule card', function () {
-        Activity::create([
-            'user_id' => $this->customerUser->id,
-            'subject_type' => Deal::class,
-            'subject_id' => $this->deal->id,
-            'type' => 'meeting',
-            'title' => 'Walk-through appointment',
-            'due_at' => now()->addDays(3),
-            'meeting_type' => 'in_person',
-            'meeting_status' => 'proposed',
-            'proposed_by' => $this->customerUser->id,
-        ]);
-
-        Livewire::actingAs($this->customerUser, 'customer')
-            ->test('customer.dashboard')
-            ->assertSee('Walk-through appointment')
-            ->assertSee('Proposed');
-    });
-
-    it('validates meeting form fields', function () {
-        Livewire::actingAs($this->customerUser, 'customer')
-            ->test('customer.dashboard')
-            ->set('showScheduleModal', true)
-            ->call('proposeMeeting')
-            ->assertHasErrors(['meetingTitle', 'meetingDateTime']);
     });
 });
 

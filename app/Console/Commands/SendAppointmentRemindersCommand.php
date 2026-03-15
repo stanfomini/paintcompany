@@ -29,6 +29,11 @@ class SendAppointmentRemindersCommand extends Command
                     ->notify(new AppointmentReminderNotification($booking));
             }
 
+            // Also notify the estimator
+            if ($booking->estimator) {
+                $booking->estimator->notify(new AppointmentReminderNotification($booking));
+            }
+
             $booking->update(['reminder_sent_at' => now()]);
             $count++;
         }

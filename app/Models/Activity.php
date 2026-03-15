@@ -175,48 +175,6 @@ class Activity extends Model
     }
 
     /**
-     * Check if the meeting is fully confirmed by all required parties.
-     */
-    public function isFullyConfirmed(?Deal $deal = null): bool
-    {
-        if (! $this->isMeeting()) {
-            return false;
-        }
-
-        $deal = $deal ?? ($this->subject instanceof Deal ? $this->subject : null);
-        if (! $deal) {
-            return false;
-        }
-
-        if (! $this->team_confirmed_at) {
-            return false;
-        }
-
-        if ($deal->customer_id && ! $this->customer_confirmed_at) {
-            return false;
-        }
-
-        if ($deal->agent_id && ! $this->agent_confirmed_at) {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Check if the meeting needs confirmation from a specific party.
-     */
-    public function needsConfirmationFrom(string $party): bool
-    {
-        return match ($party) {
-            'customer' => $this->meeting_status === 'proposed' && ! $this->customer_confirmed_at,
-            'agent' => $this->meeting_status === 'proposed' && ! $this->agent_confirmed_at,
-            'team' => $this->meeting_status === 'proposed' && ! $this->team_confirmed_at,
-            default => false,
-        };
-    }
-
-    /**
      * Mark the activity as completed.
      */
     public function markAsCompleted(): bool
@@ -352,34 +310,6 @@ class Activity extends Model
     {
         return $query->where('subject_type', $subject->getMorphClass())
             ->where('subject_id', $subject->getKey());
-    }
-
-    /**
-     * Scope for upcoming meetings that are confirmed and not completed.
-     */
-    public function scopeUpcomingMeetings($query)
-    {
-        return $query->where('type', 'meeting')
-            ->whereNotNull('meeting_type')
-            ->where('meeting_status', 'confirmed')
-            ->where('is_completed', false)
-            ->whereNotNull('due_at')
-            ->where('due_at', '>=', now())
-            ->orderBy('due_at');
-    }
-
-    /**
-     * Scope for meetings that need a reminder sent.
-     */
-    public function scopeNeedingReminder($query)
-    {
-        return $query->where('type', 'meeting')
-            ->whereNotNull('meeting_type')
-            ->where('meeting_status', 'confirmed')
-            ->where('is_completed', false)
-            ->whereNull('reminder_sent_at')
-            ->whereNotNull('due_at')
-            ->whereBetween('due_at', [now(), now()->addMinutes(65)]);
     }
 
     public function getSubjectUrl(): ?string

@@ -66,6 +66,57 @@ new class extends Component
             ->first();
     }
 
+    public function openBookModal(): void
+    {
+        $deal = $this->customer->deals()
+            ->whereNotIn('stage', ['completed', 'lost', 'cancelled'])
+            ->latest()
+            ->first();
+
+        $this->dispatch('open-appointment-modal', customerId: $this->customer->id, dealId: $deal?->id);
+    }
+
+    public function sendBookingLinkSms(): void
+    {
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($this->customer);
+        $url = url('/book?prefill='.$token);
+
+        $message = "Hi {$this->customer->first_name}! Book your free painting estimate at a time that works for you: {$url}";
+        app(\App\Services\TwilioService::class)->sendSms($this->customer->phone, $message);
+
+        session()->flash('success', __('Booking link sent via SMS.'));
+    }
+
+    public function copyBookingLink(): void
+    {
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($this->customer);
+        $url = url('/book?prefill='.$token);
+
+        $this->dispatch('copy-to-clipboard', text: $url);
+    }
+
+    public function startVideoCall(): void
+    {
+        $deal = $this->customer->deals()->latest()->first();
+        $videoCall = \App\Models\VideoCall::create([
+            'callable_type' => \App\Models\Deal::class,
+            'callable_id' => $deal?->id,
+            'initiated_by' => auth()->id(),
+            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
+            'status' => 'pending',
+        ]);
+
+        $this->redirect(route('video-call.test', $videoCall->room_id));
+    }
+
+    #[On('appointment-booked')]
+    public function onAppointmentBooked(): void
+    {
+        unset($this->appointments);
+    }
+
     public function setTab(string $tab): void
     {
         $this->activeTab = $tab;
@@ -435,11 +486,36 @@ new class extends Component
                 <flux:heading size="xl" class="truncate">{{ __('Communications') }}</flux:heading>
                 <flux:text size="sm" class="text-zinc-500 truncate">{{ $customer->full_name }}</flux:text>
             </div>
-            @if ($customer->phone)
-                <flux:button size="sm" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')" variant="primary" class="shrink-0">
-                    {{ __('Send SMS') }}
+            <div class="flex items-center gap-1 sm:gap-2 shrink-0">
+                @if ($customer->phone)
+                    <flux:button size="sm" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')" variant="primary">
+                        <span class="hidden sm:inline">{{ __('Send SMS') }}</span>
+                    </flux:button>
+                @endif
+                @can('bookings.manage')
+                    <flux:dropdown>
+                        <flux:button size="sm" icon="calendar-days" variant="ghost" icon-trailing="chevron-down">
+                            <span class="hidden sm:inline">{{ __('Book') }}</span>
+                        </flux:button>
+                        <flux:menu>
+                            <flux:menu.item icon="calendar-days" wire:click="openBookModal">
+                                {{ __('Book Appointment') }}
+                            </flux:menu.item>
+                            @if ($customer->phone)
+                                <flux:menu.item icon="link" wire:click="sendBookingLinkSms">
+                                    {{ __('Send Booking Link (SMS)') }}
+                                </flux:menu.item>
+                            @endif
+                            <flux:menu.item icon="clipboard-document" wire:click="copyBookingLink">
+                                {{ __('Copy Booking Link') }}
+                            </flux:menu.item>
+                        </flux:menu>
+                    </flux:dropdown>
+                @endcan
+                <flux:button size="sm" icon="video-camera" variant="ghost" wire:click="startVideoCall" title="{{ __('Video Call') }}">
+                    <span class="hidden sm:inline">{{ __('Video Call') }}</span>
                 </flux:button>
-            @endif
+            </div>
         </div>
 
         {{-- Project Preview --}}
@@ -482,58 +558,10 @@ new class extends Component
             </div>
         @endif
 
-        {{-- Appointments --}}
-        @if ($this->appointments->isNotEmpty())
-            <div class="mb-6 space-y-3">
-                <flux:heading size="md">{{ __('Appointments') }}</flux:heading>
-                @foreach ($this->appointments as $appointment)
-                    <div
-                        wire:key="appointment-{{ $appointment->id }}"
-                        class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
-                    >
-                        <div class="shrink-0 mt-0.5">
-                            <div class="w-8 h-8 rounded-full flex items-center justify-center {{ $appointment->status === 'confirmed' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-blue-100 dark:bg-blue-900/30' }}">
-                                <flux:icon name="calendar-days" class="w-4 h-4 {{ $appointment->status === 'confirmed' ? 'text-emerald-600 dark:text-emerald-400' : 'text-blue-600 dark:text-blue-400' }}" />
-                            </div>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2 mb-1">
-                                <flux:badge size="sm" color="{{ $appointment->status === 'confirmed' ? 'green' : 'blue' }}">
-                                    {{ __(ucfirst($appointment->status)) }}
-                                </flux:badge>
-                                @if ($appointment->estimate_preference)
-                                    <flux:badge size="sm" color="zinc">
-                                        {{ $appointment->estimate_preference === 'in_person' ? __('In Person') : __('Virtual') }}
-                                    </flux:badge>
-                                @endif
-                                @if ($appointment->vendor)
-                                    <flux:badge size="sm" color="purple">{{ $appointment->vendor->name }}</flux:badge>
-                                @endif
-                            </div>
-                            <flux:text class="font-medium text-sm">
-                                {{ $appointment->booked_date->format('l, F j, Y') }}
-                            </flux:text>
-                            <flux:text size="sm" class="text-zinc-500">
-                                {{ Carbon::parse($appointment->booked_start_time)->format('g:i A') }} - {{ Carbon::parse($appointment->booked_end_time)->format('g:i A') }}
-                            </flux:text>
-                            @if ($appointment->estimator)
-                                <flux:text size="sm" class="text-zinc-500 mt-0.5">
-                                    {{ __('Estimator') }}: {{ $appointment->estimator->name }}
-                                </flux:text>
-                            @endif
-                        </div>
-                        <div class="shrink-0 text-right text-xs text-zinc-400">
-                            @if ($appointment->prospect_phone)
-                                <div>{{ $appointment->prospect_phone }}</div>
-                            @endif
-                            @if ($appointment->prospect_email)
-                                <div>{{ $appointment->prospect_email }}</div>
-                            @endif
-                        </div>
-                    </div>
-                @endforeach
-            </div>
-        @endif
+        {{-- Appointments (with actions) --}}
+        <div class="mb-6">
+            <livewire:customers.appointment-actions :customer-id="$customer->id" />
+        </div>
 
         {{-- Tabs --}}
         <div class="flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-700 mb-6 overflow-x-auto">
@@ -990,4 +1018,19 @@ new class extends Component
             </div>
         </div>
     </flux:modal>
+
+    {{-- Book Appointment Modal --}}
+    <livewire:customers.book-appointment-modal />
+
+    {{-- Clipboard copy handler --}}
+    <script>
+        document.addEventListener('livewire:initialized', () => {
+            Livewire.on('copy-to-clipboard', ({ text }) => {
+                navigator.clipboard.writeText(text);
+                if (typeof $flux !== 'undefined') {
+                    $flux.toast('Booking link copied!');
+                }
+            });
+        });
+    </script>
 </div>

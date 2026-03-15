@@ -10,7 +10,6 @@ Artisan::command('inspire', function () {
 
 Schedule::command('crew:check-compliance')->dailyAt('07:00');
 Schedule::command('followups:generate-daily')->dailyAt('07:00');
-Schedule::command('meetings:send-reminders')->everyFiveMinutes();
 Schedule::command('priority-scores:recalculate')->everyFifteenMinutes();
 Schedule::command('workflows:process-waiting')->everyFiveMinutes();
 Schedule::command('workflows:run-scheduled')->everyFifteenMinutes();

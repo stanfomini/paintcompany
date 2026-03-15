@@ -1,15 +1,12 @@
 <?php
 
 use App\Events\CustomerContributionAdded;
-use App\Models\Activity;
 use App\Models\ChatThread;
 use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Estimate;
 use App\Models\PackageTemplate;
-use App\Models\User;
 use App\Services\ChatService;
-use App\Services\MeetingService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -38,12 +35,6 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
 
     /** @var array<int, array<string>> */
     public array $areaCustomerChecklists = [];
-
-    public string $meetingTitle = '';
-    public string $meetingDateTime = '';
-    public string $meetingType = 'in_person';
-    public string $meetingDescription = '';
-    public ?int $meetingTeamMember = null;
 
     /** @var array<string, array<string, string>> */
     private const CUSTOMER_CHECKLIST_GROUPS = [
@@ -204,74 +195,6 @@ new #[Layout('components.layouts.customer', ['title' => 'Estimate Details'])] cl
     public function customer(): ?Customer
     {
         return Customer::where('user_id', auth('customer')->id())->first();
-    }
-
-    #[Computed]
-    public function meetingActivities()
-    {
-        return $this->estimate->deal?->activities()
-            ->where('type', 'meeting')
-            ->whereNotNull('meeting_type')
-            ->with(['proposedBy', 'videoCall'])
-            ->orderBy('due_at')
-            ->get() ?? collect();
-    }
-
-    #[Computed]
-    public function teamMembers()
-    {
-        return User::where('type', 'internal')->orderBy('name')->get(['id', 'name']);
-    }
-
-    public function proposeMeeting(): void
-    {
-        $this->validate([
-            'meetingTitle' => 'required|string|max:255',
-            'meetingDateTime' => 'required|date|after:now',
-            'meetingType' => 'required|in:in_person,virtual',
-            'meetingDescription' => 'nullable|string|max:1000',
-        ]);
-
-        $user = Auth::guard('customer')->user();
-        $deal = $this->estimate->deal;
-
-        app(MeetingService::class)->proposeMeeting(
-            deal: $deal,
-            proposer: $user,
-            title: $this->meetingTitle,
-            dateTime: Carbon::parse($this->meetingDateTime),
-            meetingType: $this->meetingType,
-            teamMemberId: $this->meetingTeamMember,
-            description: $this->meetingDescription ?: null,
-            estimateId: $this->estimate->id,
-        );
-
-        $this->reset(['meetingTitle', 'meetingDateTime', 'meetingType', 'meetingDescription', 'meetingTeamMember']);
-        unset($this->meetingActivities);
-
-        session()->flash('success', __('Meeting proposed successfully.'));
-    }
-
-    public function confirmMeeting(int $activityId): void
-    {
-        $activity = Activity::findOrFail($activityId);
-        $user = Auth::guard('customer')->user();
-
-        app(MeetingService::class)->confirmMeeting($activity, $user);
-        unset($this->meetingActivities);
-
-        session()->flash('success', __('Meeting confirmed.'));
-    }
-
-    public function declineMeeting(int $activityId): void
-    {
-        $activity = Activity::findOrFail($activityId);
-        $user = Auth::guard('customer')->user();
-
-        app(MeetingService::class)->declineMeeting($activity, $user);
-        unset($this->meetingActivities);
-
-        session()->flash('success', __('Meeting declined.'));
     }
 
     /**

@@ -251,6 +251,16 @@ class RolesAndPermissionsSeeder extends Seeder
             // Reports
             'reports.view',
             'reports.own',
+
+            // Phone System
+            'phone.view_call_history',
+            'phone.make_calls',
+            'phone.receive_calls',
+            'phone.transfer_calls',
+            'settings.phone_system',
+
+            // Bookings
+            'bookings.manage',
         ];
 
         foreach ($permissions as $permission) {
@@ -352,6 +362,11 @@ class RolesAndPermissionsSeeder extends Seeder
             'team.view_financials', 'crew.view_financials',
             // Reports
             'reports.view', 'reports.own',
+            // Phone System
+            'phone.view_call_history', 'phone.make_calls', 'phone.receive_calls', 'phone.transfer_calls',
+            'settings.phone_system',
+            // Bookings
+            'bookings.manage',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -430,6 +445,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'team.view_financials', 'crew.view_financials',
             // Reports
             'reports.view', 'reports.own',
+            // Phone System
+            'phone.view_call_history', 'phone.make_calls', 'phone.receive_calls', 'phone.transfer_calls',
+            // Bookings
+            'bookings.manage',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -481,6 +500,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'messenger.view',
             // Reports
             'reports.own',
+            // Phone System
+            'phone.view_call_history', 'phone.make_calls', 'phone.receive_calls',
         ]);
 
         // HR Manager - focused on employee management, hiring, onboarding, payroll
@@ -516,6 +537,10 @@ class RolesAndPermissionsSeeder extends Seeder
             'team.manage_users', 'team.manage_invitations',
             // Photos
             'photos.upload', 'photos.comment',
+            // Phone System
+            'phone.view_call_history',
+            // Bookings
+            'bookings.manage',
         ]);
 
         // Door-to-Door Sales Rep - focused on door knocking, territory claiming, and quick customer outreach
@@ -552,6 +577,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'scheduling.view',
             // Reports (own performance stats)
             'reports.own',
+            // Phone System
+            'phone.view_call_history',
         ]);
 
         // Door Knocker - minimal permissions, focused on assigned blocks and recording knocks
@@ -562,6 +589,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'door_knocks.record',
             'territory_dispatch.view',
             'territory_dispatch.claim',
+            // Phone System
+            'phone.view_call_history',
         ]);
     }
 }

@@ -85,10 +85,7 @@ new class extends Component
 
     public ?string $followUpDate = null;
 
-    // Quote schedule modal
-    public bool $showQuoteScheduleModal = false;
-
-    public ?string $quoteScheduleDate = null;
+    // (Quote schedule modal replaced by book-appointment-modal)
 
     // Email compose modal
     public bool $showCompose = false;
@@ -469,8 +466,7 @@ new class extends Component
             }
             app(DealStageService::class)->transitionTo($this->activeDeal, $stage);
         } elseif ($stage === 'quote_scheduled') {
-            $this->quoteScheduleDate = now()->addDay()->setTime(9, 0)->format('Y-m-d\TH:i');
-            $this->showQuoteScheduleModal = true;
+            $this->dispatch('open-appointment-modal', customerId: $this->customer->id, dealId: $this->activeDeal->id);
 
             return;
         } else {
@@ -494,17 +490,9 @@ new class extends Component
         $this->refreshCustomer();
     }
 
-    public function confirmQuoteSchedule(): void
+    #[On('appointment-booked')]
+    public function onAppointmentBooked(): void
     {
-        abort_unless(auth()->user()->can('deals.edit'), 403);
-
-        if (! $this->activeDeal) {
-            return;
-        }
-
-        app(DealStageService::class)->transitionTo($this->activeDeal, 'quote_scheduled', $this->quoteScheduleDate);
-        $this->showQuoteScheduleModal = false;
-        $this->quoteScheduleDate = null;
         $this->refreshCustomer();
     }
 
@@ -1651,22 +1639,8 @@ new class extends Component
         </form>
     </flux:modal>
 
-    {{-- Quote Schedule Modal --}}
-    <flux:modal wire:model="showQuoteScheduleModal" class="max-w-sm">
-        <form wire:submit="confirmQuoteSchedule">
-            <flux:heading size="lg" class="mb-4">{{ __('Schedule Quote Appointment') }}</flux:heading>
-
-            <flux:field>
-                <flux:label>{{ __('Appointment Date & Time') }}</flux:label>
-                <flux:input wire:model="quoteScheduleDate" type="datetime-local" />
-            </flux:field>
-
-            <div class="mt-6 flex justify-end gap-3">
-                <flux:button variant="ghost" wire:click="$set('showQuoteScheduleModal', false)" type="button">{{ __('Cancel') }}</flux:button>
-                <flux:button type="submit" variant="primary">{{ __('Schedule Quote') }}</flux:button>
-            </div>
-        </form>
-    </flux:modal>
+    {{-- Book Appointment Modal (replaces old Schedule Quote modal) --}}
+    <livewire:customers.book-appointment-modal />
 
     {{-- Email Compose Flyout --}}
     <flux:modal wire:model="showCompose" name="compose-email" variant="flyout" class="w-full max-w-2xl">

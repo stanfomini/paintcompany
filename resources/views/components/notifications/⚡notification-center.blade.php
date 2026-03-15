@@ -182,9 +182,6 @@ new class extends Component {
             // Task → planner
             'TaskAssigned' => route('planner.index'),
 
-            // Meeting notifications → deal if available, otherwise planner
-            'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => isset($data['deal_id']) ? route('deals.show', $data['deal_id']) : route('planner.index'),
-
             // Collaborator access → deal
             'CollaboratorAccessGranted' => isset($data['deal_id']) ? route('deals.show', $data['deal_id']) : null,
 
@@ -243,9 +240,6 @@ new class extends Component {
             'CrewOnboardingCallRequested' => 'phone',
             'CustomerConfirmedDate', 'CustomerProposedDate' => 'calendar',
             'CustomerConfirmedColors' => 'swatch',
-            'MeetingProposed', 'MeetingConfirmed' => 'video-camera',
-            'MeetingCancelled' => 'x-circle',
-            'MeetingReminder' => 'clock',
             'VideoCallInvitation' => 'video-camera',
             'AgentListingSubmitted' => 'home',
             'CollaboratorAccessGranted' => 'user-plus',
@@ -287,10 +281,6 @@ new class extends Component {
             'CustomerConfirmedDate' => __('Date Confirmed'),
             'CustomerConfirmedColors' => __('Colors Confirmed'),
             'CustomerProposedDate' => __('Date Proposed'),
-            'MeetingProposed' => __('Meeting Proposed'),
-            'MeetingConfirmed' => __('Meeting Confirmed'),
-            'MeetingCancelled' => __('Meeting Cancelled'),
-            'MeetingReminder' => __('Meeting Reminder'),
             'VideoCallInvitation' => __('Video Call'),
             'AgentListingSubmitted' => __('Listing Submitted'),
             'CollaboratorAccessGranted' => __('Collaborator Added'),
@@ -325,7 +315,6 @@ new class extends Component {
             'ReferralLeadCreated', 'ReferralEstimateSigned', 'ReferralRewardEarned' => $data['customer_name'] ?? '',
             'TaskAssigned' => $data['title'] ?? '',
             'VideoCallInvitation' => ($data['initiator_name'] ?? '') . ' ' . __('started a call'),
-            'MeetingProposed', 'MeetingConfirmed', 'MeetingCancelled', 'MeetingReminder' => $data['title'] ?? '',
             'NewAccountCreated' => ucfirst($data['account_type'] ?? 'user') . ' — ' . ($data['user_name'] ?? ''),
             'InvitationViewed' => ($data['agent_email'] ?? '') . ' ' . __('clicked your invite'),
             'EmailReceivedNotification' => ($data['from_name'] ?? $data['from_address'] ?? __('Someone')) . ' — ' . ($data['subject'] ?? ''),

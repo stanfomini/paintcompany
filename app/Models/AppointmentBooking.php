@@ -56,6 +56,7 @@ class AppointmentBooking extends Model
         'cancelled_at',
         'cancellation_reason',
         'booked_by',
+        'override_note',
         'reminder_sent_at',
     ];
 

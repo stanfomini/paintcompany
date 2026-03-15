@@ -18,6 +18,7 @@ use App\Notifications\AppointmentCancelledNotification;
 use App\Notifications\InvitationNotification;
 use App\Notifications\NewAppointmentNotification;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Crypt;
 
 class AppointmentBookingService
 {
@@ -275,6 +276,50 @@ class AppointmentBookingService
         ]);
 
         $invitation->notify(new InvitationNotification($invitation));
+    }
+
+    /**
+     * Generate an encrypted prefill token containing customer data for the booking page.
+     */
+    public function generatePrefillToken(Customer $customer, int $expiryDays = 7): string
+    {
+        $data = [
+            'first_name' => $customer->first_name,
+            'last_name' => $customer->last_name,
+            'email' => $customer->email,
+            'phone' => $customer->phone,
+            'address' => $customer->address,
+            'city' => $customer->city,
+            'state' => $customer->state,
+            'zip' => $customer->zip,
+            'customer_id' => $customer->id,
+            'expires_at' => now()->addDays($expiryDays)->toIso8601String(),
+        ];
+
+        return Crypt::encryptString(json_encode($data));
+    }
+
+    /**
+     * Decode a prefill token back to customer data. Returns null if expired or invalid.
+     */
+    public function decodePrefillToken(string $token): ?array
+    {
+        try {
+            $json = Crypt::decryptString($token);
+            $data = json_decode($json, true);
+
+            if (! $data || ! isset($data['expires_at'])) {
+                return null;
+            }
+
+            if (now()->isAfter($data['expires_at'])) {
+                return null;
+            }
+
+            return $data;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
