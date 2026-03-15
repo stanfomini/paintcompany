@@ -54,6 +54,18 @@ class Customer extends Model
             if ($customer->phone) {
                 static::autoLinkSmsThreads($customer);
             }
+
+            // Auto-create Project Preview for every new customer
+            ProjectPreview::create([
+                'customer_id' => $customer->id,
+                'phone' => $customer->phone ?? '',
+                'first_name' => $customer->first_name,
+                'last_name' => $customer->last_name,
+                'email' => $customer->email,
+                'address' => $customer->full_address ?? $customer->address,
+                'lead_source_id' => $customer->lead_source_id,
+                'status' => 'active',
+            ]);
         });
 
         static::updated(function (Customer $customer) {
@@ -198,6 +210,11 @@ class Customer extends Model
     public function deals(): HasMany
     {
         return $this->hasMany(Deal::class);
+    }
+
+    public function projectPreviews(): HasMany
+    {
+        return $this->hasMany(ProjectPreview::class);
     }
 
     /**
