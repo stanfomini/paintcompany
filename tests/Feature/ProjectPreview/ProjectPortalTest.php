@@ -57,12 +57,12 @@ it('displays estimator name when assigned', function () {
     $response->assertSee('Jane Smith');
 });
 
-it('shows login CTA for guests', function () {
+it('shows login CTA for guests on project journey timeline', function () {
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->get("/preview/{$preview->public_token}");
 
-    $response->assertSee('Unlock More Features')
+    $response->assertSee('Login to unlock')
         ->assertSee('Create Free Account');
 });
 
@@ -72,15 +72,17 @@ it('hides login CTA for authenticated users', function () {
 
     $response = $this->actingAs($user)->get("/preview/{$preview->public_token}");
 
-    $response->assertDontSee('Unlock More Features');
+    $response->assertDontSee('Login to unlock');
 });
 
-it('shows What to Expect tab in navigation', function () {
+it('shows both journey timelines', function () {
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->get("/preview/{$preview->public_token}");
 
-    $response->assertSee('What to Expect')
-        ->assertSee('Color Visualizer')
-        ->assertSee('Book');
+    $response->assertSee('Estimate Journey')
+        ->assertSee('Project Journey')
+        ->assertSee('Book')
+        ->assertSee('Preview')
+        ->assertSee('Estimate Visit');
 });
