@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\AppointmentBooking;
+use App\Models\CallLog;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\Customer;
 use App\Models\EmailAccount;
 use App\Models\EmailMessage;
+use App\Models\ProjectPreview;
 use App\Services\FacebookMessengerService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
@@ -55,6 +57,15 @@ new class extends Component
             ->get();
     }
 
+    #[Computed]
+    public function projectPreview(): ?ProjectPreview
+    {
+        return ProjectPreview::where('customer_id', $this->customer->id)
+            ->orWhere('phone', $this->customer->phone)
+            ->latest()
+            ->first();
+    }
+
     public function setTab(string $tab): void
     {
         $this->activeTab = $tab;
@@ -67,6 +78,7 @@ new class extends Component
             $this->dealThreads,
             $this->directThreads,
             $this->emailLinks,
+            $this->callLogs,
         );
     }
 
@@ -250,6 +262,17 @@ new class extends Component
         })->values();
     }
 
+    #[Computed]
+    public function callLogs(): Collection
+    {
+        return CallLog::query()
+            ->forCustomer($this->customer->id)
+            ->with(['callerUser', 'answeredByUser'])
+            ->latest('started_at')
+            ->limit(20)
+            ->get();
+    }
+
     public function openReplyModal(int $messageId): void
     {
         $message = EmailMessage::find($messageId);
@@ -419,6 +442,46 @@ new class extends Component
             @endif
         </div>
 
+        {{-- Project Preview --}}
+        @if ($this->projectPreview)
+            <div class="mb-6 p-4 rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-900/10">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="eye" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <flux:heading size="sm">{{ __('Project Preview') }}</flux:heading>
+                    </div>
+                    <flux:badge size="sm" :color="$this->projectPreview->status === 'active' ? 'blue' : ($this->projectPreview->status === 'converted' ? 'green' : 'zinc')">
+                        {{ ucfirst($this->projectPreview->status) }}
+                    </flux:badge>
+                </div>
+                <div class="flex items-center gap-2">
+                    <flux:input readonly :value="$this->projectPreview->getPortalUrl()" class="text-xs flex-1" />
+                    <flux:button
+                        size="sm"
+                        variant="ghost"
+                        icon="clipboard-document"
+                        x-on:click="navigator.clipboard.writeText('{{ $this->projectPreview->getPortalUrl() }}'); $flux.toast('Link copied!')"
+                        title="{{ __('Copy link') }}"
+                    />
+                    <flux:button
+                        size="sm"
+                        variant="ghost"
+                        icon="arrow-top-right-on-square"
+                        :href="$this->projectPreview->getPortalUrl()"
+                        target="_blank"
+                        title="{{ __('Open preview') }}"
+                    />
+                </div>
+                <div class="flex items-center gap-4 mt-2 text-xs text-zinc-500 dark:text-zinc-400">
+                    <span>{{ $this->projectPreview->photos()->count() }} {{ __('photos') }}</span>
+                    <span>{{ $this->projectPreview->portal_views_count }} {{ __('views') }}</span>
+                    @if ($this->projectPreview->last_viewed_at)
+                        <span>{{ __('Last viewed') }} {{ $this->projectPreview->last_viewed_at->diffForHumans() }}</span>
+                    @endif
+                </div>
+            </div>
+        @endif
+
         {{-- Appointments --}}
         @if ($this->appointments->isNotEmpty())
             <div class="mb-6 space-y-3">
@@ -483,6 +546,9 @@ new class extends Component
                     'direct' => __('Direct'),
                     'emails' => __('Emails'),
                 ];
+                if (auth()->user()?->can('phone.view_call_history')) {
+                    $tabs['calls'] = __('Calls');
+                }
             @endphp
             @foreach ($tabs as $key => $label)
                 <button
@@ -775,6 +841,81 @@ new class extends Component
                                     </div>
                                 </div>
                             @endif
+                        @endforeach
+                    </div>
+                @endif
+
+            @elseif ($activeTab === 'calls')
+                @if ($this->callLogs->isEmpty())
+                    <div class="text-center py-12">
+                        <flux:icon name="phone" class="w-10 h-10 mx-auto text-zinc-300 dark:text-zinc-600 mb-3" />
+                        <flux:text size="sm" class="text-zinc-500">{{ __('No call history for this customer.') }}</flux:text>
+                    </div>
+                @else
+                    <div class="space-y-2">
+                        @foreach ($this->callLogs as $log)
+                            <div
+                                wire:key="call-{{ $log->id }}"
+                                class="flex items-start gap-3 p-4 rounded-lg border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                            >
+                                <div class="shrink-0 mt-0.5">
+                                    @if ($log->status === 'no-answer')
+                                        <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+                                            <flux:icon name="phone-x-mark" class="w-4 h-4 text-red-600 dark:text-red-400" />
+                                        </div>
+                                    @elseif ($log->isVoicemail())
+                                        <div class="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                                            <flux:icon name="inbox" class="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                                        </div>
+                                    @elseif ($log->direction === 'inbound')
+                                        <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                                            <flux:icon name="phone-arrow-down-left" class="w-4 h-4 text-green-600 dark:text-green-400" />
+                                        </div>
+                                    @else
+                                        <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                            <flux:icon name="phone-arrow-up-right" class="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                                        </div>
+                                    @endif
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <flux:text class="font-medium text-sm">
+                                            {{ $log->direction === 'inbound' ? $log->from_number : $log->to_number }}
+                                        </flux:text>
+                                        @if ($log->status === 'no-answer')
+                                            <flux:badge size="sm" color="red">{{ __('Missed') }}</flux:badge>
+                                        @elseif ($log->isVoicemail())
+                                            <flux:badge size="sm" color="yellow">{{ __('Voicemail') }}</flux:badge>
+                                        @else
+                                            <flux:badge size="sm" color="zinc">{{ __('Completed') }}</flux:badge>
+                                        @endif
+                                    </div>
+                                    @if ($log->answeredByUser)
+                                        <flux:text size="sm" class="text-zinc-400 mt-0.5">
+                                            {{ __('Answered by') }} {{ $log->answeredByUser->name }}
+                                        </flux:text>
+                                    @elseif ($log->callerUser && $log->direction === 'outbound')
+                                        <flux:text size="sm" class="text-zinc-400 mt-0.5">
+                                            {{ __('Called by') }} {{ $log->callerUser->name }}
+                                        </flux:text>
+                                    @endif
+                                    @if ($log->isVoicemail() && $log->voicemail_transcription)
+                                        <flux:text size="sm" class="text-zinc-500 italic mt-1">
+                                            "{{ Str::limit($log->voicemail_transcription, 100) }}"
+                                        </flux:text>
+                                    @endif
+                                </div>
+                                <div class="shrink-0 text-right space-y-1">
+                                    <flux:text size="xs" class="text-zinc-400">
+                                        {{ $log->started_at?->diffForHumans() }}
+                                    </flux:text>
+                                    @if ($log->duration_seconds > 0)
+                                        <flux:text size="xs" class="text-zinc-400">
+                                            {{ $log->getFormattedDuration() }}
+                                        </flux:text>
+                                    @endif
+                                </div>
+                            </div>
                         @endforeach
                     </div>
                 @endif
