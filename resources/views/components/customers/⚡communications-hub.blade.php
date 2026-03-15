@@ -61,7 +61,7 @@ new class extends Component
     public function projectPreview(): ?ProjectPreview
     {
         return ProjectPreview::where('customer_id', $this->customer->id)
-            ->orWhere('phone', $this->customer->phone)
+            ->where('status', 'active')
             ->latest()
             ->first();
     }

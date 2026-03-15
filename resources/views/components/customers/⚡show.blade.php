@@ -170,14 +170,17 @@ new class extends Component
     }
 
     /**
-     * Get the latest active project preview for this customer.
+     * Get the active project preview for the focused deal.
      */
     #[Computed]
     public function projectPreview(): ?ProjectPreview
     {
-        return ProjectPreview::where('customer_id', $this->customer->id)
-            ->orWhere('phone', $this->customer->phone)
-            ->latest()
+        if (! $this->activeDeal) {
+            return null;
+        }
+
+        return ProjectPreview::where('deal_id', $this->activeDeal->id)
+            ->where('status', 'active')
             ->first();
     }
 

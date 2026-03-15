@@ -20,9 +20,34 @@ class Deal extends Model
 
     protected static function booted(): void
     {
+        static::created(function (Deal $deal) {
+            $customer = $deal->customer;
+            if ($customer) {
+                ProjectPreview::create([
+                    'customer_id' => $customer->id,
+                    'deal_id' => $deal->id,
+                    'phone' => $customer->phone ?? '',
+                    'first_name' => $customer->first_name,
+                    'last_name' => $customer->last_name,
+                    'email' => $customer->email,
+                    'address' => $customer->full_address ?? $customer->address,
+                    'lead_source_id' => $deal->lead_source_id ?? $customer->lead_source_id,
+                    'estimator_id' => $deal->assigned_to,
+                    'status' => 'active',
+                ]);
+            }
+        });
+
         static::updated(function (Deal $deal) {
             if ($deal->wasChanged('assigned_to') && $deal->assigned_to) {
                 app(CommissionService::class)->createFromDeal($deal);
+            }
+
+            // Expire project preview when deal reaches a terminal stage
+            if ($deal->wasChanged('stage') && $deal->isPastDeal()) {
+                ProjectPreview::where('deal_id', $deal->id)
+                    ->where('status', 'active')
+                    ->update(['status' => 'expired']);
             }
         });
     }
@@ -225,6 +250,11 @@ class Deal extends Model
     public function estimates(): HasMany
     {
         return $this->hasMany(Estimate::class);
+    }
+
+    public function projectPreview(): HasOne
+    {
+        return $this->hasOne(ProjectPreview::class);
     }
 
     /**

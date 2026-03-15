@@ -237,8 +237,8 @@ new class extends Component
     }
 
     /**
-     * Get the project preview for the currently selected contact.
-     * Works for both regular customer contacts and SMS contacts.
+     * Get the active project preview for the currently selected contact.
+     * Only shows when a deal is active (not lost/completed/cancelled).
      */
     #[Computed]
     public function contactProjectPreview(): ?ProjectPreview
@@ -248,33 +248,18 @@ new class extends Component
             $customer = Customer::where('user_id', $this->selectedContact->id)->first();
             if ($customer) {
                 return ProjectPreview::where('customer_id', $customer->id)
-                    ->orWhere('phone', $customer->phone)
-                    ->active()
+                    ->where('status', 'active')
                     ->latest()
-                    ->first()
-                    ?? ProjectPreview::where('customer_id', $customer->id)
-                        ->orWhere('phone', $customer->phone)
-                        ->latest()
-                        ->first();
+                    ->first();
             }
         }
 
-        // SMS contact — look up via thread's customer or phone from subject
+        // SMS contact — look up via thread's customer
         if ($this->isSmsContact() && $this->smsThreadId) {
             $thread = ChatThread::find($this->smsThreadId);
             if ($thread?->customer_id) {
-                $customer = Customer::find($thread->customer_id);
-                if ($customer) {
-                    return ProjectPreview::where('customer_id', $customer->id)
-                        ->orWhere('phone', $customer->phone)
-                        ->latest()
-                        ->first();
-                }
-            }
-            // Try extracting phone from thread subject ("SMS from +1303...")
-            if ($thread?->subject && preg_match('/(\+?\d{10,})/', $thread->subject, $m)) {
-                $phone = preg_replace('/\D/', '', $m[1]);
-                return ProjectPreview::where('phone', 'LIKE', '%' . substr($phone, -10))
+                return ProjectPreview::where('customer_id', $thread->customer_id)
+                    ->where('status', 'active')
                     ->latest()
                     ->first();
             }
