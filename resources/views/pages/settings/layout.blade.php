@@ -71,6 +71,12 @@
                 @can('settings.company')
                     <flux:navlist.item :href="route('settings.color-visualizer')" wire:navigate>{{ __('Color Visualizer') }}</flux:navlist.item>
                 @endcan
+                @can('settings.phone_system')
+                    <flux:navlist.item :href="route('settings.phone-system')" wire:navigate>{{ __('Phone System') }}</flux:navlist.item>
+                @endcan
+                @can('settings.company')
+                    <flux:navlist.item :href="route('settings.sms-bot')" wire:navigate>{{ __('SMS Bot') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>

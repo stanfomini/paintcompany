@@ -90,6 +90,76 @@ class TwilioService
     }
 
     /**
+     * Send an MMS message with media attachments.
+     *
+     * @param  array<string>  $mediaUrls  URLs of media to attach
+     * @return array{success: bool, sid: string|null, error: string|null}
+     */
+    public function sendMms(string $to, string $body, array $mediaUrls = []): array
+    {
+        if (! $this->isEnabled()) {
+            return ['success' => false, 'sid' => null, 'error' => 'Twilio is not enabled'];
+        }
+
+        $formatted = $this->formatE164($to);
+
+        if (! $formatted) {
+            return ['success' => false, 'sid' => null, 'error' => 'Invalid phone number'];
+        }
+
+        // Same rate limiting as sendSms
+        $rateLimitKey = "sms_rate:{$formatted}";
+        $currentCount = Cache::get($rateLimitKey, 0);
+
+        if ($currentCount >= 5) {
+            Log::warning('MMS rate limit exceeded', ['to' => $formatted]);
+
+            return ['success' => false, 'sid' => null, 'error' => 'Rate limit exceeded'];
+        }
+
+        $dailyKey = 'sms_daily_count:'.now()->format('Y-m-d');
+        $dailyCount = Cache::get($dailyKey, 0);
+        $dailyLimit = config('services.twilio.daily_limit', 500);
+
+        if ($dailyCount >= $dailyLimit) {
+            Log::warning('MMS daily limit exceeded', ['count' => $dailyCount, 'limit' => $dailyLimit]);
+
+            return ['success' => false, 'sid' => null, 'error' => 'Daily SMS limit exceeded'];
+        }
+
+        try {
+            $options = [
+                'from' => config('services.twilio.from'),
+                'body' => $body,
+            ];
+
+            if (! empty($mediaUrls)) {
+                $options['mediaUrl'] = $mediaUrls;
+            }
+
+            try {
+                $options['statusCallback'] = route('webhooks.twilio.status');
+            } catch (\Throwable) {
+                // Route may not exist in test environments
+            }
+
+            $message = $this->getClient()->messages->create($formatted, $options);
+
+            Cache::put($rateLimitKey, $currentCount + 1, now()->addHour());
+            Cache::put($dailyKey, $dailyCount + 1, now()->endOfDay());
+
+            return ['success' => true, 'sid' => $message->sid, 'error' => null];
+        } catch (\Exception $e) {
+            Log::error('Failed to send MMS', [
+                'to' => $formatted,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['success' => false, 'sid' => null, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Validate a Twilio webhook signature.
      */
     public function validateWebhookSignature(Request $request): bool
@@ -155,7 +225,7 @@ class TwilioService
         return "{$appName} alerts. Reply STOP to opt out. Msg&data rates may apply.\n\n{$body}";
     }
 
-    protected function getClient(): Client
+    public function getClient(): Client
     {
         if (! $this->client) {
             $this->client = new Client(

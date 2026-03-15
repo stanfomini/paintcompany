@@ -96,6 +96,11 @@ Route::livewire('/proposal/{token}', 'public.estimate-proposal')
     ->name('estimates.public')
     ->middleware('throttle:60,1');
 
+// Public project preview portal
+Route::livewire('/preview/{token}', 'public.project-portal')
+    ->name('project.portal')
+    ->middleware('throttle:60,1');
+
 // Public vendor onboarding route
 Route::livewire('/vendor/onboarding/{token}', 'public.vendor-onboarding')
     ->name('vendor.onboarding')
@@ -755,5 +760,47 @@ Route::post('/webhooks/twilio/sms', [\App\Http\Controllers\TwilioWebhookControll
 Route::post('/webhooks/twilio/status', [\App\Http\Controllers\TwilioWebhookController::class, 'deliveryStatus'])
     ->name('webhooks.twilio.status')
     ->middleware('throttle:120,1');
+
+// Twilio Voice webhooks (no auth - verified by Twilio signature)
+Route::post('/webhooks/twilio/voice', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'incomingCall'])
+    ->name('webhooks.twilio.voice')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/status', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'callStatus'])
+    ->name('webhooks.twilio.voice.status')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/recording', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'recordingReady'])
+    ->name('webhooks.twilio.voice.recording')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/dial-status/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'dialStatus'])
+    ->name('webhooks.twilio.voice.dial-status')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/voicemail/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'voicemailComplete'])
+    ->name('webhooks.twilio.voice.voicemail')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/transcription/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'transcriptionComplete'])
+    ->name('webhooks.twilio.voice.transcription')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/ivr-select/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'ivrSelect'])
+    ->name('webhooks.twilio.voice.ivr-select')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/voicemail-fallback/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'voicemailFallback'])
+    ->name('webhooks.twilio.voice.voicemail-fallback')
+    ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/outbound-connect/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'outboundConnect'])
+    ->name('webhooks.twilio.voice.outbound-connect')
+    ->middleware('throttle:120,1');
+
+// Call management (authenticated, internal users)
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::post('/calls/initiate', [\App\Http\Controllers\CallController::class, 'initiate'])
+        ->name('calls.initiate')
+        ->middleware('permission:phone.make_calls');
+    Route::post('/calls/{callLog}/transfer', [\App\Http\Controllers\CallController::class, 'transfer'])
+        ->name('calls.transfer')
+        ->middleware('permission:phone.make_calls');
+    Route::post('/calls/{callLog}/hangup', [\App\Http\Controllers\CallController::class, 'hangup'])
+        ->name('calls.hangup')
+        ->middleware('permission:phone.make_calls');
+});
 
 require __DIR__.'/settings.php';

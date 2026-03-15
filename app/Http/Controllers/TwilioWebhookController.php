@@ -9,9 +9,11 @@ use App\Models\CrewProfile;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
 use App\Models\EmployeeProfile;
+use App\Models\SmsConversation;
 use App\Models\SmsSession;
 use App\Models\User;
 use App\Services\ChatService;
+use App\Services\SmsEngagementBotService;
 use App\Services\TwilioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -35,7 +37,14 @@ class TwilioWebhookController extends Controller
         $from = $request->input('From', '');
         $body = trim($request->input('Body', ''));
 
-        if (empty($from) || empty($body)) {
+        // Extract MMS media URLs (photos can arrive with empty body)
+        $numMedia = (int) $request->input('NumMedia', 0);
+        $mediaUrls = [];
+        for ($i = 0; $i < $numMedia; $i++) {
+            $mediaUrls[] = $request->input("MediaUrl{$i}");
+        }
+
+        if (empty($from) || (empty($body) && empty($mediaUrls))) {
             return $this->twimlResponse();
         }
 
@@ -58,6 +67,14 @@ class TwilioWebhookController extends Controller
         $formattedPhone = $this->twilio->formatE164($from);
 
         if (! $formattedPhone) {
+            return $this->twimlResponse();
+        }
+
+        // Check for active SMS bot conversation FIRST (before normal session routing)
+        $botConvo = SmsConversation::findActiveByPhone($formattedPhone);
+        if ($botConvo) {
+            app(SmsEngagementBotService::class)->handleInbound($formattedPhone, $body, $mediaUrls);
+
             return $this->twimlResponse();
         }
 

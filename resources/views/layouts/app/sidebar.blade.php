@@ -260,6 +260,11 @@
                                 {{ __('Booking Settings') }}
                             </flux:sidebar.item>
                         @endcan
+                        @can('settings.company')
+                            <flux:sidebar.item icon="chat-bubble-left-ellipsis" :href="route('settings.sms-bot')" :current="request()->routeIs('settings.sms-bot')" wire:navigate>
+                                {{ __('SMS Bot') }}
+                            </flux:sidebar.item>
+                        @endcan
                     </flux:sidebar.group>
                 @endcanany
             </flux:sidebar.nav>
@@ -355,6 +360,10 @@
                 @livewire('notifications.new-lead-alert')
                 @can('media.record')
                     @livewire('media.quick-recorder')
+                @endcan
+                @can('phone.make_calls')
+                    @livewire('communications.dial-pad')
+                    @livewire('communications.active-call')
                 @endcan
             @endif
         @endauth
