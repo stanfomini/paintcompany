@@ -11,6 +11,7 @@ use App\Models\EstimateActivity;
 use App\Models\Job;
 use App\Models\Property;
 use App\Models\User;
+use App\Models\ProjectPreview;
 use App\Services\CustomerDeletionService;
 use App\Services\CustomerDuplicateService;
 use App\Services\DealStageService;
@@ -166,6 +167,18 @@ new class extends Component
             ->whereNotIn('stage', ['completed'])
             ->latest()
             ->get();
+    }
+
+    /**
+     * Get the latest active project preview for this customer.
+     */
+    #[Computed]
+    public function projectPreview(): ?ProjectPreview
+    {
+        return ProjectPreview::where('customer_id', $this->customer->id)
+            ->orWhere('phone', $this->customer->phone)
+            ->latest()
+            ->first();
     }
 
     /**
@@ -1384,6 +1397,44 @@ new class extends Component
                                 </flux:button>
                             </div>
                         @endif
+                    </div>
+                @endif
+
+                {{-- Project Preview Card --}}
+                @if ($this->projectPreview)
+                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden">
+                        <div class="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <flux:icon name="eye" class="w-4 h-4 text-blue-500" />
+                                <flux:heading size="sm">{{ __('Project Preview') }}</flux:heading>
+                            </div>
+                            <flux:badge size="sm" :color="$this->projectPreview->status === 'active' ? 'blue' : ($this->projectPreview->status === 'converted' ? 'green' : 'zinc')">
+                                {{ ucfirst($this->projectPreview->status) }}
+                            </flux:badge>
+                        </div>
+                        <div class="p-4 space-y-3">
+                            <div class="flex items-center gap-2">
+                                <flux:input readonly :value="$this->projectPreview->getPortalUrl()" class="text-xs" />
+                                <flux:button
+                                    size="sm"
+                                    variant="ghost"
+                                    icon="clipboard-document"
+                                    x-on:click="navigator.clipboard.writeText('{{ $this->projectPreview->getPortalUrl() }}'); $flux.toast('Link copied!')"
+                                />
+                            </div>
+                            <div class="flex items-center gap-4 text-xs text-zinc-500 dark:text-zinc-400">
+                                <span>{{ $this->projectPreview->photos()->count() }} {{ __('photos') }}</span>
+                                <span>{{ $this->projectPreview->portal_views_count }} {{ __('views') }}</span>
+                                @if ($this->projectPreview->last_viewed_at)
+                                    <span>{{ __('Last viewed') }} {{ $this->projectPreview->last_viewed_at->diffForHumans() }}</span>
+                                @endif
+                            </div>
+                            <div class="flex gap-2">
+                                <flux:button size="xs" variant="ghost" icon="arrow-top-right-on-square" :href="$this->projectPreview->getPortalUrl()" target="_blank">
+                                    {{ __('Open') }}
+                                </flux:button>
+                            </div>
+                        </div>
                     </div>
                 @endif
             </div>
