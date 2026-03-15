@@ -284,6 +284,45 @@ new #[Layout('components.layouts.public')] class extends Component {
 ?>
 
 <div class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+    {{-- Appointment Reminder Banner --}}
+    @if($this->booking && $this->booking->booked_date && $this->booking->status === 'confirmed')
+        @php
+            $appointmentEnd = Carbon::parse($this->booking->booked_date->format('Y-m-d') . ' ' . $this->booking->booked_end_time);
+        @endphp
+        @if($appointmentEnd->isFuture())
+            <div class="mb-6 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl p-4 sm:p-5 text-white shadow-lg">
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                            <flux:icon name="calendar-days" class="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                            <div class="text-sm font-medium text-blue-100">{{ __('Your Estimate Appointment') }}</div>
+                            <div class="text-lg font-bold">
+                                {{ $this->booking->booked_date->format('l, M j') }} &middot; {{ Carbon::parse($this->booking->booked_start_time)->format('g:i A') }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        @if($this->booking->estimator)
+                            <div class="hidden sm:flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
+                                <div class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+                                    {{ strtoupper(substr($this->booking->estimator->name, 0, 1)) }}
+                                </div>
+                                <span class="text-sm">{{ $this->booking->estimator->name }}</span>
+                            </div>
+                        @endif
+                        @if($this->googleCalendarUrl)
+                            <a href="{{ $this->googleCalendarUrl }}" target="_blank" rel="noopener noreferrer" class="bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors">
+                                <flux:icon name="calendar" class="w-4 h-4 inline -mt-0.5" /> {{ __('Add to Calendar') }}
+                            </a>
+                        @endif
+                    </div>
+                </div>
+            </div>
+        @endif
+    @endif
+
     {{-- Hero Header --}}
     <div class="text-center mb-10">
         @if($this->company->logo_path)
@@ -473,6 +512,30 @@ new #[Layout('components.layouts.public')] class extends Component {
                             @endif
                         </div>
                     @endif
+                </div>
+
+                {{-- While You Wait — Color Visualizer promo --}}
+                <div class="mt-6 bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6 text-center">
+                    <flux:icon name="paint-brush" class="w-8 h-8 mx-auto text-blue-500 mb-3" />
+                    <flux:heading size="md">{{ __('While You Wait...') }}</flux:heading>
+                    <flux:text class="mt-2 text-zinc-600 dark:text-zinc-300 text-sm">
+                        {{ __('Try our free Color Visualizer! Upload a photo of your space, pick your colors, and see what your project could look like before we arrive.') }}
+                    </flux:text>
+                    <flux:button variant="primary" wire:click="setStep('visualizer')" class="mt-4" icon="camera">
+                        {{ __('Try the Color Visualizer') }}
+                    </flux:button>
+                </div>
+
+                {{-- Contact info --}}
+                <div class="mt-6 text-center">
+                    <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                        {{ __('Questions? Contact us at') }}
+                        @if($this->company->company_phone)
+                            <a href="tel:{{ $this->company->company_phone }}" class="underline">{{ $this->company->company_phone }}</a>
+                        @else
+                            {{ $this->company->company_email ?? config('mail.from.address') }}
+                        @endif
+                    </flux:text>
                 </div>
             @else
                 <div class="p-6 text-center">
