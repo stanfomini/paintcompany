@@ -56,7 +56,7 @@ class ProjectPreview extends Model
                 $model->uuid = (string) Str::uuid();
             }
             if (empty($model->public_token)) {
-                $model->public_token = Str::random(64);
+                $model->public_token = self::generateSlugToken();
             }
         });
     }
@@ -136,6 +136,31 @@ class ProjectPreview extends Model
     public function scopeForPhone(Builder $query, string $phone): Builder
     {
         return $query->where('phone', $phone);
+    }
+
+    /**
+     * Generate a slug-style token like "amber-river-fox-k9m2".
+     * Human-readable but unguessable (~10B+ combinations.
+     */
+    public static function generateSlugToken(): string
+    {
+        $adjectives = ['amber', 'bold', 'calm', 'deep', 'easy', 'fair', 'gold', 'hazy', 'iron', 'jade',
+            'keen', 'lush', 'mint', 'navy', 'opal', 'pale', 'ruby', 'sage', 'teal', 'warm',
+            'aqua', 'blue', 'clay', 'dawn', 'fern', 'gray', 'ivory', 'lime', 'moss', 'plum',
+            'rose', 'sand', 'stone', 'snow', 'wild', 'soft', 'rich', 'pure', 'cool', 'crisp'];
+        $nouns = ['brook', 'cedar', 'delta', 'ember', 'field', 'grove', 'haven', 'lake', 'maple', 'north',
+            'ocean', 'peak', 'ridge', 'shore', 'trail', 'vale', 'creek', 'dusk', 'frost', 'glen',
+            'hawk', 'isle', 'knoll', 'lodge', 'marsh', 'nest', 'pine', 'reef', 'slate', 'stone',
+            'tide', 'wind', 'birch', 'bluff', 'cliff', 'cove', 'fern', 'hill', 'mesa', 'rain'];
+
+        do {
+            $slug = $adjectives[array_rand($adjectives)]
+                .'-'.$nouns[array_rand($nouns)]
+                .'-'.$adjectives[array_rand($adjectives)]
+                .'-'.Str::lower(Str::random(4));
+        } while (self::where('public_token', $slug)->exists());
+
+        return $slug;
     }
 
     /**

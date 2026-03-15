@@ -18,7 +18,7 @@ class ProjectPreviewFactory extends Factory
     {
         return [
             'uuid' => (string) Str::uuid(),
-            'public_token' => Str::random(64),
+            'public_token' => ProjectPreview::generateSlugToken(),
             'customer_id' => null,
             'phone' => fake()->e164PhoneNumber(),
             'first_name' => fake()->firstName(),

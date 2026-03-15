@@ -7,6 +7,7 @@ use App\Models\EmailMessage;
 use App\Models\Customer;
 use App\Models\GuestChatSession;
 use App\Models\MessengerConversation;
+use App\Models\ProjectPreview;
 use App\Models\User;
 use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
@@ -233,6 +234,53 @@ new class extends Component
         }
 
         return User::find($this->contactId);
+    }
+
+    /**
+     * Get the project preview for the currently selected contact.
+     * Works for both regular customer contacts and SMS contacts.
+     */
+    #[Computed]
+    public function contactProjectPreview(): ?ProjectPreview
+    {
+        // Regular customer contact
+        if ($this->selectedContact?->isCustomer()) {
+            $customer = Customer::where('user_id', $this->selectedContact->id)->first();
+            if ($customer) {
+                return ProjectPreview::where('customer_id', $customer->id)
+                    ->orWhere('phone', $customer->phone)
+                    ->active()
+                    ->latest()
+                    ->first()
+                    ?? ProjectPreview::where('customer_id', $customer->id)
+                        ->orWhere('phone', $customer->phone)
+                        ->latest()
+                        ->first();
+            }
+        }
+
+        // SMS contact — look up via thread's customer or phone from subject
+        if ($this->isSmsContact() && $this->smsThreadId) {
+            $thread = ChatThread::find($this->smsThreadId);
+            if ($thread?->customer_id) {
+                $customer = Customer::find($thread->customer_id);
+                if ($customer) {
+                    return ProjectPreview::where('customer_id', $customer->id)
+                        ->orWhere('phone', $customer->phone)
+                        ->latest()
+                        ->first();
+                }
+            }
+            // Try extracting phone from thread subject ("SMS from +1303...")
+            if ($thread?->subject && preg_match('/(\+?\d{10,})/', $thread->subject, $m)) {
+                $phone = preg_replace('/\D/', '', $m[1]);
+                return ProjectPreview::where('phone', 'LIKE', '%' . substr($phone, -10))
+                    ->latest()
+                    ->first();
+            }
+        }
+
+        return null;
     }
 
     #[Computed]
@@ -918,6 +966,25 @@ new class extends Component
                     </div>
                     <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Inbound SMS conversation') }}</flux:text>
                 </div>
+                @if ($this->contactProjectPreview)
+                    <div class="flex items-center gap-1 shrink-0">
+                        <flux:button
+                            size="sm"
+                            variant="ghost"
+                            icon="clipboard-document"
+                            x-on:click="navigator.clipboard.writeText('{{ $this->contactProjectPreview->getPortalUrl() }}'); $flux.toast('Preview link copied!')"
+                            title="{{ __('Copy preview link') }}"
+                        />
+                        <flux:button
+                            size="sm"
+                            variant="ghost"
+                            icon="eye"
+                            :href="$this->contactProjectPreview->getPortalUrl()"
+                            target="_blank"
+                            title="{{ __('Open preview') }}"
+                        />
+                    </div>
+                @endif
             </div>
 
             {{-- SMS thread as full messenger view --}}
@@ -1180,6 +1247,23 @@ new class extends Component
                         @if ($customer)
                             <flux:button size="sm" variant="ghost" icon="user" :href="route('customers.show', $customer)" wire:navigate />
                         @endif
+                        @if ($this->contactProjectPreview)
+                            <flux:button
+                                size="sm"
+                                variant="ghost"
+                                icon="clipboard-document"
+                                x-on:click="navigator.clipboard.writeText('{{ $this->contactProjectPreview->getPortalUrl() }}'); $flux.toast('Preview link copied!')"
+                                title="{{ __('Copy preview link') }}"
+                            />
+                            <flux:button
+                                size="sm"
+                                variant="ghost"
+                                icon="eye"
+                                :href="$this->contactProjectPreview->getPortalUrl()"
+                                target="_blank"
+                                title="{{ __('Open preview') }}"
+                            />
+                        @endif
                     @elseif ($this->selectedContact->isAgent())
                         <flux:button size="sm" variant="ghost" icon="user" :href="route('agents.show', $this->selectedContact)" wire:navigate />
                     @elseif ($this->selectedContact->isCrew())
@@ -1198,6 +1282,9 @@ new class extends Component
                     }
                     $tabs['direct'] = __('Direct');
                     $tabs['emails'] = __('Emails');
+                    if (auth()->user()?->can('phone.view_call_history')) {
+                        $tabs['calls'] = __('Calls');
+                    }
                     $tabCounts = $this->tabUnreadCounts;
                 @endphp
                 @foreach ($tabs as $key => $label)
@@ -1390,6 +1477,11 @@ new class extends Component
                                 </div>
                             @endif
                         @endif
+                    </div>
+                @elseif ($activeTab === 'calls')
+                    {{-- CALL HISTORY TAB: Renders as standalone Livewire component --}}
+                    <div class="flex-1 overflow-y-auto p-3 sm:p-4">
+                        @livewire('communications.call-history', key('calls-tab'))
                     </div>
                 @elseif ($this->contactItems->isEmpty())
                     <div class="text-center py-12 px-4">
