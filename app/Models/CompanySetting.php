@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class CompanySetting extends Model
@@ -136,6 +137,23 @@ class CompanySetting extends Model
         // Color Visualizer
         'visualizer_agent_prompt',
         'visualizer_image_prompt',
+        'default_visualization_colors',
+        'sms_bot_enabled',
+        // Phone System
+        'phone_system_enabled',
+        'phone_routing_mode',
+        'default_call_group_id',
+        'after_hours_call_group_id',
+        'call_recording_enabled',
+        'voicemail_greeting_type',
+        'voicemail_greeting_text',
+        'voicemail_greeting_path',
+        'voicemail_timeout_seconds',
+        'phone_business_hours_start',
+        'phone_business_hours_end',
+        'phone_business_days',
+        'ivr_enabled',
+        'ivr_menu',
     ];
 
     protected function casts(): array
@@ -225,6 +243,16 @@ class CompanySetting extends Model
             'booking_lookahead_days' => 'integer',
             'booking_min_notice_hours' => 'integer',
             'bookable_estimator_ids' => 'array',
+            // Color Visualizer / SMS Bot
+            'default_visualization_colors' => 'array',
+            'sms_bot_enabled' => 'boolean',
+            // Phone System
+            'phone_system_enabled' => 'boolean',
+            'call_recording_enabled' => 'boolean',
+            'voicemail_timeout_seconds' => 'integer',
+            'phone_business_days' => 'array',
+            'ivr_enabled' => 'boolean',
+            'ivr_menu' => 'array',
         ];
     }
 
@@ -298,6 +326,36 @@ class CompanySetting extends Model
         static::deleted(function () {
             static::clearInstanceCache();
         });
+    }
+
+    /**
+     * Get the configured default visualization colors, or fallback defaults.
+     *
+     * @return array<int, array{name: string, hex: string, brand: string}>
+     */
+    public function getDefaultVisualizationColors(): array
+    {
+        return $this->default_visualization_colors ?? [
+            ['name' => 'Agreeable Gray', 'hex' => '#D0CDC8', 'brand' => 'Sherwin-Williams'],
+            ['name' => 'Simply White', 'hex' => '#F1EDE3', 'brand' => 'Benjamin Moore'],
+            ['name' => 'Hale Navy', 'hex' => '#434C5E', 'brand' => 'Benjamin Moore'],
+        ];
+    }
+
+    /**
+     * Get the default call group for incoming calls.
+     */
+    public function defaultCallGroup(): BelongsTo
+    {
+        return $this->belongsTo(CallGroup::class, 'default_call_group_id');
+    }
+
+    /**
+     * Get the after-hours call group.
+     */
+    public function afterHoursCallGroup(): BelongsTo
+    {
+        return $this->belongsTo(CallGroup::class, 'after_hours_call_group_id');
     }
 
     /**
