@@ -75,12 +75,12 @@ it('hides login CTA for authenticated users', function () {
     $response->assertDontSee('Unlock More Features');
 });
 
-it('shows What to Expect guide', function () {
+it('shows What to Expect tab in navigation', function () {
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->get("/preview/{$preview->public_token}");
 
     $response->assertSee('What to Expect')
-        ->assertSee('Estimate Visit')
-        ->assertSee('Paint Day');
+        ->assertSee('Color Visualizer')
+        ->assertSee('Book');
 });
