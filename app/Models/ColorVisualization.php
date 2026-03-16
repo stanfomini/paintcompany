@@ -21,7 +21,7 @@ class ColorVisualization extends Model
     public const STATUS_FAILED = 'failed';
 
     protected $fillable = [
-        'uuid', 'user_id', 'estimate_id', 'session_id',
+        'uuid', 'user_id', 'estimate_id', 'sms_conversation_id', 'session_id',
         'original_image_path', 'result_image_path', 'prompt',
         'parsed_colors', 'status', 'error_message', 'ai_provider',
         'disk', 'lead_name', 'lead_email', 'lead_phone', 'lead_address',
@@ -51,6 +51,11 @@ class ColorVisualization extends Model
     public function estimate(): BelongsTo
     {
         return $this->belongsTo(Estimate::class);
+    }
+
+    public function smsConversation(): BelongsTo
+    {
+        return $this->belongsTo(SmsConversation::class);
     }
 
     public function scopeCompleted(Builder $query): Builder
