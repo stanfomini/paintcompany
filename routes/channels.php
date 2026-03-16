@@ -119,20 +119,29 @@ Broadcast::channel('video-call.{roomId}', function (User $user, string $roomId) 
         return false;
     }
 
+    // Use the user's ID as the presence member ID. This is deterministic —
+    // both client and server know it without any custom headers or auth overrides.
+    // Same user on multiple tabs shares one presence slot (correct for video calls).
+    $userData = [
+        'id' => $user->id,
+        'name' => $user->name,
+        'user_id' => $user->id,
+    ];
+
     // Internal users can always join
     if ($user->isInternal()) {
-        return ['id' => $user->id, 'name' => $user->name];
+        return $userData;
     }
 
     // Job-based calls (legacy job_id column)
     $job = $videoCall->job;
     if ($job) {
         if ($job->crews()->where('crew_user_id', $user->id)->exists()) {
-            return ['id' => $user->id, 'name' => $user->name];
+            return $userData;
         }
 
         if ($job->deal?->customer?->user_id === $user->id) {
-            return ['id' => $user->id, 'name' => $user->name];
+            return $userData;
         }
     }
 
@@ -140,11 +149,11 @@ Broadcast::channel('video-call.{roomId}', function (User $user, string $roomId) 
     $callable = $videoCall->callable;
     if ($callable instanceof \App\Models\Deal) {
         if ($callable->customer?->user_id === $user->id) {
-            return ['id' => $user->id, 'name' => $user->name];
+            return $userData;
         }
 
         if ($callable->agent_id === $user->id) {
-            return ['id' => $user->id, 'name' => $user->name];
+            return $userData;
         }
     }
 
@@ -266,3 +275,11 @@ Broadcast::channel('visualization.{uuid}', function (User $user, string $uuid) {
         ->where('user_id', $user->id)
         ->exists();
 }, ['guards' => ['web', 'customer', 'agent']]);
+
+/**
+ * Authorize access to a user's call channel.
+ * Only the user themselves can listen, and they must be an internal user.
+ */
+Broadcast::channel('call.user.{userId}', function (User $user, int $userId) {
+    return $user->id === $userId && $user->isInternal();
+}, ['guards' => ['web']]);

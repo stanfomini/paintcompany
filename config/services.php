@@ -67,6 +67,7 @@ return [
         'from' => env('TWILIO_PHONE_NUMBER'),
         'enabled' => env('TWILIO_ENABLED', false),
         'daily_limit' => env('TWILIO_DAILY_LIMIT', 500),
+        'voice_enabled' => env('TWILIO_VOICE_ENABLED', false),
     ],
 
     'meta' => [

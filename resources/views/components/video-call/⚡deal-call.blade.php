@@ -32,6 +32,16 @@ new class extends Component
             ->whereIn('status', ['waiting', 'active'])
             ->first();
 
+        // Also check by consistent room ID in case the call was reactivated
+        if (! $activeCall) {
+            $estimator = User::find($deal->assigned_to);
+            if ($estimator?->personal_room_slug) {
+                $activeCall = VideoCall::where('room_id', $estimator->videoCallRoomId($deal->id))
+                    ->whereIn('status', ['waiting', 'active'])
+                    ->first();
+            }
+        }
+
         if ($activeCall) {
             $this->activeCallId = $activeCall->id;
             $this->activeRoomId = $activeCall->room_id;
@@ -49,37 +59,63 @@ new class extends Component
             return;
         }
 
-        // Create a new video call record
-        $videoCall = VideoCall::create([
-            'callable_type' => Deal::class,
-            'callable_id' => $this->deal->id,
-            'initiated_by' => $user->id,
-            'room_id' => 'deal-'.$this->deal->id.'-'.Str::random(8),
-            'status' => 'active',
-            'started_at' => now(),
-            'participants' => [
-                [
-                    'user_id' => $user->id,
-                    'name' => $user->name,
-                    'type' => $user->type,
-                    'joined_at' => now()->toISOString(),
+        // Use the deal's assigned estimator for a consistent room slug,
+        // falling back to the caller if no estimator is assigned
+        $estimator = User::find($this->deal->assigned_to) ?? $user;
+        $roomId = $estimator->videoCallRoomId($this->deal->id);
+
+        // Find-or-create VideoCall with this permanent room ID
+        $videoCall = VideoCall::where('room_id', $roomId)->first();
+
+        if (! $videoCall) {
+            $videoCall = VideoCall::create([
+                'callable_type' => Deal::class,
+                'callable_id' => $this->deal->id,
+                'initiated_by' => $user->id,
+                'room_id' => $roomId,
+                'status' => 'active',
+                'started_at' => now(),
+                'participants' => [
+                    [
+                        'user_id' => $user->id,
+                        'name' => $user->name,
+                        'type' => $user->type,
+                        'joined_at' => now()->toISOString(),
+                    ],
                 ],
-            ],
-        ]);
+            ]);
+
+            // Broadcast to other participants on this deal
+            VideoCallStarted::dispatch($videoCall, $user->name);
+
+            // Send email notifications to all deal participants (except caller)
+            $this->notifyDealParticipants($videoCall, $user);
+        } elseif ($videoCall->isEnded()) {
+            $videoCall->update(['status' => 'active', 'started_at' => now(), 'ended_at' => null]);
+            VideoCallStarted::dispatch($videoCall, $user->name);
+            $this->notifyDealParticipants($videoCall, $user);
+        }
 
         $this->activeCallId = $videoCall->id;
         $this->activeRoomId = $videoCall->room_id;
         $this->showCallPanel = true;
-
-        // Broadcast to other participants on this deal
-        VideoCallStarted::dispatch($videoCall, $user->name);
-
-        // Send email notifications to all deal participants (except caller)
-        $this->notifyDealParticipants($videoCall, $user);
     }
 
     public function joinCall(): void
     {
+        // Re-query for active call in case it was started after this component mounted
+        if (! $this->activeRoomId) {
+            $activeCall = VideoCall::where('callable_type', Deal::class)
+                ->where('callable_id', $this->deal->id)
+                ->whereIn('status', ['pending', 'waiting', 'active'])
+                ->first();
+
+            if ($activeCall) {
+                $this->activeCallId = $activeCall->id;
+                $this->activeRoomId = $activeCall->room_id;
+            }
+        }
+
         $this->showCallPanel = true;
     }
 
@@ -213,7 +249,7 @@ new class extends Component
             init() {
                 if (window.Echo) {
                     window.Echo.private('{{ $echoChannel }}')
-                        .listen('VideoCallStarted', (e) => {
+                        .listen('.video.call.started', (e) => {
                             this.callerName = e.initiator_name;
                             this.incomingCall = true;
                             setTimeout(() => { this.incomingCall = false; }, 60000);

@@ -198,10 +198,10 @@ document.addEventListener('alpine:init', () => {
     }));
 });
 
-// Lazy-load tiptap editor — only imported when a tiptapEditor element exists on the page
-if (document.querySelector('[x-data*="tiptapEditor"]')) {
-    import('./tiptap-editor');
-}
+// TipTap editor — static import ensures Alpine.data('tiptapEditor') is registered
+// before Alpine processes the DOM. Dynamic import() had a race condition: the async
+// chunk could resolve AFTER Alpine init, leaving the editor uninitialized.
+import './tiptap-editor';
 
 // Workflow builder — static import ensures Alpine.data() is registered before Alpine.start().
 // Dynamic import() had a race condition: the async chunk fetch could resolve AFTER Alpine

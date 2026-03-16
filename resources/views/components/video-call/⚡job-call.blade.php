@@ -44,36 +44,72 @@ new class extends Component {
             return;
         }
 
-        // Create a new video call record
-        $videoCall = VideoCall::create([
-            'job_id' => $this->job->id,
-            'initiated_by' => $user->id,
-            'room_id' => 'job-'.$this->job->id.'-'.Str::random(8),
-            'status' => 'active',
-            'started_at' => now(),
-            'participants' => [
-                [
-                    'user_id' => $user->id,
-                    'name' => $user->name,
-                    'type' => $user->type,
-                    'joined_at' => now()->toISOString(),
+        // Use the deal's assigned estimator for a consistent room slug
+        $deal = $this->job->deal;
+        $estimator = $deal ? User::find($deal->assigned_to) : null;
+        $estimator = $estimator ?? $user;
+
+        // For jobs, scope the room to the deal (same room as deal-call)
+        $dealId = $deal?->id ?? 0;
+        $roomId = $estimator->videoCallRoomId($dealId);
+
+        // Find-or-create VideoCall with this permanent room ID
+        $videoCall = VideoCall::where('room_id', $roomId)->first();
+
+        if (! $videoCall) {
+            $videoCall = VideoCall::create([
+                'job_id' => $this->job->id,
+                'callable_type' => $deal ? \App\Models\Deal::class : null,
+                'callable_id' => $deal?->id,
+                'initiated_by' => $user->id,
+                'room_id' => $roomId,
+                'status' => 'active',
+                'started_at' => now(),
+                'participants' => [
+                    [
+                        'user_id' => $user->id,
+                        'name' => $user->name,
+                        'type' => $user->type,
+                        'joined_at' => now()->toISOString(),
+                    ],
                 ],
-            ],
-        ]);
+            ]);
+
+            // Broadcast to other participants on this job
+            VideoCallStarted::dispatch($videoCall, $user->name);
+
+            // Send email notifications to all job participants (except caller)
+            $this->notifyJobParticipants($videoCall, $user);
+        } elseif ($videoCall->isEnded()) {
+            $videoCall->update([
+                'status' => 'active',
+                'started_at' => now(),
+                'ended_at' => null,
+                'job_id' => $this->job->id,
+            ]);
+            VideoCallStarted::dispatch($videoCall, $user->name);
+            $this->notifyJobParticipants($videoCall, $user);
+        }
 
         $this->activeCallId = $videoCall->id;
         $this->activeRoomId = $videoCall->room_id;
         $this->showCallPanel = true;
-
-        // Broadcast to other participants on this job
-        VideoCallStarted::dispatch($videoCall, $user->name);
-
-        // Send email notifications to all job participants (except caller)
-        $this->notifyJobParticipants($videoCall, $user);
     }
 
     public function joinCall(): void
     {
+        // Re-query for active call in case it was started after this component mounted
+        if (! $this->activeRoomId) {
+            $activeCall = VideoCall::where('job_id', $this->job->id)
+                ->whereIn('status', ['pending', 'waiting', 'active'])
+                ->first();
+
+            if ($activeCall) {
+                $this->activeCallId = $activeCall->id;
+                $this->activeRoomId = $activeCall->room_id;
+            }
+        }
+
         $this->showCallPanel = true;
     }
 
@@ -217,7 +253,7 @@ new class extends Component {
             init() {
                 if (window.Echo) {
                     window.Echo.private('{{ $echoChannel }}')
-                        .listen('VideoCallStarted', (e) => {
+                        .listen('.video.call.started', (e) => {
                             this.callerName = e.initiator_name;
                             this.incomingCall = true;
                             setTimeout(() => { this.incomingCall = false; }, 60000);

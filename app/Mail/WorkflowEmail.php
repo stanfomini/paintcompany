@@ -34,8 +34,14 @@ class WorkflowEmail extends Mailable implements ShouldQueue
 
     public function content(): Content
     {
+        // If body contains HTML tags, send as-is (from rich editor).
+        // Otherwise fall back to plain text with line breaks.
+        $html = strip_tags($this->emailBody) !== $this->emailBody
+            ? $this->emailBody
+            : nl2br(e($this->emailBody));
+
         return new Content(
-            htmlString: nl2br(e($this->emailBody)),
+            htmlString: $html,
         );
     }
 }

@@ -172,6 +172,22 @@ new class extends Component {
         $this->showRunHistory = true;
         unset($this->runs);
     }
+
+    public function createWithAi(): void
+    {
+        $this->authorize('ai.workflow_builder');
+
+        $workflow = Workflow::create([
+            'name' => 'AI-Generated Workflow',
+            'description' => '',
+            'is_active' => false,
+            'is_system' => false,
+            'version' => 1,
+            'created_by' => auth()->id(),
+        ]);
+
+        $this->redirect(route('workflows.builder', $workflow) . '?ai=1');
+    }
 };
 ?>
 
@@ -182,9 +198,17 @@ new class extends Component {
             <div class="text-sm text-zinc-500">
                 {{ $workflows->total() }} {{ Str::plural('workflow', $workflows->total()) }}
             </div>
-            <flux:button variant="primary" size="sm" wire:click="openCreateModal" wire:loading.attr="disabled">
-                New Workflow
-            </flux:button>
+            <div class="flex items-center gap-2">
+                @can('ai.workflow_builder')
+                    <flux:button size="sm" wire:click="createWithAi" wire:loading.attr="disabled">
+                        <svg class="mr-1 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                        Create with AI
+                    </flux:button>
+                @endcan
+                <flux:button variant="primary" size="sm" wire:click="openCreateModal" wire:loading.attr="disabled">
+                    New Workflow
+                </flux:button>
+            </div>
         </div>
 
         <div class="divide-y divide-zinc-200 rounded-lg border border-zinc-200 dark:divide-zinc-700 dark:border-zinc-700">

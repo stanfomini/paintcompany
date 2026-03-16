@@ -36,6 +36,9 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->prefix('crew')
                 ->name('crew.')
                 ->group(base_path('routes/crew.php'));
+
+            // AI & MCP routes
+            require base_path('routes/ai.php');
         },
     )
     ->withBroadcasting(
@@ -52,6 +55,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'webhooks/*',
             'api/video-views',
             'api/remotion/*',
+            'broadcasting/video-call-auth',
         ]);
 
         $middleware->alias([

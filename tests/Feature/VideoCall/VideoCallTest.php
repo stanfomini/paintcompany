@@ -121,7 +121,7 @@ it('creates a video call record when starting a call', function () {
     expect($videoCall)
         ->status->toBe('active')
         ->initiated_by->toBe($user->id)
-        ->room_id->toStartWith('job-'.$job->id.'-');
+        ->room_id->toContain('-deal-');
 });
 
 it('dispatches VideoCallStarted event when starting a call', function () {

@@ -16,6 +16,8 @@ new class extends Component {
 
     public string $name = '';
     public string $email = '';
+    public ?string $forwarding_number = '';
+    public ?string $extension = '';
 
     /**
      * Mount the component.
@@ -24,6 +26,11 @@ new class extends Component {
     {
         $this->name = Auth::user()->name;
         $this->email = Auth::user()->email;
+
+        if (Auth::user()->isInternal()) {
+            $this->forwarding_number = Auth::user()->forwarding_number ?? '';
+            $this->extension = Auth::user()->extension ?? '';
+        }
     }
 
     /**
@@ -46,6 +53,30 @@ new class extends Component {
         $this->saveAvatar($user);
 
         $this->dispatch('profile-updated', name: $user->name);
+    }
+
+    /**
+     * Update the phone settings for the currently authenticated user.
+     */
+    public function savePhoneSettings(): void
+    {
+        $user = Auth::user();
+
+        if (! $user->isInternal()) {
+            return;
+        }
+
+        $validated = $this->validate([
+            'forwarding_number' => ['nullable', 'string', 'regex:/^\+?1?\d{10,15}$/'],
+            'extension' => ['nullable', 'numeric', 'digits_between:3,4', Rule::unique(User::class, 'extension')->ignore($user->id)],
+        ]);
+
+        $user->update([
+            'forwarding_number' => $validated['forwarding_number'] ?: null,
+            'extension' => $validated['extension'] ?: null,
+        ]);
+
+        $this->dispatch('phone-settings-saved');
     }
 
     /**
@@ -125,6 +156,43 @@ new class extends Component {
                 </x-action-message>
             </div>
         </form>
+
+        @if (Auth::user()->isInternal())
+            <flux:separator class="my-8" />
+
+            <form wire:submit="savePhoneSettings" class="my-6 w-full space-y-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Phone Settings') }}</flux:heading>
+                    <flux:text class="mt-1">{{ __('Configure your call forwarding and extension settings.') }}</flux:text>
+                </div>
+
+                <flux:input
+                    wire:model="forwarding_number"
+                    :label="__('Forwarding Number')"
+                    type="tel"
+                    :description="__('Your cell phone where calls will be forwarded to you')"
+                    placeholder="3035551234"
+                />
+
+                <flux:input
+                    wire:model="extension"
+                    :label="__('Extension')"
+                    maxlength="4"
+                    :description="__('Your direct dial extension (3-4 digits)')"
+                    placeholder="101"
+                />
+
+                <div class="flex items-center gap-4">
+                    <flux:button variant="primary" type="submit">
+                        {{ __('Save Phone Settings') }}
+                    </flux:button>
+
+                    <x-action-message class="me-3" on="phone-settings-saved">
+                        {{ __('Saved.') }}
+                    </x-action-message>
+                </div>
+            </form>
+        @endif
 
         @if ($this->showDeleteUser)
             <livewire:pages::settings.delete-user-form />

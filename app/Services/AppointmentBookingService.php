@@ -160,13 +160,22 @@ class AppointmentBookingService
 
         // 7. Auto-create video call room for virtual appointments
         if (($prospectData['estimate_preference'] ?? 'in_person') === 'virtual') {
-            $videoCall = \App\Models\VideoCall::create([
-                'callable_type' => \App\Models\Deal::class,
-                'callable_id' => $deal->id,
-                'initiated_by' => $estimator->id,
-                'room_id' => 'booking-'.$booking->id.'-'.Str::random(8),
-                'status' => 'pending',
-            ]);
+            $roomId = $estimator->videoCallRoomId($deal->id);
+
+            // Find-or-create with the estimator's permanent room ID
+            $videoCall = \App\Models\VideoCall::where('room_id', $roomId)->first();
+
+            if (! $videoCall) {
+                $videoCall = \App\Models\VideoCall::create([
+                    'callable_type' => \App\Models\Deal::class,
+                    'callable_id' => $deal->id,
+                    'initiated_by' => $estimator->id,
+                    'room_id' => $roomId,
+                    'status' => 'pending',
+                ]);
+            } elseif ($videoCall->isEnded()) {
+                $videoCall->update(['status' => 'pending', 'ended_at' => null]);
+            }
 
             $booking->update(['video_call_id' => $videoCall->id]);
         }

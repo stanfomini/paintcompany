@@ -535,21 +535,26 @@ new class extends Component
     {
         $deal = $this->activeDeal ?? $this->customer->deals()->latest()->first();
 
-        // Reuse an existing active call for this deal so both parties join the same room
-        $videoCall = \App\Models\VideoCall::where('callable_type', \App\Models\Deal::class)
-            ->where('callable_id', $deal?->id)
-            ->whereIn('status', ['pending', 'waiting', 'active'])
-            ->first();
+        // Always use the deal's assigned estimator for the room slug so ALL
+        // participants (estimator, admin, customer) land in the same room.
+        $estimator = $deal?->assigned_to ? \App\Models\User::find($deal->assigned_to) : null;
+        $estimator = $estimator ?? auth()->user();
+        $roomId = $estimator->videoCallRoomId($deal?->id ?? 0);
+
+        // Find-or-create VideoCall with this permanent room ID
+        $videoCall = \App\Models\VideoCall::where('room_id', $roomId)->first();
 
         if (! $videoCall) {
             $videoCall = \App\Models\VideoCall::create([
                 'callable_type' => \App\Models\Deal::class,
                 'callable_id' => $deal?->id,
                 'initiated_by' => auth()->id(),
-                'room_id' => 'deal-'.($deal?->id ?? 0).'-'.\Illuminate\Support\Str::random(8),
+                'room_id' => $roomId,
                 'status' => 'active',
                 'started_at' => now(),
             ]);
+        } elseif ($videoCall->isEnded()) {
+            $videoCall->update(['status' => 'active', 'started_at' => now(), 'ended_at' => null]);
         }
 
         $this->redirect(route('video-call.test', $videoCall->room_id));

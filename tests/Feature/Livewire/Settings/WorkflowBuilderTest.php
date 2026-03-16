@@ -1,6 +1,7 @@
 <?php
 
 use App\Automation\Actions\CreateCustomer;
+use App\Automation\Actions\SendEmail;
 use App\Automation\Triggers\DealStageChanged;
 use App\Automation\Triggers\InboundWebhook;
 use App\Models\AutomationWebhook;
@@ -579,4 +580,39 @@ it('saves webhook field mapping as dynamic value placeholders', function () {
     $actionNode->refresh();
     expect($actionNode->config['first_name'])->toBe('{{webhook.first_name}}')
         ->and($actionNode->config['email'])->toBe('{{webhook.email}}');
+});
+
+it('shows inline email body preview for SendEmail action node', function () {
+    $workflow = Workflow::factory()->create(['created_by' => $this->user->id]);
+
+    WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'trigger',
+        'node_class' => DealStageChanged::class,
+        'config' => [],
+        'position_x' => 0,
+        'position_y' => 0,
+        'is_enabled' => true,
+    ]);
+
+    $emailNode = WorkflowNode::create([
+        'workflow_id' => $workflow->id,
+        'type' => 'action',
+        'node_class' => SendEmail::class,
+        'config' => [
+            'to' => '{{contact.email}}',
+            'subject' => 'Welcome!',
+            'body' => '<p>Hello <strong>there</strong></p>',
+        ],
+        'position_x' => 0,
+        'position_y' => 120,
+        'is_enabled' => true,
+    ]);
+
+    $component = Livewire::test('pages::settings.workflow-builder', ['workflow' => $workflow])
+        ->call('openNodeConfig', $emailNode->id);
+
+    // The body HTML should be present inline as a preview (not hidden behind a modal)
+    $component->assertSet('nodeConfig.body', '<p>Hello <strong>there</strong></p>')
+        ->assertSeeHtml('<p>Hello <strong>there</strong></p>');
 });

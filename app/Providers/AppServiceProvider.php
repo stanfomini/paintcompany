@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Ai\Gateway\XaiImageEditGateway;
+use App\Ai\Gateway\XaiTextGateway;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\DoorKnock;
@@ -19,10 +20,12 @@ use App\Observers\PaymentObserver;
 use App\Observers\UserObserver;
 use App\Observers\WorkflowModelObserver;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Laravel\Ai\Ai;
@@ -45,6 +48,7 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configureMorphMap();
         $this->configureAiGateways();
+        $this->configureRateLimiting();
 
         Payment::observe(PaymentObserver::class);
         OverheadEntry::observe(OverheadEntryObserver::class);
@@ -93,8 +97,17 @@ class AppServiceProvider extends ServiceProvider
                     $app->make(\Illuminate\Contracts\Events\Dispatcher::class),
                 );
 
-                return $provider->useImageGateway(new XaiImageEditGateway);
+                return $provider
+                    ->useTextGateway(new XaiTextGateway)
+                    ->useImageGateway(new XaiImageEditGateway);
             });
+        });
+    }
+
+    protected function configureRateLimiting(): void
+    {
+        RateLimiter::for('ai-workflow', function ($request) {
+            return Limit::perMinute(10)->by($request->user()?->id ?: $request->ip());
         });
     }
 

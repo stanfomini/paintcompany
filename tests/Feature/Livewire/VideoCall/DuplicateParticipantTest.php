@@ -1,59 +1,102 @@
 <?php
 
 use App\Models\User;
+use App\Models\VideoCall;
+
+function createRoom(string $roomId): VideoCall
+{
+    return VideoCall::factory()->active()->create(['room_id' => $roomId]);
+}
 
 it('renders the video call page for an authenticated user', function () {
     $user = User::factory()->internal()->create();
+    createRoom('test');
 
     $this->actingAs($user)
-        ->get(route('video-call.test'))
+        ->get(route('video-call.test', 'test'))
         ->assertSuccessful();
 });
 
-it('coerces userId to string on initialization to prevent self-connection', function () {
-    $user = User::factory()->internal()->create();
+it('renders for guests without auth (public page)', function () {
+    createRoom('public-room');
 
-    $response = $this->actingAs($user)
-        ->get(route('video-call.test'));
-
-    $response->assertSuccessful()
-        ->assertSee('userId: String(config.userId)', false);
+    $this->get(route('video-call.test', 'public-room'))
+        ->assertSuccessful()
+        ->assertSee('isGuest: true', false);
 });
 
-it('uses String() coercion when filtering lobby peers', function () {
+it('returns 404 for non-existent rooms', function () {
     $user = User::factory()->internal()->create();
 
-    $response = $this->actingAs($user)
-        ->get(route('video-call.test'));
-
-    $response->assertSuccessful()
-        ->assertSee('String(u.id) !== this.userId', false);
+    $this->actingAs($user)
+        ->get(route('video-call.test', 'non-existent-room'))
+        ->assertNotFound();
 });
 
-it('uses String() coercion when iterating channel members', function () {
+it('sets myPresenceId from odentity in init', function () {
     $user = User::factory()->internal()->create();
+    createRoom('test');
 
-    $response = $this->actingAs($user)
-        ->get(route('video-call.test'));
+    $content = $this->actingAs($user)
+        ->get(route('video-call.test', 'test'))
+        ->getContent();
 
-    $response->assertSuccessful()
-        ->assertSee('String(member.id) !== this.userId', false);
+    expect(str_contains($content, 'this.myPresenceId = this.odentity'))->toBeTrue();
 });
 
-it('uses numeric comparison for polite peer pattern in handleOffer', function () {
+it('uses myPresenceId when filtering lobby peers', function () {
     $user = User::factory()->internal()->create();
+    createRoom('test');
 
-    $response = $this->actingAs($user)
-        ->get(route('video-call.test'));
+    $this->actingAs($user)
+        ->get(route('video-call.test', 'test'))
+        ->assertSuccessful()
+        ->assertSee('String(u.id) !== this.myPresenceId', false);
+});
 
-    $content = $response->getContent();
+it('uses peerId in whisper payloads', function () {
+    $user = User::factory()->internal()->create();
+    createRoom('test');
 
-    $response->assertSuccessful();
+    $content = $this->actingAs($user)
+        ->get(route('video-call.test', 'test'))
+        ->getContent();
 
-    // The < character may be HTML-encoded in the rendered output,
-    // so check for both the raw and encoded variants
-    expect(
-        str_contains($content, 'Number(this.userId) < Number(peerId)')
-        || str_contains($content, 'Number(this.userId) &lt; Number(peerId)')
-    )->toBeTrue();
+    expect(str_contains($content, 'peerId: this.myPresenceId'))->toBeTrue();
+});
+
+it('auto-removes peers stuck in connecting state after timeout', function () {
+    $user = User::factory()->internal()->create();
+    createRoom('test');
+
+    $this->actingAs($user)
+        ->get(route('video-call.test', 'test'))
+        ->assertSuccessful()
+        ->assertSee('timed out (stuck connecting)', false);
+});
+
+it('re-offers to peers when they announce their role while we are in the call', function () {
+    $user = User::factory()->internal()->create();
+    createRoom('test');
+
+    $this->actingAs($user)
+        ->get(route('video-call.test', 'test'))
+        ->assertSuccessful()
+        ->assertSee('they just joined the call', false);
+});
+
+it('shows guest name input for unauthenticated users', function () {
+    createRoom('guest-room');
+
+    $this->get(route('video-call.test', 'guest-room'))
+        ->assertSuccessful()
+        ->assertSee('Enter your name to join', false);
+});
+
+it('creates Echo for guests with guest auth endpoint', function () {
+    createRoom('guest-room');
+
+    $content = $this->get(route('video-call.test', 'guest-room'))->getContent();
+
+    expect(str_contains($content, 'video-call-auth'))->toBeTrue();
 });

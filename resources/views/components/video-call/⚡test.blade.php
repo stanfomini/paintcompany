@@ -8,19 +8,33 @@ new #[Layout('layouts.video-call')] class extends Component {
 
     public string $userName = '';
 
-    public int $userId;
+    public string $odentity = '';
+
+    public bool $isGuest = false;
 
     public function mount(?string $room = null): void
     {
         $this->roomId = $room ?? 'test';
+
+        // Verify the room exists — return 404 for invalid links
+        if ($room && ! \App\Models\VideoCall::where('room_id', $room)->exists()) {
+            abort(404);
+        }
 
         $user = auth()->user()
             ?? auth('customer')->user()
             ?? auth('crew')->user()
             ?? auth('agent')->user();
 
-        $this->userName = $user->name ?? 'Guest';
-        $this->userId = $user->id ?? 0;
+        if ($user) {
+            $this->userName = $user->name;
+            $this->odentity = (string) $user->id;
+        } else {
+            // Guest — generate a random ID, they'll enter their name in the lobby
+            $this->userName = '';
+            $this->odentity = 'guest-'.\Illuminate\Support\Str::random(8);
+            $this->isGuest = true;
+        }
     }
 };
 ?>
@@ -28,8 +42,9 @@ new #[Layout('layouts.video-call')] class extends Component {
 <div
     x-data="videoCallTest({
         roomId: @js($roomId),
-        userId: @js($userId),
+        odentity: @js($odentity),
         userName: @js($userName),
+        isGuest: @js($isGuest),
     })"
     x-init="init()"
     class="flex flex-col h-screen"
@@ -50,8 +65,30 @@ new #[Layout('layouts.video-call')] class extends Component {
                     </div>
                 </div>
 
+                {{-- Guest Name Input --}}
+                <template x-if="isGuest && !userName">
+                    <div class="mb-6">
+                        <label class="block text-sm font-medium text-zinc-300 mb-2">{{ __('Enter your name to join') }}</label>
+                        <div class="flex gap-2">
+                            <input
+                                type="text"
+                                x-ref="guestNameInput"
+                                class="flex-1 px-4 py-3 rounded-xl bg-zinc-800 border border-zinc-600 text-white placeholder-zinc-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                placeholder="{{ __('Your name') }}"
+                                @keydown.enter="setGuestName($refs.guestNameInput.value)"
+                                maxlength="50"
+                            />
+                            <button
+                                type="button"
+                                @click="setGuestName($refs.guestNameInput.value)"
+                                class="px-4 py-3 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                            >{{ __('OK') }}</button>
+                        </div>
+                    </div>
+                </template>
+
                 {{-- Video Preview --}}
-                <div class="relative bg-zinc-800 rounded-xl overflow-hidden aspect-video mb-6">
+                <div class="relative bg-zinc-800 rounded-xl overflow-hidden aspect-video mb-6" x-show="!isGuest || userName">
                     <video
                         x-ref="previewVideo"
                         autoplay
@@ -61,14 +98,14 @@ new #[Layout('layouts.video-call')] class extends Component {
                     ></video>
                     <div x-show="!previewStream" class="absolute inset-0 flex items-center justify-center">
                         <div class="w-16 h-16 rounded-full bg-zinc-700 flex items-center justify-center">
-                            <span class="text-xl font-bold text-white" x-text="userName.charAt(0).toUpperCase()"></span>
+                            <span class="text-xl font-bold text-white" x-text="(userName || '?').charAt(0).toUpperCase()"></span>
                         </div>
                     </div>
-                    <div class="absolute bottom-3 left-3 px-2 py-1 rounded bg-black/60 text-white text-xs" x-text="userName"></div>
+                    <div class="absolute bottom-3 left-3 px-2 py-1 rounded bg-black/60 text-white text-xs" x-text="userName || 'Guest'"></div>
                 </div>
 
                 {{-- Join Options --}}
-                <div class="space-y-3">
+                <div class="space-y-3" x-show="!isGuest || userName">
                     <button
                         type="button"
                         @click="joinCall('presenter')"
@@ -424,10 +461,10 @@ new #[Layout('layouts.video-call')] class extends Component {
                         <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                     </button>
 
-                    {{-- Screen Share (when camera is active) --}}
+                    {{-- Screen Share --}}
                     <button
                         type="button"
-                        x-show="videoEnabled && hasScreenShare"
+                        x-show="hasScreenShare"
                         @click="toggleScreenShare()"
                         :class="isScreenSharing ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-zinc-700 text-white hover:bg-zinc-600'"
                         class="w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center transition-colors"
@@ -481,8 +518,9 @@ new #[Layout('layouts.video-call')] class extends Component {
 Alpine.data('videoCallTest', (config) => ({
     // Config
     roomId: config.roomId,
-    userId: String(config.userId),
-    userName: config.userName,
+    odentity: String(config.odentity),
+    userName: config.userName || '',
+    isGuest: config.isGuest || false,
 
     // Screen state
     screen: 'lobby', // 'lobby' or 'call'
@@ -503,6 +541,7 @@ Alpine.data('videoCallTest', (config) => ({
     participantCount: 1,
     cameraToast: '',
     focusedPeerId: null, // null = grid, 'self' = self focused, peerId string = that peer
+    myPresenceId: null, // Unique per connection: "userId|socketId"
 
     // Lobby state
     lobbyPeerCount: 0,
@@ -533,7 +572,7 @@ Alpine.data('videoCallTest', (config) => ({
     isScreenSharing: false,
     screenStream: null,
 
-    // ICE servers
+    // ICE servers for NAT traversal
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
@@ -554,11 +593,44 @@ Alpine.data('videoCallTest', (config) => ({
     async init() {
         this.log('Initializing lobby...');
 
+        // Echo is created by app.js (layout always sets meta[name="user-id"]).
+        // Override its authorizer so video-call channels use our permissive
+        // guest auth endpoint instead of /broadcasting/auth.
         if (!window.Echo) {
-            this.error = 'Echo not available. Make sure you are logged in.';
-            this.log('Echo not found on window', 'error');
+            this.error = 'Echo not available. Please refresh the page.';
+            this.log('Echo not found', 'error');
             return;
         }
+
+        // Replace Echo with one that uses our guest-friendly auth endpoint.
+        // This standalone page doesn't use any other channels, so safe to replace.
+        // The default /broadcasting/auth requires login and restricts by deal membership.
+        if (window.Echo) {
+            const EchoClass = window.Echo.constructor;
+            window.Echo.disconnect();
+
+            const meta = (name) => document.querySelector(`meta[name="${name}"]`)?.content;
+            const scheme = meta('reverb-scheme') || 'https';
+
+            window.Echo = new EchoClass({
+                broadcaster: 'reverb',
+                key: meta('reverb-key'),
+                wsHost: meta('reverb-host'),
+                wsPort: meta('reverb-port') || 443,
+                wssPort: meta('reverb-port') || 443,
+                forceTLS: scheme === 'https',
+                enabledTransports: ['ws', 'wss'],
+                authEndpoint: '/broadcasting/video-call-auth',
+                auth: {
+                    headers: {},
+                    params: { guest_id: this.odentity, guest_name: this.userName || '' },
+                },
+            });
+            this.log('Echo replaced with video-call auth endpoint');
+        }
+
+        // Use odentity as the presence ID — matches what the server returns
+        this.myPresenceId = this.odentity;
 
         // Check for multiple cameras
         try {
@@ -569,15 +641,16 @@ Alpine.data('videoCallTest', (config) => ({
             // Ignore
         }
 
-        // Start camera preview in lobby
-        await this.startPreview();
-
-        // Join channel early to see who's in the room
-        this.joinLobbyChannel();
+        // Guests need to enter their name first — preview and channel join
+        // happen in setGuestName() after they submit
+        if (!this.isGuest || this.userName) {
+            await this.startPreview();
+            this.joinLobbyChannel();
+        }
 
         window.addEventListener('beforeunload', () => this.cleanup());
 
-        this.log('Lobby ready');
+        this.log('Lobby ready, presence ID: ' + this.myPresenceId + (this.isGuest ? ' (guest)' : ''));
     },
 
     async startPreview() {
@@ -621,17 +694,21 @@ Alpine.data('videoCallTest', (config) => ({
         this.channel = window.Echo.join('video-call.' + this.roomId)
             .here((users) => {
                 this.echoConnected = true;
-                this.lobbyPeerCount = users.filter(u => String(u.id) !== this.userId).length;
-                this.log(`Lobby: ${users.length} user(s) in room`);
+                // myPresenceId = userId — matches what the server returns as the presence member ID
+                this.lobbyPeerCount = users.filter(u => String(u.id) !== this.myPresenceId).length;
+                this.log(`Lobby: ${users.length} connection(s), ${this.lobbyPeerCount} other(s), me: ${this.myPresenceId.substring(0, 8)}`);
             })
             .joining((user) => {
+                const joiningId = String(user.id);
+                if (joiningId === this.myPresenceId) return;
                 this.lobbyPeerCount++;
-                this.log('Lobby: ' + user.name + ' peeked in');
+                this.log('Lobby: ' + user.name + ' peeked in (' + joiningId + ')');
             })
             .leaving((user) => {
-                this.lobbyPeerCount = Math.max(0, this.lobbyPeerCount - 1);
-                // Decrement lobbyVideoCount if the leaving user had camera on
                 const leavingId = String(user.id);
+                if (leavingId === this.myPresenceId) return;
+                this.lobbyPeerCount = Math.max(0, this.lobbyPeerCount - 1);
+                // Decrement lobbyVideoCount if the leaving connection had camera on
                 if (this.peerRoles[leavingId] === 'presenter') {
                     this.lobbyVideoCount = Math.max(0, this.lobbyVideoCount - 1);
                 }
@@ -639,17 +716,30 @@ Alpine.data('videoCallTest', (config) => ({
                     this.participantCount = Math.max(1, this.participantCount - 1);
                     this.removePeer(leavingId);
                 }
-                this.log('Left: ' + user.name);
+                this.log('Left: ' + user.name + ' (' + leavingId + ')');
             })
             .listenForWhisper('role-announce', (data) => {
-                this.peerRoles[String(data.userId)] = data.role;
+                const peerId = String(data.peerId);
+                if (peerId === this.myPresenceId) return;
+                this.peerRoles[peerId] = data.role;
                 if (data.role === 'presenter') {
                     this.lobbyVideoCount++;
                 }
                 this.log(`${data.userName} joined as ${data.role}`);
+
+                // If we're already in the call, send a fresh offer to this peer.
+                // This handles the critical case where our earlier offer (sent when
+                // we first joined) was ignored because they were still in the lobby.
+                // Without this, both sides get stuck with stale connections.
+                if (this.screen === 'call' && this.localStream) {
+                    this.log('Re-offering to ' + data.userName + ' (they just joined the call)');
+                    this.createPeerConnection(peerId, data.userName, true);
+                    this.participantCount = 1 + Object.keys(this.peers).length;
+                }
             })
             .listenForWhisper('role-changed', (data) => {
-                const peerId = String(data.userId);
+                const peerId = String(data.peerId);
+                if (peerId === this.myPresenceId) return;
                 const oldRole = this.peerRoles[peerId];
                 this.peerRoles[peerId] = data.role;
                 // Update lobbyVideoCount based on role transition
@@ -661,19 +751,19 @@ Alpine.data('videoCallTest', (config) => ({
                 this.log(`${data.userName} switched to ${data.role === 'presenter' ? 'camera on' : 'audio only'}`);
             })
             .listenForWhisper('offer', (data) => {
-                if (String(data.targetId) !== String(this.userId)) return;
+                if (String(data.targetId) !== this.myPresenceId) return;
                 if (this.screen !== 'call') return;
                 this.log('Received offer from ' + data.userName);
-                this.handleOffer(String(data.userId), data.userName, data.sdp);
+                this.handleOffer(String(data.peerId), data.userName, data.sdp);
             })
             .listenForWhisper('answer', (data) => {
-                if (String(data.targetId) !== String(this.userId)) return;
-                this.log('Received answer from user ' + data.userId);
-                this.handleAnswer(String(data.userId), data.sdp);
+                if (String(data.targetId) !== this.myPresenceId) return;
+                this.log('Received answer from ' + data.peerId);
+                this.handleAnswer(String(data.peerId), data.sdp);
             })
             .listenForWhisper('ice-candidate', (data) => {
-                if (String(data.targetId) !== String(this.userId)) return;
-                this.handleIceCandidate(String(data.userId), data.candidate);
+                if (String(data.targetId) !== this.myPresenceId) return;
+                this.handleIceCandidate(String(data.peerId), data.candidate);
             })
             .error((error) => {
                 this.log('Channel error: ' + JSON.stringify(error), 'error');
@@ -731,9 +821,9 @@ Alpine.data('videoCallTest', (config) => ({
         // Monitor audio levels
         this.startAudioMonitor();
 
-        // Announce role to all peers
+        // Announce role to all peers using our unique presence ID
         this.channel.whisper('role-announce', {
-            userId: this.userId,
+            peerId: this.myPresenceId,
             userName: this.userName,
             role: this.myRole,
         });
@@ -743,16 +833,15 @@ Alpine.data('videoCallTest', (config) => ({
         await new Promise(resolve => setTimeout(resolve, 500));
 
         // Re-read the channel members and create offers to existing call participants
-        // We need to re-trigger connection to peers who are already in the call
+        // Each member.id is the user's ID — self-filtering uses myPresenceId
+        this.participantCount = 1; // Reset to self before counting
         this.channel.here && this.channel.subscription.members.each((member) => {
-            if (String(member.id) !== this.userId) {
-                this.log('Creating offer for peer: ' + member.info.name);
+            if (String(member.id) !== this.myPresenceId) {
+                this.log('Creating offer for peer: ' + member.info.name + ' (' + member.id + ')');
                 this.createPeerConnection(String(member.id), member.info.name, true);
                 this.participantCount++;
             }
         });
-
-        this.participantCount = Math.max(1, this.participantCount);
     },
 
     async startLocalMedia(withVideo = true) {
@@ -874,7 +963,7 @@ Alpine.data('videoCallTest', (config) => ({
         pc.onicecandidate = (event) => {
             if (event.candidate && this.channel) {
                 this.channel.whisper('ice-candidate', {
-                    userId: this.userId,
+                    peerId: this.myPresenceId,
                     targetId: peerId,
                     candidate: event.candidate.toJSON(),
                 });
@@ -890,7 +979,25 @@ Alpine.data('videoCallTest', (config) => ({
             if (state === 'failed' || state === 'closed') {
                 this.removePeer(peerId);
             }
+            if (state === 'connected') {
+                // Clear the connection timeout since we connected successfully
+                if (this.peers[peerId]?._connectTimeout) {
+                    clearTimeout(this.peers[peerId]._connectTimeout);
+                    delete this.peers[peerId]._connectTimeout;
+                }
+            }
         };
+
+        // Auto-remove peers stuck in "Connecting..." after 15 seconds
+        if (this.peers[peerId]) {
+            this.peers[peerId]._connectTimeout = setTimeout(() => {
+                if (this.peers[peerId]?.state !== 'connected') {
+                    this.log(`Peer ${displayName} timed out (stuck connecting), removing`, 'error');
+                    this.removePeer(peerId);
+                    this.participantCount = Math.max(1, this.participantCount - 1);
+                }
+            }, 15000);
+        }
 
         pc.oniceconnectionstatechange = () => {
             this.log(`Peer ${displayName} ICE: ${pc.iceConnectionState}`);
@@ -938,7 +1045,7 @@ Alpine.data('videoCallTest', (config) => ({
                 await pc.setLocalDescription(offer);
                 await this.applyBandwidthLimits(pc);
                 this.channel.whisper('offer', {
-                    userId: this.userId,
+                    peerId: this.myPresenceId,
                     userName: this.userName,
                     targetId: peerId,
                     sdp: offer.sdp,
@@ -972,14 +1079,15 @@ Alpine.data('videoCallTest', (config) => ({
 
     async handleOffer(peerId, displayName, sdp) {
         // Polite peer pattern — resolve offer glare when both sides send offers
+        // Compare presence IDs lexicographically for deterministic priority
         const existingPc = this.peerConnections[peerId];
         if (existingPc && existingPc.signalingState === 'have-local-offer') {
-            if (Number(this.userId) < Number(peerId)) {
-                // Lower userId is "impolite" — keeps our offer, ignores theirs
+            if (this.myPresenceId < peerId) {
+                // Lower presence ID is "impolite" — keeps our offer, ignores theirs
                 this.log(`Offer glare with ${displayName}: ignoring (we have priority)`);
                 return;
             }
-            // Higher userId is "polite" — drops our offer, accepts theirs
+            // Higher presence ID is "polite" — drops our offer, accepts theirs
             this.log(`Offer glare with ${displayName}: accepting their offer`);
         }
 
@@ -991,7 +1099,7 @@ Alpine.data('videoCallTest', (config) => ({
             await this.applyBandwidthLimits(pc);
 
             this.channel.whisper('answer', {
-                userId: this.userId,
+                peerId: this.myPresenceId,
                 targetId: peerId,
                 sdp: answer.sdp,
             });
@@ -1096,7 +1204,7 @@ Alpine.data('videoCallTest', (config) => ({
             this.myRole = 'viewer';
             this.cameraLabel = '';
             this.channel.whisper('role-changed', {
-                userId: this.userId,
+                peerId: this.myPresenceId,
                 userName: this.userName,
                 role: 'viewer',
             });
@@ -1136,7 +1244,7 @@ Alpine.data('videoCallTest', (config) => ({
                 this.videoEnabled = true;
                 this.myRole = 'presenter';
                 this.channel.whisper('role-changed', {
-                    userId: this.userId,
+                    peerId: this.myPresenceId,
                     userName: this.userName,
                     role: 'presenter',
                 });
@@ -1195,42 +1303,61 @@ Alpine.data('videoCallTest', (config) => ({
     },
 
     async toggleScreenShare() {
-        if (!this.videoEnabled || !this.hasScreenShare) return;
+        if (!this.hasScreenShare) return;
 
         if (this.isScreenSharing) {
-            // Stop screen sharing - revert to camera
+            // Stop screen sharing
             if (this.screenStream) {
                 this.screenStream.getTracks().forEach(t => t.stop());
                 this.screenStream = null;
             }
 
-            // Get camera track back
-            const cameraStream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    facingMode: this.useFrontCamera ? 'user' : 'environment',
-                    width: { ideal: 1280, max: 1280 },
-                    height: { ideal: 720, max: 720 },
-                    frameRate: { ideal: 30, max: 30 },
-                },
-            });
-            const cameraTrack = cameraStream.getVideoTracks()[0];
+            if (this.videoEnabled) {
+                // Camera was on before — get it back
+                try {
+                    const cameraStream = await navigator.mediaDevices.getUserMedia({
+                        video: {
+                            facingMode: this.useFrontCamera ? 'user' : 'environment',
+                            width: { ideal: 1280, max: 1280 },
+                            height: { ideal: 720, max: 720 },
+                            frameRate: { ideal: 30, max: 30 },
+                        },
+                    });
+                    const cameraTrack = cameraStream.getVideoTracks()[0];
 
-            // Replace in local stream
-            const oldTrack = this.localStream.getVideoTracks()[0];
-            if (oldTrack) this.localStream.removeTrack(oldTrack);
-            this.localStream.addTrack(cameraTrack);
+                    const oldTrack = this.localStream?.getVideoTracks()[0];
+                    if (oldTrack) this.localStream.removeTrack(oldTrack);
+                    this.localStream.addTrack(cameraTrack);
 
-            // Replace in peer connections
-            for (const pc of Object.values(this.peerConnections)) {
-                const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                if (sender) await sender.replaceTrack(cameraTrack);
+                    for (const pc of Object.values(this.peerConnections)) {
+                        const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                        if (sender) await sender.replaceTrack(cameraTrack);
+                    }
+
+                    await this.attachLocalVideo();
+                    this.cameraLabel = cameraTrack.label || 'Camera';
+                } catch (e) {
+                    this.log('Camera restore failed: ' + e.message, 'error');
+                    this.videoEnabled = false;
+                    this.cameraLabel = '';
+                }
+            } else {
+                // Was audio-only — just remove the screen video track
+                const oldTrack = this.localStream?.getVideoTracks()[0];
+                if (oldTrack) {
+                    oldTrack.stop();
+                    this.localStream.removeTrack(oldTrack);
+                }
+                for (const pc of Object.values(this.peerConnections)) {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) {
+                        try { pc.removeTrack(sender); } catch (e) { /* ignore */ }
+                    }
+                }
+                this.cameraLabel = '';
             }
 
-            // Update local video
-            await this.attachLocalVideo();
-
             this.isScreenSharing = false;
-            this.cameraLabel = cameraTrack.label || 'Camera';
             this.log('Screen sharing stopped');
             return;
         }
@@ -1245,24 +1372,31 @@ Alpine.data('videoCallTest', (config) => ({
 
             // When user stops sharing via browser UI
             screenTrack.onended = () => {
-                this.toggleScreenShare(); // Revert to camera
+                this.toggleScreenShare();
             };
 
-            // Replace camera track with screen track in local stream
-            const oldTrack = this.localStream.getVideoTracks()[0];
+            // Replace or add video track in local stream
+            const oldTrack = this.localStream?.getVideoTracks()[0];
             if (oldTrack) {
                 oldTrack.stop();
                 this.localStream.removeTrack(oldTrack);
             }
+
+            if (!this.localStream) {
+                this.localStream = new MediaStream();
+            }
             this.localStream.addTrack(screenTrack);
 
-            // Replace in all peer connections
+            // Replace or add in peer connections
             for (const pc of Object.values(this.peerConnections)) {
                 const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                if (sender) await sender.replaceTrack(screenTrack);
+                if (sender) {
+                    await sender.replaceTrack(screenTrack);
+                } else {
+                    pc.addTrack(screenTrack, this.localStream);
+                }
             }
 
-            // Update local video to show screen share
             await this.attachLocalVideo();
 
             this.isScreenSharing = true;
@@ -1296,6 +1430,21 @@ Alpine.data('videoCallTest', (config) => ({
         } catch (e) {
             // Non-critical
         }
+    },
+
+    setGuestName(name) {
+        name = (name || '').trim();
+        if (!name) return;
+        this.userName = name;
+        // Update the Echo auth params so the name is sent with channel auth
+        const opts = window.Echo.connector?.options;
+        if (opts?.auth?.params) {
+            opts.auth.params.guest_name = name;
+        }
+        this.log('Guest name set: ' + name);
+        // Now start the preview and join the lobby channel
+        this.startPreview();
+        this.joinLobbyChannel();
     },
 
     copyRoomLink() {

@@ -261,6 +261,9 @@ class RolesAndPermissionsSeeder extends Seeder
 
             // Bookings
             'bookings.manage',
+
+            // AI Features
+            'ai.workflow_builder',
         ];
 
         foreach ($permissions as $permission) {
@@ -367,6 +370,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'settings.phone_system',
             // Bookings
             'bookings.manage',
+            // AI Features
+            'ai.workflow_builder',
         ]);
 
         // Manager - view + edit, no management or deletion

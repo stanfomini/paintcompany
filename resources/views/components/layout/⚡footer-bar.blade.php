@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CallLog;
 use App\Models\EmailMessage;
 use App\Services\ChatService;
 use Livewire\Attributes\Computed;
@@ -30,7 +31,7 @@ new class extends Component
 
     public function refreshCounts(): void
     {
-        unset($this->notificationCount, $this->messageCount, $this->emailCount);
+        unset($this->notificationCount, $this->messageCount, $this->emailCount, $this->missedCallCount);
     }
 
     #[Computed]
@@ -49,6 +50,21 @@ new class extends Component
         }
 
         return app(ChatService::class)->getUnreadCountForUser($user);
+    }
+
+    #[Computed]
+    public function missedCallCount(): int
+    {
+        $user = auth()->user();
+
+        if (! $user->can('phone.make_calls')) {
+            return 0;
+        }
+
+        return CallLog::inbound()
+            ->missed()
+            ->where('created_at', '>=', now()->startOfDay())
+            ->count();
     }
 
     #[Computed]
@@ -102,6 +118,25 @@ new class extends Component
                 class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-red-400 hover:bg-zinc-700 dark:hover:bg-zinc-900 transition-colors border-x border-zinc-700">
                 <flux:icon name="video-camera" variant="solid" class="size-5" />
                 <span class="sr-only sm:not-sr-only sm:inline">{{ __('Record') }}</span>
+            </button>
+        @endcan
+
+        {{-- Phone --}}
+        @can('phone.make_calls')
+            <button
+                type="button"
+                x-data
+                x-on:click="Livewire.dispatch('open-dial-pad')"
+                class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-green-400 hover:bg-zinc-700 dark:hover:bg-zinc-900 transition-colors border-l border-zinc-700">
+                <div class="relative">
+                    <flux:icon name="phone" variant="solid" class="size-5" />
+                    @if ($this->missedCallCount > 0)
+                        <span class="absolute -top-1.5 -right-2 bg-red-500 text-white text-[10px] rounded-full min-w-4 h-4 flex items-center justify-center px-0.5 font-bold">
+                            {{ $this->missedCallCount > 99 ? '99+' : $this->missedCallCount }}
+                        </span>
+                    @endif
+                </div>
+                <span class="sr-only sm:not-sr-only sm:inline">{{ __('Phone') }}</span>
             </button>
         @endcan
 

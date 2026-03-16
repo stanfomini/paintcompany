@@ -47,6 +47,9 @@ class User extends Authenticatable
         'notification_preferences',
         'sms_opted_out_at',
         'sms_consented_at',
+        'forwarding_number',
+        'extension',
+        'personal_room_slug',
     ];
 
     /**
@@ -82,6 +85,20 @@ class User extends Authenticatable
 
     protected static function booted(): void
     {
+        static::creating(function (User $user) {
+            // Auto-generate a permanent personal room slug for internal users
+            if ($user->type === 'internal' && empty($user->personal_room_slug)) {
+                $baseSlug = Str::slug($user->name);
+                $slug = $baseSlug.'-'.Str::lower(Str::random(4));
+
+                while (static::where('personal_room_slug', $slug)->exists()) {
+                    $slug = $baseSlug.'-'.Str::lower(Str::random(4));
+                }
+
+                $user->personal_room_slug = $slug;
+            }
+        });
+
         static::created(function (User $user) {
             match ($user->type) {
                 'internal' => $user->internalUser()->create(),
@@ -94,6 +111,33 @@ class User extends Authenticatable
             // Fire automation event for workflow triggers
             event(new \App\Events\Automation\ContactCreated($user, $user->type ?? ''));
         });
+    }
+
+    /**
+     * Get or generate a personal room slug for video calls.
+     */
+    public function getOrCreatePersonalRoomSlug(): string
+    {
+        if (! $this->personal_room_slug) {
+            $baseSlug = Str::slug($this->name);
+            $slug = $baseSlug.'-'.Str::lower(Str::random(4));
+
+            while (static::where('personal_room_slug', $slug)->exists()) {
+                $slug = $baseSlug.'-'.Str::lower(Str::random(4));
+            }
+
+            $this->update(['personal_room_slug' => $slug]);
+        }
+
+        return $this->personal_room_slug;
+    }
+
+    /**
+     * Generate a consistent room ID for a deal-scoped video call.
+     */
+    public function videoCallRoomId(int $dealId): string
+    {
+        return $this->getOrCreatePersonalRoomSlug().'-deal-'.$dealId;
     }
 
     public function internalUser(): HasOne
@@ -439,6 +483,21 @@ class User extends Authenticatable
     public function pushSubscriptions(): HasMany
     {
         return $this->hasMany(PushSubscription::class);
+    }
+
+    public function callGroupMemberships(): HasMany
+    {
+        return $this->hasMany(CallGroupMember::class);
+    }
+
+    public function callLogs(): HasMany
+    {
+        return $this->hasMany(CallLog::class, 'caller_user_id');
+    }
+
+    public function answeredCalls(): HasMany
+    {
+        return $this->hasMany(CallLog::class, 'answered_by_user_id');
     }
 
     /**

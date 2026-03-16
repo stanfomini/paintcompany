@@ -44,9 +44,9 @@ class SendEmail implements ActionInterface
                 'required' => true,
             ],
             'body' => [
-                'type' => 'text',
+                'type' => 'html',
                 'label' => 'Body',
-                'description' => 'Email body text. Supports {{dynamic.values}} placeholders.',
+                'description' => 'Email body. Use the toolbar to format and insert dynamic values like {{contact.name}}.',
                 'required' => true,
             ],
             'from_name' => [

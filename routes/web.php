@@ -197,10 +197,13 @@ Route::middleware(['auth', 'verified', 'auth.internal', 'permission:team.manage_
         ->name('invitations');
 });
 
-// Video call test page (uses Reverb for signaling, accessible by all user types)
+// Video call page — public, anyone with the link can join (like Google Meet)
 Route::livewire('/video-call-test/{room?}', 'video-call.test')
-    ->middleware(['auth:web,customer,crew,agent'])
     ->name('video-call.test');
+
+// Video call channel auth — handles both logged-in users and guests
+Route::post('/broadcasting/video-call-auth', \App\Http\Controllers\VideoCallGuestAuthController::class)
+    ->name('video-call.auth');
 
 // Guest recording invite (public, no auth - token serves as authentication)
 Route::livewire('/record/{token}', 'studio.public-recorder')

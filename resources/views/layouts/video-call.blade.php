@@ -10,10 +10,18 @@
             ?? auth('crew')->user()
             ?? auth('agent')->user();
     @endphp
+    {{-- Always set user-id so app.js creates Echo (needed for WebRTC signaling).
+         For guests, use "guest" — the component overrides the channel authorizer. --}}
+    <meta name="user-id" content="{{ $authUser?->id ?? 'guest' }}">
     @if($authUser)
-    <meta name="user-id" content="{{ $authUser->id }}">
     <meta name="user-type" content="{{ $authUser->type }}">
     @endif
+
+    {{-- Reverb config for Echo initialization (guests need these to create Echo) --}}
+    <meta name="reverb-key" content="{{ config('broadcasting.connections.reverb.key') }}">
+    <meta name="reverb-host" content="{{ config('broadcasting.connections.reverb.options.host') }}">
+    <meta name="reverb-port" content="{{ config('broadcasting.connections.reverb.options.port', 443) }}">
+    <meta name="reverb-scheme" content="{{ config('broadcasting.connections.reverb.options.scheme', 'https') }}">
 
     <title>{{ $title ?? 'Video Call' }} - {{ config('app.name') }}</title>
 

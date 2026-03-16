@@ -28,11 +28,21 @@ class VideoCallStarted implements ShouldBroadcast
      */
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('job.'.$this->videoCall->job_id),
-            new PrivateChannel('customer.job.'.$this->videoCall->job_id),
-            new PrivateChannel('crew.job.'.$this->videoCall->job_id),
-        ];
+        $channels = [];
+
+        // Job-based calls
+        if ($this->videoCall->job_id) {
+            $channels[] = new PrivateChannel('job.'.$this->videoCall->job_id);
+            $channels[] = new PrivateChannel('customer.job.'.$this->videoCall->job_id);
+            $channels[] = new PrivateChannel('crew.job.'.$this->videoCall->job_id);
+        }
+
+        // Deal-based calls (polymorphic)
+        if ($this->videoCall->callable_type === \App\Models\Deal::class && $this->videoCall->callable_id) {
+            $channels[] = new PrivateChannel('deal.'.$this->videoCall->callable_id);
+        }
+
+        return $channels;
     }
 
     /**

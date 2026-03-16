@@ -56,6 +56,15 @@ new class extends Component {
     public ?array $apiSourceSamplePayload = null;
     public ?array $apiSourceAvailableFields = null;
 
+    // AI Workflow Builder
+    public bool $showAiChat = false;
+    public bool $showAiPromptModal = false;
+    public string $aiPrompt = '';
+    public string $aiChatInput = '';
+    public array $aiChatMessages = [];
+    public bool $aiProcessing = false;
+    public string $aiError = '';
+
     public function mount(Workflow $workflow): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -66,27 +75,26 @@ new class extends Component {
         $this->workflowName = $workflow->name;
         $this->workflowDescription = $workflow->description ?? '';
         $this->workflowIsActive = $workflow->is_active;
+
+        // Auto-open AI prompt modal when redirected from "Create with AI"
+        if (request()->query('ai') === '1' && Auth::user()->can('ai.workflow_builder')) {
+            $this->showAiPromptModal = true;
+        }
     }
 
     #[Computed]
     public function registryData(): array
     {
-        $registry = app(Registry::class);
+        // Use the file-cached registry data to avoid class redeclaration
+        // fatals when OPcache is active (same cache the AI service uses)
+        $cachePath = storage_path('framework/cache/workflow-ai-registry.php');
 
-        $format = fn ($classes) => $classes->map(fn ($class) => [
-            'class' => $class,
-            'name' => $class::getName(),
-            'category' => $class::getCategory(),
-            'description' => $class::getDescription(),
-            'config_schema' => $class::getConfigSchema(),
-        ])->values()->toArray();
+        if (file_exists($cachePath)) {
+            return require $cachePath;
+        }
 
-        return [
-            'triggers' => $format($registry->triggers()),
-            'actions' => $format($registry->actions()),
-            'conditions' => $format($registry->conditions()),
-            'waits' => $format($registry->waits()),
-        ];
+        // Fallback: build from Registry (first time, or if cache missing)
+        return app(\App\Services\WorkflowAiService::class)->rebuildRegistryCache();
     }
 
     #[Computed]
@@ -810,6 +818,149 @@ new class extends Component {
             default => 'zinc',
         };
     }
+
+    // === AI Workflow Builder ===
+
+    public function openAiPromptModal(): void
+    {
+        $this->authorize('ai.workflow_builder');
+        $this->aiPrompt = '';
+        $this->showAiPromptModal = true;
+    }
+
+    public function generateWorkflowFromPrompt(): void
+    {
+        $this->authorize('ai.workflow_builder');
+        $this->validate(['aiPrompt' => 'required|string|min:10|max:2000']);
+
+        $this->aiProcessing = true;
+        $this->aiError = '';
+
+        try {
+            $workflow = Workflow::findOrFail($this->workflowId);
+            $agent = new \App\Ai\Agents\WorkflowBuilderAgent($workflow);
+
+            \Illuminate\Support\Facades\Log::info('AI Workflow Builder: generating from prompt', [
+                'workflow_id' => $this->workflowId,
+                'prompt_length' => strlen($this->aiPrompt),
+            ]);
+
+            $response = $agent->prompt($this->aiPrompt);
+            $responseText = (string) $response;
+
+            \Illuminate\Support\Facades\Log::info('AI Workflow Builder: generation complete', [
+                'workflow_id' => $this->workflowId,
+                'response_length' => strlen($responseText),
+            ]);
+
+            // Refresh canvas data
+            unset($this->workflow, $this->workflowNodes, $this->workflowEdges);
+
+            $this->aiChatMessages[] = [
+                'role' => 'user',
+                'content' => $this->aiPrompt,
+                'timestamp' => now()->toISOString(),
+            ];
+            $this->aiChatMessages[] = [
+                'role' => 'assistant',
+                'content' => $responseText,
+                'timestamp' => now()->toISOString(),
+            ];
+
+            // Save conversation to session
+            session()->put("workflow_ai_chat_{$this->workflowId}", [
+                ['role' => 'user', 'content' => $this->aiPrompt],
+                ['role' => 'assistant', 'content' => $responseText],
+            ]);
+
+            $this->showAiPromptModal = false;
+            $this->showAiChat = true;
+            $this->aiPrompt = '';
+
+            // Refresh canvas data
+            unset($this->workflow, $this->workflowNodes, $this->workflowEdges);
+            $this->dispatch('workflow-data-updated', nodes: $this->workflowNodes, edges: $this->workflowEdges);
+            $this->dispatch('workflow-ai-generated');
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AI Workflow Builder: generation failed', [
+                'workflow_id' => $this->workflowId,
+                'error' => $e->getMessage(),
+                'class' => get_class($e),
+                'file' => $e->getFile() . ':' . $e->getLine(),
+            ]);
+
+            $this->aiError = $e->getMessage();
+        } finally {
+            $this->aiProcessing = false;
+        }
+    }
+
+    public function sendAiChatMessage(): void
+    {
+        $this->authorize('ai.workflow_builder');
+        $this->validate(['aiChatInput' => 'required|string|min:1|max:2000']);
+
+        $userMessage = $this->aiChatInput;
+        $this->aiChatInput = '';
+        $this->aiProcessing = true;
+
+        $this->aiChatMessages[] = [
+            'role' => 'user',
+            'content' => $userMessage,
+            'timestamp' => now()->toISOString(),
+        ];
+
+        try {
+            $workflow = Workflow::findOrFail($this->workflowId);
+            $history = session()->get("workflow_ai_chat_{$this->workflowId}", []);
+            $history[] = ['role' => 'user', 'content' => $userMessage];
+
+            $agent = (new \App\Ai\Agents\WorkflowBuilderAgent($workflow))
+                ->withHistory($history);
+
+            \Illuminate\Support\Facades\Log::info('AI Workflow Builder: sending chat message', [
+                'workflow_id' => $this->workflowId,
+                'history_count' => count($history),
+            ]);
+
+            $response = $agent->prompt($userMessage);
+            $responseText = (string) $response;
+
+            $history[] = ['role' => 'assistant', 'content' => $responseText];
+            session()->put("workflow_ai_chat_{$this->workflowId}", $history);
+
+            $this->aiChatMessages[] = [
+                'role' => 'assistant',
+                'content' => $responseText,
+                'timestamp' => now()->toISOString(),
+            ];
+
+            // Refresh canvas data
+            unset($this->workflow, $this->workflowNodes, $this->workflowEdges);
+            $this->dispatch('workflow-data-updated', nodes: $this->workflowNodes, edges: $this->workflowEdges);
+            $this->dispatch('workflow-ai-generated');
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('AI Workflow Builder: chat failed', [
+                'workflow_id' => $this->workflowId,
+                'error' => $e->getMessage(),
+                'class' => get_class($e),
+            ]);
+
+            $this->aiChatMessages[] = [
+                'role' => 'assistant',
+                'content' => 'Error: ' . $e->getMessage(),
+                'timestamp' => now()->toISOString(),
+            ];
+        } finally {
+            $this->aiProcessing = false;
+        }
+    }
+
+    public function clearAiChat(): void
+    {
+        $this->aiChatMessages = [];
+        session()->forget("workflow_ai_chat_{$this->workflowId}");
+    }
 };
 ?>
 
@@ -840,6 +991,12 @@ new class extends Component {
                 </button>
                 <div class="mx-1 h-4 w-px bg-zinc-200 dark:bg-zinc-700"></div>
                 <flux:switch wire:model.live="workflowIsActive" label="Active" />
+                @can('ai.workflow_builder')
+                    <flux:button size="sm" variant="ghost" wire:click="$toggle('showAiChat')" title="AI Assistant">
+                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>
+                        AI
+                    </flux:button>
+                @endcan
                 <flux:button size="sm" wire:click="saveWorkflowSettings" wire:loading.attr="disabled">
                     Save
                 </flux:button>
@@ -1097,9 +1254,102 @@ new class extends Component {
                     <div class="text-center">
                         <p class="text-sm text-zinc-500">This workflow has no nodes yet.</p>
                         <p class="mt-1 text-xs text-zinc-400">Drag a trigger from the left panel to get started.</p>
+                        @can('ai.workflow_builder')
+                            <flux:button size="sm" class="mt-3" wire:click="openAiPromptModal">
+                                <svg class="mr-1 h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.455 2.456L21.75 6l-1.036.259a3.375 3.375 0 00-2.455 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z"/></svg>
+                                Build with AI
+                            </flux:button>
+                        @endcan
                     </div>
                 </div>
             </div>
+
+            {{-- AI Chat Sidebar --}}
+            @can('ai.workflow_builder')
+                @if ($showAiChat)
+                    <div class="flex w-80 shrink-0 flex-col border-l border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
+                        {{-- Sidebar Header --}}
+                        <div class="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                            <div class="flex items-center gap-2">
+                                <svg class="h-4 w-4 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                                <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">AI Assistant</span>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button wire:click="clearAiChat" class="rounded p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" title="Clear chat">
+                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                </button>
+                                <button wire:click="$set('showAiChat', false)" class="rounded p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300" title="Close">
+                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {{-- Messages --}}
+                        <div class="flex-1 space-y-3 overflow-y-auto p-3" id="ai-chat-messages" x-data x-effect="$el.scrollTop = $el.scrollHeight">
+                            @if (empty($aiChatMessages))
+                                <div class="py-8 text-center">
+                                    <svg class="mx-auto mb-2 h-8 w-8 text-zinc-300 dark:text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                                    <p class="text-xs text-zinc-500">Describe what you want this workflow to do.</p>
+                                    <div class="mt-3 space-y-1.5">
+                                        <button wire:click="$set('aiChatInput', 'When a new contact is created, send them a welcome email')" class="block w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                                            Send welcome email on new contact
+                                        </button>
+                                        <button wire:click="$set('aiChatInput', 'When a deal stage changes to Closed Won, create a task to schedule the job')" class="block w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                                            Create task when deal closes
+                                        </button>
+                                        <button wire:click="$set('aiChatInput', 'When an estimate is signed, send a confirmation email and create a follow-up task in 7 days')" class="block w-full rounded-lg border border-zinc-200 px-3 py-1.5 text-left text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                                            Estimate signed follow-up
+                                        </button>
+                                    </div>
+                                </div>
+                            @else
+                                @foreach ($aiChatMessages as $index => $msg)
+                                    <div wire:key="ai-msg-{{ $index }}" class="{{ $msg['role'] === 'user' ? 'ml-6' : 'mr-6' }}">
+                                        <div class="{{ $msg['role'] === 'user'
+                                            ? 'rounded-lg rounded-br-sm bg-blue-600 px-3 py-2 text-xs text-white'
+                                            : 'rounded-lg rounded-bl-sm bg-zinc-100 px-3 py-2 text-xs text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200' }}">
+                                            <div class="whitespace-pre-wrap break-words text-xs">{!! nl2br(e($msg['content'])) !!}</div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            @endif
+
+                            {{-- Typing indicator --}}
+                            @if ($aiProcessing)
+                                <div class="mr-6">
+                                    <div class="rounded-lg rounded-bl-sm bg-zinc-100 px-3 py-2 dark:bg-zinc-800">
+                                        <div class="flex items-center gap-1">
+                                            <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-400" style="animation-delay: 0ms"></div>
+                                            <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-400" style="animation-delay: 150ms"></div>
+                                            <div class="h-1.5 w-1.5 animate-bounce rounded-full bg-zinc-400" style="animation-delay: 300ms"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+
+                        {{-- Input --}}
+                        <div class="border-t border-zinc-200 p-3 dark:border-zinc-700">
+                            <form wire:submit="sendAiChatMessage" class="flex gap-2">
+                                <input
+                                    wire:model="aiChatInput"
+                                    type="text"
+                                    placeholder="Describe a change..."
+                                    class="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500"
+                                    {{ $aiProcessing ? 'disabled' : '' }}
+                                />
+                                <button
+                                    type="submit"
+                                    class="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+                                    {{ $aiProcessing ? 'disabled' : '' }}
+                                >
+                                    <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                @endif
+            @endcan
         </div>
     </div>
 
@@ -1187,4 +1437,56 @@ new class extends Component {
             </div>
         </div>
     </flux:modal>
+
+    {{-- AI Generate Workflow Prompt Modal --}}
+    @can('ai.workflow_builder')
+        <flux:modal wire:model="showAiPromptModal" class="max-w-lg">
+            <div class="space-y-4">
+                <div class="flex items-center gap-2">
+                    <svg class="h-5 w-5 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+                    <flux:heading size="lg">Build Workflow with AI</flux:heading>
+                </div>
+
+                <p class="text-sm text-zinc-500">Describe the automation you want to build. AI will create the workflow nodes and connections for you.</p>
+
+                @if ($aiError)
+                    <div class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                        <p class="font-medium">Error</p>
+                        <p class="mt-1 text-xs">{{ $aiError }}</p>
+                    </div>
+                @endif
+
+                <flux:field>
+                    <flux:label>What should this workflow do?</flux:label>
+                    <flux:textarea wire:model="aiPrompt" rows="4" placeholder="e.g., When a new contact is created, send them a welcome email. If the contact has a property value over $500k, also create a high-value deal and assign it to the sales manager." />
+                </flux:field>
+
+                <div class="space-y-1.5">
+                    <p class="text-xs font-medium text-zinc-400">Examples:</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        <button wire:click="$set('aiPrompt', 'When a new contact is created, send them a welcome email with our company info')" class="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                            Welcome email on new contact
+                        </button>
+                        <button wire:click="$set('aiPrompt', 'When a deal stage changes to Closed Won, send a thank you email and create a follow-up task in 7 days')" class="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                            Deal closed follow-up
+                        </button>
+                        <button wire:click="$set('aiPrompt', 'When an estimate is signed, send a confirmation email to the customer and notify the internal team')" class="rounded-full border border-zinc-200 px-2.5 py-1 text-xs text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800">
+                            Estimate signed notifications
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2">
+                    <flux:button wire:click="$set('showAiPromptModal', false)">Cancel</flux:button>
+                    <flux:button variant="primary" wire:click="generateWorkflowFromPrompt" wire:loading.attr="disabled" :disabled="$aiProcessing">
+                        <span wire:loading.remove wire:target="generateWorkflowFromPrompt">Generate Workflow</span>
+                        <span wire:loading wire:target="generateWorkflowFromPrompt" class="flex items-center gap-1.5">
+                            <svg class="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            Generating...
+                        </span>
+                    </flux:button>
+                </div>
+            </div>
+        </flux:modal>
+    @endcan
 </div>

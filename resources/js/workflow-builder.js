@@ -74,6 +74,16 @@ function registerWorkflowBuilder() {
                 this.$nextTick(() => this.renderEdges());
             });
 
+            // After AI generates a workflow, auto-layout and fit view
+            this.$wire.$on('workflow-ai-generated', () => {
+                this.$nextTick(() => {
+                    if (this.nodes.length > 1) {
+                        this.autoLayout();
+                    }
+                    this.$nextTick(() => this.fitView());
+                });
+            });
+
             this._onKeyDown = (e) => {
                 if (e.key === 'Escape') {
                     if (this.connecting) {

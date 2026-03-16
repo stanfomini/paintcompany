@@ -73,3 +73,98 @@ test('correct password must be provided to delete account', function () {
 
     expect($user->fresh())->not->toBeNull();
 });
+
+test('internal user can save phone settings', function () {
+    $user = User::factory()->internal()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->set('forwarding_number', '3035551234')
+        ->set('extension', '101')
+        ->call('savePhoneSettings')
+        ->assertHasNoErrors()
+        ->assertDispatched('phone-settings-saved');
+
+    $user->refresh();
+
+    expect($user->forwarding_number)->toBe('3035551234');
+    expect($user->extension)->toBe('101');
+});
+
+test('phone settings validates extension format', function () {
+    $user = User::factory()->internal()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->set('extension', '12')
+        ->call('savePhoneSettings')
+        ->assertHasErrors(['extension']);
+});
+
+test('phone settings validates extension uniqueness', function () {
+    User::factory()->internal()->create(['extension' => '101']);
+    $user = User::factory()->internal()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->set('extension', '101')
+        ->call('savePhoneSettings')
+        ->assertHasErrors(['extension']);
+});
+
+test('phone settings validates forwarding number format', function () {
+    $user = User::factory()->internal()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->set('forwarding_number', 'not-a-phone')
+        ->call('savePhoneSettings')
+        ->assertHasErrors(['forwarding_number']);
+});
+
+test('non-internal user cannot save phone settings', function () {
+    $user = User::factory()->customer()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->set('forwarding_number', '3035551234')
+        ->call('savePhoneSettings')
+        ->assertHasNoErrors();
+
+    expect($user->refresh()->forwarding_number)->toBeNull();
+});
+
+test('phone settings section is visible for internal users', function () {
+    $user = User::factory()->internal()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->assertSee('Phone Settings');
+});
+
+test('phone settings allows nullable values', function () {
+    $user = User::factory()->internal()->create([
+        'forwarding_number' => '3035551234',
+        'extension' => '101',
+    ]);
+
+    $this->actingAs($user);
+
+    Livewire::test('pages::settings.profile')
+        ->set('forwarding_number', '')
+        ->set('extension', '')
+        ->call('savePhoneSettings')
+        ->assertHasNoErrors()
+        ->assertDispatched('phone-settings-saved');
+
+    $user->refresh();
+
+    expect($user->forwarding_number)->toBeNull();
+    expect($user->extension)->toBeNull();
+});
