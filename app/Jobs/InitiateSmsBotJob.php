@@ -2,8 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Models\SmsBotFlow;
 use App\Models\SmsConversation;
-use App\Services\SmsEngagementBotService;
+use App\Services\SmsBotFlowService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
@@ -53,19 +54,24 @@ class InitiateSmsBotJob implements ShouldQueue
         }
 
         try {
-            $botService = app(SmsEngagementBotService::class);
-            $conversation = $botService->initiate($this->phone, $this->customerId, $this->leadSourceId);
+            $flow = SmsBotFlow::findForTrigger('new_lead', $this->leadSourceId);
 
-            if ($conversation) {
-                Log::info('SMS bot conversation initiated', [
+            if (! $flow) {
+                Log::info('SMS bot: no matching flow for trigger', [
                     'phone' => $this->phone,
-                    'conversation_id' => $conversation->id,
+                    'lead_source_id' => $this->leadSourceId,
                 ]);
-            } else {
-                Log::info('SMS bot: initiation skipped (disabled or no matching flow)', [
-                    'phone' => $this->phone,
-                ]);
+
+                return;
             }
+
+            $conversation = app(SmsBotFlowService::class)->startConversation($this->phone, $flow);
+
+            Log::info('SMS bot conversation initiated', [
+                'phone' => $this->phone,
+                'conversation_id' => $conversation->id,
+                'flow_id' => $flow->id,
+            ]);
         } catch (\Exception $e) {
             Log::error('SMS bot initiation failed', [
                 'phone' => $this->phone,

@@ -11,36 +11,6 @@ class SmsConversation extends Model
 {
     use HasFactory;
 
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_INITIATED = 'initiated';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_NUDGE_PHOTO = 'nudge_photo';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_PHOTO_RECEIVED = 'photo_received';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_VISUALIZATION_READY = 'visualization_ready';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_ROOM_LABELED = 'room_labeled';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_SCOPE_COLLECTED = 'scope_collected';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_TIMELINE_COLLECTED = 'timeline_collected';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_OPEN_CHAT = 'open_chat';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_HUMAN_TAKEOVER = 'human_takeover';
-
-    /** @deprecated Will be removed when SmsEngagementBotService is retired */
-    public const STATE_DORMANT = 'dormant';
-
     protected $fillable = [
         'project_preview_id',
         'flow_id',
@@ -152,16 +122,5 @@ class SmsConversation extends Model
     public function isAbandoned(): bool
     {
         return $this->status === 'abandoned';
-    }
-
-    /**
-     * @deprecated Will be removed when SmsEngagementBotService is retired
-     */
-    public function transitionTo(string $state): void
-    {
-        $this->update([
-            'current_state' => $state,
-            'last_message_at' => now(),
-        ]);
     }
 }

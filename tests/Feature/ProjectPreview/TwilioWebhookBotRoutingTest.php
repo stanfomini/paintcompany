@@ -1,8 +1,9 @@
 <?php
 
-use App\Models\ProjectPreview;
+use App\Models\SmsBotFlow;
+use App\Models\SmsBotStep;
 use App\Models\SmsConversation;
-use App\Services\SmsEngagementBotService;
+use App\Services\SmsBotFlowService;
 use App\Services\TwilioService;
 
 beforeEach(function () {
@@ -26,24 +27,30 @@ beforeEach(function () {
 });
 
 it('extracts MMS media URLs from webhook request', function () {
-    $preview = ProjectPreview::factory()->create(['phone' => '+13035551234']);
-    $convo = SmsConversation::factory()->create([
-        'project_preview_id' => $preview->id,
-        'phone' => '+13035551234',
-        'current_state' => SmsConversation::STATE_INITIATED,
-        'expires_at' => now()->addDays(7),
+    $flow = SmsBotFlow::factory()->active()->create();
+    $step = SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Send a photo',
     ]);
 
-    // Mock the bot service to verify it receives media URLs
-    $botService = Mockery::mock(SmsEngagementBotService::class);
-    $botService->shouldReceive('handleInbound')
+    $convo = SmsConversation::factory()->create([
+        'flow_id' => $flow->id,
+        'phone' => '+13035551234',
+        'status' => 'in_progress',
+        'current_step_id' => $step->id,
+    ]);
+
+    // Mock the bot flow service to verify it receives media URLs
+    $botService = Mockery::mock(SmsBotFlowService::class);
+    $botService->shouldReceive('processResponse')
         ->once()
-        ->withArgs(function ($phone, $body, $mediaUrls) {
-            return $phone === '+13035551234'
+        ->withArgs(function ($conversation, $body, $mediaUrls) {
+            return $conversation->phone === '+13035551234'
                 && count($mediaUrls) === 1
                 && str_contains($mediaUrls[0], 'twilio.com');
         });
-    app()->instance(SmsEngagementBotService::class, $botService);
+    app()->instance(SmsBotFlowService::class, $botService);
 
     $response = $this->post('/webhooks/twilio/sms', [
         'From' => '+13035551234',
@@ -56,17 +63,23 @@ it('extracts MMS media URLs from webhook request', function () {
 });
 
 it('does not reject MMS with empty body', function () {
-    $preview = ProjectPreview::factory()->create(['phone' => '+13035551234']);
-    SmsConversation::factory()->create([
-        'project_preview_id' => $preview->id,
-        'phone' => '+13035551234',
-        'current_state' => SmsConversation::STATE_INITIATED,
-        'expires_at' => now()->addDays(7),
+    $flow = SmsBotFlow::factory()->active()->create();
+    $step = SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Send a photo',
     ]);
 
-    $botService = Mockery::mock(SmsEngagementBotService::class);
-    $botService->shouldReceive('handleInbound')->once();
-    app()->instance(SmsEngagementBotService::class, $botService);
+    SmsConversation::factory()->create([
+        'flow_id' => $flow->id,
+        'phone' => '+13035551234',
+        'status' => 'in_progress',
+        'current_step_id' => $step->id,
+    ]);
+
+    $botService = Mockery::mock(SmsBotFlowService::class);
+    $botService->shouldReceive('processResponse')->once();
+    app()->instance(SmsBotFlowService::class, $botService);
 
     $response = $this->post('/webhooks/twilio/sms', [
         'From' => '+13035551234',
@@ -79,17 +92,23 @@ it('does not reject MMS with empty body', function () {
 });
 
 it('routes to bot when active conversation exists', function () {
-    $preview = ProjectPreview::factory()->create(['phone' => '+13035551234']);
-    SmsConversation::factory()->create([
-        'project_preview_id' => $preview->id,
-        'phone' => '+13035551234',
-        'current_state' => SmsConversation::STATE_INITIATED,
-        'expires_at' => now()->addDays(7),
+    $flow = SmsBotFlow::factory()->active()->create();
+    $step = SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'What color?',
     ]);
 
-    $botService = Mockery::mock(SmsEngagementBotService::class);
-    $botService->shouldReceive('handleInbound')->once();
-    app()->instance(SmsEngagementBotService::class, $botService);
+    SmsConversation::factory()->create([
+        'flow_id' => $flow->id,
+        'phone' => '+13035551234',
+        'status' => 'in_progress',
+        'current_step_id' => $step->id,
+    ]);
+
+    $botService = Mockery::mock(SmsBotFlowService::class);
+    $botService->shouldReceive('processResponse')->once();
+    app()->instance(SmsBotFlowService::class, $botService);
 
     $response = $this->post('/webhooks/twilio/sms', [
         'From' => '+13035551234',

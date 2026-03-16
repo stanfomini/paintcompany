@@ -4,7 +4,7 @@ namespace App\Jobs;
 
 use App\Models\CompanySetting;
 use App\Models\ProjectPreviewVisualization;
-use App\Services\SmsEngagementBotService;
+use App\Services\SmsBotFlowService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Queue\Queueable;
@@ -124,7 +124,10 @@ class GeneratePreviewVisualizationJob implements ShouldQueue
             $conversation = $preview->smsConversation;
 
             if ($conversation && $conversation->isActive()) {
-                app(SmsEngagementBotService::class)->onVisualizationsReady($conversation);
+                app(SmsBotFlowService::class)->onVisualizationComplete(
+                    $conversation,
+                    $this->visualization->result_image_path ?? ''
+                );
             }
         }
     }
