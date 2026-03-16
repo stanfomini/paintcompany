@@ -218,6 +218,14 @@ class FacebookMessengerService
             return;
         }
 
+        // Check for keyword-triggered flow
+        $keywordFlow = MessengerBotFlow::findByKeyword($text);
+        if ($keywordFlow) {
+            app(MessengerBotFlowService::class)->startConversation($thread, $psid, $keywordFlow);
+
+            return;
+        }
+
         // Resolve flow from ad mapping or fall back to default
         $flow = $this->resolveFlowFromReferral($referral);
         app(MessengerBotFlowService::class)->startConversation($thread, $psid, $flow);
