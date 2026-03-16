@@ -630,6 +630,78 @@ describe('message sanitization', function () {
     });
 });
 
+describe('media steps', function () {
+    it('sends image for media_message step and auto-advances', function () {
+        $flow = MessengerBotFlow::factory()->active()->create();
+
+        MessengerBotStep::factory()->mediaMessage('https://example.com/colors.jpg')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'Check out this color palette!',
+        ]);
+
+        $questionStep = MessengerBotStep::factory()->textQuestion('customer.first_name')->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 2,
+            'message_text' => 'What is your name?',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('media-1')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        $conversation = $service->startConversation($thread, 'media-1');
+
+        $conversation->refresh();
+        // media_message auto-advances, so should now be on the question step
+        expect($conversation->current_step_id)->toBe($questionStep->id)
+            ->and($conversation->status)->toBe('in_progress');
+
+        // Should have sent the image via sendImageMessage
+        Http::assertSent(function ($request) {
+            $body = json_decode($request->body(), true);
+            $attachment = $body['message']['attachment'] ?? null;
+
+            return $attachment
+                && ($attachment['type'] ?? '') === 'image'
+                && ($attachment['payload']['url'] ?? '') === 'https://example.com/colors.jpg';
+        });
+
+        // Should also have sent the text message for the media step
+        Http::assertSent(function ($request) {
+            $body = json_decode($request->body(), true);
+
+            return ($body['message']['text'] ?? '') === 'Check out this color palette!';
+        });
+    });
+
+    it('waits for image on photo_prompt step', function () {
+        $flow = MessengerBotFlow::factory()->active()->create();
+
+        $photoStep = MessengerBotStep::factory()->photoPrompt()->create([
+            'flow_id' => $flow->id,
+            'sort_order' => 1,
+            'message_text' => 'Send me a photo of your walls!',
+        ]);
+
+        $thread = ChatThread::factory()->facebook('photo-1')->create();
+        $service = app(MessengerBotFlowService::class);
+
+        $conversation = $service->startConversation($thread, 'photo-1');
+
+        $conversation->refresh();
+        // Should be waiting on the photo_prompt step (not auto-advancing)
+        expect($conversation->current_step_id)->toBe($photoStep->id)
+            ->and($conversation->status)->toBe('in_progress');
+
+        // Should have sent the prompt text
+        Http::assertSent(function ($request) {
+            $body = json_decode($request->body(), true);
+
+            return ($body['message']['text'] ?? '') === 'Send me a photo of your walls!';
+        });
+    });
+});
+
 describe('message variable substitution', function () {
     it('replaces booking_link variable with actual URL', function () {
         $service = app(MessengerBotFlowService::class);

@@ -143,6 +143,21 @@ class MessengerBotFlowService
                 $this->messengerService->sendTextMessage($psid, $messageText);
                 $this->triggerHumanTakeover($conversation);
                 break;
+
+            case MessengerBotStep::TYPE_MEDIA_MESSAGE:
+                if ($nextStep->media_url) {
+                    $this->messengerService->sendImageMessage($psid, $nextStep->media_url);
+                }
+                if ($messageText) {
+                    $this->messengerService->sendTextMessage($psid, $messageText);
+                }
+                $this->advanceToNextStep($conversation);
+                break;
+
+            case MessengerBotStep::TYPE_PHOTO_PROMPT:
+                $this->messengerService->sendTextMessage($psid, $messageText);
+                // Wait for user to send a photo
+                break;
         }
     }
 
