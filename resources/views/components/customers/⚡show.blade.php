@@ -496,6 +496,48 @@ new class extends Component
         $this->refreshCustomer();
     }
 
+    public function openBookModal(): void
+    {
+        if ($this->activeDeal) {
+            $this->dispatch('open-appointment-modal', customerId: $this->customer->id, dealId: $this->activeDeal->id);
+        }
+    }
+
+    public function sendBookingLinkSms(): void
+    {
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($this->customer);
+        $url = url('/book?prefill='.$token);
+
+        $message = "Hi {$this->customer->first_name}! Book your free painting estimate at a time that works for you: {$url}";
+        app(\App\Services\TwilioService::class)->sendSms($this->customer->phone, $message);
+
+        session()->flash('success', __('Booking link sent via SMS.'));
+    }
+
+    public function copyBookingLink(): void
+    {
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($this->customer);
+        $url = url('/book?prefill='.$token);
+
+        $this->dispatch('copy-to-clipboard', text: $url);
+    }
+
+    public function startVideoCall(): void
+    {
+        $deal = $this->activeDeal ?? $this->customer->deals()->latest()->first();
+        $videoCall = \App\Models\VideoCall::create([
+            'callable_type' => \App\Models\Deal::class,
+            'callable_id' => $deal?->id,
+            'initiated_by' => auth()->id(),
+            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
+            'status' => 'pending',
+        ]);
+
+        $this->redirect(route('video-call.test', $videoCall->room_id));
+    }
+
     #[On('customer-updated')]
     #[On('property-created')]
     #[On('deal-created')]
@@ -754,6 +796,27 @@ new class extends Component
                         <span class="hidden sm:inline">{{ __('New Deal') }}</span>
                     </flux:button>
                 @endcan
+                @can('bookings.manage')
+                    <flux:dropdown>
+                        <flux:button size="sm" icon="calendar-days" variant="ghost" icon-trailing="chevron-down">
+                            <span class="hidden sm:inline">{{ __('Book') }}</span>
+                        </flux:button>
+                        <flux:menu>
+                            <flux:menu.item icon="calendar-days" wire:click="openBookModal">
+                                {{ __('Book Appointment') }}
+                            </flux:menu.item>
+                            @if ($customer->phone)
+                                <flux:menu.item icon="link" wire:click="sendBookingLinkSms">
+                                    {{ __('Send Booking Link (SMS)') }}
+                                </flux:menu.item>
+                            @endif
+                            <flux:menu.item icon="clipboard-document" wire:click="copyBookingLink">
+                                {{ __('Copy Booking Link') }}
+                            </flux:menu.item>
+                        </flux:menu>
+                    </flux:dropdown>
+                @endcan
+                <flux:button size="sm" icon="video-camera" variant="ghost" wire:click="startVideoCall" title="{{ __('Video Call') }}" />
 
                 {{-- Overflow menu for secondary actions on mobile --}}
                 <div class="lg:hidden">
@@ -1686,4 +1749,15 @@ new class extends Component
     </flux:modal>
 
     @livewire('customers.send-sms-modal', ['customer' => $customer], key('send-sms-' . $customer->id))
+
+    <script>
+        document.addEventListener('livewire:initialized', () => {
+            Livewire.on('copy-to-clipboard', ({ text }) => {
+                navigator.clipboard.writeText(text);
+                if (typeof $flux !== 'undefined') {
+                    $flux.toast('Booking link copied!');
+                }
+            });
+        });
+    </script>
 </div>
