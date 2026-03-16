@@ -870,6 +870,20 @@ class ChatService
             $message->id,
         );
 
+        // Send any image attachments as separate Messenger image messages
+        $message->loadMissing('attachments');
+        foreach ($message->attachments as $attachment) {
+            if ($attachment->isImage()) {
+                SendFacebookMessageJob::dispatch(
+                    $thread->external_contact_id,
+                    '',
+                    null,
+                    null,
+                    $attachment->getUrl(),
+                );
+            }
+        }
+
         // If there's an active bot conversation, trigger human takeover
         $activeConversation = $thread->messengerConversation()
             ->where('status', 'in_progress')

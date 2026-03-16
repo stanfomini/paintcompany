@@ -22,19 +22,23 @@ class SendFacebookMessageJob implements ShouldQueue
      * @param  string  $text  The message text to send.
      * @param  array<int, array{title: string, payload: string}>|null  $quickReplies  Optional quick reply buttons.
      * @param  int|null  $chatMessageId  Optional ChatMessage ID to update with facebook_message_id.
+     * @param  string|null  $mediaUrl  Optional image URL to send as attachment.
      */
     public function __construct(
         public string $psid,
         public string $text,
         public ?array $quickReplies = null,
         public ?int $chatMessageId = null,
+        public ?string $mediaUrl = null,
     ) {
         $this->onConnection('redis');
     }
 
     public function handle(FacebookMessengerService $messenger): void
     {
-        if ($this->quickReplies) {
+        if ($this->mediaUrl) {
+            $result = $messenger->sendImageMessage($this->psid, $this->mediaUrl);
+        } elseif ($this->quickReplies) {
             $result = $messenger->sendQuickReply($this->psid, $this->text, $this->quickReplies);
         } else {
             $result = $messenger->sendTextMessage($this->psid, $this->text);

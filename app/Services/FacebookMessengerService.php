@@ -66,6 +66,24 @@ class FacebookMessengerService
     }
 
     /**
+     * Send an image attachment to a Facebook user via the Send API.
+     *
+     * @return array{success: bool, message_id: string|null, error: string|null}
+     */
+    public function sendImageMessage(string $psid, string $imageUrl): array
+    {
+        return $this->sendMessage($psid, [
+            'attachment' => [
+                'type' => 'image',
+                'payload' => [
+                    'url' => $imageUrl,
+                    'is_reusable' => true,
+                ],
+            ],
+        ]);
+    }
+
+    /**
      * Send a message with quick reply buttons.
      *
      * @param  array<int, array{title: string, payload: string}>  $options

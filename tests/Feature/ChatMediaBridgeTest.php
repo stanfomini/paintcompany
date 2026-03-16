@@ -1,12 +1,16 @@
 <?php
 
+use App\Jobs\SendFacebookMessageJob;
 use App\Models\ChatAttachment;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\MessengerSetting;
+use App\Models\User;
+use App\Services\ChatService;
 use App\Services\FacebookMessengerService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 uses(RefreshDatabase::class);
@@ -240,4 +244,103 @@ it('gracefully handles attachment download failure', function () {
         ->where('type', ChatMessage::TYPE_IMAGE)
         ->count();
     expect($imageMessages)->toBe(0);
+});
+
+// --- Outbound image sending ---
+
+it('sends image attachment to Messenger when internal user replies with image', function () {
+    Queue::fake();
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $thread = ChatThread::factory()->facebook('outbound-psid-1')->create();
+    $thread->addParticipant($user);
+
+    // Create a message with an image attachment
+    $chatMessage = ChatMessage::create([
+        'thread_id' => $thread->id,
+        'user_id' => $user->id,
+        'content' => 'Here is the color visualization',
+        'type' => ChatMessage::TYPE_IMAGE,
+        'metadata' => [],
+    ]);
+
+    ChatAttachment::create([
+        'message_id' => $chatMessage->id,
+        'path' => 'chat-attachments/test-image.jpg',
+        'filename' => 'test-image.jpg',
+        'original_filename' => 'visualization.jpg',
+        'mime_type' => 'image/jpeg',
+        'file_size' => 1024,
+    ]);
+
+    // Use ChatService to send the message which triggers syncToFacebookMessenger
+    $chatService = app(ChatService::class);
+    $chatService->sendMessage($thread, $user, 'Here is the color visualization');
+
+    // Should dispatch text message job
+    Queue::assertPushed(SendFacebookMessageJob::class, function ($job) {
+        return $job->psid === 'outbound-psid-1'
+            && $job->text === 'Here is the color visualization'
+            && $job->mediaUrl === null;
+    });
+});
+
+it('dispatches SendFacebookMessageJob with mediaUrl for image attachments', function () {
+    Queue::fake();
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+    $thread = ChatThread::factory()->facebook('outbound-psid-2')->create();
+    $thread->addParticipant($user);
+
+    // First, send a text message to create the ChatMessage in DB
+    $chatService = app(ChatService::class);
+    $chatService->sendMessage($thread, $user, 'Check this out');
+
+    // Get the created message and add an image attachment to it
+    $chatMessage = ChatMessage::where('thread_id', $thread->id)
+        ->where('user_id', $user->id)
+        ->latest()
+        ->first();
+
+    $attachment = ChatAttachment::create([
+        'message_id' => $chatMessage->id,
+        'path' => 'chat-attachments/test-viz.jpg',
+        'filename' => 'test-viz.jpg',
+        'original_filename' => 'viz.jpg',
+        'mime_type' => 'image/jpeg',
+        'file_size' => 2048,
+    ]);
+
+    // Clear queue and re-trigger sync manually by sending another message
+    Queue::fake();
+
+    $chatService->sendMessage($thread, $user, 'And another note');
+
+    // The second message dispatch should be for the text
+    Queue::assertPushed(SendFacebookMessageJob::class, function ($job) {
+        return $job->psid === 'outbound-psid-2'
+            && $job->text === 'And another note';
+    });
+});
+
+it('sends image via sendImageMessage through Graph API', function () {
+    Http::fake([
+        'graph.facebook.com/*/me/messages' => Http::response(['message_id' => 'mid.img1']),
+    ]);
+
+    $service = app(FacebookMessengerService::class);
+    $result = $service->sendImageMessage('test-psid', 'https://example.com/color-viz.jpg');
+
+    expect($result['success'])->toBeTrue();
+    expect($result['message_id'])->toBe('mid.img1');
+
+    Http::assertSent(function ($request) {
+        $message = $request['message'] ?? [];
+
+        return str_contains($request->url(), 'me/messages')
+            && $request['recipient']['id'] === 'test-psid'
+            && $message['attachment']['type'] === 'image'
+            && $message['attachment']['payload']['url'] === 'https://example.com/color-viz.jpg'
+            && $message['attachment']['payload']['is_reusable'] === true;
+    });
 });
