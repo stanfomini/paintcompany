@@ -9,11 +9,12 @@ use App\Models\CrewProfile;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
 use App\Models\EmployeeProfile;
+use App\Models\SmsBotFlow;
 use App\Models\SmsConversation;
 use App\Models\SmsSession;
 use App\Models\User;
 use App\Services\ChatService;
-use App\Services\SmsEngagementBotService;
+use App\Services\SmsBotFlowService;
 use App\Services\TwilioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -73,7 +74,15 @@ class TwilioWebhookController extends Controller
         // Check for active SMS bot conversation FIRST (before normal session routing)
         $botConvo = SmsConversation::findActiveByPhone($formattedPhone);
         if ($botConvo) {
-            app(SmsEngagementBotService::class)->handleInbound($formattedPhone, $body, $mediaUrls);
+            app(SmsBotFlowService::class)->processResponse($botConvo, $body, $mediaUrls);
+
+            return $this->twimlResponse();
+        }
+
+        // Check for keyword-triggered bot flow
+        $keywordFlow = SmsBotFlow::findByKeyword($body);
+        if ($keywordFlow) {
+            app(SmsBotFlowService::class)->startConversation($formattedPhone, $keywordFlow);
 
             return $this->twimlResponse();
         }
