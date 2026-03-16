@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Events\NewThreadNotification;
 use App\Models\AgentProfile;
+use App\Models\ChatAttachment;
+use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\CrewProfile;
 use App\Models\Customer;
@@ -18,7 +20,10 @@ use App\Services\SmsBotFlowService;
 use App\Services\TwilioService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class TwilioWebhookController extends Controller
 {
@@ -90,9 +95,9 @@ class TwilioWebhookController extends Controller
         $session = SmsSession::findActiveByPhone($formattedPhone);
 
         if ($session) {
-            $this->routeToExistingSession($session, $body, $formattedPhone);
+            $this->routeToExistingSession($session, $body, $formattedPhone, $mediaUrls);
         } else {
-            $this->routeColdInbound($formattedPhone, $body);
+            $this->routeColdInbound($formattedPhone, $body, $mediaUrls);
         }
 
         return $this->twimlResponse();
@@ -101,7 +106,7 @@ class TwilioWebhookController extends Controller
     /**
      * Route a reply to an existing active SMS session.
      */
-    private function routeToExistingSession(SmsSession $session, string $body, string $phone): void
+    private function routeToExistingSession(SmsSession $session, string $body, string $phone, array $mediaUrls = []): void
     {
         try {
             $session->load(['user', 'thread']);
@@ -110,20 +115,24 @@ class TwilioWebhookController extends Controller
                 return;
             }
 
-            if ($session->user) {
-                $this->chatService->sendMessage(
-                    thread: $session->thread,
-                    sender: $session->user,
-                    content: $body,
-                    options: ['metadata' => ['source' => 'sms']],
-                );
-            } else {
-                $this->chatService->sendGuestMessage(
-                    thread: $session->thread,
-                    content: $body,
-                    metadata: ['source' => 'sms', 'phone' => $phone],
-                );
+            if ($body !== '') {
+                if ($session->user) {
+                    $this->chatService->sendMessage(
+                        thread: $session->thread,
+                        sender: $session->user,
+                        content: $body,
+                        options: ['metadata' => ['source' => 'sms']],
+                    );
+                } else {
+                    $this->chatService->sendGuestMessage(
+                        thread: $session->thread,
+                        content: $body,
+                        metadata: ['source' => 'sms', 'phone' => $phone],
+                    );
+                }
             }
+
+            $this->createMediaAttachments($session->thread, $mediaUrls, ['source' => 'sms', 'phone' => $phone]);
 
             $session->update(['expires_at' => now()->addHours(24)]);
         } catch (\Exception $e) {
@@ -137,22 +146,22 @@ class TwilioWebhookController extends Controller
     /**
      * Route a cold inbound SMS (no active session) into the chat system.
      */
-    private function routeColdInbound(string $phone, string $body): void
+    private function routeColdInbound(string $phone, string $body, array $mediaUrls = []): void
     {
         try {
             $users = $this->findUsersByPhone($phone);
             $sender = $users->first();
 
             if ($sender) {
-                $this->routeKnownUser($sender, $phone, $body);
+                $this->routeKnownUser($sender, $phone, $body, $mediaUrls);
             } else {
                 // Check if phone matches a Customer record without a user account
                 $customer = $this->findCustomerByPhone($phone);
 
                 if ($customer) {
-                    $this->routeKnownCustomerWithoutAccount($customer, $phone, $body);
+                    $this->routeKnownCustomerWithoutAccount($customer, $phone, $body, $mediaUrls);
                 } else {
-                    $this->routeUnknownNumber($phone, $body);
+                    $this->routeUnknownNumber($phone, $body, $mediaUrls);
                 }
             }
         } catch (\Exception $e) {
@@ -166,7 +175,7 @@ class TwilioWebhookController extends Controller
     /**
      * Route an SMS from a known user into a chat thread.
      */
-    private function routeKnownUser(User $sender, string $phone, string $body): void
+    private function routeKnownUser(User $sender, string $phone, string $body, array $mediaUrls = []): void
     {
         // Check if sender is a customer with an assigned internal contact
         $customer = Customer::where('user_id', $sender->id)->first();
@@ -214,12 +223,16 @@ class TwilioWebhookController extends Controller
             $isNewSupportThread = true;
         }
 
-        $this->chatService->sendMessage(
-            thread: $thread,
-            sender: $sender,
-            content: $body,
-            options: ['metadata' => ['source' => 'sms']],
-        );
+        if ($body !== '') {
+            $this->chatService->sendMessage(
+                thread: $thread,
+                sender: $sender,
+                content: $body,
+                options: ['metadata' => ['source' => 'sms']],
+            );
+        }
+
+        $this->createMediaAttachments($thread, $mediaUrls, ['source' => 'sms', 'phone' => $phone]);
 
         SmsSession::updateOrCreate(
             ['phone_number' => $phone, 'thread_id' => $thread->id],
@@ -245,7 +258,7 @@ class TwilioWebhookController extends Controller
     /**
      * Route an SMS from an unknown number into a support thread.
      */
-    private function routeUnknownNumber(string $phone, string $body): void
+    private function routeUnknownNumber(string $phone, string $body, array $mediaUrls = []): void
     {
         // Check if phone matches any Customer record (with or without user_id)
         $customer = $this->findCustomerByPhone($phone)
@@ -253,11 +266,15 @@ class TwilioWebhookController extends Controller
 
         $thread = $this->createSmsSupporThread($phone, $customer);
 
-        $this->chatService->sendGuestMessage(
-            thread: $thread,
-            content: $body,
-            metadata: ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer?->id],
-        );
+        if ($body !== '') {
+            $this->chatService->sendGuestMessage(
+                thread: $thread,
+                content: $body,
+                metadata: ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer?->id],
+            );
+        }
+
+        $this->createMediaAttachments($thread, $mediaUrls, ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer?->id]);
 
         SmsSession::create([
             'user_id' => null,
@@ -280,15 +297,19 @@ class TwilioWebhookController extends Controller
     /**
      * Route an SMS from a known Customer who has no user account.
      */
-    private function routeKnownCustomerWithoutAccount(Customer $customer, string $phone, string $body): void
+    private function routeKnownCustomerWithoutAccount(Customer $customer, string $phone, string $body, array $mediaUrls = []): void
     {
         $thread = $this->createSmsSupporThread($phone, $customer);
 
-        $this->chatService->sendGuestMessage(
-            thread: $thread,
-            content: $body,
-            metadata: ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer->id],
-        );
+        if ($body !== '') {
+            $this->chatService->sendGuestMessage(
+                thread: $thread,
+                content: $body,
+                metadata: ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer->id],
+            );
+        }
+
+        $this->createMediaAttachments($thread, $mediaUrls, ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer->id]);
 
         SmsSession::create([
             'user_id' => null,
@@ -488,6 +509,72 @@ class TwilioWebhookController extends Controller
         $phoneLike = '%'.$last10;
 
         return Customer::where('phone', 'LIKE', $phoneLike)->first();
+    }
+
+    /**
+     * Download Twilio media URLs and store as ChatMessage + ChatAttachment records.
+     */
+    private function createMediaAttachments(ChatThread $thread, array $mediaUrls, array $metadata = []): void
+    {
+        foreach ($mediaUrls as $mediaUrl) {
+            try {
+                $response = Http::get($mediaUrl);
+
+                if ($response->failed()) {
+                    Log::warning('Twilio webhook: failed to download media', [
+                        'url' => $mediaUrl,
+                        'status' => $response->status(),
+                    ]);
+
+                    continue;
+                }
+
+                $contentType = $response->header('Content-Type', 'image/jpeg');
+                $extension = $this->guessExtensionFromMime($contentType);
+                $filename = Str::uuid().'.'.$extension;
+                $path = 'chat-attachments/'.$filename;
+
+                Storage::put($path, $response->body());
+
+                $message = ChatMessage::create([
+                    'thread_id' => $thread->id,
+                    'user_id' => null,
+                    'content' => '',
+                    'type' => ChatMessage::TYPE_IMAGE,
+                    'metadata' => $metadata,
+                ]);
+
+                ChatAttachment::create([
+                    'message_id' => $message->id,
+                    'path' => $path,
+                    'filename' => $filename,
+                    'original_filename' => basename(parse_url($mediaUrl, PHP_URL_PATH) ?? $filename),
+                    'mime_type' => $contentType,
+                    'file_size' => strlen($response->body()),
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Twilio webhook: failed to store media attachment', [
+                    'url' => $mediaUrl,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Guess file extension from MIME type.
+     */
+    private function guessExtensionFromMime(string $mimeType): string
+    {
+        return match (true) {
+            str_contains($mimeType, 'png') => 'png',
+            str_contains($mimeType, 'webp') => 'webp',
+            str_contains($mimeType, 'heic') => 'heic',
+            str_contains($mimeType, 'gif') => 'gif',
+            str_contains($mimeType, 'mp4') => 'mp4',
+            str_contains($mimeType, 'pdf') => 'pdf',
+            default => 'jpg',
+        };
     }
 
     private function twimlResponse(): Response
