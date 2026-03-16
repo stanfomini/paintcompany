@@ -92,6 +92,14 @@ class GenerateColorVisualizationJob implements ShouldQueue
             // Step 6: Broadcast completion
             event(new ColorVisualizationCompleted($this->visualization));
 
+            // Step 7: Callback to SMS bot flow if triggered from conversation
+            if ($this->visualization->sms_conversation_id) {
+                $conversation = \App\Models\SmsConversation::find($this->visualization->sms_conversation_id);
+                if ($conversation && $conversation->isActive()) {
+                    app(\App\Services\SmsBotFlowService::class)->onVisualizationComplete($conversation, $resultPath);
+                }
+            }
+
         } catch (\Exception $e) {
             Log::error('Color visualization generation failed', [
                 'uuid' => $this->visualization->uuid,

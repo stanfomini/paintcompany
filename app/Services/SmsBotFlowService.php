@@ -2,14 +2,22 @@
 
 namespace App\Services;
 
+use App\Jobs\GenerateColorVisualizationJob;
+use App\Models\ChatAttachment;
+use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\ColorVisualization;
 use App\Models\CompanySetting;
+use App\Models\ProjectPreview;
 use App\Models\SmsBotFlow;
 use App\Models\SmsBotStep;
 use App\Models\SmsConversation;
 use App\Models\User;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class SmsBotFlowService
 {
@@ -56,6 +64,14 @@ class SmsBotFlowService
         // Store answer
         $answers = $conversation->answers ?? [];
         $answers["step_{$currentStep->id}"] = $text;
+
+        // Handle photo downloads for photo_prompt steps
+        if ($currentStep->step_type === SmsBotStep::TYPE_PHOTO_PROMPT && ! empty($mediaUrls)) {
+            $photoPath = $this->downloadAndStorePhoto($conversation, $mediaUrls[0]);
+            if ($photoPath) {
+                $answers["step_{$currentStep->id}_photo"] = $photoPath;
+            }
+        }
 
         $conversation->update([
             'answers' => $answers,
@@ -130,6 +146,21 @@ class SmsBotFlowService
                 }
                 $this->triggerHumanTakeover($conversation);
                 break;
+
+            case SmsBotStep::TYPE_MEDIA_MESSAGE:
+                $this->sendMms($conversation->phone, $messageText, $nextStep->media_url);
+                $this->advanceToNextStep($conversation);
+                break;
+
+            case SmsBotStep::TYPE_PHOTO_PROMPT:
+                $this->sendSms($conversation->phone, $messageText);
+                // Wait for user to send a photo
+                break;
+
+            case SmsBotStep::TYPE_AI_VISUALIZATION:
+                $this->handleAiVisualizationStep($conversation, $nextStep);
+                // Wait for job callback — don't auto-advance
+                break;
         }
     }
 
@@ -158,6 +189,155 @@ class SmsBotFlowService
     public function triggerHumanTakeover(SmsConversation $conversation): void
     {
         $conversation->update(['status' => 'human_takeover']);
+    }
+
+    /**
+     * Handle AI visualization step — find prompt and photo, dispatch job.
+     */
+    private function handleAiVisualizationStep(SmsConversation $conversation, SmsBotStep $step): void
+    {
+        $answers = $conversation->answers ?? [];
+
+        // Find the prompt from source step answer
+        $prompt = null;
+        if ($step->source_step_id) {
+            $prompt = $answers["step_{$step->source_step_id}"] ?? null;
+        }
+
+        // Find the most recent photo path from answers
+        $photoPath = null;
+        foreach (array_reverse($answers, true) as $key => $value) {
+            if (str_ends_with($key, '_photo')) {
+                $photoPath = $value;
+                break;
+            }
+        }
+
+        if (! $prompt || ! $photoPath) {
+            $this->sendSms($conversation->phone, 'Sorry, I could not process your visualization request. Let me connect you with our team.');
+            $this->advanceToNextStep($conversation);
+
+            return;
+        }
+
+        // Ensure conversation has a project preview for the visualization
+        $this->ensureProjectPreview($conversation);
+
+        // Create ColorVisualization record
+        $visualization = ColorVisualization::create([
+            'sms_conversation_id' => $conversation->id,
+            'original_image_path' => $photoPath,
+            'prompt' => $prompt,
+            'status' => ColorVisualization::STATUS_PENDING,
+            'disk' => config('filesystems.default'),
+        ]);
+
+        // Dispatch the AI job
+        GenerateColorVisualizationJob::dispatch($visualization);
+
+        Log::info('SmsBotFlowService: dispatched AI visualization', [
+            'conversation_id' => $conversation->id,
+            'visualization_id' => $visualization->id,
+            'prompt' => $prompt,
+        ]);
+    }
+
+    /**
+     * Callback when AI visualization completes — send MMS and advance flow.
+     */
+    public function onVisualizationComplete(SmsConversation $conversation, string $resultImagePath): void
+    {
+        $resultUrl = Storage::url($resultImagePath);
+
+        $this->sendMms($conversation->phone, 'Here is your color visualization!', $resultUrl);
+
+        // Store result in answers
+        $answers = $conversation->answers ?? [];
+        $answers['visualization_result'] = $resultImagePath;
+        $conversation->update(['answers' => $answers]);
+
+        $this->advanceToNextStep($conversation);
+    }
+
+    /**
+     * Download a photo from a URL and store it.
+     */
+    private function downloadAndStorePhoto(SmsConversation $conversation, string $mediaUrl): ?string
+    {
+        try {
+            $response = Http::get($mediaUrl);
+            if ($response->failed()) {
+                Log::error('SmsBotFlowService: failed to download photo', ['url' => $mediaUrl, 'status' => $response->status()]);
+
+                return null;
+            }
+
+            $contentType = $response->header('Content-Type', 'image/jpeg');
+            $extension = match (true) {
+                str_contains($contentType, 'png') => 'png',
+                str_contains($contentType, 'webp') => 'webp',
+                str_contains($contentType, 'heic') => 'heic',
+                default => 'jpg',
+            };
+
+            $filename = 'chat-attachments/'.Str::uuid().'.'.$extension;
+            Storage::put($filename, $response->body());
+
+            // Create ChatAttachment on the thread if thread exists
+            if ($conversation->chat_thread_id) {
+                $message = ChatMessage::create([
+                    'thread_id' => $conversation->chat_thread_id,
+                    'content' => 'Photo received via SMS',
+                    'type' => ChatMessage::TYPE_IMAGE,
+                ]);
+
+                ChatAttachment::create([
+                    'message_id' => $message->id,
+                    'path' => $filename,
+                    'filename' => basename($filename),
+                    'original_filename' => basename($mediaUrl),
+                    'mime_type' => $contentType,
+                    'file_size' => strlen($response->body()),
+                ]);
+            }
+
+            return $filename;
+        } catch (\Exception $e) {
+            Log::error('SmsBotFlowService: photo download failed', ['url' => $mediaUrl, 'error' => $e->getMessage()]);
+
+            return null;
+        }
+    }
+
+    /**
+     * Ensure conversation has a ProjectPreview (create one lazily if missing).
+     */
+    private function ensureProjectPreview(SmsConversation $conversation): void
+    {
+        if ($conversation->project_preview_id) {
+            return;
+        }
+
+        $preview = ProjectPreview::create([
+            'phone' => $conversation->phone,
+        ]);
+
+        $conversation->update(['project_preview_id' => $preview->id]);
+    }
+
+    /**
+     * Send MMS via TwilioService.
+     */
+    private function sendMms(string $to, string $body, string $mediaUrl): void
+    {
+        try {
+            $this->twilioService->sendMms($to, $body, [$mediaUrl]);
+        } catch (\Exception $e) {
+            Log::error('SmsBotFlowService: failed to send MMS', [
+                'to' => $to,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

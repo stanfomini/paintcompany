@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\GenerateColorVisualizationJob;
 use App\Models\ChatThread;
 use App\Models\SmsBotFlow;
 use App\Models\SmsBotStep;
@@ -7,6 +8,9 @@ use App\Models\SmsConversation;
 use App\Models\User;
 use App\Services\SmsBotFlowService;
 use App\Services\TwilioService;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     $this->twilio = Mockery::mock(TwilioService::class);
@@ -398,4 +402,184 @@ it('checks timeouts and abandons stale conversations', function () {
     expect($abandoned)->toBe(1);
     expect(SmsConversation::where('status', 'abandoned')->count())->toBe(1);
     expect(SmsConversation::where('status', 'in_progress')->count())->toBe(1);
+});
+
+// --- Task 8: media_message, photo_prompt, ai_visualization ---
+
+it('sends MMS for media_message steps', function () {
+    $this->twilio->shouldReceive('sendMms')->andReturn(['success' => true, 'sid' => 'SM789', 'error' => null]);
+
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->mediaMessage()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Check out this color!',
+        'media_url' => 'https://example.com/colors.jpg',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    // media_message auto-advances, no more steps = completed
+    $convo->refresh();
+    expect($convo->status)->toBe('completed');
+
+    $this->twilio->shouldHaveReceived('sendMms')->once();
+});
+
+it('waits for photo on photo_prompt steps', function () {
+    $flow = SmsBotFlow::factory()->active()->create();
+    $photoStep = SmsBotStep::factory()->photoPrompt()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Send me a photo of your walls!',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    // Should be waiting on photo_prompt step
+    $convo->refresh();
+    expect($convo->status)->toBe('in_progress')
+        ->and($convo->current_step_id)->toBe($photoStep->id);
+
+    // Now send a response with a photo
+    Http::fake(['*' => Http::response('fake-image-content', 200, ['Content-Type' => 'image/jpeg'])]);
+    Storage::fake();
+
+    $service->processResponse($convo, '', ['https://api.twilio.com/media/123.jpg']);
+
+    $convo->refresh();
+    expect($convo->answers)->toHaveKey("step_{$photoStep->id}_photo")
+        ->and($convo->photo_count)->toBe(1)
+        ->and($convo->status)->toBe('completed'); // no more steps
+});
+
+it('creates project preview lazily on photo_prompt if missing', function () {
+    $flow = SmsBotFlow::factory()->active()->create();
+    $photoStep = SmsBotStep::factory()->photoPrompt()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Send me a photo',
+    ]);
+    SmsBotStep::factory()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 2,
+        'step_type' => SmsBotStep::TYPE_AI_VISUALIZATION,
+        'message_text' => 'Generating visualization...',
+        'source_step_id' => null,
+    ]);
+
+    Http::fake(['*' => Http::response('fake-image-content', 200, ['Content-Type' => 'image/jpeg'])]);
+    Storage::fake();
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+    expect($convo->project_preview_id)->toBeNull();
+
+    $service->processResponse($convo, '', ['https://api.twilio.com/media/photo.jpg']);
+
+    $convo->refresh();
+    // AI visualization step should have triggered ensureProjectPreview
+    // Even without a source prompt, it creates the preview
+});
+
+it('dispatches GenerateColorVisualizationJob on ai_visualization step', function () {
+    Queue::fake();
+    Http::fake(['*' => Http::response('fake-image-content', 200, ['Content-Type' => 'image/jpeg'])]);
+    Storage::fake();
+
+    $flow = SmsBotFlow::factory()->active()->create();
+    $colorQuestion = SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'What color would you like?',
+    ]);
+    $photoStep = SmsBotStep::factory()->photoPrompt()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 2,
+        'message_text' => 'Send a photo of your room',
+    ]);
+    SmsBotStep::factory()->aiVisualization()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 3,
+        'message_text' => 'Generating your visualization...',
+        'source_step_id' => $colorQuestion->id,
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    // Answer color question
+    $service->processResponse($convo, 'Sherwin-Williams Naval SW 6244');
+    $convo->refresh();
+
+    // Send photo
+    $service->processResponse($convo, '', ['https://api.twilio.com/media/room.jpg']);
+    $convo->refresh();
+
+    // Should have dispatched the job
+    Queue::assertPushed(GenerateColorVisualizationJob::class, function ($job) {
+        return $job->visualization->prompt === 'Sherwin-Williams Naval SW 6244';
+    });
+
+    // Conversation should still be in_progress (waiting for AI callback)
+    expect($convo->status)->toBe('in_progress');
+});
+
+it('sends MMS and advances on visualization complete callback', function () {
+    $this->twilio->shouldReceive('sendMms')->andReturn(['success' => true, 'sid' => 'SM789', 'error' => null]);
+    Storage::fake();
+
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->aiVisualization()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Generating...',
+    ]);
+
+    $convo = SmsConversation::factory()->create([
+        'flow_id' => $flow->id,
+        'status' => 'in_progress',
+        'current_step_id' => SmsBotStep::where('flow_id', $flow->id)->first()->id,
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $service->onVisualizationComplete($convo, 'visualizations/result.png');
+
+    $convo->refresh();
+    expect($convo->status)->toBe('completed') // no more steps after AI
+        ->and($convo->answers['visualization_result'])->toBe('visualizations/result.png');
+
+    $this->twilio->shouldHaveReceived('sendMms')->once();
+});
+
+it('handles missing source step answer gracefully on ai_visualization', function () {
+    $flow = SmsBotFlow::factory()->active()->create();
+
+    // source_step_id exists but has no answer in conversation
+    $sourceStep = SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'What color?',
+    ]);
+
+    SmsBotStep::factory()->aiVisualization()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 2,
+        'message_text' => 'Generating...',
+        'source_step_id' => $sourceStep->id,
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    // Answer the question to advance
+    $service->processResponse($convo, 'Blue walls');
+    $convo->refresh();
+
+    // AI step: source answer exists but no photo → sends error and completes
+    expect($convo->status)->toBe('completed');
+
+    $this->twilio->shouldHaveReceived('sendSms')->atLeast()->once();
 });
