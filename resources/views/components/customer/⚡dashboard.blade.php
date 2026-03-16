@@ -264,6 +264,24 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
         unset($this->selectedDeal, $this->actionItems, $this->deals, $this->pastDeals, $this->customers, $this->customer, $this->customerIds);
     }
 
+    public function startVideoCall(): void
+    {
+        $deal = $this->selectedDeal;
+        if (! $deal) {
+            return;
+        }
+
+        $videoCall = \App\Models\VideoCall::create([
+            'callable_type' => \App\Models\Deal::class,
+            'callable_id' => $deal->id,
+            'initiated_by' => auth('customer')->id(),
+            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
+            'status' => 'pending',
+        ]);
+
+        $this->redirect(route('video-call.test', $videoCall->room_id));
+    }
+
     /**
      * Customer-friendly status label (hides internal kanban stages).
      */
@@ -523,6 +541,20 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                             <flux:icon name="phone" class="w-4 h-4 text-zinc-400 shrink-0" />
                             <span class="text-sm text-zinc-500 dark:text-zinc-400">{{ $this->selectedDeal->customer->phone }}</span>
                         </div>
+                    @endif
+                </div>
+            @endif
+
+            {{-- Quick Actions --}}
+            @if ($this->selectedDeal)
+                <div class="flex items-center gap-2">
+                    <flux:button size="sm" icon="video-camera" variant="ghost" wire:click="startVideoCall">
+                        {{ __('Start Video Call') }}
+                    </flux:button>
+                    @if ($this->selectedDeal->chatThread)
+                        <flux:button size="sm" icon="chat-bubble-left" variant="ghost" :href="route('customer.chat')" wire:navigate>
+                            {{ __('Chat') }}
+                        </flux:button>
                     @endif
                 </div>
             @endif

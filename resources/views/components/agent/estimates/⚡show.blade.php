@@ -441,6 +441,19 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
         })->toArray();
     }
 
+    public function startVideoCall(): void
+    {
+        $videoCall = \App\Models\VideoCall::create([
+            'callable_type' => \App\Models\Deal::class,
+            'callable_id' => $this->estimate->deal_id,
+            'initiated_by' => auth('agent')->id(),
+            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
+            'status' => 'pending',
+        ]);
+
+        $this->redirect(route('video-call.test', $videoCall->room_id));
+    }
+
     /**
      * Ensure the agent is a participant in the deal's chat thread.
      */
@@ -507,6 +520,11 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
                     </flux:text>
                 </div>
             @endif
+            <div class="ml-auto">
+                <flux:button size="sm" icon="video-camera" variant="ghost" wire:click="startVideoCall">
+                    {{ __('Video Call') }}
+                </flux:button>
+            </div>
         </div>
 
         @if (session('success'))

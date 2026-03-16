@@ -225,6 +225,19 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
         $this->selectedDealId = $firstActive?->id;
     }
 
+    public function startVideoCall(?int $dealId = null): void
+    {
+        $videoCall = \App\Models\VideoCall::create([
+            'callable_type' => \App\Models\Deal::class,
+            'callable_id' => $dealId,
+            'initiated_by' => auth('agent')->id(),
+            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
+            'status' => 'pending',
+        ]);
+
+        $this->redirect(route('video-call.test', $videoCall->room_id));
+    }
+
     #[Computed]
     public function agentDeals()
     {
@@ -848,7 +861,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
                         <flux:text class="text-zinc-500 dark:text-zinc-400">
                             {{ __('Have questions about this listing or estimate? Message our team directly.') }}
                         </flux:text>
-                        <div class="mt-4">
+                        <div class="mt-4 flex flex-col gap-2 sm:flex-row">
                             @if ($this->selectedDeal->chatThread)
                                 <flux:button variant="primary" icon="chat-bubble-left-right"
                                     href="{{ route('agent.chat.show', $this->selectedDeal->chatThread) }}" class="w-full sm:w-auto">
@@ -860,6 +873,10 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
                                     {{ __('Send a Message') }}
                                 </flux:button>
                             @endif
+                            <flux:button variant="ghost" icon="video-camera"
+                                wire:click="startVideoCall({{ $this->selectedDealId }})" class="w-full sm:w-auto">
+                                {{ __('Video Call') }}
+                            </flux:button>
                         </div>
                     </flux:card>
                 </div>
