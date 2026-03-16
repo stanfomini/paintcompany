@@ -37,8 +37,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->name('crew.')
                 ->group(base_path('routes/crew.php'));
 
-            // AI & MCP routes
-            require base_path('routes/ai.php');
+            // AI & MCP routes (only when laravel/mcp is installed)
+            if (class_exists(\Laravel\Mcp\Facades\Mcp::class)) {
+                require base_path('routes/ai.php');
+            }
         },
     )
     ->withBroadcasting(
