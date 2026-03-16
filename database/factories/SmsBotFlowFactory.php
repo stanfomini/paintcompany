@@ -14,19 +14,35 @@ class SmsBotFlowFactory extends Factory
 
     public function definition(): array
     {
-        return [
+        $definition = [
             'name' => fake()->words(3, true).' Flow',
             'status' => 'draft',
             'trigger_type' => 'new_lead',
+            'trigger_keyword' => null,
             'lead_source_ids' => null,
-            'greeting_message' => fake()->sentence(),
-            'photo_prompt_message' => fake()->sentence(),
-            'visualization_message' => fake()->sentence(),
-            'portal_link_message' => fake()->sentence(),
+            'completion_action' => null,
             'timeout_minutes' => 10080,
             'business_hours_only' => false,
             'delay_after_lead_minutes' => 5,
         ];
+
+        // SQLite doesn't drop columns, so these are still required in tests
+        if (\DB::getDriverName() === 'sqlite') {
+            $definition['greeting_message'] = fake()->sentence();
+            $definition['photo_prompt_message'] = fake()->sentence();
+            $definition['visualization_message'] = fake()->sentence();
+            $definition['portal_link_message'] = fake()->sentence();
+        }
+
+        return $definition;
+    }
+
+    public function keyword(string $keyword = 'COLOR'): static
+    {
+        return $this->state([
+            'trigger_type' => 'keyword',
+            'trigger_keyword' => strtoupper($keyword),
+        ]);
     }
 
     public function active(): static

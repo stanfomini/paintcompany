@@ -15,11 +15,9 @@ class SmsBotFlow extends Model
         'name',
         'status',
         'trigger_type',
+        'trigger_keyword',
         'lead_source_ids',
-        'greeting_message',
-        'photo_prompt_message',
-        'visualization_message',
-        'portal_link_message',
+        'completion_action',
         'timeout_minutes',
         'business_hours_only',
         'delay_after_lead_minutes',
@@ -90,5 +88,17 @@ class SmsBotFlow extends Model
 
                 return $leadSourceId && in_array($leadSourceId, $flow->lead_source_ids);
             });
+    }
+
+    /**
+     * Find an active keyword-triggered flow by keyword.
+     */
+    public static function findByKeyword(string $keyword): ?self
+    {
+        return static::query()
+            ->active()
+            ->where('trigger_type', 'keyword')
+            ->where('trigger_keyword', strtoupper(trim($keyword)))
+            ->first();
     }
 }
