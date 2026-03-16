@@ -10,10 +10,10 @@ return new class extends Migration
     {
         Schema::create('sms_conversations', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('project_preview_id')->constrained()->cascadeOnDelete();
+            $table->foreignId('project_preview_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('flow_id')->nullable()->constrained('sms_bot_flows')->nullOnDelete();
             $table->string('phone');
-            $table->string('current_state');
+            $table->string('current_state')->default('');
             $table->foreignId('sms_session_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('chat_thread_id')->nullable()->constrained('chat_threads')->nullOnDelete();
             $table->json('answers')->nullable();
