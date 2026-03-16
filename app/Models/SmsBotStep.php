@@ -12,11 +12,17 @@ class SmsBotStep extends Model
 
     public const TYPE_GREETING = 'greeting';
 
+    public const TYPE_MESSAGE = 'message';
+
+    public const TYPE_MEDIA_MESSAGE = 'media_message';
+
     public const TYPE_PHOTO_PROMPT = 'photo_prompt';
 
-    public const TYPE_PHOTO_RECEIVED = 'photo_received';
+    public const TYPE_AI_VISUALIZATION = 'ai_visualization';
 
     public const TYPE_QUESTION = 'question';
+
+    public const TYPE_QUICK_REPLY = 'quick_reply';
 
     public const TYPE_DELAY = 'delay';
 
@@ -27,6 +33,9 @@ class SmsBotStep extends Model
         'sort_order',
         'step_type',
         'message_text',
+        'media_url',
+        'source_step_id',
+        'wait_for_media',
         'quick_reply_options',
         'field_mapping',
         'is_required',
@@ -39,6 +48,7 @@ class SmsBotStep extends Model
         return [
             'quick_reply_options' => 'array',
             'is_required' => 'boolean',
+            'wait_for_media' => 'boolean',
             'sort_order' => 'integer',
             'delay_seconds' => 'integer',
         ];
@@ -54,6 +64,11 @@ class SmsBotStep extends Model
         return $this->belongsTo(self::class, 'next_step_id');
     }
 
+    public function sourceStep(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'source_step_id');
+    }
+
     public function isQuestion(): bool
     {
         return $this->step_type === self::TYPE_QUESTION;
@@ -61,7 +76,11 @@ class SmsBotStep extends Model
 
     public function requiresResponse(): bool
     {
-        return in_array($this->step_type, [self::TYPE_QUESTION, self::TYPE_PHOTO_PROMPT]);
+        return in_array($this->step_type, [
+            self::TYPE_QUESTION,
+            self::TYPE_PHOTO_PROMPT,
+            self::TYPE_AI_VISUALIZATION,
+        ]);
     }
 
     /**
