@@ -496,6 +496,13 @@ new class extends Component
         $this->refreshCustomer();
     }
 
+    public function cancelAppointment(string $token): void
+    {
+        app(\App\Services\AppointmentBookingService::class)->cancelBooking($token);
+        $this->refreshCustomer();
+        session()->flash('success', __('Appointment cancelled.'));
+    }
+
     public function openBookModal(): void
     {
         if ($this->activeDeal) {
@@ -1053,6 +1060,18 @@ new class extends Component
                                     <p class="font-medium text-zinc-900 dark:text-white">{{ $booking->prospect_phone ?? $booking->prospect_email }}</p>
                                 </div>
                             </div>
+                            @if ($booking->status === 'confirmed')
+                                <div class="mt-3 flex items-center gap-2">
+                                    @can('bookings.manage')
+                                        <flux:button size="xs" variant="ghost" icon="arrow-path" wire:click="$dispatch('open-reschedule-appointment-modal', { token: '{{ $booking->booking_token }}' })">
+                                            {{ __('Reschedule') }}
+                                        </flux:button>
+                                        <flux:button size="xs" variant="ghost" icon="x-mark" class="text-red-600 hover:text-red-700" wire:click="cancelAppointment('{{ $booking->booking_token }}')" wire:confirm="{{ __('Cancel this appointment?') }}">
+                                            {{ __('Cancel') }}
+                                        </flux:button>
+                                    @endcan
+                                </div>
+                            @endif
                         </div>
                     @endif
 
