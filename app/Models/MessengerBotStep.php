@@ -18,6 +18,10 @@ class MessengerBotStep extends Model
 
     public const TYPE_DELAY = 'delay';
 
+    public const TYPE_MEDIA_MESSAGE = 'media_message';
+
+    public const TYPE_PHOTO_PROMPT = 'photo_prompt';
+
     public const TYPE_HANDOFF = 'handoff';
 
     protected $fillable = [
@@ -25,6 +29,7 @@ class MessengerBotStep extends Model
         'sort_order',
         'step_type',
         'message_text',
+        'media_url',
         'quick_reply_options',
         'field_mapping',
         'is_required',

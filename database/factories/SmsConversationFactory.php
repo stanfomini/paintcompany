@@ -19,6 +19,7 @@ class SmsConversationFactory extends Factory
             'project_preview_id' => ProjectPreview::factory(),
             'phone' => fake()->e164PhoneNumber(),
             'current_state' => SmsConversation::STATE_INITIATED,
+            'status' => 'in_progress',
             'answers' => [],
             'message_count' => 0,
             'photo_count' => 0,
@@ -31,6 +32,7 @@ class SmsConversationFactory extends Factory
     {
         return $this->state([
             'current_state' => SmsConversation::STATE_DORMANT,
+            'status' => 'completed',
             'completed_at' => now(),
         ]);
     }
@@ -39,6 +41,7 @@ class SmsConversationFactory extends Factory
     {
         return $this->state([
             'current_state' => SmsConversation::STATE_HUMAN_TAKEOVER,
+            'status' => 'human_takeover',
         ]);
     }
 
@@ -46,6 +49,14 @@ class SmsConversationFactory extends Factory
     {
         return $this->state([
             'current_state' => SmsConversation::STATE_DORMANT,
+            'status' => 'completed',
+        ]);
+    }
+
+    public function abandoned(): static
+    {
+        return $this->state([
+            'status' => 'abandoned',
         ]);
     }
 }

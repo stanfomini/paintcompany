@@ -13,6 +13,7 @@ class MessengerBotFlow extends Model
     protected $fillable = [
         'name',
         'status',
+        'trigger_keyword',
         'greeting_message',
         'completion_action',
         'timeout_minutes',
@@ -50,5 +51,12 @@ class MessengerBotFlow extends Model
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    public static function findByKeyword(string $keyword): ?self
+    {
+        return static::active()
+            ->where('trigger_keyword', strtoupper(trim($keyword)))
+            ->first();
     }
 }

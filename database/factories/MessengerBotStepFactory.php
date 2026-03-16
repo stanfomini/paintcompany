@@ -17,6 +17,7 @@ class MessengerBotStepFactory extends Factory
             'sort_order' => fake()->numberBetween(0, 10),
             'step_type' => MessengerBotStep::TYPE_TEXT_QUESTION,
             'message_text' => fake()->sentence(),
+            'media_url' => null,
             'quick_reply_options' => null,
             'field_mapping' => null,
             'is_required' => true,
@@ -82,6 +83,21 @@ class MessengerBotStepFactory extends Factory
         return $this->state([
             'step_type' => MessengerBotStep::TYPE_QUICK_REPLY,
             'quick_reply_options' => $options,
+        ]);
+    }
+
+    public function mediaMessage(string $url = 'https://example.com/image.jpg'): static
+    {
+        return $this->state([
+            'step_type' => MessengerBotStep::TYPE_MEDIA_MESSAGE,
+            'media_url' => $url,
+        ]);
+    }
+
+    public function photoPrompt(): static
+    {
+        return $this->state([
+            'step_type' => MessengerBotStep::TYPE_PHOTO_PROMPT,
         ]);
     }
 }

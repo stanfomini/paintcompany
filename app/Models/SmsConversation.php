@@ -11,24 +11,34 @@ class SmsConversation extends Model
 {
     use HasFactory;
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_INITIATED = 'initiated';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_NUDGE_PHOTO = 'nudge_photo';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_PHOTO_RECEIVED = 'photo_received';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_VISUALIZATION_READY = 'visualization_ready';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_ROOM_LABELED = 'room_labeled';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_SCOPE_COLLECTED = 'scope_collected';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_TIMELINE_COLLECTED = 'timeline_collected';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_OPEN_CHAT = 'open_chat';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_HUMAN_TAKEOVER = 'human_takeover';
 
+    /** @deprecated Will be removed when SmsEngagementBotService is retired */
     public const STATE_DORMANT = 'dormant';
 
     protected $fillable = [
@@ -36,6 +46,8 @@ class SmsConversation extends Model
         'flow_id',
         'phone',
         'current_state',
+        'current_step_id',
+        'status',
         'sms_session_id',
         'chat_thread_id',
         'answers',
@@ -68,6 +80,11 @@ class SmsConversation extends Model
         return $this->belongsTo(SmsBotFlow::class, 'flow_id');
     }
 
+    public function currentStep(): BelongsTo
+    {
+        return $this->belongsTo(SmsBotStep::class, 'current_step_id');
+    }
+
     public function smsSession(): BelongsTo
     {
         return $this->belongsTo(SmsSession::class);
@@ -79,18 +96,17 @@ class SmsConversation extends Model
     }
 
     /**
-     * Scope to active conversations (not completed, not expired, not dormant).
+     * Scope to active conversations (in_progress status, not expired).
      *
      * @param  Builder<self>  $query
      */
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereNull('completed_at')
+        return $query->where('status', 'in_progress')
             ->where(function (Builder $q) {
                 $q->whereNull('expires_at')
                     ->orWhere('expires_at', '>', now());
-            })
-            ->where('current_state', '!=', self::STATE_DORMANT);
+            });
     }
 
     /**
@@ -119,15 +135,8 @@ class SmsConversation extends Model
 
     public function isActive(): bool
     {
-        if ($this->completed_at) {
-            return false;
-        }
-
-        if ($this->expires_at && $this->expires_at->isPast()) {
-            return false;
-        }
-
-        return $this->current_state !== self::STATE_DORMANT;
+        return $this->status === 'in_progress'
+            && (! $this->expires_at || $this->expires_at->isFuture());
     }
 
     public function isComplete(): bool
@@ -137,11 +146,16 @@ class SmsConversation extends Model
 
     public function isHumanTakeover(): bool
     {
-        return $this->current_state === self::STATE_HUMAN_TAKEOVER;
+        return $this->status === 'human_takeover';
+    }
+
+    public function isAbandoned(): bool
+    {
+        return $this->status === 'abandoned';
     }
 
     /**
-     * Transition the conversation to a new state.
+     * @deprecated Will be removed when SmsEngagementBotService is retired
      */
     public function transitionTo(string $state): void
     {
