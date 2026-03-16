@@ -61,6 +61,20 @@ class SmsBotFlowService
             return;
         }
 
+        // Store inbound message on chat thread
+        if ($conversation->chat_thread_id && $text !== '') {
+            ChatMessage::create([
+                'thread_id' => $conversation->chat_thread_id,
+                'user_id' => null,
+                'content' => $text,
+                'type' => ChatMessage::TYPE_TEXT,
+                'metadata' => [
+                    'source' => 'sms',
+                    'phone' => $conversation->phone,
+                ],
+            ]);
+        }
+
         // Store answer
         $answers = $conversation->answers ?? [];
         $answers["step_{$currentStep->id}"] = $text;
@@ -121,21 +135,25 @@ class SmsBotFlowService
             case SmsBotStep::TYPE_GREETING:
             case SmsBotStep::TYPE_MESSAGE:
                 $this->sendSms($conversation->phone, $messageText);
+                $this->recordOutboundMessage($conversation, $messageText);
                 $this->advanceToNextStep($conversation);
                 break;
 
             case SmsBotStep::TYPE_QUESTION:
                 $this->sendSms($conversation->phone, $messageText);
+                $this->recordOutboundMessage($conversation, $messageText);
                 break;
 
             case SmsBotStep::TYPE_QUICK_REPLY:
                 $body = $this->formatQuickReplyForSms($messageText, $nextStep->quick_reply_options ?? []);
                 $this->sendSms($conversation->phone, $body);
+                $this->recordOutboundMessage($conversation, $body);
                 break;
 
             case SmsBotStep::TYPE_DELAY:
                 if ($messageText) {
                     $this->sendSms($conversation->phone, $messageText);
+                    $this->recordOutboundMessage($conversation, $messageText);
                 }
                 $this->advanceToNextStep($conversation);
                 break;
@@ -143,17 +161,20 @@ class SmsBotFlowService
             case SmsBotStep::TYPE_HANDOFF:
                 if ($messageText) {
                     $this->sendSms($conversation->phone, $messageText);
+                    $this->recordOutboundMessage($conversation, $messageText);
                 }
                 $this->triggerHumanTakeover($conversation);
                 break;
 
             case SmsBotStep::TYPE_MEDIA_MESSAGE:
                 $this->sendMms($conversation->phone, $messageText, $nextStep->media_url);
+                $this->recordOutboundMediaMessage($conversation, $messageText, $nextStep->media_url);
                 $this->advanceToNextStep($conversation);
                 break;
 
             case SmsBotStep::TYPE_PHOTO_PROMPT:
                 $this->sendSms($conversation->phone, $messageText);
+                $this->recordOutboundMessage($conversation, $messageText);
                 // Wait for user to send a photo
                 break;
 
@@ -469,6 +490,56 @@ class SmsBotFlowService
         }
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * Record an outbound text message on the conversation's chat thread.
+     */
+    private function recordOutboundMessage(SmsConversation $conversation, string $content): void
+    {
+        if (! $conversation->chat_thread_id || $content === '') {
+            return;
+        }
+
+        ChatMessage::create([
+            'thread_id' => $conversation->chat_thread_id,
+            'user_id' => null,
+            'content' => $content,
+            'type' => ChatMessage::TYPE_TEXT,
+            'metadata' => ['source' => 'sms_bot'],
+        ]);
+    }
+
+    /**
+     * Record an outbound media message on the conversation's chat thread.
+     */
+    private function recordOutboundMediaMessage(SmsConversation $conversation, string $content, ?string $mediaUrl): void
+    {
+        if (! $conversation->chat_thread_id) {
+            return;
+        }
+
+        $chatMessage = ChatMessage::create([
+            'thread_id' => $conversation->chat_thread_id,
+            'user_id' => null,
+            'content' => $content,
+            'type' => ChatMessage::TYPE_IMAGE,
+            'metadata' => [
+                'source' => 'sms_bot',
+                'media_url' => $mediaUrl,
+            ],
+        ]);
+
+        if ($mediaUrl) {
+            ChatAttachment::create([
+                'message_id' => $chatMessage->id,
+                'path' => $mediaUrl,
+                'filename' => basename(parse_url($mediaUrl, PHP_URL_PATH) ?: 'image.jpg'),
+                'original_filename' => basename(parse_url($mediaUrl, PHP_URL_PATH) ?: 'image.jpg'),
+                'mime_type' => 'image/jpeg',
+                'file_size' => 0,
+            ]);
+        }
     }
 
     /**

@@ -1,6 +1,8 @@
 <?php
 
 use App\Jobs\GenerateColorVisualizationJob;
+use App\Models\ChatAttachment;
+use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\SmsBotFlow;
 use App\Models\SmsBotStep;
@@ -552,6 +554,90 @@ it('sends MMS and advances on visualization complete callback', function () {
         ->and($convo->answers['visualization_result'])->toBe('visualizations/result.png');
 
     $this->twilio->shouldHaveReceived('sendMms')->once();
+});
+
+// --- Task 9: Chat thread integration ---
+
+it('stores outbound bot messages as ChatMessages on the thread', function () {
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->greeting()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Hello from the bot!',
+    ]);
+    SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 2,
+        'message_text' => 'What is your name?',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    $thread = ChatThread::find($convo->chat_thread_id);
+    $botMessages = ChatMessage::where('thread_id', $thread->id)
+        ->where('type', ChatMessage::TYPE_TEXT)
+        ->whereJsonContains('metadata->source', 'sms_bot')
+        ->get();
+
+    // Should have greeting + question messages on thread
+    expect($botMessages)->toHaveCount(2);
+    expect($botMessages->pluck('content')->toArray())->toContain('Hello from the bot!');
+    expect($botMessages->pluck('content')->toArray())->toContain('What is your name?');
+});
+
+it('stores inbound responses as ChatMessages on the thread', function () {
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->question()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'What is your name?',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    $service->processResponse($convo, 'My name is John');
+
+    $thread = ChatThread::find($convo->chat_thread_id);
+    $inboundMessages = ChatMessage::where('thread_id', $thread->id)
+        ->where('type', ChatMessage::TYPE_TEXT)
+        ->whereJsonContains('metadata->source', 'sms')
+        ->get();
+
+    expect($inboundMessages)->toHaveCount(1);
+    expect($inboundMessages->first()->content)->toBe('My name is John');
+    expect($inboundMessages->first()->metadata['phone'])->toBe('+13035551234');
+    expect($inboundMessages->first()->user_id)->toBeNull();
+});
+
+it('stores media attachments as ChatAttachments on outbound messages', function () {
+    $this->twilio->shouldReceive('sendMms')->andReturn(['success' => true, 'sid' => 'SM789', 'error' => null]);
+
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->mediaMessage()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Here is a color sample!',
+        'media_url' => 'https://example.com/sample.jpg',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    $thread = ChatThread::find($convo->chat_thread_id);
+    $imageMessage = ChatMessage::where('thread_id', $thread->id)
+        ->where('type', ChatMessage::TYPE_IMAGE)
+        ->first();
+
+    expect($imageMessage)->not->toBeNull();
+    expect($imageMessage->content)->toBe('Here is a color sample!');
+    expect($imageMessage->metadata['source'])->toBe('sms_bot');
+    expect($imageMessage->metadata['media_url'])->toBe('https://example.com/sample.jpg');
+
+    $attachment = ChatAttachment::where('message_id', $imageMessage->id)->first();
+    expect($attachment)->not->toBeNull();
+    expect($attachment->path)->toBe('https://example.com/sample.jpg');
 });
 
 it('handles missing source step answer gracefully on ai_visualization', function () {
