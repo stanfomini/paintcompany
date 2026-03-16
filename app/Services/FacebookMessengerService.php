@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ChatAttachment;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\MessengerAdFlowMapping;
@@ -11,6 +12,8 @@ use App\Models\MessengerSetting;
 use App\Models\User;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class FacebookMessengerService
 {
@@ -200,6 +203,12 @@ class FacebookMessengerService
             ],
         ]);
 
+        // Store any attachments (images, videos, files)
+        $attachments = $message['attachments'] ?? [];
+        if (! empty($attachments)) {
+            $this->handleAttachments($psid, $attachments, $thread);
+        }
+
         $thread->update(['last_message_at' => now()]);
 
         // Check for active bot conversation
@@ -307,6 +316,104 @@ class FacebookMessengerService
         }
 
         return $mapping->flow;
+    }
+
+    /**
+     * Download and store Facebook Messenger attachments as ChatAttachments.
+     *
+     * @param  array<int, array{type: string, payload: array{url: string}}>  $attachments
+     */
+    protected function handleAttachments(string $psid, array $attachments, ChatThread $thread): void
+    {
+        foreach ($attachments as $attachment) {
+            $type = $attachment['type'] ?? null;
+            $url = $attachment['payload']['url'] ?? null;
+
+            if (! $url || ! in_array($type, ['image', 'video', 'file', 'audio'])) {
+                continue;
+            }
+
+            try {
+                $response = Http::timeout(30)->get($url);
+                if (! $response->successful()) {
+                    Log::warning('FacebookMessenger: Failed to download attachment', [
+                        'psid' => $psid,
+                        'url' => $url,
+                        'status' => $response->status(),
+                    ]);
+
+                    continue;
+                }
+
+                $contentType = $response->header('Content-Type', 'application/octet-stream');
+                $ext = $this->guessExtension($contentType, $url);
+                $uuid = Str::uuid();
+                $storagePath = "chat-attachments/{$uuid}.{$ext}";
+
+                Storage::put($storagePath, $response->body());
+
+                $messageType = match ($type) {
+                    'image' => ChatMessage::TYPE_IMAGE,
+                    'audio' => ChatMessage::TYPE_AUDIO,
+                    default => ChatMessage::TYPE_FILE,
+                };
+
+                $chatMessage = ChatMessage::create([
+                    'thread_id' => $thread->id,
+                    'user_id' => null,
+                    'content' => '',
+                    'type' => $messageType,
+                    'metadata' => [
+                        'source' => 'facebook_messenger',
+                        'psid' => $psid,
+                        'original_url' => $url,
+                    ],
+                ]);
+
+                ChatAttachment::create([
+                    'message_id' => $chatMessage->id,
+                    'path' => $storagePath,
+                    'filename' => "{$uuid}.{$ext}",
+                    'original_filename' => basename(parse_url($url, PHP_URL_PATH)) ?: "{$uuid}.{$ext}",
+                    'mime_type' => $contentType,
+                    'file_size' => strlen($response->body()),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('FacebookMessenger: Failed to process attachment', [
+                    'psid' => $psid,
+                    'url' => $url,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Guess file extension from Content-Type header or URL.
+     */
+    private function guessExtension(string $contentType, string $url): string
+    {
+        $mimeMap = [
+            'image/jpeg' => 'jpg',
+            'image/png' => 'png',
+            'image/gif' => 'gif',
+            'image/webp' => 'webp',
+            'video/mp4' => 'mp4',
+            'audio/mpeg' => 'mp3',
+            'audio/ogg' => 'ogg',
+            'application/pdf' => 'pdf',
+        ];
+
+        if (isset($mimeMap[$contentType])) {
+            return $mimeMap[$contentType];
+        }
+
+        $pathExt = pathinfo(parse_url($url, PHP_URL_PATH) ?? '', PATHINFO_EXTENSION);
+        if ($pathExt) {
+            return strtolower($pathExt);
+        }
+
+        return 'bin';
     }
 
     /**
