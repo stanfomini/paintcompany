@@ -10,6 +10,7 @@ use App\Models\EstimatePackage;
 use App\Models\EstimatePackageItem;
 use App\Models\PackageTemplate;
 use App\Models\PackageTemplateItem;
+use App\Models\ProjectPreview;
 use App\Models\ServiceCategory;
 use Illuminate\Support\Collection;
 
@@ -152,6 +153,12 @@ class EstimatePackageGeneratorService
             'sort_order' => $sortIndex,
             'service_category_id' => $template->service_category_id,
         ]);
+
+        // Apply questionnaire discount from linked project preview
+        $questionnaireDiscount = $this->getQuestionnaireDiscount($estimate);
+        if ($questionnaireDiscount > 0) {
+            $package->update(['discount_percent' => $questionnaireDiscount]);
+        }
 
         // If this is the default package, set it as selected on the estimate
         if ($template->is_default) {
@@ -338,6 +345,29 @@ class EstimatePackageGeneratorService
         }
 
         return 0;
+    }
+
+    /**
+     * Get questionnaire discount from the estimate's linked ProjectPreview.
+     */
+    protected function getQuestionnaireDiscount(Estimate $estimate): float
+    {
+        $preview = ProjectPreview::where('estimate_id', $estimate->id)->first();
+        if ($preview && $preview->questionnaire_discount_percent) {
+            return (float) $preview->questionnaire_discount_percent;
+        }
+
+        // Also check via deal_id
+        if ($estimate->deal_id) {
+            $preview = ProjectPreview::where('deal_id', $estimate->deal_id)
+                ->whereNotNull('questionnaire_discount_percent')
+                ->first();
+            if ($preview) {
+                return (float) $preview->questionnaire_discount_percent;
+            }
+        }
+
+        return 0.0;
     }
 
     /**

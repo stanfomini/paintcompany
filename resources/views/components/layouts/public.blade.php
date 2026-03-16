@@ -30,6 +30,11 @@
                         </div>
                         <flux:heading size="lg">{{ config('app.name') }}</flux:heading>
                     </div>
+                    @if(auth('customer')->check())
+                        <flux:button variant="ghost" size="sm" :href="route('customer.dashboard')" icon="home">
+                            {{ __('My Dashboard') }}
+                        </flux:button>
+                    @endif
                 </div>
             </header>
 

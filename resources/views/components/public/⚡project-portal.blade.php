@@ -10,7 +10,7 @@ use App\Models\ProjectPreview;
 use App\Models\ProjectPreviewView;
 use App\Services\ProjectPreviewService;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Auth; // kept for recordView
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -274,11 +274,52 @@ new #[Layout('components.layouts.public')] class extends Component {
         }
     }
 
+    #[Computed]
+    public function isAuthenticated(): bool
+    {
+        return auth('customer')->check() || auth()->check();
+    }
+
+    #[Computed]
+    public function portalAccessStatus(): string
+    {
+        $customer = $this->preview->customer;
+        if (! $customer) {
+            return 'none';
+        }
+        if ($customer->hasPortalAccess()) {
+            return 'has_account';
+        }
+
+        return 'no_account';
+    }
+
+    #[Computed]
+    public function loginCtaText(): string
+    {
+        return match ($this->portalAccessStatus) {
+            'has_account' => __('Login'),
+            default => __('Enable Your Portal'),
+        };
+    }
+
+    #[Computed]
+    public function loginCtaUrl(): string
+    {
+        return route('customer.login') . '?return=' . urlencode(url("/preview/{$this->token}"));
+    }
+
     #[On('echo-private:project-preview.{preview.uuid},VisualizationCompleted')]
     public function onVisualizationCompleted(): void
     {
         $this->preview->refresh();
         unset($this->photosWithVisualizations);
+    }
+
+    #[On('questionnaire-completed')]
+    public function onQuestionnaireCompleted(): void
+    {
+        $this->preview->refresh();
     }
 };
 ?>
@@ -407,22 +448,22 @@ new #[Layout('components.layouts.public')] class extends Component {
     <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-6 mb-8 bg-white dark:bg-zinc-800">
         <div class="flex items-center justify-between mb-6">
             <flux:heading size="sm">{{ __('Project Journey') }}</flux:heading>
-            @guest
+            @if(!$this->isAuthenticated)
                 <flux:badge color="zinc" size="sm">{{ __('Login to unlock') }}</flux:badge>
-            @endguest
+            @endif
         </div>
         <div class="flex items-center justify-between">
             @foreach($projectSteps as $stepKey => $step)
                 <div
                     wire:key="proj-step-{{ $stepKey }}"
-                    class="flex-1 flex flex-col items-center relative {{ Auth::check() ? 'cursor-pointer group' : 'opacity-50' }}"
+                    class="flex-1 flex flex-col items-center relative {{ $this->isAuthenticated ? 'cursor-pointer group' : 'opacity-50' }}"
                 >
                     @if(! $loop->first)
                         <div class="absolute top-5 -left-1/2 w-full h-0.5 bg-zinc-300 dark:bg-zinc-600"></div>
                     @endif
 
                     <div class="relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400 transition-all
-                        {{ Auth::check() ? 'group-hover:border-blue-400 group-hover:text-blue-400' : '' }}
+                        {{ $this->isAuthenticated ? 'group-hover:border-blue-400 group-hover:text-blue-400' : '' }}
                     ">
                         <flux:icon name="{{ $step['icon'] }}" class="w-5 h-5" />
                     </div>
@@ -434,16 +475,16 @@ new #[Layout('components.layouts.public')] class extends Component {
             @endforeach
         </div>
 
-        @guest
+        @if(!$this->isAuthenticated)
             <div class="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-700 text-center">
                 <flux:text size="sm" class="text-zinc-500 mb-3">
                     {{ __('Create an account to track your project from colors to completion.') }}
                 </flux:text>
-                <flux:button variant="primary" size="sm" href="{{ route('customer.login') }}">
-                    {{ __('Create Free Account') }}
+                <flux:button variant="primary" size="sm" href="{{ $this->loginCtaUrl }}">
+                    {{ $this->loginCtaText }}
                 </flux:button>
             </div>
-        @endguest
+        @endif
     </div>
 
     {{-- ================================================ --}}
@@ -486,17 +527,19 @@ new #[Layout('components.layouts.public')] class extends Component {
                         @endif
 
                         @if($this->booking->prospect_address)
-                            <div class="flex items-start gap-3">
-                                <flux:icon name="map-pin" class="w-5 h-5 text-zinc-400 mt-0.5" />
-                                <div>
-                                    <flux:text class="font-medium">{{ $this->booking->prospect_address }}</flux:text>
-                                    @if($this->booking->prospect_city || $this->booking->prospect_state)
-                                        <flux:text size="sm" class="text-zinc-500">
-                                            {{ collect([$this->booking->prospect_city, $this->booking->prospect_state])->filter()->join(', ') }} {{ $this->booking->prospect_zip }}
-                                        </flux:text>
-                                    @endif
+                            <x-blur-overlay :show="!$this->isAuthenticated" :cta-text="$this->loginCtaText" :cta-url="$this->loginCtaUrl" :message="__('Log in to see the appointment address.')">
+                                <div class="flex items-start gap-3">
+                                    <flux:icon name="map-pin" class="w-5 h-5 text-zinc-400 mt-0.5" />
+                                    <div>
+                                        <flux:text class="font-medium">{{ $this->booking->prospect_address }}</flux:text>
+                                        @if($this->booking->prospect_city || $this->booking->prospect_state)
+                                            <flux:text size="sm" class="text-zinc-500">
+                                                {{ collect([$this->booking->prospect_city, $this->booking->prospect_state])->filter()->join(', ') }} {{ $this->booking->prospect_zip }}
+                                            </flux:text>
+                                        @endif
+                                    </div>
                                 </div>
-                            </div>
+                            </x-blur-overlay>
                         @endif
                     </div>
 
@@ -591,25 +634,37 @@ new #[Layout('components.layouts.public')] class extends Component {
             </div>
         @endif
 
+        {{-- Project Questionnaire --}}
+        <div class="mb-8">
+            <livewire:public.project-questionnaire :preview="$preview" />
+        </div>
+
         {{-- Ballpark Pricing --}}
         @if(!empty($this->ballpark['rooms']))
-            <div class="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-6 border border-blue-200 dark:border-blue-800 mb-8">
-                <flux:heading size="lg" class="mb-4">{{ __('Transparent Ballpark Pricing') }}</flux:heading>
-                <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mb-4">{{ __('Rough estimates based on typical room sizes. Your estimator will provide an exact quote.') }}</flux:text>
-                <div class="space-y-3">
-                    @foreach($this->ballpark['rooms'] as $room)
-                        <div class="flex items-center justify-between py-2 border-b border-blue-200/50 dark:border-blue-700/50 last:border-0">
-                            <flux:text class="font-medium">{{ $room['name'] }}</flux:text>
-                            <flux:text class="font-semibold text-blue-700 dark:text-blue-300">${{ number_format($room['min'], 0) }} - ${{ number_format($room['max'], 0) }}</flux:text>
-                        </div>
-                    @endforeach
+            <x-blur-overlay :show="!$this->isAuthenticated" :cta-text="$this->loginCtaText" :cta-url="$this->loginCtaUrl" :message="__('Log in to see your ballpark pricing.')">
+                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-6 border border-blue-200 dark:border-blue-800 mb-8">
+                    <flux:heading size="lg" class="mb-4">{{ __('Transparent Ballpark Pricing') }}</flux:heading>
+                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mb-4">{{ __('Rough estimates based on typical room sizes. Your estimator will provide an exact quote.') }}</flux:text>
+                    <div class="space-y-3">
+                        @foreach($this->ballpark['rooms'] as $room)
+                            <div class="flex items-center justify-between py-2 border-b border-blue-200/50 dark:border-blue-700/50 last:border-0">
+                                <flux:text class="font-medium">{{ $room['name'] }}</flux:text>
+                                <flux:text class="font-semibold text-blue-700 dark:text-blue-300">${{ number_format($room['min'], 0) }} - ${{ number_format($room['max'], 0) }}</flux:text>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div class="mt-4 pt-4 border-t-2 border-blue-300 dark:border-blue-700 flex items-center justify-between">
+                        <flux:text class="font-bold text-lg">{{ __('Estimated Range') }}</flux:text>
+                        <flux:text class="font-bold text-lg text-blue-700 dark:text-blue-300">${{ number_format($this->ballpark['total_min'], 0) }} - ${{ number_format($this->ballpark['total_max'], 0) }}</flux:text>
+                    </div>
+                    <flux:text size="xs" class="mt-3 text-zinc-500 italic">{{ __('Ballpark only. Final pricing determined during your in-person estimate.') }}</flux:text>
                 </div>
-                <div class="mt-4 pt-4 border-t-2 border-blue-300 dark:border-blue-700 flex items-center justify-between">
-                    <flux:text class="font-bold text-lg">{{ __('Estimated Range') }}</flux:text>
-                    <flux:text class="font-bold text-lg text-blue-700 dark:text-blue-300">${{ number_format($this->ballpark['total_min'], 0) }} - ${{ number_format($this->ballpark['total_max'], 0) }}</flux:text>
+            </x-blur-overlay>
+            @if(!$this->isAuthenticated)
+                <div class="text-center mb-8">
+                    <flux:button variant="primary" size="sm" :href="$this->loginCtaUrl" icon="currency-dollar">{{ __('See Your Exact Pricing') }}</flux:button>
                 </div>
-                <flux:text size="xs" class="mt-3 text-zinc-500 italic">{{ __('Ballpark only. Final pricing determined during your in-person estimate.') }}</flux:text>
-            </div>
+            @endif
         @endif
 
         {{-- Estimator --}}
@@ -621,7 +676,9 @@ new #[Layout('components.layouts.public')] class extends Component {
                 <div class="flex-1 min-w-0">
                     <flux:heading size="base">{{ $preview->estimator->name }}</flux:heading>
                     @if($this->company->company_phone)
-                        <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mt-1">Text us: {{ $this->company->company_phone }}</flux:text>
+                        <x-blur-overlay :show="!$this->isAuthenticated" :cta-text="$this->loginCtaText" :cta-url="$this->loginCtaUrl" :message="__('Log in to contact your estimator.')">
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mt-1">Text us: {{ $this->company->company_phone }}</flux:text>
+                        </x-blur-overlay>
                     @endif
                     @if($this->booking?->booked_date)
                         <div class="mt-2 flex items-center gap-1.5">
@@ -862,5 +919,12 @@ new #[Layout('components.layouts.public')] class extends Component {
         <flux:text size="sm" class="text-zinc-500">
             {{ __('Questions?') }} {{ __('Text us at') }} {{ $this->company->company_phone ?? __('our office') }}
         </flux:text>
+        @if(!$this->isAuthenticated)
+            <div class="mt-3">
+                <flux:link size="sm" :href="$this->loginCtaUrl" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+                    {{ __('Login to your portal') }}
+                </flux:link>
+            </div>
+        @endif
     </div>
 </div>

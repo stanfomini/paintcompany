@@ -71,7 +71,7 @@ describe('Customer Dashboard component', function () {
 
         Livewire::actingAs($customerUser, 'customer')
             ->test('customer.dashboard')
-            ->assertSee('Estimates')
+            ->assertSee('Your Painting Estimate')
             ->assertSee('EST-2026-00001')
             ->assertSee('Review');
     });
@@ -115,7 +115,7 @@ describe('Customer Dashboard component', function () {
         Livewire::actingAs($customerUser, 'customer')
             ->test('customer.dashboard')
             ->assertSee('Accepted')
-            ->assertSeeInOrder(['Estimates', 'Accepted']);
+            ->assertSee('Your Painting Estimate');
     });
 
     it('shows empty estimates state when deal has no estimates', function () {
@@ -156,7 +156,7 @@ describe('Customer Dashboard component', function () {
             ->test('customer.dashboard')
             ->assertSee('Job Progress')
             ->assertSee('In Progress')
-            ->assertSee('View Details');
+            ->assertSee('View Job Details');
     });
 
     it('shows action items for unconfirmed scheduling', function () {
@@ -258,7 +258,6 @@ describe('Customer Dashboard component', function () {
 
         Livewire::actingAs($customerUser, 'customer')
             ->test('customer.dashboard')
-            ->assertSee('Property')
             ->assertSee('123 Main Street')
             ->assertSee('Denver');
     });
@@ -342,5 +341,70 @@ describe('Customer Dashboard component', function () {
             ->test('customer.dashboard')
             ->assertDontSee('Need Help?')
             ->assertDontSee('Send a Message');
+    });
+
+    it('shows preview toggle when customer has a ProjectPreview', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        \App\Models\ProjectPreview::factory()->create([
+            'customer_id' => $customer->id,
+            'status' => 'active',
+        ]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.dashboard')
+            ->assertSee('Project Preview')
+            ->assertSee('Dashboard');
+    });
+
+    it('hides preview toggle when no preview exists', function () {
+        $customerUser = User::factory()->customer()->create();
+        Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.dashboard')
+            ->assertDontSee('Project Preview');
+    });
+
+    it('defaults to preview view when returning from preview login flow', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        $preview = \App\Models\ProjectPreview::factory()->create([
+            'customer_id' => $customer->id,
+            'status' => 'active',
+        ]);
+
+        session()->put('preview_return_token', $preview->public_token);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.dashboard')
+            ->assertSet('viewMode', 'preview')
+            ->assertSet('previewToken', $preview->public_token);
+    });
+
+    it('defaults to dashboard view on normal navigation', function () {
+        $customerUser = User::factory()->customer()->create();
+        Customer::factory()->create(['user_id' => $customerUser->id]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.dashboard')
+            ->assertSet('viewMode', 'dashboard');
+    });
+
+    it('can toggle between dashboard and preview views', function () {
+        $customerUser = User::factory()->customer()->create();
+        $customer = Customer::factory()->create(['user_id' => $customerUser->id]);
+        \App\Models\ProjectPreview::factory()->create([
+            'customer_id' => $customer->id,
+            'status' => 'active',
+        ]);
+
+        Livewire::actingAs($customerUser, 'customer')
+            ->test('customer.dashboard')
+            ->assertSet('viewMode', 'dashboard')
+            ->call('toggleView', 'preview')
+            ->assertSet('viewMode', 'preview')
+            ->call('toggleView', 'dashboard')
+            ->assertSet('viewMode', 'dashboard');
     });
 });

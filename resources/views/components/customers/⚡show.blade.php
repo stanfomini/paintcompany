@@ -1530,6 +1530,61 @@ new class extends Component
                         </div>
                     </div>
                 @endif
+
+                {{-- Questionnaire Summary --}}
+                @php
+                    $customerPreview = \App\Models\ProjectPreview::where('customer_id', $customer->id)
+                        ->whereNotNull('questionnaire_completed_at')
+                        ->latest()
+                        ->first();
+                @endphp
+                @if($customerPreview)
+                    <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-5">
+                        <div class="flex items-center justify-between mb-4">
+                            <flux:heading size="sm">{{ __('Project Planner') }}</flux:heading>
+                            <flux:badge color="green" size="sm">{{ __('Completed') }}</flux:badge>
+                        </div>
+                        @php $qData = $customerPreview->questionnaire_data ?? []; @endphp
+                        <div class="space-y-2 text-sm">
+                            @if(!empty($qData['step_1']['motivation']))
+                                <div class="flex justify-between">
+                                    <span class="text-zinc-500">{{ __('Motivation') }}</span>
+                                    <span class="font-medium">{{ ucfirst(str_replace('_', ' ', $qData['step_1']['motivation'])) }}</span>
+                                </div>
+                            @endif
+                            @if(!empty($qData['step_2']['desired_outcome']))
+                                <div class="flex justify-between">
+                                    <span class="text-zinc-500">{{ __('Style') }}</span>
+                                    <span class="font-medium">{{ ucfirst(str_replace('_', ' ', $qData['step_2']['desired_outcome'])) }}</span>
+                                </div>
+                            @endif
+                            @if(!empty($qData['step_3']['areas']))
+                                <div class="flex justify-between">
+                                    <span class="text-zinc-500 shrink-0">{{ __('Areas') }}</span>
+                                    <span class="font-medium text-right">{{ collect($qData['step_3']['areas'])->map(fn($a) => ucfirst(str_replace('_', ' ', $a)))->join(', ') }}</span>
+                                </div>
+                            @endif
+                            @if(!empty($qData['step_5']['investment']))
+                                <div class="flex justify-between">
+                                    <span class="text-zinc-500">{{ __('Budget') }}</span>
+                                    <span class="font-medium">{{ ucfirst(str_replace('_', ' ', $qData['step_5']['investment'])) }}</span>
+                                </div>
+                            @endif
+                            @if(!empty($qData['step_5']['timeline']))
+                                <div class="flex justify-between">
+                                    <span class="text-zinc-500">{{ __('Timeline') }}</span>
+                                    <span class="font-medium">{{ ucfirst(str_replace('_', ' ', $qData['step_5']['timeline'])) }}</span>
+                                </div>
+                            @endif
+                        </div>
+                        @if($customerPreview->questionnaire_discount_percent)
+                            <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-700 flex items-center gap-2">
+                                <flux:icon name="tag" class="w-4 h-4 text-green-500" />
+                                <flux:text size="sm" class="text-green-600 dark:text-green-400 font-medium">{{ $customerPreview->questionnaire_discount_percent }}% {{ __('questionnaire discount') }}</flux:text>
+                            </div>
+                        @endif
+                    </div>
+                @endif
             </div>
         </div>
 

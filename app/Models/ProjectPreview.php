@@ -36,12 +36,17 @@ class ProjectPreview extends Model
         'status',
         'portal_views_count',
         'last_viewed_at',
+        'questionnaire_data',
+        'questionnaire_completed_at',
+        'questionnaire_discount_percent',
     ];
 
     protected function casts(): array
     {
         return [
             'rooms_data' => 'array',
+            'questionnaire_data' => 'array',
+            'questionnaire_completed_at' => 'datetime',
             'last_viewed_at' => 'datetime',
             'portal_views_count' => 'integer',
         ];
@@ -174,6 +179,25 @@ class ProjectPreview extends Model
     /**
      * Record a view and increment the portal views counter.
      */
+    public function isQuestionnaireCompleted(): bool
+    {
+        return $this->questionnaire_completed_at !== null;
+    }
+
+    public function questionnaireProgress(): int
+    {
+        $data = $this->questionnaire_data ?? [];
+        $completed = 0;
+
+        for ($i = 1; $i <= 5; $i++) {
+            if (! empty($data["step_{$i}"])) {
+                $completed++;
+            }
+        }
+
+        return $completed;
+    }
+
     public function recordView(?User $user = null): ProjectPreviewView
     {
         $this->increment('portal_views_count');

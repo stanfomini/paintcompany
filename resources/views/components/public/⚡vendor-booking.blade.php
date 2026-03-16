@@ -300,6 +300,16 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
 
 <div class="py-8 px-4 sm:py-12">
     <div class="mx-auto max-w-5xl">
+        {{-- Back to Dashboard (for logged-in customers) --}}
+        @auth('customer')
+            <div class="mb-4">
+                <a href="{{ route('customer.dashboard') }}" class="inline-flex items-center gap-1.5 text-sm text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">
+                    <flux:icon name="arrow-left" variant="mini" class="w-4 h-4" />
+                    {{ __('Back to Dashboard') }}
+                </a>
+            </div>
+        @endauth
+
         {{-- Header --}}
         <div class="text-center mb-8">
             <a href="{{ route('home') }}" class="inline-block">
@@ -677,12 +687,21 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                     </a>
                 </div>
 
-                {{-- Book another --}}
-                <div class="text-center pt-4">
-                    <a href="{{ $slug ? route('booking.vendor', $slug) : route('booking.general') }}"
-                        class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-                        {{ __('Book Another Appointment') }}
-                    </a>
+                {{-- Book another / Back to dashboard --}}
+                <div class="text-center pt-4 space-y-2">
+                    @auth('customer')
+                        <div>
+                            <flux:button variant="primary" :href="route('customer.dashboard')" icon="arrow-left">
+                                {{ __('Back to Dashboard') }}
+                            </flux:button>
+                        </div>
+                    @endauth
+                    <div>
+                        <a href="{{ $slug ? route('booking.vendor', $slug) : route('booking.general') }}"
+                            class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                            {{ __('Book Another Appointment') }}
+                        </a>
+                    </div>
                 </div>
             </div>
         @endif

@@ -1,7 +1,12 @@
 <?php
 
+use App\Models\AppointmentBooking;
+use App\Models\CompanySetting;
 use App\Models\Customer;
 use App\Models\Deal;
+use App\Models\ProjectPreview;
+use App\Services\ProjectPreviewService;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -14,8 +19,36 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
 
     public ?int $carouselEstimateId = null;
 
+    public string $viewMode = 'dashboard';
+
+    public ?string $previewToken = null;
+
     public function mount(): void
     {
+        // Check if returning from preview login flow
+        $returnToken = session()->pull('preview_return_token');
+        if ($returnToken) {
+            $preview = ProjectPreview::where('public_token', $returnToken)->first();
+            if ($preview) {
+                $this->previewToken = $returnToken;
+                $this->viewMode = 'preview';
+            }
+        }
+
+        // Fallback: find latest active preview for this customer
+        if (! $this->previewToken) {
+            $customerIds = Customer::where('user_id', auth('customer')->id())->pluck('id');
+            if ($customerIds->isNotEmpty()) {
+                $latestPreview = ProjectPreview::whereIn('customer_id', $customerIds)
+                    ->where('status', 'active')
+                    ->latest()
+                    ->first();
+                if ($latestPreview) {
+                    $this->previewToken = $latestPreview->public_token;
+                }
+            }
+        }
+
         if ($this->customers->isEmpty()) {
             return;
         }
@@ -26,6 +59,65 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
             // Auto-select the deal most needing attention (has action items), else most recent
             $this->selectedDealId = $deals->first()->id;
         }
+    }
+
+    public function toggleView(string $mode): void
+    {
+        $this->viewMode = $mode;
+    }
+
+    #[Computed]
+    public function previewData(): ?ProjectPreview
+    {
+        if (! $this->previewToken) {
+            return null;
+        }
+
+        return ProjectPreview::where('public_token', $this->previewToken)
+            ->with(['estimator', 'customer', 'appointmentBooking.estimator',
+                'photos.visualizations' => fn ($q) => $q->where('status', 'completed')->orderBy('sort_order'),
+            ])
+            ->first();
+    }
+
+    #[Computed]
+    public function previewBooking(): ?AppointmentBooking
+    {
+        $preview = $this->previewData;
+        if (! $preview) {
+            return null;
+        }
+
+        if ($preview->appointment_booking_id) {
+            return AppointmentBooking::with('estimator')->find($preview->appointment_booking_id);
+        }
+
+        if ($preview->deal_id) {
+            return AppointmentBooking::where('deal_id', $preview->deal_id)->with('estimator')->latest()->first();
+        }
+
+        if ($preview->customer_id) {
+            return AppointmentBooking::where('customer_id', $preview->customer_id)->with('estimator')->latest()->first();
+        }
+
+        return null;
+    }
+
+    #[Computed]
+    public function previewBallpark(): array
+    {
+        $preview = $this->previewData;
+        if (! $preview) {
+            return [];
+        }
+
+        return app(ProjectPreviewService::class)->calculateBallpark($preview);
+    }
+
+    #[Computed]
+    public function previewCompany(): CompanySetting
+    {
+        return CompanySetting::getInstance();
     }
 
     /**
@@ -315,12 +407,187 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
 <div class="overflow-x-hidden">
     <div class="space-y-4 sm:space-y-6">
         {{-- Header --}}
-        <div>
-            <flux:heading size="xl">{{ __('Welcome, :name!', ['name' => auth('customer')->user()->name]) }}</flux:heading>
-            <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
-                {{ __('Your painting project hub') }}
-            </flux:text>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+                <flux:heading size="xl">{{ __('Welcome, :name!', ['name' => auth('customer')->user()->name]) }}</flux:heading>
+                <flux:text class="mt-1 text-zinc-500 dark:text-zinc-400">
+                    {{ __('Your painting project hub') }}
+                </flux:text>
+            </div>
+
+            @if($previewToken)
+                <div class="inline-flex rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-100 dark:bg-zinc-800 p-1">
+                    <button
+                        wire:click="toggleView('dashboard')"
+                        class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {{ $viewMode === 'dashboard' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                    >
+                        {{ __('Dashboard') }}
+                    </button>
+                    <button
+                        wire:click="toggleView('preview')"
+                        class="px-4 py-1.5 text-sm font-medium rounded-md transition-colors {{ $viewMode === 'preview' ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                    >
+                        {{ __('Project Preview') }}
+                    </button>
+                </div>
+            @endif
         </div>
+
+        @if($viewMode === 'preview' && $this->previewData)
+            {{-- Inline Preview Content --}}
+            @php $preview = $this->previewData; $booking = $this->previewBooking; $company = $this->previewCompany; @endphp
+
+            {{-- Appointment Banner --}}
+            @if($booking && $booking->booked_date && $booking->status === 'confirmed')
+                @php $appointmentEnd = Carbon::parse($booking->booked_date->format('Y-m-d') . ' ' . $booking->booked_end_time); @endphp
+                @if($appointmentEnd->isFuture())
+                    <div class="bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl p-4 sm:p-5 text-white shadow-lg">
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                                    <flux:icon name="calendar-days" class="w-5 h-5 text-white" />
+                                </div>
+                                <div>
+                                    <div class="text-sm font-medium text-blue-100">{{ __('Your Estimate Appointment') }}</div>
+                                    <div class="text-lg font-bold">
+                                        {{ $booking->booked_date->format('l, M j') }} &middot; {{ Carbon::parse($booking->booked_start_time)->format('g:i A') }}
+                                    </div>
+                                </div>
+                            </div>
+                            @if($booking->estimator)
+                                <div class="flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
+                                    <div class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+                                        {{ strtoupper(substr($booking->estimator->name, 0, 1)) }}
+                                    </div>
+                                    <span class="text-sm">{{ $booking->estimator->name }}</span>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                @endif
+            @endif
+
+            {{-- Estimate Journey Timeline --}}
+            @php
+                $hasBooking = (bool) $booking;
+                $hasVisualizations = $preview->photos->flatMap->visualizations->isNotEmpty();
+                $estimateSteps = [
+                    'book' => ['label' => 'Book', 'icon' => 'calendar-days', 'done' => $hasBooking],
+                    'preview' => ['label' => 'Preview', 'icon' => 'eye', 'done' => false, 'active' => true],
+                    'estimate' => ['label' => 'Estimate Visit', 'icon' => 'clipboard-document-check', 'done' => false],
+                    'proposal' => ['label' => 'Proposal', 'icon' => 'document-text', 'done' => false],
+                    'approval' => ['label' => 'Approval', 'icon' => 'check-circle', 'done' => false],
+                ];
+            @endphp
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-6 bg-white dark:bg-zinc-800">
+                <flux:heading size="sm" class="mb-6">{{ __('Estimate Journey') }}</flux:heading>
+                <div class="flex items-center justify-between">
+                    @foreach($estimateSteps as $stepKey => $step)
+                        @php $isDone = $step['done'] ?? false; $isActive = $step['active'] ?? false; @endphp
+                        <div wire:key="preview-est-{{ $stepKey }}" class="flex-1 flex flex-col items-center relative">
+                            @if(!$loop->first)
+                                <div class="absolute top-5 -left-1/2 w-full h-0.5 {{ $isDone ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600' }}"></div>
+                            @endif
+                            <div class="relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 transition-all
+                                {{ $isDone ? 'bg-green-500 border-green-500 text-white' : '' }}
+                                {{ $isActive && !$isDone ? 'bg-blue-500 border-blue-500 text-white ring-4 ring-blue-100 dark:ring-blue-900' : '' }}
+                                {{ !$isDone && !$isActive ? 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400' : '' }}
+                            ">
+                                @if($isDone)
+                                    <flux:icon name="check" class="w-5 h-5" />
+                                @else
+                                    <flux:icon name="{{ $step['icon'] }}" class="w-5 h-5" />
+                                @endif
+                            </div>
+                            <flux:text class="mt-2 text-xs text-center leading-tight {{ $isActive ? 'font-semibold text-blue-600 dark:text-blue-400' : 'text-zinc-500' }}">
+                                {{ $step['label'] }}
+                            </flux:text>
+                        </div>
+                    @endforeach
+                </div>
+            </div>
+
+            {{-- Questionnaire Status --}}
+            @if($this->previewData)
+                @if($this->previewData->isQuestionnaireCompleted())
+                    <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4 flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-800 flex items-center justify-center">
+                            <flux:icon name="check-circle" class="w-5 h-5 text-green-500" />
+                        </div>
+                        <div>
+                            <flux:text class="font-medium text-green-800 dark:text-green-200">{{ __('Project planner completed') }}</flux:text>
+                            <flux:text size="sm" class="text-green-600 dark:text-green-400">{{ __('5% discount unlocked on your estimate') }}</flux:text>
+                        </div>
+                    </div>
+                @else
+                    <a href="{{ $this->previewData->getPortalUrl() }}" class="block bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-4 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-800 flex items-center justify-center">
+                                <flux:icon name="clipboard-document-list" class="w-5 h-5 text-blue-500" />
+                            </div>
+                            <div>
+                                <flux:text class="font-medium text-blue-800 dark:text-blue-200">{{ __('Complete your project planner') }}</flux:text>
+                                <flux:text size="sm" class="text-blue-600 dark:text-blue-400">{{ __('Answer 5 quick questions and unlock 5% off') }}</flux:text>
+                            </div>
+                            <flux:icon name="chevron-right" class="w-5 h-5 text-blue-400 ml-auto" />
+                        </div>
+                    </a>
+                @endif
+            @endif
+
+            {{-- Ballpark Pricing --}}
+            @if(!empty($this->previewBallpark['rooms']))
+                <div class="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl p-6 border border-blue-200 dark:border-blue-800">
+                    <flux:heading size="lg" class="mb-4">{{ __('Transparent Ballpark Pricing') }}</flux:heading>
+                    <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mb-4">{{ __('Rough estimates based on typical room sizes. Your estimator will provide an exact quote.') }}</flux:text>
+                    <div class="space-y-3">
+                        @foreach($this->previewBallpark['rooms'] as $room)
+                            <div class="flex items-center justify-between py-2 border-b border-blue-200/50 dark:border-blue-700/50 last:border-0">
+                                <flux:text class="font-medium">{{ $room['name'] }}</flux:text>
+                                <flux:text class="font-semibold text-blue-700 dark:text-blue-300">${{ number_format($room['min'], 0) }} - ${{ number_format($room['max'], 0) }}</flux:text>
+                            </div>
+                        @endforeach
+                    </div>
+                    <div class="mt-4 pt-4 border-t-2 border-blue-300 dark:border-blue-700 flex items-center justify-between">
+                        <flux:text class="font-bold text-lg">{{ __('Estimated Range') }}</flux:text>
+                        <flux:text class="font-bold text-lg text-blue-700 dark:text-blue-300">${{ number_format($this->previewBallpark['total_min'], 0) }} - ${{ number_format($this->previewBallpark['total_max'], 0) }}</flux:text>
+                    </div>
+                    <flux:text size="xs" class="mt-3 text-zinc-500 italic">{{ __('Ballpark only. Final pricing determined during your in-person estimate.') }}</flux:text>
+                </div>
+            @endif
+
+            {{-- Estimator Card --}}
+            @if($preview->estimator)
+                <div class="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 flex items-center gap-6">
+                    <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xl font-bold shrink-0">
+                        {{ strtoupper(substr($preview->estimator->name, 0, 1)) }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <flux:heading size="base">{{ $preview->estimator->name }}</flux:heading>
+                        @if($company->company_phone)
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mt-1">Text us: {{ $company->company_phone }}</flux:text>
+                        @endif
+                        @if($booking?->booked_date)
+                            <div class="mt-2 flex items-center gap-1.5">
+                                <flux:icon name="calendar-days" class="w-4 h-4 text-blue-500" />
+                                <flux:text size="sm" class="text-blue-600 dark:text-blue-400 font-medium">
+                                    Appointment: {{ $booking->booked_date->format('l, M j') }} {{ Carbon::parse($booking->booked_start_time)->format('g:i A') }}
+                                </flux:text>
+                            </div>
+                        @endif
+                    </div>
+                </div>
+            @endif
+
+            {{-- Color Visualizer CTA --}}
+            <div class="text-center py-8 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                <flux:icon name="paint-brush" class="w-12 h-12 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
+                <flux:heading size="lg">{{ __('Try the Color Visualizer') }}</flux:heading>
+                <flux:text class="mt-2 text-zinc-500 max-w-md mx-auto">{{ __('Upload a photo and see your rooms in new colors.') }}</flux:text>
+                <flux:button variant="primary" class="mt-4" icon="paint-brush" href="{{ url('/preview/' . $previewToken) }}">{{ __('Open Color Visualizer') }}</flux:button>
+            </div>
+
+        @else
 
         @if (! $this->customer)
             <flux:callout variant="info">
@@ -550,7 +817,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
                         {{ __('Book a Visit') }}
                     </flux:button>
                     @if ($this->selectedDeal->chatThread)
-                        <flux:button size="sm" icon="chat-bubble-left" variant="ghost" :href="route('customer.chat')" wire:navigate>
+                        <flux:button size="sm" icon="chat-bubble-left" variant="ghost" :href="route('customer.chat.index')" wire:navigate>
                             {{ __('Chat') }}
                         </flux:button>
                     @endif
@@ -923,6 +1190,7 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
             @endif
 
         @endif
+        @endif {{-- end viewMode toggle --}}
     </div>
 
     {{-- Area Carousel Overlay --}}

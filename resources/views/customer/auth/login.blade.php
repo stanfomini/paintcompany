@@ -5,7 +5,7 @@
         <!-- Session Status -->
         <x-auth-session-status class="text-center" :status="session('status')" />
 
-        <form method="POST" action="{{ route('customer.login') }}" class="flex flex-col gap-6">
+        <form method="POST" action="{{ route('customer.login') }}{{ !empty($returnUrl) ? '?return=' . urlencode($returnUrl) : '' }}" class="flex flex-col gap-6">
             @csrf
 
             <!-- Email Address -->

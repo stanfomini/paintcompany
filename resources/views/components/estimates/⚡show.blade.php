@@ -466,6 +466,95 @@ new class extends Component {
             </div>
         @endif
 
+        {{-- Questionnaire Discount Indicator --}}
+        @php
+            $linkedPreview = \App\Models\ProjectPreview::where('estimate_id', $estimate->id)
+                ->orWhere('deal_id', $estimate->deal_id)
+                ->whereNotNull('questionnaire_completed_at')
+                ->first();
+        @endphp
+        @if($linkedPreview)
+            <div x-data="{ showAnswers: false }" class="mb-6 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-green-100 dark:bg-green-800 flex items-center justify-center">
+                            <flux:icon name="clipboard-document-check" class="w-4 h-4 text-green-600 dark:text-green-400" />
+                        </div>
+                        <div>
+                            <flux:text class="font-medium text-green-800 dark:text-green-200">{{ __('Customer completed project planner') }}</flux:text>
+                            @if($linkedPreview->questionnaire_discount_percent)
+                                <flux:text size="sm" class="text-green-600 dark:text-green-400">{{ $linkedPreview->questionnaire_discount_percent }}% {{ __('discount applied') }}</flux:text>
+                            @endif
+                        </div>
+                    </div>
+                    <button
+                        x-on:click="showAnswers = !showAnswers"
+                        class="text-sm text-green-600 dark:text-green-400 hover:underline"
+                    >
+                        <span x-text="showAnswers ? '{{ __('Hide') }}' : '{{ __('View Answers') }}'"></span>
+                    </button>
+                </div>
+
+                {{-- Collapsible questionnaire answers --}}
+                <div x-show="showAnswers" x-collapse class="mt-4 pt-4 border-t border-green-200 dark:border-green-700 space-y-3">
+                    @php $qData = $linkedPreview->questionnaire_data ?? []; @endphp
+
+                    @if(!empty($qData['step_1']))
+                        <div>
+                            <flux:text size="sm" class="font-medium text-zinc-700 dark:text-zinc-300">{{ __("What's driving this project?") }}</flux:text>
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">{{ ucfirst(str_replace('_', ' ', $qData['step_1']['motivation'] ?? '')) }}</flux:text>
+                            @if(!empty($qData['step_1']['notes']))
+                                <flux:text size="xs" class="text-zinc-500 italic mt-1">"{{ $qData['step_1']['notes'] }}"</flux:text>
+                            @endif
+                        </div>
+                    @endif
+
+                    @if(!empty($qData['step_2']))
+                        <div>
+                            <flux:text size="sm" class="font-medium text-zinc-700 dark:text-zinc-300">{{ __('Ideal result') }}</flux:text>
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">{{ ucfirst(str_replace('_', ' ', $qData['step_2']['desired_outcome'] ?? '')) }}</flux:text>
+                            @if(!empty($qData['step_2']['notes']))
+                                <flux:text size="xs" class="text-zinc-500 italic mt-1">"{{ $qData['step_2']['notes'] }}"</flux:text>
+                            @endif
+                        </div>
+                    @endif
+
+                    @if(!empty($qData['step_3']))
+                        <div>
+                            <flux:text size="sm" class="font-medium text-zinc-700 dark:text-zinc-300">{{ __('Areas needing attention') }}</flux:text>
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">{{ collect($qData['step_3']['areas'] ?? [])->map(fn($a) => ucfirst(str_replace('_', ' ', $a)))->join(', ') }}</flux:text>
+                            @if(!empty($qData['step_3']['notes']))
+                                <flux:text size="xs" class="text-zinc-500 italic mt-1">"{{ $qData['step_3']['notes'] }}"</flux:text>
+                            @endif
+                        </div>
+                    @endif
+
+                    @if(!empty($qData['step_4']))
+                        <div>
+                            <flux:text size="sm" class="font-medium text-zinc-700 dark:text-zinc-300">{{ __('Logistics & conditions') }}</flux:text>
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">{{ collect($qData['step_4']['logistics'] ?? [])->map(fn($l) => ucfirst(str_replace('_', ' ', $l)))->join(', ') }}</flux:text>
+                            @if(!empty($qData['step_4']['notes']))
+                                <flux:text size="xs" class="text-zinc-500 italic mt-1">"{{ $qData['step_4']['notes'] }}"</flux:text>
+                            @endif
+                        </div>
+                    @endif
+
+                    @if(!empty($qData['step_5']))
+                        <div>
+                            <flux:text size="sm" class="font-medium text-zinc-700 dark:text-zinc-300">{{ __('Investment & timeline') }}</flux:text>
+                            <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400">
+                                {{ ucfirst(str_replace('_', ' ', $qData['step_5']['investment'] ?? '')) }}
+                                &middot; {{ ucfirst(str_replace('_', ' ', $qData['step_5']['timeline'] ?? '')) }}
+                            </flux:text>
+                            @if(!empty($qData['step_5']['notes']))
+                                <flux:text size="xs" class="text-zinc-500 italic mt-1">"{{ $qData['step_5']['notes'] }}"</flux:text>
+                            @endif
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
+
         <div class="space-y-6">
             <div class="grid gap-6 md:grid-cols-2">
                 <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-6">
