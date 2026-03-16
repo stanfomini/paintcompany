@@ -94,7 +94,15 @@ class SendSmsThreadReplyJob implements ShouldQueue
             $body = $twilio->prependConsentIfNeeded($session->user_id, $body);
         }
 
-        $result = $twilio->sendSms($phone, $body);
+        $this->message->load('attachments');
+        $imageAttachments = $this->message->attachments->filter(fn ($a) => $a->isImage());
+
+        if ($imageAttachments->isNotEmpty()) {
+            $mediaUrls = $imageAttachments->map(fn ($a) => $a->getUrl())->values()->toArray();
+            $result = $twilio->sendMms($phone, $body, $mediaUrls);
+        } else {
+            $result = $twilio->sendSms($phone, $body);
+        }
 
         if ($result['success']) {
             Cache::put($cacheKey, true, now()->addSeconds(30));
