@@ -143,7 +143,18 @@ new class extends Component
                                     {{ __('No Show') }}
                                 </flux:button>
                             @else
-                                {{-- Future confirmed: reschedule or cancel --}}
+                                {{-- Future confirmed: join call (if virtual), reschedule, or cancel --}}
+                                @if ($booking->estimate_preference === 'virtual' && $booking->getVideoCallUrl())
+                                    <flux:button
+                                        size="sm"
+                                        variant="primary"
+                                        icon="video-camera"
+                                        :href="$booking->getVideoCallUrl()"
+                                        target="_blank"
+                                    >
+                                        {{ __('Join Call') }}
+                                    </flux:button>
+                                @endif
                                 <flux:button
                                     size="sm"
                                     variant="ghost"

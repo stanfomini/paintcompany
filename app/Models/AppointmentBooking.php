@@ -57,6 +57,7 @@ class AppointmentBooking extends Model
         'cancellation_reason',
         'booked_by',
         'override_note',
+        'video_call_id',
         'reminder_sent_at',
     ];
 
@@ -92,6 +93,25 @@ class AppointmentBooking extends Model
     public function estimator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'estimator_id');
+    }
+
+    public function videoCall(): BelongsTo
+    {
+        return $this->belongsTo(VideoCall::class);
+    }
+
+    /**
+     * Get the video call URL if this is a virtual appointment with a call room.
+     */
+    public function getVideoCallUrl(): ?string
+    {
+        if (! $this->video_call_id) {
+            return null;
+        }
+
+        $videoCall = $this->videoCall;
+
+        return $videoCall ? route('video-call.test', $videoCall->room_id) : null;
     }
 
     public function deal(): BelongsTo

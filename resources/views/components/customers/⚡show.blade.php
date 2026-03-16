@@ -534,13 +534,23 @@ new class extends Component
     public function startVideoCall(): void
     {
         $deal = $this->activeDeal ?? $this->customer->deals()->latest()->first();
-        $videoCall = \App\Models\VideoCall::create([
-            'callable_type' => \App\Models\Deal::class,
-            'callable_id' => $deal?->id,
-            'initiated_by' => auth()->id(),
-            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
-            'status' => 'pending',
-        ]);
+
+        // Reuse an existing active call for this deal so both parties join the same room
+        $videoCall = \App\Models\VideoCall::where('callable_type', \App\Models\Deal::class)
+            ->where('callable_id', $deal?->id)
+            ->whereIn('status', ['pending', 'waiting', 'active'])
+            ->first();
+
+        if (! $videoCall) {
+            $videoCall = \App\Models\VideoCall::create([
+                'callable_type' => \App\Models\Deal::class,
+                'callable_id' => $deal?->id,
+                'initiated_by' => auth()->id(),
+                'room_id' => 'deal-'.($deal?->id ?? 0).'-'.\Illuminate\Support\Str::random(8),
+                'status' => 'active',
+                'started_at' => now(),
+            ]);
+        }
 
         $this->redirect(route('video-call.test', $videoCall->room_id));
     }
@@ -1062,6 +1072,11 @@ new class extends Component
                             </div>
                             @if ($booking->status === 'confirmed')
                                 <div class="mt-3 flex items-center gap-2">
+                                    @if ($booking->estimate_preference === 'virtual' && $booking->getVideoCallUrl())
+                                        <flux:button size="xs" variant="primary" icon="video-camera" :href="$booking->getVideoCallUrl()" target="_blank">
+                                            {{ __('Join Call') }}
+                                        </flux:button>
+                                    @endif
                                     @can('bookings.manage')
                                         <flux:button size="xs" variant="ghost" icon="arrow-path" wire:click="$dispatch('open-reschedule-appointment-modal', { token: '{{ $booking->booking_token }}' })">
                                             {{ __('Reschedule') }}

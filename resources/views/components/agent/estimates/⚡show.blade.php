@@ -441,17 +441,17 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
         })->toArray();
     }
 
-    public function startVideoCall(): void
+    public function getBookingUrl(): string
     {
-        $videoCall = \App\Models\VideoCall::create([
-            'callable_type' => \App\Models\Deal::class,
-            'callable_id' => $this->estimate->deal_id,
-            'initiated_by' => auth('agent')->id(),
-            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
-            'status' => 'pending',
-        ]);
+        $deal = $this->estimate->deal;
+        if (! $deal?->customer) {
+            return route('booking.general');
+        }
 
-        $this->redirect(route('video-call.test', $videoCall->room_id));
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($deal->customer);
+
+        return url('/book?prefill='.$token);
     }
 
     /**
@@ -520,9 +520,12 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
                     </flux:text>
                 </div>
             @endif
-            <div class="ml-auto">
-                <flux:button size="sm" icon="video-camera" variant="ghost" wire:click="startVideoCall">
-                    {{ __('Video Call') }}
+            <div class="ml-auto flex items-center gap-2">
+                <flux:button size="sm" icon="phone" variant="ghost" :href="$this->getBookingUrl()">
+                    {{ __('Book a Call') }}
+                </flux:button>
+                <flux:button size="sm" icon="calendar-days" variant="ghost" :href="$this->getBookingUrl()">
+                    {{ __('Book a Visit') }}
                 </flux:button>
             </div>
         </div>

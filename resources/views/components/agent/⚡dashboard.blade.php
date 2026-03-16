@@ -225,17 +225,21 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
         $this->selectedDealId = $firstActive?->id;
     }
 
-    public function startVideoCall(?int $dealId = null): void
+    public function getBookingUrl(?int $dealId = null): string
     {
-        $videoCall = \App\Models\VideoCall::create([
-            'callable_type' => \App\Models\Deal::class,
-            'callable_id' => $dealId,
-            'initiated_by' => auth('agent')->id(),
-            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
-            'status' => 'pending',
-        ]);
+        if (! $dealId) {
+            return route('booking.general');
+        }
 
-        $this->redirect(route('video-call.test', $videoCall->room_id));
+        $deal = \App\Models\Deal::with('customer')->find($dealId);
+        if (! $deal?->customer) {
+            return route('booking.general');
+        }
+
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($deal->customer);
+
+        return url('/book?prefill='.$token);
     }
 
     #[Computed]
@@ -873,9 +877,13 @@ new #[Layout('components.layouts.agent', ['title' => 'Dashboard'])] class extend
                                     {{ __('Send a Message') }}
                                 </flux:button>
                             @endif
-                            <flux:button variant="ghost" icon="video-camera"
-                                wire:click="startVideoCall({{ $this->selectedDealId }})" class="w-full sm:w-auto">
-                                {{ __('Video Call') }}
+                            <flux:button variant="ghost" icon="phone"
+                                :href="$this->getBookingUrl($this->selectedDealId)" class="w-full sm:w-auto">
+                                {{ __('Book a Call') }}
+                            </flux:button>
+                            <flux:button variant="ghost" icon="calendar-days"
+                                :href="$this->getBookingUrl($this->selectedDealId)" class="w-full sm:w-auto">
+                                {{ __('Book a Visit') }}
                             </flux:button>
                         </div>
                     </flux:card>

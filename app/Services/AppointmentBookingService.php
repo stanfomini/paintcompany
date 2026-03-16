@@ -158,7 +158,20 @@ class AppointmentBookingService
             'booked_by' => $bookedBy,
         ]);
 
-        // 7. Update deal with booking reference
+        // 7. Auto-create video call room for virtual appointments
+        if (($prospectData['estimate_preference'] ?? 'in_person') === 'virtual') {
+            $videoCall = \App\Models\VideoCall::create([
+                'callable_type' => \App\Models\Deal::class,
+                'callable_id' => $deal->id,
+                'initiated_by' => $estimator->id,
+                'room_id' => 'booking-'.$booking->id.'-'.Str::random(8),
+                'status' => 'pending',
+            ]);
+
+            $booking->update(['video_call_id' => $videoCall->id]);
+        }
+
+        // 8. Update deal with booking reference
         $deal->update(['appointment_booking_id' => $booking->id]);
 
         // 8. Fire new lead event for real-time pipeline updates

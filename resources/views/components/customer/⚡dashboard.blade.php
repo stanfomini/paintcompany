@@ -264,22 +264,17 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
         unset($this->selectedDeal, $this->actionItems, $this->deals, $this->pastDeals, $this->customers, $this->customer, $this->customerIds);
     }
 
-    public function startVideoCall(): void
+    public function getBookingUrl(): string
     {
-        $deal = $this->selectedDeal;
-        if (! $deal) {
-            return;
+        $customer = $this->customer;
+        if (! $customer) {
+            return route('booking.general');
         }
 
-        $videoCall = \App\Models\VideoCall::create([
-            'callable_type' => \App\Models\Deal::class,
-            'callable_id' => $deal->id,
-            'initiated_by' => auth('customer')->id(),
-            'room_id' => 'call-'.\Illuminate\Support\Str::uuid(),
-            'status' => 'pending',
-        ]);
+        $service = app(\App\Services\AppointmentBookingService::class);
+        $token = $service->generatePrefillToken($customer);
 
-        $this->redirect(route('video-call.test', $videoCall->room_id));
+        return url('/book?prefill='.$token);
     }
 
     /**
@@ -548,8 +543,11 @@ new #[Layout('components.layouts.customer', ['title' => 'Dashboard'])] class ext
             {{-- Quick Actions --}}
             @if ($this->selectedDeal)
                 <div class="flex items-center gap-2">
-                    <flux:button size="sm" icon="video-camera" variant="ghost" wire:click="startVideoCall">
-                        {{ __('Start Video Call') }}
+                    <flux:button size="sm" icon="phone" variant="ghost" :href="$this->getBookingUrl()">
+                        {{ __('Book a Call') }}
+                    </flux:button>
+                    <flux:button size="sm" icon="calendar-days" variant="primary" :href="$this->getBookingUrl()">
+                        {{ __('Book a Visit') }}
                     </flux:button>
                     @if ($this->selectedDeal->chatThread)
                         <flux:button size="sm" icon="chat-bubble-left" variant="ghost" :href="route('customer.chat')" wire:navigate>
