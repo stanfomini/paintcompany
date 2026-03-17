@@ -21,12 +21,13 @@ class extends Component {
         <flux:heading size="xl">{{ __('Media Hub') }}</flux:heading>
     </div>
 
-    <div class="flex gap-2 mb-6 border-b border-zinc-200 dark:border-zinc-700 pb-3">
+    <div class="flex flex-wrap gap-2 mb-6 pb-3">
         <flux:button
             size="sm"
             :variant="$tab === 'videos' ? 'filled' : 'ghost'"
             icon="video-camera"
             wire:click="setTab('videos')"
+            class="{{ $tab !== 'videos' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
         >
             {{ __('My Videos') }}
         </flux:button>
@@ -37,6 +38,7 @@ class extends Component {
                 :variant="$tab === 'company-videos' ? 'filled' : 'ghost'"
                 icon="building-office"
                 wire:click="setTab('company-videos')"
+                class="{{ $tab !== 'company-videos' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
             >
                 {{ __('All Videos') }}
             </flux:button>
@@ -48,6 +50,7 @@ class extends Component {
                 :variant="$tab === 'channels' ? 'filled' : 'ghost'"
                 icon="rectangle-stack"
                 wire:click="setTab('channels')"
+                class="{{ $tab !== 'channels' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
             >
                 {{ __('Channels') }}
             </flux:button>
@@ -59,6 +62,7 @@ class extends Component {
                 :variant="$tab === 'training' ? 'filled' : 'ghost'"
                 icon="academic-cap"
                 wire:click="setTab('training')"
+                class="{{ $tab !== 'training' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
             >
                 {{ __('Training') }}
             </flux:button>
@@ -70,6 +74,7 @@ class extends Component {
                 :variant="$tab === 'analytics' ? 'filled' : 'ghost'"
                 icon="chart-bar"
                 wire:click="setTab('analytics')"
+                class="{{ $tab !== 'analytics' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
             >
                 {{ __('Analytics') }}
             </flux:button>
@@ -81,6 +86,7 @@ class extends Component {
                 :variant="$tab === 'landing-page' ? 'filled' : 'ghost'"
                 icon="globe-alt"
                 wire:click="setTab('landing-page')"
+                class="{{ $tab !== 'landing-page' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
             >
                 {{ __('Landing Page') }}
             </flux:button>
@@ -90,6 +96,7 @@ class extends Component {
                 :variant="$tab === 'showcase' ? 'filled' : 'ghost'"
                 icon="photo"
                 wire:click="setTab('showcase')"
+                class="{{ $tab !== 'showcase' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
             >
                 {{ __('Showcase') }}
             </flux:button>
