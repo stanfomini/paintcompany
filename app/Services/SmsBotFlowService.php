@@ -9,6 +9,7 @@ use App\Models\ChatThread;
 use App\Models\ColorVisualization;
 use App\Models\CompanySetting;
 use App\Models\ProjectPreview;
+use App\Models\ShowcaseMedia;
 use App\Models\SmsBotFlow;
 use App\Models\SmsBotStep;
 use App\Models\SmsConversation;
@@ -167,8 +168,17 @@ class SmsBotFlowService
                 break;
 
             case SmsBotStep::TYPE_MEDIA_MESSAGE:
-                $this->sendMms($conversation->phone, $messageText, $nextStep->media_url);
-                $this->recordOutboundMediaMessage($conversation, $messageText, $nextStep->media_url);
+                $mediaUrl = $this->resolveMediaUrl($nextStep->media_url);
+                if ($mediaUrl) {
+                    $this->sendMms($conversation->phone, $messageText, $mediaUrl);
+                    $this->recordOutboundMediaMessage($conversation, $messageText, $mediaUrl);
+                } else {
+                    Log::warning('SmsBotFlowService: could not resolve media URL, skipping media_message step', [
+                        'conversation_id' => $conversation->id,
+                        'step_id' => $nextStep->id,
+                        'media_url' => $nextStep->media_url,
+                    ]);
+                }
                 $this->advanceToNextStep($conversation);
                 break;
 
@@ -344,6 +354,32 @@ class SmsBotFlowService
         ]);
 
         $conversation->update(['project_preview_id' => $preview->id]);
+    }
+
+    /**
+     * Resolve a media URL from a ShowcaseMedia slug or treat it as a raw URL.
+     *
+     * If the value matches an active ShowcaseMedia slug, use its public URL.
+     * Otherwise, treat it as a direct URL. Returns null if unresolvable.
+     */
+    private function resolveMediaUrl(?string $mediaUrlOrSlug): ?string
+    {
+        if (! $mediaUrlOrSlug) {
+            return null;
+        }
+
+        // Try resolving as a ShowcaseMedia slug first
+        $showcaseMedia = ShowcaseMedia::findBySlug($mediaUrlOrSlug);
+        if ($showcaseMedia) {
+            return $showcaseMedia->getPublicUrl();
+        }
+
+        // Fall back to raw URL if it looks like one
+        if (str_starts_with($mediaUrlOrSlug, 'http://') || str_starts_with($mediaUrlOrSlug, 'https://')) {
+            return $mediaUrlOrSlug;
+        }
+
+        return null;
     }
 
     /**

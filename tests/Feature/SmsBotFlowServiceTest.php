@@ -4,10 +4,12 @@ use App\Jobs\GenerateColorVisualizationJob;
 use App\Models\ChatAttachment;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\ShowcaseMedia;
 use App\Models\SmsBotFlow;
 use App\Models\SmsBotStep;
 use App\Models\SmsConversation;
 use App\Models\User;
+use App\Models\VideoRecording;
 use App\Services\SmsBotFlowService;
 use App\Services\TwilioService;
 use Illuminate\Support\Facades\Http;
@@ -668,4 +670,63 @@ it('handles missing source step answer gracefully on ai_visualization', function
     expect($convo->status)->toBe('completed');
 
     $this->twilio->shouldHaveReceived('sendSms')->atLeast()->once();
+});
+
+// --- ShowcaseMedia slug resolution for media_message steps ---
+
+it('resolves media_url from showcase media slug for media_message steps', function () {
+    $this->twilio->shouldReceive('sendMms')->andReturn(['success' => true, 'sid' => 'SM789', 'error' => null]);
+
+    $video = VideoRecording::factory()->ready()->create([
+        'share_token' => 'showcase-test-token-1234567890',
+    ]);
+
+    ShowcaseMedia::factory()->create([
+        'slug' => 'color-tutorial',
+        'video_recording_id' => $video->id,
+        'is_active' => true,
+    ]);
+
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->mediaMessage()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Watch this tutorial!',
+        'media_url' => 'color-tutorial',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    $convo->refresh();
+    expect($convo->status)->toBe('completed');
+
+    // Should have resolved the slug to the video's shareable URL
+    $this->twilio->shouldHaveReceived('sendMms')->withArgs(function ($to, $body, $mediaUrls) {
+        return $to === '+13035551234'
+            && str_contains($mediaUrls[0], 'showcase-test-token-1234567890');
+    })->once();
+});
+
+it('falls back to raw URL when showcase media slug not found', function () {
+    $this->twilio->shouldReceive('sendMms')->andReturn(['success' => true, 'sid' => 'SM789', 'error' => null]);
+
+    $flow = SmsBotFlow::factory()->active()->create();
+    SmsBotStep::factory()->mediaMessage()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'Check out this color!',
+        'media_url' => 'https://example.com/video.mp4',
+    ]);
+
+    $service = app(SmsBotFlowService::class);
+    $convo = $service->startConversation('+13035551234', $flow);
+
+    $convo->refresh();
+    expect($convo->status)->toBe('completed');
+
+    // Should have used the raw URL directly
+    $this->twilio->shouldHaveReceived('sendMms')->withArgs(function ($to, $body, $mediaUrls) {
+        return $mediaUrls[0] === 'https://example.com/video.mp4';
+    })->once();
 });

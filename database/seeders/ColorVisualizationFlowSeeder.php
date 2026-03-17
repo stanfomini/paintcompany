@@ -33,7 +33,8 @@ class ColorVisualizationFlowSeeder extends Seeder
                 'sort_order' => 2,
                 'step_type' => SmsBotStep::TYPE_MEDIA_MESSAGE,
                 'message_text' => 'Check out this quick tutorial on how to get the best results:',
-                'media_url' => 'TUTORIAL_VIDEO_URL_PLACEHOLDER',
+                // References a ShowcaseMedia slug — resolved at runtime via SmsBotFlowService::resolveMediaUrl()
+                'media_url' => 'color-tutorial',
             ],
             [
                 'sort_order' => 3,
