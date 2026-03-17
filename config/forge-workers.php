@@ -44,6 +44,7 @@ return [
         ['queue' => 'slack', 'processes' => 4, 'timeout' => 60, 'sleep' => 8],
         ['queue' => 'meilisearch', 'processes' => 1, 'timeout' => 60, 'sleep' => 10],
         ['queue' => 'meilisearch_customer', 'processes' => 1, 'timeout' => 60, 'sleep' => 10],
+        ['queue' => 'video-processing', 'processes' => 1, 'timeout' => 900, 'sleep' => 3],
     ],
 
     /*
