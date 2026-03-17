@@ -71,6 +71,9 @@ new class extends Component {
     public string $total_painters = '';
     public string $default_required_crew_size = '';
 
+    // Brand Ambassador Program
+    public string $brand_ambassador_spots = '10';
+
     // Computed values for display
     public string $effective_hourly_rate = '';
     public string $interior_effective_rate = '';
@@ -143,6 +146,9 @@ new class extends Component {
         // Crew & Dispatch Settings
         $this->total_painters = $settings->total_painters !== null ? (string) $settings->total_painters : '4';
         $this->default_required_crew_size = $settings->default_required_crew_size !== null ? (string) $settings->default_required_crew_size : '2';
+
+        // Brand Ambassador Program
+        $this->brand_ambassador_spots = $settings->brand_ambassador_spots !== null ? (string) $settings->brand_ambassador_spots : '10';
 
         $this->updateCalculatedValues();
     }
@@ -267,6 +273,9 @@ new class extends Component {
             'total_painters' => ['nullable', 'integer', 'min:1', 'max:100'],
             'default_required_crew_size' => ['nullable', 'integer', 'min:1', 'max:20'],
 
+            // Brand Ambassador Program
+            'brand_ambassador_spots' => ['nullable', 'integer', 'min:0', 'max:100'],
+
         ]);
 
         $settings = CompanySetting::getInstance();
@@ -329,6 +338,9 @@ new class extends Component {
             // Crew & Dispatch Settings
             'total_painters' => $validated['total_painters'] !== '' ? $validated['total_painters'] : 4,
             'default_required_crew_size' => $validated['default_required_crew_size'] !== '' ? $validated['default_required_crew_size'] : 2,
+
+            // Brand Ambassador Program
+            'brand_ambassador_spots' => $validated['brand_ambassador_spots'] !== '' ? $validated['brand_ambassador_spots'] : 10,
 
         ]);
 
@@ -527,6 +539,16 @@ new class extends Component {
                 <flux:input wire:model="recycle_fee_per_gallon" :label="__('Recycle Fee ($/gallon)')" type="number" step="0.01" min="0" max="100" />
                 <flux:input wire:model="wood_replacement_minimum" :label="__('Wood Replacement Minimum ($)')" type="number" step="0.01" min="0" max="10000" />
             </div>
+
+            <flux:separator />
+
+            {{-- Brand Ambassador Program Section --}}
+            <flux:heading size="sm">{{ __('Brand Ambassador Program') }}</flux:heading>
+            <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
+                {{ __('Update daily. Shown as a countdown to customers on the Estimate Visit page.') }}
+            </flux:text>
+
+            <flux:input wire:model="brand_ambassador_spots" :label="__('Spots Remaining This Month')" type="number" min="0" max="100" :description="__('Number of brand ambassador spots available. Set to 0 to show applications closed.')" />
 
             <flux:separator />
 

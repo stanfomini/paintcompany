@@ -597,36 +597,37 @@ NGINX;
     {
         $this->info('[14/18] Creating queue workers...');
 
-        $workers = [
-            ['queue' => 'default', 'processes' => 1, 'sleep' => 10],
-            ['queue' => 'notifications', 'processes' => 1, 'sleep' => 10],
-            ['queue' => 'broadcasts', 'processes' => 1, 'sleep' => 10],
-            ['queue' => 'webhooks', 'processes' => 1, 'sleep' => 10],
-            ['queue' => 'slack', 'processes' => 4, 'sleep' => 8],
-            ['queue' => 'meilisearch', 'processes' => 1, 'sleep' => 10],
-            ['queue' => 'meilisearch_customer', 'processes' => 1, 'sleep' => 10],
-        ];
+        $workers = config('forge-workers.workers', []);
+        $defaults = config('forge-workers.defaults', []);
+
+        if (empty($workers)) {
+            $this->warn('  No workers defined in config/forge-workers.php');
+
+            return;
+        }
 
         foreach ($workers as $worker) {
+            $merged = array_merge($defaults, $worker);
+
             if ($dryRun) {
-                $this->line("  Would create worker: {$worker['queue']} ({$worker['processes']} processes)");
+                $this->line("  Would create worker: {$merged['queue']} ({$merged['processes']} processes)");
 
                 continue;
             }
 
             $this->forge->createWorker($serverId, $siteId, [
-                'connection' => 'redis',
-                'queue' => $worker['queue'],
-                'processes' => $worker['processes'],
-                'sleep' => $worker['sleep'],
-                'timeout' => 60,
-                'tries' => 3,
-                'php_version' => 'php83',
+                'connection' => $merged['connection'] ?? 'redis',
+                'queue' => $merged['queue'],
+                'processes' => $merged['processes'] ?? 1,
+                'timeout' => $merged['timeout'] ?? 60,
+                'sleep' => $merged['sleep'] ?? 10,
+                'tries' => $merged['tries'] ?? 3,
+                'php_version' => $merged['php_version'] ?? 'php83',
                 'daemon' => true,
-                'force' => true,
+                'force' => $merged['force'] ?? false,
             ]);
 
-            $this->line("  Worker created: {$worker['queue']}");
+            $this->line("  Worker created: {$merged['queue']}");
         }
     }
 

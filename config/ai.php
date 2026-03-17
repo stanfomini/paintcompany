@@ -123,6 +123,7 @@ return [
         'xai' => [
             'driver' => 'xai',
             'key' => env('XAI_API_KEY'),
+            'model' => env('XAI_MODEL', 'grok-4-0709'),
         ],
     ],
 

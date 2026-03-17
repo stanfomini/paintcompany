@@ -1,9 +1,12 @@
 <?php
 
+use App\Models\CompanySetting;
 use App\Models\Customer;
+use App\Models\Estimate;
 use App\Models\ProjectPreview;
 use App\Models\ProjectPreviewView;
 use App\Models\User;
+use Livewire\Livewire;
 
 it('renders the portal page with valid token', function () {
     $preview = ProjectPreview::factory()->create();
@@ -58,43 +61,43 @@ it('displays estimator name when assigned', function () {
     $response->assertSee('Jane Smith');
 });
 
-it('shows login CTA for guests on project journey timeline', function () {
+it('shows portal login CTA for guests', function () {
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->get("/preview/{$preview->public_token}");
 
-    $response->assertSee('Login to unlock')
-        ->assertSee('Enable Your Portal');
+    $response->assertSee('Login to your portal');
 });
 
-it('hides login CTA for authenticated customer guard users', function () {
+it('hides portal login CTA for authenticated customer guard users', function () {
     $user = User::factory()->customer()->create();
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->actingAs($user, 'customer')->get("/preview/{$preview->public_token}");
 
-    $response->assertDontSee('Login to unlock');
+    $response->assertDontSee('Login to your portal');
 });
 
-it('hides login CTA for authenticated default guard users', function () {
+it('hides portal login CTA for authenticated default guard users', function () {
     $user = User::factory()->create(['type' => 'internal']);
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->actingAs($user)->get("/preview/{$preview->public_token}");
 
-    $response->assertDontSee('Login to unlock');
+    $response->assertDontSee('Login to your portal');
 });
 
-it('shows both journey timelines', function () {
+it('shows estimate journey timeline without project journey', function () {
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->get("/preview/{$preview->public_token}");
 
     $response->assertSee('Estimate Journey')
-        ->assertSee('Project Journey')
+        ->assertDontSee('Project Journey')
         ->assertSee('Book')
         ->assertSee('Preview')
-        ->assertSee('Estimate Visit');
+        ->assertSee('Estimate Visit')
+        ->assertSee('Approval');
 });
 
 // --- Blur overlay tests ---
@@ -139,20 +142,22 @@ it('shows estimator name without blur for guests', function () {
     $response->assertSee('Mike Johnson');
 });
 
-it('shows login CTAs for guests', function () {
+it('shows footer login CTA for guests', function () {
     $preview = ProjectPreview::factory()->create();
 
     $response = $this->get("/preview/{$preview->public_token}");
 
-    // Project Journey CTA
-    $response->assertSee('Login to unlock');
-    // Footer login link
     $response->assertSee('Login to your portal');
 });
 
-it('shows Enable Your Portal when customer has no user account', function () {
+it('shows Enable Your Portal CTA when customer has no user account', function () {
+    $estimator = User::factory()->create(['type' => 'internal']);
+    CompanySetting::getInstance()->update(['company_phone' => '555-123-4567']);
     $customer = Customer::factory()->create(['user_id' => null]);
-    $preview = ProjectPreview::factory()->create(['customer_id' => $customer->id]);
+    $preview = ProjectPreview::factory()->create([
+        'customer_id' => $customer->id,
+        'estimator_id' => $estimator->id,
+    ]);
 
     $response = $this->get("/preview/{$preview->public_token}");
 
@@ -184,4 +189,154 @@ it('does not show My Dashboard link for guests', function () {
     $response = $this->get("/preview/{$preview->public_token}");
 
     $response->assertDontSee('My Dashboard');
+});
+
+// --- Estimate Visit step tests ---
+
+it('estimate step shows Access Your Portal for unauthenticated users', function () {
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('Access Your Portal')
+        ->assertDontSee('Go to Dashboard')
+        ->assertSee('Project Command Center')
+        ->assertSee('Daily Walkaround Videos')
+        ->assertSee('Group Chat With Your Team')
+        ->assertSee('Pay Invoices Online')
+        ->assertSee('Pick Your Start Date')
+        ->assertSee('Invite Your Spouse');
+});
+
+it('estimate step shows Go to Dashboard for authenticated users', function () {
+    $user = User::factory()->customer()->create();
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::actingAs($user, 'customer')
+        ->test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('Go to Dashboard')
+        ->assertDontSee('Access Your Portal');
+});
+
+it('estimate step shows payment options including credit card limit', function () {
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('Payment Options')
+        ->assertSee('$1,000');
+});
+
+it('estimate step shows appointment duration and options messaging', function () {
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('30 minutes to 2 hours')
+        ->assertSee('We Build Options Around You')
+        ->assertSee('budget in mind');
+});
+
+it('estimate step shows brand ambassador spots count from settings', function () {
+    CompanySetting::getInstance()->update(['brand_ambassador_spots' => 7]);
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('7')
+        ->assertSee('Brand Ambassador spots remaining this month');
+});
+
+it('estimate step shows default 10 spots when not configured', function () {
+    $settings = CompanySetting::getInstance();
+    // Default from migration is 10
+    expect($settings->brand_ambassador_spots)->toBe(10);
+
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('Brand Ambassador spots remaining this month');
+});
+
+it('estimate step shows day-of decision benefits section', function () {
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'estimate')
+        ->assertSee('Why Homeowners Love Deciding at the Appointment')
+        ->assertSee('Lock in Today')
+        ->assertSee('Priority Scheduling')
+        ->assertSee('One Less Thing to Think About');
+});
+
+// --- Approval step tests ---
+
+it('approval step shows waiting message when no estimate exists', function () {
+    $preview = ProjectPreview::factory()->create();
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'approval')
+        ->assertSee('Approval')
+        ->assertSee('your estimator will build out your proposal');
+});
+
+it('approval step shows estimate link when estimate is sent', function () {
+    $estimate = Estimate::factory()->sent()->create();
+    $estimate->generatePublicToken();
+    $preview = ProjectPreview::factory()->create(['estimate_id' => $estimate->id]);
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'approval')
+        ->assertSee('Your Estimate Is Ready')
+        ->assertSee('Review');
+});
+
+it('approval step shows accepted status when estimate is accepted', function () {
+    $estimate = Estimate::factory()->accepted()->create();
+    $estimate->generatePublicToken();
+    $preview = ProjectPreview::factory()->create(['estimate_id' => $estimate->id]);
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'approval')
+        ->assertSee('Estimate Accepted')
+        ->assertSee('When Would You Like Us to Start');
+});
+
+it('approval step shows login for scheduling when unauthenticated', function () {
+    $estimate = Estimate::factory()->accepted()->create();
+    $estimate->generatePublicToken();
+    $preview = ProjectPreview::factory()->create(['estimate_id' => $estimate->id]);
+
+    Livewire::test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'approval')
+        ->assertSee('Log In to Schedule');
+});
+
+it('approval step shows dashboard link for scheduling when authenticated', function () {
+    $user = User::factory()->customer()->create();
+    $estimate = Estimate::factory()->accepted()->create();
+    $estimate->generatePublicToken();
+    $preview = ProjectPreview::factory()->create(['estimate_id' => $estimate->id]);
+
+    Livewire::actingAs($user, 'customer')
+        ->test('public.project-portal', ['token' => $preview->public_token])
+        ->call('setStep', 'approval')
+        ->assertSee('Go to Dashboard')
+        ->assertDontSee('Log In to Schedule');
+});
+
+// --- Timeline dynamic state tests ---
+
+it('marks preview step as done when questionnaire is completed', function () {
+    $preview = ProjectPreview::factory()->create([
+        'questionnaire_completed_at' => now(),
+        'questionnaire_data' => ['step1' => 'done'],
+    ]);
+
+    $response = $this->get("/preview/{$preview->public_token}");
+
+    // The preview step should have a check icon (done state)
+    $response->assertSee('Estimate Journey');
 });

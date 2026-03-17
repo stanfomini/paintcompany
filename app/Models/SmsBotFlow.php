@@ -21,6 +21,11 @@ class SmsBotFlow extends Model
         'timeout_minutes',
         'business_hours_only',
         'delay_after_lead_minutes',
+        // Legacy columns — dropped in MySQL migration but SQLite can't drop columns
+        'greeting_message',
+        'photo_prompt_message',
+        'visualization_message',
+        'portal_link_message',
     ];
 
     protected function casts(): array

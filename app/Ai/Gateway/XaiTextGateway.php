@@ -57,10 +57,17 @@ class XaiTextGateway implements TextGateway
 
         if ($response->failed()) {
             $body = $response->json();
-            $errorMessage = $body['error']['message'] ?? $body['error'] ?? 'Unknown error';
-            $errorCode = $body['error']['code'] ?? 'unknown';
+            \Illuminate\Support\Facades\Log::error('XAI API error', [
+                'status' => $response->status(),
+                'body' => $body,
+                'model' => $model,
+            ]);
 
-            throw new AiException("XAI Error [{$response->status()}]: [{$errorCode}] {$errorMessage}");
+            $errorMessage = $body['error']['message']
+                ?? (is_string($body['error'] ?? null) ? $body['error'] : null)
+                ?? json_encode($body['error'] ?? $body);
+
+            throw new AiException("XAI Error [{$response->status()}]: {$errorMessage}");
         }
 
         $data = $response->json();
@@ -271,10 +278,17 @@ class XaiTextGateway implements TextGateway
 
         if ($response->failed()) {
             $body = $response->json();
-            $errorMessage = $body['error']['message'] ?? $body['error'] ?? 'Unknown error';
-            $errorCode = $body['error']['code'] ?? 'unknown';
+            \Illuminate\Support\Facades\Log::error('XAI API error', [
+                'status' => $response->status(),
+                'body' => $body,
+                'model' => $model,
+            ]);
 
-            throw new AiException("XAI Error [{$response->status()}]: [{$errorCode}] {$errorMessage}");
+            $errorMessage = $body['error']['message']
+                ?? (is_string($body['error'] ?? null) ? $body['error'] : null)
+                ?? json_encode($body['error'] ?? $body);
+
+            throw new AiException("XAI Error [{$response->status()}]: {$errorMessage}");
         }
 
         $data = $response->json();

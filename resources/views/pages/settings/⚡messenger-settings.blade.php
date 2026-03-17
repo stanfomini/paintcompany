@@ -578,8 +578,16 @@ new class extends Component {
                         <div wire:key="flow-{{ $flow['id'] }}" class="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
                             <div class="flex items-center gap-3">
                                 <div>
-                                    <div class="font-medium text-sm">{{ $flow['name'] }}</div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-sm">{{ $flow['name'] }}</span>
+                                        @if (! empty($flow['trigger_keyword']))
+                                            <flux:badge size="sm" color="purple">{{ $flow['trigger_keyword'] }}</flux:badge>
+                                        @endif
+                                    </div>
                                     <flux:text class="text-xs text-zinc-500">
+                                        @if (! empty($flow['trigger_keyword']))
+                                            {{ __('Keyword trigger') }} &middot;
+                                        @endif
                                         {{ $flow['steps_count'] ?? 0 }} {{ __('steps') }}
                                         @if ($flow['business_hours_only'])
                                             &middot; {{ __('Business hours only') }}

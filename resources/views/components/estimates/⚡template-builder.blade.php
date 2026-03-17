@@ -17,15 +17,20 @@ use App\Services\EstimateAmendmentService;
 use App\Services\EstimatePackageGeneratorService;
 use App\Services\EstimateTemplateService;
 use App\Services\EstimateTierPricingService;
+use App\Services\PythonBridgeService;
 use App\Services\TemplatePricingService;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 new class extends Component
 {
+    use WithFileUploads;
+
     public ?Deal $deal = null;
 
     public ?Estimate $estimate = null;
@@ -97,6 +102,24 @@ new class extends Component
         'better' => ['mode' => 'single', 'default_paint_product_id' => null, 'paint_by_category' => []],
         'best' => ['mode' => 'single', 'default_paint_product_id' => null, 'paint_by_category' => []],
     ];
+
+    // AI Chat Panel
+    public bool $showAiChat = false;
+
+    public string $aiChatInput = '';
+
+    /** @var array<int, array{role: string, content: string}> */
+    public array $aiChatMessages = [];
+
+    public bool $aiProcessing = false;
+
+    public ?string $aiError = null;
+
+    public ?string $aiCacheKey = null;
+
+    public $voiceRecording = null;
+
+    public bool $canUseAiChat = false;
 
 
     protected function rules(): array
@@ -220,8 +243,13 @@ new class extends Component
                 $this->paintByCategory = $companyDefaults;
                 $this->paintMode = 'category';
             }
+
+            // New estimates default to tier pricing ON so AI can set Good/Better/Best immediately
+            $this->useTierPricing = true;
         }
 
+        // Check AI permission
+        $this->canUseAiChat = Auth::user()?->can('ai.estimate_builder') ?? false;
     }
 
     /**
@@ -2773,6 +2801,240 @@ new class extends Component
     {
         $this->save(true);
     }
+
+    // =========================================================================
+    // AI CHAT METHODS
+    // =========================================================================
+
+    /**
+     * Toggle the AI chat panel.
+     */
+    public function toggleAiChat(): void
+    {
+        $this->showAiChat = ! $this->showAiChat;
+    }
+
+    /**
+     * Send a message to the AI agent (dispatches async job).
+     */
+    public function sendAiChatMessage(): void
+    {
+        if (empty(trim($this->aiChatInput)) || $this->aiProcessing) {
+            return;
+        }
+
+        $this->authorize('ai.estimate_builder');
+
+        // Ensure estimate is saved first
+        if (! $this->estimate?->id) {
+            $this->save(false);
+            if (! $this->estimate?->id) {
+                $this->aiError = 'Please save the estimate first.';
+                return;
+            }
+        }
+
+        $userMessage = trim($this->aiChatInput);
+        $this->aiChatMessages[] = ['role' => 'user', 'content' => $userMessage];
+        $this->aiChatInput = '';
+        $this->aiProcessing = true;
+        $this->aiError = null;
+
+        // Dispatch to queue — the job runs with no FPM timeout
+        $this->aiCacheKey = 'ai-estimate-chat:' . $this->estimate->id . ':' . now()->timestamp;
+        // Each message starts a fresh agent — no prior history so the AI focuses on one room at a time
+        $priorHistory = [];
+
+        \Illuminate\Support\Facades\Cache::put($this->aiCacheKey, ['status' => 'processing'], now()->addMinutes(10));
+
+        \App\Jobs\ProcessEstimateAiChat::dispatch(
+            estimateId: $this->estimate->id,
+            cacheKey: $this->aiCacheKey,
+            userMessage: $userMessage,
+            history: $priorHistory,
+        );
+    }
+
+    /**
+     * Poll for AI response from the queued job.
+     */
+    public function pollAiResponse(): void
+    {
+        if (! $this->aiCacheKey || ! $this->aiProcessing) {
+            return;
+        }
+
+        $result = \Illuminate\Support\Facades\Cache::get($this->aiCacheKey);
+
+        if (! $result || $result['status'] === 'processing') {
+            return; // Still working
+        }
+
+        if ($result['status'] === 'complete') {
+            $this->aiChatMessages[] = ['role' => 'assistant', 'content' => $result['response']];
+            $this->refreshEstimateFromDb();
+        } elseif ($result['status'] === 'error') {
+            $this->aiError = $result['response'];
+        }
+
+        $this->aiProcessing = false;
+        $this->aiCacheKey = null;
+        \Illuminate\Support\Facades\Cache::forget($this->aiCacheKey);
+    }
+
+    /**
+     * Process a voice recording through transcription and AI.
+     */
+    public function processVoiceRecording(): void
+    {
+        if (! $this->voiceRecording) {
+            return;
+        }
+
+        $this->authorize('ai.estimate_builder');
+        $this->aiProcessing = true;
+        $this->aiError = null;
+
+        try {
+            $python = app(PythonBridgeService::class);
+            $result = $python->transcribeAudioFile($this->voiceRecording->getRealPath());
+
+            $transcript = $result['text'] ?? '';
+            if (empty(trim($transcript))) {
+                $this->aiError = 'Could not transcribe the recording. Please try again.';
+                $this->aiProcessing = false;
+                return;
+            }
+
+            // Show transcript as user message and feed to AI
+            $this->aiChatInput = $transcript;
+            $this->voiceRecording = null;
+            $this->aiProcessing = false;
+            $this->sendAiChatMessage();
+        } catch (\Throwable $e) {
+            $this->aiError = 'Transcription error: ' . $e->getMessage();
+            $this->aiProcessing = false;
+        }
+    }
+
+    /**
+     * Clear the AI chat history.
+     */
+    public function clearAiChat(): void
+    {
+        $this->aiChatMessages = [];
+        $this->aiError = null;
+        $this->aiChatInput = '';
+    }
+
+    /**
+     * Refresh estimate data from database after AI changes.
+     */
+    protected function refreshEstimateFromDb(): void
+    {
+        if (! $this->estimate?->id) {
+            return;
+        }
+
+        $this->estimate->refresh();
+        $this->estimate->load(['areas.surfaces.productionRate', 'areas.addons.nestedAreaTemplate']);
+
+        // Rebuild the areas array from DB
+        $this->areas = [];
+        foreach ($this->estimate->areas()->whereNull('parent_area_id')->orderBy('sort_order')->get() as $area) {
+            $this->areas[] = $this->buildAreaDataFromModel($area);
+        }
+
+        // Update totals
+        $this->estimate->calculateTotals();
+        $this->estimate->calculateDepositAndBalance();
+        $this->estimate->save();
+    }
+
+    /**
+     * Build area data array from an EstimateArea model.
+     */
+    protected function buildAreaDataFromModel(EstimateArea $area): array
+    {
+        $settings = CompanySetting::getInstance();
+        $scope = $area->scope_type ?? 'interior';
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scope);
+
+        $surfaces = [];
+        $totalLaborHours = 0;
+        $totalMaterialCost = 0;
+
+        foreach ($area->surfaces as $surface) {
+            $laborHours = (float) ($surface->labor_hours ?? 0);
+            $materialCost = (float) ($surface->material_cost ?? 0);
+            $totalLaborHours += $laborHours;
+            $totalMaterialCost += $materialCost;
+
+            $surfaces[] = [
+                'id' => $surface->id,
+                'name' => $surface->name,
+                'surface_type' => $surface->surface_type,
+                'surface_category' => $surface->surface_category ?? $surface->getSurfaceCategory(),
+                'quantity' => (float) $surface->quantity,
+                'unit' => $surface->unit,
+                'coats' => $surface->coats ?? 2,
+                'production_rate_id' => $surface->production_rate_id,
+                'production_rate_value' => (float) ($surface->production_rate_value ?? 200),
+                'labor_hours' => $laborHours,
+                'labor_cost' => (float) ($surface->labor_cost ?? 0),
+                'material_cost' => $materialCost,
+                'paint_product_id' => $surface->paint_product_id,
+                'total' => (float) ($surface->total ?? 0),
+                'is_required' => true,
+                'is_default_enabled' => true,
+            ];
+        }
+
+        $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scope);
+        $cleanupCost = $cleanupHours * $effectiveRate;
+        $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scope);
+        $laborCost = $totalLaborHours * $effectiveRate;
+        $addonCost = (float) $area->addons()->sum('total_price');
+
+        $baseTotalResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $totalMaterialCost + $addonCost);
+        $cogs = $baseTotalResult['cogs'];
+        $margin = $settings->getMarginPercentForScope($scope) + ($this->marginDiscountPercent ?? 0);
+        $withMargins = $margin > 0 ? round($cogs / ($margin / 100), 2) : $cogs;
+
+        return [
+            'name' => $area->name,
+            'scope_type' => $scope,
+            'source_template_id' => null,
+            'length' => (float) ($area->length ?? 0),
+            'width' => (float) ($area->width ?? 0),
+            'height' => (float) ($area->height ?? 8),
+            'wall_count' => $area->wall_count ?? 4,
+            'wall_sqft' => (float) ($area->wall_sqft ?? 0),
+            'ceiling_sqft' => (float) ($area->ceiling_sqft ?? 0),
+            'perimeter_lnft' => (float) ($area->perimeter_lnft ?? 0),
+            'default_coats' => 2,
+            'substrate_id' => $area->substrate_id,
+            'surfaces' => $surfaces,
+            'addons' => $area->addons->map(fn ($a) => [
+                'id' => $a->id,
+                'template_id' => $a->nested_area_template_id,
+                'name' => $a->name,
+                'quantity' => $a->quantity,
+                'unit_price' => (float) $a->unit_price,
+                'total_price' => (float) $a->total_price,
+            ])->toArray(),
+            'labor_hours' => round($totalLaborHours, 2),
+            'labor_cost' => round($laborCost, 2),
+            'cleanup_hours' => round($cleanupHours, 2),
+            'cleanup_cost' => round($cleanupCost, 2),
+            'sundries_cost' => round($sundriesCost, 2),
+            'material_cost' => round($totalMaterialCost, 2),
+            'addon_cost' => round($addonCost, 2),
+            'base_total' => round($cogs, 2),
+            'with_margins' => round($withMargins, 2),
+            'price' => round($withMargins, 2),
+        ];
+    }
 }; ?>
 
 <div>
@@ -2833,6 +3095,11 @@ new class extends Component
                     @endif
                 </flux:heading>
             </div>
+            @if ($canUseAiChat)
+                <flux:button wire:click="toggleAiChat" variant="{{ $showAiChat ? 'primary' : 'ghost' }}" icon="sparkles" size="sm">
+                    {{ __('AI Builder') }}
+                </flux:button>
+            @endif
         </div>
 
         @if (session('error'))
@@ -3693,4 +3960,175 @@ new class extends Component
 
     {{-- Area Builder Component (Flyout) --}}
     <livewire:estimates.area-builder wire:key="area-builder" wire:ref="area-builder" />
+
+    {{-- AI Chat Panel (Sliding Right Panel) --}}
+    @if ($canUseAiChat)
+        <div
+            x-data="{
+                isRecording: false,
+                mediaRecorder: null,
+                audioChunks: [],
+                async startRecording() {
+                    try {
+                        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                        this.mediaRecorder = new MediaRecorder(stream);
+                        this.audioChunks = [];
+                        this.mediaRecorder.ondataavailable = (e) => this.audioChunks.push(e.data);
+                        this.mediaRecorder.onstop = () => {
+                            const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
+                            const file = new File([blob], 'voice-recording.webm', { type: 'audio/webm' });
+                            @this.upload('voiceRecording', file, () => {
+                                @this.call('processVoiceRecording');
+                            });
+                            stream.getTracks().forEach(t => t.stop());
+                        };
+                        this.mediaRecorder.start();
+                        this.isRecording = true;
+                    } catch (err) {
+                        console.error('Microphone access denied:', err);
+                    }
+                },
+                stopRecording() {
+                    if (this.mediaRecorder && this.isRecording) {
+                        this.mediaRecorder.stop();
+                        this.isRecording = false;
+                    }
+                },
+                scrollToBottom() {
+                    this.$nextTick(() => {
+                        const el = this.$refs.chatMessages;
+                        if (el) el.scrollTop = el.scrollHeight;
+                    });
+                }
+            }"
+            x-effect="if ($wire.aiChatMessages.length) scrollToBottom()"
+            x-init="
+                let aiPollStart = null;
+                setInterval(() => {
+                    if ($wire.aiProcessing && $wire.aiCacheKey) {
+                        if (!aiPollStart) aiPollStart = Date.now();
+                        // Auto-timeout after 5 minutes of polling
+                        if (Date.now() - aiPollStart > 300000) {
+                            $wire.aiProcessing = false;
+                            $wire.aiError = 'The AI request timed out. Please try again.';
+                            $wire.aiCacheKey = null;
+                            aiPollStart = null;
+                            return;
+                        }
+                        $wire.pollAiResponse();
+                    } else {
+                        aiPollStart = null;
+                    }
+                }, 3000);
+            "
+            class="fixed inset-y-0 right-0 z-50 w-full sm:w-96 transform transition-transform duration-300 ease-in-out"
+            :class="$wire.showAiChat ? 'translate-x-0' : 'translate-x-full'"
+            x-show="$wire.showAiChat"
+            x-cloak
+        >
+            <div class="h-full flex flex-col bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-700 shadow-2xl">
+                {{-- Header --}}
+                <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="sparkles" class="w-5 h-5 text-purple-500" />
+                        <flux:heading size="sm">{{ __('AI Estimate Builder') }}</flux:heading>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <flux:button wire:click="clearAiChat" variant="ghost" size="xs" icon="trash" />
+                        <flux:button wire:click="toggleAiChat" variant="ghost" size="xs" icon="x-mark" />
+                    </div>
+                </div>
+
+                {{-- Messages --}}
+                <div x-ref="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4">
+                    @if (empty($aiChatMessages))
+                        <div class="text-center text-zinc-400 dark:text-zinc-500 mt-8">
+                            <flux:icon name="sparkles" class="w-12 h-12 mx-auto mb-3 text-purple-300" />
+                            <p class="text-sm font-medium">{{ __('AI Estimate Builder') }}</p>
+                            <p class="text-xs mt-1">{{ __('Describe the rooms and I\'ll build your estimate.') }}</p>
+                            <p class="text-xs mt-3 text-zinc-400">{{ __('Try: "Add a medium living room, large master bedroom, and small bathroom"') }}</p>
+                        </div>
+                    @endif
+
+                    @foreach ($aiChatMessages as $msg)
+                        <div class="flex {{ $msg['role'] === 'user' ? 'justify-end' : 'justify-start' }}">
+                            <div class="max-w-[85%] rounded-xl px-4 py-2.5 text-sm {{ $msg['role'] === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
+                                {!! nl2br(e($msg['content'])) !!}
+                            </div>
+                        </div>
+                    @endforeach
+
+                    @if ($aiProcessing)
+                        <div class="flex justify-start">
+                            <div class="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-4 py-3">
+                                <div class="flex items-center gap-2 text-sm text-zinc-500">
+                                    <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    {{ __('Building estimate...') }}
+                                </div>
+                            </div>
+                        </div>
+                    @endif
+
+                    @if ($aiError)
+                        <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-600 dark:text-red-400">
+                            {{ $aiError }}
+                        </div>
+                    @endif
+                </div>
+
+                {{-- Input --}}
+                <div class="border-t border-zinc-200 dark:border-zinc-700 p-3">
+                    <form wire:submit.prevent="sendAiChatMessage" class="flex items-end gap-2">
+                        <div class="flex-1">
+                            <textarea
+                                wire:model="aiChatInput"
+                                placeholder="{{ __('Describe rooms, dimensions, paint...') }}"
+                                class="w-full rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm px-3 py-2 resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:text-zinc-100"
+                                rows="2"
+                                @keydown.enter.prevent="if (!event.shiftKey) { $wire.sendAiChatMessage(); }"
+                                :disabled="$wire.aiProcessing"
+                            ></textarea>
+                        </div>
+                        <div class="flex flex-col gap-1">
+                            {{-- Voice recording button --}}
+                            <button
+                                type="button"
+                                @click="isRecording ? stopRecording() : startRecording()"
+                                :class="isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600'"
+                                class="p-2 rounded-lg transition-colors"
+                                :disabled="$wire.aiProcessing"
+                                title="{{ __('Voice recording') }}"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-14 0m14 0a7 7 0 00-14 0m14 0v1a7 7 0 01-14 0v-1m7 8v3m-4 0h8M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z" />
+                                </svg>
+                            </button>
+                            {{-- Send button --}}
+                            <button
+                                type="submit"
+                                class="p-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors disabled:opacity-50"
+                                :disabled="$wire.aiProcessing"
+                            >
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                            </button>
+                        </div>
+                    </form>
+                    <p class="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">{{ __('Each message starts a fresh AI session. Send one room at a time for best results.') }}</p>
+                </div>
+            </div>
+        </div>
+
+        {{-- Backdrop --}}
+        <div
+            x-show="$wire.showAiChat"
+            x-cloak
+            @click="$wire.toggleAiChat()"
+            class="fixed inset-0 z-40 bg-black/20 sm:hidden"
+        ></div>
+    @endif
 </div>

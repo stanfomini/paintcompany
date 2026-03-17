@@ -1,0 +1,1083 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\CompanySetting;
+use App\Models\Estimate;
+use App\Models\EstimateArea;
+use App\Models\EstimateAreaAddon;
+use App\Models\EstimateAreaSurface;
+use App\Models\EstimateTemplate;
+use App\Models\NestedAreaTemplate;
+use App\Models\PaintProduct;
+use App\Models\ProductionRate;
+use App\Models\Substrate;
+
+class EstimateAiService
+{
+    // =========================================================================
+    // DISCOVERY METHODS
+    // =========================================================================
+
+    /**
+     * Search for matching templates by name/keywords.
+     *
+     * @return array<int, array{id: int, name: string, scope_type: string, category: string|null, sizes: array, surfaces: array, description: string|null}>
+     */
+    public function searchTemplates(string $query, ?string $scopeType = null): array
+    {
+        $q = EstimateTemplate::query()
+            ->active()
+            ->configurable()
+            ->with(['templateCategory', 'surfaces.productionRate'])
+            ->where(function ($builder) use ($query) {
+                $builder->where('name', 'like', "%{$query}%")
+                    ->orWhere('description', 'like', "%{$query}%")
+                    ->orWhereHas('templateCategory', function ($catQ) use ($query) {
+                        $catQ->where('name', 'like', "%{$query}%");
+                    });
+            });
+
+        if ($scopeType) {
+            $q->byScope($scopeType);
+        }
+
+        return $q->limit(10)->get()->map(function (EstimateTemplate $template) {
+            $metadata = $template->metadata ?? [];
+            $dimensions = $metadata['dimensions'] ?? [];
+
+            return [
+                'id' => $template->id,
+                'name' => $template->name,
+                'scope_type' => $template->scope_type,
+                'category' => $template->templateCategory?->name,
+                'sizes' => $dimensions,
+                'surfaces' => $template->surfaces->map(fn ($s) => [
+                    'name' => $s->name,
+                    'surface_type' => $s->surface_type,
+                    'production_rate' => $s->productionRate?->name,
+                    'production_rate_id' => $s->production_rate_id,
+                ])->toArray(),
+                'surface_ratios' => $metadata['surface_ratios'] ?? null,
+                'description' => $template->description,
+            ];
+        })->toArray();
+    }
+
+    /**
+     * List production rates, optionally filtered by scope and category.
+     *
+     * @return array<int, array{id: int, name: string, surface_category: string, scope: string, production_rate: float, unit_type: string, rate_type: string, default_coats: int}>
+     */
+    public function listProductionRates(?string $scopeType = null, ?string $category = null): array
+    {
+        $q = ProductionRate::query()->orderBy('scope')->orderBy('surface_category')->orderBy('name');
+
+        if ($scopeType) {
+            $q->where('scope', $scopeType);
+        }
+
+        if ($category) {
+            $q->where('surface_category', $category);
+        }
+
+        return $q->get()->map(fn (ProductionRate $rate) => [
+            'id' => $rate->id,
+            'name' => $rate->name,
+            'surface_category' => $rate->surface_category,
+            'scope' => $rate->scope,
+            'production_rate' => (float) $rate->production_rate,
+            'unit_type' => $rate->unit_type,
+            'rate_type' => $rate->rate_type,
+            'default_coats' => $rate->default_coats ?? 2,
+        ])->toArray();
+    }
+
+    /**
+     * List paint products, optionally filtered.
+     *
+     * @return array<int, array{id: int, brand_name: string, name: string, sheen: string|null, quality_tier: string|null, price_per_gallon: float, coverage_sqft: float, scope_type: string}>
+     */
+    public function listPaintProducts(?string $scopeType = null, ?string $sheen = null, ?string $qualityTier = null): array
+    {
+        $q = PaintProduct::query()->with('brand')->where('is_active', true)->orderBy('name');
+
+        if ($scopeType) {
+            $q->where(fn ($b) => $b->where('scope_type', $scopeType)->orWhere('scope_type', 'both'));
+        }
+
+        if ($sheen) {
+            $q->where('sheen', $sheen);
+        }
+
+        if ($qualityTier) {
+            $q->where('quality_tier', $qualityTier);
+        }
+
+        return $q->limit(50)->get()->map(fn (PaintProduct $p) => [
+            'id' => $p->id,
+            'brand_name' => $p->brand?->name ?? 'Unknown',
+            'name' => $p->name,
+            'sheen' => $p->sheen,
+            'quality_tier' => $p->quality_tier,
+            'price_per_gallon' => (float) $p->price_per_gallon,
+            'coverage_sqft' => (float) ($p->coverage_sqft_brush_roll ?? 400),
+            'scope_type' => $p->scope_type,
+        ])->toArray();
+    }
+
+    /**
+     * List substrates (surface conditions).
+     *
+     * @return array<int, array{id: int, name: string, category: string, prep_time_multiplier: float, paint_time_multiplier: float, material_multiplier: float}>
+     */
+    public function listSubstrates(?string $scopeType = null): array
+    {
+        $q = Substrate::query()->where('is_active', true)->orderBy('name');
+
+        if ($scopeType) {
+            $q->where(fn ($b) => $b->where('scope_type', $scopeType)->orWhere('scope_type', 'both'));
+        }
+
+        return $q->get()->map(fn (Substrate $s) => [
+            'id' => $s->id,
+            'name' => $s->name,
+            'category' => $s->category,
+            'scope_type' => $s->scope_type,
+            'prep_time_multiplier' => (float) $s->prep_time_multiplier,
+            'paint_time_multiplier' => (float) $s->paint_time_multiplier,
+            'material_multiplier' => (float) $s->material_multiplier,
+        ])->toArray();
+    }
+
+    /**
+     * List nested area templates (fixed-price addons).
+     *
+     * @return array<int, array{id: int, name: string, category: string, fixed_price: float|null, estimated_hours: float|null, scope_type: string}>
+     */
+    public function listNestedTemplates(?string $scopeType = null, ?string $category = null): array
+    {
+        $q = NestedAreaTemplate::query()->where('is_active', true)->orderBy('name');
+
+        if ($scopeType) {
+            $q->where(fn ($b) => $b->where('scope_type', $scopeType)->orWhere('scope_type', 'both'));
+        }
+
+        if ($category) {
+            $q->where('category', $category);
+        }
+
+        return $q->get()->map(fn (NestedAreaTemplate $t) => [
+            'id' => $t->id,
+            'name' => $t->name,
+            'category' => $t->category,
+            'fixed_price' => $t->getEffectivePrice(),
+            'estimated_hours' => (float) ($t->estimated_hours ?? 0),
+            'scope_type' => $t->scope_type,
+        ])->toArray();
+    }
+
+    /**
+     * Get company pricing config by scope.
+     *
+     * @return array{interior: array, exterior: array, formula_explanation: string}
+     */
+    public function getPricingConfig(): array
+    {
+        $settings = CompanySetting::getInstance();
+
+        $buildScope = function (string $scope) use ($settings) {
+            return [
+                'wage' => $settings->getHourlyWageForScope($scope),
+                'effective_rate' => $settings->getEffectiveHourlyRateForScope($scope),
+                'payroll_burden_multiplier' => (float) $settings->payroll_burden_multiplier,
+                'margin_percent' => $settings->getMarginPercentForScope($scope),
+                'cleanup_hours_ratio' => $settings->getCleanupHoursRatioForScope($scope),
+                'sundries_per_hour' => $settings->getSundriesCostForScope($scope),
+                'material_tax_rate' => (float) ($settings->material_tax_rate ?? 0),
+                'labor_tax_rate' => (float) ($settings->labor_tax_rate ?? 0),
+                'recycle_fee_per_gallon' => (float) ($settings->recycle_fee_per_gallon ?? 0.54),
+            ];
+        };
+
+        return [
+            'interior' => $buildScope('interior'),
+            'exterior' => $buildScope('exterior'),
+            'formula_explanation' => 'OTD = COGS / (margin% / 100). COGS = labor + cleanup + sundries + materials + taxes.',
+        ];
+    }
+
+    // =========================================================================
+    // ESTIMATE-LEVEL METHODS
+    // =========================================================================
+
+    /**
+     * Get full estimate state with areas, surfaces, and pricing.
+     */
+    public function getEstimateState(Estimate $estimate): array
+    {
+        $estimate->load([
+            'areas.surfaces.productionRate',
+            'areas.surfaces.paintProduct',
+            'areas.substrate',
+            'areas.addons.nestedAreaTemplate',
+            'areas.childAreas',
+        ]);
+
+        return [
+            'id' => $estimate->id,
+            'title' => $estimate->title,
+            'status' => $estimate->status,
+            'project_type' => $estimate->project_type,
+            'estimator_mode' => $estimate->estimator_mode,
+            'areas' => $estimate->areas->where('parent_area_id', null)->map(function (EstimateArea $area) {
+                return [
+                    'id' => $area->id,
+                    'name' => $area->name,
+                    'scope_type' => $area->scope_type,
+                    'dimensions' => [
+                        'length' => (float) ($area->length ?? 0),
+                        'width' => (float) ($area->width ?? 0),
+                        'height' => (float) ($area->height ?? 0),
+                        'wall_count' => $area->wall_count ?? 4,
+                    ],
+                    'calculated' => [
+                        'wall_sqft' => (float) ($area->wall_sqft ?? 0),
+                        'ceiling_sqft' => (float) ($area->ceiling_sqft ?? 0),
+                        'perimeter_lnft' => (float) ($area->perimeter_lnft ?? 0),
+                    ],
+                    'surfaces' => $area->surfaces->map(fn (EstimateAreaSurface $s) => [
+                        'id' => $s->id,
+                        'name' => $s->name,
+                        'surface_type' => $s->surface_type,
+                        'surface_category' => $s->surface_category ?? $s->getSurfaceCategory(),
+                        'quantity' => (float) $s->quantity,
+                        'unit' => $s->unit,
+                        'coats' => $s->coats,
+                        'production_rate' => $s->productionRate?->name,
+                        'production_rate_id' => $s->production_rate_id,
+                        'labor_hours' => (float) ($s->labor_hours ?? 0),
+                        'labor_cost' => (float) ($s->labor_cost ?? 0),
+                        'material_cost' => (float) ($s->material_cost ?? 0),
+                        'paint_product' => $s->paintProduct?->name,
+                        'total' => (float) ($s->total ?? 0),
+                    ])->toArray(),
+                    'addons' => $area->addons->map(fn ($a) => [
+                        'id' => $a->id,
+                        'name' => $a->nestedAreaTemplate?->name ?? $a->name,
+                        'quantity' => $a->quantity,
+                        'unit_price' => (float) $a->unit_price,
+                        'total_price' => (float) $a->total_price,
+                    ])->toArray(),
+                    'is_fixed_price' => $area->is_fixed_price,
+                    'cogs' => $area->getFullCOGS(),
+                    'price' => $area->getCustomerPrice(),
+                ];
+            })->values()->toArray(),
+            'totals' => [
+                'subtotal' => (float) ($estimate->subtotal ?? 0),
+                'tax_amount' => (float) ($estimate->tax_amount ?? 0),
+                'total' => (float) ($estimate->total ?? 0),
+                'areas_count' => $estimate->areas->where('parent_area_id', null)->count(),
+            ],
+        ];
+    }
+
+    /**
+     * Update estimate-level settings.
+     */
+    public function updateEstimateSettings(Estimate $estimate, array $params): array
+    {
+        $fillable = ['title', 'project_type', 'notes', 'valid_until'];
+        $numericFields = ['tax_rate', 'deposit_percent', 'margin_discount_percent'];
+
+        foreach ($fillable as $field) {
+            if (array_key_exists($field, $params)) {
+                $estimate->{$field} = $params[$field];
+            }
+        }
+
+        foreach ($numericFields as $field) {
+            if (array_key_exists($field, $params)) {
+                $modelField = $field === 'tax_rate' ? 'default_tax_rate' : $field;
+                if ($field === 'tax_rate') {
+                    $modelField = 'tax_rate';
+                }
+                $estimate->{$field} = $params[$field];
+            }
+        }
+
+        $estimate->save();
+
+        return ['success' => true, 'estimate_id' => $estimate->id];
+    }
+
+    /**
+     * Recalculate all totals on the estimate.
+     */
+    public function recalculate(Estimate $estimate): array
+    {
+        $estimate->calculateTotals();
+        $estimate->calculateDepositAndBalance();
+        $estimate->save();
+
+        return [
+            'subtotal' => (float) ($estimate->subtotal ?? 0),
+            'tax_amount' => (float) ($estimate->tax_amount ?? 0),
+            'total' => (float) ($estimate->total ?? 0),
+            'deposit_amount' => (float) ($estimate->deposit_amount ?? 0),
+            'balance_due' => (float) ($estimate->balance_due ?? 0),
+            'areas_count' => $estimate->areas()->whereNull('parent_area_id')->count(),
+        ];
+    }
+
+    // =========================================================================
+    // AREA CREATION METHODS
+    // =========================================================================
+
+    /**
+     * Create area from a template (quick path).
+     * Loads template → applies size → creates surfaces → calculates pricing.
+     */
+    public function createAreaFromTemplate(
+        Estimate $estimate,
+        int $templateId,
+        string $size = 'medium',
+        int $coats = 2,
+        ?int $substrateId = null
+    ): array {
+        $template = EstimateTemplate::with(['surfaces.productionRate', 'substrate', 'templateCategory'])
+            ->findOrFail($templateId);
+
+        $metadata = $template->metadata ?? [];
+        $dimensions = $metadata['dimensions'] ?? [];
+        $surfaceRatios = $metadata['surface_ratios'] ?? [];
+        $sizeConfig = $dimensions[$size] ?? $dimensions['medium'] ?? [];
+
+        $scopeType = $template->scope_type ?? $estimate->project_type ?? 'interior';
+
+        // Create area with dimensions from template
+        $area = EstimateArea::create([
+            'estimate_id' => $estimate->id,
+            'name' => $template->name,
+            'scope_type' => $scopeType,
+            'length' => $sizeConfig['length'] ?? null,
+            'width' => $sizeConfig['width'] ?? null,
+            'height' => $sizeConfig['height'] ?? 8,
+            'wall_count' => $sizeConfig['wall_count'] ?? 4,
+            'substrate_id' => $substrateId ?? $template->substrate_id,
+            'measurement_type' => 'dimensions',
+            'sort_order' => $estimate->areas()->max('sort_order') + 1,
+        ]);
+
+        // Create surfaces from template surfaces or surface_ratios
+        $surfaces = [];
+        if ($template->hasModelSurfaces()) {
+            foreach ($template->surfaces as $templateSurface) {
+                $surface = $this->createSurfaceFromTemplate($area, $templateSurface, $coats);
+                $surfaces[] = $surface;
+            }
+        } elseif (! empty($surfaceRatios)) {
+            $surfaces = $this->createSurfacesFromRatios($area, $surfaceRatios, $coats);
+        }
+
+        // Calculate pricing using TemplatePricingService for cached values
+        $pricingService = app(TemplatePricingService::class);
+        $roomSqft = (float) ($sizeConfig['sqft'] ?? ($area->length * $area->width));
+        $breakdown = $pricingService->getTemplateCostBreakdown($templateId, $roomSqft, $coats, [
+            'substrate_id' => $substrateId ?? $template->substrate_id,
+        ]);
+
+        // Cache pricing on area
+        $area->cached_cogs = $breakdown['base_total'];
+        $area->cached_customer_price = $breakdown['with_margins'];
+        $area->save();
+
+        // Recalculate estimate totals
+        $estimate->calculateTotals();
+        $estimate->calculateDepositAndBalance();
+        $estimate->save();
+
+        return [
+            'area_id' => $area->id,
+            'name' => $area->name,
+            'scope_type' => $scopeType,
+            'size' => $size,
+            'dimensions' => [
+                'length' => (float) ($area->length ?? 0),
+                'width' => (float) ($area->width ?? 0),
+                'height' => (float) ($area->height ?? 0),
+                'wall_sqft' => (float) ($area->wall_sqft ?? 0),
+                'ceiling_sqft' => (float) ($area->ceiling_sqft ?? 0),
+                'perimeter_lnft' => (float) ($area->perimeter_lnft ?? 0),
+            ],
+            'surfaces' => collect($surfaces)->map(fn ($s) => [
+                'id' => $s->id,
+                'name' => $s->name,
+                'quantity' => (float) $s->quantity,
+                'unit' => $s->unit,
+                'labor_hours' => (float) ($s->labor_hours ?? 0),
+            ])->toArray(),
+            'cogs' => round($breakdown['base_total'], 2),
+            'price' => round($breakdown['with_margins'], 2),
+        ];
+    }
+
+    /**
+     * Create custom area with manual dimensions (no template).
+     */
+    public function createCustomArea(
+        Estimate $estimate,
+        string $name,
+        string $scopeType,
+        float $length,
+        float $width,
+        float $height,
+        int $wallCount = 4,
+        ?int $substrateId = null
+    ): array {
+        $area = EstimateArea::create([
+            'estimate_id' => $estimate->id,
+            'name' => $name,
+            'scope_type' => $scopeType,
+            'length' => $length,
+            'width' => $width,
+            'height' => $height,
+            'wall_count' => $wallCount,
+            'substrate_id' => $substrateId,
+            'measurement_type' => 'dimensions',
+            'sort_order' => $estimate->areas()->max('sort_order') + 1,
+        ]);
+
+        return [
+            'area_id' => $area->id,
+            'name' => $area->name,
+            'scope_type' => $scopeType,
+            'wall_sqft' => (float) ($area->wall_sqft ?? 0),
+            'ceiling_sqft' => (float) ($area->ceiling_sqft ?? 0),
+            'perimeter_lnft' => (float) ($area->perimeter_lnft ?? 0),
+            'surfaces' => [],
+            'message' => 'Area created with dimensions. Add surfaces using add_surface_to_area.',
+        ];
+    }
+
+    // =========================================================================
+    // SURFACE-LEVEL METHODS
+    // =========================================================================
+
+    /**
+     * Add a surface to an area with auto-calculated quantity from area dimensions.
+     */
+    public function addSurfaceToArea(
+        int $areaId,
+        string $surfaceCategory,
+        int $productionRateId,
+        int $coats = 2,
+        ?float $quantityOverride = null
+    ): array {
+        $area = EstimateArea::findOrFail($areaId);
+        $rate = ProductionRate::findOrFail($productionRateId);
+
+        // Auto-calculate quantity from area dimensions based on category
+        $quantity = $quantityOverride ?? $this->getQuantityForCategory($area, $surfaceCategory);
+        $unit = $this->getUnitForCategory($surfaceCategory);
+        $surfaceType = $this->getSurfaceTypeForCategory($surfaceCategory);
+        $surfaceName = $this->getSurfaceNameForCategory($surfaceCategory);
+
+        $surface = EstimateAreaSurface::create([
+            'area_id' => $area->id,
+            'name' => $surfaceName,
+            'surface_type' => $surfaceType,
+            'surface_category' => $surfaceCategory,
+            'quantity' => $quantity,
+            'unit' => $unit,
+            'coats' => $coats,
+            'production_rate_id' => $rate->id,
+            'production_rate_value' => $rate->production_rate,
+            'sort_order' => $area->surfaces()->max('sort_order') + 1,
+        ]);
+
+        // Clear cached pricing on the area
+        $area->update(['cached_cogs' => null, 'cached_customer_price' => null]);
+
+        return [
+            'surface_id' => $surface->id,
+            'name' => $surface->name,
+            'category' => $surfaceCategory,
+            'quantity' => (float) $surface->quantity,
+            'unit' => $surface->unit,
+            'production_rate_name' => $rate->name,
+            'labor_hours' => (float) ($surface->labor_hours ?? 0),
+            'labor_cost' => (float) ($surface->labor_cost ?? 0),
+            'material_cost' => (float) ($surface->material_cost ?? 0),
+            'total' => (float) ($surface->total ?? 0),
+        ];
+    }
+
+    /**
+     * Update a surface's configuration.
+     */
+    public function updateSurface(
+        int $surfaceId,
+        ?int $productionRateId = null,
+        ?int $coats = null,
+        ?int $paintProductId = null,
+        ?float $quantityOverride = null
+    ): array {
+        $surface = EstimateAreaSurface::findOrFail($surfaceId);
+
+        $updates = [];
+        if ($productionRateId !== null) {
+            $rate = ProductionRate::findOrFail($productionRateId);
+            $updates['production_rate_id'] = $rate->id;
+            $updates['production_rate_value'] = $rate->production_rate;
+        }
+        if ($coats !== null) {
+            $updates['coats'] = $coats;
+        }
+        if ($paintProductId !== null) {
+            $updates['paint_product_id'] = $paintProductId;
+        }
+        if ($quantityOverride !== null) {
+            $updates['quantity'] = $quantityOverride;
+        }
+
+        // Clear calculated fields to trigger recalculation in model boot
+        $updates['labor_hours'] = null;
+        $updates['labor_cost'] = null;
+        $updates['material_cost'] = null;
+        $updates['total'] = null;
+
+        $surface->update($updates);
+        $surface->refresh();
+
+        // Clear cached pricing on parent area
+        $surface->area?->update(['cached_cogs' => null, 'cached_customer_price' => null]);
+
+        return [
+            'surface_id' => $surface->id,
+            'name' => $surface->name,
+            'quantity' => (float) $surface->quantity,
+            'unit' => $surface->unit,
+            'coats' => $surface->coats,
+            'production_rate_id' => $surface->production_rate_id,
+            'labor_hours' => (float) ($surface->labor_hours ?? 0),
+            'labor_cost' => (float) ($surface->labor_cost ?? 0),
+            'material_cost' => (float) ($surface->material_cost ?? 0),
+            'total' => (float) ($surface->total ?? 0),
+        ];
+    }
+
+    /**
+     * Remove a surface from an area.
+     */
+    public function removeSurface(int $surfaceId): array
+    {
+        $surface = EstimateAreaSurface::findOrFail($surfaceId);
+        $areaId = $surface->area_id;
+        $name = $surface->name;
+        $surface->delete();
+
+        // Clear cached pricing
+        EstimateArea::where('id', $areaId)->update(['cached_cogs' => null, 'cached_customer_price' => null]);
+
+        return ['success' => true, 'removed' => $name, 'area_id' => $areaId];
+    }
+
+    /**
+     * Add a fixed-price addon (nested area template) to an area.
+     */
+    public function addAddonToArea(int $areaId, int $nestedTemplateId, int $quantity = 1): array
+    {
+        $area = EstimateArea::findOrFail($areaId);
+        $template = NestedAreaTemplate::findOrFail($nestedTemplateId);
+
+        $unitPrice = $template->getEffectivePrice();
+
+        $addon = EstimateAreaAddon::create([
+            'estimate_area_id' => $area->id,
+            'nested_area_template_id' => $template->id,
+            'name' => $template->name,
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'total_price' => $unitPrice * $quantity,
+        ]);
+
+        // Clear cached pricing
+        $area->update(['cached_cogs' => null, 'cached_customer_price' => null]);
+
+        return [
+            'addon_id' => $addon->id,
+            'name' => $template->name,
+            'unit_price' => round($unitPrice, 2),
+            'quantity' => $quantity,
+            'total_price' => round($unitPrice * $quantity, 2),
+        ];
+    }
+
+    // =========================================================================
+    // AREA MANAGEMENT METHODS
+    // =========================================================================
+
+    /**
+     * Remove an area and all its surfaces/addons.
+     */
+    public function removeArea(int $areaId): array
+    {
+        $area = EstimateArea::findOrFail($areaId);
+        $estimateId = $area->estimate_id;
+        $name = $area->name;
+
+        // Delete surfaces, addons, child areas
+        $area->surfaces()->delete();
+        $area->addons()->delete();
+        $area->childAreas()->each(function ($child) {
+            $child->surfaces()->delete();
+            $child->addons()->delete();
+            $child->delete();
+        });
+        $area->delete();
+
+        // Recalculate estimate
+        $estimate = Estimate::find($estimateId);
+        if ($estimate) {
+            $estimate->calculateTotals();
+            $estimate->calculateDepositAndBalance();
+            $estimate->save();
+        }
+
+        return ['success' => true, 'removed' => $name, 'estimate_id' => $estimateId];
+    }
+
+    /**
+     * Update area dimensions (triggers surface quantity recalculation).
+     */
+    public function updateAreaDimensions(
+        int $areaId,
+        ?float $length = null,
+        ?float $width = null,
+        ?float $height = null,
+        ?int $wallCount = null
+    ): array {
+        $area = EstimateArea::findOrFail($areaId);
+
+        if ($length !== null) {
+            $area->length = $length;
+        }
+        if ($width !== null) {
+            $area->width = $width;
+        }
+        if ($height !== null) {
+            $area->height = $height;
+        }
+        if ($wallCount !== null) {
+            $area->wall_count = $wallCount;
+        }
+
+        // Clear cached pricing
+        $area->cached_cogs = null;
+        $area->cached_customer_price = null;
+        $area->save();
+
+        // Recalculate surface quantities based on new dimensions
+        foreach ($area->surfaces as $surface) {
+            if ($surface->surface_category) {
+                $newQuantity = $this->getQuantityForCategory($area->fresh(), $surface->surface_category);
+                $surface->update([
+                    'quantity' => $newQuantity,
+                    'labor_hours' => null,
+                    'labor_cost' => null,
+                    'material_cost' => null,
+                    'total' => null,
+                ]);
+            }
+        }
+
+        $area->refresh();
+
+        return [
+            'area_id' => $area->id,
+            'name' => $area->name,
+            'wall_sqft' => (float) ($area->wall_sqft ?? 0),
+            'ceiling_sqft' => (float) ($area->ceiling_sqft ?? 0),
+            'perimeter_lnft' => (float) ($area->perimeter_lnft ?? 0),
+            'surfaces_updated' => $area->surfaces()->count(),
+        ];
+    }
+
+    /**
+     * Preview pricing breakdown for an area.
+     */
+    public function previewAreaPricing(int $areaId): array
+    {
+        $area = EstimateArea::with(['surfaces.productionRate', 'addons', 'substrate'])->findOrFail($areaId);
+        $settings = CompanySetting::getInstance();
+        $scope = $area->scope_type ?? 'interior';
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scope);
+
+        $surfaces = $area->surfaces->where('is_included', true)->map(fn ($s) => [
+            'name' => $s->name,
+            'quantity' => (float) $s->quantity,
+            'unit' => $s->unit,
+            'rate' => $s->productionRate?->name,
+            'hours' => (float) ($s->labor_hours ?? 0),
+            'labor_cost' => (float) ($s->labor_cost ?? 0),
+            'material_cost' => (float) ($s->material_cost ?? 0),
+        ])->values()->toArray();
+
+        $laborHours = collect($surfaces)->sum('hours');
+        $laborCost = collect($surfaces)->sum('labor_cost');
+        $materialCost = collect($surfaces)->sum('material_cost');
+
+        $cleanupHours = $settings->calculateCleanupHours($laborHours, $scope);
+        $cleanupCost = $cleanupHours * $effectiveRate;
+        $sundriesCost = $settings->calculateSundriesCost($laborHours, $scope);
+        $addonCost = (float) $area->addons()->sum('total_price');
+
+        $cogs = $area->getFullCOGS(null, true);
+        $price = $area->getCustomerPrice();
+
+        return [
+            'area_id' => $area->id,
+            'name' => $area->name,
+            'surfaces' => $surfaces,
+            'labor_hours' => round($laborHours, 2),
+            'cleanup_hours' => round($cleanupHours, 2),
+            'cleanup_cost' => round($cleanupCost, 2),
+            'sundries_cost' => round($sundriesCost, 2),
+            'materials' => round($materialCost, 2),
+            'addon_cost' => round($addonCost, 2),
+            'cogs' => round($cogs, 2),
+            'price' => round($price, 2),
+        ];
+    }
+
+    // =========================================================================
+    // PAINT CONFIGURATION METHODS
+    // =========================================================================
+
+    /**
+     * Set paint for entire estimate.
+     */
+    public function setEstimatePaintConfig(
+        Estimate $estimate,
+        string $mode,
+        ?int $paintProductId = null,
+        ?array $categoryOverrides = null
+    ): array {
+        if ($mode === 'single' && $paintProductId) {
+            $estimate->default_paint_product_id = $paintProductId;
+            $estimate->paint_products_by_category = null;
+        } elseif ($mode === 'category' && $categoryOverrides) {
+            $estimate->paint_products_by_category = $categoryOverrides;
+        }
+
+        $estimate->save();
+
+        // Propagate to all surfaces
+        $this->propagatePaintToSurfaces($estimate, $mode, $paintProductId, $categoryOverrides);
+
+        // Recalculate
+        $estimate->calculateTotals();
+        $estimate->calculateDepositAndBalance();
+        $estimate->save();
+
+        return [
+            'success' => true,
+            'mode' => $mode,
+            'paint_product_id' => $paintProductId,
+            'category_overrides' => $categoryOverrides,
+            'new_total' => (float) ($estimate->total ?? 0),
+        ];
+    }
+
+    /**
+     * Set paint for a specific area.
+     */
+    public function setAreaPaintProduct(
+        int $areaId,
+        ?int $paintProductId = null,
+        ?array $categoryOverrides = null
+    ): array {
+        $area = EstimateArea::with('surfaces')->findOrFail($areaId);
+
+        if ($paintProductId) {
+            $area->default_paint_product_id = $paintProductId;
+        }
+
+        $area->cached_cogs = null;
+        $area->cached_customer_price = null;
+        $area->save();
+
+        // Update surfaces
+        foreach ($area->surfaces as $surface) {
+            $pid = $paintProductId;
+            if ($categoryOverrides) {
+                $cat = $surface->surface_category ?? $surface->getSurfaceCategory();
+                $pid = $categoryOverrides[$cat] ?? $paintProductId;
+            }
+            if ($pid) {
+                $surface->update([
+                    'paint_product_id' => $pid,
+                    'labor_hours' => null,
+                    'labor_cost' => null,
+                    'material_cost' => null,
+                    'total' => null,
+                ]);
+            }
+        }
+
+        return [
+            'success' => true,
+            'area_id' => $area->id,
+            'paint_product_id' => $paintProductId,
+        ];
+    }
+
+    /**
+     * Configure tier pricing (good/better/best).
+     */
+    public function setTierPricing(
+        Estimate $estimate,
+        string $tier,
+        ?int $paintProductId = null,
+        ?array $categoryOverrides = null
+    ): array {
+        $tiers = $estimate->paint_tiers ?? [];
+        $tiers[$tier] = [
+            'default_paint_product_id' => $paintProductId,
+            'paint_by_category' => $categoryOverrides,
+        ];
+        $estimate->paint_tiers = $tiers;
+        $estimate->save();
+
+        // Update surface tier material costs
+        foreach ($estimate->areas as $area) {
+            foreach ($area->surfaces as $surface) {
+                $pid = $paintProductId;
+                if ($categoryOverrides) {
+                    $cat = $surface->surface_category ?? $surface->getSurfaceCategory();
+                    $pid = $categoryOverrides[$cat] ?? $paintProductId;
+                }
+                if ($pid) {
+                    $tierField = "paint_product_id_{$tier}";
+                    $materialField = "material_cost_{$tier}";
+                    $product = PaintProduct::find($pid);
+                    $materialCost = 0;
+                    if ($product) {
+                        $costCalc = $product->calculateCost(
+                            (float) $surface->quantity,
+                            $surface->coats ?? 2,
+                            'brush_roll',
+                            (float) (CompanySetting::getInstance()->recycle_fee_per_gallon ?? 0.54)
+                        );
+                        $materialCost = $costCalc['total_cost'];
+                    }
+                    $surface->update([
+                        $tierField => $pid,
+                        $materialField => $materialCost,
+                    ]);
+                }
+            }
+        }
+
+        return [
+            'success' => true,
+            'tier' => $tier,
+            'paint_product_id' => $paintProductId,
+        ];
+    }
+
+    // =========================================================================
+    // ESTIMATE SUMMARY
+    // =========================================================================
+
+    /**
+     * Get human-readable estimate summary with per-area breakdown.
+     */
+    public function getEstimateSummary(Estimate $estimate, ?string $tier = null): array
+    {
+        $estimate->load(['areas.surfaces', 'areas.addons']);
+
+        $areas = $estimate->areas->where('parent_area_id', null)->map(function (EstimateArea $area) use ($tier) {
+            return [
+                'name' => $area->name,
+                'scope' => $area->scope_type,
+                'surfaces_count' => $area->surfaces->count(),
+                'cogs' => round($area->getFullCOGS($tier), 2),
+                'price' => round($area->getCustomerPrice($tier), 2),
+            ];
+        })->values()->toArray();
+
+        $totalCogs = collect($areas)->sum('cogs');
+        $totalPrice = collect($areas)->sum('price');
+
+        return [
+            'title' => $estimate->title,
+            'tier' => $tier,
+            'areas' => $areas,
+            'total_cogs' => round($totalCogs, 2),
+            'total_price' => round($totalPrice, 2),
+            'tax_amount' => (float) ($estimate->tax_amount ?? 0),
+            'grand_total' => (float) ($estimate->total ?? 0),
+        ];
+    }
+
+    // =========================================================================
+    // PRIVATE HELPER METHODS
+    // =========================================================================
+
+    /**
+     * Create a surface from a template surface definition.
+     */
+    protected function createSurfaceFromTemplate(EstimateArea $area, $templateSurface, int $coats): EstimateAreaSurface
+    {
+        $quantity = $this->getQuantityForCategory($area, $templateSurface->surface_type ?? 'walls');
+
+        return EstimateAreaSurface::create([
+            'area_id' => $area->id,
+            'name' => $templateSurface->name,
+            'surface_type' => $templateSurface->surface_type,
+            'surface_category' => $templateSurface->surface_category ?? $templateSurface->surface_type,
+            'quantity' => $quantity,
+            'unit' => $templateSurface->unit ?? $this->getUnitForCategory($templateSurface->surface_type ?? 'walls'),
+            'coats' => $coats,
+            'production_rate_id' => $templateSurface->production_rate_id,
+            'production_rate_value' => $templateSurface->productionRate?->production_rate ?? 200,
+            'sort_order' => $templateSurface->sort_order ?? 0,
+        ]);
+    }
+
+    /**
+     * Create surfaces from surface_ratios in template metadata.
+     *
+     * @return EstimateAreaSurface[]
+     */
+    protected function createSurfacesFromRatios(EstimateArea $area, array $surfaceRatios, int $coats): array
+    {
+        $surfaces = [];
+        $sortOrder = 0;
+
+        foreach ($surfaceRatios as $surfaceName => $config) {
+            $category = app(TemplatePricingService::class)->mapSurfaceToCategory($surfaceName);
+            $quantity = $this->getQuantityForCategory($area, $category);
+            $unit = $this->getUnitForCategory($category);
+
+            $rateId = $config['rate_id'] ?? null;
+            $rate = $rateId ? ProductionRate::find($rateId) : null;
+
+            $surfaces[] = EstimateAreaSurface::create([
+                'area_id' => $area->id,
+                'name' => ucfirst(str_replace('_', ' ', $surfaceName)),
+                'surface_type' => $this->getSurfaceTypeForCategory($category),
+                'surface_category' => $category,
+                'quantity' => $quantity,
+                'unit' => $unit,
+                'coats' => $coats,
+                'production_rate_id' => $rateId,
+                'production_rate_value' => $rate?->production_rate ?? 200,
+                'sort_order' => $sortOrder++,
+            ]);
+        }
+
+        return $surfaces;
+    }
+
+    /**
+     * Auto-calculate quantity from area dimensions based on surface category.
+     */
+    protected function getQuantityForCategory(EstimateArea $area, string $category): float
+    {
+        return match ($category) {
+            'walls', 'wall', 'body', 'siding' => max(0, (float) ($area->wall_sqft ?? 0)),
+            'ceiling', 'eaves' => max(0, (float) ($area->ceiling_sqft ?? 0)),
+            'baseboard', 'trim', 'fascia', 'crown', 'molding' => max(0, (float) ($area->perimeter_lnft ?? $area->baseboard_lnft ?? 0)),
+            'doors', 'exterior_doors' => 1.0,
+            'windows' => 1.0,
+            default => max(0, (float) ($area->wall_sqft ?? 0)),
+        };
+    }
+
+    /**
+     * Get the unit type for a surface category.
+     */
+    protected function getUnitForCategory(string $category): string
+    {
+        return match ($category) {
+            'walls', 'wall', 'ceiling', 'body', 'siding', 'eaves' => 'sqft',
+            'baseboard', 'trim', 'fascia', 'crown', 'molding' => 'lnft',
+            'doors', 'exterior_doors', 'windows' => 'unit',
+            default => 'sqft',
+        };
+    }
+
+    /**
+     * Get the surface_type field value for a category.
+     */
+    protected function getSurfaceTypeForCategory(string $category): string
+    {
+        return match ($category) {
+            'walls', 'wall' => 'walls',
+            'ceiling' => 'ceiling',
+            'baseboard', 'trim', 'crown', 'molding' => 'trim',
+            'doors', 'exterior_doors' => 'doors',
+            'windows' => 'windows',
+            'body', 'siding' => 'body',
+            'fascia' => 'fascia',
+            'eaves' => 'eaves',
+            default => 'walls',
+        };
+    }
+
+    /**
+     * Get human-readable surface name for a category.
+     */
+    protected function getSurfaceNameForCategory(string $category): string
+    {
+        return match ($category) {
+            'walls', 'wall' => 'Walls',
+            'ceiling' => 'Ceiling',
+            'baseboard' => 'Baseboards',
+            'trim' => 'Trim',
+            'doors' => 'Doors',
+            'exterior_doors' => 'Exterior Doors',
+            'windows' => 'Windows',
+            'body', 'siding' => 'Body/Siding',
+            'fascia' => 'Fascia',
+            'eaves' => 'Eaves/Soffits',
+            'crown' => 'Crown Molding',
+            'molding' => 'Molding',
+            default => ucfirst($category),
+        };
+    }
+
+    /**
+     * Propagate paint configuration to all surfaces on an estimate.
+     */
+    protected function propagatePaintToSurfaces(
+        Estimate $estimate,
+        string $mode,
+        ?int $paintProductId,
+        ?array $categoryOverrides
+    ): void {
+        foreach ($estimate->areas as $area) {
+            foreach ($area->surfaces as $surface) {
+                $pid = $paintProductId;
+                if ($mode === 'category' && $categoryOverrides) {
+                    $cat = $surface->surface_category ?? $surface->getSurfaceCategory();
+                    $pid = $categoryOverrides[$cat] ?? $paintProductId;
+                }
+                if ($pid) {
+                    $surface->update([
+                        'paint_product_id' => $pid,
+                        'labor_hours' => null,
+                        'labor_cost' => null,
+                        'material_cost' => null,
+                        'total' => null,
+                    ]);
+                }
+            }
+            $area->update(['cached_cogs' => null, 'cached_customer_price' => null]);
+        }
+    }
+}

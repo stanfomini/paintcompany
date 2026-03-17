@@ -1,5 +1,6 @@
 <?php
 
+use App\Mcp\Servers\EstimateBuilderServer;
 use App\Mcp\Servers\WorkflowBuilderServer;
 use Laravel\Mcp\Facades\Mcp;
 
@@ -19,3 +20,9 @@ Mcp::web('/mcp/workflow-builder', WorkflowBuilderServer::class)
 
 // Local stdio-based MCP endpoint (for local AI clients)
 Mcp::local('workflow-builder', WorkflowBuilderServer::class);
+
+// Estimate Builder MCP endpoints
+Mcp::web('/mcp/estimate-builder', EstimateBuilderServer::class)
+    ->middleware(['auth:sanctum', 'throttle:ai-estimate']);
+
+Mcp::local('estimate-builder', EstimateBuilderServer::class);

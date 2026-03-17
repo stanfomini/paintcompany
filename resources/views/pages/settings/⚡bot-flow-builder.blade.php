@@ -18,6 +18,7 @@ new class extends Component {
     public ?int $flowId = null;
     public string $flowName = '';
     public string $flowStatus = 'draft';
+    public string $triggerKeyword = '';
     public string $greetingMessage = '';
     public int $timeoutMinutes = 30;
     public bool $businessHoursOnly = false;
@@ -33,6 +34,7 @@ new class extends Component {
             $this->flowId = $flowModel->id;
             $this->flowName = $flowModel->name;
             $this->flowStatus = $flowModel->status;
+            $this->triggerKeyword = $flowModel->trigger_keyword ?? '';
             $this->greetingMessage = $flowModel->greeting_message ?? '';
             $this->timeoutMinutes = $flowModel->timeout_minutes;
             $this->businessHoursOnly = $flowModel->business_hours_only;
@@ -123,10 +125,11 @@ new class extends Component {
     {
         $this->validate([
             'flowName' => ['required', 'string', 'max:255'],
+            'triggerKeyword' => ['nullable', 'string', 'max:50'],
             'greetingMessage' => ['nullable', 'string', 'max:1000'],
             'timeoutMinutes' => ['required', 'integer', 'min:1', 'max:1440'],
             'steps' => ['array'],
-            'steps.*.step_type' => ['required', 'string', 'in:greeting,text_question,quick_reply,delay,handoff'],
+            'steps.*.step_type' => ['required', 'string', 'in:greeting,text_question,quick_reply,delay,handoff,media_message,photo_prompt'],
             'steps.*.message_text' => ['required', 'string', 'max:1000'],
         ]);
 
@@ -135,6 +138,7 @@ new class extends Component {
                 ['id' => $this->flowId],
                 [
                     'name' => $this->flowName,
+                    'trigger_keyword' => $this->triggerKeyword ? strtoupper(trim($this->triggerKeyword)) : null,
                     'greeting_message' => $this->greetingMessage ?: null,
                     'timeout_minutes' => $this->timeoutMinutes,
                     'business_hours_only' => $this->businessHoursOnly,
@@ -407,7 +411,9 @@ new class extends Component {
                 <flux:icon name="cog-6-tooth" class="size-5 text-zinc-400" />
                 <flux:heading size="sm" class="!mb-0">{{ __('Flow Settings') }}</flux:heading>
                 <span x-show="!settingsOpen" x-cloak class="text-sm text-zinc-400">
-                    &mdash; {{ $flowName ?: __('Unnamed') }} &middot; {{ $timeoutMinutes }}{{ __('min timeout') }}
+                    &mdash; {{ $flowName ?: __('Unnamed') }}
+                    @if ($triggerKeyword) &middot; {{ __('Keyword:') }} {{ strtoupper($triggerKeyword) }} @endif
+                    &middot; {{ $timeoutMinutes }}{{ __('min timeout') }}
                     @if ($businessHoursOnly) &middot; {{ __('Business hours') }} @endif
                 </span>
             </div>
@@ -419,6 +425,10 @@ new class extends Component {
             <div class="border-t border-zinc-200 dark:border-zinc-700 px-5 py-4">
                 <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <flux:input wire:model="flowName" :label="__('Flow Name')" :placeholder="__('e.g. Lead Qualification')" />
+
+                    <flux:input wire:model="triggerKeyword" :label="__('Trigger Keyword')"
+                        :placeholder="__('e.g. COLOR (leave blank for default flow)')"
+                        description="{{ __('Customer sends this word to trigger this flow. Stored UPPERCASE.') }}" />
 
                     <div class="sm:col-span-2 lg:col-span-1">
                         <flux:textarea wire:model="greetingMessage" :label="__('Greeting Message')" rows="2"

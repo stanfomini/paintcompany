@@ -77,6 +77,9 @@
                 @can('settings.company')
                     <flux:navlist.item :href="route('settings.sms-bot')" wire:navigate>{{ __('SMS Bot') }}</flux:navlist.item>
                 @endcan
+                @can('ai.estimate_builder')
+                    <flux:navlist.item :href="route('settings.ai-estimator')" wire:navigate>{{ __('AI Estimator') }}</flux:navlist.item>
+                @endcan
             @endif
         </flux:navlist>
     </div>

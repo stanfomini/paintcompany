@@ -7,8 +7,13 @@ use App\Models\CompanySetting;
 use App\Models\PaintBrand;
 use App\Models\PaintColor;
 use App\Models\ProjectPreview;
+use App\Models\ProjectPreviewPhoto;
 use App\Models\ProjectPreviewView;
+use App\Models\ProjectPreviewVisualization;
+use App\Models\PropertyPhoto;
+use App\Models\User;
 use App\Services\ProjectPreviewService;
+use Illuminate\Support\Facades\Storage;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth; // kept for recordView
 use Livewire\Attributes\Computed;
@@ -46,6 +51,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                 'photos.visualizations' => fn ($q) => $q->where('status', 'completed')->orderBy('sort_order'),
                 'estimator',
                 'customer',
+                'estimate',
                 'appointmentBooking.estimator',
             ])
             ->first();
@@ -111,6 +117,21 @@ new #[Layout('components.layouts.public')] class extends Component {
                 ->with('estimator')
                 ->latest()
                 ->first();
+        }
+
+        return null;
+    }
+
+    #[Computed]
+    public function currentEstimator(): ?User
+    {
+        // Prefer booking estimator (freshly queried), fall back to preview's estimator (re-queried to avoid stale data)
+        if ($this->booking?->estimator) {
+            return $this->booking->estimator;
+        }
+
+        if ($this->preview->estimator_id) {
+            return User::find($this->preview->estimator_id);
         }
 
         return null;
@@ -274,6 +295,102 @@ new #[Layout('components.layouts.public')] class extends Component {
         }
     }
 
+    public function saveVisualizationToPage(): void
+    {
+        $viz = $this->visualization;
+        if (! $viz || ! $viz->isCompleted()) {
+            return;
+        }
+
+        $sourceDisk = $viz->disk ?? config('filesystems.default');
+        $targetDisk = config('filesystems.default');
+
+        // Create a ProjectPreviewPhoto from the original image
+        $originalFilename = 'viz-original-' . $viz->uuid . '.png';
+        $originalPath = "photos/previews/{$this->preview->id}/{$originalFilename}";
+        $contents = Storage::disk($sourceDisk)->get($viz->original_image_path);
+        Storage::disk($targetDisk)->put($originalPath, $contents);
+
+        $maxSortOrder = $this->preview->photos()->max('sort_order') ?? 0;
+
+        $photo = ProjectPreviewPhoto::create([
+            'project_preview_id' => $this->preview->id,
+            'original_path' => $originalPath,
+            'disk' => $targetDisk,
+            'room_label' => 'Color Visualization',
+            'sort_order' => $maxSortOrder + 1,
+        ]);
+
+        // Create the visualization record linked to the photo
+        $resultFilename = 'viz-result-' . $viz->uuid . '.png';
+        $resultPath = "photos/previews/{$this->preview->id}/{$resultFilename}";
+        $resultContents = Storage::disk($sourceDisk)->get($viz->result_image_path);
+        Storage::disk($targetDisk)->put($resultPath, $resultContents);
+
+        $colorName = collect($viz->parsed_colors)
+            ->map(fn (array $c) => trim(($c['brand'] ?? '') . ' ' . ($c['name'] ?? '')))
+            ->filter()
+            ->first() ?? 'Custom Color';
+
+        $colorHex = $viz->parsed_colors[0]['hex'] ?? null;
+        $colorBrand = $viz->parsed_colors[0]['brand'] ?? null;
+
+        ProjectPreviewVisualization::create([
+            'project_preview_photo_id' => $photo->id,
+            'result_image_path' => $resultPath,
+            'disk' => $targetDisk,
+            'color_name' => $colorName,
+            'color_hex' => $colorHex,
+            'color_brand' => $colorBrand,
+            'is_primary' => true,
+            'status' => ProjectPreviewVisualization::STATUS_COMPLETED,
+            'sort_order' => 0,
+        ]);
+
+        // Clear cached computed so the gallery refreshes
+        unset($this->photosWithVisualizations);
+    }
+
+    public function addVisualizationToEstimate(): void
+    {
+        $viz = $this->visualization;
+        $estimate = $this->preview->estimate;
+
+        if (! $viz || ! $viz->isCompleted() || ! $estimate) {
+            return;
+        }
+
+        $sourceDisk = $viz->disk ?? config('filesystems.default');
+        $targetDisk = config('filesystems.default');
+
+        $colorNames = collect($viz->parsed_colors)
+            ->map(fn (array $c) => trim(($c['brand'] ?? '') . ' ' . ($c['name'] ?? '')))
+            ->filter()
+            ->implode(', ');
+
+        $filename = 'viz-' . $viz->uuid . '.png';
+        $targetPath = "photos/estimates/{$estimate->id}/{$filename}";
+
+        $contents = Storage::disk($sourceDisk)->get($viz->result_image_path);
+        Storage::disk($targetDisk)->put($targetPath, $contents);
+
+        $maxSortOrder = $estimate->photos()->max('sort_order') ?? 0;
+
+        PropertyPhoto::create([
+            'estimate_id' => $estimate->id,
+            'property_id' => $estimate->deal?->property_id,
+            'path' => $targetPath,
+            'filename' => $filename,
+            'original_filename' => $filename,
+            'caption' => $colorNames ? "AI Visualization: {$colorNames}" : 'AI Color Visualization',
+            'category' => 'reference',
+            'disk' => $targetDisk,
+            'show_on_proposal' => true,
+            'mime_type' => 'image/png',
+            'sort_order' => $maxSortOrder + 1,
+        ]);
+    }
+
     #[Computed]
     public function isAuthenticated(): bool
     {
@@ -347,9 +464,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                     <div class="flex items-center gap-2">
                         @if($this->booking->estimator)
                             <div class="hidden sm:flex items-center gap-2 bg-white/10 rounded-lg px-3 py-1.5">
-                                <div class="w-6 h-6 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
-                                    {{ strtoupper(substr($this->booking->estimator->name, 0, 1)) }}
-                                </div>
+                                <flux:avatar size="xs" :src="$this->booking->estimator->getAvatarUrl()" name="{{ $this->booking->estimator->name }}" />
                                 <span class="text-sm">{{ $this->booking->estimator->name }}</span>
                             </div>
                         @endif
@@ -383,12 +498,15 @@ new #[Layout('components.layouts.public')] class extends Component {
     @php
         $hasBooking = (bool) $this->booking;
         $hasVisualizations = $this->photosWithVisualizations->isNotEmpty();
+        $questionnaireCompleted = $preview->isQuestionnaireCompleted();
+        $hasEstimate = (bool) $preview->estimate_id;
+        $estimateStatus = $hasEstimate ? $preview->estimate?->status : null;
+        $estimateSentOrAccepted = in_array($estimateStatus, ['sent', 'accepted']);
         $estimateSteps = [
-            'book'       => ['label' => 'Book',           'icon' => 'calendar-days',            'done' => $hasBooking],
-            'preview'    => ['label' => 'Preview',         'icon' => 'eye',                      'done' => false, 'active' => true],
-            'estimate'   => ['label' => 'Estimate Visit',  'icon' => 'clipboard-document-check', 'done' => false],
-            'proposal'   => ['label' => 'Proposal',        'icon' => 'document-text',            'done' => false],
-            'approval'   => ['label' => 'Approval',        'icon' => 'check-circle',             'done' => false],
+            'book'       => ['label' => 'Book',            'icon' => 'calendar-days',            'done' => $hasBooking],
+            'preview'    => ['label' => 'Preview',          'icon' => 'eye',                      'done' => $questionnaireCompleted, 'active' => !$questionnaireCompleted],
+            'estimate'   => ['label' => 'Estimate Visit',   'icon' => 'clipboard-document-check', 'done' => $estimateSentOrAccepted, 'active' => $questionnaireCompleted && !$estimateSentOrAccepted],
+            'approval'   => ['label' => 'Approval',         'icon' => 'check-circle',             'done' => $estimateStatus === 'accepted', 'active' => $estimateSentOrAccepted && $estimateStatus !== 'accepted'],
         ];
         $estimateStepKeys = array_keys($estimateSteps);
     @endphp
@@ -434,60 +552,6 @@ new #[Layout('components.layouts.public')] class extends Component {
     </div>
 
     {{-- ================================================ --}}
-    {{-- TIMELINE 2: Project Journey (post-approval)      --}}
-    {{-- ================================================ --}}
-    @php
-        $projectSteps = [
-            'colors'     => ['label' => 'Colors',     'icon' => 'swatch'],
-            'prep'       => ['label' => 'Job Prep',   'icon' => 'wrench-screwdriver'],
-            'paint_day'  => ['label' => 'Paint Day',  'icon' => 'paint-brush'],
-            'completed'  => ['label' => 'Complete',   'icon' => 'star'],
-        ];
-    @endphp
-
-    <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-6 mb-8 bg-white dark:bg-zinc-800">
-        <div class="flex items-center justify-between mb-6">
-            <flux:heading size="sm">{{ __('Project Journey') }}</flux:heading>
-            @if(!$this->isAuthenticated)
-                <flux:badge color="zinc" size="sm">{{ __('Login to unlock') }}</flux:badge>
-            @endif
-        </div>
-        <div class="flex items-center justify-between">
-            @foreach($projectSteps as $stepKey => $step)
-                <div
-                    wire:key="proj-step-{{ $stepKey }}"
-                    class="flex-1 flex flex-col items-center relative {{ $this->isAuthenticated ? 'cursor-pointer group' : 'opacity-50' }}"
-                >
-                    @if(! $loop->first)
-                        <div class="absolute top-5 -left-1/2 w-full h-0.5 bg-zinc-300 dark:bg-zinc-600"></div>
-                    @endif
-
-                    <div class="relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-600 text-zinc-400 transition-all
-                        {{ $this->isAuthenticated ? 'group-hover:border-blue-400 group-hover:text-blue-400' : '' }}
-                    ">
-                        <flux:icon name="{{ $step['icon'] }}" class="w-5 h-5" />
-                    </div>
-
-                    <flux:text class="mt-2 text-xs text-center leading-tight text-zinc-500">
-                        {{ $step['label'] }}
-                    </flux:text>
-                </div>
-            @endforeach
-        </div>
-
-        @if(!$this->isAuthenticated)
-            <div class="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-700 text-center">
-                <flux:text size="sm" class="text-zinc-500 mb-3">
-                    {{ __('Create an account to track your project from colors to completion.') }}
-                </flux:text>
-                <flux:button variant="primary" size="sm" href="{{ $this->loginCtaUrl }}">
-                    {{ $this->loginCtaText }}
-                </flux:button>
-            </div>
-        @endif
-    </div>
-
-    {{-- ================================================ --}}
     {{-- STEP CONTENT                                     --}}
     {{-- ================================================ --}}
 
@@ -517,8 +581,8 @@ new #[Layout('components.layouts.public')] class extends Component {
                         @endif
 
                         @if($this->booking->estimator)
-                            <div class="flex items-start gap-3">
-                                <flux:icon name="user" class="w-5 h-5 text-zinc-400 mt-0.5" />
+                            <div class="flex items-center gap-3">
+                                <flux:avatar size="sm" :src="$this->booking->estimator->getAvatarUrl()" name="{{ $this->booking->estimator->name }}" />
                                 <div>
                                     <flux:text class="font-medium">{{ $this->booking->estimator->name }}</flux:text>
                                     <flux:text size="sm" class="text-zinc-500">{{ __('Your Estimator') }}</flux:text>
@@ -668,13 +732,11 @@ new #[Layout('components.layouts.public')] class extends Component {
         @endif
 
         {{-- Estimator --}}
-        @if($preview->estimator)
+        @if($this->currentEstimator)
             <div class="bg-white dark:bg-zinc-800 rounded-xl p-6 border border-zinc-200 dark:border-zinc-700 flex items-center gap-6 mb-8">
-                <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center text-white text-xl font-bold shrink-0">
-                    {{ strtoupper(substr($preview->estimator->name, 0, 1)) }}
-                </div>
+                <flux:avatar size="xl" :src="$this->currentEstimator->getAvatarUrl()" name="{{ $this->currentEstimator->name }}" class="shrink-0" />
                 <div class="flex-1 min-w-0">
-                    <flux:heading size="base">{{ $preview->estimator->name }}</flux:heading>
+                    <flux:heading size="base">{{ $this->currentEstimator->name }}</flux:heading>
                     @if($this->company->company_phone)
                         <x-blur-overlay :show="!$this->isAuthenticated" :cta-text="$this->loginCtaText" :cta-url="$this->loginCtaUrl" :message="__('Log in to contact your estimator.')">
                             <flux:text size="sm" class="text-zinc-600 dark:text-zinc-400 mt-1">Text us: {{ $this->company->company_phone }}</flux:text>
@@ -708,45 +770,295 @@ new #[Layout('components.layouts.public')] class extends Component {
 
     {{-- ESTIMATE VISIT --}}
     @elseif($activeStep === 'estimate')
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 text-center bg-white dark:bg-zinc-800">
-            <flux:icon name="clipboard-document-check" class="w-16 h-16 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-            <flux:heading size="lg">{{ __('Estimate Visit') }}</flux:heading>
-            <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                {{ __('Your estimator will visit in person to measure rooms, assess surfaces, and build you an exact quote. No surprises.') }}
-            </flux:text>
-            @if($preview->estimator)
-                <div class="mt-6 inline-flex items-center gap-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg px-4 py-3">
-                    <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">
-                        {{ strtoupper(substr($preview->estimator->name, 0, 1)) }}
+        <div class="space-y-6">
+
+            {{-- Section 1: Portal Access CTA --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-white dark:bg-zinc-800">
+                <flux:heading size="xl">{{ __('Your Project Command Center') }}</flux:heading>
+                <flux:text class="text-lg text-zinc-600 dark:text-zinc-400 mt-2">
+                    {{ __('Most painting companies leave you in the dark. We give you a portal where you see everything, control everything, and never have to wonder "what\'s happening with my project?"') }}
+                </flux:text>
+
+                <div class="mt-6 grid gap-4 sm:grid-cols-2">
+                    {{-- Daily Walkaround Videos --}}
+                    <div class="flex items-start gap-3 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-700/30">
+                        <flux:icon name="video-camera" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                            <flux:text class="text-lg font-semibold">{{ __('Daily Walkaround Videos') }}</flux:text>
+                            <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('Your crew records video updates every day so you see exactly what got done — even if you\'re not home.') }}</flux:text>
+                        </div>
                     </div>
-                    <flux:text class="font-medium">{{ $preview->estimator->name }}</flux:text>
+
+                    {{-- Group Messaging --}}
+                    <div class="flex items-start gap-3 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-700/30">
+                        <flux:icon name="chat-bubble-left-right" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                            <flux:text class="text-lg font-semibold">{{ __('Group Chat With Your Team') }}</flux:text>
+                            <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('One thread with your crew, your estimator, and your project coordinator. Ask questions, share ideas, get instant answers.') }}</flux:text>
+                        </div>
+                    </div>
+
+                    {{-- Pay Online --}}
+                    <div class="flex items-start gap-3 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-700/30">
+                        <flux:icon name="credit-card" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                            <flux:text class="text-lg font-semibold">{{ __('Pay Invoices Online') }}</flux:text>
+                            <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('View invoices, make payments, and track every dollar — all from your phone.') }}</flux:text>
+                        </div>
+                    </div>
+
+                    {{-- Propose Dates --}}
+                    <div class="flex items-start gap-3 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-700/30">
+                        <flux:icon name="calendar-days" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                            <flux:text class="text-lg font-semibold">{{ __('Pick Your Start Date') }}</flux:text>
+                            <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('Propose the week that works for your family. No phone tag. No back-and-forth emails.') }}</flux:text>
+                        </div>
+                    </div>
+
+                    {{-- Project Plan & Next Steps --}}
+                    <div class="flex items-start gap-3 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-700/30">
+                        <flux:icon name="clipboard-document-list" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                            <flux:text class="text-lg font-semibold">{{ __('Project Plan & Next Steps') }}</flux:text>
+                            <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('Always know what\'s happening today, what\'s next, and what\'s already done. Zero guesswork.') }}</flux:text>
+                        </div>
+                    </div>
+
+                    {{-- Invite Family --}}
+                    <div class="flex items-start gap-3 p-4 rounded-lg bg-zinc-50 dark:bg-zinc-700/30">
+                        <flux:icon name="user-plus" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                        <div>
+                            <flux:text class="text-lg font-semibold">{{ __('Invite Your Spouse & Family') }}</flux:text>
+                            <flux:text class="text-zinc-500 dark:text-zinc-400">{{ __('Give your partner their own login. Everyone stays informed, everyone can help manage the project.') }}</flux:text>
+                        </div>
+                    </div>
                 </div>
-            @endif
+
+                <flux:text class="text-lg font-medium text-zinc-700 dark:text-zinc-300 mt-6">
+                    {{ __('This is what it looks like when a painting company actually respects your time.') }}
+                </flux:text>
+
+                <div class="mt-4">
+                    @if($this->isAuthenticated)
+                        <flux:button variant="primary" :href="route('customer.dashboard')" icon="arrow-right">{{ __('Go to Dashboard') }}</flux:button>
+                    @else
+                        <flux:button variant="primary" :href="$this->loginCtaUrl" icon="arrow-right">{{ __('Access Your Portal') }}</flux:button>
+                    @endif
+                </div>
+            </div>
+
+            {{-- Section 2: What to Expect --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-white dark:bg-zinc-800">
+                <div class="flex items-center gap-3 mb-4">
+                    <flux:icon name="clock" class="w-7 h-7 text-zinc-500" />
+                    <flux:heading size="lg">{{ __('What to Expect') }}</flux:heading>
+                </div>
+                <flux:text class="text-lg">
+                    {{ __('Depending on your project size, the estimate takes') }} <strong>{{ __('30 minutes to 2 hours') }}</strong>.
+                </flux:text>
+                <flux:text class="text-lg text-zinc-600 dark:text-zinc-400 mt-3">
+                    {{ __('Your estimator walks through every room, measures surfaces, and assesses conditions so your quote is accurate — no surprises.') }}
+                </flux:text>
+
+                {{-- We Build Options Around You --}}
+                <div class="mt-6 border-t border-zinc-100 dark:border-zinc-700 pt-6">
+                    <flux:heading size="lg">{{ __('We Build Options Around You') }}</flux:heading>
+                    <flux:text class="text-lg text-zinc-600 dark:text-zinc-400 mt-2">
+                        {{ __('Every homeowner has different priorities. Some want the full transformation — every room, every surface, premium finishes. Others want to start with the spaces that matter most and plan the rest over time. We build proposals that cover the full scope of what you\'re envisioning, with options at every level so you can choose what fits.') }}
+                    </flux:text>
+                </div>
+
+                {{-- What Helps Us Give You Better Options --}}
+                <div class="mt-6 border-t border-zinc-100 dark:border-zinc-700 pt-6">
+                    <flux:heading size="base" class="text-zinc-700 dark:text-zinc-300">{{ __('What helps us give you the best options:') }}</flux:heading>
+                    <ul class="mt-3 space-y-3">
+                        <li class="flex items-start gap-3">
+                            <flux:icon name="chat-bubble-bottom-center-text" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                            <flux:text class="text-lg">{{ __('Share what you\'re hoping to accomplish — even if it\'s just a feeling or a rough idea. We\'ll figure out the rest.') }}</flux:text>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <flux:icon name="flag" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                            <flux:text class="text-lg">{{ __('Let us know which rooms or areas are the priority, and which ones can wait.') }}</flux:text>
+                        </li>
+                        <li class="flex items-start gap-3">
+                            <flux:icon name="currency-dollar" class="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
+                            <flux:text class="text-lg">{{ __('If you have a budget in mind, share it. We\'ll tailor the options so you get the most impact for what you\'re comfortable spending.') }}</flux:text>
+                        </li>
+                    </ul>
+                    <flux:text class="text-lg text-zinc-500 dark:text-zinc-400 mt-4">
+                        {{ __('There\'s no wrong answer here. The more we understand what matters to you, the better we can make the proposal feel like it was built just for you — because it is.') }}
+                    </flux:text>
+                </div>
+
+                @if($this->currentEstimator)
+                    <div class="mt-6 inline-flex items-center gap-3 bg-zinc-50 dark:bg-zinc-700/50 rounded-lg px-4 py-3">
+                        <flux:avatar size="sm" :src="$this->currentEstimator->getAvatarUrl()" name="{{ $this->currentEstimator->name }}" />
+                        <div>
+                            <flux:text class="font-medium">{{ $this->currentEstimator->name }}</flux:text>
+                            <flux:text size="sm" class="text-zinc-500">{{ __('Your Estimator') }}</flux:text>
+                        </div>
+                    </div>
+                @endif
+            </div>
+
+            {{-- Section 3: Payment Options --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-white dark:bg-zinc-800">
+                <flux:heading size="lg">{{ __('Payment Options') }}</flux:heading>
+                <ul class="mt-4 space-y-3">
+                    <li class="flex items-start gap-3">
+                        <flux:icon name="check" class="w-6 h-6 text-green-500 shrink-0 mt-0.5" />
+                        <flux:text class="text-lg">{{ __('Check at the appointment') }}</flux:text>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <flux:icon name="check" class="w-6 h-6 text-green-500 shrink-0 mt-0.5" />
+                        <flux:text class="text-lg">{{ __('ACH at the appointment') }}</flux:text>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <flux:icon name="check" class="w-6 h-6 text-green-500 shrink-0 mt-0.5" />
+                        <flux:text class="text-lg">{{ __('Cash') }}</flux:text>
+                    </li>
+                    <li class="flex items-start gap-3">
+                        <flux:icon name="check" class="w-6 h-6 text-green-500 shrink-0 mt-0.5" />
+                        <flux:text class="text-lg">{{ __('Credit card (up to $1,000)') }}</flux:text>
+                    </li>
+                </ul>
+                <flux:text class="text-zinc-500 dark:text-zinc-400 mt-4 text-lg">
+                    {{ __('Have questions about other ways to pay? Ask your estimator.') }}
+                </flux:text>
+            </div>
+
+            {{-- Section 4: Brand Ambassador Counter --}}
+            @php $spots = $this->company->brand_ambassador_spots ?? 10; @endphp
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-amber-50/50 dark:bg-amber-900/10">
+                @if($spots > 0)
+                    <div class="text-center">
+                        <span class="text-5xl font-bold text-zinc-900 dark:text-white">{{ $spots }}</span>
+                        <flux:text class="text-lg mt-2 font-medium text-zinc-700 dark:text-zinc-300">
+                            {{ __('Brand Ambassador spots remaining this month') }}
+                        </flux:text>
+                        @if($spots <= 3)
+                            <flux:badge color="amber" class="mt-2">{{ __('Almost gone') }}</flux:badge>
+                        @endif
+                    </div>
+                    <flux:text class="text-lg text-zinc-600 dark:text-zinc-400 mt-4 text-center">
+                        {{ __('Brand Ambassadors enjoy priority scheduling, exclusive pricing, and a dedicated project coordinator.') }}
+                    </flux:text>
+                @else
+                    <div class="text-center">
+                        <flux:text class="text-lg text-zinc-500 dark:text-zinc-400">
+                            {{ __('Brand Ambassador applications are closed for this month.') }}
+                        </flux:text>
+                    </div>
+                @endif
+            </div>
+
+            {{-- Section 5: Benefits of Deciding Day-Of --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-white dark:bg-zinc-800">
+                <flux:heading size="xl">{{ __('Why Homeowners Love Deciding at the Appointment') }}</flux:heading>
+
+                <div class="mt-6 space-y-6">
+                    <div>
+                        <flux:heading size="lg">{{ __('Lock in Today\'s Pricing') }}</flux:heading>
+                        <flux:text class="text-lg mt-1 text-zinc-600 dark:text-zinc-400">
+                            {{ __('Material and labor costs change. The price quoted today reflects current costs.') }}
+                        </flux:text>
+                    </div>
+                    <div>
+                        <flux:heading size="lg">{{ __('Priority Scheduling') }}</flux:heading>
+                        <flux:text class="text-lg mt-1 text-zinc-600 dark:text-zinc-400">
+                            {{ __('Homeowners who confirm at the appointment get first pick of dates. Calendar fills fast in peak season.') }}
+                        </flux:text>
+                    </div>
+                    <div>
+                        <flux:heading size="lg">{{ __('One Less Thing to Think About') }}</flux:heading>
+                        <flux:text class="text-lg mt-1 text-zinc-600 dark:text-zinc-400">
+                            {{ __('No back-and-forth, no second appointments. Walk through the estimate, ask questions, and check it off — all in one visit.') }}
+                        </flux:text>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Book CTA if no booking yet --}}
             @if(!$this->booking)
-                <div class="mt-6">
+                <div class="text-center">
                     <flux:button variant="primary" wire:click="setStep('book')" icon="calendar-days">{{ __('Book Your Estimate') }}</flux:button>
                 </div>
             @endif
         </div>
 
-    {{-- PROPOSAL --}}
-    @elseif($activeStep === 'proposal')
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 text-center bg-white dark:bg-zinc-800">
-            <flux:icon name="document-text" class="w-16 h-16 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-            <flux:heading size="lg">{{ __('Your Proposal') }}</flux:heading>
-            <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                {{ __('After the estimate visit, you\'ll receive a detailed proposal with transparent pricing, scope of work, and timeline. Review it online and ask questions anytime.') }}
-            </flux:text>
-        </div>
-
     {{-- APPROVAL --}}
     @elseif($activeStep === 'approval')
-        <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 text-center bg-white dark:bg-zinc-800">
-            <flux:icon name="check-circle" class="w-16 h-16 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
-            <flux:heading size="lg">{{ __('Approval & Scheduling') }}</flux:heading>
-            <flux:text class="text-zinc-500 mt-2 max-w-md mx-auto">
-                {{ __('Love the proposal? Sign digitally, pick your paint day, and we\'ll handle the rest. Your project moves to the Project Journey above.') }}
-            </flux:text>
+        <div class="space-y-6">
+            @if($preview->estimate_id && $preview->estimate)
+                @php $estimate = $preview->estimate; @endphp
+
+                {{-- Estimate link + status --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-white dark:bg-zinc-800">
+                    @if($estimate->status === 'accepted')
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+                                <flux:icon name="check-circle" class="w-6 h-6 text-green-600 dark:text-green-400" />
+                            </div>
+                            <div>
+                                <flux:heading size="lg">{{ __('Estimate Accepted') }}</flux:heading>
+                                <flux:text class="text-zinc-500">{{ __('Signed') }} {{ $estimate->accepted_at?->format('M j, Y') }}</flux:text>
+                            </div>
+                        </div>
+                        <flux:text class="text-lg text-zinc-600 dark:text-zinc-400">
+                            {{ __('You\'re all set. Your project is confirmed and your team is preparing everything.') }}
+                        </flux:text>
+                    @else
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
+                                <flux:icon name="document-text" class="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <flux:heading size="lg">{{ __('Your Estimate Is Ready') }}</flux:heading>
+                        </div>
+                        <flux:text class="text-lg text-zinc-600 dark:text-zinc-400">
+                            {{ __('Review the full scope of work, pricing, and options. Ask questions, then sign when you\'re ready.') }}
+                        </flux:text>
+                    @endif
+
+                    @if($estimate->public_token && $estimate->isPublicTokenValid())
+                        <div class="mt-6">
+                            <flux:button variant="primary" :href="$estimate->getPublicUrl()" icon="document-text">
+                                {{ $estimate->status === 'accepted' ? __('View Your Estimate') : __('Review & Sign Your Estimate') }}
+                            </flux:button>
+                        </div>
+                    @endif
+                </div>
+
+                {{-- Scheduling preference --}}
+                @if($estimate->status === 'accepted')
+                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 bg-white dark:bg-zinc-800">
+                        <div class="flex items-center gap-3 mb-4">
+                            <flux:icon name="calendar-days" class="w-7 h-7 text-zinc-500" />
+                            <flux:heading size="lg">{{ __('When Would You Like Us to Start?') }}</flux:heading>
+                        </div>
+                        <flux:text class="text-lg text-zinc-600 dark:text-zinc-400">
+                            {{ __('Log in to your portal to propose the week that works best for your family. Your project coordinator will confirm availability and lock it in.') }}
+                        </flux:text>
+                        <div class="mt-6">
+                            @if($this->isAuthenticated)
+                                <flux:button variant="primary" :href="route('customer.dashboard')" icon="calendar-days">{{ __('Go to Dashboard') }}</flux:button>
+                            @else
+                                <flux:button variant="primary" :href="$this->loginCtaUrl" icon="calendar-days">{{ __('Log In to Schedule') }}</flux:button>
+                            @endif
+                        </div>
+                    </div>
+                @endif
+
+            @else
+                {{-- No estimate yet --}}
+                <div class="border border-zinc-200 dark:border-zinc-700 rounded-xl p-8 text-center bg-white dark:bg-zinc-800">
+                    <flux:icon name="clock" class="w-16 h-16 mx-auto text-zinc-300 dark:text-zinc-600 mb-4" />
+                    <flux:heading size="lg">{{ __('Approval & Scheduling') }}</flux:heading>
+                    <flux:text class="text-lg text-zinc-500 mt-2 max-w-md mx-auto">
+                        {{ __('After your estimate visit, your estimator will build out your proposal. Once it\'s ready, you\'ll be able to review it, sign digitally, and pick your start date — all from right here.') }}
+                    </flux:text>
+                </div>
+            @endif
         </div>
 
     {{-- COLOR VISUALIZER --}}
@@ -794,8 +1106,16 @@ new #[Layout('components.layouts.public')] class extends Component {
                             </div>
                         </div>
                     @endif
-                    <div class="mt-6">
-                        <flux:button wire:click="regenerate" variant="primary">{{ __('Try Another Photo') }}</flux:button>
+                    <div class="mt-6 flex flex-wrap gap-3">
+                        <flux:button wire:click="saveVisualizationToPage" variant="primary" icon="bookmark">
+                            {{ __('Save to My Page') }}
+                        </flux:button>
+                        @if($preview->estimate_id)
+                            <flux:button wire:click="addVisualizationToEstimate" variant="filled" icon="plus">
+                                {{ __('Add to Estimate') }}
+                            </flux:button>
+                        @endif
+                        <flux:button wire:click="regenerate" variant="ghost">{{ __('Try Another Photo') }}</flux:button>
                     </div>
                 @elseif($this->visualization->isFailed())
                     <div class="py-8 text-center">

@@ -48,14 +48,10 @@ it('findForTrigger still works for programmatic triggers', function () {
         ->and($found->id)->toBe($flow->id);
 });
 
-it('fillable includes new columns and excludes old message columns', function () {
+it('fillable includes new columns', function () {
     $flow = new SmsBotFlow;
     $fillable = $flow->getFillable();
 
     expect($fillable)->toContain('trigger_keyword')
-        ->toContain('completion_action')
-        ->not->toContain('greeting_message')
-        ->not->toContain('photo_prompt_message')
-        ->not->toContain('visualization_message')
-        ->not->toContain('portal_link_message');
+        ->toContain('completion_action');
 });

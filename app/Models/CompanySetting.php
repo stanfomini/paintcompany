@@ -67,6 +67,7 @@ class CompanySetting extends Model
         // JSON fields
         'paint_catalog',
         'default_paint_products_by_category',
+        'estimate_builder_instructions',
         'trim_widths',
         'warranty_options',
         // Production Settings
@@ -154,6 +155,8 @@ class CompanySetting extends Model
         'phone_business_days',
         'ivr_enabled',
         'ivr_menu',
+        // Brand Ambassador Program
+        'brand_ambassador_spots',
     ];
 
     protected function casts(): array
@@ -253,6 +256,8 @@ class CompanySetting extends Model
             'phone_business_days' => 'array',
             'ivr_enabled' => 'boolean',
             'ivr_menu' => 'array',
+            // Brand Ambassador Program
+            'brand_ambassador_spots' => 'integer',
         ];
     }
 
@@ -302,6 +307,8 @@ class CompanySetting extends Model
             // Crew & Dispatch settings
             'default_required_crew_size' => 2,
             'total_painters' => 4,
+            // Brand Ambassador Program
+            'brand_ambassador_spots' => 10,
         ]);
     }
 

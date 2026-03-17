@@ -17,7 +17,6 @@ use App\Ai\Tools\Workflow\RemoveWorkflowNodeAiTool;
 use App\Models\CompanySetting;
 use App\Models\Workflow;
 use Laravel\Ai\Attributes\MaxSteps;
-use Laravel\Ai\Attributes\Model;
 use Laravel\Ai\Attributes\Provider;
 use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Contracts\Agent;
@@ -29,7 +28,6 @@ use Laravel\Ai\Promptable;
 use Stringable;
 
 #[Provider(Lab::xAI)]
-#[Model('grok-4.20-beta-0309-reasoning')]
 #[MaxSteps(15)]
 #[Timeout(120)]
 class WorkflowBuilderAgent implements Agent, Conversational, HasTools
@@ -42,6 +40,11 @@ class WorkflowBuilderAgent implements Agent, Conversational, HasTools
     public function __construct(
         public Workflow $workflow,
     ) {}
+
+    public function model(): string
+    {
+        return config('ai.providers.xai.model', 'grok-4-0709');
+    }
 
     /**
      * Set conversation history from session.

@@ -9,18 +9,16 @@ use Livewire\Component;
 
 new class extends Component {
     public bool $botEnabled = false;
-    public array $defaultColors = [];
 
     // Flow management
     public bool $showCreateFlow = false;
     public string $newFlowName = '';
     public string $newFlowTrigger = 'new_lead';
-    public string $newFlowGreeting = '';
-    public string $newFlowPhotoPrompt = '';
-    public string $newFlowVisualization = '';
-    public string $newFlowPortalLink = '';
+    public string $newFlowKeyword = '';
+    public string $newFlowCompletion = 'none';
     public int $newFlowTimeout = 10080;
     public int $newFlowDelay = 5;
+    public bool $newFlowBusinessHours = false;
 
     public function boot(): void
     {
@@ -37,7 +35,6 @@ new class extends Component {
 
         $settings = CompanySetting::getInstance();
         $this->botEnabled = (bool) $settings->sms_bot_enabled;
-        $this->defaultColors = $settings->getDefaultVisualizationColors();
     }
 
     #[Computed]
@@ -51,7 +48,7 @@ new class extends Component {
     #[Computed]
     public function recentConversations()
     {
-        return SmsConversation::with('preview')
+        return SmsConversation::with(['preview', 'currentStep'])
             ->latest('last_message_at')
             ->limit(10)
             ->get();
@@ -65,28 +62,47 @@ new class extends Component {
 
     public function createFlow(): void
     {
-        $this->validate([
+        $rules = [
             'newFlowName' => 'required|string|max:255',
-            'newFlowGreeting' => 'required|string',
-            'newFlowPhotoPrompt' => 'required|string',
-            'newFlowVisualization' => 'required|string',
-            'newFlowPortalLink' => 'required|string',
-        ]);
+            'newFlowTrigger' => 'required|in:new_lead,keyword,ad_lead,booking_lead',
+            'newFlowCompletion' => 'required|in:none,create_lead,create_deal,handoff',
+            'newFlowTimeout' => 'required|integer|min:1',
+            'newFlowDelay' => 'required|integer|min:0',
+            'newFlowBusinessHours' => 'boolean',
+        ];
 
-        SmsBotFlow::create([
+        if ($this->newFlowTrigger === 'keyword') {
+            $rules['newFlowKeyword'] = 'required|string|max:50';
+        }
+
+        $this->validate($rules);
+
+        $attributes = [
             'name' => $this->newFlowName,
             'status' => 'draft',
             'trigger_type' => $this->newFlowTrigger,
-            'greeting_message' => $this->newFlowGreeting,
-            'photo_prompt_message' => $this->newFlowPhotoPrompt,
-            'visualization_message' => $this->newFlowVisualization,
-            'portal_link_message' => $this->newFlowPortalLink,
+            'trigger_keyword' => $this->newFlowTrigger === 'keyword' ? strtoupper(trim($this->newFlowKeyword)) : null,
+            'completion_action' => $this->newFlowCompletion === 'none' ? null : $this->newFlowCompletion,
             'timeout_minutes' => $this->newFlowTimeout,
             'delay_after_lead_minutes' => $this->newFlowDelay,
-        ]);
+            'business_hours_only' => $this->newFlowBusinessHours,
+        ];
 
-        $this->reset('showCreateFlow', 'newFlowName', 'newFlowGreeting', 'newFlowPhotoPrompt', 'newFlowVisualization', 'newFlowPortalLink');
-        unset($this->flows);
+        // SQLite can't drop columns — old columns still have NOT NULL constraints in tests
+        if (\DB::getDriverName() === 'sqlite') {
+            $attributes['greeting_message'] = '';
+            $attributes['photo_prompt_message'] = '';
+            $attributes['visualization_message'] = '';
+            $attributes['portal_link_message'] = '';
+        }
+
+        $flow = SmsBotFlow::create($attributes);
+
+        $this->reset('showCreateFlow', 'newFlowName', 'newFlowTrigger', 'newFlowKeyword', 'newFlowCompletion', 'newFlowTimeout', 'newFlowDelay', 'newFlowBusinessHours');
+        $this->newFlowTimeout = 10080;
+        $this->newFlowDelay = 5;
+
+        $this->redirect(route('settings.sms-bot.flows.edit', $flow), navigate: true);
     }
 
     public function toggleFlowStatus(int $flowId): void
@@ -110,39 +126,12 @@ new class extends Component {
         SmsBotFlow::findOrFail($flowId)->delete();
         unset($this->flows);
     }
-
-    public function saveColors(): void
-    {
-        $this->validate([
-            'defaultColors' => 'array',
-            'defaultColors.*.name' => 'required|string|max:255',
-            'defaultColors.*.hex' => 'required|string|regex:/^#[0-9A-Fa-f]{6}$/',
-            'defaultColors.*.brand' => 'nullable|string|max:255',
-        ]);
-
-        CompanySetting::getInstance()->update([
-            'default_visualization_colors' => $this->defaultColors,
-        ]);
-
-        $this->dispatch('sms-bot-settings-saved');
-    }
-
-    public function addColor(): void
-    {
-        $this->defaultColors[] = ['name' => '', 'hex' => '#FFFFFF', 'brand' => ''];
-    }
-
-    public function removeColor(int $index): void
-    {
-        unset($this->defaultColors[$index]);
-        $this->defaultColors = array_values($this->defaultColors);
-    }
 }; ?>
 
 <section class="w-full">
     @include('partials.settings-heading')
 
-    <x-pages::settings.layout :heading="__('SMS Bot Settings')" :subheading="__('Configure the SMS bot system, flows, and default visualization colors')">
+    <x-pages::settings.layout :heading="__('SMS Bot Settings')" :subheading="__('Configure the SMS bot system and conversation flows.')">
 
         {{-- Global Toggle --}}
         <div class="my-6 flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
@@ -156,54 +145,6 @@ new class extends Component {
                 </flux:text>
             </div>
             <flux:switch wire:click="toggleBot" :checked="$botEnabled" />
-        </div>
-
-        <flux:separator />
-
-        {{-- Default Visualization Colors --}}
-        <div class="my-6 w-full space-y-6">
-            <div>
-                <flux:heading size="sm">{{ __('Default Visualization Colors') }}</flux:heading>
-                <flux:text class="text-sm text-zinc-500">
-                    {{ __('The default color options shown to leads when they receive a wall color visualization.') }}
-                </flux:text>
-            </div>
-
-            @if (count($defaultColors) > 0)
-                <div class="space-y-3">
-                    @foreach ($defaultColors as $index => $color)
-                        <div wire:key="color-{{ $index }}" class="flex items-end gap-3">
-                            <div class="flex-1">
-                                <flux:input wire:model="defaultColors.{{ $index }}.name" :label="$index === 0 ? __('Color Name') : ''" placeholder="Agreeable Gray" />
-                            </div>
-                            <div class="w-24">
-                                <flux:input wire:model="defaultColors.{{ $index }}.hex" :label="$index === 0 ? __('Hex') : ''" type="color" />
-                            </div>
-                            <div class="flex-1">
-                                <flux:input wire:model="defaultColors.{{ $index }}.brand" :label="$index === 0 ? __('Brand') : ''" placeholder="Sherwin-Williams" />
-                            </div>
-                            <flux:button size="sm" variant="ghost" wire:click="removeColor({{ $index }})" icon="x-mark" class="text-red-500 hover:text-red-700" />
-                        </div>
-                    @endforeach
-                </div>
-            @else
-                <div class="rounded-lg border border-dashed border-zinc-300 py-8 text-center dark:border-zinc-600">
-                    <flux:text class="text-sm text-zinc-500">{{ __('No default colors configured. Add colors to offer leads.') }}</flux:text>
-                </div>
-            @endif
-
-            <div class="flex items-center gap-4">
-                <flux:button size="sm" variant="ghost" wire:click="addColor" icon="plus">
-                    {{ __('Add Color') }}
-                </flux:button>
-            </div>
-
-            <div class="flex items-center gap-4">
-                <flux:button wire:click="saveColors" variant="primary">{{ __('Save Colors') }}</flux:button>
-                <x-action-message class="me-3" on="sms-bot-settings-saved">
-                    {{ __('Saved.') }}
-                </x-action-message>
-            </div>
         </div>
 
         <flux:separator />
@@ -227,28 +168,35 @@ new class extends Component {
 
                     <flux:input wire:model="newFlowName" :label="__('Flow Name')" placeholder="Default Lead Flow" />
 
-                    <flux:select wire:model="newFlowTrigger" :label="__('Trigger Type')">
-                        <flux:select.option value="new_lead">{{ __('New Lead') }}</flux:select.option>
-                        <flux:select.option value="ad_lead">{{ __('Ad Lead') }}</flux:select.option>
-                        <flux:select.option value="booking_lead">{{ __('Booking Lead') }}</flux:select.option>
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <flux:select wire:model.live="newFlowTrigger" :label="__('Trigger Type')">
+                            <flux:select.option value="new_lead">{{ __('New Lead') }}</flux:select.option>
+                            <flux:select.option value="keyword">{{ __('Keyword') }}</flux:select.option>
+                            <flux:select.option value="ad_lead">{{ __('Ad Lead') }}</flux:select.option>
+                            <flux:select.option value="booking_lead">{{ __('Booking Lead') }}</flux:select.option>
+                        </flux:select>
+
+                        @if ($newFlowTrigger === 'keyword')
+                            <flux:input wire:model="newFlowKeyword" :label="__('Trigger Keyword')" placeholder="COLOR" description="{{ __('Stored UPPERCASE. Customer texts this word to start the flow.') }}" />
+                        @endif
+                    </div>
+
+                    <flux:select wire:model="newFlowCompletion" :label="__('Completion Action')">
+                        <flux:select.option value="none">{{ __('None') }}</flux:select.option>
+                        <flux:select.option value="create_lead">{{ __('Create Lead') }}</flux:select.option>
+                        <flux:select.option value="create_deal">{{ __('Create Deal') }}</flux:select.option>
+                        <flux:select.option value="handoff">{{ __('Handoff to Human') }}</flux:select.option>
                     </flux:select>
 
-                    <flux:textarea wire:model="newFlowGreeting" :label="__('Greeting Message')" rows="2" :placeholder="__('Hi {name}! Thanks for reaching out...')" />
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <flux:input wire:model.number="newFlowTimeout" :label="__('Timeout (minutes)')" type="number" min="1" />
 
-                    <flux:textarea wire:model="newFlowPhotoPrompt" :label="__('Photo Prompt Message')" rows="2" :placeholder="__('Could you send a photo of the area you want painted?')" />
-
-                    <flux:textarea wire:model="newFlowVisualization" :label="__('Visualization Message')" rows="2" :placeholder="__('Here is a preview of your room with new colors!')" />
-
-                    <flux:textarea wire:model="newFlowPortalLink" :label="__('Portal Link Message')" rows="2" :placeholder="__('View your full project details here: {link}')" />
-
-                    <div class="flex items-center gap-3">
-                        <div class="flex-1">
-                            <flux:input wire:model.number="newFlowTimeout" :label="__('Timeout (minutes)')" type="number" min="1" />
-                        </div>
-                        <div class="flex-1">
+                        @if ($newFlowTrigger === 'new_lead')
                             <flux:input wire:model.number="newFlowDelay" :label="__('Delay After Lead (minutes)')" type="number" min="0" />
-                        </div>
+                        @endif
                     </div>
+
+                    <flux:switch wire:model="newFlowBusinessHours" :label="__('Business Hours Only')" />
 
                     <div class="flex items-center gap-3">
                         <flux:button type="submit" variant="primary">{{ __('Create Flow') }}</flux:button>
@@ -263,10 +211,16 @@ new class extends Component {
                     @foreach ($this->flows as $flow)
                         <div wire:key="flow-{{ $flow->id }}" class="flex items-center justify-between rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
                             <div>
-                                <div class="text-sm font-medium">{{ $flow->name }}</div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium">{{ $flow->name }}</span>
+                                    @if ($flow->trigger_type === 'keyword' && $flow->trigger_keyword)
+                                        <flux:badge size="sm" color="purple">{{ $flow->trigger_keyword }}</flux:badge>
+                                    @endif
+                                </div>
                                 <flux:text class="text-xs text-zinc-500">
                                     {{ ucfirst(str_replace('_', ' ', $flow->trigger_type)) }}
                                     &middot; {{ $flow->conversations_count }} {{ __('conversations') }}
+                                    &middot; {{ $flow->steps_count ?? $flow->steps()->count() }} {{ __('steps') }}
                                     @if ($flow->business_hours_only)
                                         &middot; {{ __('Business hours only') }}
                                     @endif
@@ -276,6 +230,7 @@ new class extends Component {
                                 <flux:badge size="sm" :color="match($flow->status) { 'active' => 'green', 'draft' => 'yellow', default => 'zinc' }">
                                     {{ ucfirst($flow->status) }}
                                 </flux:badge>
+                                <flux:button size="sm" variant="ghost" :href="route('settings.sms-bot.flows.edit', $flow)" wire:navigate icon="pencil-square" />
                                 <flux:button size="sm" variant="ghost" wire:click="toggleFlowStatus({{ $flow->id }})" :icon="$flow->status === 'active' ? 'pause' : 'play'" />
                                 <flux:button size="sm" variant="ghost" wire:click="deleteFlow({{ $flow->id }})" wire:confirm="{{ __('Are you sure you want to delete this flow?') }}" icon="trash" class="text-red-500 hover:text-red-700" />
                             </div>
@@ -313,15 +268,20 @@ new class extends Component {
                                     @endif
                                     <flux:text class="text-sm font-medium">{{ $conversation->phone }}</flux:text>
                                 </div>
-                                <flux:badge size="sm" :color="match($conversation->current_state) {
-                                    'initiated' => 'yellow',
-                                    'photo_received', 'visualization_ready' => 'blue',
+                                <flux:badge size="sm" :color="match($conversation->status) {
+                                    'in_progress' => 'yellow',
+                                    'completed' => 'blue',
                                     'human_takeover' => 'red',
-                                    'dormant' => 'zinc',
+                                    'abandoned' => 'zinc',
                                     default => 'zinc',
                                 }">
-                                    {{ ucfirst(str_replace('_', ' ', $conversation->current_state)) }}
+                                    {{ ucfirst(str_replace('_', ' ', $conversation->status ?? 'unknown')) }}
                                 </flux:badge>
+                                @if ($conversation->currentStep)
+                                    <flux:badge size="sm" color="zinc">
+                                        {{ str_replace('_', ' ', $conversation->currentStep->step_type) }}
+                                    </flux:badge>
+                                @endif
                             </div>
                             <div class="flex items-center gap-3">
                                 <flux:text class="text-xs text-zinc-500">

@@ -344,6 +344,32 @@ describe('CompanySetting model', function () {
         expect($settings->calculateWithProfitMargin(70.00))->toBe(233.33);
     });
 
+    it('can update brand_ambassador_spots', function () {
+        Livewire::actingAs($this->internalUser)
+            ->test('pages::settings.company')
+            ->set('company_name', 'Test Company')
+            ->set('brand_ambassador_spots', '5')
+            ->call('updateCompanySettings')
+            ->assertDispatched('company-settings-updated');
+
+        expect(CompanySetting::first()->brand_ambassador_spots)->toBe(5);
+    });
+
+    it('validates brand_ambassador_spots max bound', function () {
+        Livewire::actingAs($this->internalUser)
+            ->test('pages::settings.company')
+            ->set('company_name', 'Test Company')
+            ->set('brand_ambassador_spots', '101')
+            ->call('updateCompanySettings')
+            ->assertHasErrors(['brand_ambassador_spots' => 'max']);
+    });
+
+    it('defaults brand_ambassador_spots to 10', function () {
+        $settings = CompanySetting::getInstance();
+
+        expect($settings->brand_ambassador_spots)->toBe(10);
+    });
+
     it('handles edge case of 0% profit margin', function () {
         $settings = CompanySetting::create([
             'company_name' => 'Test',
