@@ -3,6 +3,9 @@
 use App\Models\Deal;
 use App\Models\LandingPageShowcasePhoto;
 use App\Models\PropertyPhoto;
+use App\Models\ShowcaseMedia;
+use App\Models\VideoRecording;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -23,9 +26,93 @@ new class extends Component
 
     public string $selectingMode = 'before';
 
+    // Bot Media properties
+    public bool $showMediaPicker = false;
+
+    public string $mediaLabel = '';
+
+    public string $mediaSlug = '';
+
+    public string $mediaVideoSearch = '';
+
+    public ?int $selectedVideoId = null;
+
     public function boot(): void
     {
         abort_unless(auth()->user()?->can('media.manage'), 403);
+    }
+
+    #[Computed]
+    public function showcaseMedia()
+    {
+        return ShowcaseMedia::with('video')->orderBy('sort_order')->get();
+    }
+
+    #[Computed]
+    public function availableVideos()
+    {
+        $query = VideoRecording::query()->where('status', 'ready');
+
+        if ($this->mediaVideoSearch) {
+            $search = '%'.$this->mediaVideoSearch.'%';
+            $query->where('title', 'like', $search);
+        }
+
+        return $query->latest()->limit(20)->get();
+    }
+
+    public function openMediaPicker(): void
+    {
+        $this->mediaLabel = '';
+        $this->mediaSlug = '';
+        $this->mediaVideoSearch = '';
+        $this->selectedVideoId = null;
+        $this->showMediaPicker = true;
+        unset($this->availableVideos);
+    }
+
+    public function updatedMediaLabel(): void
+    {
+        $this->mediaSlug = Str::slug($this->mediaLabel);
+    }
+
+    public function updatedMediaVideoSearch(): void
+    {
+        unset($this->availableVideos);
+    }
+
+    public function saveMedia(): void
+    {
+        $this->validate([
+            'mediaLabel' => 'required|string|max:255',
+            'mediaSlug' => 'required|string|max:255|unique:showcase_media,slug',
+        ]);
+
+        $maxSort = ShowcaseMedia::max('sort_order') ?? 0;
+
+        ShowcaseMedia::create([
+            'slug' => $this->mediaSlug,
+            'label' => $this->mediaLabel,
+            'video_recording_id' => $this->selectedVideoId,
+            'is_active' => true,
+            'sort_order' => $maxSort + 1,
+        ]);
+
+        $this->showMediaPicker = false;
+        unset($this->showcaseMedia);
+    }
+
+    public function toggleMedia(int $id): void
+    {
+        $media = ShowcaseMedia::findOrFail($id);
+        $media->update(['is_active' => ! $media->is_active]);
+        unset($this->showcaseMedia);
+    }
+
+    public function removeMedia(int $id): void
+    {
+        ShowcaseMedia::where('id', $id)->delete();
+        unset($this->showcaseMedia);
     }
 
     #[Computed]
@@ -232,6 +319,139 @@ new class extends Component
 ?>
 
 <div>
+    {{-- Bot Media Section --}}
+    <div class="mb-10">
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <flux:heading size="lg">{{ __('Bot Media') }}</flux:heading>
+                <flux:text class="text-zinc-500 mt-1">{{ __('Videos and media referenced by SMS/Messenger bot flows. Use the slug to link bot steps to media.') }}</flux:text>
+            </div>
+            <flux:button size="sm" variant="primary" icon="plus" wire:click="openMediaPicker">
+                {{ __('Add Media') }}
+            </flux:button>
+        </div>
+
+        @if($this->showcaseMedia->isEmpty())
+            <div class="text-center py-12 border border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg">
+                <flux:icon name="video-camera" class="h-8 w-8 text-zinc-400 mx-auto mb-3" />
+                <flux:text class="text-zinc-500">{{ __('No bot media yet. Add videos that your bot flows can reference by slug.') }}</flux:text>
+            </div>
+        @else
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                @foreach($this->showcaseMedia as $media)
+                    <div wire:key="media-{{ $media->id }}" class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900 overflow-hidden">
+                        {{-- Video Thumbnail --}}
+                        <div class="aspect-video bg-zinc-100 dark:bg-zinc-800 relative">
+                            @if($media->video?->getThumbnailUrl())
+                                <img src="{{ $media->video->getThumbnailUrl() }}" alt="{{ $media->label }}" class="w-full h-full object-cover" loading="lazy" />
+                            @else
+                                <div class="w-full h-full flex items-center justify-center">
+                                    <flux:icon name="video-camera" class="h-8 w-8 text-zinc-400" />
+                                </div>
+                            @endif
+                            @if($media->video)
+                                <div class="absolute bottom-2 right-2">
+                                    <flux:badge size="sm" color="zinc">{{ $media->video->formatted_duration ?? __('Video') }}</flux:badge>
+                                </div>
+                            @endif
+                        </div>
+
+                        {{-- Info --}}
+                        <div class="p-4">
+                            <div class="flex items-start justify-between gap-2 mb-2">
+                                <div class="min-w-0">
+                                    <flux:heading size="sm" class="truncate">{{ $media->label }}</flux:heading>
+                                    <flux:badge size="sm" color="blue" class="mt-1">{{ $media->slug }}</flux:badge>
+                                </div>
+                                <flux:badge size="sm" :color="$media->is_active ? 'green' : 'zinc'">
+                                    {{ $media->is_active ? __('Active') : __('Inactive') }}
+                                </flux:badge>
+                            </div>
+                            @if(! $media->video)
+                                <flux:text class="text-xs text-amber-600 dark:text-amber-400">{{ __('No video linked') }}</flux:text>
+                            @endif
+                            <div class="flex items-center gap-2 mt-3">
+                                <flux:button size="sm" variant="ghost" icon="{{ $media->is_active ? 'eye-slash' : 'eye' }}" wire:click="toggleMedia({{ $media->id }})" />
+                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="removeMedia({{ $media->id }})" wire:confirm="{{ __('Remove this bot media?') }}" />
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
+
+    {{-- Bot Media Picker Modal --}}
+    <flux:modal wire:model="showMediaPicker" class="max-w-3xl">
+        <flux:heading size="lg" class="mb-1">{{ __('Add Bot Media') }}</flux:heading>
+        <flux:text class="text-zinc-500 mb-4">{{ __('Create a new bot media entry and optionally link it to a video.') }}</flux:text>
+
+        <div class="space-y-4">
+            <flux:field>
+                <flux:label>{{ __('Label') }}</flux:label>
+                <flux:input wire:model.live.debounce.300ms="mediaLabel" placeholder="{{ __('e.g. Color Tutorial Video') }}" />
+                @error('mediaLabel') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Slug') }}</flux:label>
+                <flux:input wire:model="mediaSlug" placeholder="{{ __('e.g. color-tutorial') }}" />
+                <flux:text class="text-xs text-zinc-500 mt-1">{{ __('Auto-generated from label. Used in bot flow steps to reference this media.') }}</flux:text>
+                @error('mediaSlug') <flux:text class="text-red-500 text-sm">{{ $message }}</flux:text> @enderror
+            </flux:field>
+
+            <flux:field>
+                <flux:label>{{ __('Link Video (optional)') }}</flux:label>
+                <flux:input wire:model.live.debounce.300ms="mediaVideoSearch" placeholder="{{ __('Search videos by title...') }}" icon="magnifying-glass" />
+            </flux:field>
+
+            @if($this->availableVideos->isNotEmpty())
+                <div class="max-h-60 overflow-y-auto space-y-2">
+                    @foreach($this->availableVideos as $video)
+                        <button
+                            wire:key="video-pick-{{ $video->id }}"
+                            wire:click="$set('selectedVideoId', {{ $video->id }})"
+                            type="button"
+                            class="w-full text-left flex items-center gap-3 p-2 rounded-lg border transition-all {{ $selectedVideoId === $video->id ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600' }}"
+                        >
+                            <div class="w-16 h-10 rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden shrink-0">
+                                @if($video->getThumbnailUrl())
+                                    <img src="{{ $video->getThumbnailUrl() }}" alt="" class="w-full h-full object-cover" loading="lazy" />
+                                @else
+                                    <div class="w-full h-full flex items-center justify-center">
+                                        <flux:icon name="video-camera" class="h-4 w-4 text-zinc-400" />
+                                    </div>
+                                @endif
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">{{ $video->title ?? __('Untitled') }}</p>
+                                <p class="text-xs text-zinc-500">{{ $video->formatted_duration ?? '' }} {{ $video->created_at->format('M j, Y') }}</p>
+                            </div>
+                            @if($selectedVideoId === $video->id)
+                                <svg class="w-5 h-5 text-blue-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            @endif
+                        </button>
+                    @endforeach
+                </div>
+            @elseif($mediaVideoSearch)
+                <flux:text class="text-zinc-500 text-sm">{{ __('No ready videos match your search.') }}</flux:text>
+            @endif
+
+            @if($selectedVideoId)
+                <div class="flex items-center gap-2">
+                    <flux:badge size="sm" color="blue">{{ __('Video selected') }}</flux:badge>
+                    <flux:button size="sm" variant="ghost" wire:click="$set('selectedVideoId', null)">{{ __('Clear') }}</flux:button>
+                </div>
+            @endif
+        </div>
+
+        <div class="flex justify-end gap-3 mt-6 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+            <flux:button variant="ghost" wire:click="$set('showMediaPicker', false)">{{ __('Cancel') }}</flux:button>
+            <flux:button variant="primary" wire:click="saveMedia">{{ __('Save Media') }}</flux:button>
+        </div>
+    </flux:modal>
+
+    {{-- Showcase Photos Section --}}
     <div class="flex items-center justify-between mb-6">
         <div>
             <flux:heading size="lg">{{ __('Showcase Photos') }}</flux:heading>
