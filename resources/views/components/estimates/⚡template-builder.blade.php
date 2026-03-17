@@ -4,6 +4,8 @@ use App\Events\EstimateAreaUpdated;
 use App\Models\CompanySetting;
 use App\Models\Deal;
 use App\Models\Estimate;
+use App\Models\EstimateAiMessage;
+use App\Models\EstimateAiThread;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaAddon;
 use App\Models\EstimateTemplateCategory;
@@ -108,14 +110,16 @@ new class extends Component
 
     public string $aiChatInput = '';
 
-    /** @var array<int, array{role: string, content: string}> */
-    public array $aiChatMessages = [];
+    /** @var \Illuminate\Support\Collection<int, \App\Models\EstimateAiThread> */
+    public $aiThreads;
 
-    public bool $aiProcessing = false;
+    public ?int $activeThreadId = null;
+
+    public int $maxConcurrentThreads = 5;
 
     public ?string $aiError = null;
 
-    public ?string $aiCacheKey = null;
+    public string $aiProgressLabel = '';
 
     public $voiceRecording = null;
 
@@ -250,6 +254,22 @@ new class extends Component
 
         // Check AI permission
         $this->canUseAiChat = Auth::user()?->can('ai.estimate_builder') ?? false;
+
+        // Load existing AI threads from DB
+        $this->mountAiThreads();
+    }
+
+    /**
+     * Load existing AI threads from database.
+     */
+    protected function mountAiThreads(): void
+    {
+        if ($this->estimate?->id) {
+            $this->aiThreads = $this->estimate->aiThreads()->with('messages')->get();
+            $this->activeThreadId = $this->aiThreads->last()?->id;
+        } else {
+            $this->aiThreads = collect();
+        }
     }
 
     /**
@@ -2803,7 +2823,7 @@ new class extends Component
     }
 
     // =========================================================================
-    // AI CHAT METHODS
+    // AI CHAT METHODS (Multi-Thread)
     // =========================================================================
 
     /**
@@ -2815,11 +2835,74 @@ new class extends Component
     }
 
     /**
+     * Create a new AI thread.
+     */
+    public function createAiThread(?string $name = null): void
+    {
+        if (! $this->estimate?->id) {
+            $this->save(false);
+            if (! $this->estimate?->id) {
+                $this->aiError = 'Please save the estimate first.';
+                return;
+            }
+        }
+
+        $thread = EstimateAiThread::create([
+            'estimate_id' => $this->estimate->id,
+            'name' => $name ?: 'Thread ' . ($this->aiThreads->count() + 1),
+        ]);
+
+        $this->aiThreads->push($thread->load('messages'));
+        $this->activeThreadId = $thread->id;
+    }
+
+    /**
+     * Switch to a different AI thread tab.
+     */
+    public function switchThread(int $threadId): void
+    {
+        $this->activeThreadId = $threadId;
+        $this->aiError = null;
+    }
+
+    /**
+     * Rename an AI thread.
+     */
+    public function renameThread(int $threadId, string $name): void
+    {
+        $thread = $this->aiThreads->firstWhere('id', $threadId);
+        if (! $thread) {
+            return;
+        }
+
+        $thread->update(['name' => $name]);
+        $this->refreshThread($threadId);
+    }
+
+    /**
+     * Delete an AI thread and its messages.
+     */
+    public function deleteThread(int $threadId): void
+    {
+        $thread = $this->aiThreads->firstWhere('id', $threadId);
+        if (! $thread || $thread->is_processing) {
+            return;
+        }
+
+        $thread->delete();
+        $this->aiThreads = $this->aiThreads->reject(fn ($t) => $t->id === $threadId)->values();
+
+        if ($this->activeThreadId === $threadId) {
+            $this->activeThreadId = $this->aiThreads->last()?->id;
+        }
+    }
+
+    /**
      * Send a message to the AI agent (dispatches async job).
      */
     public function sendAiChatMessage(): void
     {
-        if (empty(trim($this->aiChatInput)) || $this->aiProcessing) {
+        if (empty(trim($this->aiChatInput))) {
             return;
         }
 
@@ -2834,52 +2917,125 @@ new class extends Component
             }
         }
 
-        $userMessage = trim($this->aiChatInput);
-        $this->aiChatMessages[] = ['role' => 'user', 'content' => $userMessage];
-        $this->aiChatInput = '';
-        $this->aiProcessing = true;
-        $this->aiError = null;
+        // Auto-create thread if none exists
+        if (! $this->activeThreadId) {
+            $this->createAiThread();
+        }
 
-        // Dispatch to queue — the job runs with no FPM timeout
-        $this->aiCacheKey = 'ai-estimate-chat:' . $this->estimate->id . ':' . now()->timestamp;
-        // Each message starts a fresh agent — no prior history so the AI focuses on one room at a time
-        $priorHistory = [];
-
-        \Illuminate\Support\Facades\Cache::put($this->aiCacheKey, ['status' => 'processing'], now()->addMinutes(10));
-
-        \App\Jobs\ProcessEstimateAiChat::dispatch(
-            estimateId: $this->estimate->id,
-            cacheKey: $this->aiCacheKey,
-            userMessage: $userMessage,
-            history: $priorHistory,
-        );
-    }
-
-    /**
-     * Poll for AI response from the queued job.
-     */
-    public function pollAiResponse(): void
-    {
-        if (! $this->aiCacheKey || ! $this->aiProcessing) {
+        $thread = $this->aiThreads->firstWhere('id', $this->activeThreadId);
+        if (! $thread) {
             return;
         }
 
-        $result = \Illuminate\Support\Facades\Cache::get($this->aiCacheKey);
-
-        if (! $result || $result['status'] === 'processing') {
-            return; // Still working
+        // Block if THIS thread is already processing
+        if ($thread->is_processing) {
+            $this->aiError = 'This thread is still processing. Switch to another thread or wait.';
+            return;
         }
 
-        if ($result['status'] === 'complete') {
-            $this->aiChatMessages[] = ['role' => 'assistant', 'content' => $result['response']];
+        // Cap total concurrent across all threads
+        $processingCount = $this->aiThreads->where('is_processing', true)->count();
+        if ($processingCount >= $this->maxConcurrentThreads) {
+            $this->aiError = 'Too many requests in progress. Please wait for one to finish.';
+            return;
+        }
+
+        $userMessage = trim($this->aiChatInput);
+        $this->aiChatInput = '';
+        $this->aiError = null;
+
+        // Save user message to DB
+        $thread->messages()->create([
+            'role' => 'user',
+            'content' => $userMessage,
+        ]);
+
+        // Build conversation history from this thread's messages (excluding the one we just added)
+        $history = $thread->messages()
+            ->whereIn('role', ['user', 'assistant'])
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn ($m) => ['role' => $m->role, 'content' => $m->content])
+            ->all();
+
+        // Remove the last message — it goes as userMessage param
+        array_pop($history);
+
+        // Generate cache key and mark thread as processing
+        $cacheKey = 'ai-estimate-chat:' . $this->estimate->id . ':' . uniqid('', true);
+        $thread->markProcessing($cacheKey);
+
+        \Illuminate\Support\Facades\Cache::put($cacheKey, ['status' => 'processing'], now()->addMinutes(10));
+
+        \App\Jobs\ProcessEstimateAiChat::dispatch(
+            estimateId: $this->estimate->id,
+            threadId: $thread->id,
+            cacheKey: $cacheKey,
+            userMessage: $userMessage,
+            history: $history,
+        );
+
+        // Refresh the thread in our local collection
+        $this->refreshThread($thread->id);
+    }
+
+    /**
+     * Poll all processing threads for AI responses.
+     */
+    public function pollAiResponse(): void
+    {
+        $processingThreads = $this->aiThreads->where('is_processing', true);
+
+        if ($processingThreads->isEmpty()) {
+            $this->aiProgressLabel = '';
+
+            return;
+        }
+
+        $anyCompleted = false;
+
+        foreach ($processingThreads as $thread) {
+            if (! $thread->cache_key) {
+                continue;
+            }
+
+            // Check for progress updates
+            $progress = \Illuminate\Support\Facades\Cache::get("{$thread->cache_key}:progress");
+            if ($progress && $thread->id === $this->activeThreadId) {
+                $this->aiProgressLabel = $progress['label'] ?? 'Working...';
+            }
+
+            $result = \Illuminate\Support\Facades\Cache::get($thread->cache_key);
+            if (! $result || $result['status'] === 'processing') {
+                continue;
+            }
+
+            // Job wrote the message to DB already — just refresh
+            \Illuminate\Support\Facades\Cache::forget($thread->cache_key);
+            \Illuminate\Support\Facades\Cache::forget("{$thread->cache_key}:progress");
+            $this->refreshThread($thread->id);
+            $anyCompleted = true;
+        }
+
+        if ($anyCompleted) {
+            $this->aiProgressLabel = '';
             $this->refreshEstimateFromDb();
-        } elseif ($result['status'] === 'error') {
-            $this->aiError = $result['response'];
+        }
+    }
+
+    /**
+     * Reload a single thread from DB.
+     */
+    protected function refreshThread(int $threadId): void
+    {
+        $fresh = EstimateAiThread::with('messages')->find($threadId);
+        if (! $fresh) {
+            return;
         }
 
-        $this->aiProcessing = false;
-        $this->aiCacheKey = null;
-        \Illuminate\Support\Facades\Cache::forget($this->aiCacheKey);
+        $this->aiThreads = $this->aiThreads->map(
+            fn ($t) => $t->id === $threadId ? $fresh : $t
+        );
     }
 
     /**
@@ -2892,7 +3048,6 @@ new class extends Component
         }
 
         $this->authorize('ai.estimate_builder');
-        $this->aiProcessing = true;
         $this->aiError = null;
 
         try {
@@ -2902,29 +3057,31 @@ new class extends Component
             $transcript = $result['text'] ?? '';
             if (empty(trim($transcript))) {
                 $this->aiError = 'Could not transcribe the recording. Please try again.';
-                $this->aiProcessing = false;
                 return;
             }
 
             // Show transcript as user message and feed to AI
             $this->aiChatInput = $transcript;
             $this->voiceRecording = null;
-            $this->aiProcessing = false;
             $this->sendAiChatMessage();
         } catch (\Throwable $e) {
             $this->aiError = 'Transcription error: ' . $e->getMessage();
-            $this->aiProcessing = false;
         }
     }
 
     /**
-     * Clear the AI chat history.
+     * Clear the active AI thread's messages.
      */
-    public function clearAiChat(): void
+    public function clearAiThread(): void
     {
-        $this->aiChatMessages = [];
+        $thread = $this->aiThreads->firstWhere('id', $this->activeThreadId);
+        if (! $thread || $thread->is_processing) {
+            return;
+        }
+
+        $thread->messages()->delete();
+        $this->refreshThread($thread->id);
         $this->aiError = null;
-        $this->aiChatInput = '';
     }
 
     /**
@@ -3096,9 +3253,16 @@ new class extends Component
                 </flux:heading>
             </div>
             @if ($canUseAiChat)
-                <flux:button wire:click="toggleAiChat" variant="{{ $showAiChat ? 'primary' : 'ghost' }}" icon="sparkles" size="sm">
-                    {{ __('AI Builder') }}
-                </flux:button>
+                <div class="relative">
+                    <flux:button wire:click="toggleAiChat" variant="{{ $showAiChat ? 'primary' : 'ghost' }}" icon="sparkles" size="sm">
+                        {{ __('AI Builder') }}
+                    </flux:button>
+                    @if ($aiThreads->where('is_processing', true)->count() > 0)
+                        <span class="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-purple-600 rounded-full animate-pulse">
+                            {{ $aiThreads->where('is_processing', true)->count() }}
+                        </span>
+                    @endif
+                </div>
             @endif
         </div>
 
@@ -3961,13 +4125,20 @@ new class extends Component
     {{-- Area Builder Component (Flyout) --}}
     <livewire:estimates.area-builder wire:key="area-builder" wire:ref="area-builder" />
 
-    {{-- AI Chat Panel (Sliding Right Panel) --}}
+    {{-- AI Chat Panel (Sliding Right Panel) — Multi-Thread --}}
     @if ($canUseAiChat)
+        @php
+            $activeThread = $aiThreads->firstWhere('id', $activeThreadId);
+            $activeMessages = $activeThread?->messages ?? collect();
+            $activeIsProcessing = $activeThread?->is_processing ?? false;
+        @endphp
         <div
             x-data="{
                 isRecording: false,
                 mediaRecorder: null,
                 audioChunks: [],
+                renamingThreadId: null,
+                renameValue: '',
                 async startRecording() {
                     try {
                         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -3999,29 +4170,31 @@ new class extends Component
                         const el = this.$refs.chatMessages;
                         if (el) el.scrollTop = el.scrollHeight;
                     });
+                },
+                startRename(threadId, currentName) {
+                    this.renamingThreadId = threadId;
+                    this.renameValue = currentName || '';
+                    this.$nextTick(() => this.$refs.renameInput?.focus());
+                },
+                finishRename() {
+                    if (this.renamingThreadId && this.renameValue.trim()) {
+                        $wire.renameThread(this.renamingThreadId, this.renameValue.trim());
+                    }
+                    this.renamingThreadId = null;
+                    this.renameValue = '';
                 }
             }"
-            x-effect="if ($wire.aiChatMessages.length) scrollToBottom()"
+            x-effect="scrollToBottom()"
             x-init="
-                let aiPollStart = null;
                 setInterval(() => {
-                    if ($wire.aiProcessing && $wire.aiCacheKey) {
-                        if (!aiPollStart) aiPollStart = Date.now();
-                        // Auto-timeout after 5 minutes of polling
-                        if (Date.now() - aiPollStart > 300000) {
-                            $wire.aiProcessing = false;
-                            $wire.aiError = 'The AI request timed out. Please try again.';
-                            $wire.aiCacheKey = null;
-                            aiPollStart = null;
-                            return;
-                        }
+                    const threads = $wire.aiThreads || [];
+                    const anyProcessing = threads.some(t => t.is_processing);
+                    if (anyProcessing) {
                         $wire.pollAiResponse();
-                    } else {
-                        aiPollStart = null;
                     }
                 }, 3000);
             "
-            class="fixed inset-y-0 right-0 z-50 w-full sm:w-96 transform transition-transform duration-300 ease-in-out"
+            class="fixed inset-y-0 right-0 z-50 w-full sm:w-[28rem] transform transition-transform duration-300 ease-in-out"
             :class="$wire.showAiChat ? 'translate-x-0' : 'translate-x-full'"
             x-show="$wire.showAiChat"
             x-cloak
@@ -4034,31 +4207,86 @@ new class extends Component
                         <flux:heading size="sm">{{ __('AI Estimate Builder') }}</flux:heading>
                     </div>
                     <div class="flex items-center gap-1">
-                        <flux:button wire:click="clearAiChat" variant="ghost" size="xs" icon="trash" />
+                        @if ($activeThread)
+                            <flux:button wire:click="clearAiThread" variant="ghost" size="xs" icon="trash" title="{{ __('Clear thread') }}" />
+                            <flux:button wire:click="deleteThread({{ $activeThreadId }})" variant="ghost" size="xs" icon="x-circle" title="{{ __('Delete thread') }}" />
+                        @endif
                         <flux:button wire:click="toggleAiChat" variant="ghost" size="xs" icon="x-mark" />
                     </div>
                 </div>
 
+                {{-- Thread Tabs --}}
+                <div class="flex items-center border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50 overflow-x-auto">
+                    @foreach ($aiThreads as $thread)
+                        <button
+                            wire:key="thread-tab-{{ $thread->id }}"
+                            wire:click="switchThread({{ $thread->id }})"
+                            @dblclick="startRename({{ $thread->id }}, '{{ addslashes($thread->name) }}')"
+                            class="relative flex items-center gap-1.5 px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors shrink-0
+                                {{ $thread->id === $activeThreadId
+                                    ? 'border-purple-500 text-purple-700 dark:text-purple-300 bg-white dark:bg-zinc-900'
+                                    : 'border-transparent text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800' }}"
+                        >
+                            <template x-if="renamingThreadId === {{ $thread->id }}">
+                                <input
+                                    x-ref="renameInput"
+                                    x-model="renameValue"
+                                    @blur="finishRename()"
+                                    @keydown.enter.prevent="finishRename()"
+                                    @keydown.escape.prevent="renamingThreadId = null"
+                                    class="w-20 bg-transparent border-b border-purple-400 text-xs outline-none"
+                                    @click.stop
+                                />
+                            </template>
+                            <template x-if="renamingThreadId !== {{ $thread->id }}">
+                                <span class="max-w-[8rem] truncate">{{ $thread->name }}</span>
+                            </template>
+                            @if ($thread->is_processing)
+                                <svg class="animate-spin h-3 w-3 text-purple-500 shrink-0" viewBox="0 0 24 24">
+                                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
+                                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            @endif
+                        </button>
+                    @endforeach
+                    {{-- New Thread Button --}}
+                    <button
+                        wire:click="createAiThread"
+                        class="flex items-center gap-1 px-3 py-2 text-xs text-zinc-400 hover:text-purple-600 dark:hover:text-purple-400 transition-colors shrink-0"
+                        title="{{ __('New thread') }}"
+                    >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                    </button>
+                </div>
+
                 {{-- Messages --}}
                 <div x-ref="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4">
-                    @if (empty($aiChatMessages))
+                    @if ($activeMessages->isEmpty() && ! $activeIsProcessing)
                         <div class="text-center text-zinc-400 dark:text-zinc-500 mt-8">
                             <flux:icon name="sparkles" class="w-12 h-12 mx-auto mb-3 text-purple-300" />
                             <p class="text-sm font-medium">{{ __('AI Estimate Builder') }}</p>
                             <p class="text-xs mt-1">{{ __('Describe the rooms and I\'ll build your estimate.') }}</p>
                             <p class="text-xs mt-3 text-zinc-400">{{ __('Try: "Add a medium living room, large master bedroom, and small bathroom"') }}</p>
+                            @if ($aiThreads->isEmpty())
+                                <p class="text-xs mt-2 text-zinc-400">{{ __('A thread will be created automatically when you send your first message.') }}</p>
+                            @endif
                         </div>
                     @endif
 
-                    @foreach ($aiChatMessages as $msg)
-                        <div class="flex {{ $msg['role'] === 'user' ? 'justify-end' : 'justify-start' }}">
-                            <div class="max-w-[85%] rounded-xl px-4 py-2.5 text-sm {{ $msg['role'] === 'user' ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100' }}">
-                                {!! nl2br(e($msg['content'])) !!}
+                    @foreach ($activeMessages as $msg)
+                        <div wire:key="msg-{{ $msg->id }}" class="flex {{ $msg->role === 'user' ? 'justify-end' : 'justify-start' }}">
+                            <div class="max-w-[85%] rounded-xl px-4 py-2.5 text-sm
+                                {{ $msg->role === 'user'
+                                    ? 'bg-blue-600 text-white'
+                                    : ($msg->role === 'error'
+                                        ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400'
+                                        : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100') }}">
+                                {!! nl2br(e($msg->content)) !!}
                             </div>
                         </div>
                     @endforeach
 
-                    @if ($aiProcessing)
+                    @if ($activeIsProcessing)
                         <div class="flex justify-start">
                             <div class="bg-zinc-100 dark:bg-zinc-800 rounded-xl px-4 py-3">
                                 <div class="flex items-center gap-2 text-sm text-zinc-500">
@@ -4066,7 +4294,7 @@ new class extends Component
                                         <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle>
                                         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    {{ __('Building estimate...') }}
+                                    {{ $aiProgressLabel ?: __('Building estimate...') }}
                                 </div>
                             </div>
                         </div>
@@ -4089,7 +4317,7 @@ new class extends Component
                                 class="w-full rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800 text-sm px-3 py-2 resize-none focus:ring-2 focus:ring-purple-500 focus:border-transparent dark:text-zinc-100"
                                 rows="2"
                                 @keydown.enter.prevent="if (!event.shiftKey) { $wire.sendAiChatMessage(); }"
-                                :disabled="$wire.aiProcessing"
+                                @if($activeIsProcessing) disabled @endif
                             ></textarea>
                         </div>
                         <div class="flex flex-col gap-1">
@@ -4099,7 +4327,7 @@ new class extends Component
                                 @click="isRecording ? stopRecording() : startRecording()"
                                 :class="isRecording ? 'bg-red-500 text-white animate-pulse' : 'bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600'"
                                 class="p-2 rounded-lg transition-colors"
-                                :disabled="$wire.aiProcessing"
+                                @if($activeIsProcessing) disabled @endif
                                 title="{{ __('Voice recording') }}"
                             >
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4110,7 +4338,7 @@ new class extends Component
                             <button
                                 type="submit"
                                 class="p-2 rounded-lg bg-purple-600 text-white hover:bg-purple-700 transition-colors disabled:opacity-50"
-                                :disabled="$wire.aiProcessing"
+                                @if($activeIsProcessing) disabled @endif
                             >
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
@@ -4118,7 +4346,7 @@ new class extends Component
                             </button>
                         </div>
                     </form>
-                    <p class="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">{{ __('Each message starts a fresh AI session. Send one room at a time for best results.') }}</p>
+                    <p class="mt-1.5 text-xs text-zinc-400 dark:text-zinc-500">{{ __('Each thread remembers context. Use + to start a new area.') }}</p>
                 </div>
             </div>
         </div>

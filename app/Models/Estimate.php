@@ -83,6 +83,8 @@ class Estimate extends Model
         'customer_checklist',
         'agent_notes',
         'agent_checklist',
+        'ai_context',
+        'ai_summary',
     ];
 
     protected function casts(): array
@@ -406,6 +408,14 @@ class Estimate extends Model
     public function amendments(): HasMany
     {
         return $this->hasMany(EstimateAmendment::class)->orderBy('amendment_number');
+    }
+
+    /**
+     * Get the AI threads for this estimate.
+     */
+    public function aiThreads(): HasMany
+    {
+        return $this->hasMany(EstimateAiThread::class);
     }
 
     /**

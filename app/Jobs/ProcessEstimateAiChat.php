@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Ai\Agents\EstimateBuilderAgent;
 use App\Models\Estimate;
+use App\Models\EstimateAiMessage;
+use App\Models\EstimateAiThread;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -22,8 +24,9 @@ class ProcessEstimateAiChat implements ShouldQueue
      */
     public function __construct(
         public int $estimateId,
-        public string $cacheKey,
-        public string $userMessage,
+        public ?int $threadId = null,
+        public string $cacheKey = '',
+        public string $userMessage = '',
         public array $history = [],
     ) {
         $this->onQueue('ai');
@@ -37,8 +40,37 @@ class ProcessEstimateAiChat implements ShouldQueue
             $agent = new EstimateBuilderAgent($estimate);
             $agent->withHistory($this->history);
 
+            // Set up progress tracking via the gateway's tool invocation callback
+            $cacheKey = $this->cacheKey;
+            $gateway = app(\App\Ai\Gateway\XaiTextGateway::class);
+            $gateway->onToolInvocation(
+                invoking: function ($tool, $args) use ($cacheKey) {
+                    $label = $this->getToolProgressLabel($tool);
+                    Cache::put("{$cacheKey}:progress", [
+                        'label' => $label,
+                        'tool' => class_basename($tool),
+                        'timestamp' => now()->toIso8601String(),
+                    ], now()->addMinutes(5));
+                },
+                invoked: function ($tool, $args, $result) use ($cacheKey) {
+                    // Clear progress after tool completes
+                    Cache::forget("{$cacheKey}:progress");
+                },
+            );
+
             $response = $agent->prompt($this->userMessage);
             $responseText = (string) $response;
+
+            // Save assistant message to DB
+            if ($this->threadId) {
+                EstimateAiMessage::create([
+                    'thread_id' => $this->threadId,
+                    'role' => 'assistant',
+                    'content' => $responseText,
+                ]);
+
+                EstimateAiThread::find($this->threadId)?->markComplete();
+            }
 
             Cache::put($this->cacheKey, [
                 'status' => 'complete',
@@ -47,15 +79,26 @@ class ProcessEstimateAiChat implements ShouldQueue
         } catch (\Throwable $e) {
             Log::error('AI Estimate Builder job failed', [
                 'estimate_id' => $this->estimateId,
+                'thread_id' => $this->threadId,
                 'message' => $this->userMessage,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            // Give user a friendlier message for known error types
             $userMessage = str_contains($e->getMessage(), 'XAI Error')
                 ? 'The AI service returned an error. Please try again in a moment.'
                 : 'AI error: '.$e->getMessage();
+
+            // Save error message to DB
+            if ($this->threadId) {
+                EstimateAiMessage::create([
+                    'thread_id' => $this->threadId,
+                    'role' => 'error',
+                    'content' => $userMessage,
+                ]);
+
+                EstimateAiThread::find($this->threadId)?->markComplete();
+            }
 
             Cache::put($this->cacheKey, [
                 'status' => 'error',
@@ -65,19 +108,77 @@ class ProcessEstimateAiChat implements ShouldQueue
     }
 
     /**
+     * Map tool class to user-friendly progress label.
+     */
+    protected function getToolProgressLabel(object $tool): string
+    {
+        $className = class_basename($tool);
+
+        return match ($className) {
+            'SearchTemplatesAiTool' => 'Searching templates...',
+            'ListProductionRatesAiTool' => 'Looking up production rates...',
+            'ListPaintProductsAiTool' => 'Browsing paint products...',
+            'ListSubstratesAiTool' => 'Checking surface conditions...',
+            'ListNestedTemplatesAiTool' => 'Finding addons...',
+            'GetPricingConfigAiTool' => 'Loading pricing config...',
+            'GetEstimateStateAiTool' => 'Reading estimate...',
+            'UpdateEstimateSettingsAiTool' => 'Updating settings...',
+            'GetEstimateSummaryAiTool' => 'Generating summary...',
+            'CreateAreaFromTemplateAiTool' => 'Creating room from template...',
+            'CreateCustomAreaAiTool' => 'Creating custom area...',
+            'AddSurfaceToAreaAiTool' => 'Adding surface...',
+            'UpdateSurfaceAiTool' => 'Updating surface...',
+            'RemoveSurfaceAiTool' => 'Removing surface...',
+            'AddAddonToAreaAiTool' => 'Adding addon...',
+            'RemoveAreaAiTool' => 'Removing area...',
+            'UpdateAreaDimensionsAiTool' => 'Updating dimensions...',
+            'PreviewAreaPricingAiTool' => 'Calculating pricing...',
+            'SetEstimatePaintConfigAiTool' => 'Setting paint...',
+            'SetAreaPaintProductAiTool' => 'Setting area paint...',
+            'SetTierPricingAiTool' => 'Configuring tiers...',
+            'RecalculateEstimateAiTool' => 'Recalculating totals...',
+            'CreateProductionRateAiTool' => 'Creating production rate...',
+            'CreateTemplateAiTool' => 'Creating template...',
+            'CreateNestedTemplateAiTool' => 'Creating nested template...',
+            'CreateEstimateItemAiTool' => 'Adding line item...',
+            'AddCostItemAiTool' => 'Adding cost item...',
+            'RemoveCostItemAiTool' => 'Removing cost item...',
+            'ListCostItemsAiTool' => 'Listing cost items...',
+            'SaveAiContextAiTool' => 'Saving notes...',
+            'GetProjectContextAiTool' => 'Loading project context...',
+            'WriteEstimateSummaryAiTool' => 'Writing summary...',
+            default => 'Working...',
+        };
+    }
+
+    /**
      * Handle job failure (e.g., timeout).
      */
     public function failed(?\Throwable $exception): void
     {
         Log::error('AI Estimate Builder job failed (external)', [
             'estimate_id' => $this->estimateId,
+            'thread_id' => $this->threadId,
             'message' => $this->userMessage,
             'error' => $exception?->getMessage(),
         ]);
 
+        $errorMessage = 'The AI request timed out. Please try a simpler prompt.';
+
+        // Save error message to DB
+        if ($this->threadId) {
+            EstimateAiMessage::create([
+                'thread_id' => $this->threadId,
+                'role' => 'error',
+                'content' => $errorMessage,
+            ]);
+
+            EstimateAiThread::find($this->threadId)?->markComplete();
+        }
+
         Cache::put($this->cacheKey, [
             'status' => 'error',
-            'response' => 'The AI request timed out. Please try a simpler prompt.',
+            'response' => $errorMessage,
         ], now()->addMinutes(10));
     }
 }
