@@ -29,7 +29,7 @@ class ListProductionRatesAiTool implements Tool
     {
         return [
             'scope_type' => $schema->string()->description('Filter by scope: interior or exterior'),
-            'category' => $schema->string()->description('Filter by surface category: walls, ceiling, trim, doors, etc.'),
+            'category' => $schema->string()->description('Filter by surface_category. Interior: walls|ceiling|baseboard|trim|doors|windows|prep. Exterior: body|eaves|fascia|trim|exterior_doors|windows|wood_replacement|prep'),
         ];
     }
 }

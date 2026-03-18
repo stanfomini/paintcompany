@@ -43,7 +43,7 @@ class AddSurfaceToAreaAiTool implements Tool
     {
         return [
             'area_id' => $schema->integer()->description('ID of the area to add the surface to')->required(),
-            'surface_category' => $schema->string()->description('Surface category: walls, ceiling, baseboard, trim, doors, windows, body, siding, fascia, eaves, crown, molding')->required(),
+            'surface_category' => $schema->string()->description('Surface category. Interior: walls|ceiling|baseboard|trim|doors|windows|prep. Exterior: body|eaves|fascia|trim|exterior_doors|windows|wood_replacement|prep. Do NOT use siding, crown, molding, or other.')->required(),
             'production_rate_id' => $schema->integer()->description('Production rate ID from list_production_rates')->required(),
             'coats' => $schema->integer()->description('Number of coats (default: 2)'),
             'quantity_override' => $schema->number()->description('Override auto-calculated quantity (sqft, lnft, or unit count)'),
