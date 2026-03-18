@@ -270,6 +270,7 @@ class EstimateAiService
                         'total_price' => (float) $a->total_price,
                     ])->toArray(),
                     'is_fixed_price' => $area->is_fixed_price,
+                    'package_tiers' => $area->package_tiers,
                     'cogs' => $area->getFullCOGS(),
                     'price' => $area->getCustomerPrice(),
                 ];
