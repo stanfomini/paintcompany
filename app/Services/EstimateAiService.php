@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Events\EstimateAreaUpdated;
 use App\Models\CompanySetting;
 use App\Models\Estimate;
 use App\Models\EstimateArea;
@@ -750,6 +751,213 @@ class EstimateAiService
             'addon_cost' => round($addonCost, 2),
             'cogs' => round($cogs, 2),
             'price' => round($price, 2),
+        ];
+    }
+
+    // =========================================================================
+    // PACKAGE TIER METHODS
+    // =========================================================================
+
+    /**
+     * Set which package tiers an area is included in (good/better/best).
+     *
+     * Passing null or an empty array means the area is included in ALL tiers.
+     * Invalid tier names are silently filtered out.
+     *
+     * @param  array<string>|null  $tiers
+     * @return array{area_id: int, package_tiers: array<string>|null, included_in: array<string>}
+     */
+    public function setAreaPackageTiers(int $areaId, ?array $tiers): array
+    {
+        $area = EstimateArea::findOrFail($areaId);
+
+        $allTiers = ['good', 'better', 'best'];
+
+        // Null or empty array → include in all tiers (package_tiers = null)
+        if ($tiers === null || count($tiers) === 0) {
+            $filteredTiers = null;
+        } else {
+            $filteredTiers = array_values(array_filter($tiers, fn ($t) => in_array($t, $allTiers, true)));
+            if (count($filteredTiers) === 0) {
+                $filteredTiers = null;
+            }
+        }
+
+        $area->update([
+            'package_tiers' => $filteredTiers,
+            'cached_cogs' => null,
+            'cached_customer_price' => null,
+            'cached_tier_prices' => null,
+        ]);
+
+        $area->refresh();
+
+        event(new EstimateAreaUpdated(
+            estimateId: $area->estimate_id,
+            areaId: $area->id,
+            action: 'package_tiers_updated',
+        ));
+
+        return [
+            'area_id' => $area->id,
+            'package_tiers' => $area->package_tiers,
+            'included_in' => $area->package_tiers === null ? $allTiers : $area->package_tiers,
+        ];
+    }
+
+    /**
+     * Update per-tier configuration overrides for a surface.
+     *
+     * Stores tier-specific coats, production rate, labor hours, and material cost
+     * in the surface's tier_overrides JSON column, and dual-writes flat columns
+     * for material_cost_{tier} and paint_product_id_{tier}.
+     *
+     * @return array{tier: string, tier_data: array<string, mixed>, area_tier_cogs: float, area_tier_price: float}
+     *
+     * @throws \InvalidArgumentException if $tier is not good/better/best
+     */
+    public function updateSurfaceTierOverrides(
+        int $surfaceId,
+        string $tier,
+        ?int $coats = null,
+        ?int $productionRateId = null,
+        ?float $laborHours = null,
+        ?int $paintProductId = null,
+        ?float $materialCost = null,
+    ): array {
+        $validTiers = ['good', 'better', 'best'];
+
+        if (! in_array($tier, $validTiers, true)) {
+            throw new \InvalidArgumentException("Invalid tier: {$tier}");
+        }
+
+        $surface = EstimateAreaSurface::with(['area', 'productionRate'])->findOrFail($surfaceId);
+
+        $existingOverrides = $surface->tier_overrides ?? [];
+
+        // Create _base snapshot if this is the first tier override
+        if (! isset($existingOverrides['_base'])) {
+            $currentRate = $surface->productionRate;
+            $existingOverrides['_base'] = [
+                'production_rate_id' => $surface->production_rate_id,
+                'default_coats' => $currentRate?->default_coats ?? $surface->coats ?? 2,
+                'labor_hours' => round((float) $surface->labor_hours, 4),
+                'labor_cost' => round((float) $surface->labor_cost, 4),
+                'material_cost' => round((float) $surface->material_cost, 4),
+            ];
+        }
+
+        // Resolve the production rate to use for this tier
+        $tierData = $existingOverrides[$tier] ?? [];
+        $rateToUse = null;
+
+        if ($productionRateId !== null) {
+            $rateToUse = ProductionRate::findOrFail($productionRateId);
+            $tierData['production_rate_id'] = $rateToUse->id;
+        } else {
+            $existingRateId = $tierData['production_rate_id'] ?? $surface->production_rate_id;
+            $rateToUse = $existingRateId ? ProductionRate::find($existingRateId) : $surface->productionRate;
+            $tierData['production_rate_id'] = $existingRateId;
+        }
+
+        // Resolve coats
+        $resolvedCoats = $coats ?? $tierData['default_coats'] ?? $rateToUse?->default_coats ?? $surface->coats ?? 2;
+        $tierData['default_coats'] = $resolvedCoats;
+
+        // Compute labor hours
+        if ($laborHours !== null) {
+            $tierData['labor_hours'] = (float) $laborHours;
+        } else {
+            // Apply substrate multipliers from the area, just like the surface saving hook does
+            $area = $surface->area;
+            $substrate = $area?->substrate;
+            $prepMultiplier = $substrate ? (float) ($substrate->prep_time_multiplier ?? 1.0) : 1.0;
+            $paintMultiplier = $substrate ? (float) ($substrate->paint_time_multiplier ?? 1.0) : 1.0;
+
+            if ($rateToUse && $surface->quantity && (float) $surface->quantity > 0) {
+                $coatMultiplier = $rateToUse->getCoatMultiplier($resolvedCoats);
+                $rateValue = (float) ($rateToUse->rate_type === 'hours_per_unit'
+                    ? $rateToUse->production_rate
+                    : $rateToUse->production_rate);
+
+                if ($rateToUse->rate_type === 'hours_per_unit') {
+                    $rawHours = (float) $surface->quantity * $rateValue * $coatMultiplier;
+                } else {
+                    $rawHours = ((float) $surface->quantity / $rateValue) * $coatMultiplier;
+                }
+
+                $tierData['labor_hours'] = round($rawHours * $prepMultiplier * $paintMultiplier, 4);
+            } else {
+                $tierData['labor_hours'] = round((float) $surface->labor_hours, 4);
+            }
+        }
+
+        // Compute labor cost
+        $scopeType = $surface->area?->scope_type ?? 'interior';
+        $settings = CompanySetting::getInstance();
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scopeType);
+        $tierData['labor_cost'] = round($tierData['labor_hours'] * $effectiveRate, 4);
+
+        // Resolve material cost
+        $flatMaterialCostColumn = "material_cost_{$tier}";
+        $flatPaintProductColumn = "paint_product_id_{$tier}";
+
+        if ($materialCost !== null) {
+            $tierData['material_cost'] = $materialCost;
+        } elseif ($paintProductId !== null) {
+            $product = PaintProduct::findOrFail($paintProductId);
+            $costCalc = $product->calculateCost(
+                (float) $surface->quantity,
+                $resolvedCoats,
+                $surface->application_method ?? 'brush_roll',
+                (float) ($settings->recycle_fee_per_gallon ?? 0.54)
+            );
+            $tierData['material_cost'] = $costCalc['total_cost'];
+        } else {
+            $tierData['material_cost'] = $tierData['material_cost'] ?? round((float) $surface->material_cost, 4);
+        }
+
+        if ($paintProductId !== null) {
+            $tierData['paint_product_id'] = $paintProductId;
+        }
+
+        $existingOverrides[$tier] = $tierData;
+
+        // Build update array — dual-write flat columns for material cost / paint product
+        $updateData = ['tier_overrides' => $existingOverrides];
+
+        $updateData[$flatMaterialCostColumn] = $tierData['material_cost'];
+
+        if ($paintProductId !== null) {
+            $updateData[$flatPaintProductColumn] = $paintProductId;
+        }
+
+        $surface->update($updateData);
+        $surface->refresh();
+
+        // Clear cached area pricing
+        $area = $surface->area;
+        $area->update([
+            'cached_cogs' => null,
+            'cached_customer_price' => null,
+            'cached_tier_prices' => null,
+        ]);
+
+        event(new EstimateAreaUpdated(
+            estimateId: $area->estimate_id,
+            areaId: $area->id,
+            action: 'surface_tier_overrides_updated',
+        ));
+
+        $area->refresh();
+        $areaTierCogs = $area->getFullCOGS($tier, true);
+        $areaTierPrice = $area->getCustomerPrice($tier);
+
+        return [
+            'tier' => $tier,
+            'tier_data' => $tierData,
+            'area_tier_cogs' => round($areaTierCogs, 2),
+            'area_tier_price' => round($areaTierPrice, 2),
         ];
     }
 
