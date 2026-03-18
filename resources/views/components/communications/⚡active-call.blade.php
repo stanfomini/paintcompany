@@ -243,7 +243,7 @@ new class extends Component
                     <span class="text-sm font-mono tabular-nums" x-text="formatTime()">00:00</span>
                     <button
                         @click="expanded ? collapse() : expanded = true"
-                        class="text-white/80 hover:text-white transition-colors"
+                        class="text-white/80 hover:text-white transition-colors p-2 -mr-2"
                         :title="expanded ? '{{ __('Collapse') }}' : '{{ __('Expand') }}'"
                     >
                         <flux:icon name="chevron-up" class="size-4 transition-transform" :class="expanded ? '' : 'rotate-180'" />

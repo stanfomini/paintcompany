@@ -205,7 +205,22 @@ describe('transfer picker', function () {
 
         Livewire::test('communications.active-call')
             ->call('onCallConnected', ['call_log_id' => 42])
-            ->assertDontSee('Transfer');
+            ->assertDontSee('<span>Transfer</span>', escape: false);
+    });
+
+    it('closes transfer picker via closeTransferPicker', function () {
+        Livewire::test('communications.active-call')
+            ->call('onCallConnected', [
+                'call_log_id' => 42,
+                'ulid' => 'test',
+                'caller_name' => 'Test',
+                'from_number' => '+1234567890',
+                'customer_id' => null,
+            ])
+            ->call('toggleTransferPicker')
+            ->assertSet('showTransferPicker', true)
+            ->call('closeTransferPicker')
+            ->assertSet('showTransferPicker', false);
     });
 
     it('shows internal users with extensions in transfer picker', function () {
