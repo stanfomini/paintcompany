@@ -8,6 +8,9 @@ use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateCostItem;
 use App\Models\EstimateItem;
+use App\Models\EstimateTemplate;
+use App\Models\NestedAreaTemplate;
+use App\Models\NestedTemplateSurface;
 use App\Models\ProductionRate;
 use App\Models\Property;
 use App\Services\EstimateAiService;
@@ -570,4 +573,157 @@ it('creates an estimate item that belongs to the estimate', function () {
         ->where('description', 'Sprayer rental (2 days)')
         ->exists()
     )->toBeTrue();
+});
+
+// =============================================================================
+// createNestedTemplate — happy path
+// =============================================================================
+
+it('creates a nested area template and persists it to the database', function () {
+    $result = $this->service->createNestedTemplate(
+        name: 'Large Walk-in Closet',
+        scopeType: 'interior',
+        category: 'closet',
+        fixedPrice: 150.00,
+        estimatedHours: 2.0,
+        materialCost: 25.00,
+        description: 'Standard large walk-in closet painting',
+        includesWalls: true,
+        includesCeiling: true,
+        includesTrim: false,
+        includesDoor: true,
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['template']['name'])->toBe('Large Walk-in Closet')
+        ->and($result['template']['category'])->toBe('closet')
+        ->and($result['template']['scope_type'])->toBe('interior')
+        ->and((float) $result['template']['fixed_price'])->toBe(150.0)
+        ->and((bool) $result['template']['includes_walls'])->toBeTrue()
+        ->and((bool) $result['template']['includes_door'])->toBeTrue()
+        ->and((bool) $result['template']['includes_trim'])->toBeFalse();
+
+    expect(NestedAreaTemplate::where('name', 'Large Walk-in Closet')
+        ->where('category', 'closet')
+        ->exists()
+    )->toBeTrue();
+});
+
+// =============================================================================
+// createNestedTemplate — with surfaces
+// =============================================================================
+
+it('creates a nested area template with surfaces', function () {
+    $rate = ProductionRate::factory()->create(['production_rate' => 200, 'scope' => 'interior']);
+
+    $result = $this->service->createNestedTemplate(
+        name: 'Half Bath with Surfaces',
+        scopeType: 'interior',
+        category: 'bathroom',
+        surfaces: [
+            [
+                'name' => 'Walls',
+                'surface_type' => 'walls',
+                'production_rate_id' => $rate->id,
+                'calculation_method' => 'ratio',
+                'calculation_value' => 1.0,
+            ],
+        ],
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['template']['name'])->toBe('Half Bath with Surfaces');
+
+    $template = NestedAreaTemplate::where('name', 'Half Bath with Surfaces')->first();
+
+    expect($template)->not->toBeNull();
+
+    expect(NestedTemplateSurface::where('nested_area_template_id', $template->id)
+        ->where('surface_type', 'walls')
+        ->exists()
+    )->toBeTrue();
+});
+
+// =============================================================================
+// createTemplate — happy path
+// =============================================================================
+
+it('creates an estimate template and persists it to the database', function () {
+    $result = $this->service->createTemplate(
+        name: 'Sunroom',
+        scopeType: 'interior',
+        category: 'room',
+        pricingMethod: 'production_rate',
+        description: 'Custom sunroom template',
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['template']['name'])->toBe('Sunroom')
+        ->and($result['template']['scope_type'])->toBe('interior')
+        ->and($result['template']['pricing_method'])->toBe('production_rate')
+        ->and((bool) $result['template']['is_configurable'])->toBeTrue()
+        ->and((bool) $result['template']['is_active'])->toBeTrue();
+
+    expect(EstimateTemplate::where('name', 'Sunroom')->exists())->toBeTrue();
+});
+
+// =============================================================================
+// createTemplate — with sizes metadata
+// =============================================================================
+
+it('creates an estimate template with S/M/L size metadata', function () {
+    $result = $this->service->createTemplate(
+        name: 'Game Room',
+        scopeType: 'interior',
+        sizes: [
+            'small' => ['length' => 12, 'width' => 10, 'height' => 8],
+            'medium' => ['length' => 16, 'width' => 14, 'height' => 8],
+            'large' => ['length' => 20, 'width' => 18, 'height' => 9],
+        ],
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['template']['name'])->toBe('Game Room');
+
+    $template = EstimateTemplate::where('name', 'Game Room')->first();
+
+    expect($template)->not->toBeNull()
+        ->and($template->metadata['dimensions'])->toHaveKeys(['small', 'medium', 'large']);
+});
+
+// =============================================================================
+// createTemplate — with surfaces
+// =============================================================================
+
+it('creates an estimate template with surfaces', function () {
+    $rate = ProductionRate::factory()->create(['production_rate' => 250, 'scope' => 'interior']);
+
+    $result = $this->service->createTemplate(
+        name: 'Loft',
+        scopeType: 'interior',
+        surfaces: [
+            [
+                'name' => 'Walls',
+                'surface_type' => 'walls',
+                'production_rate_id' => $rate->id,
+                'calculation_method' => 'ratio',
+                'calculation_value' => 1.0,
+            ],
+            [
+                'name' => 'Ceiling',
+                'surface_type' => 'ceiling',
+                'production_rate_id' => $rate->id,
+                'calculation_method' => 'ratio',
+                'calculation_value' => 0.9,
+            ],
+        ],
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['template']['name'])->toBe('Loft');
+
+    $template = EstimateTemplate::where('name', 'Loft')->first();
+
+    expect($template)->not->toBeNull()
+        ->and($template->surfaces()->count())->toBe(2);
 });

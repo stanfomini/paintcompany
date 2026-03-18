@@ -10,11 +10,14 @@ use App\Models\EstimateAreaAddon;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateCostItem;
 use App\Models\EstimateTemplate;
+use App\Models\EstimateTemplateCategory;
 use App\Models\NestedAreaTemplate;
+use App\Models\NestedTemplateSurface;
 use App\Models\PaintProduct;
 use App\Models\ProductionRate;
 use App\Models\ProductionRateCategory;
 use App\Models\Substrate;
+use Illuminate\Support\Str;
 
 class EstimateAiService
 {
@@ -1493,6 +1496,145 @@ class EstimateAiService
         $item = $estimate->items()->create($data);
 
         return ['success' => true, 'item' => $item->toArray()];
+    }
+
+    // =========================================================================
+    // TEMPLATE METHODS
+    // =========================================================================
+
+    /**
+     * Create a new nested area template (closets, half baths, prep work).
+     *
+     * @param  array<int, array{name: string, surface_type: string, production_rate_id: int, calculation_method: string, calculation_value: float}>|null  $surfaces
+     * @return array{success: true, template: array}
+     */
+    public function createNestedTemplate(
+        string $name,
+        string $scopeType = 'interior',
+        string $category = 'other',
+        ?float $fixedPrice = null,
+        ?float $estimatedHours = null,
+        ?float $materialCost = null,
+        ?string $description = null,
+        ?array $surfaces = null,
+        bool $includesWalls = false,
+        bool $includesCeiling = false,
+        bool $includesTrim = false,
+        bool $includesDoor = false,
+    ): array {
+        // fixed_price is NOT NULL in the schema — default to 0 when not provided
+        $fixedPrice = $fixedPrice ?? 0.0;
+        $baseCode = strtoupper(Str::slug($name, '-'));
+        $code = $baseCode;
+        $counter = 1;
+
+        while (NestedAreaTemplate::where('code', $code)->exists()) {
+            $code = $baseCode.'-'.$counter;
+            $counter++;
+        }
+
+        $template = NestedAreaTemplate::create([
+            'name' => $name,
+            'code' => $code,
+            'scope_type' => $scopeType,
+            'category' => $category,
+            'fixed_price' => $fixedPrice,
+            'estimated_hours' => $estimatedHours,
+            'material_cost' => $materialCost,
+            'description' => $description,
+            'includes_walls' => $includesWalls,
+            'includes_ceiling' => $includesCeiling,
+            'includes_trim' => $includesTrim,
+            'includes_door' => $includesDoor,
+            'is_active' => true,
+        ]);
+
+        if (! empty($surfaces)) {
+            foreach ($surfaces as $index => $surfaceData) {
+                NestedTemplateSurface::create([
+                    'nested_area_template_id' => $template->id,
+                    'name' => $surfaceData['name'] ?? ucfirst($surfaceData['surface_type'] ?? 'Surface'),
+                    'surface_type' => $surfaceData['surface_type'] ?? 'other',
+                    'calculation_method' => $surfaceData['calculation_method'] ?? 'ratio',
+                    'calculation_value' => $surfaceData['calculation_value'] ?? 1.0,
+                    'production_rate_id' => $surfaceData['production_rate_id'] ?? null,
+                    'default_coats' => $surfaceData['default_coats'] ?? 2,
+                    'is_required' => $surfaceData['is_required'] ?? false,
+                    'is_default_enabled' => $surfaceData['is_default_enabled'] ?? true,
+                    'sort_order' => $surfaceData['sort_order'] ?? $index,
+                ]);
+            }
+        }
+
+        return ['success' => true, 'template' => $template->fresh(['surfaces'])->toArray()];
+    }
+
+    /**
+     * Create a new room/area template (EstimateTemplate).
+     *
+     * @param  array<int, array{name: string, surface_type: string, production_rate_id?: int, calculation_method?: string, calculation_value?: float}>|null  $surfaces
+     * @param  array<string, array{length: float, width: float, height: float}>|null  $sizes  S/M/L dimension sets stored in metadata
+     * @return array{success: true, template: array}
+     */
+    public function createTemplate(
+        string $name,
+        string $scopeType,
+        string $category = 'room',
+        string $pricingMethod = 'production_rate',
+        ?array $sizes = null,
+        ?array $surfaces = null,
+        ?string $description = null,
+        ?float $basePrice = null,
+        ?float $perSqftRate = null,
+    ): array {
+        $categoryType = match ($category) {
+            'surface' => EstimateTemplateCategory::TYPE_SURFACE,
+            'item' => EstimateTemplateCategory::TYPE_ITEM,
+            'addon' => EstimateTemplateCategory::TYPE_ADDON,
+            default => EstimateTemplateCategory::TYPE_ROOM,
+        };
+
+        $templateCategory = EstimateTemplateCategory::firstOrCreate(
+            ['type' => $categoryType, 'name' => ucfirst($category)],
+            ['is_active' => true, 'sort_order' => 0],
+        );
+
+        $metadata = [];
+        if (! empty($sizes)) {
+            $metadata['dimensions'] = $sizes;
+        }
+
+        $template = EstimateTemplate::create([
+            'template_category_id' => $templateCategory->id,
+            'name' => $name,
+            'description' => $description,
+            'scope_type' => $scopeType,
+            'pricing_method' => $pricingMethod,
+            'base_price' => $basePrice,
+            'per_sqft_rate' => $perSqftRate,
+            'metadata' => ! empty($metadata) ? $metadata : null,
+            'is_active' => true,
+            'is_configurable' => true,
+            'visibility' => EstimateTemplate::VISIBILITY_COMPANY,
+        ]);
+
+        if (! empty($surfaces)) {
+            foreach ($surfaces as $index => $surfaceData) {
+                $template->surfaces()->create([
+                    'name' => $surfaceData['name'] ?? ucfirst($surfaceData['surface_type'] ?? 'Surface'),
+                    'surface_type' => $surfaceData['surface_type'] ?? 'other',
+                    'calculation_method' => $surfaceData['calculation_method'] ?? 'ratio',
+                    'calculation_value' => $surfaceData['calculation_value'] ?? 1.0,
+                    'production_rate_id' => $surfaceData['production_rate_id'] ?? null,
+                    'default_coats' => $surfaceData['default_coats'] ?? 2,
+                    'is_required' => $surfaceData['is_required'] ?? false,
+                    'is_default_enabled' => $surfaceData['is_default_enabled'] ?? true,
+                    'sort_order' => $surfaceData['sort_order'] ?? $index,
+                ]);
+            }
+        }
+
+        return ['success' => true, 'template' => $template->fresh(['surfaces', 'templateCategory'])->toArray()];
     }
 
     // =========================================================================
