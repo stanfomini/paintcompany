@@ -45,6 +45,13 @@ new class extends Component
     public string $tplLedgerConsideration = '';
     public int $tplAuthorizedShares = 0;
 
+    // Template form - Certificate of Incumbency
+    public string $tplCertifyingOfficer = '';
+    public string $tplCertifyingTitle = '';
+    public string $tplCertificateDate = '';
+    public bool $tplIncludeOwnership = false;
+    public string $tplAuthorityStatement = 'The above-named persons are authorized to execute documents, enter into contracts, and take any and all actions on behalf of the entity in the ordinary course of business.';
+
     public function boot(): void
     {
         if (! Auth::user()?->can('business_plan.view')) {
@@ -149,6 +156,11 @@ new class extends Component
         $this->tplSharesIssued = 0;
         $this->tplLedgerConsideration = '';
         $this->tplAuthorizedShares = 0;
+        $this->tplCertifyingOfficer = '';
+        $this->tplCertifyingTitle = '';
+        $this->tplCertificateDate = '';
+        $this->tplIncludeOwnership = false;
+        $this->tplAuthorityStatement = 'The above-named persons are authorized to execute documents, enter into contracts, and take any and all actions on behalf of the entity in the ordinary course of business.';
         $this->resetErrorBag();
     }
 
@@ -217,6 +229,43 @@ new class extends Component
             ];
 
             $title = 'Stock Ledger';
+        } elseif ($this->templateType === 'certificate_of_incumbency') {
+            $this->validate([
+                'tplCertifyingOfficer' => ['required', 'string', 'max:255'],
+                'tplCertifyingTitle' => ['required', 'string', 'max:255'],
+                'tplCertificateDate' => ['required', 'string', 'max:255'],
+            ]);
+
+            $this->corporation->load(['officers', 'owners']);
+
+            $templateData = [
+                'corporation_name' => $this->corporation->name,
+                'entity_type' => $this->corporation->entity_type,
+                'state' => $this->corporation->state_of_formation,
+                'formation_date' => $this->corporation->formation_date?->format('F j, Y'),
+                'ein' => $this->corporation->ein,
+                'address' => $this->corporation->address_line_1,
+                'city' => $this->corporation->city,
+                'state_abbr' => $this->corporation->state,
+                'zip' => $this->corporation->zip,
+                'registered_agent' => $this->corporation->registered_agent,
+                'certifying_officer' => $this->tplCertifyingOfficer,
+                'certifying_title' => $this->tplCertifyingTitle,
+                'certificate_date' => $this->tplCertificateDate,
+                'include_ownership' => $this->tplIncludeOwnership,
+                'authority_statement' => $this->tplAuthorityStatement,
+                'officers' => $this->corporation->officers->map(fn ($o) => [
+                    'name' => $o->name,
+                    'title' => $o->title,
+                ])->toArray(),
+                'owners' => $this->corporation->owners->map(fn ($o) => [
+                    'name' => $o->name,
+                    'role' => $o->role,
+                    'percentage' => $o->percentage,
+                ])->toArray(),
+            ];
+
+            $title = 'Certificate of Incumbency';
         } else {
             return;
         }
@@ -472,6 +521,41 @@ new class extends Component
                             <flux:error name="tplLedgerConsideration" />
                         </flux:field>
                     </div>
+                @elseif ($templateType === 'certificate_of_incumbency')
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <flux:field>
+                            <flux:label>{{ __('Certifying Officer') }}</flux:label>
+                            <flux:input wire:model="tplCertifyingOfficer" placeholder="Matt Stanford" />
+                            <flux:error name="tplCertifyingOfficer" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Title / Position') }}</flux:label>
+                            <flux:input wire:model="tplCertifyingTitle" placeholder="Secretary" />
+                            <flux:error name="tplCertifyingTitle" />
+                        </flux:field>
+                        <flux:field>
+                            <flux:label>{{ __('Certificate Date') }}</flux:label>
+                            <flux:input wire:model="tplCertificateDate" placeholder="March 18, 2026" />
+                            <flux:error name="tplCertificateDate" />
+                        </flux:field>
+                        <flux:field class="flex items-end">
+                            <flux:checkbox wire:model="tplIncludeOwnership" label="{{ __('Include ownership percentages') }}" />
+                        </flux:field>
+                        <flux:field class="sm:col-span-2">
+                            <flux:label>{{ __('Authority Statement') }}</flux:label>
+                            <flux:textarea wire:model="tplAuthorityStatement" rows="3" />
+                        </flux:field>
+                    </div>
+                    @if ($this->corporation->officers->count())
+                        <div class="mt-3 rounded border border-green-200 bg-green-50 p-3 text-sm dark:border-green-800 dark:bg-green-900/30">
+                            <span class="font-medium">{{ __('Officers auto-included:') }}</span>
+                            {{ $this->corporation->officers->map(fn ($o) => $o->name . ' (' . $o->title . ')')->implode(', ') }}
+                        </div>
+                    @else
+                        <div class="mt-3 rounded border border-amber-200 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-900/30">
+                            {{ __('No officers on this corporation yet. Add officers in the corporation edit form.') }}
+                        </div>
+                    @endif
                 @endif
 
                 <div class="mt-4 flex items-center justify-end gap-2">

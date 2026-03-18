@@ -55,6 +55,11 @@ class Corporation extends Model
         return $this->hasMany(CorporationOwner::class)->orderBy('sort_order');
     }
 
+    public function officers(): HasMany
+    {
+        return $this->hasMany(CorporationOfficer::class)->orderBy('sort_order');
+    }
+
     public function documents(): HasMany
     {
         return $this->hasMany(CorporateDocument::class);

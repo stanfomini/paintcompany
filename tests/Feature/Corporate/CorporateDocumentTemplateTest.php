@@ -292,6 +292,127 @@ it('creates document without user', function () {
     expect($doc->uploaded_by)->toBeNull();
 });
 
+// -- Certificate of Incumbency Template --
+
+it('creates a certificate of incumbency from template', function () {
+    $this->corporation->officers()->createMany([
+        ['name' => 'Alice Smith', 'title' => 'President', 'sort_order' => 0],
+        ['name' => 'Bob Jones', 'title' => 'Secretary', 'sort_order' => 1],
+    ]);
+
+    $data = [
+        'corporation_name' => $this->corporation->name,
+        'entity_type' => 'LLC',
+        'state' => 'Colorado',
+        'formation_date' => 'January 15, 2020',
+        'ein' => '12-3456789',
+        'address' => '123 Main St',
+        'city' => 'Denver',
+        'state_abbr' => 'CO',
+        'zip' => '80202',
+        'registered_agent' => 'Agent Corp',
+        'certifying_officer' => 'Alice Smith',
+        'certifying_title' => 'President',
+        'certificate_date' => 'March 18, 2026',
+        'include_ownership' => true,
+        'authority_statement' => 'The listed persons are authorized to act on behalf of the entity.',
+        'officers' => [
+            ['name' => 'Alice Smith', 'title' => 'President'],
+            ['name' => 'Bob Jones', 'title' => 'Secretary'],
+        ],
+        'owners' => [
+            ['name' => 'Alice Smith', 'role' => 'Managing Member', 'percentage' => 60],
+            ['name' => 'Bob Jones', 'role' => 'Member', 'percentage' => 40],
+        ],
+    ];
+
+    $doc = $this->service->createFromTemplate(
+        $this->corporation,
+        'certificate_of_incumbency',
+        'Certificate of Incumbency',
+        $data,
+        $this->user,
+    );
+
+    expect($doc)
+        ->toBeInstanceOf(CorporateDocument::class)
+        ->title->toBe('Certificate of Incumbency')
+        ->type->toBe('certificate_of_incumbency')
+        ->source->toBe('template')
+        ->status->toBe('ready')
+        ->version->toBe(1)
+        ->template_data->toBe($data);
+
+    Storage::assertExists($doc->original_file_path);
+});
+
+it('builds parsed content sections for certificate of incumbency', function () {
+    $data = [
+        'corporation_name' => 'Test Corp LLC',
+        'entity_type' => 'LLC',
+        'state' => 'Colorado',
+        'formation_date' => 'January 15, 2020',
+        'ein' => '12-3456789',
+        'address' => '123 Main St',
+        'city' => 'Denver',
+        'state_abbr' => 'CO',
+        'zip' => '80202',
+        'registered_agent' => 'Agent Corp',
+        'certifying_officer' => 'Alice Smith',
+        'certifying_title' => 'President',
+        'certificate_date' => 'March 18, 2026',
+        'include_ownership' => false,
+        'authority_statement' => 'Authorized to act.',
+        'officers' => [
+            ['name' => 'Alice Smith', 'title' => 'President'],
+        ],
+    ];
+
+    $sections = $this->service->buildSectionsForTemplate('certificate_of_incumbency', $data);
+
+    expect($sections)->toBeArray()->not->toBeEmpty();
+    expect($sections[0])->toMatchArray(['type' => 'heading', 'text' => 'Test Corp LLC']);
+    expect($sections[1])->toMatchArray(['type' => 'heading', 'text' => 'Certificate of Incumbency']);
+
+    // Should contain the officer
+    $officerTexts = collect($sections)->pluck('text');
+    expect($officerTexts->contains(fn ($t) => str_contains($t, 'Alice Smith')))->toBeTrue();
+});
+
+it('auto-includes corporation officers in certificate data', function () {
+    $this->corporation->officers()->createMany([
+        ['name' => 'Officer One', 'title' => 'President', 'sort_order' => 0],
+        ['name' => 'Officer Two', 'title' => 'Secretary', 'sort_order' => 1],
+    ]);
+
+    $data = [
+        'corporation_name' => $this->corporation->name,
+        'entity_type' => 'S-Corp',
+        'state' => 'Delaware',
+        'certifying_officer' => 'Officer One',
+        'certifying_title' => 'President',
+        'certificate_date' => 'March 18, 2026',
+        'include_ownership' => false,
+        'authority_statement' => 'Authorized.',
+        'officers' => $this->corporation->officers->map(fn ($o) => [
+            'name' => $o->name,
+            'title' => $o->title,
+        ])->toArray(),
+    ];
+
+    $doc = $this->service->createFromTemplate(
+        $this->corporation,
+        'certificate_of_incumbency',
+        'Certificate of Incumbency',
+        $data,
+        $this->user,
+    );
+
+    expect($doc->template_data['officers'])->toHaveCount(2);
+    expect($doc->template_data['officers'][0]['name'])->toBe('Officer One');
+    expect($doc->template_data['officers'][1]['name'])->toBe('Officer Two');
+});
+
 // -- isTemplateGenerated --
 
 it('marks template generated documents correctly', function () {

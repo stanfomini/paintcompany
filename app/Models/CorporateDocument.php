@@ -46,6 +46,7 @@ class CorporateDocument extends Model
         'resolution' => 'Resolution',
         'board_resolution' => 'Board Resolution',
         'stock_ledger' => 'Stock Ledger',
+        'certificate_of_incumbency' => 'Certificate of Incumbency',
         'amendment' => 'Amendment',
         'annual_report' => 'Annual Report',
         'other' => 'Other',
@@ -54,6 +55,7 @@ class CorporateDocument extends Model
     public const TEMPLATE_TYPES = [
         'board_resolution' => 'Board Resolution to Issue Shares',
         'stock_ledger' => 'Stock Ledger',
+        'certificate_of_incumbency' => 'Certificate of Incumbency',
     ];
 
     public const STATUSES = [

@@ -291,6 +291,7 @@ class CorporateDocumentService
         $viewMap = [
             'board_resolution' => 'pdf.board-resolution-shares',
             'stock_ledger' => 'pdf.stock-ledger',
+            'certificate_of_incumbency' => 'pdf.certificate-of-incumbency',
         ];
 
         $view = $viewMap[$type] ?? throw new \InvalidArgumentException("Unknown template type: {$type}");
@@ -338,6 +339,10 @@ class CorporateDocumentService
 
         if ($type === 'stock_ledger') {
             return $this->buildStockLedgerSections($data);
+        }
+
+        if ($type === 'certificate_of_incumbency') {
+            return $this->buildCertificateOfIncumbencySections($data);
         }
 
         return [];
@@ -414,6 +419,87 @@ class CorporateDocumentService
     }
 
     /**
+     * @return array<int, array{type: string, text: string, level?: int}>
+     */
+    private function buildCertificateOfIncumbencySections(array $data): array
+    {
+        $corpName = $data['corporation_name'] ?? '';
+        $entityType = $data['entity_type'] ?? 'LLC';
+        $certifyingOfficer = $data['certifying_officer'] ?? '';
+        $certifyingTitle = $data['certifying_title'] ?? '';
+        $certificateDate = $data['certificate_date'] ?? '';
+        $officers = $data['officers'] ?? [];
+
+        $isLlc = $entityType === 'LLC';
+        $personnelLabel = $isLlc ? 'Members and Managers' : 'Officers and Directors';
+
+        $sections = [
+            ['type' => 'heading', 'level' => 1, 'text' => $corpName],
+            ['type' => 'heading', 'level' => 2, 'text' => 'Certificate of Incumbency'],
+            ['type' => 'paragraph', 'text' => "I, {$certifyingOfficer}, the {$certifyingTitle} of {$corpName}, do hereby certify as of {$certificateDate} that the following persons hold the offices and positions set forth opposite their respective names and are duly authorized to act on behalf of the entity."],
+        ];
+
+        if (! empty($data['formation_date']) || ! empty($data['address']) || ! empty($data['ein'])) {
+            $sections[] = ['type' => 'heading', 'level' => 3, 'text' => 'Entity Information'];
+
+            $info = [];
+            if (! empty($data['state'])) {
+                $info[] = "State of Formation: {$data['state']}";
+            }
+            if (! empty($data['formation_date'])) {
+                $info[] = "Formation Date: {$data['formation_date']}";
+            }
+            if (! empty($data['address'])) {
+                $addr = $data['address'];
+                if (! empty($data['city'])) {
+                    $addr .= ', '.$data['city'];
+                }
+                if (! empty($data['state_abbr'])) {
+                    $addr .= ', '.$data['state_abbr'];
+                }
+                if (! empty($data['zip'])) {
+                    $addr .= ' '.$data['zip'];
+                }
+                $info[] = "Principal Address: {$addr}";
+            }
+            if (! empty($data['registered_agent'])) {
+                $info[] = "Registered Agent: {$data['registered_agent']}";
+            }
+            if (! empty($data['ein'])) {
+                $info[] = "EIN: {$data['ein']}";
+            }
+
+            foreach ($info as $line) {
+                $sections[] = ['type' => 'paragraph', 'text' => $line];
+            }
+        }
+
+        $sections[] = ['type' => 'heading', 'level' => 3, 'text' => $personnelLabel];
+
+        foreach ($officers as $officer) {
+            $line = ($officer['name'] ?? 'Unknown').' — '.($officer['title'] ?? $officer['role'] ?? 'Officer');
+            $sections[] = ['type' => 'paragraph', 'text' => $line];
+        }
+
+        if (! empty($data['include_ownership']) && ! empty($data['owners'])) {
+            $sections[] = ['type' => 'heading', 'level' => 3, 'text' => 'Ownership'];
+            foreach ($data['owners'] as $owner) {
+                $pct = isset($owner['percentage']) ? number_format((float) $owner['percentage'], 2).'%' : '';
+                $sections[] = ['type' => 'paragraph', 'text' => ($owner['name'] ?? 'Unknown').' — '.($owner['role'] ?? 'Member')." ({$pct})"];
+            }
+        }
+
+        if (! empty($data['authority_statement'])) {
+            $sections[] = ['type' => 'heading', 'level' => 3, 'text' => 'Authority'];
+            $sections[] = ['type' => 'paragraph', 'text' => $data['authority_statement']];
+        }
+
+        $sections[] = ['type' => 'paragraph', 'text' => "{$certifyingOfficer}, {$certifyingTitle}"];
+
+        return $sections;
+    }
+
+    /**
      * Export a corporate document to PDF.
      */
     public function exportToPdf(CorporateDocument $document): \Barryvdh\DomPDF\PDF
@@ -424,6 +510,7 @@ class CorporateDocumentService
             $viewMap = [
                 'board_resolution' => 'pdf.board-resolution-shares',
                 'stock_ledger' => 'pdf.stock-ledger',
+                'certificate_of_incumbency' => 'pdf.certificate-of-incumbency',
             ];
 
             $view = $viewMap[$document->type] ?? 'pdf.corporate-document';

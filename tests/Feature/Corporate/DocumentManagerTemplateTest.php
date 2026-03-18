@@ -21,7 +21,8 @@ it('shows template options in dropdown for managers', function () {
         ->assertSee('Add Document')
         ->assertSee('Upload PDF')
         ->assertSee('Board Resolution to Issue Shares')
-        ->assertSee('Stock Ledger');
+        ->assertSee('Stock Ledger')
+        ->assertSee('Certificate of Incumbency');
 });
 
 it('hides template options for non-managers', function () {
@@ -166,4 +167,63 @@ it('prevents non-managers from generating templates', function () {
         ->set('tplConsideration', '$100')
         ->call('generateFromTemplate')
         ->assertForbidden();
+});
+
+// -- Certificate of Incumbency --
+
+it('shows certificate of incumbency in template dropdown', function () {
+    Livewire::test('corporate.document-manager', ['corporationId' => $this->corporation->id])
+        ->assertSee('Certificate of Incumbency');
+});
+
+it('shows certificate of incumbency template form', function () {
+    Livewire::test('corporate.document-manager', ['corporationId' => $this->corporation->id])
+        ->call('showTemplate', 'certificate_of_incumbency')
+        ->assertSet('showTemplateForm', true)
+        ->assertSet('templateType', 'certificate_of_incumbency')
+        ->assertSee('Certifying Officer')
+        ->assertSee('Title / Position')
+        ->assertSee('Certificate Date')
+        ->assertSee('Include ownership percentages');
+});
+
+it('generates certificate of incumbency end-to-end', function () {
+    $this->corporation->officers()->createMany([
+        ['name' => 'Alice Smith', 'title' => 'President', 'sort_order' => 0],
+        ['name' => 'Bob Jones', 'title' => 'Secretary', 'sort_order' => 1],
+    ]);
+
+    Livewire::test('corporate.document-manager', ['corporationId' => $this->corporation->id])
+        ->call('showTemplate', 'certificate_of_incumbency')
+        ->set('tplCertifyingOfficer', 'Alice Smith')
+        ->set('tplCertifyingTitle', 'President')
+        ->set('tplCertificateDate', 'March 18, 2026')
+        ->set('tplIncludeOwnership', false)
+        ->call('generateFromTemplate')
+        ->assertSet('showTemplateForm', false)
+        ->assertHasNoErrors();
+
+    $doc = CorporateDocument::where('corporation_id', $this->corporation->id)
+        ->where('type', 'certificate_of_incumbency')
+        ->first();
+
+    expect($doc)
+        ->not->toBeNull()
+        ->source->toBe('template')
+        ->status->toBe('ready')
+        ->template_data->toBeArray();
+
+    expect($doc->template_data['certifying_officer'])->toBe('Alice Smith');
+    expect($doc->template_data['officers'])->toHaveCount(2);
+    expect($doc->template_data['officers'][0]['name'])->toBe('Alice Smith');
+    expect($doc->template_data['officers'][0]['title'])->toBe('President');
+
+    Storage::assertExists($doc->original_file_path);
+});
+
+it('validates required fields for certificate of incumbency', function () {
+    Livewire::test('corporate.document-manager', ['corporationId' => $this->corporation->id])
+        ->call('showTemplate', 'certificate_of_incumbency')
+        ->call('generateFromTemplate')
+        ->assertHasErrors(['tplCertifyingOfficer', 'tplCertifyingTitle', 'tplCertificateDate']);
 });

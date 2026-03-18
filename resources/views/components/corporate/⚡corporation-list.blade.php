@@ -2,6 +2,7 @@
 
 use App\Models\CompanySetting;
 use App\Models\Corporation;
+use App\Models\CorporationOfficer;
 use App\Models\CorporationOwner;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -31,6 +32,9 @@ new class extends Component
     // Owners
     public array $owners = [];
 
+    // Officers
+    public array $officers = [];
+
     public function boot(): void
     {
         if (! Auth::user()?->can('business_plan.view')) {
@@ -47,7 +51,10 @@ new class extends Component
     #[Computed]
     public function corporations(): \Illuminate\Database\Eloquent\Collection
     {
-        return Corporation::with(['owners' => fn ($q) => $q->orderBy('sort_order')])
+        return Corporation::with([
+            'owners' => fn ($q) => $q->orderBy('sort_order'),
+            'officers' => fn ($q) => $q->orderBy('sort_order'),
+        ])
             ->orderBy('name')
             ->get();
     }
@@ -61,7 +68,10 @@ new class extends Component
 
     public function openEditModal(int $id): void
     {
-        $corp = Corporation::with(['owners' => fn ($q) => $q->orderBy('sort_order')])->findOrFail($id);
+        $corp = Corporation::with([
+            'owners' => fn ($q) => $q->orderBy('sort_order'),
+            'officers' => fn ($q) => $q->orderBy('sort_order'),
+        ])->findOrFail($id);
 
         $this->editingId = $corp->id;
         $this->name = $corp->name;
@@ -86,6 +96,12 @@ new class extends Component
             'phone' => $o->phone ?? '',
         ])->toArray();
 
+        $this->officers = $corp->officers->map(fn ($o) => [
+            'id' => $o->id,
+            'name' => $o->name,
+            'title' => $o->title,
+        ])->toArray();
+
         $this->showModal = true;
         $this->editing = true;
     }
@@ -106,6 +122,21 @@ new class extends Component
     {
         unset($this->owners[$index]);
         $this->owners = array_values($this->owners);
+    }
+
+    public function addOfficer(): void
+    {
+        $this->officers[] = [
+            'id' => null,
+            'name' => '',
+            'title' => 'President',
+        ];
+    }
+
+    public function removeOfficer(int $index): void
+    {
+        unset($this->officers[$index]);
+        $this->officers = array_values($this->officers);
     }
 
     public function save(): void
@@ -133,6 +164,9 @@ new class extends Component
             'owners.*.role' => ['required', Rule::in(array_keys(CorporationOwner::ROLES))],
             'owners.*.email' => ['nullable', 'email', 'max:255'],
             'owners.*.phone' => ['nullable', 'string', 'max:20'],
+            'officers' => ['array'],
+            'officers.*.name' => ['required', 'string', 'max:255'],
+            'officers.*.title' => ['required', Rule::in(array_keys(CorporationOfficer::TITLES))],
         ]);
 
         $corpData = collect($validated)->except('owners')->toArray();
@@ -176,6 +210,30 @@ new class extends Component
         // Remove owners not in the keep list
         $corp->owners()->whereNotIn('id', $keepIds)->delete();
 
+        // Sync officers
+        $existingOfficerIds = $corp->officers->pluck('id')->toArray();
+        $keepOfficerIds = [];
+
+        foreach ($this->officers as $i => $officerData) {
+            if (! empty($officerData['id']) && in_array($officerData['id'], $existingOfficerIds)) {
+                CorporationOfficer::where('id', $officerData['id'])->update([
+                    'name' => $officerData['name'],
+                    'title' => $officerData['title'],
+                    'sort_order' => $i,
+                ]);
+                $keepOfficerIds[] = $officerData['id'];
+            } else {
+                $newOfficer = $corp->officers()->create([
+                    'name' => $officerData['name'],
+                    'title' => $officerData['title'],
+                    'sort_order' => $i,
+                ]);
+                $keepOfficerIds[] = $newOfficer->id;
+            }
+        }
+
+        $corp->officers()->whereNotIn('id', $keepOfficerIds)->delete();
+
         $this->showModal = false;
         $this->resetForm();
         unset($this->corporations);
@@ -207,6 +265,7 @@ new class extends Component
         $this->zip = '';
         $this->notes = '';
         $this->owners = [];
+        $this->officers = [];
         $this->resetValidation();
     }
 };
@@ -276,6 +335,21 @@ new class extends Component
                                             <flux:badge size="sm" variant="outline">{{ $owner->role }}</flux:badge>
                                         </div>
                                         <span class="font-medium text-zinc-600 dark:text-zinc-400">{{ $owner->percentage }}%</span>
+                                    </div>
+                                @endforeach
+                            </div>
+                        </div>
+                    @endif
+
+                    {{-- Officers --}}
+                    @if ($corp->officers->isNotEmpty())
+                        <div class="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                            <flux:text class="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{{ __('Officers') }}</flux:text>
+                            <div class="space-y-1">
+                                @foreach ($corp->officers as $officer)
+                                    <div wire:key="officer-{{ $officer->id }}" class="flex items-center gap-2 text-sm">
+                                        <span class="text-zinc-700 dark:text-zinc-300">{{ $officer->name }}</span>
+                                        <flux:badge size="sm" variant="outline">{{ $officer->title }}</flux:badge>
                                     </div>
                                 @endforeach
                             </div>
@@ -435,6 +509,47 @@ new class extends Component
                 @if (empty($owners))
                     <flux:text class="text-center text-sm text-zinc-400 dark:text-zinc-500">
                         {{ __('No owners added yet.') }}
+                    </flux:text>
+                @endif
+            </div>
+
+            {{-- Officers Section --}}
+            <div>
+                <div class="mb-3 flex items-center justify-between">
+                    <flux:heading size="sm">{{ __('Officers') }}</flux:heading>
+                    <flux:button size="xs" variant="ghost" icon="plus" wire:click="addOfficer">
+                        {{ __('Add Officer') }}
+                    </flux:button>
+                </div>
+
+                @foreach ($officers as $i => $officer)
+                    <div wire:key="officer-form-{{ $i }}" class="mb-3 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700">
+                        <div class="mb-2 flex items-center justify-between">
+                            <flux:text class="text-xs font-medium text-zinc-500">{{ __('Officer') }} #{{ $i + 1 }}</flux:text>
+                            <flux:button size="xs" variant="ghost" icon="x-mark" class="text-red-500" wire:click="removeOfficer({{ $i }})" />
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:field>
+                                <flux:label>{{ __('Name') }}</flux:label>
+                                <flux:input wire:model="officers.{{ $i }}.name" size="sm" />
+                                <flux:error name="officers.{{ $i }}.name" />
+                            </flux:field>
+                            <flux:field>
+                                <flux:label>{{ __('Title') }}</flux:label>
+                                <flux:select wire:model="officers.{{ $i }}.title" size="sm">
+                                    @foreach (\App\Models\CorporationOfficer::TITLES as $key => $label)
+                                        <flux:select.option :value="$key">{{ $label }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                                <flux:error name="officers.{{ $i }}.title" />
+                            </flux:field>
+                        </div>
+                    </div>
+                @endforeach
+
+                @if (empty($officers))
+                    <flux:text class="text-center text-sm text-zinc-400 dark:text-zinc-500">
+                        {{ __('No officers added yet.') }}
                     </flux:text>
                 @endif
             </div>

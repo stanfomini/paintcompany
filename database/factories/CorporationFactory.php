@@ -4,6 +4,7 @@ namespace Database\Factories;
 
 use App\Models\CompanySetting;
 use App\Models\Corporation;
+use App\Models\CorporationOfficer;
 use App\Models\CorporationOwner;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -61,6 +62,16 @@ class CorporationFactory extends Factory
     {
         return $this->afterCreating(function (Corporation $corporation) use ($count) {
             CorporationOwner::factory()
+                ->count($count)
+                ->for($corporation)
+                ->create();
+        });
+    }
+
+    public function withOfficers(int $count = 2): static
+    {
+        return $this->afterCreating(function (Corporation $corporation) use ($count) {
+            CorporationOfficer::factory()
                 ->count($count)
                 ->for($corporation)
                 ->create();
