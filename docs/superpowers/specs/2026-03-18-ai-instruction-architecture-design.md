@@ -163,8 +163,16 @@ When the user clicks "Edit" on an area card or adds a custom area, this modal op
   - **wall_sqft** — Total wall area: `perimeter_lnft × height`. Inherits the wall_count adjustment from perimeter.
   - **ceiling_sqft** — Ceiling area: `length × width` (not affected by wall_count).
 
+  **Wall Count (1-4):** Interior areas have a wall count selector with 1, 2, 3, or 4 wall pills. This is critical for flexible estimating:
+  - **4 walls** (default) — Standard enclosed room (bedroom, bathroom, office)
+  - **3 walls** — Room open to another room on one side (kitchen open to dining, living room with archway). Gets 75% of full perimeter/wall sqft.
+  - **2 walls** — Corner section, L-shaped alcove, or a two-wall accent area. Gets 50%.
+  - **1 wall** — Single wall estimate (accent wall, one side of a hallway, front of a house). Gets 25%.
+
+  **Length is optional.** For exterior work or single-surface estimates, you often only need width and height (e.g., the front face of a house is 45ft wide × 12ft tall — no length/depth needed). When length is omitted, the system calculates based on width only. This is important for exterior estimates where you're pricing individual faces of a building, a single fence section, or a retaining wall.
+
   Three measurement modes:
-  - **Dimensions mode:** Enter Length (ft), Width (ft), Height (ft), and Wall Count (1-4 pills, interior only). All three derived values are auto-calculated.
+  - **Dimensions mode:** Enter Width (ft), Height (ft), and optionally Length (ft). Wall Count (1-4 pills, interior only). All three derived values are auto-calculated. For exterior single-face work, just use width + height with wall_count=1.
   - **Sqft mode:** Enter Wall Sqft and Ceiling Sqft directly. Used when the user knows exact measurements.
   - **Lnft mode:** Enter Linear Feet directly. Used for exterior linear measurements.
 
@@ -264,10 +272,11 @@ The top-level container. Key fields:
 Represents one area on the estimate — a room, a section of exterior, a stairwell, etc. Key fields:
 - `name` — "Master Bedroom", "Kitchen", "Front Porch" (shown on proposal)
 - `scope_type` — "interior" or "exterior"
-- `length`, `width`, `height`, `wall_count` — Physical dimensions
-- `perimeter_lnft` — Auto-calculated: `2 × (length + width) × (wall_count / 4)`. Wall count defaults to 4; a 3-wall room gets 75% of full perimeter.
+- `length`, `width`, `height`, `wall_count` — Physical dimensions. Length is optional (can be null for single-face exterior work like "front of house" where only width × height matters).
+- `wall_count` — 1 to 4 (default 4). Controls what fraction of a full room's perimeter/wall area is used: 4=100%, 3=75%, 2=50%, 1=25%. Use 1 for single-wall or single-face estimates.
+- `perimeter_lnft` — Auto-calculated: `2 × (length + width) × (wall_count / 4)`. When length is null, uses width only.
 - `wall_sqft` — Auto-calculated: `perimeter_lnft × height`. Inherits wall_count adjustment.
-- `ceiling_sqft` — Auto-calculated: `length × width` (not affected by wall_count).
+- `ceiling_sqft` — Auto-calculated: `length × width` (not affected by wall_count). When length is null, uses width only.
 - `substrate_id` — Optional surface condition (modifies labor multipliers)
 - `measurement_type` — "dimensions", "sqft", or "lnft"
 
@@ -501,7 +510,7 @@ Default to 2 coats unless the user specifies otherwise. Coat multipliers adjust 
    - `add_surface_to_area_ai_tool(area_id=X, surface_category="trim", production_rate_id=[Cabinet Door Faces], coats=2, quantity_override=14)` → name: "Cabinet Door Faces", quantity_source: custom → 14 units
    - `add_surface_to_area_ai_tool(area_id=X, surface_category="trim", production_rate_id=[Cabinet Drawer Fronts], coats=2, quantity_override=8)` → name: "Cabinet Drawer Fronts", quantity_source: custom → 8 units
 
-**Example 3: Exterior — "Add the house exterior"**
+**Example 3: Exterior Full House — "Add the house exterior"**
 
 1. Search templates: `search_templates_ai_tool("house exterior")`
 2. Create from template or custom:
@@ -511,6 +520,30 @@ Default to 2 coats unless the user specifies otherwise. Coat multipliers adjust 
    - "Exterior Trim" — category: trim, rate: Trim 1 story (25 lnft/hr), quantity_source: perimeter_lnft
    - "Front Door" — category: exterior_doors, rate: Ext door body color (1 hr/unit), quantity_source: door_count, quantity_override: 1
    - "Windows" — category: windows, rate: Vinyl windows (4 units/hr), quantity_source: window_count, quantity_override: 12
+
+**Example 4: Flexible Dimensions — "Paint just the front of the house, 45 feet wide, 12 feet tall"**
+
+This is a single-face estimate. No length/depth needed — just width and height.
+
+1. `create_custom_area_ai_tool(name="Front of House", scope_type="exterior", length=0, width=45, height=12, wall_count=1)`
+   - wall_count=1 means we're estimating one face, not a full perimeter
+   - wall_sqft will calculate based on the single face: ~540 sqft
+   - perimeter_lnft will be reduced to 25% of full perimeter
+2. Add surfaces for just the front face: body/siding, trim, windows, front door
+
+**Example 5: Partial Room — "Paint 3 walls in the living room, the 4th wall is brick"**
+
+1. `create_custom_area_ai_tool(name="Living Room", scope_type="interior", length=18, width=14, height=9, wall_count=3)`
+   - wall_count=3 means 75% of the full room perimeter and wall area
+   - This correctly accounts for the unpainted brick wall
+2. Add surfaces normally — quantities auto-adjust to 3/4 of full room values
+
+**Example 6: Single Wall — "I need to paint an accent wall, it's 14 feet wide and 10 feet tall"**
+
+1. `create_custom_area_ai_tool(name="Accent Wall", scope_type="interior", length=0, width=14, height=10, wall_count=1)`
+   - wall_count=1 for a single wall
+   - wall_sqft ≈ 140 sqft (14 × 10)
+2. Add just a walls surface — no ceiling, no baseboards unless requested
 
 **Source:** Entirely new content. Fills the biggest gap in current instructions.
 
