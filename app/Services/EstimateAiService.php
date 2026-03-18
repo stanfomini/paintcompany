@@ -8,6 +8,7 @@ use App\Models\Estimate;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaAddon;
 use App\Models\EstimateAreaSurface;
+use App\Models\EstimateCostItem;
 use App\Models\EstimateTemplate;
 use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
@@ -1295,5 +1296,160 @@ class EstimateAiService
             }
             $area->update(['cached_cogs' => null, 'cached_customer_price' => null]);
         }
+    }
+
+    // =========================================================================
+    // COST ITEM METHODS
+    // =========================================================================
+
+    /**
+     * Add a cost item (material, rental, equipment, service) to an area or surface.
+     *
+     * @return array{success: true, cost_item: array}
+     */
+    public function addCostItem(
+        string $targetType,
+        int $targetId,
+        string $name,
+        string $costType = 'material',
+        float $quantity = 1,
+        string $unit = 'each',
+        float $unitCost = 0,
+        float $unitPrice = 0,
+        ?string $tier = null,
+        ?string $notes = null,
+    ): array {
+        if (! in_array($targetType, ['area', 'surface'], strict: true)) {
+            throw new \InvalidArgumentException("targetType must be 'area' or 'surface', got: {$targetType}");
+        }
+
+        $data = [
+            'name' => $name,
+            'cost_type' => $costType,
+            'quantity' => $quantity,
+            'unit' => $unit,
+            'unit_cost' => $unitCost,
+            'unit_price' => $unitPrice,
+            'tier' => $tier,
+            'notes' => $notes,
+        ];
+
+        if ($targetType === 'area') {
+            $area = EstimateArea::findOrFail($targetId);
+            $item = $area->costItems()->create($data);
+        } else {
+            $surface = EstimateAreaSurface::findOrFail($targetId);
+            $item = $surface->costItems()->create($data);
+        }
+
+        return ['success' => true, 'cost_item' => $item->toArray()];
+    }
+
+    /**
+     * Remove a cost item by ID.
+     *
+     * @return array{success: true}
+     */
+    public function removeCostItem(int $costItemId): array
+    {
+        $item = EstimateCostItem::findOrFail($costItemId);
+        $item->delete();
+
+        return ['success' => true];
+    }
+
+    /**
+     * List all cost items on a given area or surface.
+     *
+     * @return array{cost_items: array}
+     */
+    public function listCostItems(string $targetType, int $targetId): array
+    {
+        if (! in_array($targetType, ['area', 'surface'], strict: true)) {
+            throw new \InvalidArgumentException("targetType must be 'area' or 'surface', got: {$targetType}");
+        }
+
+        if ($targetType === 'area') {
+            $area = EstimateArea::findOrFail($targetId);
+            $items = $area->costItems()->get()->toArray();
+        } else {
+            $surface = EstimateAreaSurface::findOrFail($targetId);
+            $items = $surface->costItems()->get()->toArray();
+        }
+
+        return ['cost_items' => $items];
+    }
+
+    // =========================================================================
+    // AI CONTEXT METHODS
+    // =========================================================================
+
+    /**
+     * Persist internal AI session notes on the estimate.
+     *
+     * @return array{success: true}
+     */
+    public function updateAiContext(Estimate $estimate, string $context): array
+    {
+        $estimate->update(['ai_context' => $context]);
+
+        return ['success' => true];
+    }
+
+    /**
+     * Write a customer-facing proposal summary on the estimate.
+     *
+     * @return array{success: true}
+     */
+    public function updateAiSummary(Estimate $estimate, string $summary): array
+    {
+        $estimate->update(['ai_summary' => $summary]);
+
+        return ['success' => true];
+    }
+
+    /**
+     * Return customer, property, and deal context for this estimate.
+     *
+     * @return array{customer: array|null, property: array|null, deal: array|null}
+     */
+    public function getProjectContext(Estimate $estimate): array
+    {
+        $estimate->load(['deal.customer', 'deal.property']);
+
+        $deal = $estimate->deal;
+        $customer = $deal?->customer;
+        $property = $deal?->property;
+
+        return [
+            'customer' => $customer ? [
+                'id' => $customer->id,
+                'first_name' => $customer->first_name,
+                'last_name' => $customer->last_name,
+                'email' => $customer->email,
+                'phone' => $customer->phone,
+                'address' => $customer->address,
+                'city' => $customer->city,
+                'state' => $customer->state,
+                'zip' => $customer->zip,
+            ] : null,
+            'property' => $property ? [
+                'id' => $property->id,
+                'address' => $property->address,
+                'city' => $property->city,
+                'state' => $property->state,
+                'zip' => $property->zip,
+                'type' => $property->type,
+                'square_footage' => $property->square_footage,
+                'year_built' => $property->year_built,
+                'listing_status' => $property->listing_status,
+                'listing_price' => $property->listing_price,
+            ] : null,
+            'deal' => $deal ? [
+                'id' => $deal->id,
+                'stage' => $deal->stage,
+                'title' => $deal->title ?? null,
+            ] : null,
+        ];
     }
 }
