@@ -767,9 +767,11 @@ class EstimateAiService
      * @param  array<string>|null  $tiers
      * @return array{area_id: int, package_tiers: array<string>|null, included_in: array<string>}
      */
-    public function setAreaPackageTiers(int $areaId, ?array $tiers): array
+    public function setAreaPackageTiers(int $areaId, ?array $tiers, ?Estimate $estimate = null): array
     {
-        $area = EstimateArea::findOrFail($areaId);
+        $area = $estimate
+            ? $estimate->areas()->findOrFail($areaId)
+            : EstimateArea::findOrFail($areaId);
 
         $allTiers = ['good', 'better', 'best'];
 
@@ -824,6 +826,7 @@ class EstimateAiService
         ?float $laborHours = null,
         ?int $paintProductId = null,
         ?float $materialCost = null,
+        ?Estimate $estimate = null,
     ): array {
         $validTiers = ['good', 'better', 'best'];
 
@@ -832,6 +835,10 @@ class EstimateAiService
         }
 
         $surface = EstimateAreaSurface::with(['area', 'productionRate'])->findOrFail($surfaceId);
+
+        if ($estimate !== null && (int) $surface->area->estimate_id !== (int) $estimate->id) {
+            throw new \InvalidArgumentException('Surface does not belong to this estimate.');
+        }
 
         $existingOverrides = $surface->tier_overrides ?? [];
 
