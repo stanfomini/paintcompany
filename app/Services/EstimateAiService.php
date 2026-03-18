@@ -1308,6 +1308,7 @@ class EstimateAiService
      * @return array{success: true, cost_item: array}
      */
     public function addCostItem(
+        Estimate $estimate,
         string $targetType,
         int $targetId,
         string $name,
@@ -1335,10 +1336,13 @@ class EstimateAiService
         ];
 
         if ($targetType === 'area') {
-            $area = EstimateArea::findOrFail($targetId);
+            $area = $estimate->areas()->findOrFail($targetId);
             $item = $area->costItems()->create($data);
         } else {
             $surface = EstimateAreaSurface::findOrFail($targetId);
+            if ((int) $surface->area->estimate_id !== (int) $estimate->id) {
+                throw new \InvalidArgumentException('Surface does not belong to this estimate.');
+            }
             $item = $surface->costItems()->create($data);
         }
 
@@ -1350,9 +1354,21 @@ class EstimateAiService
      *
      * @return array{success: true}
      */
-    public function removeCostItem(int $costItemId): array
+    public function removeCostItem(Estimate $estimate, int $costItemId): array
     {
         $item = EstimateCostItem::findOrFail($costItemId);
+        $costable = $item->costable;
+
+        if ($costable instanceof EstimateArea) {
+            if ((int) $costable->estimate_id !== (int) $estimate->id) {
+                throw new \InvalidArgumentException('Cost item does not belong to this estimate.');
+            }
+        } elseif ($costable instanceof EstimateAreaSurface) {
+            if ((int) $costable->area->estimate_id !== (int) $estimate->id) {
+                throw new \InvalidArgumentException('Cost item does not belong to this estimate.');
+            }
+        }
+
         $item->delete();
 
         return ['success' => true];
@@ -1363,17 +1379,20 @@ class EstimateAiService
      *
      * @return array{cost_items: array}
      */
-    public function listCostItems(string $targetType, int $targetId): array
+    public function listCostItems(Estimate $estimate, string $targetType, int $targetId): array
     {
         if (! in_array($targetType, ['area', 'surface'], strict: true)) {
             throw new \InvalidArgumentException("targetType must be 'area' or 'surface', got: {$targetType}");
         }
 
         if ($targetType === 'area') {
-            $area = EstimateArea::findOrFail($targetId);
+            $area = $estimate->areas()->findOrFail($targetId);
             $items = $area->costItems()->get()->toArray();
         } else {
             $surface = EstimateAreaSurface::findOrFail($targetId);
+            if ((int) $surface->area->estimate_id !== (int) $estimate->id) {
+                throw new \InvalidArgumentException('Surface does not belong to this estimate.');
+            }
             $items = $surface->costItems()->get()->toArray();
         }
 

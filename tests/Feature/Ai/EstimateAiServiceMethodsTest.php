@@ -49,6 +49,7 @@ beforeEach(function () {
 
 it('adds a cost item to an area', function () {
     $result = $this->service->addCostItem(
+        estimate: $this->estimate,
         targetType: 'area',
         targetId: $this->area->id,
         name: 'Baseboard Material',
@@ -79,6 +80,7 @@ it('adds a cost item to an area', function () {
 
 it('adds a cost item to a surface', function () {
     $result = $this->service->addCostItem(
+        estimate: $this->estimate,
         targetType: 'surface',
         targetId: $this->surface->id,
         name: 'Sprayer Rental',
@@ -110,6 +112,7 @@ it('adds a cost item to a surface', function () {
 
 it('throws when adding cost item with invalid target type', function () {
     $this->service->addCostItem(
+        estimate: $this->estimate,
         targetType: 'estimate',
         targetId: $this->estimate->id,
         name: 'Something',
@@ -122,6 +125,7 @@ it('throws when adding cost item with invalid target type', function () {
 
 it('auto-calculates total_cost and total_price on creation', function () {
     $result = $this->service->addCostItem(
+        estimate: $this->estimate,
         targetType: 'area',
         targetId: $this->area->id,
         name: 'Paint',
@@ -149,7 +153,7 @@ it('removes a cost item by id', function () {
         'unit_price' => 20.00,
     ]);
 
-    $result = $this->service->removeCostItem(costItemId: $item->id);
+    $result = $this->service->removeCostItem(estimate: $this->estimate, costItemId: $item->id);
 
     expect($result['success'])->toBeTrue();
     expect(EstimateCostItem::find($item->id))->toBeNull();
@@ -160,7 +164,7 @@ it('removes a cost item by id', function () {
 // =============================================================================
 
 it('throws when removing a non-existent cost item', function () {
-    $this->service->removeCostItem(costItemId: 99999);
+    $this->service->removeCostItem(estimate: $this->estimate, costItemId: 99999);
 })->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
 
 // =============================================================================
@@ -186,7 +190,7 @@ it('lists cost items on an area', function () {
         'unit_price' => 100.00,
     ]);
 
-    $result = $this->service->listCostItems(targetType: 'area', targetId: $this->area->id);
+    $result = $this->service->listCostItems(estimate: $this->estimate, targetType: 'area', targetId: $this->area->id);
 
     expect($result['cost_items'])->toHaveCount(2)
         ->and(collect($result['cost_items'])->pluck('name')->toArray())->toContain('Item A', 'Item B');
@@ -206,7 +210,7 @@ it('lists cost items on a surface', function () {
         'unit_price' => 150.00,
     ]);
 
-    $result = $this->service->listCostItems(targetType: 'surface', targetId: $this->surface->id);
+    $result = $this->service->listCostItems(estimate: $this->estimate, targetType: 'surface', targetId: $this->surface->id);
 
     expect($result['cost_items'])->toHaveCount(1)
         ->and($result['cost_items'][0]['name'])->toBe('Surface Item');
@@ -217,7 +221,7 @@ it('lists cost items on a surface', function () {
 // =============================================================================
 
 it('returns empty cost_items array when none exist', function () {
-    $result = $this->service->listCostItems(targetType: 'area', targetId: $this->area->id);
+    $result = $this->service->listCostItems(estimate: $this->estimate, targetType: 'area', targetId: $this->area->id);
 
     expect($result['cost_items'])->toBeArray()->toBeEmpty();
 });
@@ -227,7 +231,7 @@ it('returns empty cost_items array when none exist', function () {
 // =============================================================================
 
 it('throws when listing cost items with invalid target type', function () {
-    $this->service->listCostItems(targetType: 'estimate', targetId: $this->estimate->id);
+    $this->service->listCostItems(estimate: $this->estimate, targetType: 'estimate', targetId: $this->estimate->id);
 })->throws(\InvalidArgumentException::class);
 
 // =============================================================================
@@ -384,3 +388,106 @@ it('returns null property when deal has no property', function () {
         ->and($result['property'])->toBeNull()
         ->and($result['deal'])->not->toBeNull();
 });
+
+// =============================================================================
+// Ownership validation — addCostItem rejects foreign area
+// =============================================================================
+
+it('throws when adding cost item to an area from a different estimate', function () {
+    $otherEstimate = Estimate::factory()->create(['status' => 'draft', 'project_type' => 'interior']);
+    $otherArea = EstimateArea::factory()->forEstimate($otherEstimate)->create(['name' => 'Other Room']);
+
+    $this->service->addCostItem(
+        estimate: $this->estimate,
+        targetType: 'area',
+        targetId: $otherArea->id,
+        name: 'Intruder Item',
+    );
+})->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+// =============================================================================
+// Ownership validation — addCostItem rejects foreign surface
+// =============================================================================
+
+it('throws when adding cost item to a surface from a different estimate', function () {
+    $otherEstimate = Estimate::factory()->create(['status' => 'draft', 'project_type' => 'interior']);
+    $otherArea = EstimateArea::factory()->forEstimate($otherEstimate)->create(['name' => 'Other Room']);
+    $otherSurface = EstimateAreaSurface::factory()->forArea($otherArea)->create(['name' => 'Wall']);
+
+    $this->service->addCostItem(
+        estimate: $this->estimate,
+        targetType: 'surface',
+        targetId: $otherSurface->id,
+        name: 'Intruder Item',
+    );
+})->throws(\InvalidArgumentException::class);
+
+// =============================================================================
+// Ownership validation — listCostItems rejects foreign area
+// =============================================================================
+
+it('throws when listing cost items on an area from a different estimate', function () {
+    $otherEstimate = Estimate::factory()->create(['status' => 'draft', 'project_type' => 'interior']);
+    $otherArea = EstimateArea::factory()->forEstimate($otherEstimate)->create(['name' => 'Other Room']);
+
+    $this->service->listCostItems(
+        estimate: $this->estimate,
+        targetType: 'area',
+        targetId: $otherArea->id,
+    );
+})->throws(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+// =============================================================================
+// Ownership validation — listCostItems rejects foreign surface
+// =============================================================================
+
+it('throws when listing cost items on a surface from a different estimate', function () {
+    $otherEstimate = Estimate::factory()->create(['status' => 'draft', 'project_type' => 'interior']);
+    $otherArea = EstimateArea::factory()->forEstimate($otherEstimate)->create(['name' => 'Other Room']);
+    $otherSurface = EstimateAreaSurface::factory()->forArea($otherArea)->create(['name' => 'Wall']);
+
+    $this->service->listCostItems(
+        estimate: $this->estimate,
+        targetType: 'surface',
+        targetId: $otherSurface->id,
+    );
+})->throws(\InvalidArgumentException::class);
+
+// =============================================================================
+// Ownership validation — removeCostItem rejects cost item from a foreign area
+// =============================================================================
+
+it('throws when removing a cost item that belongs to a different estimate area', function () {
+    $otherEstimate = Estimate::factory()->create(['status' => 'draft', 'project_type' => 'interior']);
+    $otherArea = EstimateArea::factory()->forEstimate($otherEstimate)->create(['name' => 'Other Room']);
+    $otherItem = $otherArea->costItems()->create([
+        'name' => 'Foreign Item',
+        'cost_type' => 'material',
+        'quantity' => 1,
+        'unit' => 'each',
+        'unit_cost' => 10.00,
+        'unit_price' => 20.00,
+    ]);
+
+    $this->service->removeCostItem(estimate: $this->estimate, costItemId: $otherItem->id);
+})->throws(\InvalidArgumentException::class);
+
+// =============================================================================
+// Ownership validation — removeCostItem rejects cost item from a foreign surface
+// =============================================================================
+
+it('throws when removing a cost item that belongs to a different estimate surface', function () {
+    $otherEstimate = Estimate::factory()->create(['status' => 'draft', 'project_type' => 'interior']);
+    $otherArea = EstimateArea::factory()->forEstimate($otherEstimate)->create(['name' => 'Other Room']);
+    $otherSurface = EstimateAreaSurface::factory()->forArea($otherArea)->create(['name' => 'Wall']);
+    $otherItem = $otherSurface->costItems()->create([
+        'name' => 'Foreign Surface Item',
+        'cost_type' => 'rental',
+        'quantity' => 1,
+        'unit' => 'day',
+        'unit_cost' => 75.00,
+        'unit_price' => 150.00,
+    ]);
+
+    $this->service->removeCostItem(estimate: $this->estimate, costItemId: $otherItem->id);
+})->throws(\InvalidArgumentException::class);
