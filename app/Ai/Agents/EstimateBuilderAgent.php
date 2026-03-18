@@ -11,6 +11,7 @@ use App\Ai\Tools\Estimate\CreateEstimateItemAiTool;
 use App\Ai\Tools\Estimate\CreateNestedTemplateAiTool;
 use App\Ai\Tools\Estimate\CreateProductionRateAiTool;
 use App\Ai\Tools\Estimate\CreateTemplateAiTool;
+use App\Ai\Tools\Estimate\ExecuteEstimatePlanAiTool;
 use App\Ai\Tools\Estimate\GetEstimateStateAiTool;
 use App\Ai\Tools\Estimate\GetEstimateSummaryAiTool;
 use App\Ai\Tools\Estimate\GetPricingConfigAiTool;
@@ -277,6 +278,9 @@ class EstimateBuilderAgent implements Agent, Conversational, HasTools
 
             // Recalculate tool
             new RecalculateEstimateAiTool($this->estimate),
+
+            // Batch execution (mega-tool)
+            new ExecuteEstimatePlanAiTool($this->estimate),
         ];
     }
 }

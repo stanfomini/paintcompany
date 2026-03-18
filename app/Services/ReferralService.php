@@ -71,6 +71,11 @@ class ReferralService
         );
 
         $customer = $result->customer;
+
+        if (! empty($data['sms_marketing_consent'])) {
+            $customer->update(['sms_marketing_consent_at' => now()]);
+        }
+
         $deal = $result->deal;
 
         // Find auto-created property and link to deal if not already set

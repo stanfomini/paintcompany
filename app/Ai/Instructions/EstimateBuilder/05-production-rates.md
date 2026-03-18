@@ -2,6 +2,8 @@
 
 Production rates define painter speed only. Labor cost comes from CompanySetting (effective hourly rate). Material cost comes from PaintProduct.
 
+**IMPORTANT: The system has 125+ pre-loaded production rates covering every common surface type for both interior and exterior work.** Always call `list_production_rates_ai_tool` first. You will almost always find an existing rate that fits. Only create new rates for truly unusual work (venetian plaster, specialty epoxy, etc.).
+
 ## The 5 Rate Types
 
 | Rate Type | Meaning | Labor Hours Formula | Use When |
@@ -88,16 +90,31 @@ Rule: detailed woodwork in units/lnft → `trim`. Flat area in sqft → `walls`/
 
 ### Exterior
 
-| Surface | Rate | Type |
+**Each exterior surface type has its own `surface_category`. Do NOT put fascia under `trim` or doors under `body`.**
+
+| Surface | Category | Rate | Type | Quantity |
+|---|---|---|---|---|
+| Siding — spray | `body` | 150-250 sqft/hr | sqft_hr | auto (wall_sqft) |
+| Siding — brush/roll | `body` | 75-125 sqft/hr | sqft_hr | auto (wall_sqft) |
+| Fascia | `fascia` | 30-50 lnft/hr | lnft_hr | auto (perimeter_lnft) |
+| Eaves/soffits | `eaves` | 15-75 lnft/hr | lnft_hr | auto (perimeter_lnft) |
+| Exterior trim (downspouts, posts) | `trim` | 20-50 lnft/hr | lnft_hr | auto (perimeter_lnft) |
+| Exterior windows | `windows` | 1-6 units/hr | units_hr | **OVERRIDE required** |
+| Exterior doors | `exterior_doors` | 0.4-4 units/hr | units_hr | **OVERRIDE required** |
+| Deck staining (horizontal) | `body` | 75-150 sqft/hr | sqft_hr | auto |
+| Deck railing | `trim` | 15-30 lnft/hr | lnft_hr | auto |
+| Fence (solid panel) | `body` | 100-200 sqft/hr | sqft_hr | auto |
+| Fence (picket) | `body` | 50-100 sqft/hr | sqft_hr | auto |
+| Pergola/arbor | `body` | 30-60 sqft/hr | sqft_hr | auto |
+| Wood replacement | `wood_replacement` | varies | cost_per_lnft | **OVERRIDE required** |
+
+### Exterior Category Mapping — Do Not Confuse
+
+| Item | Correct Category | Wrong Category |
 |---|---|---|
-| Siding — spray | 150-250 sqft/hr | sqft_hr |
-| Siding — brush/roll | 75-125 sqft/hr | sqft_hr |
-| Fascia | 30-50 lnft/hr | lnft_hr |
-| Eaves/soffits | 15-75 lnft/hr | lnft_hr |
-| Exterior windows | 1-6 units/hr | units_hr |
-| Exterior doors | 0.8-1.3 hrs/door | hours_per_unit |
-| Deck staining (horizontal) | 75-150 sqft/hr | sqft_hr |
-| Deck railing | 15-30 lnft/hr | lnft_hr |
-| Fence (solid panel) | 100-200 sqft/hr | sqft_hr |
-| Fence (picket) | 50-100 sqft/hr | sqft_hr |
-| Pergola/arbor | 30-60 sqft/hr | sqft_hr |
+| Fascia boards | `fascia` | ~~`trim`~~ |
+| Eaves, soffits, overhangs | `eaves` | ~~`ceiling`~~ |
+| Front door, garage service door | `exterior_doors` | ~~`doors`~~ |
+| Siding, stucco, masonry | `body` | ~~`walls`~~ |
+| Window frames/trim | `windows` | ~~`trim`~~ |
+| General exterior trim, downspouts | `trim` | (correct) |

@@ -104,6 +104,8 @@ class ProductionRate extends Model
         self::CATEGORY_WALLS => 'Walls',
         self::CATEGORY_CEILING => 'Ceiling',
         self::CATEGORY_BASEBOARD => 'Baseboard',
+        self::CATEGORY_TRIM => 'Other Trim',
+        self::CATEGORY_WINDOWS => 'Windows',
         self::CATEGORY_DOORS => 'Doors',
         self::CATEGORY_PREP => 'Prep Work',
     ];

@@ -99,6 +99,11 @@ class AppointmentBookingService
             );
 
             $customer = $result->customer;
+
+            if (! empty($prospectData['sms_marketing_consent'])) {
+                $customer->update(['sms_marketing_consent_at' => now()]);
+            }
+
             $deal = $result->deal;
 
             // Link property to customer if not set

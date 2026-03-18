@@ -530,7 +530,7 @@ it('throws when creating a production rate with an invalid surface_category', fu
     $this->service->createProductionRate(
         name: 'Bad Rate',
         scope: 'interior',
-        surfaceCategory: 'siding',
+        surfaceCategory: 'Invalid Category',
         productionRate: 200.0,
     );
 })->throws(\InvalidArgumentException::class);

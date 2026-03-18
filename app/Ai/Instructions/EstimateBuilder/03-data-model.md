@@ -91,13 +91,23 @@ Speed data only — how fast a painter works. Contains NO pricing or wage inform
 ALL material costs come from here, never from ProductionRate.
 
 - `name` — "Duration", "SuperPaint", "ProMar 200"
-- `quality_tier` — `"good"`, `"better"`, `"best"`
+- `quality_tier` — `"good"`, `"better"`, `"best"` — used to filter paints for tier pricing
 - `price_per_gallon` — primary material cost input
 - `coverage_sqft_brush_roll` / `coverage_sqft_spray` — sqft per gallon by method
 - `scope_type` — `"interior"`, `"exterior"`, or `"both"`
 - `sheen` — flat, matte, eggshell, satin, semi-gloss, gloss
 
 **Material cost formula:** gallons = ceil((quantity * coats) / coverage). Cost = gallons * (price_per_gallon + recycle_fee).
+
+**CRITICAL:** If no PaintProduct is assigned (estimate-level, area-level, or surface-level), material cost = $0. This means the estimate only includes labor costs and is significantly underpriced. Always ensure a paint product is set.
+
+**Paint assignment priority (highest wins):**
+1. Surface-level `paint_product_id` — individual surface override
+2. Area-level `default_paint_product_id` — all surfaces in area
+3. Estimate-level `default_paint_product_id` or `paint_products_by_category` — all surfaces on estimate
+4. Tier-level paint from `paint_tiers` — used when viewing a specific tier
+
+**Exception:** Surfaces using `cost_per_lnft` rate type (wood replacement) don't use PaintProduct — the rate itself is a bundled cost.
 
 ## Substrate
 

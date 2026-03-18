@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class EstimateAreaSurface extends Model
 {
@@ -218,6 +219,14 @@ class EstimateAreaSurface extends Model
     public function paintProduct(): BelongsTo
     {
         return $this->belongsTo(PaintProduct::class);
+    }
+
+    /**
+     * Get cost items for this surface (materials, rentals, equipment).
+     */
+    public function costItems(): MorphMany
+    {
+        return $this->morphMany(EstimateCostItem::class, 'costable');
     }
 
     /**

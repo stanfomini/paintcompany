@@ -76,6 +76,7 @@ describe('Landing page', function () {
             ->set('email', 'jane@example.com')
             ->set('phone', '303-555-1234')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -99,6 +100,7 @@ describe('Landing page', function () {
             ->set('last_name', 'Customer')
             ->set('email', 'referred@example.com')
             ->set('estimate_preference', 'in_person')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -120,6 +122,7 @@ describe('Landing page', function () {
             ->set('last_name', 'User')
             ->set('email', 'test@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertRedirect();
 
@@ -150,6 +153,7 @@ describe('Landing page', function () {
             ->set('last_name', 'User')
             ->set('email', 'portal@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -176,6 +180,7 @@ describe('Landing page', function () {
             ->set('last_name', 'User')
             ->set('email', 'existing@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertHasNoErrors()
             ->assertRedirect(route('customer.login'));

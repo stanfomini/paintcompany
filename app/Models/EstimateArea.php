@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class EstimateArea extends Model
 {
@@ -290,6 +291,14 @@ class EstimateArea extends Model
     }
 
     /**
+     * Get cost items for this area (materials, rentals, equipment).
+     */
+    public function costItems(): MorphMany
+    {
+        return $this->morphMany(EstimateCostItem::class, 'costable');
+    }
+
+    /**
      * Get the total of all included surfaces.
      */
     public function getSurfacesTotalAttribute(): float
@@ -454,8 +463,15 @@ class EstimateArea extends Model
         // Add addon costs (nested area templates like closets)
         $addonCost = (float) $this->addons()->sum('total_price');
 
+        // Add cost items (materials, rentals, equipment) to COGS
+        $costItemsCost = (float) $this->costItems()->sum('total_cost');
+        $surfaceCostItemsCost = 0.0;
+        foreach ($this->surfaces()->where('is_included', true)->get() as $s) {
+            $surfaceCostItemsCost += (float) $s->costItems()->sum('total_cost');
+        }
+
         // Calculate COGS with taxes
-        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost + $addonCost);
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost + $addonCost + $costItemsCost + $surfaceCostItemsCost);
 
         return $cogsResult['cogs'];
     }

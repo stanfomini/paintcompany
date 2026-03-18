@@ -96,6 +96,14 @@ class NestedAreaTemplate extends Model
     }
 
     /**
+     * Get the surfaces for this template.
+     */
+    public function surfaces(): HasMany
+    {
+        return $this->hasMany(NestedTemplateSurface::class)->orderBy('sort_order');
+    }
+
+    /**
      * Get areas created from this template.
      */
     public function estimateAreas(): HasMany
@@ -161,6 +169,12 @@ class NestedAreaTemplate extends Model
     public function getCalculatedPrice(?string $scopeType = null): float
     {
         $scope = $scopeType ?? $this->scope_type ?? 'interior';
+
+        // If surfaces exist, calculate from surfaces using PBP formula
+        if ($this->surfaces()->exists()) {
+            return $this->calculatePriceFromSurfaces($scope);
+        }
+
         $laborHours = (float) ($this->estimated_hours ?? 0);
         $materialCost = (float) ($this->material_cost ?? 0);
 
@@ -179,6 +193,79 @@ class NestedAreaTemplate extends Model
         $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $materialCost);
 
         return $settings->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+    }
+
+    /**
+     * Calculate price from surfaces using production rates and PBP formula.
+     */
+    protected function calculatePriceFromSurfaces(string $scope): float
+    {
+        $settings = CompanySetting::getInstance();
+        $effectiveRate = $settings->getEffectiveHourlyRateForScope($scope);
+
+        $totalLaborHours = 0.0;
+        $totalMaterialCost = (float) ($this->material_cost ?? 0);
+
+        foreach ($this->surfaces as $surface) {
+            if (! $surface->is_default_enabled) {
+                continue;
+            }
+
+            $rate = $surface->productionRate;
+            if (! $rate) {
+                continue;
+            }
+
+            // Calculate quantity based on template dimensions and calculation method
+            $quantity = $this->calculateSurfaceQuantity($surface);
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $coatMultiplier = $rate->getCoatMultiplier($surface->default_coats);
+            $laborHours = ($quantity / (float) $rate->production_rate) * $coatMultiplier;
+            $totalLaborHours += $laborHours;
+        }
+
+        if ($totalLaborHours <= 0 && $totalMaterialCost <= 0) {
+            return (float) ($this->fixed_price ?? 0);
+        }
+
+        $laborCost = $totalLaborHours * $effectiveRate;
+        $cleanupHours = $settings->calculateCleanupHours($totalLaborHours, $scope);
+        $cleanupCost = $cleanupHours * $effectiveRate;
+        $sundriesCost = $settings->calculateSundriesCost($totalLaborHours, $scope);
+
+        $cogsResult = $settings->calculateCOGS($laborCost, $cleanupCost, $sundriesCost, $totalMaterialCost);
+
+        return $settings->calculateOTDFromCOGS($cogsResult['cogs'], $scope);
+    }
+
+    /**
+     * Calculate surface quantity from template dimensions and calculation method.
+     */
+    protected function calculateSurfaceQuantity(NestedTemplateSurface $surface): float
+    {
+        $length = (float) ($this->default_length ?? 0);
+        $width = (float) ($this->default_width ?? 0);
+        $height = (float) ($this->default_height ?? 8);
+        $perimeter = 2 * ($length + $width);
+        $floorSqft = $length * $width;
+
+        return match ($surface->calculation_method) {
+            'ratio' => match ($surface->surface_type) {
+                'walls' => $perimeter * $height * (float) $surface->calculation_value,
+                'ceiling', 'floor' => $floorSqft * (float) $surface->calculation_value,
+                'trim' => $perimeter * (float) $surface->calculation_value,
+                'doors' => (float) $surface->calculation_value,
+                default => $floorSqft * (float) $surface->calculation_value,
+            },
+            'per_100sqft' => ($floorSqft / 100) * (float) $surface->calculation_value,
+            'per_lnft' => $perimeter * (float) $surface->calculation_value,
+            'fixed_count' => (float) $surface->calculation_value,
+            'fixed_price' => 0, // No labor calculation for fixed price items
+            default => 0,
+        };
     }
 
     /**

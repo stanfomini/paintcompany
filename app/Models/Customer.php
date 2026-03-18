@@ -95,6 +95,7 @@ class Customer extends Model
         'zip',
         'notes',
         'status',
+        'sms_marketing_consent_at',
         'source',
         'estimate_preference',
     ];
@@ -103,6 +104,7 @@ class Customer extends Model
     {
         return [
             'deleted_at' => 'datetime',
+            'sms_marketing_consent_at' => 'datetime',
         ];
     }
 

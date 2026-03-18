@@ -28,6 +28,7 @@ describe('Unified CTA flow - Main form', function () {
             ->set('last_name', 'Doe')
             ->set('email', 'jane-unified@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -44,6 +45,7 @@ describe('Unified CTA flow - Main form', function () {
             ->set('last_name', 'Test')
             ->set('email', 'invite-test@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm');
 
         $invitation = Invitation::where('email', 'invite-test@example.com')
@@ -68,6 +70,7 @@ describe('Unified CTA flow - Main form', function () {
             ->set('zip', '80202')
             ->set('estimate_preference', 'in_person')
             ->set('description', 'Paint my house')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm');
 
         $prefill = session('landing_page_prefill');
@@ -91,6 +94,7 @@ describe('Unified CTA flow - Main form', function () {
             ->set('last_name', 'User')
             ->set('email', 'existing-unified@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm')
             ->assertRedirect(route('customer.login'));
     });
@@ -103,6 +107,7 @@ describe('Unified CTA flow - Main form', function () {
             ->set('last_name', 'Test')
             ->set('email', 'notify-test@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm');
 
         $invitation = Invitation::where('email', 'notify-test@example.com')->first();
@@ -119,6 +124,7 @@ describe('Unified CTA flow - Main form', function () {
             ->set('last_name', 'Invite')
             ->set('email', 'no-invite-existing@example.com')
             ->set('estimate_preference', 'virtual')
+            ->set('smsServiceConsent', true)
             ->call('submitLeadForm');
 
         expect(Invitation::where('email', 'no-invite-existing@example.com')->exists())->toBeFalse();

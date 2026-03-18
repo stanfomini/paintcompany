@@ -169,6 +169,7 @@ class ProcessEstimateAiChat implements ShouldQueue
             'SaveAiContextAiTool' => 'Saving notes...',
             'GetProjectContextAiTool' => 'Loading project context...',
             'WriteEstimateSummaryAiTool' => 'Writing summary...',
+            'ExecuteEstimatePlanAiTool' => 'Executing estimate plan...',
             default => 'Working...',
         };
     }
@@ -198,6 +199,7 @@ class ProcessEstimateAiChat implements ShouldQueue
             'RemoveCostItemAiTool',
             'SetAreaPackageTiersAiTool',
             'WriteEstimateSummaryAiTool',
+            'ExecuteEstimatePlanAiTool',
         ];
 
         return in_array(class_basename($tool), $mutatingTools);

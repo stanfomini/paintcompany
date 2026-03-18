@@ -165,6 +165,16 @@ class LegalDocumentsSeeder extends Seeder
             'This Agreement, including the accepted proposal and any Change Orders, constitutes the entire agreement between the parties and supersedes all prior or contemporaneous negotiations, representations, warranties, and agreements, whether written or oral. No amendment or waiver of any provision of this Agreement shall be effective unless in writing and signed by both parties. The failure of either party to enforce any provision of this Agreement shall not constitute a waiver of that party\'s right to enforce that provision or any other provision in the future.',
             '',
             "By accepting the proposal from {$c}, you acknowledge that you have read, understood, and agree to be bound by these Terms and Conditions.",
+            '',
+            '18. TEXT MESSAGING AND COMMUNICATIONS',
+            '',
+            "By providing your phone number and agreeing to service message consent on our forms, you authorize {$c} to send automated text messages to that number for service-related purposes (appointment confirmations, estimate delivery, invoices, project updates).",
+            '',
+            'Marketing text messages require separate opt-in and are never a condition of service.',
+            '',
+            'To stop receiving text messages, reply STOP at any time. For help, reply HELP. Message and data rates may apply. Message frequency varies.',
+            '',
+            'This section supplements and does not replace any consent given via our website forms.',
         ]);
     }
 
@@ -271,6 +281,18 @@ class LegalDocumentsSeeder extends Seeder
             'We may update this Privacy Policy from time to time. Changes will be posted on our website with an updated "Last Updated" date. Your continued use of our services after changes are posted constitutes your acceptance of the revised policy. For material changes, we will make reasonable efforts to notify you via email or through our platform.',
             '',
             'If you have questions about this Privacy Policy or wish to exercise your privacy rights, please contact us at the email address or phone number listed on our website.',
+            '',
+            '12. TEXT MESSAGING AND SMS COMMUNICATIONS',
+            '',
+            "By providing your phone number on our website forms, you consent to receive service-related text messages from {$c}, including appointment confirmations and reminders, estimate notifications, invoice alerts, and project updates.",
+            '',
+            'If you separately opt in to marketing communications, you may also receive promotional messages, seasonal offers, and painting tips.',
+            '',
+            'No mobile information will be shared with third parties or affiliates for marketing or promotional purposes. Text messaging opt-in data and consent will not be sold or shared with any third parties.',
+            '',
+            'Message frequency varies. Message and data rates may apply.',
+            '',
+            'To opt out of text messages at any time, reply STOP. For help, reply HELP. Carriers are not liable for delayed or undelivered messages.',
         ]);
     }
 

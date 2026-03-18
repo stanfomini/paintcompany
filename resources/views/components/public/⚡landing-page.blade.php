@@ -108,6 +108,10 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 
     public string $honeypot = '';
 
+    public bool $smsServiceConsent = false;
+
+    public bool $smsMarketingConsent = false;
+
     // Scarcity modal properties
     public string $scarcityEmail = '';
 
@@ -156,11 +160,14 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
             'estimate_preference' => ['required', 'in:virtual,in_person'],
             'description' => ['nullable', 'string', 'max:5000'],
             'referralCode' => ['nullable', 'string', 'max:50'],
+            'smsServiceConsent' => ['accepted'],
+            'smsMarketingConsent' => ['nullable', 'boolean'],
         ], [
             'first_name.required' => 'Please enter your first name.',
             'last_name.required' => 'Please enter your last name.',
             'email.required' => 'Please enter your email address.',
             'email.email' => 'Please enter a valid email address.',
+            'smsServiceConsent.accepted' => 'You must agree to receive service text messages to continue.',
         ]);
 
         // Check if user already exists
@@ -175,6 +182,9 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         $service = app(\App\Services\ReferralService::class);
         $referralCode = $validated['referralCode'] ?? null;
         unset($validated['referralCode']);
+        $smsMarketingConsent = $validated['smsMarketingConsent'] ?? false;
+        unset($validated['smsServiceConsent'], $validated['smsMarketingConsent']);
+        $validated['sms_marketing_consent'] = $smsMarketingConsent;
         $service->createFromLeadForm($validated, $referralCode ?: null);
 
         // Store prefill data for onboarding
@@ -1531,6 +1541,30 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                         <input type="tel" id="phone" wire:model="phone" placeholder="(555) 123-4567"
                             class="w-full rounded-lg border border-zinc-300 px-4 py-2.5 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none" />
                         @error('phone') <p class="text-red-500 text-sm mt-1">{{ $message }}</p> @enderror
+                    </div>
+
+                    {{-- SMS Service Consent (required) --}}
+                    <div class="mt-2">
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="checkbox" wire:model="smsServiceConsent" class="mt-0.5 text-emerald-600" />
+                            <span class="text-xs text-zinc-500">
+                                By providing your phone number, you agree to receive service-related text messages from {{ config('app.name') }} (appointment updates, estimate notifications, project info).
+                                Message frequency varies. Msg &amp; data rates may apply. Reply STOP to cancel. Reply HELP for help.
+                                <a href="{{ route('legal.privacy') }}" class="underline">Privacy Policy</a> |
+                                <a href="{{ route('legal.terms') }}" class="underline">Terms</a>
+                            </span>
+                        </label>
+                        @error('smsServiceConsent') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
+                    </div>
+
+                    {{-- SMS Marketing Consent (optional) --}}
+                    <div class="mt-2">
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="checkbox" wire:model="smsMarketingConsent" class="mt-0.5 text-emerald-600" />
+                            <span class="text-xs text-zinc-500">
+                                I'd like to receive promotional offers and updates from {{ config('app.name') }} via text (optional).
+                            </span>
+                        </label>
                     </div>
 
                     {{-- Address --}}

@@ -67,8 +67,38 @@ Each surface row has:
 ### Fixed-Price Add-ons
 Nested template items (closets, half baths, accent walls, repairs) with name, unit price, quantity. Included in area COGS.
 
-### Tier Tabs
-When tier pricing is enabled: [All Tiers] [Good] [Better] [Best]. Each tier stores per-surface snapshots with different coats, rates, paint products, and resulting costs. Without snapshots (via `update_surface_tier_overrides_ai_tool`), tier tabs are empty/broken.
+### Tier Tabs (Area Builder)
+When tier pricing is enabled: [All Tiers] [Good] [Better] [Best]. Each tier stores per-surface snapshots with different coats, rates, paint products, and resulting costs. Without snapshots, tier tabs are empty/broken.
+
+## Two Different "Good/Better/Best" — Don't Confuse Them
+
+There are two separate tier systems that work together:
+
+### 1. Estimate-Level Paint Tiers (Template Builder → Paint Selector)
+- **What it is:** Which paint product to use for each tier — e.g., Good=ProMar 200, Better=SuperPaint, Best=Duration
+- **Where it lives:** `Estimate.paint_tiers` JSON column
+- **What it controls:** Material cost per tier (different paint prices per gallon)
+- **Set by:** `set_tier_pricing_ai_tool` or `tier_config` in the batch plan
+- **Visible on:** Template Builder left column — 3 paint columns when tiers are active
+
+### 2. Surface-Level Tier Snapshots (Area Builder → Tier Tabs)
+- **What it is:** Per-surface per-tier overrides for coats, production rate, labor hours, and material cost
+- **Where it lives:** `EstimateAreaSurface.tier_overrides` JSON column
+- **What it controls:** How each surface is priced differently per tier (1 coat Good vs 2 coats Better)
+- **Set by:** `update_surface_tier_overrides_ai_tool` or auto-applied by `execute_estimate_plan_ai_tool`
+- **Visible on:** Area Builder modal — tier tab content
+
+### How They Connect
+1. Estimate-level sets the paint product per tier → determines material cost
+2. Surface-level snapshots set coats per tier → determines labor hours
+3. Together: Good tier = 1 coat budget paint (cheapest). Best tier = 2 coats premium paint (most expensive).
+4. **Both are required.** Estimate-level tiers without surface snapshots = tier tabs appear but show $0. Surface snapshots without estimate-level tiers = material costs missing.
+
+### The `execute_estimate_plan_ai_tool` Handles Both
+When you pass `tier_config` in the batch plan, PHP automatically:
+1. Sets paint products per tier on the estimate (estimate-level)
+2. Creates tier snapshots for every surface × every tier (surface-level)
+You don't need to think about the two layers — the plan handles both.
 
 ## Customer Proposal (Public Page)
 

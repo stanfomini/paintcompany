@@ -84,6 +84,17 @@ These create resources reusable across all estimates. They do NOT modify the cur
 - `update_estimate_settings_ai_tool` — Update title, project_type, tax_rate, deposit_percent, margin_discount_percent, notes.
 - `recalculate_estimate_ai_tool` — Force full recalculation of all totals. Call after batch changes, tier setup, paint changes.
 
+## Batch Execution
+
+- `execute_estimate_plan_ai_tool` — **Use for multi-area creates, bulk updates, or tier pricing.** Single atomic transaction. Supports:
+  - `areas` — create new areas (template or custom) with surfaces, addons, cost items
+  - `update_areas` — modify existing areas: rename, resize, update/add/remove surfaces, change coats/rates/names
+  - `tier_config` + `apply_tiers_to_existing: true` — add tier pricing to all existing surfaces
+  - `paint_config` — set estimate-level paint
+  - `create_first` — create new production rates with ref: references
+  - `line_items` — add standalone line items
+  - See `10-batch-execution.md` for full schema and examples.
+
 ## AI Memory & Output
 
 - `save_ai_context_ai_tool` — Save persistent notes to this estimate (customer preferences, budget, decisions). Append to existing notes, don't overwrite.

@@ -1,8 +1,21 @@
 # Tier Pricing — Good/Better/Best
 
-Tier pricing offers customers three price levels using different paint products (and optionally coats). Both steps below are ALWAYS required — Step 1 without Step 2 leaves tier tabs empty.
+Tier pricing offers customers three price levels using different paint products (and optionally coats).
 
-## Step 1: Set Paint Products Per Tier (Estimate-Level)
+## Preferred: Use `execute_estimate_plan_ai_tool` for Tier Pricing
+
+For new areas with tier pricing, **always use the batch plan**. Pass `tier_config` and the plan automatically:
+1. Sets paint products per tier on the estimate
+2. Creates tier snapshots for every surface × every tier
+3. Recalculates everything
+
+See `10-batch-execution.md` for examples. This replaces the manual Step 1 + Step 2 workflow below.
+
+## Manual Workflow (for modifying existing surfaces only)
+
+Use this when adding tiers to surfaces that already exist, or changing tier values on existing surfaces.
+
+### Step 1: Set Paint Products Per Tier (Estimate-Level)
 
 Call `set_tier_pricing_ai_tool` once per tier:
 ```
@@ -17,7 +30,7 @@ set_tier_pricing_ai_tool(tier="best", paint_product_id=premium_id)
 
 Optional: set per-surface-category paints within a tier using `walls_paint_id`, `ceiling_paint_id`, `trim_paint_id`, `doors_paint_id` params.
 
-## Step 2: Create Tier Snapshots on EVERY Surface — NEVER SKIP
+### Step 2: Create Tier Snapshots on EVERY Surface — NEVER SKIP
 
 Call `update_surface_tier_overrides_ai_tool` for EACH surface × EACH tier. Without this, tier tabs are empty.
 
@@ -31,8 +44,6 @@ For EACH surface:
 
 recalculate_estimate_ai_tool
 ```
-
-4 areas × 4 surfaces × 3 tiers = 48 calls. This is correct and necessary.
 
 ## Default Tier Values
 

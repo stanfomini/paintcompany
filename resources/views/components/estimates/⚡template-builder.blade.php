@@ -2950,8 +2950,9 @@ new class extends Component
             'content' => $userMessage,
         ]);
 
-        // Build conversation history from this thread's messages (excluding the one we just added)
-        $history = $thread->messages()
+        // Build conversation history — sliding window of recent messages
+        // Keeps context manageable and prevents stale old messages from overriding current instructions
+        $allMessages = $thread->messages()
             ->whereIn('role', ['user', 'assistant'])
             ->orderBy('created_at')
             ->get()
@@ -2959,7 +2960,10 @@ new class extends Component
             ->all();
 
         // Remove the last message — it goes as userMessage param
-        array_pop($history);
+        array_pop($allMessages);
+
+        // Sliding window: keep last 20 messages for context
+        $history = array_slice($allMessages, -20);
 
         // Generate cache key and mark thread as processing
         $cacheKey = 'ai-estimate-chat:' . $this->estimate->id . ':' . uniqid('', true);
@@ -2992,7 +2996,24 @@ new class extends Component
             return;
         }
 
+        // Safety net: force-clear threads processing for >3 minutes
+        foreach ($processingThreads as $thread) {
+            if ($thread->updated_at && $thread->updated_at->diffInMinutes(now()) > 3) {
+                $thread->update(['is_processing' => false]);
+                $this->refreshThread($thread->id);
+            }
+        }
+
+        // Re-check after clearing stale threads
+        $processingThreads = $processingThreads->filter(fn ($t) => $t->is_processing);
+        if ($processingThreads->isEmpty()) {
+            $this->aiProgressLabel = '';
+
+            return;
+        }
+
         $anyCompleted = false;
+        $hadError = false;
 
         foreach ($processingThreads as $thread) {
             if (! $thread->cache_key) {
@@ -3010,6 +3031,10 @@ new class extends Component
                 continue;
             }
 
+            if ($result['status'] === 'error') {
+                $hadError = true;
+            }
+
             // Job wrote the message to DB already — just refresh
             \Illuminate\Support\Facades\Cache::forget($thread->cache_key);
             \Illuminate\Support\Facades\Cache::forget("{$thread->cache_key}:progress");
@@ -3020,6 +3045,7 @@ new class extends Component
         if ($anyCompleted) {
             $this->aiProgressLabel = '';
             $this->refreshEstimateFromDb();
+            $this->dispatch($hadError ? 'ai-chat-error' : 'ai-chat-completed');
         }
     }
 
@@ -3087,7 +3113,7 @@ new class extends Component
     /**
      * Refresh estimate data from database after AI changes.
      */
-    protected function refreshEstimateFromDb(): void
+    public function refreshEstimateFromDb(): void
     {
         if (! $this->estimate?->id) {
             return;
@@ -4182,6 +4208,47 @@ new class extends Component
                     }
                     this.renamingThreadId = null;
                     this.renameValue = '';
+                },
+                playAiSound(type) {
+                    try {
+                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        const osc = ctx.createOscillator();
+                        const gain = ctx.createGain();
+                        osc.connect(gain);
+                        gain.connect(ctx.destination);
+
+                        if (type === 'start') {
+                            osc.frequency.value = 440;
+                            osc.frequency.linearRampToValueAtTime(660, ctx.currentTime + 0.15);
+                            gain.gain.value = 0.08;
+                            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.2);
+                            osc.start(); osc.stop(ctx.currentTime + 0.2);
+                        } else if (type === 'progress') {
+                            osc.frequency.value = 600;
+                            gain.gain.value = 0.03;
+                            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.05);
+                            osc.start(); osc.stop(ctx.currentTime + 0.05);
+                        } else if (type === 'complete') {
+                            osc.frequency.value = 523;
+                            gain.gain.value = 0.1;
+                            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.15);
+                            osc.start(); osc.stop(ctx.currentTime + 0.15);
+                            setTimeout(() => {
+                                const osc2 = ctx.createOscillator();
+                                const gain2 = ctx.createGain();
+                                osc2.connect(gain2); gain2.connect(ctx.destination);
+                                osc2.frequency.value = 659;
+                                gain2.gain.value = 0.1;
+                                gain2.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+                                osc2.start(); osc2.stop(ctx.currentTime + 0.3);
+                            }, 150);
+                        } else if (type === 'error') {
+                            osc.frequency.value = 300;
+                            gain.gain.value = 0.1;
+                            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+                            osc.start(); osc.stop(ctx.currentTime + 0.3);
+                        }
+                    } catch(e) { /* Audio not supported */ }
                 }
             }"
             x-effect="scrollToBottom()"
@@ -4192,7 +4259,44 @@ new class extends Component
                     if (anyProcessing) {
                         $wire.pollAiResponse();
                     }
-                }, 3000);
+                }, 2000);
+
+                // Real-time AI tool updates via Echo
+                if (window.Echo && {{ $estimate?->id ?? 'null' }}) {
+                    let refreshTimer = null;
+                    let completionTimer = null;
+                    const estimateId = {{ $estimate?->id ?? 'null' }};
+                    window.Echo.private('estimate.' + estimateId)
+                        .listen('.estimate.ai.tool.completed', (data) => {
+                            $wire.aiProgressLabel = data.tool_label || 'Working...';
+                            this.playAiSound('progress');
+
+                            if (data.data_changed) {
+                                clearTimeout(refreshTimer);
+                                refreshTimer = setTimeout(() => {
+                                    $wire.refreshEstimateFromDb();
+                                }, 2000);
+                            }
+
+                            // When tool events stop arriving, force a poll to catch completion
+                            clearTimeout(completionTimer);
+                            completionTimer = setTimeout(() => {
+                                $wire.pollAiResponse();
+                            }, 5000);
+                        })
+                        .listen('.estimate.area.updated', (data) => {
+                            if (data.action === 'ai-update') {
+                                clearTimeout(refreshTimer);
+                                refreshTimer = setTimeout(() => {
+                                    $wire.refreshEstimateFromDb();
+                                }, 2000);
+                            }
+                        });
+                }
+
+                // Audio feedback on completion/error
+                $wire.on('ai-chat-completed', () => this.playAiSound('complete'));
+                $wire.on('ai-chat-error', () => this.playAiSound('error'));
             "
             class="fixed inset-y-0 right-0 z-50 w-full sm:w-[28rem] transform transition-transform duration-300 ease-in-out"
             :class="$wire.showAiChat ? 'translate-x-0' : 'translate-x-full'"
@@ -4309,7 +4413,7 @@ new class extends Component
 
                 {{-- Input --}}
                 <div class="border-t border-zinc-200 dark:border-zinc-700 p-3">
-                    <form wire:submit.prevent="sendAiChatMessage" class="flex items-end gap-2">
+                    <form wire:submit.prevent="sendAiChatMessage" @submit="playAiSound('start')" class="flex items-end gap-2">
                         <div class="flex-1">
                             <textarea
                                 wire:model="aiChatInput"

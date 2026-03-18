@@ -369,6 +369,33 @@ class ProductionRateService
             ['Prime & 2 coats Baseboards & caulk in', 21.43, 'lnft_hr'],
         ]);
 
+        // Interior Other Trim (crown molding, chair rail, window casing, etc.)
+        $this->seedRates($category, 'interior', 'trim', [
+            ['Crown Molding same color', 30, 'lnft_hr'],
+            ['Crown Molding change color', 20, 'lnft_hr'],
+            ['Crown Molding stain to paint', 10, 'lnft_hr'],
+            ['Chair Rail same color', 35, 'lnft_hr'],
+            ['Chair Rail change color', 25, 'lnft_hr'],
+            ['Window Casing same color', 30, 'lnft_hr'],
+            ['Window Casing change color', 20, 'lnft_hr'],
+            ['Window Casing stain to paint', 10, 'lnft_hr'],
+            ['General Trim same color', 30, 'lnft_hr'],
+            ['General Trim change color', 20, 'lnft_hr'],
+        ]);
+
+        // Interior Windows (trim, sills, frames)
+        $this->seedRates($category, 'interior', 'windows', [
+            ['Window Trim & Sill same color', 3, 'units_hr'],
+            ['Window Trim & Sill change color', 2, 'units_hr'],
+            ['Window Trim & Sill stain to paint', 1, 'units_hr'],
+            ['Window Frame only same color', 4, 'units_hr'],
+            ['Window Frame only change color', 3, 'units_hr'],
+            ['Bay Window (3-section) same color', 1.5, 'units_hr'],
+            ['Bay Window (3-section) change color', 1, 'units_hr'],
+            ['Picture Window Trim same color', 4, 'units_hr'],
+            ['Picture Window Trim change color', 3, 'units_hr'],
+        ]);
+
         // Interior Door Types (Column O-P) - Note: these are hours/door
         $this->seedRates($category, 'interior', 'doors', [
             ['Doors 1 side', 1, 'hours_per_unit'],

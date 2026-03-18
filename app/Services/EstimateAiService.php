@@ -17,6 +17,7 @@ use App\Models\PaintProduct;
 use App\Models\ProductionRate;
 use App\Models\ProductionRateCategory;
 use App\Models\Substrate;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class EstimateAiService
@@ -1424,13 +1425,9 @@ class EstimateAiService
         int $defaultCoats = 2,
         ?string $description = null,
     ): array {
-        $allCategories = array_keys(
-            array_merge(ProductionRate::INTERIOR_CATEGORIES, ProductionRate::EXTERIOR_CATEGORIES)
-        );
-
-        if (! in_array($surfaceCategory, $allCategories, strict: true)) {
-            $valid = implode(', ', $allCategories);
-            throw new \InvalidArgumentException("Invalid surface_category: {$surfaceCategory}. Valid values: {$valid}");
+        // Enforce snake_case naming convention for freeform categories
+        if (! preg_match('/^[a-z][a-z0-9_]*$/', $surfaceCategory)) {
+            throw new \InvalidArgumentException("Invalid surface_category: {$surfaceCategory}. Must be lowercase snake_case (e.g., walls, trim, epoxy_floor).");
         }
 
         $validRateTypes = array_keys(ProductionRate::RATE_TYPES);
@@ -1708,5 +1705,519 @@ class EstimateAiService
                 'title' => $deal->title ?? null,
             ] : null,
         ];
+    }
+
+    // =========================================================================
+    // BATCH EXECUTION — EXECUTE-PLAN MEGA-TOOL
+    // =========================================================================
+
+    /**
+     * Execute a structured estimate plan in a single DB transaction.
+     *
+     * Creates multiple areas (from templates or custom), adds surfaces, addons,
+     * cost items, line items, configures paint and tier pricing — all atomically.
+     * If anything fails, the entire plan is rolled back.
+     *
+     * @param  array{
+     *     estimate_settings?: array{title?: string, project_type?: string},
+     *     paint_config?: array{mode: string, paint_product_id?: int, category_overrides?: array},
+     *     tier_config?: array<string, array{paint_product_id?: int, default_coats?: int}>,
+     *     create_first?: array{production_rates?: array},
+     *     areas?: array,
+     *     line_items?: array,
+     * }  $plan
+     * @return array{success: bool, areas_created: int, surfaces_created: int, tier_overrides_set: int, errors: array, area_results: array, estimate_total: float}
+     */
+    public function executePlan(Estimate $estimate, array $plan): array
+    {
+        $errors = [];
+        $areaResults = [];
+        $surfacesCreated = 0;
+        $tierOverridesSet = 0;
+        $refMap = [];
+
+        return DB::transaction(function () use ($estimate, $plan, &$errors, &$areaResults, &$surfacesCreated, &$tierOverridesSet, &$refMap) {
+
+            // ── Step 1: Create new production rates from create_first ──
+            foreach ($plan['create_first']['production_rates'] ?? [] as $rateDef) {
+                try {
+                    $ref = $rateDef['ref'] ?? null;
+                    $result = $this->createProductionRate(
+                        name: $rateDef['name'],
+                        scope: $rateDef['scope'],
+                        surfaceCategory: $rateDef['surface_category'],
+                        productionRate: (float) $rateDef['production_rate'],
+                        rateType: $rateDef['rate_type'] ?? 'sqft_hr',
+                        unitType: $rateDef['unit_type'] ?? 'sqft',
+                        defaultCoats: $rateDef['default_coats'] ?? 2,
+                        description: $rateDef['description'] ?? null,
+                    );
+                    if ($ref && isset($result['production_rate']['id'])) {
+                        $refMap[$ref] = $result['production_rate']['id'];
+                    }
+                } catch (\Throwable $e) {
+                    $errors[] = "Failed to create production rate '{$rateDef['name']}': {$e->getMessage()}";
+                }
+            }
+
+            // ── Step 2: Update estimate settings ──
+            if (! empty($plan['estimate_settings'])) {
+                try {
+                    $this->updateEstimateSettings($estimate, $plan['estimate_settings']);
+                    $estimate->refresh();
+                } catch (\Throwable $e) {
+                    $errors[] = "Failed to update estimate settings: {$e->getMessage()}";
+                }
+            }
+
+            // ── Step 3: Set paint config ──
+            if (! empty($plan['paint_config'])) {
+                try {
+                    $pc = $plan['paint_config'];
+                    $this->setEstimatePaintConfig(
+                        $estimate->fresh(),
+                        $pc['mode'] ?? 'single',
+                        isset($pc['paint_product_id']) ? (int) $pc['paint_product_id'] : null,
+                        $pc['category_overrides'] ?? null,
+                    );
+                    $estimate->refresh();
+                } catch (\Throwable $e) {
+                    $errors[] = "Failed to set paint config: {$e->getMessage()}";
+                }
+            }
+
+            // ── Step 4: Set tier pricing (paint per tier) ──
+            $tierConfig = $plan['tier_config'] ?? [];
+            foreach ($tierConfig as $tier => $config) {
+                try {
+                    $this->setTierPricing(
+                        $estimate->fresh(),
+                        $tier,
+                        isset($config['paint_product_id']) ? (int) $config['paint_product_id'] : null,
+                        $config['category_overrides'] ?? null,
+                    );
+                } catch (\Throwable $e) {
+                    $errors[] = "Failed to set tier pricing for '{$tier}': {$e->getMessage()}";
+                }
+            }
+            $estimate->refresh();
+
+            // ── Step 5: Create areas ──
+            foreach ($plan['areas'] ?? [] as $index => $areaDef) {
+                $areaResult = ['index' => $index, 'errors' => []];
+
+                try {
+                    $area = null;
+
+                    if (($areaDef['source'] ?? '') === 'template') {
+                        $result = $this->createAreaFromTemplate(
+                            $estimate->fresh(),
+                            (int) $areaDef['template_id'],
+                            $areaDef['size'] ?? 'medium',
+                            $areaDef['coats'] ?? 2,
+                            isset($areaDef['substrate_id']) ? (int) $areaDef['substrate_id'] : null,
+                        );
+                        $area = EstimateArea::find($result['area_id']);
+                        $areaResult['area_id'] = $result['area_id'];
+                        $areaResult['name'] = $result['name'];
+                        $areaResult['surfaces_created'] = count($result['surfaces'] ?? []);
+                        $surfacesCreated += $areaResult['surfaces_created'];
+
+                        if (! empty($areaDef['name'])) {
+                            $area->update(['name' => $areaDef['name']]);
+                            $areaResult['name'] = $areaDef['name'];
+                        }
+                    } else {
+                        $dims = $areaDef['dimensions'] ?? [];
+                        $result = $this->createCustomArea(
+                            $estimate->fresh(),
+                            $areaDef['name'] ?? 'Area '.($index + 1),
+                            $areaDef['scope_type'] ?? $estimate->project_type ?? 'interior',
+                            (float) ($dims['length'] ?? 0),
+                            (float) ($dims['width'] ?? 0),
+                            (float) ($dims['height'] ?? 9),
+                            (int) ($dims['wall_count'] ?? 4),
+                            isset($areaDef['substrate_id']) ? (int) $areaDef['substrate_id'] : null,
+                        );
+                        $area = EstimateArea::find($result['area_id']);
+                        $areaResult['area_id'] = $result['area_id'];
+                        $areaResult['name'] = $result['name'] ?? $areaDef['name'];
+
+                        // Add surfaces for custom areas
+                        $createdSurfaces = 0;
+                        foreach ($areaDef['surfaces'] ?? [] as $surfDef) {
+                            try {
+                                $rateId = $surfDef['production_rate_id'];
+                                if (is_string($rateId) && str_starts_with($rateId, 'ref:')) {
+                                    $refKey = substr($rateId, 4);
+                                    $rateId = $refMap[$refKey] ?? null;
+                                    if (! $rateId) {
+                                        $areaResult['errors'][] = "Unresolved rate ref '{$refKey}' for surface '{$surfDef['name']}'";
+
+                                        continue;
+                                    }
+                                }
+
+                                $surfResult = $this->addSurfaceToArea(
+                                    $area->id,
+                                    $surfDef['surface_category'],
+                                    (int) $rateId,
+                                    $surfDef['coats'] ?? 2,
+                                    isset($surfDef['quantity_override']) ? (float) $surfDef['quantity_override'] : null,
+                                );
+
+                                if (! empty($surfDef['name']) && isset($surfResult['surface_id'])) {
+                                    EstimateAreaSurface::where('id', $surfResult['surface_id'])
+                                        ->update(['name' => $surfDef['name']]);
+                                }
+
+                                $createdSurfaces++;
+                            } catch (\Throwable $e) {
+                                $areaResult['errors'][] = "Surface '{$surfDef['name']}': {$e->getMessage()}";
+                            }
+                        }
+                        $areaResult['surfaces_created'] = $createdSurfaces;
+                        $surfacesCreated += $createdSurfaces;
+                    }
+
+                    // Add addons
+                    foreach ($areaDef['addons'] ?? [] as $addonDef) {
+                        try {
+                            $this->addAddonToArea(
+                                $area->id,
+                                (int) $addonDef['nested_template_id'],
+                                $addonDef['quantity'] ?? 1,
+                            );
+                        } catch (\Throwable $e) {
+                            $areaResult['errors'][] = "Addon: {$e->getMessage()}";
+                        }
+                    }
+
+                    // Add cost items
+                    foreach ($areaDef['cost_items'] ?? [] as $costDef) {
+                        try {
+                            $this->addCostItem(
+                                $estimate,
+                                'area',
+                                $area->id,
+                                $costDef['name'],
+                                $costDef['cost_type'] ?? 'material',
+                                $costDef['quantity'] ?? 1,
+                                $costDef['unit'] ?? 'each',
+                                $costDef['unit_cost'] ?? 0,
+                                $costDef['unit_price'] ?? 0,
+                                $costDef['tier'] ?? null,
+                                $costDef['notes'] ?? null,
+                            );
+                        } catch (\Throwable $e) {
+                            $areaResult['errors'][] = "Cost item '{$costDef['name']}': {$e->getMessage()}";
+                        }
+                    }
+
+                    // Set package tiers
+                    if (isset($areaDef['package_tiers'])) {
+                        try {
+                            $this->setAreaPackageTiers($area->id, $areaDef['package_tiers'], $estimate);
+                        } catch (\Throwable $e) {
+                            $areaResult['errors'][] = "Package tiers: {$e->getMessage()}";
+                        }
+                    }
+
+                    // ── Tier overrides for all surfaces on this area ──
+                    if (! empty($tierConfig) && $area) {
+                        $area->refresh();
+                        $area->load('surfaces');
+
+                        foreach ($area->surfaces as $surface) {
+                            foreach ($tierConfig as $tier => $tConfig) {
+                                try {
+                                    $this->updateSurfaceTierOverrides(
+                                        surfaceId: $surface->id,
+                                        tier: $tier,
+                                        coats: $tConfig['default_coats'] ?? null,
+                                        paintProductId: isset($tConfig['paint_product_id']) ? (int) $tConfig['paint_product_id'] : null,
+                                        estimate: $estimate,
+                                    );
+                                    $tierOverridesSet++;
+                                } catch (\Throwable $e) {
+                                    $areaResult['errors'][] = "Tier override {$tier}/{$surface->name}: {$e->getMessage()}";
+                                }
+                            }
+                        }
+                    }
+
+                    $area->refresh();
+                    $areaResult['price'] = $area->getCustomerPrice();
+
+                } catch (\Throwable $e) {
+                    $areaResult['errors'][] = "Area creation failed: {$e->getMessage()}";
+                    $errors[] = "Area #{$index}: {$e->getMessage()}";
+                }
+
+                if (! empty($areaResult['errors'])) {
+                    $errors = array_merge($errors, $areaResult['errors']);
+                }
+
+                $areaResults[] = $areaResult;
+            }
+
+            // ── Step 6: Create standalone line items ──
+            foreach ($plan['line_items'] ?? [] as $itemDef) {
+                try {
+                    $this->createEstimateItem(
+                        $estimate->fresh(),
+                        $itemDef['description'],
+                        $itemDef['quantity'] ?? 1,
+                        $itemDef['unit'] ?? 'each',
+                        $itemDef['unit_price'] ?? 0,
+                        $itemDef['cost'] ?? null,
+                    );
+                } catch (\Throwable $e) {
+                    $errors[] = "Line item '{$itemDef['description']}': {$e->getMessage()}";
+                }
+            }
+
+            // ── Step 7: Update existing areas ──
+            $areasUpdated = 0;
+            $surfacesUpdated = 0;
+            foreach ($plan['update_areas'] ?? [] as $index => $updateDef) {
+                try {
+                    $areaId = $updateDef['area_id'] ?? null;
+                    if (! $areaId) {
+                        $errors[] = "update_areas[{$index}]: missing area_id";
+
+                        continue;
+                    }
+
+                    $area = $estimate->areas()->findOrFail($areaId);
+
+                    // Update area-level fields
+                    $areaUpdates = [];
+                    if (isset($updateDef['name'])) {
+                        $areaUpdates['name'] = $updateDef['name'];
+                    }
+                    if (isset($updateDef['substrate_id'])) {
+                        $areaUpdates['substrate_id'] = $updateDef['substrate_id'];
+                    }
+                    if (! empty($areaUpdates)) {
+                        $area->update($areaUpdates);
+                    }
+
+                    // Update dimensions if provided
+                    if (isset($updateDef['dimensions'])) {
+                        $dims = $updateDef['dimensions'];
+                        $this->updateAreaDimensions(
+                            $area->id,
+                            $dims['length'] ?? null,
+                            $dims['width'] ?? null,
+                            $dims['height'] ?? null,
+                            isset($dims['wall_count']) ? (int) $dims['wall_count'] : null,
+                        );
+                    }
+
+                    // Remove surfaces
+                    foreach ($updateDef['remove_surface_ids'] ?? [] as $removeSurfaceId) {
+                        try {
+                            $surface = $area->surfaces()->findOrFail($removeSurfaceId);
+                            $this->removeSurface($surface->id);
+                        } catch (\Throwable $e) {
+                            $errors[] = "Remove surface {$removeSurfaceId}: {$e->getMessage()}";
+                        }
+                    }
+
+                    // Update existing surfaces
+                    foreach ($updateDef['update_surfaces'] ?? [] as $surfUpdate) {
+                        try {
+                            $surfaceId = $surfUpdate['surface_id'] ?? null;
+                            if (! $surfaceId) {
+                                $errors[] = 'update_surfaces: missing surface_id';
+
+                                continue;
+                            }
+
+                            $surface = $area->surfaces()->findOrFail($surfaceId);
+
+                            // Direct field updates (name, surface_category, application_method)
+                            $directUpdates = [];
+                            if (isset($surfUpdate['name'])) {
+                                $directUpdates['name'] = $surfUpdate['name'];
+                            }
+                            if (isset($surfUpdate['surface_category'])) {
+                                $directUpdates['surface_category'] = $surfUpdate['surface_category'];
+                            }
+                            if (isset($surfUpdate['application_method'])) {
+                                $directUpdates['application_method'] = $surfUpdate['application_method'];
+                            }
+                            if (! empty($directUpdates)) {
+                                $surface->update($directUpdates);
+                            }
+
+                            // Use updateSurface() for fields that trigger recalculation
+                            $hasCalcUpdate = isset($surfUpdate['production_rate_id'])
+                                || isset($surfUpdate['coats'])
+                                || isset($surfUpdate['paint_product_id'])
+                                || isset($surfUpdate['quantity_override']);
+
+                            if ($hasCalcUpdate) {
+                                $rateId = $surfUpdate['production_rate_id'] ?? null;
+                                if (is_string($rateId) && str_starts_with($rateId, 'ref:')) {
+                                    $rateId = $refMap[substr($rateId, 4)] ?? null;
+                                }
+
+                                $this->updateSurface(
+                                    $surface->id,
+                                    $rateId ? (int) $rateId : null,
+                                    isset($surfUpdate['coats']) ? (int) $surfUpdate['coats'] : null,
+                                    isset($surfUpdate['paint_product_id']) ? (int) $surfUpdate['paint_product_id'] : null,
+                                    isset($surfUpdate['quantity_override']) ? (float) $surfUpdate['quantity_override'] : null,
+                                );
+                            }
+
+                            $surfacesUpdated++;
+                        } catch (\Throwable $e) {
+                            $errors[] = "Update surface {$surfUpdate['surface_id']}: {$e->getMessage()}";
+                        }
+                    }
+
+                    // Add new surfaces to existing area
+                    foreach ($updateDef['add_surfaces'] ?? [] as $surfDef) {
+                        try {
+                            $rateId = $surfDef['production_rate_id'];
+                            if (is_string($rateId) && str_starts_with($rateId, 'ref:')) {
+                                $rateId = $refMap[substr($rateId, 4)] ?? null;
+                                if (! $rateId) {
+                                    $errors[] = "Unresolved rate ref for surface '{$surfDef['name']}'";
+
+                                    continue;
+                                }
+                            }
+
+                            $surfResult = $this->addSurfaceToArea(
+                                $area->id,
+                                $surfDef['surface_category'],
+                                (int) $rateId,
+                                $surfDef['coats'] ?? 2,
+                                isset($surfDef['quantity_override']) ? (float) $surfDef['quantity_override'] : null,
+                            );
+
+                            if (! empty($surfDef['name']) && isset($surfResult['surface_id'])) {
+                                EstimateAreaSurface::where('id', $surfResult['surface_id'])
+                                    ->update(['name' => $surfDef['name']]);
+                            }
+
+                            $surfacesCreated++;
+                        } catch (\Throwable $e) {
+                            $errors[] = "Add surface to area {$area->name}: {$e->getMessage()}";
+                        }
+                    }
+
+                    // Add addons to existing area
+                    foreach ($updateDef['addons'] ?? [] as $addonDef) {
+                        try {
+                            $this->addAddonToArea(
+                                $area->id,
+                                (int) $addonDef['nested_template_id'],
+                                $addonDef['quantity'] ?? 1,
+                            );
+                        } catch (\Throwable $e) {
+                            $errors[] = "Addon on {$area->name}: {$e->getMessage()}";
+                        }
+                    }
+
+                    // Add cost items to existing area
+                    foreach ($updateDef['cost_items'] ?? [] as $costDef) {
+                        try {
+                            $this->addCostItem(
+                                $estimate,
+                                'area',
+                                $area->id,
+                                $costDef['name'],
+                                $costDef['cost_type'] ?? 'material',
+                                $costDef['quantity'] ?? 1,
+                                $costDef['unit'] ?? 'each',
+                                $costDef['unit_cost'] ?? 0,
+                                $costDef['unit_price'] ?? 0,
+                                $costDef['tier'] ?? null,
+                                $costDef['notes'] ?? null,
+                            );
+                        } catch (\Throwable $e) {
+                            $errors[] = "Cost item on {$area->name}: {$e->getMessage()}";
+                        }
+                    }
+
+                    // Set package tiers on existing area
+                    if (isset($updateDef['package_tiers'])) {
+                        try {
+                            $this->setAreaPackageTiers($area->id, $updateDef['package_tiers'], $estimate);
+                        } catch (\Throwable $e) {
+                            $errors[] = "Package tiers on {$area->name}: {$e->getMessage()}";
+                        }
+                    }
+
+                    $areasUpdated++;
+                } catch (\Throwable $e) {
+                    $errors[] = "update_areas[{$index}]: {$e->getMessage()}";
+                }
+            }
+
+            // ── Step 8: Apply tier overrides to existing surfaces ──
+            if (! empty($tierConfig) && ! empty($plan['apply_tiers_to_existing'])) {
+                $estimate->refresh();
+                $estimate->load('areas.surfaces');
+
+                foreach ($estimate->areas as $area) {
+                    foreach ($area->surfaces as $surface) {
+                        // Skip if this surface already got tier overrides from new area creation
+                        $existingOverrides = $surface->tier_overrides ?? [];
+                        $allTiersPresent = isset($existingOverrides['good'])
+                            && isset($existingOverrides['better'])
+                            && isset($existingOverrides['best']);
+
+                        if ($allTiersPresent) {
+                            continue;
+                        }
+
+                        foreach ($tierConfig as $tier => $tConfig) {
+                            if (isset($existingOverrides[$tier])) {
+                                continue;
+                            }
+
+                            try {
+                                $this->updateSurfaceTierOverrides(
+                                    surfaceId: $surface->id,
+                                    tier: $tier,
+                                    coats: $tConfig['default_coats'] ?? null,
+                                    paintProductId: isset($tConfig['paint_product_id']) ? (int) $tConfig['paint_product_id'] : null,
+                                    estimate: $estimate,
+                                );
+                                $tierOverridesSet++;
+                            } catch (\Throwable $e) {
+                                $errors[] = "Tier override {$tier}/{$surface->name}: {$e->getMessage()}";
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Step 9: Final recalculation ──
+            $estimate = $estimate->fresh();
+            $estimate->calculateTotals();
+            $estimate->calculateDepositAndBalance();
+            $estimate->save();
+
+            EstimateAreaUpdated::dispatch($estimate->id, 0, 'batch-plan-executed', 'AI Builder');
+
+            return [
+                'success' => empty($errors),
+                'areas_created' => count($areaResults),
+                'areas_updated' => $areasUpdated,
+                'surfaces_created' => $surfacesCreated,
+                'surfaces_updated' => $surfacesUpdated,
+                'tier_overrides_set' => $tierOverridesSet,
+                'errors' => $errors,
+                'area_results' => $areaResults,
+                'estimate_total' => (float) ($estimate->total ?? 0),
+            ];
+        });
     }
 }

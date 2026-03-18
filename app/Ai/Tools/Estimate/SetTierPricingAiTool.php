@@ -17,7 +17,7 @@ class SetTierPricingAiTool implements Tool
 
     public function description(): Stringable|string
     {
-        return 'Configure Good/Better/Best tier pricing. Set paint products per tier. Call once per tier.';
+        return 'Configure Good/Better/Best tier pricing by setting paint products per tier. This ONLY changes paint/material costs — it does NOT change coats or labor hours. To change coats per tier, use update_surface_tier_overrides_ai_tool instead. Call once per tier.';
     }
 
     public function handle(Request $request): Stringable|string

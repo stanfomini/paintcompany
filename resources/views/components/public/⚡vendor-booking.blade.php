@@ -52,6 +52,10 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
 
     public string $honeypot = '';
 
+    public bool $smsServiceConsent = false;
+
+    public bool $smsMarketingConsent = false;
+
     // Result
     public ?array $bookingResult = null;
 
@@ -219,6 +223,10 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
             'zip' => 'nullable|string|max:10',
             'description' => 'nullable|string|max:2000',
             'estimatePreference' => 'required|in:in_person,virtual',
+            'smsServiceConsent' => ['accepted'],
+            'smsMarketingConsent' => ['nullable', 'boolean'],
+        ], [
+            'smsServiceConsent.accepted' => 'You must agree to receive service text messages to continue.',
         ]);
 
         $this->errorMessage = null;
@@ -242,6 +250,7 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                     'zip' => $this->zip,
                     'description' => $this->description,
                     'estimate_preference' => $this->estimatePreference,
+                    'sms_marketing_consent' => $this->smsMarketingConsent,
                 ],
                 $this->selectedSlot['estimator_id'],
                 Carbon::parse($this->selectedDate),
@@ -571,6 +580,30 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <flux:input wire:model="email" type="email" :label="__('Email')" required />
                             <flux:input wire:model="phone" :label="__('Phone')" />
+                        </div>
+
+                        {{-- SMS Service Consent (required) --}}
+                        <div>
+                            <label class="flex items-start gap-2 cursor-pointer">
+                                <input type="checkbox" wire:model="smsServiceConsent" class="mt-0.5 text-emerald-600" />
+                                <span class="text-xs text-zinc-500">
+                                    By providing your phone number, you agree to receive service-related text messages from {{ config('app.name') }} (appointment updates, estimate notifications, project info).
+                                    Message frequency varies. Msg &amp; data rates may apply. Reply STOP to cancel. Reply HELP for help.
+                                    <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
+                                    <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
+                                </span>
+                            </label>
+                            @error('smsServiceConsent') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
+                        </div>
+
+                        {{-- SMS Marketing Consent (optional) --}}
+                        <div>
+                            <label class="flex items-start gap-2 cursor-pointer">
+                                <input type="checkbox" wire:model="smsMarketingConsent" class="mt-0.5 text-emerald-600" />
+                                <span class="text-xs text-zinc-500">
+                                    {{ __("I'd like to receive promotional offers and updates from") }} {{ config('app.name') }} {{ __('via text (optional).') }}
+                                </span>
+                            </label>
                         </div>
                     </div>
 

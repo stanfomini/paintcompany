@@ -948,6 +948,15 @@ new #[Layout('components.layouts.public')] class extends Component {
             </div>
         @endif
 
+        {{-- AI-Generated Proposal Summary --}}
+        @if ($this->estimate->ai_summary)
+            <flux:card class="p-6 mb-6">
+                <div class="prose prose-sm dark:prose-invert max-w-none">
+                    {!! Str::markdown($this->estimate->ai_summary) !!}
+                </div>
+            </flux:card>
+        @endif
+
         {{-- Areas Section (Expandable detail - filtered by selected package) --}}
         @php
             $filteredAreas = $this->getFilteredAreas();
