@@ -13,6 +13,7 @@ use App\Models\EstimateTemplate;
 use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
 use App\Models\ProductionRate;
+use App\Models\ProductionRateCategory;
 use App\Models\Substrate;
 
 class EstimateAiService
@@ -1397,6 +1398,101 @@ class EstimateAiService
         }
 
         return ['cost_items' => $items];
+    }
+
+    // =========================================================================
+    // PRODUCTION RATE METHODS
+    // =========================================================================
+
+    /**
+     * Create a new production rate.
+     *
+     * @return array{success: true, production_rate: array}
+     *
+     * @throws \InvalidArgumentException if surface_category or rate_type is invalid
+     */
+    public function createProductionRate(
+        string $name,
+        string $scope,
+        string $surfaceCategory,
+        float $productionRate,
+        string $rateType = 'sqft_hr',
+        string $unitType = 'sqft',
+        int $defaultCoats = 2,
+        ?string $description = null,
+    ): array {
+        $allCategories = array_keys(
+            array_merge(ProductionRate::INTERIOR_CATEGORIES, ProductionRate::EXTERIOR_CATEGORIES)
+        );
+
+        if (! in_array($surfaceCategory, $allCategories, strict: true)) {
+            $valid = implode(', ', $allCategories);
+            throw new \InvalidArgumentException("Invalid surface_category: {$surfaceCategory}. Valid values: {$valid}");
+        }
+
+        $validRateTypes = array_keys(ProductionRate::RATE_TYPES);
+
+        if (! in_array($rateType, $validRateTypes, strict: true)) {
+            $valid = implode(', ', $validRateTypes);
+            throw new \InvalidArgumentException("Invalid rate_type: {$rateType}. Valid values: {$valid}");
+        }
+
+        $categoryType = $scope === ProductionRate::SCOPE_EXTERIOR
+            ? ProductionRateCategory::TYPE_EXTERIOR
+            : ProductionRateCategory::TYPE_INTERIOR;
+
+        $category = ProductionRateCategory::firstOrCreate(
+            ['name' => ucfirst($scope).' Painting', 'type' => $categoryType],
+            ['is_active' => true, 'sort_order' => 0],
+        );
+
+        $rate = ProductionRate::create([
+            'category_id' => $category->id,
+            'name' => $name,
+            'scope' => $scope,
+            'surface_category' => $surfaceCategory,
+            'production_rate' => $productionRate,
+            'rate_type' => $rateType,
+            'unit_type' => $unitType,
+            'default_coats' => $defaultCoats,
+            'description' => $description,
+            'is_active' => true,
+        ]);
+
+        return ['success' => true, 'production_rate' => $rate->toArray()];
+    }
+
+    // =========================================================================
+    // ESTIMATE ITEM METHODS
+    // =========================================================================
+
+    /**
+     * Create a line item on the estimate.
+     *
+     * @return array{success: true, item: array}
+     */
+    public function createEstimateItem(
+        Estimate $estimate,
+        string $description,
+        float $quantity,
+        string $unit = 'each',
+        float $unitPrice = 0,
+        ?float $cost = null,
+    ): array {
+        $data = [
+            'description' => $description,
+            'quantity' => $quantity,
+            'unit' => $unit,
+            'unit_price' => $unitPrice,
+        ];
+
+        if ($cost !== null) {
+            $data['cost'] = $cost;
+        }
+
+        $item = $estimate->items()->create($data);
+
+        return ['success' => true, 'item' => $item->toArray()];
     }
 
     // =========================================================================

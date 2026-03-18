@@ -7,6 +7,8 @@ use App\Models\Estimate;
 use App\Models\EstimateArea;
 use App\Models\EstimateAreaSurface;
 use App\Models\EstimateCostItem;
+use App\Models\EstimateItem;
+use App\Models\ProductionRate;
 use App\Models\Property;
 use App\Services\EstimateAiService;
 
@@ -491,3 +493,81 @@ it('throws when removing a cost item that belongs to a different estimate surfac
 
     $this->service->removeCostItem(estimate: $this->estimate, costItemId: $otherItem->id);
 })->throws(\InvalidArgumentException::class);
+
+// =============================================================================
+// createProductionRate — happy path
+// =============================================================================
+
+it('creates a production rate and persists it to the database', function () {
+    $result = $this->service->createProductionRate(
+        name: 'Sunroom Walls - Brush/Roll',
+        scope: 'interior',
+        surfaceCategory: 'walls',
+        productionRate: 180.0,
+        rateType: 'sqft_hr',
+        unitType: 'sqft',
+        defaultCoats: 2,
+        description: 'Slower rate for sunroom glass transitions',
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['production_rate']['name'])->toBe('Sunroom Walls - Brush/Roll')
+        ->and($result['production_rate']['surface_category'])->toBe('walls')
+        ->and($result['production_rate']['scope'])->toBe('interior')
+        ->and((float) $result['production_rate']['production_rate'])->toBe(180.0);
+
+    expect(ProductionRate::where('name', 'Sunroom Walls - Brush/Roll')->exists())->toBeTrue();
+});
+
+// =============================================================================
+// createProductionRate — invalid surface_category
+// =============================================================================
+
+it('throws when creating a production rate with an invalid surface_category', function () {
+    $this->service->createProductionRate(
+        name: 'Bad Rate',
+        scope: 'interior',
+        surfaceCategory: 'siding',
+        productionRate: 200.0,
+    );
+})->throws(\InvalidArgumentException::class);
+
+// =============================================================================
+// createProductionRate — invalid rate_type
+// =============================================================================
+
+it('throws when creating a production rate with an invalid rate_type', function () {
+    $this->service->createProductionRate(
+        name: 'Bad Rate Type',
+        scope: 'interior',
+        surfaceCategory: 'walls',
+        productionRate: 200.0,
+        rateType: 'per_room',
+    );
+})->throws(\InvalidArgumentException::class);
+
+// =============================================================================
+// createEstimateItem — happy path
+// =============================================================================
+
+it('creates an estimate item that belongs to the estimate', function () {
+    $result = $this->service->createEstimateItem(
+        estimate: $this->estimate,
+        description: 'Sprayer rental (2 days)',
+        quantity: 2.0,
+        unit: 'day',
+        unitPrice: 150.00,
+        cost: 75.00,
+    );
+
+    expect($result['success'])->toBeTrue()
+        ->and($result['item']['description'])->toBe('Sprayer rental (2 days)')
+        ->and((float) $result['item']['quantity'])->toBe(2.0)
+        ->and($result['item']['unit'])->toBe('day')
+        ->and((float) $result['item']['unit_price'])->toBe(150.0);
+
+    expect(EstimateItem::where('estimate_id', $this->estimate->id)
+        ->where('description', 'Sprayer rental (2 days)')
+        ->exists()
+    )->toBeTrue();
+});
