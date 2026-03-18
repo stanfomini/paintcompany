@@ -51,7 +51,7 @@ use Stringable;
 
 #[Provider(Lab::xAI)]
 #[MaxSteps(40)]
-#[Timeout(420)]
+#[Timeout(600)]
 class EstimateBuilderAgent implements Agent, Conversational, HasTools
 {
     use Promptable;

@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Ai\Agents\EstimateBuilderAgent;
+use App\Events\EstimateAiToolCompleted;
+use App\Events\EstimateAreaUpdated;
 use App\Models\Estimate;
 use App\Models\EstimateAiMessage;
 use App\Models\EstimateAiThread;
@@ -15,7 +17,7 @@ class ProcessEstimateAiChat implements ShouldQueue
 {
     use Queueable;
 
-    public int $timeout = 300;
+    public int $timeout = 660;
 
     public int $tries = 1;
 
@@ -55,6 +57,26 @@ class ProcessEstimateAiChat implements ShouldQueue
                 invoked: function ($tool, $args, $result) use ($cacheKey) {
                     // Clear progress after tool completes
                     Cache::forget("{$cacheKey}:progress");
+
+                    $isMutating = $this->isDataMutatingTool($tool);
+
+                    // Broadcast tool completion for real-time UI updates
+                    EstimateAiToolCompleted::dispatch(
+                        estimateId: $this->estimateId,
+                        toolLabel: $this->getToolProgressLabel($tool),
+                        dataChanged: $isMutating,
+                    );
+
+                    // Also fire EstimateAreaUpdated for area-mutating tools
+                    // so ⚡show.blade.php and ⚡estimate-proposal.blade.php auto-refresh
+                    if ($isMutating) {
+                        EstimateAreaUpdated::dispatch(
+                            estimateId: $this->estimateId,
+                            areaId: 0,
+                            action: 'ai-update',
+                            actorName: 'AI Builder',
+                        );
+                    }
                 },
             );
 
@@ -149,6 +171,36 @@ class ProcessEstimateAiChat implements ShouldQueue
             'WriteEstimateSummaryAiTool' => 'Writing summary...',
             default => 'Working...',
         };
+    }
+
+    /**
+     * Determine if a tool modifies estimate data (vs read-only discovery).
+     */
+    protected function isDataMutatingTool(object $tool): bool
+    {
+        $mutatingTools = [
+            'CreateAreaFromTemplateAiTool',
+            'CreateCustomAreaAiTool',
+            'AddSurfaceToAreaAiTool',
+            'UpdateSurfaceAiTool',
+            'RemoveSurfaceAiTool',
+            'UpdateSurfaceTierOverridesAiTool',
+            'AddAddonToAreaAiTool',
+            'RemoveAreaAiTool',
+            'UpdateAreaDimensionsAiTool',
+            'SetEstimatePaintConfigAiTool',
+            'SetAreaPaintProductAiTool',
+            'SetTierPricingAiTool',
+            'RecalculateEstimateAiTool',
+            'UpdateEstimateSettingsAiTool',
+            'CreateEstimateItemAiTool',
+            'AddCostItemAiTool',
+            'RemoveCostItemAiTool',
+            'SetAreaPackageTiersAiTool',
+            'WriteEstimateSummaryAiTool',
+        ];
+
+        return in_array(class_basename($tool), $mutatingTools);
     }
 
     /**
