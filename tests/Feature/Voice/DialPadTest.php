@@ -219,11 +219,13 @@ it('does not show other users recent contacts', function () {
     expect($contacts)->toHaveCount(0);
 });
 
-it('updates call state on connected event', function () {
+it('updates call state on connected event and closes dialpad', function () {
     Livewire::test('communications.dial-pad')
+        ->call('open')
         ->set('activeCallLogId', 42)
         ->call('onCallConnected', ['call_log_id' => 42])
-        ->assertSet('callState', 'connected');
+        ->assertSet('callState', 'connected')
+        ->assertSet('isOpen', false);
 });
 
 it('ignores connected event for different call', function () {

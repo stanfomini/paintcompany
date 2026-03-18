@@ -123,6 +123,7 @@ new class extends Component
     {
         if (isset($data['call_log_id']) && $data['call_log_id'] === $this->activeCallLogId) {
             $this->callState = 'connected';
+            $this->isOpen = false;
         }
     }
 
