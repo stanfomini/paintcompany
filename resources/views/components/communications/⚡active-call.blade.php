@@ -109,6 +109,11 @@ new class extends Component
         $this->showTransferPicker = ! $this->showTransferPicker;
     }
 
+    public function closeTransferPicker(): void
+    {
+        $this->showTransferPicker = false;
+    }
+
     #[Computed]
     public function internalUsers(): \Illuminate\Support\Collection
     {
@@ -136,8 +141,8 @@ new class extends Component
 <div>
     @if ($isActive)
         <div
-            class="fixed top-0 inset-x-0 z-50"
             x-data="{
+                expanded: true,
                 seconds: 0,
                 timer: null,
                 init() {
@@ -150,82 +155,99 @@ new class extends Component
                     const m = Math.floor(this.seconds / 60).toString().padStart(2, '0');
                     const s = (this.seconds % 60).toString().padStart(2, '0');
                     return m + ':' + s;
+                },
+                collapse() {
+                    this.expanded = false;
+                    $wire.closeTransferPicker();
                 }
             }"
+            class="bg-green-700 dark:bg-green-800 text-white"
         >
-            <div class="bg-green-600 dark:bg-green-700 text-white shadow-lg">
-                <div class="max-w-7xl mx-auto px-4 py-2 flex items-center justify-between gap-4">
-                    {{-- Call info --}}
-                    <div class="flex items-center gap-3 min-w-0">
-                        <div class="shrink-0 flex items-center gap-1.5">
-                            <span class="relative flex size-2.5">
-                                <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/75"></span>
-                                <span class="relative inline-flex rounded-full size-2.5 bg-white"></span>
-                            </span>
-                            <flux:icon name="phone" variant="solid" class="size-4" />
-                        </div>
-                        <div class="min-w-0">
-                            <p class="text-sm font-medium truncate">
-                                {{ $callerName ?? $callerNumber ?? __('Active Call') }}
-                            </p>
-                            @if ($callerName && $callerNumber)
-                                <p class="text-xs text-green-100 truncate">{{ $callerNumber }}</p>
-                            @endif
-                        </div>
-                    </div>
-
-                    {{-- Timer --}}
-                    <div class="shrink-0 text-sm font-mono tabular-nums" x-text="formatTime()">00:00</div>
-
-                    {{-- Actions --}}
-                    <div class="flex items-center gap-2 shrink-0 relative">
-                        {{-- Transfer button --}}
-                        @can('phone.transfer_calls')
-                            <div class="relative">
-                                <button
-                                    wire:click="toggleTransferPicker"
-                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
-                                    title="{{ __('Transfer') }}"
-                                >
-                                    <flux:icon name="arrow-right-start-on-rectangle" class="size-4" />
-                                    <span class="hidden sm:inline">{{ __('Transfer') }}</span>
-                                </button>
-
-                                {{-- Transfer picker dropdown --}}
-                                @if ($showTransferPicker)
-                                    <div class="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 z-10">
-                                        <p class="px-3 py-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
-                                            {{ __('Transfer to') }}
-                                        </p>
-                                        @forelse ($this->internalUsers as $user)
-                                            <button
-                                                wire:key="transfer-user-{{ $user->id }}"
-                                                wire:click="transfer('{{ $user->extension }}')"
-                                                class="w-full text-left px-3 py-2 text-sm text-zinc-900 dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center justify-between"
-                                            >
-                                                <span class="truncate">{{ $user->name }}</span>
-                                                <span class="text-xs text-zinc-400 dark:text-zinc-500 font-mono">x{{ $user->extension }}</span>
-                                            </button>
-                                        @empty
-                                            <p class="px-3 py-2 text-sm text-zinc-400 dark:text-zinc-500">
-                                                {{ __('No users available') }}
-                                            </p>
-                                        @endforelse
-                                    </div>
-                                @endif
-                            </div>
-                        @endcan
-
-                        {{-- Hang up button --}}
+            {{-- Actions row (expands upward, shown above info row) --}}
+            <div
+                x-show="expanded"
+                x-transition
+                class="flex items-center gap-2 px-4 py-2 border-b border-green-600"
+            >
+                {{-- Transfer button --}}
+                @can('phone.transfer_calls')
+                    <div class="relative flex-1">
                         <button
-                            wire:click="hangup"
-                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500 hover:bg-red-600 transition-colors"
-                            title="{{ __('Hang Up') }}"
+                            wire:click="toggleTransferPicker"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/20 hover:bg-white/30 transition-colors"
+                            title="{{ __('Transfer') }}"
                         >
-                            <flux:icon name="phone-x-mark" variant="solid" class="size-4" />
-                            <span class="hidden sm:inline">{{ __('Hang Up') }}</span>
+                            <flux:icon name="arrow-right-start-on-rectangle" class="size-4" />
+                            <span>{{ __('Transfer') }}</span>
                         </button>
+
+                        {{-- Transfer picker — opens upward --}}
+                        @if ($showTransferPicker)
+                            <div class="absolute left-0 bottom-full mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 z-50">
+                                <p class="px-3 py-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
+                                    {{ __('Transfer to') }}
+                                </p>
+                                @forelse ($this->internalUsers as $user)
+                                    <button
+                                        wire:key="transfer-user-{{ $user->id }}"
+                                        wire:click="transfer('{{ $user->extension }}')"
+                                        class="w-full text-left px-3 py-2 text-sm text-zinc-900 dark:text-white hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors flex items-center justify-between"
+                                    >
+                                        <span class="truncate">{{ $user->name }}</span>
+                                        <span class="text-xs text-zinc-400 dark:text-zinc-500 font-mono">x{{ $user->extension }}</span>
+                                    </button>
+                                @empty
+                                    <p class="px-3 py-2 text-sm text-zinc-400 dark:text-zinc-500">
+                                        {{ __('No users available') }}
+                                    </p>
+                                @endforelse
+                            </div>
+                        @endif
                     </div>
+                @endcan
+
+                {{-- Hang up button --}}
+                <button
+                    wire:click="hangup"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-red-500 hover:bg-red-600 transition-colors ml-auto"
+                    title="{{ __('Hang Up') }}"
+                >
+                    <flux:icon name="phone-x-mark" variant="solid" class="size-4" />
+                    <span>{{ __('Hang Up') }}</span>
+                </button>
+            </div>
+
+            {{-- Info row — always visible --}}
+            <div class="px-4 py-2.5 flex items-center justify-between gap-4">
+                {{-- Caller info --}}
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="shrink-0 flex items-center gap-1.5">
+                        <span class="relative flex size-2.5">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/75"></span>
+                            <span class="relative inline-flex rounded-full size-2.5 bg-white"></span>
+                        </span>
+                        <flux:icon name="phone" variant="solid" class="size-4" />
+                    </div>
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium truncate">
+                            {{ $callerName ?? $callerNumber ?? __('Active Call') }}
+                        </p>
+                        @if ($callerName && $callerNumber)
+                            <p class="text-xs text-green-200 truncate">{{ $callerNumber }}</p>
+                        @endif
+                    </div>
+                </div>
+
+                {{-- Timer + chevron --}}
+                <div class="flex items-center gap-3 shrink-0">
+                    <span class="text-sm font-mono tabular-nums" x-text="formatTime()">00:00</span>
+                    <button
+                        @click="expanded ? collapse() : expanded = true"
+                        class="text-white/80 hover:text-white transition-colors"
+                        :title="expanded ? '{{ __('Collapse') }}' : '{{ __('Expand') }}'"
+                    >
+                        <flux:icon name="chevron-up" class="size-4 transition-transform" :class="expanded ? '' : 'rotate-180'" />
+                    </button>
                 </div>
             </div>
         </div>
