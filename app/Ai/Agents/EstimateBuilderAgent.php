@@ -50,7 +50,7 @@ use Laravel\Ai\Promptable;
 use Stringable;
 
 #[Provider(Lab::xAI)]
-#[MaxSteps(40)]
+#[MaxSteps(80)]
 #[Timeout(600)]
 class EstimateBuilderAgent implements Agent, Conversational, HasTools
 {
