@@ -1,7 +1,7 @@
 # AI Estimate Builder — Instruction Architecture Redesign
 
 **Date:** 2026-03-18
-**Status:** Draft
+**Status:** Reviewed
 **Problem:** The AI estimate builder's system prompt is a single monolithic heredoc that has grown through incremental additions. Knowledge is fragmented — the AI has tools and reference data but lacks a complete mental model of the pages it's building for, the data relationships, and how to make correct decisions when building surfaces. This causes wrong category selections, wrong production rate choices, generic naming, and no awareness of quantity sources.
 **Solution:** Break the system prompt into modular, topic-based markdown instruction files that give the AI a complete, organized mental model. Preserve all existing knowledge while filling critical gaps (page descriptions, surface building guide, naming conventions, quantity source mapping).
 
@@ -159,9 +159,9 @@ When the user clicks "Edit" on an area card or adds a custom area, this modal op
 
 - **Dimensions Section:**
   The user enters room measurements, and the system auto-calculates three derived values that surfaces use for their quantities:
-  - **wall_sqft** — Total wall area (length × height × 2 + width × height × 2, adjusted by wall_count)
-  - **ceiling_sqft** — Ceiling area (length × width)
-  - **perimeter_lnft** — Room perimeter (length × 2 + width × 2)
+  - **perimeter_lnft** — Room perimeter: `2 × (length + width) × (wall_count / 4)`. Wall count defaults to 4. A 3-wall room gets 75% of the full perimeter.
+  - **wall_sqft** — Total wall area: `perimeter_lnft × height`. Inherits the wall_count adjustment from perimeter.
+  - **ceiling_sqft** — Ceiling area: `length × width` (not affected by wall_count).
 
   Three measurement modes:
   - **Dimensions mode:** Enter Length (ft), Width (ft), Height (ft), and Wall Count (1-4 pills, interior only). All three derived values are auto-calculated.
@@ -212,7 +212,17 @@ When the user clicks "Edit" on an area card or adds a custom area, this modal op
 5. When the user **saves** from the Area Builder, it writes back to the database and the Template Builder card updates
 6. When the estimate is **sent to the customer**, the area names and surface names appear on the **public proposal page**
 
-**Everything you name and configure is visible.** There is no hidden or internal-only data. This is why accuracy and professional naming matter.
+#### The Customer Proposal (Public Page)
+
+When the estimate is sent, a public proposal page is generated for the customer. This page shows:
+- The estimate title and company branding
+- Each area name as a section header (e.g., "Master Bedroom", "Kitchen")
+- Surface names within each area (e.g., "Walls", "Ceiling", "Crown Molding")
+- Good/Better/Best tier options if tier pricing is enabled
+- Total price, deposit amount, and balance due
+- A digital signature area for acceptance
+
+**Everything you name and configure is visible on this page.** There is no hidden or internal-only data. This is why accuracy and professional naming matter. A surface named "Trim" tells the customer nothing. A surface named "Crown Molding" tells them exactly what they're paying for.
 
 **Source:** Entirely new content. This section did not exist in the current instructions.
 
@@ -255,13 +265,13 @@ Represents one area on the estimate — a room, a section of exterior, a stairwe
 - `name` — "Master Bedroom", "Kitchen", "Front Porch" (shown on proposal)
 - `scope_type` — "interior" or "exterior"
 - `length`, `width`, `height`, `wall_count` — Physical dimensions
-- `wall_sqft` — Auto-calculated: total wall area from dimensions
-- `ceiling_sqft` — Auto-calculated: length × width
-- `perimeter_lnft` — Auto-calculated: (length + width) × 2
+- `perimeter_lnft` — Auto-calculated: `2 × (length + width) × (wall_count / 4)`. Wall count defaults to 4; a 3-wall room gets 75% of full perimeter.
+- `wall_sqft` — Auto-calculated: `perimeter_lnft × height`. Inherits wall_count adjustment.
+- `ceiling_sqft` — Auto-calculated: `length × width` (not affected by wall_count).
 - `substrate_id` — Optional surface condition (modifies labor multipliers)
 - `measurement_type` — "dimensions", "sqft", or "lnft"
 
-**Critical:** The three calculated fields (wall_sqft, ceiling_sqft, perimeter_lnft) are what surfaces use for their quantities. When you create an area with dimensions, these values are computed automatically. Every surface on the area derives its quantity from one of these three values (or from a manual override).
+**Critical:** The three calculated fields (wall_sqft, ceiling_sqft, perimeter_lnft) are what surfaces use for their quantities. When you create an area with dimensions, these values are computed automatically. Every surface on the area derives its quantity from one of these three values (or from a manual override). Note that wall_count affects both perimeter_lnft and wall_sqft — a 3-wall room gets 75% of the measurements of a 4-wall room.
 
 #### EstimateAreaSurface (a paintable surface)
 
@@ -277,14 +287,18 @@ Represents one paintable surface within an area — walls, ceiling, baseboards, 
 - `labor_cost` — Calculated: labor_hours × effective_hourly_rate (from CompanySetting)
 - `material_cost` — Calculated: from PaintProduct pricing and coverage
 - `paint_product_id` — Optional per-surface paint override
+- `hourly_labor_rate` — Snapshot of the effective hourly rate at creation time (for reference)
+- `application_method` — "brush_roll" or "spray" (affects material cost via paint coverage rates)
 - `tier_overrides` — JSON: per-tier snapshots of coats, rates, labor, materials for Good/Better/Best
 - `is_custom` — When true, labor_hours and material_cost are manually entered instead of calculated from a production rate
 
 **Quantity Source Concept:** The `surface_category` determines which of the area's calculated fields provides the quantity:
-- Category "walls" / "body" / "siding" → gets quantity from `area.wall_sqft`
+- Category "walls" / "body" → gets quantity from `area.wall_sqft`
 - Category "ceiling" / "eaves" → gets quantity from `area.ceiling_sqft`
-- Category "baseboard" / "trim" / "fascia" / "crown" / "molding" → gets quantity from `area.perimeter_lnft`
+- Category "baseboard" / "trim" / "fascia" → gets quantity from `area.perimeter_lnft`
 - Category "doors" / "exterior_doors" / "windows" → count-based, typically 1 unless overridden
+
+**Note:** "crown" and "molding" are NOT valid surface_categories. Crown molding uses surface_category `"trim"` with quantity_source `perimeter_lnft`. Similarly, "siding" is NOT a valid surface_category — use `"body"` for exterior wall surfaces.
 
 #### ProductionRate (painting speed data)
 
@@ -407,11 +421,13 @@ The quantity source tells the system WHERE to get the measurement for this surfa
 
 | Surface Category | Default Quantity Source | Unit | How quantity is calculated |
 |---|---|---|---|
-| walls, body, siding | `wall_sqft` | sqft | Auto from area wall_sqft (dimensions × wall_count) |
+| walls, body | `wall_sqft` | sqft | Auto from area wall_sqft (perimeter × height, adjusted by wall_count) |
 | ceiling, eaves | `ceiling_sqft` | sqft | Auto from area ceiling_sqft (length × width) |
-| baseboard, trim, fascia, crown, molding | `perimeter_lnft` | lnft | Auto from area perimeter_lnft ((L+W) × 2) |
+| baseboard, trim, fascia | `perimeter_lnft` | lnft | Auto from area perimeter_lnft (2 × (L+W) × wall_count/4) |
 | doors, exterior_doors | `door_count` | units | Manual count — set quantity_override (default 1) |
 | windows | `window_count` | units | Manual count — set quantity_override (default 1) |
+
+**Important:** "crown", "molding", and "siding" are NOT valid surface_categories. Crown molding uses category `"trim"`. Siding uses category `"body"`. Always use the actual category values from the table above.
 
 **When to use `custom` quantity source:**
 Use custom when the surface doesn't derive from room dimensions:
@@ -458,6 +474,8 @@ Default to 2 coats unless the user specifies otherwise. Coat multipliers adjust 
 - 2 coats = 1.8× base time (not 2.0 — first coat includes prep/cut-in)
 - 3 coats = 2.5× base time
 
+**Note on Application Method:** Surfaces have an `application_method` field ("brush_roll" or "spray") that affects material cost calculations — spray uses more paint per sqft than brush/roll. For exterior spray jobs or cabinet spray work, this matters for accurate material pricing. The default is "brush_roll".
+
 #### Complete Examples
 
 **Example 1: Standard Interior Room — "Add a medium living room"**
@@ -489,7 +507,7 @@ Default to 2 coats unless the user specifies otherwise. Coat multipliers adjust 
 2. Create from template or custom:
    - "Body/Siding" — category: body, rate: Body spray (200 sqft/hr), quantity_source: wall_sqft
    - "Fascia" — category: fascia, rate: Fascia 1 story (40 lnft/hr), quantity_source: perimeter_lnft
-   - "Eaves/Soffits" — category: eaves, rate: Eaves body color (50 lnft/hr), quantity_source: ceiling_sqft
+   - "Eaves/Soffits" — category: eaves, rate: Eaves body color (50 lnft/hr), quantity_source: ceiling_sqft (Note: eaves use ceiling_sqft because soffits cover the overhead area matching the ceiling footprint, even though the production rate is lnft_hr)
    - "Exterior Trim" — category: trim, rate: Trim 1 story (25 lnft/hr), quantity_source: perimeter_lnft
    - "Front Door" — category: exterior_doors, rate: Ext door body color (1 hr/unit), quantity_source: door_count, quantity_override: 1
    - "Windows" — category: windows, rate: Vinyl windows (4 units/hr), quantity_source: window_count, quantity_override: 12
@@ -561,7 +579,7 @@ This means 2 coats is NOT double the time — the first coat is slower (prep, cu
 
 #### Reference Production Rates
 
-These are professional-grade reference ranges. Use the MIDDLE of the range as your default, adjust up for simple/same-color, down for detailed/color-change/stain-to-paint.
+These are professional-grade reference ranges for when you need to CREATE a new rate. **Always check `list_production_rates_ai_tool` first** — the company may have customized rates that differ from these ranges. Only fall back to these when no existing rate matches. Use the MIDDLE of the range as your default, adjust up for simple/same-color, down for detailed/color-change/stain-to-paint.
 
 **Interior Surfaces:**
 
@@ -923,19 +941,14 @@ PACKAGES — call `recalculate_estimate_ai_tool` after changes to sync packages.
 
 **Purpose:** Inject per-request data that changes with every conversation.
 
-**Content built in PHP:**
-- Company name
-- Interior settings: wage, effective rate, margin, cleanup ratio, sundries
-- Exterior settings: wage, effective rate, margin, cleanup ratio, sundries
-- Payroll burden multiplier
-- Custom instructions from `CompanySetting::estimate_builder_instructions`
-- Current estimate: ID, title, status, project_type, tier pricing status
-- Areas summary: each area with name, scope, price
-- Current total
-- AI context notes from previous sessions
-- Project context: customer name, property details, deal info
+**Content built in PHP (in this order):**
+1. Company name and settings (wages, margins, cleanup ratios, sundries, burden multiplier for both scopes)
+2. Custom instructions from `CompanySetting::estimate_builder_instructions` (can override default behaviors)
+3. Current estimate state: ID, title, status, project_type, tier pricing status, areas summary with pricing, current total
+4. AI context notes from previous sessions (`estimate.ai_context`)
+5. Project context: customer name, property details, deal info
 
-**Source:** Preserves the existing dynamic context injection exactly as-is.
+**Source:** Preserves the existing dynamic context injection. Ordering is explicitly specified so custom instructions appear after company settings but before estimate state.
 
 ---
 
@@ -945,17 +958,22 @@ PACKAGES — call `recalculate_estimate_ai_tool` after changes to sync packages.
 2. **Write all 9 instruction files** with the content specified above
 3. **Refactor `EstimateBuilderAgent::instructions()`** to load files + append dynamic context
 4. **Extract `buildDynamicContext()`** as a private method (contains current dynamic PHP code)
-5. **Remove the old heredoc** — all static content now lives in the instruction files
-6. **Run existing AI tests** to verify nothing breaks
-7. **Manual testing** — send test prompts through the AI chat to verify behavior
+5. **Verify all 34 tools are registered** in the agent's `tools()` method — some tools exist on disk but may not be registered yet. The instruction files reference all 34 tools, so they must all be in the `tools()` array. Compare `app/Ai/Tools/Estimate/*.php` files against the `tools()` return array and add any missing registrations.
+6. **Remove the old heredoc** — all static content now lives in the instruction files
+7. **Run existing AI tests** to verify nothing breaks
+8. **Manual testing** — send test prompts through the AI chat to verify behavior
+
+### Performance Note
+
+Loading 9 small markdown files per request via `glob()` + `file_get_contents()` is microsecond-fast and needs no caching for the initial implementation. If profiling ever shows this as a concern, results can be cached via a static property on the agent class.
 
 ### What Changes in Code
 
 | File | Change |
 |---|---|
-| `app/Ai/Agents/EstimateBuilderAgent.php` | Replace heredoc with file loader + buildDynamicContext() |
+| `app/Ai/Agents/EstimateBuilderAgent.php` | Replace heredoc with file loader + buildDynamicContext(). Verify all 34 tools registered in tools(). |
 | `app/Ai/Instructions/EstimateBuilder/*.md` (9 files) | NEW — all instruction content |
-| Tool files (`app/Ai/Tools/Estimate/*.php`) | NO CHANGES — tool schemas stay as-is |
+| Tool files (`app/Ai/Tools/Estimate/*.php`) | NO CHANGES to tool implementations — schemas and handle methods stay as-is |
 | `app/Services/EstimateAiService.php` | NO CHANGES — service methods stay as-is |
 
 ### What Does NOT Change
@@ -965,5 +983,6 @@ PACKAGES — call `recalculate_estimate_ai_tool` after changes to sync packages.
 - Gateway (XaiTextGateway)
 - Job (ProcessEstimateAiChat)
 - Livewire components
-- Models
+- Models (`app/Models/*.php`)
 - Tests
+- Database schema
