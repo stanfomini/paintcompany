@@ -347,10 +347,10 @@
         {{-- Footer bar as grid row for internal users --}}
         @auth
             @if (auth()->user()->isInternal())
-                @can('phone.make_calls')
-                    @livewire('communications.active-call')
-                @endcan
                 <flux:footer class="!p-0">
+                    @can('phone.make_calls')
+                        @livewire('communications.active-call')
+                    @endcan
                     @livewire('layout.footer-bar')
                 </flux:footer>
             @endif
