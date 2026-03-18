@@ -86,6 +86,8 @@ new class extends Component
             $callLog = $voice->initiateOutboundCall(auth()->user(), $this->phoneNumber);
             $this->activeCallLogId = $callLog->id;
             $this->activeCallLogUlid = $callLog->ulid;
+            $this->isOpen = false;
+            $this->dispatch('notify', type: 'info', message: __('Calling your phone...'));
         } catch (\Exception $e) {
             $this->callState = 'idle';
             $this->dispatch('notify', type: 'error', message: $e->getMessage());

@@ -135,6 +135,31 @@ it('dispatches error when user has no forwarding number', function () {
         ->assertSet('callState', 'idle');
 });
 
+it('closes dialpad and dispatches calling toast on successful dial', function () {
+    $this->user->update(['forwarding_number' => '+13035550000']);
+
+    $callLog = CallLog::factory()->outbound()->create([
+        'caller_user_id' => $this->user->id,
+        'to_number' => '+13035551234',
+    ]);
+
+    $mock = mock(\App\Services\TwilioVoiceService::class)
+        ->shouldReceive('initiateOutboundCall')
+        ->once()
+        ->andReturn($callLog)
+        ->getMock();
+
+    app()->instance(\App\Services\TwilioVoiceService::class, $mock);
+
+    Livewire::test('communications.dial-pad')
+        ->call('open')
+        ->set('phoneNumber', '+13035551234')
+        ->call('dial')
+        ->assertSet('callState', 'calling')
+        ->assertSet('isOpen', false)
+        ->assertDispatched('notify');
+});
+
 it('resets dial pad state', function () {
     Livewire::test('communications.dial-pad')
         ->set('phoneNumber', '3035551234')
