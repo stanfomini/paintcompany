@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SmsConversation;
 use App\Models\User;
 use App\Services\TwilioService;
 
@@ -76,4 +77,32 @@ it('opts out crew user found via crew profile phone', function () {
 
     $response->assertStatus(200);
     expect($user->fresh()->sms_opted_out_at)->not->toBeNull();
+});
+
+it('abandons active bot conversation when user texts STOP', function () {
+    $user = User::factory()->customer()->create(['phone' => '5551112222']);
+
+    $conversation = SmsConversation::create([
+        'phone' => '+15551112222',
+        'flow_id' => null,
+        'status' => 'in_progress',
+        'answers' => [],
+        'message_count' => 1,
+        'photo_count' => 0,
+        'last_message_at' => now(),
+    ]);
+
+    $this->mock(TwilioService::class, function ($mock) {
+        $mock->shouldReceive('validateWebhookSignature')->andReturn(true);
+        $mock->shouldReceive('formatE164')->with('+15551112222')->andReturn('+15551112222');
+    });
+
+    $response = $this->post(route('webhooks.twilio.sms'), [
+        'Body' => 'STOP',
+        'From' => '+15551112222',
+    ]);
+
+    $response->assertStatus(200);
+    expect($conversation->fresh()->status)->toBe('abandoned');
+    expect($conversation->fresh()->completed_at)->not->toBeNull();
 });

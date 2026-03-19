@@ -568,8 +568,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'estimates.view',
             // Planner (own schedule)
             'planner.view', 'planner.delegate_own',
-            // Communication (chat with internal team + customers for follow-ups)
-            'chat.access', 'chat.with_internal', 'chat.with_customers',
+            // Communication (chat with internal team only — customer chat requires estimator role)
+            'chat.access', 'chat.with_internal',
             'video_call.access',
             // Sales Territories
             'sales_territories.view',

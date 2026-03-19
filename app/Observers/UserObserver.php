@@ -12,17 +12,23 @@ class UserObserver
      */
     public function created(User $user): void
     {
-        if ($user->type === 'internal') {
+        // Internal users manage themselves; crew joins via invite only
+        if (in_array($user->type, ['internal', 'crew'])) {
             return;
         }
 
-        // Notify all internal users whose role has the notify.new_account_created permission
-        $recipients = User::query()
-            ->where('type', 'internal')
-            ->permission('notify.new_account_created')
-            ->get();
+        try {
+            // Notify all internal users whose role has the notify.new_account_created permission
+            $recipients = User::query()
+                ->where('type', 'internal')
+                ->permission('notify.new_account_created')
+                ->get();
+        } catch (\Throwable) {
+            // Permission may not exist yet (e.g., during seeding)
+            $recipients = collect();
+        }
 
-        // Fallback: if no permissions are set up yet, notify user ID 1
+        // Fallback: if no users matched, notify user ID 1
         if ($recipients->isEmpty()) {
             $admin = User::find(1);
             if ($admin && $admin->isInternal()) {

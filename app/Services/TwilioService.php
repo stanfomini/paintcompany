@@ -2,6 +2,11 @@
 
 namespace App\Services;
 
+use App\Models\AgentProfile;
+use App\Models\CrewProfile;
+use App\Models\CustomerProfile;
+use App\Models\EmployeeProfile;
+use App\Models\SmsLog;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -22,11 +27,44 @@ class TwilioService
     }
 
     /**
+     * Check if a phone number has opted out of SMS.
+     */
+    public function isPhoneOptedOut(string $phone): bool
+    {
+        $digits = preg_replace('/\D/', '', $phone);
+        $last10 = substr($digits, -10);
+
+        if (strlen($last10) < 10) {
+            return false;
+        }
+
+        $phoneLike = '%'.$last10;
+
+        $userIds = collect()
+            ->merge(User::where('phone', 'LIKE', $phoneLike)->pluck('id'))
+            ->merge(CustomerProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->merge(AgentProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->merge(CrewProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->merge(EmployeeProfile::where('phone', 'LIKE', $phoneLike)->pluck('user_id'))
+            ->unique()
+            ->filter();
+
+        if ($userIds->isEmpty()) {
+            return false;
+        }
+
+        return User::whereIn('id', $userIds)
+            ->whereNotNull('sms_opted_out_at')
+            ->exists();
+    }
+
+    /**
      * Send an SMS message.
      *
+     * @param  array{message_type?: string, user_id?: int, customer_id?: int}  $context
      * @return array{success: bool, sid: string|null, error: string|null}
      */
-    public function sendSms(string $to, string $body): array
+    public function sendSms(string $to, string $body, array $context = []): array
     {
         if (! $this->isEnabled()) {
             return ['success' => false, 'sid' => null, 'error' => 'Twilio is not enabled'];
@@ -36,6 +74,14 @@ class TwilioService
 
         if (! $formatted) {
             return ['success' => false, 'sid' => null, 'error' => 'Invalid phone number'];
+        }
+
+        // TCPA compliance: block SMS to opted-out phones
+        if ($this->isPhoneOptedOut($formatted)) {
+            Log::info('SMS blocked: phone opted out', ['to' => $formatted]);
+            $this->logSms($formatted, 'outbound', $body, 'blocked', null, 'Phone opted out', $context);
+
+            return ['success' => false, 'sid' => null, 'error' => 'opted_out'];
         }
 
         // Rate limit: max 5 SMS per phone per hour
@@ -78,12 +124,16 @@ class TwilioService
             Cache::put($rateLimitKey, $currentCount + 1, now()->addHour());
             Cache::put($dailyKey, $dailyCount + 1, now()->endOfDay());
 
+            $this->logSms($formatted, 'outbound', $body, 'sent', $message->sid, null, $context);
+
             return ['success' => true, 'sid' => $message->sid, 'error' => null];
         } catch (\Exception $e) {
             Log::error('Failed to send SMS', [
                 'to' => $formatted,
                 'error' => $e->getMessage(),
             ]);
+
+            $this->logSms($formatted, 'outbound', $body, 'failed', null, $e->getMessage(), $context);
 
             return ['success' => false, 'sid' => null, 'error' => $e->getMessage()];
         }
@@ -95,7 +145,7 @@ class TwilioService
      * @param  array<string>  $mediaUrls  URLs of media to attach
      * @return array{success: bool, sid: string|null, error: string|null}
      */
-    public function sendMms(string $to, string $body, array $mediaUrls = []): array
+    public function sendMms(string $to, string $body, array $mediaUrls = [], array $context = []): array
     {
         if (! $this->isEnabled()) {
             return ['success' => false, 'sid' => null, 'error' => 'Twilio is not enabled'];
@@ -105,6 +155,14 @@ class TwilioService
 
         if (! $formatted) {
             return ['success' => false, 'sid' => null, 'error' => 'Invalid phone number'];
+        }
+
+        // TCPA compliance: block MMS to opted-out phones
+        if ($this->isPhoneOptedOut($formatted)) {
+            Log::info('MMS blocked: phone opted out', ['to' => $formatted]);
+            $this->logSms($formatted, 'outbound', $body, 'blocked', null, 'Phone opted out', $context);
+
+            return ['success' => false, 'sid' => null, 'error' => 'opted_out'];
         }
 
         // Same rate limiting as sendSms
@@ -148,12 +206,16 @@ class TwilioService
             Cache::put($rateLimitKey, $currentCount + 1, now()->addHour());
             Cache::put($dailyKey, $dailyCount + 1, now()->endOfDay());
 
+            $this->logSms($formatted, 'outbound', $body, 'sent', $message->sid, null, $context);
+
             return ['success' => true, 'sid' => $message->sid, 'error' => null];
         } catch (\Exception $e) {
             Log::error('Failed to send MMS', [
                 'to' => $formatted,
                 'error' => $e->getMessage(),
             ]);
+
+            $this->logSms($formatted, 'outbound', $body, 'failed', null, $e->getMessage(), $context);
 
             return ['success' => false, 'sid' => null, 'error' => $e->getMessage()];
         }
@@ -223,6 +285,38 @@ class TwilioService
         $user->update(['sms_consented_at' => now()]);
 
         return "{$appName} alerts. Reply STOP to opt out. Msg&data rates may apply.\n\n{$body}";
+    }
+
+    /**
+     * Log an outbound SMS to the audit trail.
+     *
+     * @param  array{message_type?: string, user_id?: int, customer_id?: int}  $context
+     */
+    private function logSms(
+        string $phone,
+        string $direction,
+        string $body,
+        string $status,
+        ?string $twilioSid = null,
+        ?string $error = null,
+        array $context = []
+    ): void {
+        try {
+            SmsLog::create([
+                'phone' => $phone,
+                'direction' => $direction,
+                'body' => mb_substr($body, 0, 160),
+                'status' => $status,
+                'message_type' => $context['message_type'] ?? 'service',
+                'twilio_sid' => $twilioSid,
+                'error' => $error,
+                'user_id' => $context['user_id'] ?? null,
+                'customer_id' => $context['customer_id'] ?? null,
+                'metadata' => ! empty($context) ? $context : null,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write SMS audit log', ['error' => $e->getMessage()]);
+        }
     }
 
     public function getClient(): Client

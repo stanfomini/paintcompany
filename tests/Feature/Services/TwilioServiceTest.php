@@ -197,3 +197,88 @@ describe('prependConsentIfNeeded', function () {
         expect($result)->toBe('Hello');
     });
 });
+
+describe('isPhoneOptedOut', function () {
+    it('returns true when user with that phone is opted out', function () {
+        User::factory()->customer()->create([
+            'phone' => '5551234567',
+            'sms_opted_out_at' => now(),
+        ]);
+
+        expect($this->service->isPhoneOptedOut('+15551234567'))->toBeTrue();
+    });
+
+    it('returns false when user with that phone is not opted out', function () {
+        User::factory()->customer()->create([
+            'phone' => '5551234567',
+            'sms_opted_out_at' => null,
+        ]);
+
+        expect($this->service->isPhoneOptedOut('+15551234567'))->toBeFalse();
+    });
+
+    it('returns false for unknown numbers', function () {
+        expect($this->service->isPhoneOptedOut('+15559999999'))->toBeFalse();
+    });
+
+    it('returns false for invalid phone numbers', function () {
+        expect($this->service->isPhoneOptedOut('123'))->toBeFalse();
+    });
+});
+
+describe('opt-out gate', function () {
+    it('blocks sendSms when phone is opted out', function () {
+        Config::set('services.twilio.enabled', true);
+        Config::set('services.twilio.sid', 'test-sid');
+        Config::set('services.twilio.token', 'test-token');
+        Config::set('services.twilio.from', '+15559999999');
+
+        User::factory()->customer()->create([
+            'phone' => '5551234567',
+            'sms_opted_out_at' => now(),
+        ]);
+
+        $result = $this->service->sendSms('+15551234567', 'Test message');
+
+        expect($result)->toMatchArray([
+            'success' => false,
+            'error' => 'opted_out',
+        ]);
+    });
+
+    it('blocks sendMms when phone is opted out', function () {
+        Config::set('services.twilio.enabled', true);
+        Config::set('services.twilio.sid', 'test-sid');
+        Config::set('services.twilio.token', 'test-token');
+        Config::set('services.twilio.from', '+15559999999');
+
+        User::factory()->customer()->create([
+            'phone' => '5551234567',
+            'sms_opted_out_at' => now(),
+        ]);
+
+        $result = $this->service->sendMms('+15551234567', 'Test', ['https://example.com/img.jpg']);
+
+        expect($result)->toMatchArray([
+            'success' => false,
+            'error' => 'opted_out',
+        ]);
+    });
+
+    it('allows sendSms when phone is not opted out', function () {
+        Config::set('services.twilio.enabled', true);
+        Config::set('services.twilio.sid', 'test-sid');
+        Config::set('services.twilio.token', 'test-token');
+        Config::set('services.twilio.from', '+15559999999');
+
+        User::factory()->customer()->create([
+            'phone' => '5551234567',
+            'sms_opted_out_at' => null,
+        ]);
+
+        // Will fail at Twilio API call (no mock), but should NOT fail on opt-out
+        $result = $this->service->sendSms('+15551234567', 'Test message');
+
+        expect($result['error'])->not->toBe('opted_out');
+    });
+});
