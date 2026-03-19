@@ -87,6 +87,7 @@ class VoicemailReceived implements ShouldBroadcastNow
             'customer_name' => $this->callLog->customer?->name,
             'recording_url' => $this->callLog->recording_url,
             'voicemail_transcription' => $this->callLog->voicemail_transcription,
+            'voicemail_for_user_id' => $this->callLog->voicemail_for_user_id,
         ];
     }
 

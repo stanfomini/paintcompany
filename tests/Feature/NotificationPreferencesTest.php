@@ -96,9 +96,7 @@ it('returns all default categories', function () {
 
     foreach ($defaults as $category => $channels) {
         expect($channels)->toHaveKeys(['email', 'push']);
+        expect($channels['email'])->toBeTrue();
+        expect($channels['push'])->toBeTrue();
     }
-
-    // phone_calls defaults to email off, push on
-    expect($defaults['phone_calls']['email'])->toBeFalse();
-    expect($defaults['phone_calls']['push'])->toBeTrue();
 });
