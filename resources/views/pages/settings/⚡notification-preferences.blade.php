@@ -83,6 +83,7 @@ new class extends Component {
             'jobs' => __('Jobs & Scheduling'),
             'tasks' => __('Tasks'),
             'payments' => __('Payments'),
+            'phone_calls' => __('Phone Calls & Voicemails'),
             'documents' => __('Documents'),
             'general' => __('General'),
         ];

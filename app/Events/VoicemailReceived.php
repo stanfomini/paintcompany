@@ -24,15 +24,48 @@ class VoicemailReceived implements ShouldBroadcastNow
     /**
      * Get the channels the event should broadcast on.
      *
+     * Personal voicemail (voicemail_for_user_id set):
+     *   - The specific user it's for
+     *   - Users with phone.view_all_voicemails permission
+     *
+     * Company voicemail (voicemail_for_user_id null):
+     *   - Users with phone.view_company_voicemails permission
+     *   - Users with phone.view_all_voicemails permission
+     *   - Users with phone.receive_calls permission
+     *
      * @return array<int, \Illuminate\Broadcasting\Channel>
      */
     public function broadcastOn(): array
     {
-        return User::query()
-            ->where('type', 'internal')
-            ->permission('phone.receive_calls')
-            ->pluck('id')
+        $userIds = collect();
+
+        if ($this->callLog->isForUser()) {
+            // Personal voicemail: notify the target user + view_all users
+            $userIds->push($this->callLog->voicemail_for_user_id);
+
+            $viewAllIds = User::query()
+                ->where('type', 'internal')
+                ->permission('phone.view_all_voicemails')
+                ->pluck('id');
+
+            $userIds = $userIds->merge($viewAllIds);
+        } else {
+            // Company-wide voicemail: notify view_company + view_all + receive_calls users
+            $permissions = ['phone.view_company_voicemails', 'phone.view_all_voicemails', 'phone.receive_calls'];
+
+            foreach ($permissions as $permission) {
+                $ids = User::query()
+                    ->where('type', 'internal')
+                    ->permission($permission)
+                    ->pluck('id');
+
+                $userIds = $userIds->merge($ids);
+            }
+        }
+
+        return $userIds->unique()
             ->map(fn (int $userId) => new PrivateChannel('call.user.'.$userId))
+            ->values()
             ->all();
     }
 
