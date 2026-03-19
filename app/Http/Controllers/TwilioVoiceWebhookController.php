@@ -149,12 +149,32 @@ class TwilioVoiceWebhookController extends Controller
 
         // Dispatch missed call processing for no-answer status
         if ($status === 'no-answer') {
-            ProcessMissedCallJob::dispatch($callLog->id);
+            ProcessMissedCallJob::dispatch($callLog->id)->delay(now()->addSeconds(5));
         }
 
-        // Auto-complete follow-up activity when a callback is made
-        if ($status === 'completed' && $callLog->customer_id) {
-            $this->autoCompleteFollowUp($callLog);
+        // Auto-complete follow-up when calling back a missed caller
+        if ($status === 'completed' && $callLog->direction === 'outbound' && $callLog->to_number) {
+            $recentMissed = CallLog::query()
+                ->where('from_number', $callLog->to_number)
+                ->where('direction', 'inbound')
+                ->missed()
+                ->unhandled()
+                ->where('started_at', '>=', now()->subDays(7))
+                ->get();
+
+            foreach ($recentMissed as $missed) {
+                $missed->markHandledBy(
+                    \App\Models\User::find($callLog->caller_user_id) ?? auth()->user(),
+                    'called_back'
+                );
+
+                // Auto-complete the linked activity
+                if ($missed->follow_up_activity_id) {
+                    \App\Models\Activity::where('id', $missed->follow_up_activity_id)
+                        ->where('is_completed', false)
+                        ->update(['is_completed' => true, 'completed_at' => now()]);
+                }
+            }
         }
 
         return response('OK', 200);
@@ -192,8 +212,8 @@ class TwilioVoiceWebhookController extends Controller
         // Dispatch processing jobs
         if ($callLog->isVoicemail()) {
             TranscribeVoicemailJob::dispatch($callLog->id);
-            ProcessMissedCallJob::dispatch($callLog->id);
             $this->safeBroadcast(new VoicemailReceived($callLog));
+            ProcessMissedCallJob::dispatch($callLog->id)->delay(now()->addSeconds(10));
         }
 
         ProcessCallRecordingJob::dispatch($callLog->id);
@@ -546,29 +566,6 @@ class TwilioVoiceWebhookController extends Controller
         $user = \App\Models\User::where('forwarding_number', 'LIKE', '%'.$last10)->first();
 
         return $user?->id;
-    }
-
-    /**
-     * Auto-complete any pending follow-up activity when a callback is made to the same customer.
-     */
-    private function autoCompleteFollowUp(CallLog $callLog): void
-    {
-        // Find the most recent missed call/voicemail for this customer with an open follow-up
-        $previousCall = CallLog::where('customer_id', $callLog->customer_id)
-            ->where('id', '!=', $callLog->id)
-            ->whereNotNull('follow_up_activity_id')
-            ->whereHas('followUpActivity', function ($q) {
-                $q->where('is_completed', false);
-            })
-            ->latest('started_at')
-            ->first();
-
-        if ($previousCall && $previousCall->followUpActivity) {
-            $previousCall->followUpActivity->update([
-                'is_completed' => true,
-                'completed_at' => now(),
-            ]);
-        }
     }
 
     private function twimlResponse(string $twiml): Response

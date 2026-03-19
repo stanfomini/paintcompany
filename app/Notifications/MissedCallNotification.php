@@ -2,70 +2,57 @@
 
 namespace App\Notifications;
 
-use App\Channels\WebPushChannel;
-use App\Channels\WebPushMessage;
 use App\Models\CallLog;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
 class MissedCallNotification extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public string $pushCategory = 'voicemails';
+    public function __construct(
+        public CallLog $callLog
+    ) {}
 
-    public function __construct(public CallLog $callLog) {}
-
-    /**
-     * @return array<int, string>
-     */
     public function via(object $notifiable): array
     {
-        $channels = [];
+        $channels = ['database', 'broadcast'];
 
-        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
-            $channels[] = WebPushChannel::class;
+        if ($notifiable->wantsPush('phone_calls')) {
+            $channels[] = 'mail';
         }
-
-        $channels[] = 'database';
-        $channels[] = 'broadcast';
 
         return $channels;
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    public function toMail(object $notifiable): MailMessage
+    {
+        $callerName = $this->callLog->customer?->full_name ?? $this->callLog->from_number;
+
+        return (new MailMessage)
+            ->subject(__('Missed Call from :caller', ['caller' => $callerName]))
+            ->line(__('You missed a call from :caller.', ['caller' => $callerName]))
+            ->action(__('View in Communications Hub'), url('/communications'))
+            ->line(__('Please call back when you can.'));
+    }
+
     public function toArray(object $notifiable): array
     {
         return [
             'type' => 'missed_call',
             'call_log_id' => $this->callLog->id,
-            'caller_name' => $this->getCallerName(),
+            'caller_name' => $this->callLog->customer?->full_name ?? $this->callLog->from_number,
             'from_number' => $this->callLog->from_number,
-            'message' => "Missed call from {$this->getCallerName()}",
+            'message' => __('Missed call from :caller', [
+                'caller' => $this->callLog->customer?->full_name ?? $this->callLog->from_number,
+            ]),
         ];
     }
 
-    public function toWebPush(object $notifiable): WebPushMessage
+    public function toBroadcast(object $notifiable): array
     {
-        $callerName = $this->getCallerName();
-
-        return new WebPushMessage(
-            title: "Missed call from {$callerName}",
-            body: 'Tap to view and return the call',
-            url: '/phone',
-            tag: "missed-call-{$this->callLog->id}",
-        );
-    }
-
-    private function getCallerName(): string
-    {
-        if ($this->callLog->customer) {
-            return trim($this->callLog->customer->first_name.' '.$this->callLog->customer->last_name);
-        }
-
-        return $this->callLog->from_number ?? 'Unknown';
+        return $this->toArray($notifiable);
     }
 }

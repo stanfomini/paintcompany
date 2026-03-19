@@ -13,16 +13,11 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 
 class ProcessMissedCallJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public int $tries = 3;
-
-    public int $backoff = 15;
 
     public function __construct(
         public int $callLogId
@@ -30,126 +25,83 @@ class ProcessMissedCallJob implements ShouldQueue
 
     public function handle(): void
     {
-        $callLog = CallLog::with(['customer', 'callGroup'])->find($this->callLogId);
+        $callLog = CallLog::with('customer')->find($this->callLogId);
 
         if (! $callLog) {
-            Log::warning('ProcessMissedCallJob: CallLog not found', [
-                'call_log_id' => $this->callLogId,
-            ]);
-
             return;
         }
 
-        // Only process missed calls and voicemails
-        if (! in_array($callLog->status, ['no-answer', 'voicemail'])) {
-            return;
-        }
-
-        $recipients = $this->determineRecipients($callLog);
-
-        if ($recipients->isEmpty()) {
-            Log::info('ProcessMissedCallJob: No recipients found', [
-                'call_log_id' => $this->callLogId,
-            ]);
-
-            return;
-        }
-
-        // Send appropriate notification
-        if ($callLog->isVoicemail()) {
-            Notification::send($recipients, new VoicemailReceivedNotification($callLog));
-        } else {
-            Notification::send($recipients, new MissedCallNotification($callLog));
-        }
-
-        // Create follow-up activity
-        $this->createFollowUpActivity($callLog, $recipients->first());
-
-        Log::info('ProcessMissedCallJob: Processed', [
-            'call_log_id' => $this->callLogId,
-            'status' => $callLog->status,
-            'recipient_count' => $recipients->count(),
-        ]);
-    }
-
-    /**
-     * Determine who should receive the notification.
-     *
-     * @return \Illuminate\Support\Collection<int, User>
-     */
-    private function determineRecipients(CallLog $callLog): \Illuminate\Support\Collection
-    {
-        // Personal voicemail — notify only that user
-        if ($callLog->voicemail_for_user_id) {
-            $user = User::find($callLog->voicemail_for_user_id);
-
-            return $user ? collect([$user]) : collect();
-        }
-
-        // Call group members
-        if ($callLog->callGroup) {
-            $members = $callLog->callGroup->members()
-                ->where('is_active', true)
-                ->whereNotNull('user_id')
-                ->with('user')
-                ->get()
-                ->pluck('user')
-                ->filter();
-
-            if ($members->isNotEmpty()) {
-                return $members;
-            }
-        }
-
-        // Fallback: internal users with voicemail permissions
-        return User::where('type', 'internal')
-            ->where('is_active', true)
-            ->permission('phone.view_company_voicemails')
-            ->get();
-    }
-
-    /**
-     * Create a follow-up callback activity linked to the call log.
-     */
-    private function createFollowUpActivity(CallLog $callLog, User $assignee): void
-    {
-        // Skip if already has a follow-up
+        // Skip if already processed (deduplication)
         if ($callLog->follow_up_activity_id) {
             return;
         }
 
-        $callerName = $callLog->customer
-            ? trim($callLog->customer->first_name.' '.$callLog->customer->last_name)
-            : $callLog->from_number;
+        // Determine notification recipients based on ownership
+        $recipients = $this->getRecipients($callLog);
 
-        $description = $callLog->isVoicemail()
-            ? "Voicemail from {$callerName}"
-            : "Missed call from {$callerName}";
-
-        if ($callLog->voicemail_transcription) {
-            $description .= "\n\nTranscription: {$callLog->voicemail_transcription}";
+        if ($recipients->isEmpty()) {
+            return;
         }
 
-        $activity = Activity::create([
-            'user_id' => $assignee->id,
-            'assigned_to' => $assignee->id,
-            'subject_type' => $callLog->customer ? Customer::class : null,
-            'subject_id' => $callLog->customer_id,
-            'type' => 'call',
-            'title' => "Callback: {$callerName}",
-            'description' => $description,
-            'priority' => 'high',
-            'due_at' => now()->addMinutes(30),
-        ]);
+        // Send appropriate notification
+        $notification = $callLog->isVoicemail()
+            ? new VoicemailReceivedNotification($callLog)
+            : new MissedCallNotification($callLog);
 
-        $callLog->update(['follow_up_activity_id' => $activity->id]);
+        Notification::send($recipients, $notification);
+
+        // Create follow-up Activity only if customer is identified
+        if ($callLog->customer_id) {
+            $assigneeId = $callLog->voicemail_for_user_id ?? $recipients->first()?->id;
+
+            $activity = Activity::create([
+                'user_id' => $assigneeId,
+                'assigned_to' => $assigneeId,
+                'subject_type' => Customer::class,
+                'subject_id' => $callLog->customer_id,
+                'type' => 'call',
+                'title' => $callLog->isVoicemail()
+                    ? __('Callback: :name (voicemail)', ['name' => $callLog->customer->full_name])
+                    : __('Callback: :name (missed call)', ['name' => $callLog->customer->full_name]),
+                'description' => $callLog->voicemail_transcription
+                    ? __('Voicemail transcription: ":text"', ['text' => $callLog->voicemail_transcription])
+                    : __('Missed call - no voicemail left'),
+                'priority' => 'high',
+                'due_at' => now()->addMinutes(30),
+                'automation_key' => 'missed_call_callback_'.$callLog->id,
+            ]);
+
+            $callLog->update(['follow_up_activity_id' => $activity->id]);
+        }
     }
 
-    public function failed(?\Throwable $exception): void
+    /**
+     * Get users who should receive the notification.
+     */
+    private function getRecipients(CallLog $callLog): \Illuminate\Support\Collection
     {
-        Log::error('ProcessMissedCallJob: Failed permanently', [
-            'call_log_id' => $this->callLogId,
-            'error' => $exception?->getMessage(),
-        ]);
+        if ($callLog->voicemail_for_user_id) {
+            // Personal: notify the target user + users with view_all permission
+            $userIds = collect([$callLog->voicemail_for_user_id]);
+
+            $viewAllIds = User::query()
+                ->where('type', 'internal')
+                ->where('id', '!=', $callLog->voicemail_for_user_id)
+                ->permission('phone.view_all_voicemails')
+                ->pluck('id');
+
+            $userIds = $userIds->merge($viewAllIds)->unique();
+
+            return User::whereIn('id', $userIds)->get();
+        }
+
+        // Company-wide: notify users with relevant permissions
+        return User::query()
+            ->where('type', 'internal')
+            ->where(function ($q) {
+                $q->permission('phone.view_company_voicemails')
+                    ->orWhere(fn ($q2) => $q2->permission('phone.receive_calls'));
+            })
+            ->get();
     }
 }
