@@ -82,6 +82,8 @@ class TwilioVoiceWebhookController extends Controller
         // Broadcast incoming call to target users
         $targetUserIds = [];
         if ($callGroup) {
+            $callLog->update(['call_group_id' => $callGroup->id]);
+
             $targetUserIds = $callGroup->members()
                 ->where('is_active', true)
                 ->whereNotNull('user_id')
@@ -327,8 +329,9 @@ class TwilioVoiceWebhookController extends Controller
         $callGroup = $this->routing->resolveIvrOption($digit, $ivrMenu);
 
         if ($callGroup) {
-            // Update call log metadata
+            // Update call log with group assignment
             $log->update([
+                'call_group_id' => $callGroup->id,
                 'metadata' => array_merge($log->metadata ?? [], [
                     'ivr_option' => $digit,
                     'call_group_id' => $callGroup->id,
@@ -364,8 +367,9 @@ class TwilioVoiceWebhookController extends Controller
         $user = $this->routing->resolveFromExtension($digits);
 
         if ($user) {
-            // Update call log metadata
+            // Update call log with voicemail ownership and metadata
             $log->update([
+                'voicemail_for_user_id' => $user->id,
                 'metadata' => array_merge($log->metadata ?? [], [
                     'extension_dialed' => $digits,
                     'extension_user_id' => $user->id,
@@ -417,6 +421,8 @@ class TwilioVoiceWebhookController extends Controller
                 : null;
 
             if ($defaultGroup) {
+                $log->update(['call_group_id' => $defaultGroup->id]);
+
                 $targetUserIds = $defaultGroup->members()
                     ->where('is_active', true)
                     ->whereNotNull('user_id')
