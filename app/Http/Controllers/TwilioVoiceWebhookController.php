@@ -7,6 +7,7 @@ use App\Events\CallEnded;
 use App\Events\IncomingCall;
 use App\Events\VoicemailReceived;
 use App\Jobs\ProcessCallRecordingJob;
+use App\Jobs\ProcessMissedCallJob;
 use App\Jobs\TranscribeVoicemailJob;
 use App\Models\CallGroup;
 use App\Models\CallLog;
@@ -146,6 +147,16 @@ class TwilioVoiceWebhookController extends Controller
             $this->safeBroadcast(new CallEnded($callLog, $userId));
         }
 
+        // Dispatch missed call processing for no-answer status
+        if ($status === 'no-answer') {
+            ProcessMissedCallJob::dispatch($callLog->id);
+        }
+
+        // Auto-complete follow-up activity when a callback is made
+        if ($status === 'completed' && $callLog->customer_id) {
+            $this->autoCompleteFollowUp($callLog);
+        }
+
         return response('OK', 200);
     }
 
@@ -181,6 +192,7 @@ class TwilioVoiceWebhookController extends Controller
         // Dispatch processing jobs
         if ($callLog->isVoicemail()) {
             TranscribeVoicemailJob::dispatch($callLog->id);
+            ProcessMissedCallJob::dispatch($callLog->id);
             $this->safeBroadcast(new VoicemailReceived($callLog));
         }
 
@@ -534,6 +546,29 @@ class TwilioVoiceWebhookController extends Controller
         $user = \App\Models\User::where('forwarding_number', 'LIKE', '%'.$last10)->first();
 
         return $user?->id;
+    }
+
+    /**
+     * Auto-complete any pending follow-up activity when a callback is made to the same customer.
+     */
+    private function autoCompleteFollowUp(CallLog $callLog): void
+    {
+        // Find the most recent missed call/voicemail for this customer with an open follow-up
+        $previousCall = CallLog::where('customer_id', $callLog->customer_id)
+            ->where('id', '!=', $callLog->id)
+            ->whereNotNull('follow_up_activity_id')
+            ->whereHas('followUpActivity', function ($q) {
+                $q->where('is_completed', false);
+            })
+            ->latest('started_at')
+            ->first();
+
+        if ($previousCall && $previousCall->followUpActivity) {
+            $previousCall->followUpActivity->update([
+                'is_completed' => true,
+                'completed_at' => now(),
+            ]);
+        }
     }
 
     private function twimlResponse(string $twiml): Response

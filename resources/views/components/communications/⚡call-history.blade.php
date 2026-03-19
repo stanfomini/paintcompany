@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\CallLog;
+use App\Models\CallLogUser;
+use App\Services\MissedCallVoicemailService;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -35,13 +37,20 @@ new class extends Component
     public function callLogs()
     {
         $query = CallLog::query()
-            ->with(['customer', 'callerUser', 'answeredByUser'])
+            ->with(['customer', 'callerUser', 'answeredByUser', 'voicemailForUser', 'userInteractions'])
             ->latest('started_at');
+
+        // For missed/voicemail/unhandled filters, apply visibility scoping
+        if (in_array($this->filter, ['missed', 'voicemail', 'unhandled'])) {
+            $query->visibleTo(auth()->user());
+        }
 
         if ($this->filter === 'missed') {
             $query->where('status', 'no-answer');
         } elseif ($this->filter === 'voicemail') {
             $query->where('status', 'voicemail');
+        } elseif ($this->filter === 'unhandled') {
+            $query->missed()->unhandled();
         } elseif ($this->filter === 'inbound') {
             $query->inbound();
         } elseif ($this->filter === 'outbound') {
@@ -63,6 +72,23 @@ new class extends Component
         return $query->paginate(25);
     }
 
+    public function markListened(int $callLogId): void
+    {
+        $callLog = CallLog::find($callLogId);
+        if ($callLog) {
+            app(MissedCallVoicemailService::class)->markListened($callLog, auth()->user());
+        }
+    }
+
+    public function markHandled(int $callLogId, string $action): void
+    {
+        $callLog = CallLog::find($callLogId);
+        if ($callLog) {
+            app(MissedCallVoicemailService::class)->markHandled($callLog, auth()->user(), $action);
+            unset($this->callLogs);
+        }
+    }
+
     public function callBack(string $phone): void
     {
         $this->dispatch('open-dial-pad', phone: $phone);
@@ -78,6 +104,7 @@ new class extends Component
                 'all' => __('All Calls'),
                 'missed' => __('Missed'),
                 'voicemail' => __('Voicemail'),
+                'unhandled' => __('Unhandled'),
                 'inbound' => __('Inbound'),
                 'outbound' => __('Outbound'),
             ];
@@ -159,6 +186,22 @@ new class extends Component
                             @else
                                 <flux:badge size="sm" color="zinc">{{ __('Completed') }}</flux:badge>
                             @endif
+
+                            {{-- Ownership Badge --}}
+                            @if ($log->isVoicemail() || $log->isMissedCall())
+                                @if ($log->isCompanyWide())
+                                    <flux:badge size="sm" color="blue">{{ __('Company') }}</flux:badge>
+                                @elseif ($log->voicemailForUser)
+                                    <flux:badge size="sm" color="purple">{{ $log->voicemailForUser->name }}</flux:badge>
+                                @endif
+                            @endif
+
+                            {{-- Handled Status --}}
+                            @if (($log->isVoicemail() || $log->isMissedCall()) && $log->isHandled())
+                                <flux:badge size="sm" color="green">{{ __('Handled') }}</flux:badge>
+                            @elseif ($log->isVoicemail() || $log->isMissedCall())
+                                <flux:badge size="sm" color="orange">{{ __('Needs Callback') }}</flux:badge>
+                            @endif
                         </div>
 
                         {{-- Phone number (show if customer exists, as secondary info) --}}
@@ -181,10 +224,17 @@ new class extends Component
 
                         {{-- Voicemail Transcription --}}
                         @if ($log->isVoicemail() && $log->voicemail_transcription)
-                            <div class="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800">
+                            <div class="mt-2 p-2 rounded bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800" x-data="{ expanded: false }">
                                 <flux:text size="sm" class="text-zinc-700 dark:text-zinc-300 italic">
-                                    "{{ \Illuminate\Support\Str::limit($log->voicemail_transcription, 120) }}"
+                                    <span x-show="!expanded">"{{ \Illuminate\Support\Str::limit($log->voicemail_transcription, 120) }}"</span>
+                                    <span x-show="expanded" x-cloak>"{{ $log->voicemail_transcription }}"</span>
                                 </flux:text>
+                                @if (strlen($log->voicemail_transcription) > 120)
+                                    <button @click="expanded = !expanded" class="text-xs text-blue-600 dark:text-blue-400 hover:underline mt-1">
+                                        <span x-show="!expanded">{{ __('Show more') }}</span>
+                                        <span x-show="expanded" x-cloak>{{ __('Show less') }}</span>
+                                    </button>
+                                @endif
                             </div>
                         @endif
 
@@ -192,7 +242,7 @@ new class extends Component
                         @if ($log->hasRecording())
                             <div class="mt-2">
                                 <button
-                                    @click="togglePlay('{{ $log->recording_url }}')"
+                                    @click="togglePlay('{{ $log->recording_url }}'); $wire.markListened({{ $log->id }})"
                                     class="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
                                 >
                                     <template x-if="currentUrl === '{{ $log->recording_url }}' && playing">
@@ -233,6 +283,28 @@ new class extends Component
                                 />
                             </div>
                         @endcan
+                        @if (($log->isVoicemail() || $log->isMissedCall()) && !$log->isHandled())
+                            @can('phone.manage_voicemails')
+                                <div class="mt-1">
+                                    <flux:dropdown>
+                                        <flux:button size="xs" variant="ghost" icon="check-circle">
+                                            {{ __('Handle') }}
+                                        </flux:button>
+                                        <flux:menu>
+                                            <flux:menu.item wire:click="markHandled({{ $log->id }}, 'called_back')" icon="phone">
+                                                {{ __('Called Back') }}
+                                            </flux:menu.item>
+                                            <flux:menu.item wire:click="markHandled({{ $log->id }}, 'left_message')" icon="chat-bubble-left">
+                                                {{ __('Left Message') }}
+                                            </flux:menu.item>
+                                            <flux:menu.item wire:click="markHandled({{ $log->id }}, 'not_needed')" icon="x-mark">
+                                                {{ __('Not Needed') }}
+                                            </flux:menu.item>
+                                        </flux:menu>
+                                    </flux:dropdown>
+                                </div>
+                            @endcan
+                        @endif
                     </div>
                 </div>
             @endforeach
