@@ -86,6 +86,7 @@ new class extends Component
         if ($callLog) {
             app(MissedCallVoicemailService::class)->markHandled($callLog, auth()->user(), $action);
             unset($this->callLogs);
+            $this->dispatch('refresh-notification-counts');
         }
     }
 
