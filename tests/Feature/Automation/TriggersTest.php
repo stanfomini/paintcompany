@@ -283,3 +283,104 @@ it('dispatches ApplicationReceived event when applicant is created', function ()
             && $event->getContext()['source'] === 'web';
     });
 });
+
+// --- DealCreated ---
+
+it('matches deal.created event', function () {
+    $trigger = new \App\Automation\Triggers\DealCreated;
+    $subject = Deal::factory()->make();
+
+    expect($trigger->matches('deal.created', $subject, ['stage' => 'lead'], []))
+        ->toBeTrue();
+});
+
+it('matches deal.created with specific stage filter', function () {
+    $trigger = new \App\Automation\Triggers\DealCreated;
+    $subject = Deal::factory()->make();
+
+    expect($trigger->matches('deal.created', $subject, ['stage' => 'lead'], ['initial_stage' => 'lead']))
+        ->toBeTrue();
+});
+
+it('does not match deal.created when stage filter does not match', function () {
+    $trigger = new \App\Automation\Triggers\DealCreated;
+    $subject = Deal::factory()->make();
+
+    expect($trigger->matches('deal.created', $subject, ['stage' => 'lead'], ['initial_stage' => 'quoted']))
+        ->toBeFalse();
+});
+
+it('does not match wrong event for deal created', function () {
+    $trigger = new \App\Automation\Triggers\DealCreated;
+    $subject = Deal::factory()->make();
+
+    expect($trigger->matches('deal.stage_changed', $subject, ['stage' => 'lead'], []))
+        ->toBeFalse();
+});
+
+it('has correct metadata for DealCreated trigger', function () {
+    expect(\App\Automation\Triggers\DealCreated::getName())->toBe('Deal Created')
+        ->and(\App\Automation\Triggers\DealCreated::getCategory())->toBe('Deals')
+        ->and(\App\Automation\Triggers\DealCreated::getAvailableDynamicPrefixes())->toContain('deal', 'preview')
+        ->and(\App\Automation\Triggers\DealCreated::getConfigSchema())->toHaveKey('initial_stage');
+});
+
+// --- InboundSmsReceived ---
+
+it('matches sms.received event', function () {
+    $trigger = new \App\Automation\Triggers\InboundSmsReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('sms.received', $subject, ['body' => 'Hello'], []))
+        ->toBeTrue();
+});
+
+it('matches sms.received with keyword filter', function () {
+    $trigger = new \App\Automation\Triggers\InboundSmsReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('sms.received', $subject, ['body' => 'I need a QUOTE please'], ['keyword_filter' => 'quote']))
+        ->toBeTrue();
+});
+
+it('does not match sms.received when keyword not present', function () {
+    $trigger = new \App\Automation\Triggers\InboundSmsReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('sms.received', $subject, ['body' => 'Hello world'], ['keyword_filter' => 'quote']))
+        ->toBeFalse();
+});
+
+it('does not match wrong event for inbound sms', function () {
+    $trigger = new \App\Automation\Triggers\InboundSmsReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('messenger.received', $subject, ['body' => 'Hello'], []))
+        ->toBeFalse();
+});
+
+// --- InboundMessengerReceived ---
+
+it('matches messenger.received event', function () {
+    $trigger = new \App\Automation\Triggers\InboundMessengerReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('messenger.received', $subject, ['message_text' => 'Hi'], []))
+        ->toBeTrue();
+});
+
+it('matches messenger.received with keyword filter', function () {
+    $trigger = new \App\Automation\Triggers\InboundMessengerReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('messenger.received', $subject, ['message_text' => 'I want a QUOTE'], ['keyword_filter' => 'quote']))
+        ->toBeTrue();
+});
+
+it('does not match messenger.received when keyword not present', function () {
+    $trigger = new \App\Automation\Triggers\InboundMessengerReceived;
+    $subject = \App\Models\Customer::factory()->make();
+
+    expect($trigger->matches('messenger.received', $subject, ['message_text' => 'Hello'], ['keyword_filter' => 'estimate']))
+        ->toBeFalse();
+});

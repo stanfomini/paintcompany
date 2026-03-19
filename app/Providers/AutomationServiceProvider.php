@@ -6,9 +6,12 @@ use App\Automation\Registry;
 use App\Events\Automation\ApiPollReceived;
 use App\Events\Automation\ApplicationReceived;
 use App\Events\Automation\ContactCreated;
+use App\Events\Automation\DealCreated;
 use App\Events\Automation\DealStageChanged;
 use App\Events\Automation\DoorKnockRecorded;
 use App\Events\Automation\EstimateStatusChanged;
+use App\Events\Automation\InboundMessengerReceived;
+use App\Events\Automation\InboundSmsReceived;
 use App\Events\Automation\JobStageChanged;
 use App\Events\Automation\TaskStatusChanged;
 use App\Events\Automation\WebhookReceived;
@@ -37,9 +40,12 @@ class AutomationServiceProvider extends ServiceProvider
             ApiPollReceived::class,
             ApplicationReceived::class,
             ContactCreated::class,
+            DealCreated::class,
             DealStageChanged::class,
             DoorKnockRecorded::class,
             EstimateStatusChanged::class,
+            InboundMessengerReceived::class,
+            InboundSmsReceived::class,
             JobStageChanged::class,
             TaskStatusChanged::class,
             WebhookReceived::class,

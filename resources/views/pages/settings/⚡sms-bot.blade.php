@@ -20,6 +20,12 @@ new class extends Component {
     public int $newFlowDelay = 5;
     public bool $newFlowBusinessHours = false;
 
+    // Preview Link Auto-Send
+    public bool $previewLinkAutoSend = true;
+    public string $previewLinkSmsMessage = '';
+    public string $previewLinkEmailSubject = '';
+    public string $previewLinkEmailBody = '';
+
     public function boot(): void
     {
         if (! auth()->user()?->can('settings.company')) {
@@ -35,6 +41,12 @@ new class extends Component {
 
         $settings = CompanySetting::getInstance();
         $this->botEnabled = (bool) $settings->sms_bot_enabled;
+
+        // Preview Link settings
+        $this->previewLinkAutoSend = (bool) $settings->preview_link_auto_send;
+        $this->previewLinkSmsMessage = $settings->preview_link_sms_message ?? '';
+        $this->previewLinkEmailSubject = $settings->preview_link_email_subject ?? '';
+        $this->previewLinkEmailBody = $settings->preview_link_email_body ?? '';
     }
 
     #[Computed]
@@ -58,6 +70,23 @@ new class extends Component {
     {
         $this->botEnabled = ! $this->botEnabled;
         CompanySetting::getInstance()->update(['sms_bot_enabled' => $this->botEnabled]);
+    }
+
+    public function togglePreviewLinkAutoSend(): void
+    {
+        $this->previewLinkAutoSend = ! $this->previewLinkAutoSend;
+        CompanySetting::getInstance()->update(['preview_link_auto_send' => $this->previewLinkAutoSend]);
+    }
+
+    public function savePreviewLinkSettings(): void
+    {
+        CompanySetting::getInstance()->update([
+            'preview_link_sms_message' => $this->previewLinkSmsMessage ?: null,
+            'preview_link_email_subject' => $this->previewLinkEmailSubject ?: null,
+            'preview_link_email_body' => $this->previewLinkEmailBody ?: null,
+        ]);
+
+        session()->flash('preview-link-saved', true);
     }
 
     public function createFlow(): void
@@ -145,6 +174,56 @@ new class extends Component {
                 </flux:text>
             </div>
             <flux:switch wire:click="toggleBot" :checked="$botEnabled" />
+        </div>
+
+        <flux:separator />
+
+        {{-- Preview Link Auto-Send --}}
+        <div class="my-6 w-full space-y-6">
+            <div class="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="link" class="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+                        <flux:heading size="sm">{{ __('Preview Link Auto-Send') }}</flux:heading>
+                    </div>
+                    <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                        {{ __('Automatically send the project portal link to customers when a deal is created.') }}
+                    </flux:text>
+                </div>
+                <flux:switch wire:click="togglePreviewLinkAutoSend" :checked="$previewLinkAutoSend" />
+            </div>
+
+            <form wire:submit="savePreviewLinkSettings" class="space-y-4">
+                <flux:textarea
+                    wire:model="previewLinkSmsMessage"
+                    :label="__('SMS Message Template')"
+                    :description="__('Available placeholders: {name}, {company}, {link}')"
+                    placeholder="Hi {name}! Your project portal is ready. View photos, visualizations, and details about your project here:"
+                    rows="3"
+                />
+
+                <flux:input
+                    wire:model="previewLinkEmailSubject"
+                    :label="__('Email Subject')"
+                    :description="__('Available placeholders: {company}')"
+                    placeholder="Your Project Portal — {company}"
+                />
+
+                <flux:textarea
+                    wire:model="previewLinkEmailBody"
+                    :label="__('Email Body Intro')"
+                    :description="__('Available placeholders: {name}, {company}')"
+                    placeholder="We've set up a dedicated portal for your project where you can view photos, color visualizations, and track progress."
+                    rows="3"
+                />
+
+                <div class="flex items-center gap-3">
+                    <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
+                    @if (session('preview-link-saved'))
+                        <flux:text class="text-sm text-green-600 dark:text-green-400">{{ __('Saved!') }}</flux:text>
+                    @endif
+                </div>
+            </form>
         </div>
 
         <flux:separator />

@@ -442,3 +442,63 @@ it('has correct metadata for TriggerWorkflow', function () {
         ->and(TriggerWorkflow::getCategory())->toBe('Workflow Control')
         ->and(TriggerWorkflow::getConfigSchema())->toHaveKey('workflow_id');
 });
+
+// --- SendSMS ---
+
+it('SendSMS returns error when no phone provided', function () {
+    $run = WorkflowRun::factory()->create();
+
+    $action = new \App\Automation\Actions\SendSMS;
+    $result = $action->execute($run, ['to' => '', 'message' => 'Hello']);
+
+    expect($result['sent'])->toBeFalse()
+        ->and($result['error'])->toBe('No recipient phone number');
+});
+
+it('SendSMS returns error when no message provided', function () {
+    $run = WorkflowRun::factory()->create();
+
+    $action = new \App\Automation\Actions\SendSMS;
+    $result = $action->execute($run, ['to' => '+13035551234', 'message' => '']);
+
+    expect($result['sent'])->toBeFalse()
+        ->and($result['error'])->toBe('No message content');
+});
+
+it('SendSMS has correct metadata', function () {
+    expect(\App\Automation\Actions\SendSMS::getName())->toBe('Send SMS')
+        ->and(\App\Automation\Actions\SendSMS::getCategory())->toBe('Communication')
+        ->and(\App\Automation\Actions\SendSMS::getConfigSchema())->toHaveKeys(['to', 'message']);
+});
+
+// --- SendMessenger ---
+
+it('SendMessenger returns error when no PSID found', function () {
+    $user = User::factory()->internal()->create();
+    $run = WorkflowRun::factory()->create([
+        'subject_type' => User::class,
+        'subject_id' => $user->id,
+    ]);
+
+    $action = new \App\Automation\Actions\SendMessenger;
+    $result = $action->execute($run, ['recipient_id' => '', 'message' => 'Hello']);
+
+    expect($result['sent'])->toBeFalse()
+        ->and($result['error'])->toBe('No Facebook PSID found');
+});
+
+it('SendMessenger returns error when no message provided', function () {
+    $run = WorkflowRun::factory()->create();
+
+    $action = new \App\Automation\Actions\SendMessenger;
+    $result = $action->execute($run, ['recipient_id' => '12345', 'message' => '']);
+
+    expect($result['sent'])->toBeFalse()
+        ->and($result['error'])->toBe('No message content');
+});
+
+it('SendMessenger has correct metadata', function () {
+    expect(\App\Automation\Actions\SendMessenger::getName())->toBe('Send Messenger')
+        ->and(\App\Automation\Actions\SendMessenger::getCategory())->toBe('Communication')
+        ->and(\App\Automation\Actions\SendMessenger::getConfigSchema())->toHaveKeys(['recipient_id', 'message']);
+});

@@ -6,6 +6,7 @@ use App\Automation\Contracts\DynamicValueInterface;
 use App\Models\Customer;
 use App\Models\Deal;
 use App\Models\Job;
+use App\Models\MessengerConversation;
 use App\Models\User;
 use App\Models\WorkflowRun;
 
@@ -21,7 +22,7 @@ class ContactValues implements DynamicValueInterface
      */
     public static function getAvailableKeys(): array
     {
-        return ['name', 'email', 'phone'];
+        return ['name', 'email', 'phone', 'messenger_psid'];
     }
 
     public function resolve(string $key, WorkflowRun $run): ?string
@@ -36,6 +37,7 @@ class ContactValues implements DynamicValueInterface
             'name' => $user->name,
             'email' => $user->email,
             'phone' => $user->phone ?? null,
+            'messenger_psid' => $this->resolveMessengerPsid($run),
             default => null,
         };
     }
@@ -68,5 +70,38 @@ class ContactValues implements DynamicValueInterface
         }
 
         return null;
+    }
+
+    /**
+     * Resolve the Messenger PSID for the contact.
+     */
+    protected function resolveMessengerPsid(WorkflowRun $run): ?string
+    {
+        $subject = $run->subject;
+
+        if (! $subject) {
+            return null;
+        }
+
+        $customerId = null;
+
+        if ($subject instanceof Customer) {
+            $customerId = $subject->id;
+        } elseif ($subject instanceof Deal) {
+            $customerId = $subject->customer_id;
+        } elseif ($subject instanceof Job) {
+            $customerId = $subject->deal?->customer_id;
+        } elseif ($subject instanceof User) {
+            $customer = Customer::where('user_id', $subject->id)->first();
+            $customerId = $customer?->id;
+        }
+
+        if (! $customerId) {
+            return null;
+        }
+
+        return MessengerConversation::where('customer_id', $customerId)
+            ->whereNotNull('facebook_psid')
+            ->value('facebook_psid');
     }
 }

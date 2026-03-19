@@ -57,7 +57,7 @@ it('returns null for unknown contact key', function () {
 
 it('has correct prefix and keys for ContactValues', function () {
     expect(ContactValues::getPrefix())->toBe('contact')
-        ->and(ContactValues::getAvailableKeys())->toBe(['name', 'email', 'phone']);
+        ->and(ContactValues::getAvailableKeys())->toBe(['name', 'email', 'phone', 'messenger_psid']);
 });
 
 // --- DealValues ---
@@ -190,4 +190,40 @@ it('resolves workflow values from the run', function () {
 it('has correct prefix and keys for WorkflowValues', function () {
     expect(WorkflowValues::getPrefix())->toBe('workflow')
         ->and(WorkflowValues::getAvailableKeys())->toBe(['name', 'triggered_at', 'run_id']);
+});
+
+// --- PreviewValues ---
+
+it('resolves preview portal_url from a deal subject', function () {
+    $customer = Customer::factory()->create();
+    $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+    $preview = \App\Models\ProjectPreview::where('deal_id', $deal->id)->first();
+
+    $run = WorkflowRun::factory()->create([
+        'subject_type' => Deal::class,
+        'subject_id' => $deal->id,
+    ]);
+
+    $resolver = new \App\Automation\DynamicValues\PreviewValues;
+
+    expect($resolver->resolve('portal_url', $run))->toBe($preview->getPortalUrl())
+        ->and($resolver->resolve('customer_name', $run))->toBe(trim($preview->first_name.' '.$preview->last_name))
+        ->and($resolver->resolve('status', $run))->toBe('active');
+});
+
+it('returns null for preview values when no preview exists', function () {
+    $deal = Deal::factory()->create(['customer_id' => null]);
+
+    $run = WorkflowRun::factory()->create([
+        'subject_type' => Deal::class,
+        'subject_id' => $deal->id,
+    ]);
+
+    $resolver = new \App\Automation\DynamicValues\PreviewValues;
+    expect($resolver->resolve('portal_url', $run))->toBeNull();
+});
+
+it('has correct prefix and keys for PreviewValues', function () {
+    expect(\App\Automation\DynamicValues\PreviewValues::getPrefix())->toBe('preview')
+        ->and(\App\Automation\DynamicValues\PreviewValues::getAvailableKeys())->toBe(['portal_url', 'customer_name', 'status']);
 });

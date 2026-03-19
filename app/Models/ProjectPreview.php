@@ -39,6 +39,7 @@ class ProjectPreview extends Model
         'questionnaire_data',
         'questionnaire_completed_at',
         'questionnaire_discount_percent',
+        'preview_link_sent_at',
     ];
 
     protected function casts(): array
@@ -49,6 +50,7 @@ class ProjectPreview extends Model
             'questionnaire_completed_at' => 'datetime',
             'last_viewed_at' => 'datetime',
             'portal_views_count' => 'integer',
+            'preview_link_sent_at' => 'datetime',
         ];
     }
 

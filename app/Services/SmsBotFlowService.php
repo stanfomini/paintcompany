@@ -8,6 +8,7 @@ use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\ColorVisualization;
 use App\Models\CompanySetting;
+use App\Models\Customer;
 use App\Models\ProjectPreview;
 use App\Models\ShowcaseMedia;
 use App\Models\SmsBotFlow;
@@ -28,9 +29,24 @@ class SmsBotFlowService
 
     /**
      * Start a new bot conversation for a phone number.
+     * Returns null if the flow requires marketing consent and the customer lacks it.
      */
-    public function startConversation(string $phone, SmsBotFlow $flow, ?ChatThread $thread = null): SmsConversation
+    public function startConversation(string $phone, SmsBotFlow $flow, ?ChatThread $thread = null): ?SmsConversation
     {
+        // Check marketing consent if required by the flow
+        if ($flow->requires_marketing_consent) {
+            $customer = $this->findCustomerByPhone($phone);
+            if ($customer && ! $customer->hasSmsMarketingConsent()) {
+                Log::info('SmsBotFlowService: skipped conversation, customer lacks marketing consent', [
+                    'phone' => $phone,
+                    'flow_id' => $flow->id,
+                    'customer_id' => $customer->id,
+                ]);
+
+                return null;
+            }
+        }
+
         if (! $thread) {
             $thread = $this->createSmsBotThread($phone);
         }
@@ -591,6 +607,21 @@ class SmsBotFlowService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Find a Customer record by phone number.
+     */
+    private function findCustomerByPhone(string $phone): ?Customer
+    {
+        $digits = preg_replace('/\D/', '', $phone);
+        $last10 = substr($digits, -10);
+
+        if (strlen($last10) < 10) {
+            return null;
+        }
+
+        return Customer::where('phone', 'LIKE', '%'.$last10)->first();
     }
 
     /**

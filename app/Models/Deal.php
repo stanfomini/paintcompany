@@ -35,7 +35,24 @@ class Deal extends Model
                     'estimator_id' => $deal->assigned_to,
                     'status' => 'active',
                 ]);
+
+                // Auto-send portal link to customer (if enabled in settings)
+                $settings = CompanySetting::getInstance();
+                if ($settings->preview_link_auto_send && ($customer->email || $customer->phone)) {
+                    $preview = ProjectPreview::where('deal_id', $deal->id)->first();
+                    if ($preview && ! $preview->preview_link_sent_at) {
+                        try {
+                            $customer->notify(new \App\Notifications\ProjectPreviewLinkNotification($preview, $deal));
+                            $preview->update(['preview_link_sent_at' => now()]);
+                        } catch (\Throwable $e) {
+                            report($e);
+                        }
+                    }
+                }
             }
+
+            // Dispatch automation event for workflow engine
+            \App\Events\Automation\DealCreated::dispatch($deal);
         });
 
         static::updated(function (Deal $deal) {

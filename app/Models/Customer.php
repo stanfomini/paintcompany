@@ -336,11 +336,35 @@ class Customer extends Model
     }
 
     /**
+     * Check if the customer has SMS marketing consent.
+     */
+    public function hasSmsMarketingConsent(): bool
+    {
+        return $this->sms_marketing_consent_at !== null;
+    }
+
+    /**
      * Check if the customer is active.
      */
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    /**
+     * Route notifications for the Twilio SMS channel.
+     */
+    public function routeNotificationForTwilio(): ?string
+    {
+        return $this->phone;
+    }
+
+    /**
+     * Route notifications for the Mail channel.
+     */
+    public function routeNotificationForMail(): ?string
+    {
+        return $this->email;
     }
 
     /**

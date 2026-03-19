@@ -2,17 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\Automation\InboundSmsReceived;
 use App\Events\NewThreadNotification;
 use App\Models\AgentProfile;
 use App\Models\ChatAttachment;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
+use App\Models\CompanySetting;
 use App\Models\CrewProfile;
 use App\Models\Customer;
 use App\Models\CustomerProfile;
 use App\Models\EmployeeProfile;
 use App\Models\SmsBotFlow;
 use App\Models\SmsConversation;
+use App\Models\SmsLog;
 use App\Models\SmsSession;
 use App\Models\User;
 use App\Services\ChatService;
@@ -69,6 +72,26 @@ class TwilioWebhookController extends Controller
             return $this->twimlResponse();
         }
 
+        if (in_array($keyword, ['HELP', 'INFO'])) {
+            $this->handleHelp($from);
+
+            return $this->twimlResponse();
+        }
+
+        // Log inbound SMS for audit trail
+        try {
+            SmsLog::create([
+                'phone' => $from,
+                'direction' => 'inbound',
+                'body' => mb_substr($body, 0, 160),
+                'status' => 'received',
+                'message_type' => 'service',
+                'twilio_sid' => $request->input('MessageSid'),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to log inbound SMS', ['error' => $e->getMessage()]);
+        }
+
         // Look up active SMS session for this phone number
         $formattedPhone = $this->twilio->formatE164($from);
 
@@ -87,9 +110,11 @@ class TwilioWebhookController extends Controller
         // Check for keyword-triggered bot flow
         $keywordFlow = SmsBotFlow::findByKeyword($body);
         if ($keywordFlow) {
-            app(SmsBotFlowService::class)->startConversation($formattedPhone, $keywordFlow);
-
-            return $this->twimlResponse();
+            $conversation = app(SmsBotFlowService::class)->startConversation($formattedPhone, $keywordFlow);
+            if ($conversation) {
+                return $this->twimlResponse();
+            }
+            // Fall through to normal routing if consent check blocked the flow
         }
 
         $session = SmsSession::findActiveByPhone($formattedPhone);
@@ -99,6 +124,9 @@ class TwilioWebhookController extends Controller
         } else {
             $this->routeColdInbound($formattedPhone, $body, $mediaUrls);
         }
+
+        // Dispatch automation event for known customers
+        $this->dispatchInboundSmsEvent($formattedPhone, $body);
 
         return $this->twimlResponse();
     }
@@ -405,7 +433,32 @@ class TwilioWebhookController extends Controller
             $user->update(['sms_opted_out_at' => now()]);
         });
 
+        // Abandon active bot conversations for this phone
+        SmsConversation::where('phone', $formattedPhone)
+            ->where('status', 'in_progress')
+            ->update(['status' => 'abandoned', 'completed_at' => now()]);
+
         Log::info('Twilio webhook: opt-out processed', ['phone' => $formattedPhone]);
+    }
+
+    private function handleHelp(string $phone): void
+    {
+        $settings = CompanySetting::getInstance();
+        $companyName = $settings->company_name ?? config('app.name', 'Our Company');
+        $companyPhone = $settings->company_phone ?? '';
+        $companyEmail = $settings->company_email ?? '';
+
+        $parts = ["{$companyName}: For help"];
+        if ($companyPhone) {
+            $parts[] = "call {$companyPhone}";
+        }
+        if ($companyEmail) {
+            $parts[] = "or email {$companyEmail}";
+        }
+
+        $message = implode(' ', $parts).'. Reply STOP to opt out. Msg&data rates apply.';
+
+        $this->twilio->sendSms($phone, $message, ['message_type' => 'system']);
     }
 
     private function handleOptIn(string $phone): void
@@ -575,6 +628,22 @@ class TwilioWebhookController extends Controller
             str_contains($mimeType, 'pdf') => 'pdf',
             default => 'jpg',
         };
+    }
+
+    private function dispatchInboundSmsEvent(string $phone, string $body): void
+    {
+        try {
+            $digits = preg_replace('/\D/', '', $phone);
+            $last10 = substr($digits, -10);
+
+            $customer = Customer::where('phone', 'LIKE', '%'.$last10)->first();
+
+            if ($customer) {
+                InboundSmsReceived::dispatch($customer, $phone, $body);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to dispatch InboundSmsReceived event', ['error' => $e->getMessage()]);
+        }
     }
 
     private function twimlResponse(): Response

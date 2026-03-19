@@ -20,6 +20,7 @@ class SmsBotFlow extends Model
         'completion_action',
         'timeout_minutes',
         'business_hours_only',
+        'requires_marketing_consent',
         'delay_after_lead_minutes',
         // Legacy columns — dropped in MySQL migration but SQLite can't drop columns
         'greeting_message',
@@ -33,6 +34,7 @@ class SmsBotFlow extends Model
         return [
             'lead_source_ids' => 'array',
             'business_hours_only' => 'boolean',
+            'requires_marketing_consent' => 'boolean',
             'timeout_minutes' => 'integer',
             'delay_after_lead_minutes' => 'integer',
         ];
