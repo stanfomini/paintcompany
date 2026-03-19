@@ -102,13 +102,13 @@ new class extends Component
         $this->aiBuildStatus = $cached['status'] ?? 'building';
         $this->aiBuildMessage = $cached['message'] ?? 'AI is working...';
 
-        // If final status, clear cache and reload the page to show new areas
+        // If final status, clear cache and refresh areas in-place
         if (in_array($cached['status'] ?? '', ['completed', 'partial', 'failed', 'nothing_to_build', 'unreadable_blueprints'])) {
             Cache::forget("ai-build-estimate:{$this->estimate->id}");
             $this->aiBuildInProgress = false;
 
             if (in_array($cached['status'], ['completed', 'partial'])) {
-                $this->redirect(route('estimates.edit', $this->estimate), navigate: true);
+                $this->dispatch('refreshEstimateFromDb');
             }
         }
     }
@@ -144,7 +144,7 @@ new class extends Component
         };
 
         if (in_array($data['status'], ['completed', 'partial'])) {
-            $this->redirect(route('estimates.edit', $this->estimate), navigate: true);
+            $this->dispatch('refreshEstimateFromDb');
         }
     }
 }; ?>

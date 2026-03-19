@@ -2,6 +2,7 @@
 
 use App\Models\AreaTemplateSurface;
 use App\Models\CompanySetting;
+use App\Models\EstimateArea;
 use App\Models\EstimateTemplate;
 use App\Models\NestedAreaTemplate;
 use App\Models\PaintProduct;
@@ -24,6 +25,9 @@ new class extends Component
 {
     // Area being edited (index in parent's areas array, or null for new)
     public ?int $editingIndex = null;
+
+    // DB ID of the area being edited (for Echo listeners)
+    public ?int $areaId = null;
 
     public bool $isOpen = false;
 
@@ -253,6 +257,7 @@ new class extends Component
         $this->reset(['surfaces', 'addons', 'newAddonTemplateId', 'newAddonQuantity', 'measurementType', 'wallCount', 'directSqft', 'directLnft', 'directCeilingSqft', 'serviceCategoryId', 'showNewCategoryForm', 'newCategoryName']);
 
         $this->editingIndex = $editingIndex;
+        $this->areaId = $areaData['id'] ?? null;
         $this->sourceTemplateId = $areaData['source_template_id'] ?? null;
         $this->name = $areaData['name'] ?? '';
         $this->scopeType = $areaData['scope_type'] ?? 'interior';
@@ -1528,6 +1533,7 @@ new class extends Component
     {
         $this->isOpen = false;
         $this->editingIndex = null;
+        $this->areaId = null;
         $this->measurementType = 'dimensions';
         $this->wallCount = 4;
         $this->directSqft = null;
@@ -1539,11 +1545,58 @@ new class extends Component
         $this->editingTier = null;
         $this->useTierPricing = false;
     }
+
+    /**
+     * Reload the currently-editing area from DB when AI modifies it.
+     */
+    #[On('area-updated-by-ai')]
+    public function refreshAreaFromAi(int $areaId): void
+    {
+        if (! $this->isOpen || ! $this->areaId || $this->areaId !== $areaId) {
+            return;
+        }
+
+        $area = EstimateArea::with('surfaces.productionRate')->find($areaId);
+        if (! $area) {
+            return;
+        }
+
+        $this->name = $area->name;
+        $this->scopeType = $area->scope_type ?? 'interior';
+        $this->roomLength = (float) ($area->length ?? $this->roomLength);
+        $this->roomWidth = (float) ($area->width ?? $this->roomWidth);
+        $this->roomHeight = (float) ($area->height ?? $this->roomHeight);
+
+        // Reload surfaces from DB
+        $this->surfaces = [];
+        foreach ($area->surfaces as $surface) {
+            $this->surfaces[] = [
+                'id' => $surface->id,
+                'name' => $surface->name,
+                'surface_type' => $surface->surface_type,
+                'surface_category' => $surface->surface_category ?? $surface->getSurfaceCategory(),
+                'production_rate_id' => $surface->production_rate_id,
+                'quantity_source' => 'custom',
+                'quantity_override' => (float) $surface->quantity,
+                'default_coats' => $surface->coats ?? 2,
+                'is_required' => true,
+                'is_default_enabled' => true,
+                'fixed_price' => null,
+                'is_custom' => false,
+                'labor_hours' => null,
+                'material_cost' => null,
+                'sale_price' => null,
+                'crew_price' => null,
+            ];
+        }
+
+        unset($this->previewCalculation);
+    }
 }; ?>
 
 <div>
-    <flux:modal wire:model="isOpen" variant="flyout" class="max-w-6xl w-full">
-        <div class="flex flex-col h-full max-h-[90vh]">
+    <flux:modal wire:model="isOpen" variant="flyout" class="max-w-6xl w-full area-builder-flyout">
+        <div class="flex flex-col h-full max-h-[90vh] lg:max-h-[90vh] max-lg:max-h-[100dvh]">
             {{-- Header --}}
             <div class="p-4 border-b border-zinc-200 dark:border-zinc-700">
                 <flux:heading size="lg">
@@ -1627,12 +1680,12 @@ new class extends Component
                                 {{-- Measurement Mode Selector --}}
                                 <div>
                                     <flux:label class="mb-1.5">{{ __('Measurement Mode') }}</flux:label>
-                                    <div class="flex gap-1">
+                                    <div class="flex gap-1.5">
                                         @foreach (['dimensions' => __('Dimensions'), 'sqft' => __('Sqft'), 'lnft' => __('Linear Ft')] as $mode => $modeLabel)
                                             <button
                                                 wire:click="$set('measurementType', '{{ $mode }}')"
                                                 type="button"
-                                                class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors {{ $measurementType === $mode ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
+                                                class="px-4 py-2.5 lg:px-3 lg:py-1.5 text-sm lg:text-xs font-medium rounded-md transition-colors min-h-[44px] lg:min-h-0 {{ $measurementType === $mode ? 'bg-blue-600 text-white' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
                                             >
                                                 {{ $modeLabel }}
                                             </button>
@@ -2246,20 +2299,35 @@ new class extends Component
             </div>
 
             {{-- Footer --}}
-            <div class="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-end gap-3">
-                <flux:button wire:click="closeBuilder" variant="ghost">
-                    {{ __('Cancel') }}
-                </flux:button>
-                <flux:button wire:click="saveArea" variant="primary" wire:loading.attr="disabled">
-                    <span wire:loading.remove wire:target="saveArea">
-                        @if ($editingIndex !== null)
-                            {{ __('Update Area') }}
-                        @else
-                            {{ __('Add Area') }}
-                        @endif
-                    </span>
-                    <span wire:loading wire:target="saveArea">{{ __('Saving...') }}</span>
-                </flux:button>
+            <div class="p-4 border-t border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 flex items-center justify-between gap-3 pwa-safe-bottom">
+                <div>
+                    @if ($editingIndex !== null)
+                        <flux:button
+                            x-on:click="$dispatch('open-ai-for-area', { areaIndex: {{ $editingIndex }}, areaName: '{{ addslashes($name) }}' })"
+                            variant="ghost"
+                            size="sm"
+                            icon="sparkles"
+                            class="max-lg:min-h-[44px] text-purple-600 dark:text-purple-400"
+                        >
+                            {{ __('AI') }}
+                        </flux:button>
+                    @endif
+                </div>
+                <div class="flex items-center gap-3">
+                    <flux:button wire:click="closeBuilder" variant="ghost" class="max-lg:min-h-[44px]">
+                        {{ __('Cancel') }}
+                    </flux:button>
+                    <flux:button wire:click="saveArea" variant="primary" wire:loading.attr="disabled" class="max-lg:min-h-[44px]">
+                        <span wire:loading.remove wire:target="saveArea">
+                            @if ($editingIndex !== null)
+                                {{ __('Update Area') }}
+                            @else
+                                {{ __('Add Area') }}
+                            @endif
+                        </span>
+                        <span wire:loading wire:target="saveArea">{{ __('Saving...') }}</span>
+                    </flux:button>
+                </div>
             </div>
         </div>
     </flux:modal>

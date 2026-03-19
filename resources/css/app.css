@@ -127,3 +127,13 @@ select:focus[data-flux-control] {
 .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
 }
+
+/* Area builder flyout: full-screen on mobile for usability */
+@media (max-width: 1023px) {
+    .area-builder-flyout [data-flux-modal-panel] {
+        max-width: 100% !important;
+        width: 100% !important;
+        height: 100dvh !important;
+        border-radius: 0 !important;
+    }
+}

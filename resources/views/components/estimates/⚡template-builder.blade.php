@@ -33,6 +33,22 @@ new class extends Component
 {
     use WithFileUploads;
 
+    public function getListeners(): array
+    {
+        if (! $this->estimate?->id) {
+            return [
+                'refreshEstimateFromDb' => 'refreshEstimateFromDb',
+            ];
+        }
+
+        return [
+            "echo-private:estimate.{$this->estimate->id},.estimate.ai.tool.completed" => 'handleAiToolCompleted',
+            "echo-private:estimate.{$this->estimate->id},.estimate.area.updated" => 'handleAreaUpdated',
+            "echo-private:estimate.{$this->estimate->id},.ai.build.completed" => 'handleAiBuildCompleted',
+            'refreshEstimateFromDb' => 'refreshEstimateFromDb',
+        ];
+    }
+
     public ?Deal $deal = null;
 
     public ?Estimate $estimate = null;
@@ -125,6 +141,12 @@ new class extends Component
 
     public bool $canUseAiChat = false;
 
+    #[Computed]
+    public function aiIsProcessing(): bool
+    {
+        return $this->aiThreads instanceof Collection
+            && $this->aiThreads->where('is_processing', true)->count() > 0;
+    }
 
     protected function rules(): array
     {
@@ -2835,6 +2857,16 @@ new class extends Component
     }
 
     /**
+     * Open AI chat focused on a specific area (dispatched from area-builder).
+     */
+    #[On('open-ai-for-area')]
+    public function openAiForArea(int $areaIndex, string $areaName): void
+    {
+        $this->showAiChat = true;
+        $this->aiChatInput = "Help me modify the \"{$areaName}\" area. ";
+    }
+
+    /**
      * Create a new AI thread.
      */
     public function createAiThread(?string $name = null): void
@@ -3132,6 +3164,46 @@ new class extends Component
         $this->estimate->calculateTotals();
         $this->estimate->calculateDepositAndBalance();
         $this->estimate->save();
+
+        // Signal browser for visual feedback
+        $this->dispatch('areas-refreshed');
+    }
+
+    /**
+     * Handle real-time AI tool completion events via Echo.
+     */
+    public function handleAiToolCompleted(array $data): void
+    {
+        $this->aiProgressLabel = $data['tool_label'] ?? 'Working...';
+
+        if ($data['data_changed'] ?? false) {
+            $this->refreshEstimateFromDb();
+        }
+    }
+
+    /**
+     * Handle real-time area update events via Echo.
+     */
+    public function handleAreaUpdated(array $data): void
+    {
+        if (($data['action'] ?? '') === 'ai-update') {
+            $this->refreshEstimateFromDb();
+
+            // Notify area builder if it has the updated area open
+            if ($areaId = ($data['area_id'] ?? null)) {
+                $this->dispatch('area-updated-by-ai', areaId: (int) $areaId);
+            }
+        }
+    }
+
+    /**
+     * Handle AI blueprint build completion via Echo.
+     */
+    public function handleAiBuildCompleted(array $data): void
+    {
+        if (in_array($data['status'] ?? '', ['completed', 'partial'])) {
+            $this->refreshEstimateFromDb();
+        }
     }
 
     /**
@@ -3185,6 +3257,7 @@ new class extends Component
         $withMargins = $margin > 0 ? round($cogs / ($margin / 100), 2) : $cogs;
 
         return [
+            'id' => $area->id,
             'name' => $area->name,
             'scope_type' => $scope,
             'source_template_id' => null,
@@ -3220,9 +3293,9 @@ new class extends Component
     }
 }; ?>
 
-<div>
+<div @if($this->aiIsProcessing) wire:poll.5s="pollAiResponse" @endif>
     {{-- Mobile Sticky Header with Total --}}
-    <div class="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 px-4 py-3 shadow-sm">
+    <div class="lg:hidden fixed top-0 left-0 right-0 z-40 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700 px-4 py-3 shadow-sm pwa-safe-top">
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
                 @if ($isEditing)
@@ -3231,7 +3304,17 @@ new class extends Component
                     <flux:button variant="ghost" :href="route('deals.show', $deal)" icon="arrow-left" wire:navigate size="sm" />
                 @endif
                 <div>
-                    <div class="font-semibold text-sm">{{ __('Estimate Builder') }}</div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-semibold text-sm">{{ __('Estimate Builder') }}</span>
+                        @if ($canUseAiChat && $isEditing)
+                            <span
+                                x-data="{ connected: false, init() { const check = () => { if (window.Echo?.connector?.pusher) { this.connected = window.Echo.connector.pusher.connection.state === 'connected'; window.Echo.connector.pusher.connection.bind('state_change', (s) => this.connected = s.current === 'connected'); } else { setTimeout(check, 2000); } }; check(); } }"
+                                :class="connected ? 'bg-green-500' : 'bg-red-400'"
+                                class="w-2 h-2 rounded-full shrink-0"
+                                :title="connected ? '{{ __('Real-time connected') }}' : '{{ __('Connecting...') }}'"
+                            ></span>
+                        @endif
+                    </div>
                     <div class="text-xs text-zinc-500">{{ count($areas) > 0 ? count($areas) . ' areas' : count($selectedTemplates) . ' items' }}</div>
                 </div>
             </div>
@@ -3243,8 +3326,20 @@ new class extends Component
     </div>
 
     {{-- Mobile Bottom Action Bar --}}
-    <div class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700 p-4 shadow-lg">
-        <div class="flex gap-3">
+    <div class="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-700 p-4 shadow-lg pwa-safe-bottom">
+        <div class="flex gap-2">
+            @if ($canUseAiChat)
+                <button
+                    wire:click="toggleAiChat"
+                    type="button"
+                    class="relative shrink-0 p-2.5 rounded-lg transition-colors {{ $showAiChat ? 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
+                >
+                    <flux:icon name="sparkles" class="w-5 h-5" />
+                    @if ($this->aiIsProcessing)
+                        <span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-purple-500 rounded-full animate-pulse"></span>
+                    @endif
+                </button>
+            @endif
             <flux:button wire:click="saveAsDraft" wire:loading.attr="disabled" class="flex-1" size="sm">
                 <span wire:loading.remove wire:target="saveAsDraft">{{ __('Draft') }}</span>
                 <span wire:loading wire:target="saveAsDraft">...</span>
@@ -3277,13 +3372,21 @@ new class extends Component
                         {{ __('Template Builder') }}
                     @endif
                 </flux:heading>
+                @if ($canUseAiChat && $isEditing)
+                    <span
+                        x-data="{ connected: false, init() { const check = () => { if (window.Echo?.connector?.pusher) { this.connected = window.Echo.connector.pusher.connection.state === 'connected'; window.Echo.connector.pusher.connection.bind('state_change', (s) => this.connected = s.current === 'connected'); } else { setTimeout(check, 2000); } }; check(); } }"
+                        :class="connected ? 'bg-green-500' : 'bg-red-400'"
+                        class="w-2.5 h-2.5 rounded-full shrink-0"
+                        :title="connected ? '{{ __('Real-time connected') }}' : '{{ __('Connecting...') }}'"
+                    ></span>
+                @endif
             </div>
             @if ($canUseAiChat)
                 <div class="relative">
                     <flux:button wire:click="toggleAiChat" variant="{{ $showAiChat ? 'primary' : 'ghost' }}" icon="sparkles" size="sm">
                         {{ __('AI Builder') }}
                     </flux:button>
-                    @if ($aiThreads->where('is_processing', true)->count() > 0)
+                    @if ($this->aiIsProcessing)
                         <span class="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-purple-600 rounded-full animate-pulse">
                             {{ $aiThreads->where('is_processing', true)->count() }}
                         </span>
@@ -3375,35 +3478,52 @@ new class extends Component
 
                 {{-- AREAS LIST (New Design) --}}
                 @if (count($areas) > 0)
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900">
+                    <div
+                        x-data="{ justRefreshed: false }"
+                        x-on:areas-refreshed.window="justRefreshed = true; setTimeout(() => justRefreshed = false, 1500)"
+                        :class="justRefreshed ? 'ring-2 ring-purple-400 dark:ring-purple-500 transition-all duration-300' : 'transition-all duration-300'"
+                        class="border border-zinc-200 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-900"
+                    >
                         <div class="p-4 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
                             <flux:heading size="sm">{{ __('Areas') }}</flux:heading>
-                            <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300">
-                                {{ count($areas) }} {{ Str::plural('area', count($areas)) }}
-                            </span>
+                            <div class="flex items-center gap-2">
+                                <span x-show="justRefreshed" x-transition class="text-xs text-purple-600 dark:text-purple-400 font-medium">{{ __('Updated') }}</span>
+                                <span class="px-2.5 py-1 text-xs font-semibold rounded-full bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300">
+                                    {{ count($areas) }} {{ Str::plural('area', count($areas)) }}
+                                </span>
+                            </div>
                         </div>
                         <div class="p-4 space-y-3">
                             @foreach ($areas as $index => $area)
-                                <div wire:key="area-{{ $index }}" x-data="{ expanded: false }" class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden group">
+                                <div wire:key="area-{{ $area['id'] ?? 'new-'.$index }}" x-data="{ expanded: false }" class="border border-zinc-200 dark:border-zinc-700 rounded-lg overflow-hidden group">
                                     {{-- Area Header with Quick Inputs --}}
                                     <div class="p-3 bg-zinc-50 dark:bg-zinc-800/50">
-                                        <div class="flex items-start justify-between gap-3">
+                                        {{-- Mobile: Stack vertically. Desktop: Side-by-side --}}
+                                        <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
                                             <div class="flex-1">
-                                                <div class="flex items-center gap-2 mb-2">
-                                                    <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ $area['name'] }}</span>
-                                                    <span class="px-2 py-0.5 text-xs font-medium rounded-full {{ $area['scope_type'] === 'interior' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' }}">
-                                                        {{ ucfirst($area['scope_type']) }}
-                                                    </span>
-                                                    @if (!empty($area['measurement_type']) && $area['measurement_type'] !== 'dimensions')
-                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
-                                                            {{ strtoupper($area['measurement_type']) }}
+                                                <div class="flex items-center justify-between lg:justify-start gap-2 mb-2">
+                                                    <div class="flex items-center gap-2 flex-wrap">
+                                                        <span class="font-semibold text-zinc-900 dark:text-zinc-100">{{ $area['name'] }}</span>
+                                                        <span class="px-2 py-0.5 text-xs font-medium rounded-full {{ $area['scope_type'] === 'interior' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' : 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' }}">
+                                                            {{ ucfirst($area['scope_type']) }}
                                                         </span>
-                                                    @endif
-                                                    @if (!empty($area['service_category_id']))
-                                                        <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
-                                                            {{ __('Service') }}
-                                                        </span>
-                                                    @endif
+                                                        @if (!empty($area['measurement_type']) && $area['measurement_type'] !== 'dimensions')
+                                                            <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300">
+                                                                {{ strtoupper($area['measurement_type']) }}
+                                                            </span>
+                                                        @endif
+                                                        @if (!empty($area['service_category_id']))
+                                                            <span class="px-1.5 py-0.5 text-[10px] font-medium rounded bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300">
+                                                                {{ __('Service') }}
+                                                            </span>
+                                                        @endif
+                                                    </div>
+                                                    {{-- Mobile-only: price shown inline with name --}}
+                                                    <div class="lg:hidden text-right shrink-0">
+                                                        <div class="text-lg font-bold text-blue-600 dark:text-blue-400">
+                                                            ${{ number_format($area['price'] ?? 0, 2) }}
+                                                        </div>
+                                                    </div>
                                                 </div>
 
                                                 {{-- Quick Dimension Inputs --}}
@@ -3414,7 +3534,7 @@ new class extends Component
                                                             type="number"
                                                             value="{{ $area['length'] }}"
                                                             wire:change="updateAreaDimension({{ $index }}, 'length', $event.target.value)"
-                                                            class="w-14 px-1.5 py-0.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-700 text-center"
+                                                            class="w-16 lg:w-14 px-1.5 py-1.5 lg:py-0.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-700 text-center min-h-[44px] lg:min-h-0"
                                                             step="0.5"
                                                             min="0"
                                                         />
@@ -3426,7 +3546,7 @@ new class extends Component
                                                             type="number"
                                                             value="{{ $area['width'] }}"
                                                             wire:change="updateAreaDimension({{ $index }}, 'width', $event.target.value)"
-                                                            class="w-14 px-1.5 py-0.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-700 text-center"
+                                                            class="w-16 lg:w-14 px-1.5 py-1.5 lg:py-0.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-700 text-center min-h-[44px] lg:min-h-0"
                                                             step="0.5"
                                                             min="1"
                                                         />
@@ -3438,7 +3558,7 @@ new class extends Component
                                                             type="number"
                                                             value="{{ $area['height'] }}"
                                                             wire:change="updateAreaDimension({{ $index }}, 'height', $event.target.value)"
-                                                            class="w-14 px-1.5 py-0.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-700 text-center"
+                                                            class="w-16 lg:w-14 px-1.5 py-1.5 lg:py-0.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded bg-white dark:bg-zinc-700 text-center min-h-[44px] lg:min-h-0"
                                                             step="0.5"
                                                             min="1"
                                                         />
@@ -3462,8 +3582,9 @@ new class extends Component
                                             </div>
 
                                             {{-- Price and Actions --}}
-                                            <div class="flex items-start gap-2">
-                                                <div class="text-right">
+                                            <div class="flex items-center lg:items-start justify-between lg:justify-end gap-2">
+                                                {{-- Desktop-only price --}}
+                                                <div class="hidden lg:block text-right">
                                                     <div class="text-lg font-bold text-blue-600 dark:text-blue-400">
                                                         ${{ number_format($area['price'] ?? 0, 2) }}
                                                     </div>
@@ -3473,29 +3594,35 @@ new class extends Component
                                                         </div>
                                                     @endif
                                                 </div>
+                                                {{-- Mobile: base cost shown inline --}}
+                                                @if (($area['base_total'] ?? 0) > 0 && ($area['base_total'] ?? 0) != ($area['price'] ?? 0))
+                                                    <div class="lg:hidden text-xs text-zinc-500 dark:text-zinc-400">
+                                                        {{ __('Base') }}: ${{ number_format($area['base_total'], 2) }}
+                                                    </div>
+                                                @endif
                                                 <div class="flex items-center gap-1">
                                                     <button
                                                         @click="expanded = !expanded"
                                                         type="button"
-                                                        class="p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors"
+                                                        class="p-2.5 lg:p-1.5 rounded-lg hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors min-h-[44px] lg:min-h-0 min-w-[44px] lg:min-w-0 flex items-center justify-center"
                                                         title="Show details"
                                                     >
-                                                        <svg x-show="!expanded" class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                                                        <svg x-show="expanded" class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                                                        <svg x-show="!expanded" class="w-5 h-5 lg:w-4 lg:h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                                                        <svg x-show="expanded" class="w-5 h-5 lg:w-4 lg:h-4 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
                                                     </button>
                                                     <flux:button
                                                         wire:click="editSelectedTemplate({{ $index }})"
                                                         variant="ghost"
                                                         size="sm"
                                                         icon="pencil"
-                                                        class="opacity-60 group-hover:opacity-100"
+                                                        class="opacity-60 group-hover:opacity-100 max-lg:!min-h-[44px] max-lg:!min-w-[44px]"
                                                     />
                                                     <flux:button
                                                         wire:click="removeTemplate({{ $index }})"
                                                         variant="ghost"
                                                         size="sm"
                                                         icon="trash"
-                                                        class="text-red-500 hover:text-red-700 dark:text-red-400 opacity-60 group-hover:opacity-100"
+                                                        class="text-red-500 hover:text-red-700 dark:text-red-400 opacity-60 group-hover:opacity-100 max-lg:!min-h-[44px] max-lg:!min-w-[44px]"
                                                     />
                                                 </div>
                                             </div>
@@ -4260,39 +4387,6 @@ new class extends Component
                         $wire.pollAiResponse();
                     }
                 }, 2000);
-
-                // Real-time AI tool updates via Echo
-                if (window.Echo && {{ $estimate?->id ?? 'null' }}) {
-                    let refreshTimer = null;
-                    let completionTimer = null;
-                    const estimateId = {{ $estimate?->id ?? 'null' }};
-                    window.Echo.private('estimate.' + estimateId)
-                        .listen('.estimate.ai.tool.completed', (data) => {
-                            $wire.aiProgressLabel = data.tool_label || 'Working...';
-                            this.playAiSound('progress');
-
-                            if (data.data_changed) {
-                                clearTimeout(refreshTimer);
-                                refreshTimer = setTimeout(() => {
-                                    $wire.refreshEstimateFromDb();
-                                }, 2000);
-                            }
-
-                            // When tool events stop arriving, force a poll to catch completion
-                            clearTimeout(completionTimer);
-                            completionTimer = setTimeout(() => {
-                                $wire.pollAiResponse();
-                            }, 5000);
-                        })
-                        .listen('.estimate.area.updated', (data) => {
-                            if (data.action === 'ai-update') {
-                                clearTimeout(refreshTimer);
-                                refreshTimer = setTimeout(() => {
-                                    $wire.refreshEstimateFromDb();
-                                }, 2000);
-                            }
-                        });
-                }
 
                 // Audio feedback on completion/error
                 $wire.on('ai-chat-completed', () => this.playAiSound('complete'));
