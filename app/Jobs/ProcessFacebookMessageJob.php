@@ -2,6 +2,9 @@
 
 namespace App\Jobs;
 
+use App\Events\Automation\InboundMessengerReceived;
+use App\Models\Customer;
+use App\Models\MessengerConversation;
 use App\Services\FacebookMessengerService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -37,6 +40,37 @@ class ProcessFacebookMessageJob implements ShouldQueue
                     'error' => $e->getMessage(),
                 ]);
             }
+
+            // Dispatch automation event for known customers
+            $this->dispatchMessengerEvent($entry);
+        }
+    }
+
+    private function dispatchMessengerEvent(array $entry): void
+    {
+        try {
+            $messaging = $entry['messaging'] ?? [];
+
+            foreach ($messaging as $event) {
+                $senderPsid = $event['sender']['id'] ?? null;
+                $messageText = $event['message']['text'] ?? '';
+
+                if (! $senderPsid || empty($messageText)) {
+                    continue;
+                }
+
+                $conversation = MessengerConversation::where('facebook_psid', $senderPsid)->first();
+
+                if ($conversation && $conversation->customer_id) {
+                    $customer = Customer::find($conversation->customer_id);
+
+                    if ($customer) {
+                        InboundMessengerReceived::dispatch($customer, $senderPsid, $messageText);
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Failed to dispatch InboundMessengerReceived event', ['error' => $e->getMessage()]);
         }
     }
 }

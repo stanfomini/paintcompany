@@ -140,6 +140,11 @@ class CompanySetting extends Model
         'visualizer_image_prompt',
         'default_visualization_colors',
         'sms_bot_enabled',
+        // Preview Link Settings
+        'preview_link_auto_send',
+        'preview_link_sms_message',
+        'preview_link_email_subject',
+        'preview_link_email_body',
         // Phone System
         'phone_system_enabled',
         'phone_routing_mode',
@@ -249,6 +254,8 @@ class CompanySetting extends Model
             // Color Visualizer / SMS Bot
             'default_visualization_colors' => 'array',
             'sms_bot_enabled' => 'boolean',
+            // Preview Link Settings
+            'preview_link_auto_send' => 'boolean',
             // Phone System
             'phone_system_enabled' => 'boolean',
             'call_recording_enabled' => 'boolean',
