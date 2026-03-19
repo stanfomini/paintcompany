@@ -97,7 +97,8 @@ Rule: detailed woodwork in units/lnft → `trim`. Flat area in sqft → `walls`/
 | Siding — spray | `body` | 150-250 sqft/hr | sqft_hr | auto (wall_sqft) |
 | Siding — brush/roll | `body` | 75-125 sqft/hr | sqft_hr | auto (wall_sqft) |
 | Fascia | `fascia` | 30-50 lnft/hr | lnft_hr | auto (perimeter_lnft) |
-| Eaves/soffits | `eaves` | 15-75 lnft/hr | lnft_hr | auto (perimeter_lnft) |
+| Eaves/soffits (linear) | `eaves` | 15-75 lnft/hr | lnft_hr | **SET quantity_override** — auto-calc is ceiling_sqft which is sqft, not lnft |
+| Porch ceiling (flat) | `eaves` | 100-175 sqft/hr | sqft_hr | auto (ceiling_sqft) — create this rate if needed |
 | Exterior trim (downspouts, posts) | `trim` | 20-50 lnft/hr | lnft_hr | auto (perimeter_lnft) |
 | Exterior windows | `windows` | 1-6 units/hr | units_hr | **OVERRIDE required** |
 | Exterior doors | `exterior_doors` | 0.4-4 units/hr | units_hr | **OVERRIDE required** |
@@ -118,3 +119,46 @@ Rule: detailed woodwork in units/lnft → `trim`. Flat area in sqft → `walls`/
 | Siding, stucco, masonry | `body` | ~~`walls`~~ |
 | Window frames/trim | `windows` | ~~`trim`~~ |
 | General exterior trim, downspouts | `trim` | (correct) |
+
+## Intelligent Rate Research — Think Like an Estimator
+
+When you need a production rate, don't just grab the first match. **Think about what the painter is actually doing**, then find or build the right rate.
+
+### Research Hierarchy
+
+1. **Search the correct category first** — `list_production_rates_ai_tool(scope, category)`. Most common surfaces are already in the system.
+2. **If no exact match, scan ALL rates for the scope** — `list_production_rates_ai_tool(scope)` with no category filter. The rate might exist under a different category name than you expected.
+3. **If still no match, think about the work** — What is the painter physically doing? Is it closer to linear-foot trim work or square-foot surface work? How fast can a painter reasonably do this? Check the Reference Rates table above for comparable work.
+4. **Then web search** — Research production rates for this specific task. Cross-reference multiple sources.
+5. **Create the rate** — with the correct category, unit type, and a researched value. Explain your reasoning.
+
+### Verify Before Using
+
+**When you select a rate, verify it makes sense for the surface:**
+- Does the rate's **unit type** match how this surface should be measured? (See Unit Mismatch section in `04-surface-building-guide.md`)
+- Does the rate's **speed** produce reasonable labor hours? Quick sanity check: quantity ÷ rate = hours. Does that feel right for the job?
+- Does the rate's **category** match the surface category you need? If not, the system won't connect them.
+
+**If something looks wrong — a surface shows $0, or the hours seem way off — stop and diagnose.** Don't deliver a broken estimate. Check: is the quantity 0? Is the rate type mismatched? Is the production rate unreasonably fast or slow?
+
+### When the User Directs You to a Rate
+
+If a user says "use the eaves rate for this" or "put it under trim", follow their direction BUT verify:
+- Does the rate's unit type work for this surface? If not, explain: "That rate measures in lnft but this surface calculates in sqft — I'll set a quantity override so the math works."
+- Does the category assignment make sense? If it's a stretch, mention it: "I'm using the trim category for railings since there's no dedicated railings category."
+- **Never silently apply a rate that produces 0 quantity or wrong units.** Always catch and fix it.
+
+### Common Surfaces That May Need New Rates
+
+If a user requests one of these and no exact match exists, research and create:
+
+| Surface | Category | Rate Type | Typical Range | Notes |
+|---|---|---|---|---|
+| Porch Railings (same color) | `trim` | `lnft_hr` | 30-40 lnft/hr | Spindle-style wood railings |
+| Porch Railings (separate color) | `trim` | `lnft_hr` | 15-25 lnft/hr | Different color from body |
+| Porch Ceiling / Beadboard | `eaves` | `sqft_hr` | 100-175 sqft/hr | Flat overhead porch ceiling |
+| Deck Railing | `trim` | `lnft_hr` | 25-35 lnft/hr | Exterior deck railing |
+| Metal Railing | `trim` | `lnft_hr` | 20-30 lnft/hr | Iron/aluminum railing |
+| Garage Floor (epoxy) | `walls` | `sqft_hr` | 40-80 sqft/hr | Specialty coating |
+
+Don't wait for the user to notice a missing rate — if the work clearly needs one and none exists, create it proactively using researched values.

@@ -187,7 +187,8 @@ When creating surfaces, quantities are auto-calculated from area dimensions. Thi
 | Category | Auto-Calc Source | Formula | Unit | Default if no dimensions |
 |---|---|---|---|---|
 | `walls` / `body` | `wall_sqft` | `perimeter_lnft × height` | sqft | 0 |
-| `ceiling` / `eaves` | `ceiling_sqft` | `length × width` | sqft | 0 |
+| `ceiling` | `ceiling_sqft` | `length × width` | sqft | 0 |
+| `eaves` | `ceiling_sqft` | `length × width` | sqft | 0 — **WARNING: most eaves rates are lnft_hr, not sqft_hr. Set `quantity_override` if using an lnft rate, or use/create a sqft_hr eaves rate for flat porch ceilings.** |
 | `baseboard` / `trim` / `fascia` | `perimeter_lnft` | `2 × (length + width) × (wall_count / 4)` | lnft | 0 |
 | `doors` / `exterior_doors` | count | Manual — set `quantity_override` | unit | 1 |
 | `windows` | count | Manual — set `quantity_override` | unit | 1 |
@@ -195,3 +196,18 @@ When creating surfaces, quantities are auto-calculated from area dimensions. Thi
 **Key insight:** For template-based areas, the template already has dimensions for S/M/L sizes. You don't need to think about these formulas — just pick the template and size.
 
 **For custom areas:** The AI service auto-calculates wall_sqft, ceiling_sqft, and perimeter_lnft from (length, width, height, wall_count). You only need to set `quantity_override` for doors and windows.
+
+## Unit Mismatch — Think Before You Build
+
+**Before adding ANY surface, compare the production rate's unit type against the auto-calc source unit.** If they don't match, auto-calc will produce 0 or a wrong number. You must set `quantity_override` with a value in the rate's actual unit.
+
+Known mismatches to watch for:
+- **Eaves**: Auto-calc gives `ceiling_sqft` (sqft), but most eaves rates use `lnft_hr`. For eaves measured in linear feet, set `quantity_override` to the perimeter or measured linear footage. For flat porch ceilings measured in sqft, look for a `sqft_hr` eaves rate or create one.
+- **Trim on exteriors**: Some trim work is measured in lnft (railings, downspouts), some in units (shutters). Match the rate type to the actual measurement.
+
+**The rule:** If the rate says `lnft_hr` but the surface auto-calculates in `sqft`, or vice versa — STOP. Either find a rate with the correct unit type, or set `quantity_override` with the value converted to the rate's unit.
+
+**If you're unsure whether a surface should be measured in sqft or lnft**, think about what a painter would measure on the job:
+- Flat expanses (walls, ceilings, siding) → sqft
+- Linear runs (baseboards, fascia, railings, eaves along a roofline) → lnft
+- Counted items (doors, windows, cabinet faces) → units
