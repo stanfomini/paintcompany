@@ -2,6 +2,7 @@
 
 use App\Models\EmailMessage;
 use App\Services\ChatService;
+use App\Services\MissedCallVoicemailService;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -15,6 +16,7 @@ new class extends Component
             "echo-private:chat.user.{$userId},.thread.created" => 'refreshCount',
             "echo-private:chat.user.{$userId},.message.sent" => 'refreshCount',
             "echo-private:email.user.{$userId},.email.received" => 'refreshCount',
+            "echo-private:call.user.{$userId},.voicemail.received" => 'refreshCount',
             'message-sent' => 'refreshCount',
             'refresh-notification-counts' => 'refreshCount',
         ];
@@ -45,6 +47,11 @@ new class extends Component
                     ->unread()
                     ->count();
             }
+        }
+
+        // Phone calls unhandled
+        if ($user->can('phone.view_call_history')) {
+            $count += app(MissedCallVoicemailService::class)->getUnhandledCountForUser($user);
         }
 
         return $count;
