@@ -85,7 +85,7 @@ class EstimateAiService
         }
 
         if ($category) {
-            $q->where('surface_category', $category);
+            $q->where('surface_category', trim($category, " \t\n\r\0\x0B\"'"));
         }
 
         return $q->get()->map(fn (ProductionRate $rate) => [
@@ -483,6 +483,8 @@ class EstimateAiService
         int $coats = 2,
         ?float $quantityOverride = null
     ): array {
+        $surfaceCategory = trim($surfaceCategory, " \t\n\r\0\x0B\"'");
+
         $area = EstimateArea::findOrFail($areaId);
         $rate = ProductionRate::findOrFail($productionRateId);
 
@@ -1425,6 +1427,8 @@ class EstimateAiService
         int $defaultCoats = 2,
         ?string $description = null,
     ): array {
+        $surfaceCategory = trim($surfaceCategory, " \t\n\r\0\x0B\"'");
+
         // Enforce snake_case naming convention for freeform categories
         if (! preg_match('/^[a-z][a-z0-9_]*$/', $surfaceCategory)) {
             throw new \InvalidArgumentException("Invalid surface_category: {$surfaceCategory}. Must be lowercase snake_case (e.g., walls, trim, epoxy_floor).");
@@ -2043,7 +2047,7 @@ class EstimateAiService
                                 $directUpdates['name'] = $surfUpdate['name'];
                             }
                             if (isset($surfUpdate['surface_category'])) {
-                                $directUpdates['surface_category'] = $surfUpdate['surface_category'];
+                                $directUpdates['surface_category'] = trim($surfUpdate['surface_category'], " \t\n\r\0\x0B\"'");
                             }
                             if (isset($surfUpdate['application_method'])) {
                                 $directUpdates['application_method'] = $surfUpdate['application_method'];
