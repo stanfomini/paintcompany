@@ -2,7 +2,9 @@
 
 namespace Database\Factories;
 
+use App\Models\CallGroup;
 use App\Models\CallLog;
+use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -84,6 +86,27 @@ class CallLogFactory extends Factory
             'recording_sid' => 'RE'.Str::random(32),
             'recording_url' => 'https://api.twilio.com/recordings/RE'.Str::random(32),
             'recording_duration_seconds' => fake()->numberBetween(10, 300),
+        ]);
+    }
+
+    public function forUser(User $user): static
+    {
+        return $this->state(fn () => [
+            'voicemail_for_user_id' => $user->id,
+        ]);
+    }
+
+    public function companyWide(): static
+    {
+        return $this->state(fn () => [
+            'voicemail_for_user_id' => null,
+        ]);
+    }
+
+    public function withCallGroup(CallGroup $group): static
+    {
+        return $this->state(fn () => [
+            'call_group_id' => $group->id,
         ]);
     }
 }

@@ -7,6 +7,7 @@ use App\Events\CallEnded;
 use App\Events\IncomingCall;
 use App\Events\VoicemailReceived;
 use App\Jobs\ProcessCallRecordingJob;
+use App\Jobs\ProcessMissedCallJob;
 use App\Jobs\TranscribeVoicemailJob;
 use App\Models\CallGroup;
 use App\Models\CallLog;
@@ -82,6 +83,8 @@ class TwilioVoiceWebhookController extends Controller
         // Broadcast incoming call to target users
         $targetUserIds = [];
         if ($callGroup) {
+            $callLog->update(['call_group_id' => $callGroup->id]);
+
             $targetUserIds = $callGroup->members()
                 ->where('is_active', true)
                 ->whereNotNull('user_id')
@@ -144,6 +147,36 @@ class TwilioVoiceWebhookController extends Controller
             $this->safeBroadcast(new CallEnded($callLog, $userId));
         }
 
+        // Dispatch missed call processing for no-answer status
+        if ($status === 'no-answer') {
+            ProcessMissedCallJob::dispatch($callLog->id)->delay(now()->addSeconds(5));
+        }
+
+        // Auto-complete follow-up when calling back a missed caller
+        if ($status === 'completed' && $callLog->direction === 'outbound' && $callLog->to_number) {
+            $recentMissed = CallLog::query()
+                ->where('from_number', $callLog->to_number)
+                ->where('direction', 'inbound')
+                ->missed()
+                ->unhandled()
+                ->where('started_at', '>=', now()->subDays(7))
+                ->get();
+
+            foreach ($recentMissed as $missed) {
+                $missed->markHandledBy(
+                    \App\Models\User::find($callLog->caller_user_id) ?? auth()->user(),
+                    'called_back'
+                );
+
+                // Auto-complete the linked activity
+                if ($missed->follow_up_activity_id) {
+                    \App\Models\Activity::where('id', $missed->follow_up_activity_id)
+                        ->where('is_completed', false)
+                        ->update(['is_completed' => true, 'completed_at' => now()]);
+                }
+            }
+        }
+
         return response('OK', 200);
     }
 
@@ -180,6 +213,7 @@ class TwilioVoiceWebhookController extends Controller
         if ($callLog->isVoicemail()) {
             TranscribeVoicemailJob::dispatch($callLog->id);
             $this->safeBroadcast(new VoicemailReceived($callLog));
+            ProcessMissedCallJob::dispatch($callLog->id)->delay(now()->addSeconds(10));
         }
 
         ProcessCallRecordingJob::dispatch($callLog->id);
@@ -327,8 +361,9 @@ class TwilioVoiceWebhookController extends Controller
         $callGroup = $this->routing->resolveIvrOption($digit, $ivrMenu);
 
         if ($callGroup) {
-            // Update call log metadata
+            // Update call log with group assignment
             $log->update([
+                'call_group_id' => $callGroup->id,
                 'metadata' => array_merge($log->metadata ?? [], [
                     'ivr_option' => $digit,
                     'call_group_id' => $callGroup->id,
@@ -364,8 +399,9 @@ class TwilioVoiceWebhookController extends Controller
         $user = $this->routing->resolveFromExtension($digits);
 
         if ($user) {
-            // Update call log metadata
+            // Update call log with voicemail ownership and metadata
             $log->update([
+                'voicemail_for_user_id' => $user->id,
                 'metadata' => array_merge($log->metadata ?? [], [
                     'extension_dialed' => $digits,
                     'extension_user_id' => $user->id,
@@ -417,6 +453,8 @@ class TwilioVoiceWebhookController extends Controller
                 : null;
 
             if ($defaultGroup) {
+                $log->update(['call_group_id' => $defaultGroup->id]);
+
                 $targetUserIds = $defaultGroup->members()
                     ->where('is_active', true)
                     ->whereNotNull('user_id')

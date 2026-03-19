@@ -8,6 +8,7 @@ use Livewire\Livewire;
 beforeEach(function () {
     $this->user = User::factory()->internal()->create();
     $this->user->givePermissionTo('phone.view_call_history');
+    $this->user->givePermissionTo('phone.view_company_voicemails');
     $this->actingAs($this->user);
 });
 

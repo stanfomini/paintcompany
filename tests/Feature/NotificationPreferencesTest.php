@@ -91,7 +91,7 @@ it('returns all default categories', function () {
 
     expect($defaults)->toHaveKeys([
         'estimates', 'chat', 'messenger', 'email_messages', 'jobs',
-        'tasks', 'payments', 'documents', 'general',
+        'tasks', 'payments', 'phone_calls', 'documents', 'general',
     ]);
 
     foreach ($defaults as $category => $channels) {

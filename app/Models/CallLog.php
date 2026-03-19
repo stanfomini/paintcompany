@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
 
 class CallLog extends Model
@@ -29,6 +30,9 @@ class CallLog extends Model
         'recording_duration_seconds',
         'voicemail_transcription',
         'metadata',
+        'voicemail_for_user_id',
+        'call_group_id',
+        'follow_up_activity_id',
         'started_at',
         'answered_at',
         'ended_at',
@@ -70,6 +74,26 @@ class CallLog extends Model
         return $this->belongsTo(User::class, 'answered_by_user_id');
     }
 
+    public function voicemailForUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voicemail_for_user_id');
+    }
+
+    public function callGroup(): BelongsTo
+    {
+        return $this->belongsTo(CallGroup::class);
+    }
+
+    public function followUpActivity(): BelongsTo
+    {
+        return $this->belongsTo(Activity::class, 'follow_up_activity_id');
+    }
+
+    public function userInteractions(): HasMany
+    {
+        return $this->hasMany(CallLogUser::class);
+    }
+
     public function scopeInbound(Builder $query): void
     {
         $query->where('direction', 'inbound');
@@ -90,6 +114,50 @@ class CallLog extends Model
         $query->where('customer_id', $customerId);
     }
 
+    public function scopeVoicemails(Builder $query): void
+    {
+        $query->where('status', 'voicemail');
+    }
+
+    public function scopeCompanyWide(Builder $query): void
+    {
+        $query->whereNull('voicemail_for_user_id');
+    }
+
+    public function scopeForUser(Builder $query, int $userId): void
+    {
+        $query->where('voicemail_for_user_id', $userId);
+    }
+
+    public function scopeUnlistenedBy(Builder $query, int $userId): void
+    {
+        $query->whereDoesntHave('userInteractions', function ($q) use ($userId) {
+            $q->where('user_id', $userId)->whereNotNull('listened_at');
+        });
+    }
+
+    public function scopeUnhandled(Builder $query): void
+    {
+        $query->whereDoesntHave('userInteractions', function ($q) {
+            $q->whereNotNull('handled_at');
+        });
+    }
+
+    public function scopeVisibleTo(Builder $query, User $user): void
+    {
+        $query->where(function (Builder $q) use ($user) {
+            $q->where('voicemail_for_user_id', $user->id);
+
+            if ($user->can('phone.view_company_voicemails')) {
+                $q->orWhereNull('voicemail_for_user_id');
+            }
+
+            if ($user->can('phone.view_all_voicemails')) {
+                $q->orWhereNotNull('id');
+            }
+        });
+    }
+
     public function isVoicemail(): bool
     {
         return $this->status === 'voicemail';
@@ -98,6 +166,52 @@ class CallLog extends Model
     public function hasRecording(): bool
     {
         return ! empty($this->recording_url);
+    }
+
+    public function isCompanyWide(): bool
+    {
+        return $this->voicemail_for_user_id === null;
+    }
+
+    public function isForUser(): bool
+    {
+        return $this->voicemail_for_user_id !== null;
+    }
+
+    public function isMissedCall(): bool
+    {
+        return $this->status === 'no-answer';
+    }
+
+    public function markListenedBy(User $user): void
+    {
+        CallLogUser::updateOrCreate(
+            ['call_log_id' => $this->id, 'user_id' => $user->id],
+            ['listened_at' => now()]
+        );
+    }
+
+    public function markHandledBy(User $user, string $action): void
+    {
+        CallLogUser::updateOrCreate(
+            ['call_log_id' => $this->id, 'user_id' => $user->id],
+            ['handled_at' => now(), 'handled_action' => $action]
+        );
+    }
+
+    public function isListenedBy(User $user): bool
+    {
+        return $this->userInteractions()
+            ->where('user_id', $user->id)
+            ->whereNotNull('listened_at')
+            ->exists();
+    }
+
+    public function isHandled(): bool
+    {
+        return $this->userInteractions()
+            ->whereNotNull('handled_at')
+            ->exists();
     }
 
     /**

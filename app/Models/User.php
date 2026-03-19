@@ -514,6 +514,7 @@ class User extends Authenticatable
             'jobs' => ['email' => true, 'push' => true, 'sms' => true],
             'tasks' => ['email' => true, 'push' => true, 'sms' => false],
             'payments' => ['email' => true, 'push' => true, 'sms' => true],
+            'phone_calls' => ['email' => true, 'push' => true, 'sms' => false],
             'documents' => ['email' => true, 'push' => true, 'sms' => false],
             'general' => ['email' => true, 'push' => true, 'sms' => false],
         ];

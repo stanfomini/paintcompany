@@ -36,6 +36,7 @@ it('shows all category labels', function () {
         ->assertSee('Jobs & Scheduling')
         ->assertSee('Tasks')
         ->assertSee('Payments')
+        ->assertSee('Phone Calls & Voicemails')
         ->assertSee('Documents')
         ->assertSee('General');
 });
@@ -47,8 +48,8 @@ it('loads default preferences when user has none saved', function () {
         ->test('pages::settings.notification-preferences');
 
     foreach (User::defaultNotificationPreferences() as $category => $channels) {
-        $component->assertSet("preferences.{$category}.email", true);
-        $component->assertSet("preferences.{$category}.push", true);
+        $component->assertSet("preferences.{$category}.email", $channels['email']);
+        $component->assertSet("preferences.{$category}.push", $channels['push']);
     }
 });
 

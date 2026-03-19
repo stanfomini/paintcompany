@@ -13,6 +13,7 @@ use App\Services\ChatService;
 use App\Services\CommunicationsContactService;
 use App\Services\FacebookMessengerService;
 use App\Services\MessengerLeadCreationService;
+use App\Services\MissedCallVoicemailService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Url;
 use Livewire\Component;
@@ -87,6 +88,7 @@ new class extends Component
             "echo-private:chat.user.{$userId},.message.sent" => 'onNewMessage',
             "echo-private:chat.user.{$userId},.thread.created" => 'refreshData',
             "echo-private:email.user.{$userId},.email.received" => 'refreshData',
+            "echo-private:call.user.{$userId},.voicemail.received" => 'refreshData',
             'message-sent' => 'onChildMessageSent',
         ];
 
@@ -374,7 +376,7 @@ new class extends Component
                     $unread = $thread->getUnreadCountFor(auth()->user());
                 }
             }
-            return ['all' => $unread, 'messenger' => $unread, 'direct' => 0, 'deals' => 0, 'emails' => 0];
+            return ['all' => $unread, 'messenger' => $unread, 'direct' => 0, 'deals' => 0, 'emails' => 0, 'calls' => 0];
         }
 
         if ($this->isSmsContact()) {
@@ -385,7 +387,7 @@ new class extends Component
                     $unread = $thread->getUnreadCountFor(auth()->user());
                 }
             }
-            return ['all' => $unread, 'direct' => $unread, 'messenger' => 0, 'deals' => 0, 'emails' => 0];
+            return ['all' => $unread, 'direct' => $unread, 'messenger' => 0, 'deals' => 0, 'emails' => 0, 'calls' => 0];
         }
 
         if ($this->isSetterContact()) {
@@ -396,17 +398,26 @@ new class extends Component
                     $unread = $thread->getUnreadCountFor(auth()->user());
                 }
             }
-            return ['all' => $unread, 'direct' => $unread, 'messenger' => 0, 'deals' => 0, 'emails' => 0];
+            return ['all' => $unread, 'direct' => $unread, 'messenger' => 0, 'deals' => 0, 'emails' => 0, 'calls' => 0];
         }
 
         if (! $this->selectedContact) {
             return [];
         }
 
-        return app(CommunicationsContactService::class)->getTabUnreadCounts(
+        $counts = app(CommunicationsContactService::class)->getTabUnreadCounts(
             auth()->user(),
             $this->selectedContact
         );
+
+        // Add calls unhandled count
+        if (auth()->user()->can('phone.view_call_history')) {
+            $counts['calls'] = app(MissedCallVoicemailService::class)->getUnhandledCountForUser(auth()->user());
+        } else {
+            $counts['calls'] = 0;
+        }
+
+        return $counts;
     }
 
     #[Computed]

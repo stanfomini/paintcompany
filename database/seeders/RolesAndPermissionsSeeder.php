@@ -257,6 +257,9 @@ class RolesAndPermissionsSeeder extends Seeder
             'phone.make_calls',
             'phone.receive_calls',
             'phone.transfer_calls',
+            'phone.view_company_voicemails',
+            'phone.view_all_voicemails',
+            'phone.manage_voicemails',
             'settings.phone_system',
 
             // Bookings
@@ -368,6 +371,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.view', 'reports.own',
             // Phone System
             'phone.view_call_history', 'phone.make_calls', 'phone.receive_calls', 'phone.transfer_calls',
+            'phone.view_company_voicemails', 'phone.view_all_voicemails', 'phone.manage_voicemails',
             'settings.phone_system',
             // Bookings
             'bookings.manage',
@@ -454,6 +458,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.view', 'reports.own',
             // Phone System
             'phone.view_call_history', 'phone.make_calls', 'phone.receive_calls', 'phone.transfer_calls',
+            'phone.view_company_voicemails', 'phone.manage_voicemails',
             // Bookings
             'bookings.manage',
         ]);
