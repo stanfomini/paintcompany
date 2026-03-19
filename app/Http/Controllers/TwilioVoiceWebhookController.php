@@ -415,7 +415,7 @@ class TwilioVoiceWebhookController extends Controller
             // Dial the user's forwarding number directly
             $response = new \Twilio\TwiML\VoiceResponse;
             $dialOptions = [
-                'timeout' => 20,
+                'timeout' => 17,
                 'callerId' => $log->from_number,
             ];
 
