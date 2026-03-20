@@ -223,10 +223,8 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
             'zip' => 'nullable|string|max:10',
             'description' => 'nullable|string|max:2000',
             'estimatePreference' => 'required|in:in_person,virtual',
-            'smsServiceConsent' => ['accepted'],
+            'smsServiceConsent' => ['nullable', 'boolean'],
             'smsMarketingConsent' => ['nullable', 'boolean'],
-        ], [
-            'smsServiceConsent.accepted' => 'You must agree to receive service text messages to continue.',
         ]);
 
         $this->errorMessage = null;
@@ -582,18 +580,17 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                             <flux:input wire:model="phone" :label="__('Phone')" />
                         </div>
 
-                        {{-- SMS Service Consent (required) --}}
+                        {{-- SMS Service Consent (optional) --}}
                         <div>
                             <label class="flex items-start gap-2 cursor-pointer">
                                 <input type="checkbox" wire:model="smsServiceConsent" class="mt-0.5 text-emerald-600" />
                                 <span class="text-xs text-zinc-500">
-                                    By providing your phone number, you agree to receive service-related text messages from {{ config('app.name') }} (appointment updates, estimate notifications, project info).
-                                    Message frequency varies. Msg &amp; data rates may apply. Reply STOP to cancel. Reply HELP for help.
+                                    {{ __('I agree to receive service-related text messages from') }} {{ config('app.name') }} {{ __('(appointment updates, estimate notifications, project info).') }}
+                                    {{ __('Message frequency varies. Msg & data rates may apply. Reply STOP to cancel. Reply HELP for help.') }}
                                     <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
                                     <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
                                 </span>
                             </label>
-                            @error('smsServiceConsent') <p class="text-red-500 text-xs mt-1">{{ $message }}</p> @enderror
                         </div>
 
                         {{-- SMS Marketing Consent (optional) --}}
@@ -601,7 +598,10 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                             <label class="flex items-start gap-2 cursor-pointer">
                                 <input type="checkbox" wire:model="smsMarketingConsent" class="mt-0.5 text-emerald-600" />
                                 <span class="text-xs text-zinc-500">
-                                    {{ __("I'd like to receive promotional offers and updates from") }} {{ config('app.name') }} {{ __('via text (optional).') }}
+                                    {{ __("I'd also like to receive promotional offers, seasonal discounts, and painting tips from") }} {{ config('app.name') }} {{ __('via text.') }}
+                                    {{ __('Message frequency varies. Msg & data rates may apply. Reply STOP to cancel. Reply HELP for help.') }}
+                                    <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
+                                    <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
                                 </span>
                             </label>
                         </div>
