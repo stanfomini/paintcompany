@@ -37,7 +37,7 @@ return [
 
     'workers' => [
         ['queue' => 'default', 'processes' => 1, 'timeout' => 60, 'sleep' => 10],
-        ['queue' => 'ai', 'processes' => 3, 'timeout' => 310, 'sleep' => 3],
+        ['queue' => 'ai', 'processes' => 3, 'timeout' => 720, 'sleep' => 3],
         ['queue' => 'notifications', 'processes' => 1, 'timeout' => 60, 'sleep' => 10],
         ['queue' => 'broadcasts', 'processes' => 1, 'timeout' => 60, 'sleep' => 10],
         ['queue' => 'webhooks', 'processes' => 1, 'timeout' => 60, 'sleep' => 10],
