@@ -63,6 +63,7 @@ User's explicit values always override these defaults.
 | `update_surface_tier_overrides_ai_tool` | Create tier snapshot on one surface for one tier | Step 2 — call per surface × per tier |
 | `update_surface_ai_tool` | Set BASE values (All Tiers tab) | Non-tier changes only. Last call wins for all tiers. |
 | `set_area_package_tiers_ai_tool` | Restrict area to specific tiers | Tier-exclusive areas (e.g., crown molding only in Best) |
+| `set_surface_package_tiers_ai_tool` | Restrict surface to specific tiers | Tier-exclusive surfaces (e.g., ceiling only in Better/Best) |
 
 `update_surface_ai_tool` sets base values shared by ALL tiers. `update_surface_tier_overrides_ai_tool` sets ONE tier's snapshot. Use the latter for per-tier differentiation.
 
@@ -97,3 +98,23 @@ Estimate-level tier paints already exist. For new areas, only do:
 ## Tier-Exclusive Areas
 
 Use `set_area_package_tiers_ai_tool(area_id=X, tiers=["best"])` to include an area in only specific tiers. Tier-exclusive areas still need tier snapshots for their included tiers.
+
+## Tier-Exclusive Surfaces
+
+Use `set_surface_package_tiers_ai_tool(surface_id=X, tiers=["best"])` to include a surface in only specific tiers. This is more granular than area-level exclusion — you can have walls in all tiers but crown molding only in Best.
+
+**When to use:**
+- "Crown molding only in the Best tier" → exclude crown from good/better
+- "Ceiling painting is a Better/Best upgrade" → exclude ceiling from good
+- Premium finishes (accent walls, decorative trim) only in higher tiers
+
+**Important:** Tier-excluded surfaces still need tier overrides for their included tiers. If crown molding is only in Best, still call `update_surface_tier_overrides_ai_tool` for the "best" tier on that surface.
+
+Example:
+```
+create_area_from_template_ai_tool(template_id=X, size="medium")
+→ Surfaces: Walls(10), Ceiling(11), Crown Molding(12)
+
+set_surface_package_tiers_ai_tool(surface_id=12, tiers=["best"])
+→ Crown molding only appears in the Best tier pricing
+```

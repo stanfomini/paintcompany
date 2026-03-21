@@ -31,6 +31,7 @@ use App\Ai\Tools\Estimate\SearchTemplatesAiTool;
 use App\Ai\Tools\Estimate\SetAreaPackageTiersAiTool;
 use App\Ai\Tools\Estimate\SetAreaPaintProductAiTool;
 use App\Ai\Tools\Estimate\SetEstimatePaintConfigAiTool;
+use App\Ai\Tools\Estimate\SetSurfacePackageTiersAiTool;
 use App\Ai\Tools\Estimate\SetTierPricingAiTool;
 use App\Ai\Tools\Estimate\UpdateAreaDimensionsAiTool;
 use App\Ai\Tools\Estimate\UpdateEstimateSettingsAiTool;
@@ -260,6 +261,7 @@ class EstimateBuilderAgent implements Agent, Conversational, HasTools
             new UpdateAreaDimensionsAiTool($this->estimate),
             new PreviewAreaPricingAiTool($this->estimate),
             new SetAreaPackageTiersAiTool($this->estimate),
+            new SetSurfacePackageTiersAiTool($this->estimate),
 
             // Line items and cost items
             new CreateEstimateItemAiTool($this->estimate),

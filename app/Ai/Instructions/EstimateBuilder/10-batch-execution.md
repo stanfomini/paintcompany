@@ -70,6 +70,7 @@ The mega-tool replaces 30-60+ individual tool calls with a single call. All area
 - **Rate references**: Use `create_first.production_rates` with a `ref` key, then reference as `"ref:new_rate_0"` in surface `production_rate_id`.
 - **Auto tier overrides**: When `tier_config` is provided, tier snapshots are automatically created for every surface on every area. No need to call `update_surface_tier_overrides_ai_tool` separately.
 - **Package tiers**: Set `package_tiers: ["better", "best"]` on an area to restrict it to specific tiers.
+- **Surface package tiers**: Set `package_tiers: ["better", "best"]` on a surface definition to restrict it to specific tiers. Works only for `source: "custom"` areas with explicit surfaces.
 - **Transaction safety**: All-or-nothing. If area 3 fails, areas 1 and 2 are also rolled back.
 
 ## Example: "Paint my 3-bedroom house with good/better/best"

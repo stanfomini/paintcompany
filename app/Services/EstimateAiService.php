@@ -268,6 +268,7 @@ class EstimateAiService
                         'material_cost' => (float) ($s->material_cost ?? 0),
                         'paint_product' => $s->paintProduct?->name,
                         'total' => (float) ($s->total ?? 0),
+                        'package_tiers' => $s->package_tiers,
                     ])->toArray(),
                     'addons' => $area->addons->map(fn ($a) => [
                         'id' => $a->id,
@@ -812,6 +813,55 @@ class EstimateAiService
             'area_id' => $area->id,
             'package_tiers' => $area->package_tiers,
             'included_in' => $area->package_tiers === null ? $allTiers : $area->package_tiers,
+        ];
+    }
+
+    /**
+     * Set which package tiers a surface is included in (good/better/best).
+     *
+     * Passing null or an empty array means the surface is included in ALL tiers.
+     * Invalid tier names are silently filtered out.
+     *
+     * @param  array<string>|null  $tiers
+     * @return array{surface_id: int, package_tiers: array<string>|null, included_in: array<string>}
+     */
+    public function setSurfacePackageTiers(int $surfaceId, ?array $tiers, ?Estimate $estimate = null): array
+    {
+        $surface = $estimate
+            ? EstimateAreaSurface::whereIn('area_id', $estimate->areas()->pluck('id'))->findOrFail($surfaceId)
+            : EstimateAreaSurface::findOrFail($surfaceId);
+
+        $allTiers = ['good', 'better', 'best'];
+
+        if ($tiers === null || count($tiers) === 0) {
+            $filteredTiers = null;
+        } else {
+            $filteredTiers = array_values(array_filter($tiers, fn ($t) => in_array($t, $allTiers, true)));
+            if (count($filteredTiers) === 0) {
+                $filteredTiers = null;
+            }
+        }
+
+        $surface->update([
+            'package_tiers' => $filteredTiers,
+        ]);
+
+        // Clear area caches
+        $area = $surface->area;
+        if ($area) {
+            $area->update([
+                'cached_cogs' => null,
+                'cached_customer_price' => null,
+                'cached_tier_prices' => null,
+            ]);
+        }
+
+        $surface->refresh();
+
+        return [
+            'surface_id' => $surface->id,
+            'package_tiers' => $surface->package_tiers,
+            'included_in' => $surface->package_tiers === null ? $allTiers : $surface->package_tiers,
         ];
     }
 
@@ -1870,9 +1920,18 @@ class EstimateAiService
                                     isset($surfDef['quantity_override']) ? (float) $surfDef['quantity_override'] : null,
                                 );
 
-                                if (! empty($surfDef['name']) && isset($surfResult['surface_id'])) {
-                                    EstimateAreaSurface::where('id', $surfResult['surface_id'])
-                                        ->update(['name' => $surfDef['name']]);
+                                if (isset($surfResult['surface_id'])) {
+                                    $surfaceUpdates = [];
+                                    if (! empty($surfDef['name'])) {
+                                        $surfaceUpdates['name'] = $surfDef['name'];
+                                    }
+                                    if (isset($surfDef['package_tiers'])) {
+                                        $surfaceUpdates['package_tiers'] = ! empty($surfDef['package_tiers']) ? $surfDef['package_tiers'] : null;
+                                    }
+                                    if (! empty($surfaceUpdates)) {
+                                        EstimateAreaSurface::where('id', $surfResult['surface_id'])
+                                            ->update($surfaceUpdates);
+                                    }
                                 }
 
                                 $createdSurfaces++;

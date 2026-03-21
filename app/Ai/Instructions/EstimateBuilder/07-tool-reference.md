@@ -67,6 +67,7 @@ These create resources reusable across all estimates. They do NOT modify the cur
 - `update_area_dimensions_ai_tool` — Change area dimensions. Auto-recalculates all surface quantities — no need to update surfaces individually.
 - `preview_area_pricing_ai_tool` — Get detailed cost breakdown for one area (per-surface hours, labor, materials, COGS, OTD).
 - `set_area_package_tiers_ai_tool` — Control which tiers include this area. Pass `tiers` array (e.g., `["better", "best"]`). Null = all tiers.
+- `set_surface_package_tiers_ai_tool` — Control which tiers include a specific surface. Pass `tiers` array (e.g., `["better", "best"]`). Null = all tiers. More granular than area-level tier control.
 
 ## Line Items & Cost Items
 
