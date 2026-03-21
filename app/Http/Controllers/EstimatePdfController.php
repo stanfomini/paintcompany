@@ -18,6 +18,7 @@ class EstimatePdfController extends Controller
             'items',
             'areas.surfaces.productionRate',
             'options',
+            'packages',
             'photos' => fn ($q) => $q->where('show_on_proposal', true)->orderBy('sort_order'),
             'signature',
         ]);

@@ -440,11 +440,6 @@ new class extends Component {
                 <flux:input wire:model="estimate_validity_days" :label="__('Estimate Validity (days)')" type="number" min="1" max="365" />
             </div>
 
-            <flux:select wire:model="excluded_surfaces_display" :label="__('Excluded Surfaces on Proposal')" :description="__('Controls whether surfaces excluded from a package tier are hidden or shown (dimmed) in the customer-facing Scope of Work.')">
-                <option value="hidden">{{ __('Hidden — excluded surfaces are not shown') }}</option>
-                <option value="shown">{{ __('Shown — excluded surfaces appear dimmed') }}</option>
-            </flux:select>
-
             <flux:separator />
 
             {{-- Labor Configuration Section --}}

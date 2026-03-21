@@ -919,6 +919,7 @@ new #[Layout('components.layouts.agent', ['title' => 'Estimate Details'])] class
                     </div>
                 @endif
             </div>
+        @endif
 
         {{-- ============================================================== --}}
         {{-- Persistent Chat Section (below tabs) --}}
