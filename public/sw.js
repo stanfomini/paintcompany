@@ -1,4 +1,4 @@
-const CACHE_VERSION = '4d430970-v20';
+const CACHE_VERSION = '4d430970-v21';
 const CACHE_NAME = `apex-${CACHE_VERSION}`;
 const OFFLINE_URL = '/offline.html';
 

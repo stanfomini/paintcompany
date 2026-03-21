@@ -100,6 +100,16 @@ class extends Component {
             >
                 {{ __('Showcase') }}
             </flux:button>
+
+            <flux:button
+                size="sm"
+                :variant="$tab === 'offers' ? 'filled' : 'ghost'"
+                icon="signal"
+                wire:click="setTab('offers')"
+                class="{{ $tab !== 'offers' ? 'border border-zinc-300 dark:border-zinc-600 rounded-lg' : 'rounded-lg' }}"
+            >
+                {{ __('Offers') }}
+            </flux:button>
         @endcan
     </div>
 
@@ -117,5 +127,7 @@ class extends Component {
         @livewire('media.landing-page-videos')
     @elseif($tab === 'showcase')
         @livewire('media.landing-page-showcase')
+    @elseif($tab === 'offers')
+        @livewire('media.offer-manager')
     @endif
 </div>

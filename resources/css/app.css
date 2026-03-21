@@ -137,3 +137,13 @@ select:focus[data-flux-control] {
         border-radius: 0 !important;
     }
 }
+
+/* Area builder flyout: safe-area padding for PWA standalone on mobile */
+@supports (padding: env(safe-area-inset-top)) {
+    @media (display-mode: standalone) and (max-width: 1023px) {
+        .area-builder-flyout [data-flux-modal-panel] {
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    }
+}

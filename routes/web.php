@@ -147,6 +147,18 @@ Route::livewire('/booking/{token}/cancel', 'public.booking-cancel')
     ->name('booking.cancel')
     ->middleware('throttle:60,1');
 
+// Facebook offer landing pages
+Route::livewire('/offer/{slug}', 'public.fb-offer')
+    ->name('offer.show')
+    ->middleware('throttle:60,1');
+
+Route::get('/fb', function () {
+    $offer = \App\Models\FbLandingPageOffer::active()->first();
+    abort_unless($offer, 404);
+
+    return redirect()->route('offer.show', $offer->slug);
+})->name('offer.fb')->middleware('throttle:60,1');
+
 // Public color visualizer
 Route::livewire('/visualize', 'public.color-visualizer')
     ->name('visualize')

@@ -59,6 +59,10 @@ new #[Layout('components.layouts.public')] class extends Component
 
     public string $honeypot = '';
 
+    public bool $smsServiceConsent = false;
+
+    public bool $smsMarketingConsent = false;
+
     // Result
     public ?array $bookingResult = null;
 
@@ -245,6 +249,8 @@ new #[Layout('components.layouts.public')] class extends Component
             'zip' => 'nullable|string|max:10',
             'description' => 'nullable|string|max:2000',
             'estimatePreference' => 'required|in:in_person,virtual',
+            'smsServiceConsent' => ['nullable', 'boolean'],
+            'smsMarketingConsent' => ['nullable', 'boolean'],
         ]);
 
         $this->errorMessage = null;
@@ -263,6 +269,7 @@ new #[Layout('components.layouts.public')] class extends Component
                     'zip' => $this->zip,
                     'description' => $this->description,
                     'estimate_preference' => $this->estimatePreference,
+                    'sms_marketing_consent' => $this->smsMarketingConsent,
                 ],
                 $this->selectedSlot['estimator_id'],
                 Carbon::parse($this->selectedDate),
@@ -689,6 +696,32 @@ new #[Layout('components.layouts.public')] class extends Component
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <flux:input wire:model="email" type="email" :label="__('Email')" required />
                                 <flux:input wire:model="phone" :label="__('Phone')" />
+                            </div>
+
+                            {{-- SMS Service Consent (optional) --}}
+                            <div>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" wire:model="smsServiceConsent" class="mt-0.5 text-emerald-600" />
+                                    <span class="text-xs text-zinc-500">
+                                        {{ __('I agree to receive service-related text messages from') }} {{ config('app.name') }} {{ __('(appointment updates, estimate notifications, project info).') }}
+                                        {{ __('Message frequency varies. Msg & data rates may apply. Reply STOP to cancel. Reply HELP for help.') }}
+                                        <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
+                                        <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
+                                    </span>
+                                </label>
+                            </div>
+
+                            {{-- SMS Marketing Consent (optional) --}}
+                            <div>
+                                <label class="flex items-start gap-2 cursor-pointer">
+                                    <input type="checkbox" wire:model="smsMarketingConsent" class="mt-0.5 text-emerald-600" />
+                                    <span class="text-xs text-zinc-500">
+                                        {{ __("I'd also like to receive promotional offers, seasonal discounts, and painting tips from") }} {{ config('app.name') }} {{ __('via text.') }}
+                                        {{ __('Message frequency varies. Msg & data rates may apply. Reply STOP to cancel. Reply HELP for help.') }}
+                                        <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
+                                        <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
+                                    </span>
+                                </label>
                             </div>
                         </div>
 

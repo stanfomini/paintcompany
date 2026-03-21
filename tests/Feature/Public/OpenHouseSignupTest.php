@@ -245,4 +245,46 @@ describe('OpenHouseSignup component', function () {
         Livewire::test('public.open-house-signup', ['property' => $property])
             ->assertSee('$450,000');
     });
+
+    it('sets sms_marketing_consent_at when marketing consent is checked', function () {
+        $property = Property::factory()->agentListing()->active()->create();
+
+        Livewire::test('public.open-house-signup', ['property' => $property])
+            ->set('firstName', 'SMS')
+            ->set('lastName', 'Consent')
+            ->set('email', 'sms-consent-oh@example.com')
+            ->set('smsServiceConsent', true)
+            ->set('smsMarketingConsent', true)
+            ->call('submit')
+            ->assertHasNoErrors();
+
+        $customer = Customer::where('email', 'sms-consent-oh@example.com')->first();
+        expect($customer)->not->toBeNull()
+            ->and($customer->sms_marketing_consent_at)->not->toBeNull();
+    });
+
+    it('does not set sms_marketing_consent_at when marketing consent is unchecked', function () {
+        $property = Property::factory()->agentListing()->active()->create();
+
+        Livewire::test('public.open-house-signup', ['property' => $property])
+            ->set('firstName', 'No')
+            ->set('lastName', 'Consent')
+            ->set('email', 'no-sms-oh@example.com')
+            ->set('smsServiceConsent', false)
+            ->set('smsMarketingConsent', false)
+            ->call('submit')
+            ->assertHasNoErrors();
+
+        $customer = Customer::where('email', 'no-sms-oh@example.com')->first();
+        expect($customer)->not->toBeNull()
+            ->and($customer->sms_marketing_consent_at)->toBeNull();
+    });
+
+    it('displays SMS consent checkboxes on the form', function () {
+        $property = Property::factory()->agentListing()->active()->create();
+
+        Livewire::test('public.open-house-signup', ['property' => $property])
+            ->assertSee('I agree to receive service-related text messages from')
+            ->assertSee('promotional offers, seasonal discounts, and painting tips');
+    });
 });

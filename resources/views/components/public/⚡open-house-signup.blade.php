@@ -29,6 +29,10 @@ new #[Layout('components.layouts.guest')] class extends Component {
 
     public string $honeypot = '';
 
+    public bool $smsServiceConsent = false;
+
+    public bool $smsMarketingConsent = false;
+
     public bool $submitted = false;
 
     public function mount(Property $property): void
@@ -59,6 +63,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'state' => ['nullable', 'string', 'max:50'],
             'zip' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:5000'],
+            'smsServiceConsent' => ['nullable', 'boolean'],
+            'smsMarketingConsent' => ['nullable', 'boolean'],
         ], [
             'firstName.required' => __('Please enter your first name.'),
             'lastName.required' => __('Please enter your last name.'),
@@ -81,6 +87,7 @@ new #[Layout('components.layouts.guest')] class extends Component {
             'source' => 'open_house',
             'status' => 'active',
             'created_by' => $this->property->agent_id,
+            'sms_marketing_consent_at' => $this->smsMarketingConsent ? now() : null,
         ]);
 
         // Notify the agent about the new sign-up
@@ -195,6 +202,32 @@ new #[Layout('components.layouts.guest')] class extends Component {
                             <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text>
                         @enderror
                     </flux:field>
+
+                    {{-- SMS Service Consent (optional) --}}
+                    <div>
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="checkbox" wire:model="smsServiceConsent" class="mt-0.5 text-emerald-600" />
+                            <span class="text-xs text-zinc-500">
+                                {{ __('I agree to receive service-related text messages from') }} {{ config('app.name') }} {{ __('(appointment updates, estimate notifications, project info).') }}
+                                {{ __('Message frequency varies. Msg & data rates may apply. Reply STOP to cancel. Reply HELP for help.') }}
+                                <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
+                                <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
+                            </span>
+                        </label>
+                    </div>
+
+                    {{-- SMS Marketing Consent (optional) --}}
+                    <div>
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="checkbox" wire:model="smsMarketingConsent" class="mt-0.5 text-emerald-600" />
+                            <span class="text-xs text-zinc-500">
+                                {{ __("I'd also like to receive promotional offers, seasonal discounts, and painting tips from") }} {{ config('app.name') }} {{ __('via text.') }}
+                                {{ __('Message frequency varies. Msg & data rates may apply. Reply STOP to cancel. Reply HELP for help.') }}
+                                <a href="{{ route('legal.privacy') }}" class="underline">{{ __('Privacy Policy') }}</a> |
+                                <a href="{{ route('legal.terms') }}" class="underline">{{ __('Terms') }}</a>
+                            </span>
+                        </label>
+                    </div>
 
                     <flux:separator class="my-4" />
 

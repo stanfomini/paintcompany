@@ -12,7 +12,7 @@ it('renders notification bell for internal users', function () {
 
     Livewire::test('notifications.notification-center')
         ->assertStatus(200)
-        ->call('toggleOpen')
+        ->call('loadPanel')
         ->assertSee(__('Notifications'));
 });
 
@@ -35,6 +35,7 @@ it('shows unread count when there are unread notifications', function () {
     $this->actingAs($user);
 
     Livewire::test('notifications.notification-center')
+        ->call('loadPanel')
         ->assertSee('1');
 });
 
@@ -63,7 +64,7 @@ it('can mark all notifications as read', function () {
     $this->actingAs($user);
 
     Livewire::test('notifications.notification-center')
-        ->call('toggleOpen')
+        ->call('loadPanel')
         ->call('markAllAsRead');
 
     expect($user->fresh()->unreadNotifications()->count())->toBe(0);
@@ -103,7 +104,7 @@ it('can mark as read and navigate', function () {
     expect($user->fresh()->unreadNotifications()->count())->toBe(0);
 });
 
-it('shows unread notifications when opened', function () {
+it('shows unread notifications when panel is loaded', function () {
     $user = User::factory()->internal()->create();
 
     $estimate = Estimate::factory()->create();
@@ -112,7 +113,7 @@ it('shows unread notifications when opened', function () {
     $this->actingAs($user);
 
     Livewire::test('notifications.notification-center')
-        ->call('toggleOpen')
+        ->call('loadPanel')
         ->assertSee(__('Estimate Accepted'));
 });
 
@@ -122,7 +123,7 @@ it('shows empty state when no unread notifications', function () {
     $this->actingAs($user);
 
     Livewire::test('notifications.notification-center')
-        ->call('toggleOpen')
+        ->call('loadPanel')
         ->assertSee(__('All caught up!'));
 });
 
@@ -143,7 +144,7 @@ it('only shows unread notifications in main list', function () {
     expect($component->get('unreadCount'))->toBe(1);
 });
 
-it('can toggle to history view', function () {
+it('loadPanel sets loaded to true and loads data', function () {
     $user = User::factory()->internal()->create();
 
     $user->notify(new EstimateAccepted(Estimate::factory()->create()));
@@ -152,10 +153,9 @@ it('can toggle to history view', function () {
     $this->actingAs($user);
 
     Livewire::test('notifications.notification-center')
-        ->call('toggleOpen')
-        ->assertSet('showHistory', false)
-        ->call('toggleHistory')
-        ->assertSet('showHistory', true)
+        ->assertSet('loaded', false)
+        ->call('loadPanel')
+        ->assertSet('loaded', true)
         ->assertSee(__('History'));
 });
 
@@ -186,20 +186,6 @@ it('limits history to 15 notifications', function () {
     $component = Livewire::test('notifications.notification-center');
 
     expect($component->get('historyNotifications'))->toHaveCount(15);
-});
-
-it('resets to main view when toggling panel closed and open', function () {
-    $user = User::factory()->internal()->create();
-
-    $this->actingAs($user);
-
-    Livewire::test('notifications.notification-center')
-        ->call('toggleOpen')
-        ->call('toggleHistory')
-        ->assertSet('showHistory', true)
-        ->call('toggleOpen') // close
-        ->assertSet('showHistory', false)
-        ->assertSet('open', false);
 });
 
 it('marking a notification as read moves it from unread to history', function () {

@@ -31,6 +31,8 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
     public string $leadEmail = '';
     public string $leadPhone = '';
     public string $leadAddress = '';
+    public bool $smsServiceConsent = false;
+    public bool $smsMarketingConsent = false;
     public bool $leadSubmitted = false;
 
     #[Computed]
@@ -155,6 +157,8 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
             'leadEmail' => 'required|email|max:255',
             'leadPhone' => 'nullable|string|max:20',
             'leadAddress' => 'nullable|string|max:500',
+            'smsServiceConsent' => ['nullable', 'boolean'],
+            'smsMarketingConsent' => ['nullable', 'boolean'],
         ]);
 
         try {
@@ -169,8 +173,13 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                     'address' => $this->leadAddress ?: null,
                     'source' => 'online',
                     'created_by' => $firstInternal?->id,
+                    'sms_marketing_consent_at' => $this->smsMarketingConsent ? now() : null,
                 ]
             );
+
+            if (! $customer->wasRecentlyCreated && $this->smsMarketingConsent && ! $customer->sms_marketing_consent_at) {
+                $customer->update(['sms_marketing_consent_at' => now()]);
+            }
 
             if ($customer->wasRecentlyCreated) {
                 Deal::create([
@@ -263,6 +272,33 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                 <div class="sm:col-span-2">
                     <flux:input wire:model="leadAddress" label="Property Address" placeholder="Where would you like the painting done?" />
                 </div>
+
+                {{-- SMS Service Consent (optional) --}}
+                <div class="sm:col-span-2">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" wire:model="smsServiceConsent" class="mt-0.5 text-emerald-600" />
+                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                            I agree to receive service-related text messages from {{ config('app.name') }} (appointment updates, estimate notifications, project info).
+                            Message frequency varies. Msg &amp; data rates may apply. Reply STOP to cancel. Reply HELP for help.
+                            <a href="{{ route('legal.privacy') }}" class="underline">Privacy Policy</a> |
+                            <a href="{{ route('legal.terms') }}" class="underline">Terms</a>
+                        </span>
+                    </label>
+                </div>
+
+                {{-- SMS Marketing Consent (optional) --}}
+                <div class="sm:col-span-2">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" wire:model="smsMarketingConsent" class="mt-0.5 text-emerald-600" />
+                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                            I'd also like to receive promotional offers, seasonal discounts, and painting tips from {{ config('app.name') }} via text.
+                            Message frequency varies. Msg &amp; data rates may apply. Reply STOP to cancel. Reply HELP for help.
+                            <a href="{{ route('legal.privacy') }}" class="underline">Privacy Policy</a> |
+                            <a href="{{ route('legal.terms') }}" class="underline">Terms</a>
+                        </span>
+                    </label>
+                </div>
+
                 <div class="sm:col-span-2">
                     <flux:button type="submit" variant="primary" class="w-full">
                         <span wire:loading.remove wire:target="submitLeadForm">Unlock Unlimited Visualizations</span>

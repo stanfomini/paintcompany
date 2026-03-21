@@ -96,7 +96,7 @@ new class extends Component
         <button
             type="button"
             x-data
-            x-on:click="Livewire.dispatch('toggle-notifications')"
+            x-on:click="$dispatch('toggle-notification-panel')"
             class="flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium text-amber-400 hover:bg-zinc-700 dark:hover:bg-zinc-900 transition-colors">
             <div class="relative">
                 <flux:icon name="bell" variant="solid" class="size-5" />
