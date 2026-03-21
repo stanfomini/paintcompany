@@ -1210,7 +1210,7 @@ new class extends Component {
                                 size="sm"
                                 variant="primary"
                                 icon="plus"
-                                wire:click="createContract({{ $selectedTemplateId ?: 0 }})"
+                                wire:click="createContract($selectedTemplateId)"
                                 :disabled="! $selectedTemplateId"
                             >
                                 {{ __('New Contract') }}
