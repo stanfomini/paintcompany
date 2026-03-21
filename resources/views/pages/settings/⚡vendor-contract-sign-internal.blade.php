@@ -15,6 +15,12 @@ new class extends Component {
 
     public string $signatureType = 'typed';
 
+    public string $signerTitle = '';
+
+    public string $signerPhone = '';
+
+    public string $signerEmail = '';
+
     public bool $showSignatureModal = false;
 
     public function mount(int $vendor, int $contract): void
@@ -52,6 +58,9 @@ new class extends Component {
         $this->validate([
             'signatureData' => ['required', 'string', 'min:1'],
             'signatureType' => ['required', 'in:typed,drawn'],
+            'signerTitle' => ['nullable', 'string', 'max:255'],
+            'signerPhone' => ['nullable', 'string', 'max:255'],
+            'signerEmail' => ['nullable', 'email', 'max:255'],
         ]);
 
         app(VendorContractService::class)->signAsInternal(
@@ -59,12 +68,18 @@ new class extends Component {
             auth()->user(),
             $this->signatureData,
             $this->signatureType,
+            $this->signerTitle ?: null,
+            $this->signerPhone ?: null,
+            $this->signerEmail ?: null,
         );
 
         $this->vendorContract->refresh();
         $this->vendorContract->load('signers.user');
         $this->signatureData = '';
         $this->signatureType = 'typed';
+        $this->signerTitle = '';
+        $this->signerPhone = '';
+        $this->signerEmail = '';
         $this->showSignatureModal = false;
     }
 
@@ -199,6 +214,17 @@ new class extends Component {
                     </flux:button>
                 @endif
 
+                @if ($vendorContract->public_token)
+                    <flux:button
+                        variant="ghost"
+                        icon="eye"
+                        :href="route('vendor.contract.sign', ['token' => $vendorContract->public_token])"
+                        target="_blank"
+                    >
+                        {{ __('Preview Public Page') }}
+                    </flux:button>
+                @endif
+
                 @if ($vendorContract->isPendingInternal())
                     <flux:button variant="danger" wire:click="recallToDraft" wire:confirm="{{ __('Recall this contract to draft? All signatures will be cleared.') }}">
                         {{ __('Recall to Draft') }}
@@ -224,6 +250,25 @@ new class extends Component {
             </div>
 
             <form wire:submit="sign" class="space-y-5">
+                {{-- Signer Details --}}
+                <div class="space-y-3">
+                    <flux:field>
+                        <flux:label>{{ __('Title / Role') }}</flux:label>
+                        <flux:input wire:model="signerTitle" type="text" :placeholder="__('e.g., Owner, Project Manager')" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('Phone') }}</flux:label>
+                        <flux:input wire:model="signerPhone" type="tel" :placeholder="__('Phone number')" />
+                    </flux:field>
+                    <flux:field>
+                        <flux:label>{{ __('Email') }}</flux:label>
+                        <flux:input wire:model="signerEmail" type="email" :placeholder="auth()->user()->email" />
+                        <flux:error name="signerEmail" />
+                    </flux:field>
+                </div>
+
+                <flux:separator />
+
                 {{-- Signature Type Tabs --}}
                 <div>
                     <flux:label class="mb-2">{{ __('Signature') }} <span class="text-red-500">*</span></flux:label>

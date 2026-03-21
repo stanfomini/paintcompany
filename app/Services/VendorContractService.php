@@ -182,6 +182,9 @@ class VendorContractService
         User $user,
         string $signatureData,
         string $signatureType,
+        ?string $signerTitle = null,
+        ?string $signerPhone = null,
+        ?string $signerEmail = null,
     ): void {
         if (! $contract->isPendingInternal()) {
             throw new InvalidArgumentException('Contract is not pending internal signatures.');
@@ -201,6 +204,9 @@ class VendorContractService
             'signed_at' => now(),
             'signature_data' => $signatureData,
             'signature_type' => $signatureType,
+            'signer_title' => $signerTitle,
+            'signer_phone' => $signerPhone,
+            'signer_email' => $signerEmail ?? $user->email,
         ]);
 
         $contract->refresh();
@@ -223,7 +229,7 @@ class VendorContractService
 
         $token = $contract->generatePublicToken();
 
-        $url = url('/vendor/contract/'.$token);
+        $url = route('vendor.contract.sign', ['token' => $token]);
 
         $contract->load('vendor');
 
@@ -241,6 +247,8 @@ class VendorContractService
         string $signatureData,
         string $signatureType,
         ?Request $request = null,
+        ?string $signerTitle = null,
+        ?string $signerPhone = null,
     ): void {
         if (! $contract->isPendingVendor()) {
             throw new InvalidArgumentException('Contract is not pending vendor signature.');
@@ -250,6 +258,8 @@ class VendorContractService
             'vendor_contract_id' => $contract->id,
             'signer_name' => $name,
             'signer_email' => $email,
+            'signer_title' => $signerTitle,
+            'signer_phone' => $signerPhone,
             'signature_data' => $signatureData,
             'signature_type' => $signatureType,
             'signer_ip' => $request?->ip(),

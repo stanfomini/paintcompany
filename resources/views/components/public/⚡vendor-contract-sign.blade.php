@@ -17,6 +17,12 @@ new #[Layout('components.layouts.public')] class extends Component {
     #[Validate('required|email|max:255')]
     public string $signerEmail = '';
 
+    #[Validate('nullable|string|max:255')]
+    public string $signerTitle = '';
+
+    #[Validate('nullable|string|max:255')]
+    public string $signerPhone = '';
+
     #[Validate('required|string')]
     public string $signatureData = '';
 
@@ -63,6 +69,8 @@ new #[Layout('components.layouts.public')] class extends Component {
             signatureData: $this->signatureData,
             signatureType: $this->signatureType,
             request: request(),
+            signerTitle: $this->signerTitle ?: null,
+            signerPhone: $this->signerPhone ?: null,
         );
 
         $this->isSigned = true;
@@ -188,6 +196,24 @@ new #[Layout('components.layouts.public')] class extends Component {
                             required
                         />
                         <flux:error name="signerEmail" />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>{{ __('Title / Role') }}</flux:label>
+                        <flux:input
+                            wire:model="signerTitle"
+                            type="text"
+                            :placeholder="__('e.g., Principal, Owner')"
+                        />
+                    </flux:field>
+
+                    <flux:field>
+                        <flux:label>{{ __('Phone') }}</flux:label>
+                        <flux:input
+                            wire:model="signerPhone"
+                            type="tel"
+                            :placeholder="__('Phone number')"
+                        />
                     </flux:field>
                 </div>
 

@@ -161,6 +161,15 @@
                 @foreach ($contract->signers as $signer)
                     <div class="signature-block">
                         <div class="signature-label">{{ $signer->user->name ?? __('Signer') }}</div>
+                        @if ($signer->signer_title)
+                            <div class="signature-value">{{ __('Title') }}: {{ $signer->signer_title }}</div>
+                        @endif
+                        @if ($signer->signer_email)
+                            <div class="signature-value">{{ __('Email') }}: {{ $signer->signer_email }}</div>
+                        @endif
+                        @if ($signer->signer_phone)
+                            <div class="signature-value">{{ __('Phone') }}: {{ $signer->signer_phone }}</div>
+                        @endif
                         <div class="signature-line">
                             @if ($signer->signature_type === 'drawn' && $signer->signature_data)
                                 <div class="signature-drawn">
@@ -171,7 +180,7 @@
                             @endif
                         </div>
                         @if ($signer->signed_at)
-                            <div class="signature-value">{{ __('Date') }}: {{ $signer->signed_at->format('m/d/Y g:ia') }}</div>
+                            <div class="signature-value">{{ __('Date') }}: {{ $signer->signed_at->format('F j, Y \a\t g:i A') }}</div>
                         @endif
                     </div>
                 @endforeach
@@ -182,7 +191,13 @@
 
                     <div class="signature-block">
                         <div class="signature-label">{{ $contract->vendorSignature->signer_name }}</div>
-                        <div class="signature-value" style="margin-bottom: 8px;">{{ $contract->vendorSignature->signer_email }}</div>
+                        @if ($contract->vendorSignature->signer_title)
+                            <div class="signature-value">{{ __('Title') }}: {{ $contract->vendorSignature->signer_title }}</div>
+                        @endif
+                        <div class="signature-value">{{ __('Email') }}: {{ $contract->vendorSignature->signer_email }}</div>
+                        @if ($contract->vendorSignature->signer_phone)
+                            <div class="signature-value">{{ __('Phone') }}: {{ $contract->vendorSignature->signer_phone }}</div>
+                        @endif
                         <div class="signature-line">
                             @if ($contract->vendorSignature->signature_type === 'drawn' && $contract->vendorSignature->signature_data)
                                 <div class="signature-drawn">
@@ -193,7 +208,7 @@
                             @endif
                         </div>
                         @if ($contract->vendorSignature->signed_at)
-                            <div class="signature-value">{{ __('Date') }}: {{ $contract->vendorSignature->signed_at->format('m/d/Y g:ia') }}</div>
+                            <div class="signature-value">{{ __('Date') }}: {{ $contract->vendorSignature->signed_at->format('F j, Y \a\t g:i A') }}</div>
                         @endif
                     </div>
                 @endif

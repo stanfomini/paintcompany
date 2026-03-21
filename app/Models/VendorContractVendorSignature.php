@@ -11,6 +11,8 @@ class VendorContractVendorSignature extends Model
         'vendor_contract_id',
         'signer_name',
         'signer_email',
+        'signer_title',
+        'signer_phone',
         'signature_data',
         'signature_type',
         'signer_ip',
