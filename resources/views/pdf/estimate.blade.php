@@ -577,9 +577,28 @@
         </div>
 
         @if ($estimate->areas->count() > 0)
+            @php
+                $pdfTier = null;
+                if ($estimate->selected_package_id) {
+                    $selectedPkg = $estimate->packages->find($estimate->selected_package_id);
+                    $pdfTier = $selectedPkg?->getPaintTier();
+                }
+                $pdfExcludedDisplay = $estimate->getExcludedSurfacesDisplay();
+            @endphp
             <div class="section areas-section">
                 <div class="section-title">{{ __('Areas & Surfaces') }}</div>
                 @foreach ($estimate->areas as $area)
+                    @php
+                        $includedSurfaces = $area->surfaces->where('is_included', true);
+                        if ($pdfTier) {
+                            $excludedSurfaces = ($pdfExcludedDisplay === 'shown')
+                                ? $includedSurfaces->filter(fn ($s) => ! $s->isIncludedInTier($pdfTier))
+                                : collect();
+                            $includedSurfaces = $includedSurfaces->filter(fn ($s) => $s->isIncludedInTier($pdfTier));
+                        } else {
+                            $excludedSurfaces = collect();
+                        }
+                    @endphp
                     <div class="area-name">
                         {{ $area->name }}
                         @if ($area->length && $area->width && $area->height)
@@ -588,7 +607,7 @@
                             </span>
                         @endif
                     </div>
-                    @if ($area->surfaces->count() > 0)
+                    @if ($includedSurfaces->count() > 0 || $excludedSurfaces->count() > 0)
                         <table class="surfaces-table">
                             <thead>
                                 <tr>
@@ -601,8 +620,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {{-- TODO: Apply tier-based surface filtering here once PDF export receives package/tier context --}}
-                                @foreach ($area->surfaces->where('is_included', true) as $surface)
+                                @foreach ($includedSurfaces as $surface)
                                     <tr>
                                         <td>{{ $surface->name }}</td>
                                         <td class="text-right">{{ number_format($surface->quantity, 0) }}</td>
@@ -610,6 +628,15 @@
                                         <td class="text-right">{{ $surface->coats }}</td>
                                         <td class="text-right">${{ number_format($surface->labor_cost, 2) }}</td>
                                         <td class="text-right">${{ number_format($surface->material_cost, 2) }}</td>
+                                    </tr>
+                                @endforeach
+                                @foreach ($excludedSurfaces as $surface)
+                                    <tr style="opacity: 0.45; text-decoration: line-through;">
+                                        <td>{{ $surface->name }}</td>
+                                        <td class="text-right">{{ number_format($surface->quantity, 0) }}</td>
+                                        <td>{{ $surface->unit }}</td>
+                                        <td class="text-right">{{ $surface->coats }}</td>
+                                        <td class="text-right" colspan="2" style="text-align: right; font-style: italic; color: #9ca3af;">{{ __('Not included') }}</td>
                                     </tr>
                                 @endforeach
                             </tbody>
