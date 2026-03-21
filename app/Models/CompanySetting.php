@@ -68,6 +68,7 @@ class CompanySetting extends Model
         'paint_catalog',
         'default_paint_products_by_category',
         'estimate_builder_instructions',
+        'excluded_surfaces_display',
         'trim_widths',
         'warranty_options',
         // Production Settings

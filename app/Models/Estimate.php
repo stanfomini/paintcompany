@@ -74,6 +74,7 @@ class Estimate extends Model
         'default_paint_product_id',
         'paint_products_by_category',
         'paint_tiers',
+        'excluded_surfaces_display',
         'settings_snapshot',
         'actual_paint_costs',
         'actual_painters',
@@ -562,6 +563,21 @@ class Estimate extends Model
         $tiers = $this->paint_tiers;
 
         return is_array($tiers) && ! empty($tiers);
+    }
+
+    /**
+     * Get the effective excluded surfaces display mode.
+     * Cascades: Estimate override → Company default.
+     *
+     * @return string 'hidden' or 'shown'
+     */
+    public function getExcludedSurfacesDisplay(): string
+    {
+        if ($this->excluded_surfaces_display !== null) {
+            return $this->excluded_surfaces_display;
+        }
+
+        return CompanySetting::getInstance()->excluded_surfaces_display ?? 'hidden';
     }
 
     /**

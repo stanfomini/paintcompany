@@ -267,4 +267,16 @@ class EstimateAreaSurfaceFactory extends Factory
             'crew_price' => $crewRate,
         ]);
     }
+
+    /**
+     * Set surface to be included only in specific package tiers.
+     *
+     * @param  array<string>  $tiers  e.g., ['better', 'best']
+     */
+    public function forTiers(array $tiers): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'package_tiers' => $tiers,
+        ]);
+    }
 }
