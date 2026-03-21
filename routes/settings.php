@@ -95,6 +95,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->name('vendors.documents.download');
         Route::get('settings/vendors/documents/{vendorDocument}/view', [\App\Http\Controllers\VendorDocumentController::class, 'view'])
             ->name('vendors.documents.view');
+        Route::get('settings/vendors/{vendor}/contracts/{contract}/pdf', [\App\Http\Controllers\VendorContractPdfController::class, 'download'])
+            ->name('vendor-contracts.pdf.download');
+        Route::get('settings/vendors/{vendor}/contracts/{contract}/edit', function () {
+            abort(404, 'Contract editor not yet implemented.');
+        })->name('vendor-contracts.edit');
     });
 
     Route::livewire('settings/messenger', 'pages::settings.messenger-settings')

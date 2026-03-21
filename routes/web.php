@@ -106,6 +106,11 @@ Route::livewire('/vendor/onboarding/{token}', 'public.vendor-onboarding')
     ->name('vendor.onboarding')
     ->middleware('throttle:60,1');
 
+// Public vendor contract PDF download
+Route::get('/vendor/contract/{token}/pdf', [\App\Http\Controllers\VendorContractPdfController::class, 'publicDownload'])
+    ->name('vendor.contract.pdf')
+    ->middleware('throttle:60,1');
+
 // Public communications hub showcase page
 Route::livewire('/features/communications-hub', 'public.communications-hub')
     ->name('features.communications-hub')
