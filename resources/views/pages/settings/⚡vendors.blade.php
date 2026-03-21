@@ -3,7 +3,10 @@
 use App\Models\Account;
 use App\Models\BudgetCategory;
 use App\Models\CompanySetting;
+use App\Models\ContractTemplate;
 use App\Models\Vendor;
+use App\Models\VendorContract;
+use App\Services\VendorContractService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -69,6 +72,11 @@ new class extends Component {
     public string $internalUploadType = 'other';
     public string $internalUploadName = '';
     public ?string $internalUploadExpires = null;
+
+    // Contracts flyout
+    public bool $showContractsModal = false;
+    public ?int $contractVendorId = null;
+    public ?int $selectedTemplateId = null;
 
     // Delete confirmation
     public bool $showDeleteModal = false;
@@ -396,6 +404,68 @@ new class extends Component {
         return Vendor::with('documents')->find($this->viewingVendorId);
     }
 
+    #[Computed]
+    public function contractVendor(): ?Vendor
+    {
+        return $this->contractVendorId ? Vendor::find($this->contractVendorId) : null;
+    }
+
+    #[Computed]
+    public function vendorContracts(): \Illuminate\Support\Collection
+    {
+        if (! $this->contractVendorId) {
+            return collect();
+        }
+
+        return VendorContract::where('vendor_id', $this->contractVendorId)
+            ->orderByDesc('created_at')
+            ->get();
+    }
+
+    #[Computed]
+    public function vendorTemplates(): \Illuminate\Support\Collection
+    {
+        return ContractTemplate::where('type', 'vendor')->where('is_active', true)->get();
+    }
+
+    public function viewContracts(int $vendorId): void
+    {
+        $this->contractVendorId = $vendorId;
+        $this->showContractsModal = true;
+    }
+
+    public function closeContractsModal(): void
+    {
+        $this->showContractsModal = false;
+        $this->contractVendorId = null;
+        $this->selectedTemplateId = null;
+    }
+
+    public function createContract(int $templateId): void
+    {
+        $vendor = Vendor::findOrFail($this->contractVendorId);
+        $template = ContractTemplate::findOrFail($templateId);
+        $service = app(VendorContractService::class);
+        $contract = $service->createFromTemplate($vendor, $template, [auth()->id()], auth()->user());
+
+        $this->redirect(route('vendor-contracts.edit', ['vendor' => $vendor->id, 'contract' => $contract->id]));
+    }
+
+    public function deleteContract(int $contractId): void
+    {
+        $contract = VendorContract::findOrFail($contractId);
+
+        if ($contract->isDraft()) {
+            $contract->delete();
+        }
+    }
+
+    public function invalidateContract(int $contractId): void
+    {
+        $contract = VendorContract::findOrFail($contractId);
+        app(VendorContractService::class)->invalidate($contract);
+    }
+
     public function uploadInternalDocument(): void
     {
         if (! auth()->user()?->can('vendors.manage')) {
@@ -712,6 +782,7 @@ new class extends Component {
                                                 <flux:button size="sm" variant="ghost" icon="envelope" wire:click="sendOnboardingLink({{ $vendor->id }})" wire:confirm="{{ __('Send onboarding link to :email?', ['email' => $vendor->email]) }}" :title="__('Send Onboarding Link')" />
                                             @endif
                                         @endcan
+                                        <flux:button size="sm" variant="ghost" icon="document-text" wire:click="viewContracts({{ $vendor->id }})" :title="__('Contracts')" />
                                         <flux:button size="sm" variant="ghost" icon="folder-open" wire:click="viewDocuments({{ $vendor->id }})" :title="__('Documents')" />
                                         <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $vendor->id }})" />
                                         <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $vendor->id }})" />
@@ -1109,6 +1180,120 @@ new class extends Component {
                         </div>
                     </div>
                 @endcan
+            </div>
+        @endif
+    </flux:modal>
+
+    {{-- Contracts Flyout Modal --}}
+    <flux:modal wire:model="showContractsModal" variant="flyout" class="w-[520px]">
+        @if ($this->contractVendor)
+            <div class="space-y-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Contracts') }} &mdash; {{ $this->contractVendor->name }}</flux:heading>
+                    <flux:text class="mt-1">{{ __('Manage contracts for this vendor.') }}</flux:text>
+                </div>
+
+                {{-- Template Picker --}}
+                @if ($this->vendorTemplates->isNotEmpty())
+                    <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                        <flux:heading size="sm" class="mb-2">{{ __('Create from Template') }}</flux:heading>
+                        <div class="flex items-end gap-2">
+                            <div class="flex-1">
+                                <flux:select wire:model="selectedTemplateId" size="sm">
+                                    <flux:select.option value="">{{ __('Select a template...') }}</flux:select.option>
+                                    @foreach ($this->vendorTemplates as $template)
+                                        <flux:select.option value="{{ $template->id }}">{{ $template->name }}</flux:select.option>
+                                    @endforeach
+                                </flux:select>
+                            </div>
+                            <flux:button
+                                size="sm"
+                                variant="primary"
+                                icon="plus"
+                                wire:click="createContract({{ $selectedTemplateId ?: 0 }})"
+                                :disabled="! $selectedTemplateId"
+                            >
+                                {{ __('New Contract') }}
+                            </flux:button>
+                        </div>
+                    </div>
+                @endif
+
+                <flux:separator />
+
+                {{-- Contract List --}}
+                <div>
+                    <flux:heading size="sm" class="mb-3">{{ __('Contracts') }}</flux:heading>
+
+                    @if ($this->vendorContracts->isEmpty())
+                        <flux:text class="text-sm">{{ __('No contracts for this vendor.') }}</flux:text>
+                    @else
+                        <div class="space-y-2">
+                            @foreach ($this->vendorContracts as $contract)
+                                <div wire:key="contract-{{ $contract->id }}" class="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-900">
+                                    <div class="flex items-start justify-between gap-2">
+                                        <div class="min-w-0 flex-1">
+                                            <div class="font-medium text-sm text-zinc-900 dark:text-zinc-100">{{ $contract->title }}</div>
+                                            <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                                                @php
+                                                    $statusColor = match ($contract->status) {
+                                                        'draft' => 'zinc',
+                                                        'pending_internal' => 'amber',
+                                                        'pending_vendor' => 'blue',
+                                                        'fully_executed' => 'green',
+                                                        'expired' => 'red',
+                                                        'invalidated' => 'zinc',
+                                                        default => 'zinc',
+                                                    };
+                                                @endphp
+                                                <flux:badge size="sm" :color="$statusColor">{{ $contract->getStatusLabel() }}</flux:badge>
+                                                @if ($contract->expires_at)
+                                                    <span class="text-xs {{ $contract->expires_at->isPast() ? 'text-red-500' : 'text-zinc-500' }}">
+                                                        {{ $contract->expires_at->isPast() ? __('Expired') : __('Expires') }} {{ $contract->expires_at->format('M j, Y') }}
+                                                    </span>
+                                                @endif
+                                                @if (! $contract->is_valid)
+                                                    <flux:badge size="sm" color="red">{{ __('Invalid') }}</flux:badge>
+                                                @endif
+                                            </div>
+                                            <div class="mt-0.5 text-xs text-zinc-400">
+                                                {{ __('Created') }} {{ $contract->created_at->format('M j, Y') }}
+                                            </div>
+                                        </div>
+                                        <div class="flex shrink-0 items-center gap-1">
+                                            @if ($contract->isDraft())
+                                                <a href="{{ route('vendor-contracts.edit', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Edit') }}">
+                                                    <flux:icon name="pencil" variant="mini" />
+                                                </a>
+                                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="deleteContract({{ $contract->id }})" wire:confirm="{{ __('Delete this draft contract?') }}" :title="__('Delete')" />
+                                            @elseif ($contract->isPendingInternal())
+                                                <a href="{{ route('vendor-contracts.edit', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Sign') }}">
+                                                    <flux:icon name="pencil-square" variant="mini" />
+                                                </a>
+                                                <flux:button size="sm" variant="ghost" icon="x-circle" wire:click="invalidateContract({{ $contract->id }})" wire:confirm="{{ __('Invalidate this contract?') }}" :title="__('Invalidate')" />
+                                            @elseif ($contract->isPendingVendor())
+                                                <flux:button size="sm" variant="ghost" icon="x-circle" wire:click="invalidateContract({{ $contract->id }})" wire:confirm="{{ __('Invalidate this contract?') }}" :title="__('Invalidate')" />
+                                            @elseif ($contract->isFullyExecuted())
+                                                @if ($contract->executed_pdf_path)
+                                                    <a href="{{ route('vendor-contracts.pdf.download', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Download PDF') }}">
+                                                        <flux:icon name="arrow-down-tray" variant="mini" />
+                                                    </a>
+                                                @endif
+                                                <flux:button size="sm" variant="ghost" icon="x-circle" wire:click="invalidateContract({{ $contract->id }})" wire:confirm="{{ __('Invalidate this contract?') }}" :title="__('Invalidate')" />
+                                            @elseif ($contract->isExpired())
+                                                @if ($contract->executed_pdf_path)
+                                                    <a href="{{ route('vendor-contracts.pdf.download', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Download PDF') }}">
+                                                        <flux:icon name="arrow-down-tray" variant="mini" />
+                                                    </a>
+                                                @endif
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                    @endif
+                </div>
             </div>
         @endif
     </flux:modal>
