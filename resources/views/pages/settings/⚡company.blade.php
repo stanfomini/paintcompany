@@ -71,6 +71,9 @@ new class extends Component {
     public string $total_painters = '';
     public string $default_required_crew_size = '';
 
+    // Proposal Display
+    public string $excluded_surfaces_display = 'hidden';
+
     // Brand Ambassador Program
     public string $brand_ambassador_spots = '10';
 
@@ -146,6 +149,9 @@ new class extends Component {
         // Crew & Dispatch Settings
         $this->total_painters = $settings->total_painters !== null ? (string) $settings->total_painters : '4';
         $this->default_required_crew_size = $settings->default_required_crew_size !== null ? (string) $settings->default_required_crew_size : '2';
+
+        // Proposal Display
+        $this->excluded_surfaces_display = $settings->excluded_surfaces_display ?? 'hidden';
 
         // Brand Ambassador Program
         $this->brand_ambassador_spots = $settings->brand_ambassador_spots !== null ? (string) $settings->brand_ambassador_spots : '10';
@@ -273,6 +279,9 @@ new class extends Component {
             'total_painters' => ['nullable', 'integer', 'min:1', 'max:100'],
             'default_required_crew_size' => ['nullable', 'integer', 'min:1', 'max:20'],
 
+            // Proposal Display
+            'excluded_surfaces_display' => ['required', 'in:hidden,shown'],
+
             // Brand Ambassador Program
             'brand_ambassador_spots' => ['nullable', 'integer', 'min:0', 'max:100'],
 
@@ -338,6 +347,9 @@ new class extends Component {
             // Crew & Dispatch Settings
             'total_painters' => $validated['total_painters'] !== '' ? $validated['total_painters'] : 4,
             'default_required_crew_size' => $validated['default_required_crew_size'] !== '' ? $validated['default_required_crew_size'] : 2,
+
+            // Proposal Display
+            'excluded_surfaces_display' => $validated['excluded_surfaces_display'],
 
             // Brand Ambassador Program
             'brand_ambassador_spots' => $validated['brand_ambassador_spots'] !== '' ? $validated['brand_ambassador_spots'] : 10,
@@ -427,6 +439,11 @@ new class extends Component {
                 <flux:input wire:model="default_payment_terms_days" :label="__('Payment Terms (days)')" type="number" min="0" max="365" />
                 <flux:input wire:model="estimate_validity_days" :label="__('Estimate Validity (days)')" type="number" min="1" max="365" />
             </div>
+
+            <flux:select wire:model="excluded_surfaces_display" :label="__('Excluded Surfaces on Proposal')" :description="__('Controls whether surfaces excluded from a package tier are hidden or shown (dimmed) in the customer-facing Scope of Work.')">
+                <option value="hidden">{{ __('Hidden — excluded surfaces are not shown') }}</option>
+                <option value="shown">{{ __('Shown — excluded surfaces appear dimmed') }}</option>
+            </flux:select>
 
             <flux:separator />
 
@@ -539,6 +556,20 @@ new class extends Component {
                 <flux:input wire:model="recycle_fee_per_gallon" :label="__('Recycle Fee ($/gallon)')" type="number" step="0.01" min="0" max="100" />
                 <flux:input wire:model="wood_replacement_minimum" :label="__('Wood Replacement Minimum ($)')" type="number" step="0.01" min="0" max="10000" />
             </div>
+
+            <flux:separator />
+
+            {{-- Proposal Display Section --}}
+            <flux:heading size="sm">{{ __('Proposal Display') }}</flux:heading>
+
+            <flux:field>
+                <flux:label>{{ __('Excluded Surfaces on Proposals') }}</flux:label>
+                <flux:select wire:model="excluded_surfaces_display">
+                    <option value="hidden">{{ __('Hidden — excluded surfaces are not shown') }}</option>
+                    <option value="shown">{{ __('Shown — excluded surfaces appear grayed out') }}</option>
+                </flux:select>
+                <flux:description>{{ __('When a surface is excluded from a package tier, choose whether to hide it completely or show it grayed out on the proposal.') }}</flux:description>
+            </flux:field>
 
             <flux:separator />
 

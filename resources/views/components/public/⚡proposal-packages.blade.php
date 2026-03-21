@@ -124,6 +124,9 @@ new class extends Component {
                 $seen = [];
                 foreach ($this->estimate->areas as $area) {
                     foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+                        if (! $surface->isIncludedInTier($paintTier)) {
+                            continue;
+                        }
                         $product = $surface->getPaintProductForTier($paintTier);
                         if ($product && ! isset($seen[$product->id])) {
                             $seen[$product->id] = true;
@@ -185,6 +188,9 @@ new class extends Component {
                 $seen = [];
                 foreach ($this->estimate->areas as $area) {
                     foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
+                        if (! $surface->isIncludedInTier($paintTier)) {
+                            continue;
+                        }
                         $product = $surface->getPaintProductForTier($paintTier);
                         if ($product && ! isset($seen[$product->id])) {
                             $seen[$product->id] = true;

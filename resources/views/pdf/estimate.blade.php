@@ -601,6 +601,7 @@
                                 </tr>
                             </thead>
                             <tbody>
+                                {{-- TODO: Apply tier-based surface filtering here once PDF export receives package/tier context --}}
                                 @foreach ($area->surfaces->where('is_included', true) as $surface)
                                     <tr>
                                         <td>{{ $surface->name }}</td>

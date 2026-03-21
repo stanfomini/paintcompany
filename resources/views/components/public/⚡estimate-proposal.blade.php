@@ -976,6 +976,25 @@ new #[Layout('components.layouts.public')] class extends Component {
                             $visibleSurfaces = $packageSurfaceIds === null
                                 ? $area->surfaces->where('is_included', true)
                                 : $area->surfaces->where('is_included', true)->whereIn('id', $packageSurfaceIds);
+
+                            // Determine active tier from selected package
+                            $activeTier = null;
+                            if ($this->selectedPackageId) {
+                                $selectedPkg = $this->estimate->packages->firstWhere('id', $this->selectedPackageId);
+                                $activeTier = $selectedPkg?->getPaintTier();
+                            }
+
+                            // Separate surfaces by tier inclusion
+                            $excludedDisplay = $this->estimate->getExcludedSurfacesDisplay();
+                            if ($activeTier) {
+                                $includedSurfaces = $visibleSurfaces->filter(fn ($s) => $s->isIncludedInTier($activeTier));
+                                $excludedSurfaces = ($excludedDisplay === 'shown')
+                                    ? $visibleSurfaces->filter(fn ($s) => ! $s->isIncludedInTier($activeTier))
+                                    : collect();
+                            } else {
+                                $includedSurfaces = $visibleSurfaces;
+                                $excludedSurfaces = collect();
+                            }
                         @endphp
                         <div
                             x-data="{ expanded: false }"
@@ -1002,8 +1021,8 @@ new #[Layout('components.layouts.public')] class extends Component {
                                     <div>
                                         <flux:heading size="base">{{ $area->name }}</flux:heading>
                                         <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">
-                                            @if ($visibleSurfaces->count() > 0)
-                                                {{ trans_choice(':count surface|:count surfaces', $visibleSurfaces->count()) }}
+                                            @if ($includedSurfaces->count() > 0)
+                                                {{ trans_choice(':count surface|:count surfaces', $includedSurfaces->count()) }}
                                             @endif
                                             @if ($area->wall_sqft > 0 || $area->ceiling_sqft > 0)
                                                 <span class="text-zinc-300 dark:text-zinc-600 mx-1">&bull;</span>
@@ -1025,9 +1044,9 @@ new #[Layout('components.layouts.public')] class extends Component {
                                 x-collapse
                                 class="border-t border-zinc-200 dark:border-zinc-700"
                             >
-                                @if ($visibleSurfaces->isNotEmpty())
+                                @if ($includedSurfaces->isNotEmpty() || $excludedSurfaces->isNotEmpty())
                                     <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                        @foreach ($visibleSurfaces as $surface)
+                                        @foreach ($includedSurfaces as $surface)
                                             <div class="px-4 py-3 flex items-center justify-between bg-white dark:bg-zinc-900">
                                                 <div class="flex items-center gap-3">
                                                     <div class="w-2 h-2 rounded-full bg-blue-400 dark:bg-blue-500"></div>
@@ -1046,6 +1065,12 @@ new #[Layout('components.layouts.public')] class extends Component {
                                                 <flux:text class="font-medium text-zinc-900 dark:text-zinc-100">
                                                     ${{ number_format($this->getSurfaceDisplayTotal($surface), 2) }}
                                                 </flux:text>
+                                            </div>
+                                        @endforeach
+                                        @foreach ($excludedSurfaces as $surface)
+                                            <div class="flex justify-between px-4 py-3 text-sm text-zinc-400 dark:text-zinc-600 line-through opacity-60 bg-white dark:bg-zinc-900">
+                                                <span>{{ $surface->name ?? $surface->productionRate?->name ?? __('Surface') }}</span>
+                                                <span class="text-xs italic">{{ __('Not included') }}</span>
                                             </div>
                                         @endforeach
                                     </div>
