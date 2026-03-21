@@ -47,6 +47,7 @@ class EstimateAreaSurface extends Model
         'sale_price',
         'crew_price',
         'tier_overrides',
+        'package_tiers',
     ];
 
     protected function casts(): array
@@ -72,6 +73,7 @@ class EstimateAreaSurface extends Model
             'sale_price' => 'decimal:2',
             'crew_price' => 'decimal:2',
             'tier_overrides' => 'array',
+            'package_tiers' => 'array',
         ];
     }
 
@@ -466,6 +468,19 @@ class EstimateAreaSurface extends Model
     public function hasTierOverrides(): bool
     {
         return $this->tier_overrides !== null && ! empty($this->tier_overrides);
+    }
+
+    /**
+     * Check if this surface is included in a specific package tier.
+     * Returns true if package_tiers is null (all tiers) or if tier is in the list.
+     */
+    public function isIncludedInTier(string $tier): bool
+    {
+        if ($this->package_tiers === null) {
+            return true;
+        }
+
+        return in_array($tier, $this->package_tiers, true);
     }
 
     /**
