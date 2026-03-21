@@ -852,6 +852,7 @@ new class extends Component
                 'labor_cost' => (float) ($surface->labor_cost ?? 0),
                 'material_cost' => (float) ($surface->material_cost ?? 0),
                 'tier_overrides' => $surface->tier_overrides,
+                'package_tiers' => $surface->package_tiers,
             ];
 
             if ($surface->is_included) {
@@ -1943,6 +1944,11 @@ new class extends Component
                 if (! ($surface['is_required'] ?? false) && ! ($surface['is_default_enabled'] ?? true)) {
                     continue;
                 }
+                // Skip surfaces not included in this tier
+                $surfaceTiers = $surface['package_tiers'] ?? null;
+                if ($surfaceTiers !== null && ! in_array($tier, $surfaceTiers)) {
+                    continue;
+                }
                 if (($surface['fixed_price'] ?? null) !== null && $surface['fixed_price'] > 0) {
                     $tierMaterialCost += (float) $surface['fixed_price'];
 
@@ -1992,6 +1998,11 @@ new class extends Component
                 $hourlyWage = $this->getEffectiveRateForScope($scopeType);
                 foreach ($areaData['surfaces'] as $surface) {
                     if (! ($surface['is_required'] ?? false) && ! ($surface['is_default_enabled'] ?? true)) {
+                        continue;
+                    }
+                    // Skip surfaces not included in this tier
+                    $surfaceTiers = $surface['package_tiers'] ?? null;
+                    if ($surfaceTiers !== null && ! in_array($tier, $surfaceTiers)) {
                         continue;
                     }
                     $sLaborHours = (float) ($surface['tier_overrides'][$tier]['labor_hours'] ?? $surface['labor_hours'] ?? 0);
@@ -2768,6 +2779,7 @@ new class extends Component
                 'sale_price' => $isCustom && ($surfaceData['sale_price'] ?? '') !== '' ? (float) $surfaceData['sale_price'] : null,
                 'crew_price' => $isCustom && ($surfaceData['crew_price'] ?? '') !== '' ? (float) $surfaceData['crew_price'] : null,
                 'tier_overrides' => ! empty($surfaceData['tier_overrides']) ? $surfaceData['tier_overrides'] : null,
+                'package_tiers' => ! empty($surfaceData['package_tiers']) ? $surfaceData['package_tiers'] : null,
                 'sort_order' => $surfaceSortOrder,
             ]);
         }
@@ -4399,7 +4411,7 @@ new class extends Component
         >
             <div class="h-full flex flex-col bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-700 shadow-2xl">
                 {{-- Header --}}
-                <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800">
+                <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800" style="padding-top: calc(0.75rem + env(safe-area-inset-top, 0px))">
                     <div class="flex items-center gap-2">
                         <flux:icon name="sparkles" class="w-5 h-5 text-purple-500" />
                         <flux:heading size="sm">{{ __('AI Estimate Builder') }}</flux:heading>
@@ -4506,7 +4518,7 @@ new class extends Component
                 </div>
 
                 {{-- Input --}}
-                <div class="border-t border-zinc-200 dark:border-zinc-700 p-3">
+                <div class="border-t border-zinc-200 dark:border-zinc-700 p-3" style="padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px))">
                     <form wire:submit.prevent="sendAiChatMessage" @submit="playAiSound('start')" class="flex items-end gap-2">
                         <div class="flex-1">
                             <textarea
