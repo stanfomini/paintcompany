@@ -120,7 +120,7 @@ Add `vendorContract()` relationship on `VendorDocument` and inverse `vendorDocum
 
 **Vendor Signing Flow:**
 - `sendToVendor($contract)` — generates public token, sends email with signing link via on-demand notification (`Notification::route('mail', $vendor->email)`)
-- `signAsVendor($contract, $name, $email, $signatureData, $signatureType, $request)` — records vendor signature, nullifies public token, transitions to `fully_executed`, triggers post-execution
+- `signAsVendor($contract, $name, $email, $signatureData, $signatureType, $request)` — records vendor signature, transitions to `fully_executed`, triggers post-execution. Public token is kept alive so the vendor can still access the PDF download via their original link. The signing form is hidden based on contract status (not token presence).
 
 **Post-Execution (on `fully_executed`):**
 - Generate final PDF with all signatures via DomPDF
@@ -224,7 +224,8 @@ On `fully_executed`:
 ## Security
 
 - Public routes use `throttle:60,1` middleware
-- Public token is nullified after vendor signs (prevents re-access to signing form)
+- Public token is kept alive after vendor signs so vendor can still download the executed PDF via their original link
+- The signing form is hidden based on contract status (fully_executed), not token presence — prevents re-signing while allowing PDF access
 - Public PDF route returns 404 unless contract is `fully_executed` with a valid `executed_pdf_path`
 - After vendor signs, public page shows read-only confirmation (not the signing form)
 - All internal routes require `vendors.manage` permission
