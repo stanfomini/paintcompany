@@ -34,6 +34,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 
     public bool $isSigned = false;
 
+    public bool $canVendorSign = false;
+
     public function mount(string $token): void
     {
         $contract = VendorContract::byPublicToken($token)
@@ -54,6 +56,10 @@ new #[Layout('components.layouts.public')] class extends Component {
         if ($contract->vendorSignature || $contract->isFullyExecuted()) {
             $this->isSigned = true;
         }
+
+        // Vendor can only sign when status is pending_vendor
+        // During pending_internal, this page is preview-only
+        $this->canVendorSign = $contract->isPendingVendor() && ! $this->isSigned;
     }
 
     public function submitSignature(): void
@@ -137,20 +143,46 @@ new #[Layout('components.layouts.public')] class extends Component {
         </div>
     @endif
 
-    {{-- Signing Form or Success Message --}}
+    {{-- Vendor Signature Display (after signing) --}}
+    @if ($isSigned && $contract->vendorSignature)
+        <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-6 sm:p-8 mb-8">
+            <flux:heading size="lg" class="mb-4">{{ __('Vendor Signature') }}</flux:heading>
+            <div class="space-y-2">
+                <div class="text-sm"><strong>{{ __('Name') }}:</strong> {{ $contract->vendorSignature->signer_name }}</div>
+                @if ($contract->vendorSignature->signer_title)
+                    <div class="text-sm"><strong>{{ __('Title') }}:</strong> {{ $contract->vendorSignature->signer_title }}</div>
+                @endif
+                <div class="text-sm"><strong>{{ __('Email') }}:</strong> {{ $contract->vendorSignature->signer_email }}</div>
+                @if ($contract->vendorSignature->signer_phone)
+                    <div class="text-sm"><strong>{{ __('Phone') }}:</strong> {{ $contract->vendorSignature->signer_phone }}</div>
+                @endif
+                <div class="mt-3 border-t border-zinc-200 dark:border-zinc-700 pt-3">
+                    @if ($contract->vendorSignature->signature_type === 'typed')
+                        <div class="text-2xl text-zinc-900 dark:text-white" style="font-family: 'Brush Script MT', 'Segoe Script', 'Bradley Hand', cursive;">
+                            {{ $contract->vendorSignature->signature_data }}
+                        </div>
+                    @elseif ($contract->vendorSignature->signature_type === 'drawn' && $contract->vendorSignature->signature_data)
+                        <img src="{{ $contract->vendorSignature->signature_data }}" alt="Signature" class="max-h-16" />
+                    @endif
+                    <div class="text-xs text-zinc-500 mt-1">{{ __('Signed') }} {{ $contract->vendorSignature->signed_at->format('F j, Y \a\t g:i A') }}</div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- Signed Status Banner + PDF Download --}}
     @if ($isSigned)
-        {{-- Success State --}}
-        <div class="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-6 sm:p-8 text-center">
+        <div class="bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800 p-6 sm:p-8 text-center mb-8">
             <div class="flex items-center justify-center w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/40 mx-auto mb-4">
                 <svg class="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
                 </svg>
             </div>
             <flux:heading size="lg" class="text-green-900 dark:text-green-100">
-                {{ __('Contract Signed Successfully') }}
+                {{ __('Contract Fully Executed') }}
             </flux:heading>
             <flux:text class="mt-2 text-green-700 dark:text-green-300">
-                {{ __('A copy will be emailed to you. Thank you for signing this agreement.') }}
+                {{ __('This contract has been signed by all parties. A copy has been emailed to you.') }}
             </flux:text>
 
             @if ($contract->isFullyExecuted() && $contract->executed_pdf_path)
@@ -168,7 +200,7 @@ new #[Layout('components.layouts.public')] class extends Component {
                 </div>
             @endif
         </div>
-    @else
+    @elseif ($canVendorSign)
         {{-- Signing Form --}}
         <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-6 sm:p-8">
             <flux:heading size="lg" class="mb-6">{{ __('Sign This Contract') }}</flux:heading>
@@ -345,6 +377,16 @@ new #[Layout('components.layouts.public')] class extends Component {
                     </flux:button>
                 </div>
             </form>
+        </div>
+    @elseif ($contract->isPendingInternal())
+        {{-- Preview Notice (internal signing in progress) --}}
+        <div class="bg-amber-50 dark:bg-amber-900/20 rounded-xl border border-amber-200 dark:border-amber-800 p-6 sm:p-8 text-center">
+            <flux:heading size="lg" class="text-amber-900 dark:text-amber-100">
+                {{ __('Contract Preview') }}
+            </flux:heading>
+            <flux:text class="mt-2 text-amber-700 dark:text-amber-300">
+                {{ __('This contract is currently being reviewed and signed internally. The signing form will be available once all internal signatures have been collected.') }}
+            </flux:text>
         </div>
     @endif
 </div>

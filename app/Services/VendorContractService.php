@@ -141,6 +141,11 @@ class VendorContractService
 
         $contract->update(['status' => VendorContract::STATUS_PENDING_INTERNAL]);
 
+        // Generate public token early so internal signers can preview the public page
+        if (! $contract->public_token) {
+            $contract->generatePublicToken();
+        }
+
         $contract->load('signers.user');
 
         foreach ($contract->signers as $signer) {
