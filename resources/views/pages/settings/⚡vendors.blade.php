@@ -1275,31 +1275,37 @@ new class extends Component {
                                             </div>
                                         </div>
                                         <div class="flex shrink-0 items-center gap-1">
+                                            {{-- View public page (any status with a token) --}}
+                                            @if ($contract->public_token)
+                                                <a href="{{ route('vendor.contract.sign', ['token' => $contract->public_token]) }}" target="_blank" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('View Public Page') }}">
+                                                    <flux:icon name="eye" variant="mini" />
+                                                </a>
+                                            @endif
+
+                                            {{-- View/Sign internal page (any non-draft status) --}}
+                                            @if (! $contract->isDraft() && ! $contract->isInvalidated())
+                                                <a href="{{ route('vendor-contracts.sign-internal', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('View Contract') }}">
+                                                    <flux:icon name="document-text" variant="mini" />
+                                                </a>
+                                            @endif
+
                                             @if ($contract->isDraft())
                                                 <a href="{{ route('vendor-contracts.edit', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Edit') }}">
                                                     <flux:icon name="pencil" variant="mini" />
                                                 </a>
                                                 <flux:button size="sm" variant="ghost" icon="trash" wire:click="deleteContract({{ $contract->id }})" wire:confirm="{{ __('Delete this draft contract?') }}" :title="__('Delete')" />
-                                            @elseif ($contract->isPendingInternal())
-                                                <a href="{{ route('vendor-contracts.edit', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Sign') }}">
-                                                    <flux:icon name="pencil-square" variant="mini" />
+                                            @endif
+
+                                            {{-- Download PDF (fully_executed or expired with PDF) --}}
+                                            @if (($contract->isFullyExecuted() || $contract->isExpired()) && $contract->executed_pdf_path)
+                                                <a href="{{ route('vendor-contracts.pdf.download', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Download PDF') }}">
+                                                    <flux:icon name="arrow-down-tray" variant="mini" />
                                                 </a>
+                                            @endif
+
+                                            {{-- Invalidate (any active non-draft status) --}}
+                                            @if ($contract->isPendingInternal() || $contract->isPendingVendor() || $contract->isFullyExecuted())
                                                 <flux:button size="sm" variant="ghost" icon="x-circle" wire:click="invalidateContract({{ $contract->id }})" wire:confirm="{{ __('Invalidate this contract?') }}" :title="__('Invalidate')" />
-                                            @elseif ($contract->isPendingVendor())
-                                                <flux:button size="sm" variant="ghost" icon="x-circle" wire:click="invalidateContract({{ $contract->id }})" wire:confirm="{{ __('Invalidate this contract?') }}" :title="__('Invalidate')" />
-                                            @elseif ($contract->isFullyExecuted())
-                                                @if ($contract->executed_pdf_path)
-                                                    <a href="{{ route('vendor-contracts.pdf.download', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Download PDF') }}">
-                                                        <flux:icon name="arrow-down-tray" variant="mini" />
-                                                    </a>
-                                                @endif
-                                                <flux:button size="sm" variant="ghost" icon="x-circle" wire:click="invalidateContract({{ $contract->id }})" wire:confirm="{{ __('Invalidate this contract?') }}" :title="__('Invalidate')" />
-                                            @elseif ($contract->isExpired())
-                                                @if ($contract->executed_pdf_path)
-                                                    <a href="{{ route('vendor-contracts.pdf.download', ['vendor' => $contract->vendor_id, 'contract' => $contract->id]) }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300" title="{{ __('Download PDF') }}">
-                                                        <flux:icon name="arrow-down-tray" variant="mini" />
-                                                    </a>
-                                                @endif
                                             @endif
                                         </div>
                                     </div>
