@@ -292,6 +292,7 @@ new class extends Component
             $loadedSurfaces[$i]['sale_price'] = $surfaceData['sale_price'] ?? null;
             $loadedSurfaces[$i]['crew_price'] = $surfaceData['crew_price'] ?? null;
             $loadedSurfaces[$i]['tier_overrides'] = $surfaceData['tier_overrides'] ?? null;
+            $loadedSurfaces[$i]['package_tiers'] = $surfaceData['package_tiers'] ?? null;
         }
         $this->surfaces = $loadedSurfaces;
 
@@ -336,6 +337,7 @@ new class extends Component
                     'sale_price' => null,
                     'crew_price' => null,
                     'tier_overrides' => null,
+                    'package_tiers' => null,
                 ];
             }
 
@@ -370,6 +372,7 @@ new class extends Component
                 'sale_price' => null,
                 'crew_price' => null,
                 'tier_overrides' => null,
+                'package_tiers' => null,
             ];
         }
     }
@@ -521,6 +524,7 @@ new class extends Component
             'sale_price' => null,
             'crew_price' => null,
             'tier_overrides' => null,
+            'package_tiers' => null,
         ];
 
         // Add ceiling/eaves surface
@@ -542,6 +546,7 @@ new class extends Component
             'sale_price' => null,
             'crew_price' => null,
             'tier_overrides' => null,
+            'package_tiers' => null,
         ];
 
         // Add trim surface
@@ -563,6 +568,7 @@ new class extends Component
             'sale_price' => null,
             'crew_price' => null,
             'tier_overrides' => null,
+            'package_tiers' => null,
         ];
     }
 
@@ -698,6 +704,7 @@ new class extends Component
             'sale_price' => null,
             'crew_price' => null,
             'tier_overrides' => null,
+            'package_tiers' => null,
         ];
     }
 
@@ -1300,6 +1307,29 @@ new class extends Component
         }
     }
 
+    public function toggleSurfaceTier(int $index, string $tier): void
+    {
+        if (! isset($this->surfaces[$index])) {
+            return;
+        }
+
+        $currentTiers = $this->surfaces[$index]['package_tiers'] ?? ['good', 'better', 'best'];
+
+        if (in_array($tier, $currentTiers)) {
+            $currentTiers = array_values(array_diff($currentTiers, [$tier]));
+        } else {
+            $currentTiers[] = $tier;
+            sort($currentTiers);
+        }
+
+        // Must have at least one tier
+        if (empty($currentTiers)) {
+            $currentTiers = [$tier];
+        }
+
+        $this->surfaces[$index]['package_tiers'] = count($currentTiers) === 3 ? null : $currentTiers;
+    }
+
     protected function ensureBaseSnapshot(): void
     {
         foreach ($this->surfaces as $index => $surface) {
@@ -1587,6 +1617,8 @@ new class extends Component
                 'material_cost' => null,
                 'sale_price' => null,
                 'crew_price' => null,
+                'tier_overrides' => null,
+                'package_tiers' => $surface->package_tiers,
             ];
         }
 
@@ -1860,13 +1892,27 @@ new class extends Component
                                                             @endif
                                                         @endif
                                                     </div>
-                                                    <flux:button
-                                                        wire:click="removeSurface({{ $index }})"
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        icon="trash"
-                                                        class="text-red-500 hover:text-red-700 dark:text-red-400"
-                                                    />
+                                                    <div class="flex items-center gap-2">
+                                                        @if ($useTierPricing)
+                                                            <div class="flex gap-0.5">
+                                                                @foreach (['good' => 'G', 'better' => 'B', 'best' => 'B+'] as $tier => $label)
+                                                                    @php $inTier = ($surface['package_tiers'] ?? null) === null || in_array($tier, $surface['package_tiers'] ?? []); @endphp
+                                                                    <button wire:click="toggleSurfaceTier({{ $index }}, '{{ $tier }}')" type="button"
+                                                                        class="{{ $inTier ? 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/50 dark:text-blue-300' : 'bg-zinc-100 text-zinc-400 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500' }} w-7 h-6 text-[10px] font-bold rounded border transition-colors flex items-center justify-center"
+                                                                        title="{{ $inTier ? __('Remove from :tier', ['tier' => ucfirst($tier)]) : __('Add to :tier', ['tier' => ucfirst($tier)]) }}">
+                                                                        {{ $label }}
+                                                                    </button>
+                                                                @endforeach
+                                                            </div>
+                                                        @endif
+                                                        <flux:button
+                                                            wire:click="removeSurface({{ $index }})"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            icon="trash"
+                                                            class="text-red-500 hover:text-red-700 dark:text-red-400"
+                                                        />
+                                                    </div>
                                                 </div>
 
                                                 {{-- Surface Details --}}
