@@ -12,7 +12,10 @@ class VendorContractInternalSigningRequest extends Notification implements Shoul
 {
     use Queueable;
 
-    public function __construct(public VendorContract $contract) {}
+    public function __construct(public VendorContract $contract)
+    {
+        $this->contract->loadMissing('vendor');
+    }
 
     /**
      * @return array<int, string>
@@ -24,13 +27,15 @@ class VendorContractInternalSigningRequest extends Notification implements Shoul
 
     public function toMail(object $notifiable): MailMessage
     {
+        $name = $notifiable->name ?? 'there';
+
         return (new MailMessage)
-            ->subject('Vendor Contract Requires Your Signature: '.$this->contract->title)
-            ->greeting('Hello '.$notifiable->first_name.'!')
+            ->subject('Contract Signing Required: '.$this->contract->title)
+            ->greeting("Hello {$name}!")
             ->line('A vendor contract requires your signature.')
             ->line('**Contract:** '.$this->contract->title)
             ->line('**Vendor:** '.$this->contract->vendor?->name)
-            ->action('Review & Sign', url('/'))
+            ->action('Review & Sign', url('/vendor-contracts/'.$this->contract->id))
             ->line('Please review and sign the contract at your earliest convenience.');
     }
 
@@ -40,6 +45,7 @@ class VendorContractInternalSigningRequest extends Notification implements Shoul
     public function toArray(object $notifiable): array
     {
         return [
+            'type' => 'vendor_contract_internal_signing_request',
             'vendor_contract_id' => $this->contract->id,
             'title' => $this->contract->title,
             'vendor_name' => $this->contract->vendor?->name,

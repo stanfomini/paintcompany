@@ -15,7 +15,9 @@ class VendorContractSentToVendor extends Notification implements ShouldQueue
     public function __construct(
         public VendorContract $contract,
         public string $url,
-    ) {}
+    ) {
+        $this->contract->loadMissing('vendor');
+    }
 
     /**
      * @return array<int, string>
@@ -28,7 +30,7 @@ class VendorContractSentToVendor extends Notification implements ShouldQueue
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Contract for Your Review & Signature: '.$this->contract->title)
+            ->subject('Contract for Review and Signature: '.$this->contract->title)
             ->greeting('Hello!')
             ->line('A contract has been prepared for your review and signature.')
             ->line('**Contract:** '.$this->contract->title)

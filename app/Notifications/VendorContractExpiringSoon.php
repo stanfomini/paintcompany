@@ -5,6 +5,7 @@ namespace App\Notifications;
 use App\Models\VendorContract;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\AnonymousNotifiable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
@@ -12,13 +13,20 @@ class VendorContractExpiringSoon extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    public function __construct(public VendorContract $contract) {}
+    public function __construct(public VendorContract $contract)
+    {
+        $this->contract->loadMissing('vendor');
+    }
 
     /**
      * @return array<int, string>
      */
     public function via(object $notifiable): array
     {
+        if ($notifiable instanceof AnonymousNotifiable) {
+            return ['mail'];
+        }
+
         return ['mail', 'database'];
     }
 
@@ -33,7 +41,7 @@ class VendorContractExpiringSoon extends Notification implements ShouldQueue
             ->line('**Contract:** '.$this->contract->title)
             ->line('**Vendor:** '.$this->contract->vendor?->name)
             ->line('**Expires:** '.$expiresAt)
-            ->action('View Contract', url('/'))
+            ->action('View Contract', url('/vendor-contracts/'.$this->contract->id))
             ->line('Consider renewing the contract before it expires.');
     }
 
@@ -43,9 +51,9 @@ class VendorContractExpiringSoon extends Notification implements ShouldQueue
     public function toArray(object $notifiable): array
     {
         return [
+            'type' => 'vendor_contract_expiring_soon',
             'vendor_contract_id' => $this->contract->id,
             'title' => $this->contract->title,
-            'vendor_name' => $this->contract->vendor?->name,
             'expires_at' => $this->contract->expires_at?->toISOString(),
         ];
     }
