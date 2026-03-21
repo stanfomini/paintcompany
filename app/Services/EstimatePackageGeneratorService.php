@@ -224,14 +224,14 @@ class EstimatePackageGeneratorService
 
             foreach ($area->surfaces()->orderBy('sort_order')->get() as $surface) {
                 // Disable auto-calculation during creation to avoid issues
-                EstimatePackageItem::withoutEvents(function () use ($package, $surface, &$sortOrder, $areaInTier) {
+                EstimatePackageItem::withoutEvents(function () use ($package, $surface, &$sortOrder, $areaInTier, $paintTier) {
                     EstimatePackageItem::create([
                         'package_id' => $package->id,
                         'itemable_type' => EstimateAreaSurface::class,
                         'itemable_id' => $surface->id,
                         'quantity' => 1,
                         'price_override' => null, // Use surface's calculated price
-                        'is_included' => $surface->is_included && $areaInTier,
+                        'is_included' => $surface->is_included && $areaInTier && ($paintTier === null || $surface->isIncludedInTier($paintTier)),
                         'customer_approved' => true, // Painting work is always approved
                         'customer_approved_at' => now(),
                         'sort_order' => $sortOrder++,
@@ -442,6 +442,13 @@ class EstimatePackageGeneratorService
                         $area = $itemable->area;
                     }
                     if ($area && ! $area->isIncludedInTier($paintTier)) {
+                        $areaExcluded = true;
+                    }
+                }
+
+                // Also check surface-level tier inclusion
+                if (! $areaExcluded && $paintTier !== null && $itemable instanceof \App\Models\EstimateAreaSurface) {
+                    if (! $itemable->isIncludedInTier($paintTier)) {
                         $areaExcluded = true;
                     }
                 }

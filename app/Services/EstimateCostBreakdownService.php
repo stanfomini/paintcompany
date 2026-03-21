@@ -706,6 +706,12 @@ class EstimateCostBreakdownService
             $surfaceQuery->whereIn('id', $includedSurfaceIds);
         }
         $surfaces = $surfaceQuery->get();
+
+        // Filter out surfaces not included in this paint tier
+        if ($paintTier !== null) {
+            $surfaces = $surfaces->filter(fn ($s) => $s->isIncludedInTier($paintTier));
+        }
+
         $laborHours = (float) $surfaces->sum('labor_hours');
         $laborCost = (float) $surfaces->sum('labor_cost');
 
