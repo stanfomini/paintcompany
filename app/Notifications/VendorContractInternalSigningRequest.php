@@ -35,7 +35,10 @@ class VendorContractInternalSigningRequest extends Notification implements Shoul
             ->line('A vendor contract requires your signature.')
             ->line('**Contract:** '.$this->contract->title)
             ->line('**Vendor:** '.$this->contract->vendor?->name)
-            ->action('Review & Sign', url('/vendor-contracts/'.$this->contract->id))
+            ->action('Review & Sign', route('vendor-contracts.sign-internal', [
+                'vendor' => $this->contract->vendor_id,
+                'contract' => $this->contract->id,
+            ]))
             ->line('Please review and sign the contract at your earliest convenience.');
     }
 

@@ -41,7 +41,10 @@ class VendorContractExpiringSoon extends Notification implements ShouldQueue
             ->line('**Contract:** '.$this->contract->title)
             ->line('**Vendor:** '.$this->contract->vendor?->name)
             ->line('**Expires:** '.$expiresAt)
-            ->action('View Contract', url('/vendor-contracts/'.$this->contract->id))
+            ->action('View Contract', route('vendor-contracts.sign-internal', [
+                'vendor' => $this->contract->vendor_id,
+                'contract' => $this->contract->id,
+            ]))
             ->line('Consider renewing the contract before it expires.');
     }
 
