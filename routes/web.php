@@ -161,6 +161,11 @@ Route::livewire('/roi/{token}', 'public.roi-viewer')
     ->name('roi.public')
     ->middleware('throttle:60,1');
 
+// Public SaaS savings report viewer
+Route::livewire('/saas-report/{token}', 'public.saas-savings-report')
+    ->name('saas-report.public')
+    ->middleware('throttle:60,1');
+
 // Public careers routes
 Route::livewire('/careers', 'public.careers')
     ->name('careers')

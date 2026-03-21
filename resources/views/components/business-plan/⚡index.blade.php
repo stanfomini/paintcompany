@@ -76,11 +76,13 @@ new class extends Component
             'budget' => ['label' => __('Budget'), 'icon' => 'banknotes'],
             'overhead-tracking' => ['label' => __('Overhead'), 'icon' => 'building-office-2'],
             'marketing-tracking' => ['label' => __('Marketing'), 'icon' => 'megaphone'],
+            'fb-ads-report' => ['label' => __('FB Ads'), 'icon' => 'signal'],
             'vendors' => ['label' => __('Vendors'), 'icon' => 'building-storefront'],
             'chart-of-accounts' => ['label' => __('Chart of Accounts'), 'icon' => 'list-bullet'],
             'journal-entries' => ['label' => __('Journal'), 'icon' => 'book-open'],
             'financial-reports' => ['label' => __('Reports'), 'icon' => 'chart-bar-square'],
             'corporate' => ['label' => __('Corporate'), 'icon' => 'building-library'],
+            'saas-savings' => ['label' => __('SaaS Savings'), 'icon' => 'server-stack'],
         ];
     }
 
@@ -312,6 +314,8 @@ new class extends Component
             <livewire:dynamic-component :component="'business-plan.overhead-tracking'" :key="'overhead-tab'" />
         @elseif ($activeTab === 'marketing-tracking')
             <livewire:dynamic-component :component="'business-plan.marketing-tracking'" :key="'marketing-tab'" />
+        @elseif ($activeTab === 'fb-ads-report')
+            <livewire:dynamic-component :component="'business-plan.fb-ads-report'" :key="'fb-ads-tab'" />
         @elseif ($activeTab === 'vendors')
             <livewire:dynamic-component :component="'business-plan.vendors'" :key="'vendors-tab'" />
         @elseif ($activeTab === 'chart-of-accounts')
@@ -322,6 +326,8 @@ new class extends Component
             <livewire:dynamic-component :component="'business-plan.financial-reports'" :key="'reports-tab'" />
         @elseif ($activeTab === 'corporate')
             <livewire:dynamic-component :component="'business-plan.corporate'" :key="'corporate-tab'" />
+        @elseif ($activeTab === 'saas-savings')
+            <livewire:dynamic-component :component="'business-plan.saas-savings'" :key="'saas-savings-tab'" />
         @endif
     </div>
 </div>
