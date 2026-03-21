@@ -22,9 +22,12 @@
 | Modify | `app/Models/Estimate.php:41` | Add `excluded_surfaces_display` to fillable, add helper method |
 | Modify | `database/factories/EstimateAreaSurfaceFactory.php` | Add `forTiers()` state method |
 | Modify | `resources/views/components/estimates/⚡area-builder.blade.php` | Add G/B/B+ toggle buttons per surface, `toggleSurfaceTier()` method |
+| Modify | `app/Services/EstimateCostBreakdownService.php` | Filter surfaces by tier in internal breakdown calculations |
+| Modify | `app/Services/EstimatePackageGeneratorService.php` | Filter surfaces by tier when building packages |
 | Modify | `resources/views/components/estimates/⚡template-builder.blade.php` | Persist `package_tiers` in surface data through save flow |
 | Modify | `resources/views/components/public/⚡estimate-proposal.blade.php` | Respect `excluded_surfaces_display` when rendering surfaces |
 | Modify | `resources/views/components/public/⚡proposal-packages.blade.php` | Filter surfaces by tier in package view |
+| Modify | `resources/views/pdf/estimate.blade.php` | Filter surfaces by tier in PDF export |
 | Create | `tests/Feature/SurfaceTierInclusionTest.php` | Core model tests for surface tier filtering |
 | Create | `tests/Feature/Livewire/Estimates/SurfaceTierToggleTest.php` | UI toggle tests |
 
@@ -381,7 +384,39 @@ if ($tier !== null) {
 }
 ```
 
-- [ ] **Step 4: Run all tests**
+- [ ] **Step 4: Update `getPartialCustomerPrice` to filter surfaces by tier**
+
+In `getPartialCustomerPrice()` (line 756), after fetching `$allSurfaces`:
+
+```php
+$allSurfaces = $this->surfaces()->where('is_included', true)->get();
+```
+
+Add:
+
+```php
+if ($tier !== null) {
+    $allSurfaces = $allSurfaces->filter(fn ($s) => $s->isIncludedInTier($tier));
+}
+```
+
+- [ ] **Step 5: Update `getPartialCOGS` to filter surfaces by tier**
+
+In `getPartialCOGS()` (line 803), after fetching `$allSurfaces`:
+
+```php
+$allSurfaces = $this->surfaces()->where('is_included', true)->get();
+```
+
+Add:
+
+```php
+if ($tier !== null) {
+    $allSurfaces = $allSurfaces->filter(fn ($s) => $s->isIncludedInTier($tier));
+}
+```
+
+- [ ] **Step 6: Run all tests**
 
 ```bash
 php artisan test --compact tests/Feature/SurfaceTierInclusionTest.php
@@ -389,7 +424,7 @@ php artisan test --compact tests/Feature/SurfaceTierInclusionTest.php
 
 Expected: All tests PASS including the COGS comparison test.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add app/Models/EstimateArea.php
@@ -398,7 +433,59 @@ git commit -m "feat(estimates): filter surfaces by package_tiers in area pricing
 
 ---
 
-### Task 5: Model — Add `excluded_surfaces_display` to CompanySetting and Estimate
+### Task 5: Services — Filter surfaces by tier in breakdown and package generator
+
+**Files:**
+- Modify: `app/Services/EstimateCostBreakdownService.php` (surface query needs tier filtering)
+- Modify: `app/Services/EstimatePackageGeneratorService.php` (package building needs surface tier check)
+
+- [ ] **Step 1: Update `EstimateCostBreakdownService`**
+
+Find where the breakdown service queries surfaces (around line 704):
+
+```php
+$surfaceQuery = $area->surfaces()->where('is_included', true);
+```
+
+When a tier is being calculated, surfaces excluded from that tier must be skipped. Check how the service receives the tier parameter and add filtering:
+
+```php
+if ($tier !== null) {
+    $surfaces = $surfaceQuery->get()->filter(fn ($s) => $s->isIncludedInTier($tier));
+} else {
+    $surfaces = $surfaceQuery->get();
+}
+```
+
+Apply this pattern wherever surfaces are summed for labor/material/COGS in the breakdown.
+
+- [ ] **Step 2: Update `EstimatePackageGeneratorService`**
+
+In the package generator (around line 199-204), when building package items for a specific tier, add surface-level filtering. After the area-level `isIncludedInTier()` check, also check each surface:
+
+```php
+if ($paintTier && ! $surface->isIncludedInTier($paintTier)) {
+    continue;
+}
+```
+
+- [ ] **Step 3: Run related tests**
+
+```bash
+php artisan test --compact --filter=PackageGenerator
+php artisan test --compact --filter=CostBreakdown
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add app/Services/EstimateCostBreakdownService.php app/Services/EstimatePackageGeneratorService.php
+git commit -m "feat(estimates): filter surfaces by tier in breakdown and package generator services"
+```
+
+---
+
+### Task 6: Model — Add `excluded_surfaces_display` to CompanySetting and Estimate
 
 **Files:**
 - Modify: `app/Models/CompanySetting.php` (fillable array)
@@ -446,7 +533,7 @@ git commit -m "feat(estimates): add excluded_surfaces_display setting to Company
 
 ---
 
-### Task 6: Factory — Add `forTiers()` state
+### Task 7: Factory — Add `forTiers()` state
 
 **Files:**
 - Modify: `database/factories/EstimateAreaSurfaceFactory.php`
@@ -478,7 +565,7 @@ git commit -m "feat(estimates): add forTiers factory state to EstimateAreaSurfac
 
 ---
 
-### Task 7: UI — Surface tier toggle buttons in area builder
+### Task 8: UI — Surface tier toggle buttons in area builder
 
 **Files:**
 - Modify: `resources/views/components/estimates/⚡area-builder.blade.php`
@@ -568,7 +655,7 @@ git commit -m "feat(estimates): add per-surface tier toggle buttons in area buil
 
 ---
 
-### Task 8: Save Flow — Persist surface `package_tiers` through template builder
+### Task 9: Save Flow — Persist surface `package_tiers` through template builder
 
 **Files:**
 - Modify: `resources/views/components/estimates/⚡template-builder.blade.php`
@@ -622,6 +709,8 @@ if ($surfaceTiers !== null && ! in_array($tier, $surfaceTiers)) {
 }
 ```
 
+There are **two** surface loops in this method — one for material costs (around line 1942) and one for tier-specific labor hours (around line 1993). Add the same check to **both** loops after the `is_required`/`is_default_enabled` check.
+
 - [ ] **Step 4: Run existing tests**
 
 ```bash
@@ -637,7 +726,7 @@ git commit -m "feat(estimates): persist surface package_tiers through template b
 
 ---
 
-### Task 9: Proposal — Respect surface tier exclusion display
+### Task 10: Proposal — Respect surface tier exclusion display
 
 **Files:**
 - Modify: `resources/views/components/public/⚡estimate-proposal.blade.php`
@@ -709,22 +798,32 @@ foreach ($area->surfaces()->where('is_included', true)->get() as $surface) {
 
 Apply the same pattern to the second similar loop (around line 187).
 
-- [ ] **Step 3: Run Pint**
+- [ ] **Step 3: Filter surfaces in PDF export**
+
+In `resources/views/pdf/estimate.blade.php`, find where surfaces are iterated (around line 604):
+
+```php
+$area->surfaces->where('is_included', true)
+```
+
+Add tier filtering based on the active tier/package context. If the PDF is generated for a specific package, excluded surfaces should be hidden or shown based on the `excluded_surfaces_display` setting.
+
+- [ ] **Step 4: Run Pint**
 
 ```bash
 vendor/bin/pint --dirty
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add resources/views/components/public/⚡estimate-proposal.blade.php resources/views/components/public/⚡proposal-packages.blade.php
-git commit -m "feat(estimates): respect surface tier inclusion in proposal views"
+git add resources/views/components/public/⚡estimate-proposal.blade.php resources/views/components/public/⚡proposal-packages.blade.php resources/views/pdf/estimate.blade.php
+git commit -m "feat(estimates): respect surface tier inclusion in proposal views and PDF"
 ```
 
 ---
 
-### Task 10: Company Settings UI — Add `excluded_surfaces_display` setting
+### Task 11: Company Settings UI — Add `excluded_surfaces_display` setting
 
 **Files:**
 - Modify: `resources/views/pages/settings/⚡company.blade.php`
@@ -755,7 +854,7 @@ git commit -m "feat(settings): add excluded_surfaces_display setting to company 
 
 ---
 
-### Task 11: Livewire Tests — Surface tier toggle
+### Task 12: Livewire Tests — Surface tier toggle
 
 **Files:**
 - Create: `tests/Feature/Livewire/Estimates/SurfaceTierToggleTest.php`
@@ -848,7 +947,7 @@ git commit -m "test(estimates): add tests for surface tier inclusion and exclude
 
 ---
 
-### Task 12: Final Integration — Run full related tests
+### Task 13: Final Integration — Run full related tests
 
 **Files:** (no new changes, just verification)
 
