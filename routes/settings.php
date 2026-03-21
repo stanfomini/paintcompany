@@ -90,6 +90,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:vendors.view')
         ->name('vendors.edit');
 
+    Route::middleware('permission:vendors.manage')->group(function () {
+        Route::get('settings/vendors/documents/{vendorDocument}/download', [\App\Http\Controllers\VendorDocumentController::class, 'download'])
+            ->name('vendors.documents.download');
+        Route::get('settings/vendors/documents/{vendorDocument}/view', [\App\Http\Controllers\VendorDocumentController::class, 'view'])
+            ->name('vendors.documents.view');
+    });
+
     Route::livewire('settings/messenger', 'pages::settings.messenger-settings')
         ->middleware('permission:messenger.manage')
         ->name('messenger.edit');

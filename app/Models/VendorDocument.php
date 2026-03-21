@@ -156,9 +156,19 @@ class VendorDocument extends Model
         return $this;
     }
 
-    public function getDownloadUrl(): string
+    public function getDownloadUrl(): ?string
     {
-        return Storage::temporaryUrl($this->file_path, now()->addMinutes(30));
+        $disk = Storage::disk();
+
+        if (method_exists($disk, 'temporaryUrl')) {
+            try {
+                return $disk->temporaryUrl($this->file_path, now()->addMinutes(30));
+            } catch (\RuntimeException) {
+                // Local disk doesn't support temporaryUrl
+            }
+        }
+
+        return null;
     }
 
     public function getFileExtension(): string

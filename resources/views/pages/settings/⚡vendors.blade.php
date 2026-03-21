@@ -1058,6 +1058,12 @@ new class extends Component {
                                     </div>
                                     <div class="ml-2 flex shrink-0 items-center gap-1">
                                         @can('vendors.manage')
+                                            <a href="{{ route('vendors.documents.view', $doc) }}" target="_blank" title="{{ __('View') }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                                                <flux:icon name="eye" variant="mini" />
+                                            </a>
+                                            <a href="{{ route('vendors.documents.download', $doc) }}" title="{{ __('Download') }}" class="inline-flex items-center justify-center rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-300">
+                                                <flux:icon name="arrow-down-tray" variant="mini" />
+                                            </a>
                                             @if ($doc->isPending())
                                                 <flux:button size="sm" variant="ghost" icon="check" wire:click="approveDocument({{ $doc->id }})" class="text-green-600" :title="__('Approve')" />
                                                 <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="rejectDocument({{ $doc->id }})" class="text-red-600" :title="__('Reject')" />
