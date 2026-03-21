@@ -445,6 +445,9 @@ class EstimateArea extends Model
             $laborCost = 0.0;
             $materialCost = 0.0;
             foreach ($surfaces->get() as $surface) {
+                if (! $surface->isIncludedInTier($tier)) {
+                    continue;
+                }
                 $laborHours += $surface->getLaborHoursForTier($tier);
                 $laborCost += $surface->getLaborCostForTier($tier);
                 $materialCost += $surface->getMaterialCostForTier($tier);
@@ -467,6 +470,9 @@ class EstimateArea extends Model
         $costItemsCost = (float) $this->costItems()->sum('total_cost');
         $surfaceCostItemsCost = 0.0;
         foreach ($this->surfaces()->where('is_included', true)->get() as $s) {
+            if ($tier !== null && ! $s->isIncludedInTier($tier)) {
+                continue;
+            }
             $surfaceCostItemsCost += (float) $s->costItems()->sum('total_cost');
         }
 
@@ -568,6 +574,11 @@ class EstimateArea extends Model
 
         // Check if any custom surfaces have explicit sale_price
         $surfaces = $this->surfaces()->where('is_included', true)->get();
+
+        if ($tier !== null) {
+            $surfaces = $surfaces->filter(fn ($s) => $s->isIncludedInTier($tier));
+        }
+
         $hasCustomSalePrices = $surfaces->contains(fn ($s) => $s->is_custom && $s->sale_price !== null);
 
         if (! $hasCustomSalePrices) {
@@ -645,6 +656,10 @@ class EstimateArea extends Model
     {
         $customerPrice = $this->getCustomerPrice($tier);
         $surfaces = $this->surfaces()->where('is_included', true)->get();
+
+        if ($tier !== null) {
+            $surfaces = $surfaces->filter(fn ($s) => $s->isIncludedInTier($tier));
+        }
 
         if ($surfaces->isEmpty()) {
             return [];
@@ -755,6 +770,10 @@ class EstimateArea extends Model
 
         $allSurfaces = $this->surfaces()->where('is_included', true)->get();
 
+        if ($tier !== null) {
+            $allSurfaces = $allSurfaces->filter(fn ($s) => $s->isIncludedInTier($tier));
+        }
+
         // Use full surface COGS (includes cleanup + sundries) for accurate proportioning
         if ($tier !== null) {
             $totalCogs = 0.0;
@@ -801,6 +820,10 @@ class EstimateArea extends Model
         }
 
         $allSurfaces = $this->surfaces()->where('is_included', true)->get();
+
+        if ($tier !== null) {
+            $allSurfaces = $allSurfaces->filter(fn ($s) => $s->isIncludedInTier($tier));
+        }
 
         if ($tier !== null) {
             $totalCogs = 0.0;
