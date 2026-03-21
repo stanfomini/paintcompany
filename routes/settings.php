@@ -97,9 +97,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->name('vendors.documents.view');
         Route::get('settings/vendors/{vendor}/contracts/{contract}/pdf', [\App\Http\Controllers\VendorContractPdfController::class, 'download'])
             ->name('vendor-contracts.pdf.download');
-        Route::get('settings/vendors/{vendor}/contracts/{contract}/edit', function () {
-            abort(404, 'Contract editor not yet implemented.');
-        })->name('vendor-contracts.edit');
+        Route::livewire('settings/vendors/{vendor}/contracts/{contract}/edit', 'pages::settings.vendor-contract-editor')
+            ->name('vendor-contracts.edit');
+        Route::livewire('settings/vendors/{vendor}/contracts/{contract}/sign', 'pages::settings.vendor-contract-sign-internal')
+            ->name('vendor-contracts.sign-internal');
     });
 
     Route::livewire('settings/messenger', 'pages::settings.messenger-settings')
