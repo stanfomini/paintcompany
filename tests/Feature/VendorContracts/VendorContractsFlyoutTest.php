@@ -44,7 +44,8 @@ it('creates a contract from template and redirects to editor', function () {
 
     Livewire::test('pages::settings.vendors')
         ->call('viewContracts', $vendor->id)
-        ->call('createContract', $template->id)
+        ->set('selectedTemplateId', $template->id)
+        ->call('createContract')
         ->assertRedirect();
 
     expect(VendorContract::where('vendor_id', $vendor->id)->count())->toBe(1);
@@ -53,6 +54,21 @@ it('creates a contract from template and redirects to editor', function () {
     expect($contract->status)->toBe('draft')
         ->and($contract->template_id)->toBe($template->id)
         ->and($contract->created_by)->toBe($this->user->id);
+});
+
+it('creates a blank contract and redirects to editor', function () {
+    $vendor = Vendor::factory()->create();
+
+    Livewire::test('pages::settings.vendors')
+        ->call('viewContracts', $vendor->id)
+        ->call('createContract')
+        ->assertRedirect();
+
+    $contract = VendorContract::where('vendor_id', $vendor->id)->first();
+    expect($contract)->not->toBeNull()
+        ->and($contract->status)->toBe('draft')
+        ->and($contract->template_id)->toBeNull()
+        ->and($contract->content)->toBe('');
 });
 
 it('deletes a draft contract', function () {

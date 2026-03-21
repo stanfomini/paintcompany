@@ -23,6 +23,29 @@ class VendorContractService
     // ─── Creation & Editing ───
 
     /**
+     * Create a blank vendor contract.
+     */
+    public function createBlank(Vendor $vendor, User $createdBy): VendorContract
+    {
+        $contract = VendorContract::create([
+            'vendor_id' => $vendor->id,
+            'title' => 'New Contract — '.$vendor->name,
+            'content' => '',
+            'status' => VendorContract::STATUS_DRAFT,
+            'is_valid' => true,
+            'created_by' => $createdBy->id,
+        ]);
+
+        VendorContractSigner::create([
+            'vendor_contract_id' => $contract->id,
+            'user_id' => $createdBy->id,
+            'order' => 0,
+        ]);
+
+        return $contract->load('signers');
+    }
+
+    /**
      * Create a new vendor contract from a template.
      *
      * @param  array<int>  $signerUserIds

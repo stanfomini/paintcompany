@@ -441,12 +441,17 @@ new class extends Component {
         $this->selectedTemplateId = null;
     }
 
-    public function createContract(int $templateId): void
+    public function createContract(): void
     {
         $vendor = Vendor::findOrFail($this->contractVendorId);
-        $template = ContractTemplate::findOrFail($templateId);
         $service = app(VendorContractService::class);
-        $contract = $service->createFromTemplate($vendor, $template, [auth()->id()], auth()->user());
+
+        if ($this->selectedTemplateId) {
+            $template = ContractTemplate::findOrFail($this->selectedTemplateId);
+            $contract = $service->createFromTemplate($vendor, $template, [auth()->id()], auth()->user());
+        } else {
+            $contract = $service->createBlank($vendor, auth()->user());
+        }
 
         $this->redirect(route('vendor-contracts.edit', ['vendor' => $vendor->id, 'contract' => $contract->id]));
     }
@@ -1193,13 +1198,13 @@ new class extends Component {
                     <flux:text class="mt-1">{{ __('Manage contracts for this vendor.') }}</flux:text>
                 </div>
 
-                {{-- Template Picker --}}
-                @if ($this->vendorTemplates->isNotEmpty())
-                    <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                        <flux:heading size="sm" class="mb-2">{{ __('Create from Template') }}</flux:heading>
-                        <div class="flex items-end gap-2">
+                {{-- Create New Contract --}}
+                <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                    <flux:heading size="sm" class="mb-2">{{ __('New Contract') }}</flux:heading>
+                    @if ($this->vendorTemplates->isNotEmpty())
+                        <div class="flex items-end gap-2 mb-2">
                             <div class="flex-1">
-                                <flux:select wire:model="selectedTemplateId" size="sm">
+                                <flux:select wire:model.live="selectedTemplateId" size="sm">
                                     <flux:select.option value="">{{ __('Select a template...') }}</flux:select.option>
                                     @foreach ($this->vendorTemplates as $template)
                                         <flux:select.option value="{{ $template->id }}">{{ $template->name }}</flux:select.option>
@@ -1210,14 +1215,23 @@ new class extends Component {
                                 size="sm"
                                 variant="primary"
                                 icon="plus"
-                                wire:click="createContract($selectedTemplateId)"
+                                wire:click="createContract"
                                 :disabled="! $selectedTemplateId"
                             >
-                                {{ __('New Contract') }}
+                                {{ __('From Template') }}
                             </flux:button>
                         </div>
-                    </div>
-                @endif
+                    @endif
+                    <flux:button
+                        size="sm"
+                        variant="ghost"
+                        icon="document-plus"
+                        wire:click="createContract"
+                        class="w-full"
+                    >
+                        {{ __('Blank Contract') }}
+                    </flux:button>
+                </div>
 
                 <flux:separator />
 
