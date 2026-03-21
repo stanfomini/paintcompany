@@ -50,6 +50,7 @@ class VendorDocument extends Model
 
     protected $fillable = [
         'vendor_id',
+        'vendor_contract_id',
         'uploaded_by',
         'name',
         'type',
@@ -86,6 +87,11 @@ class VendorDocument extends Model
     public function reviewedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reviewed_by');
+    }
+
+    public function vendorContract(): BelongsTo
+    {
+        return $this->belongsTo(VendorContract::class);
     }
 
     // ─── Scopes ───

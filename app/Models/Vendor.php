@@ -89,6 +89,11 @@ class Vendor extends Model
         return $this->hasMany(VendorDocument::class);
     }
 
+    public function contracts(): HasMany
+    {
+        return $this->hasMany(VendorContract::class);
+    }
+
     public function bookings(): HasMany
     {
         return $this->hasMany(AppointmentBooking::class);

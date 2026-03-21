@@ -62,6 +62,11 @@ class ContractTemplate extends Model
         return $query->where('content_type', 'pdf');
     }
 
+    public function scopeVendor(Builder $query): Builder
+    {
+        return $query->where('type', 'vendor');
+    }
+
     /**
      * Get the standard merge tags available for contract templates.
      *
@@ -83,6 +88,14 @@ class ContractTemplate extends Model
             '{employee_address}',
             '{employee_phone}',
             '{employee_email}',
+            '{vendor_name}',
+            '{vendor_company}',
+            '{vendor_contact}',
+            '{vendor_email}',
+            '{vendor_phone}',
+            '{vendor_address}',
+            '{contract_date}',
+            '{expiration_date}',
         ];
     }
 }
