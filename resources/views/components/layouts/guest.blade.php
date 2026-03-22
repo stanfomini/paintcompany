@@ -9,6 +9,14 @@
         'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
         })(window,document,'script','dataLayer','GTM-KPDL23JM');</script>
         <!-- End Google Tag Manager -->
+        <!-- Google tag (gtag.js) -->
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-D4F4V2J77S"></script>
+        <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-D4F4V2J77S');
+        </script>
         @endproduction
         @include('partials.head')
         @isset($structuredData)
