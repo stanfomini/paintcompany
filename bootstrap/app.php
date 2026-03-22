@@ -1,6 +1,7 @@
 <?php
 
 use App\Exceptions\UserTypeMismatchException;
+use App\Http\Middleware\DevServerProtection;
 use App\Http\Middleware\EnsureAgentOnboarded;
 use App\Http\Middleware\EnsureCrewOnboarded;
 use App\Http\Middleware\EnsureCustomerOnboarded;
@@ -46,6 +47,10 @@ return Application::configure(basePath: dirname(__DIR__))
         ['middleware' => ['web', 'auth:web,agent,customer,crew']],
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->prepend([
+            DevServerProtection::class,
+        ]);
+
         $middleware->web(append: [
             SetLocale::class,
         ]);

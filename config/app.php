@@ -123,4 +123,17 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Dev Server Protection
+    |--------------------------------------------------------------------------
+    |
+    | Credentials for HTTP Basic Auth on non-production domains.
+    | Set DEV_AUTH_PASS in .env to enable. Leave empty to disable auth.
+    |
+    */
+
+    'dev_auth_user' => env('DEV_AUTH_USER', 'dev'),
+    'dev_auth_pass' => env('DEV_AUTH_PASS', ''),
+
 ];

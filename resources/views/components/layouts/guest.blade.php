@@ -1,6 +1,15 @@
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}" class="dark">
     <head>
+        @production
+        <!-- Google Tag Manager -->
+        <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+        'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+        })(window,document,'script','dataLayer','GTM-KPDL23JM');</script>
+        <!-- End Google Tag Manager -->
+        @endproduction
         @include('partials.head')
         @isset($structuredData)
         <script type="application/ld+json">
@@ -9,6 +18,12 @@
         @endisset
     </head>
     <body class="min-h-screen bg-zinc-50 antialiased dark:bg-zinc-900">
+        @production
+        <!-- Google Tag Manager (noscript) -->
+        <noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KPDL23JM"
+        height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+        <!-- End Google Tag Manager (noscript) -->
+        @endproduction
         <div class="min-h-screen flex flex-col">
             <main class="flex-1">
                 {{ $slot }}
