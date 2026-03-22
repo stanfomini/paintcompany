@@ -137,3 +137,27 @@ it('findByZip scope works correctly', function () {
     expect($result)->toHaveCount(1);
     expect($result->first()->city)->toBe('Broomfield');
 });
+
+it('renders area pages for I-25 corridor expansion cities', function () {
+    $corridorCities = [
+        ['city' => 'Fort Collins', 'slug' => 'fort-collins-co'],
+        ['city' => 'Loveland', 'slug' => 'loveland-co'],
+        ['city' => 'Windsor', 'slug' => 'windsor-co'],
+    ];
+
+    foreach ($corridorCities as $data) {
+        ServiceArea::factory()->create([
+            'city' => $data['city'],
+            'slug' => $data['slug'],
+            'is_active' => true,
+            'latitude' => 40.0,
+            'longitude' => -105.0,
+        ]);
+    }
+
+    foreach ($corridorCities as $data) {
+        $this->get('/areas/'.$data['slug'])
+            ->assertSuccessful()
+            ->assertSee($data['city']);
+    }
+});
