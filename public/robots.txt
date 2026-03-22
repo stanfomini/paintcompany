@@ -43,6 +43,3 @@ Disallow: /agent/
 Disallow: /crew/
 
 Sitemap: https://paintingmadeeasydenver.com/sitemap.xml
-
-# Service Guide Pages
-Sitemap: https://paintingmadeeasydenver.com/services

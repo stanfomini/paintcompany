@@ -16,6 +16,8 @@ class ServiceArea extends Model
         'state',
         'slug',
         'zip_codes',
+        'latitude',
+        'longitude',
         'territory_id',
         'meta_title',
         'meta_description',
@@ -28,6 +30,8 @@ class ServiceArea extends Model
     {
         return [
             'zip_codes' => 'array',
+            'latitude' => 'decimal:7',
+            'longitude' => 'decimal:7',
             'is_active' => 'boolean',
         ];
     }

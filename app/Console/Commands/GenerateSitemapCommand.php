@@ -28,6 +28,29 @@ class GenerateSitemapCommand extends Command
         $urls->push(['loc' => $baseUrl.'/privacy', 'changefreq' => 'yearly', 'priority' => '0.3']);
         $urls->push(['loc' => $baseUrl.'/referral-terms', 'changefreq' => 'yearly', 'priority' => '0.3']);
 
+        // Services index and guides
+        $urls->push(['loc' => $baseUrl.'/services', 'changefreq' => 'weekly', 'priority' => '0.8']);
+        $urls->push(['loc' => $baseUrl.'/faq', 'changefreq' => 'monthly', 'priority' => '0.7']);
+        $urls->push(['loc' => $baseUrl.'/how-it-works', 'changefreq' => 'monthly', 'priority' => '0.7']);
+        $urls->push(['loc' => $baseUrl.'/visualize', 'changefreq' => 'monthly', 'priority' => '0.7']);
+
+        // Individual service guide pages
+        $serviceSlugs = [
+            'interior-painting', 'exterior-painting', 'cabinet-painting',
+            'deck-fence-staining', 'garage-floor-coating', 'popcorn-ceiling-removal',
+            'drywall-repair', 'trim-door-painting', 'wallpaper-removal',
+            'commercial-interior', 'commercial-exterior', 'warehouse-industrial',
+            'hoa-multiunit', 'line-striping', 'pressure-washing',
+            'color-consultation', 'stucco-coating',
+        ];
+        foreach ($serviceSlugs as $slug) {
+            $urls->push([
+                'loc' => $baseUrl.'/services/'.$slug,
+                'changefreq' => 'monthly',
+                'priority' => '0.7',
+            ]);
+        }
+
         // Dynamic service area pages
         ServiceArea::active()->orderBy('city')->each(function (ServiceArea $area) use ($urls, $baseUrl) {
             $urls->push([

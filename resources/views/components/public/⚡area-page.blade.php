@@ -40,7 +40,7 @@ new #[Layout('components.layouts.guest')] class extends Component
     #[Computed]
     public function structuredData(): string
     {
-        return json_encode([
+        $schema = json_encode(array_filter([
             '@context' => 'https://schema.org',
             '@type' => 'HousePainter',
             'name' => ($this->company->company_name ?? 'Painting Made Easy Denver') . ' - ' . $this->area->city,
@@ -54,6 +54,11 @@ new #[Layout('components.layouts.guest')] class extends Component
                 'addressRegion' => $this->area->state,
                 'addressCountry' => 'US',
             ],
+            'geo' => $this->area->latitude ? [
+                '@type' => 'GeoCoordinates',
+                'latitude' => (float) $this->area->latitude,
+                'longitude' => (float) $this->area->longitude,
+            ] : null,
             'areaServed' => [
                 '@type' => 'City',
                 'name' => $this->area->city,
@@ -69,7 +74,19 @@ new #[Layout('components.layouts.guest')] class extends Component
                 'opens' => $this->company->business_hours_start ?? '08:00',
                 'closes' => $this->company->business_hours_end ?? '17:00',
             ],
+        ]), JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        $breadcrumb = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'BreadcrumbList',
+            'itemListElement' => [
+                ['@type' => 'ListItem', 'position' => 1, 'name' => 'Home', 'item' => url('/')],
+                ['@type' => 'ListItem', 'position' => 2, 'name' => 'Service Areas', 'item' => route('areas.index')],
+                ['@type' => 'ListItem', 'position' => 3, 'name' => $this->area->city],
+            ],
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        return $schema . ',' . $breadcrumb;
     }
 
     #[Computed]
@@ -172,6 +189,24 @@ new #[Layout('components.layouts.guest')] class extends Component
                     </div>
                 @endforeach
             </div>
+        </div>
+    </section>
+    @endif
+
+    {{-- Service Area Map --}}
+    @if($area->latitude)
+    <section class="bg-zinc-50 py-12 sm:py-16">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6">
+            <div class="text-center mb-6">
+                <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-2">{{ __('Our Service Area Near :city', ['city' => $area->city]) }}</h2>
+                <p class="text-zinc-600">{{ __('We also serve nearby communities across the Denver metro.') }}</p>
+            </div>
+            @include('partials.service-area-map', [
+                'areas' => \App\Models\ServiceArea::active()->whereNotNull('latitude')->get(),
+                'center' => [$area->latitude, $area->longitude],
+                'zoom' => 11,
+                'highlight' => $area->slug,
+            ])
         </div>
     </section>
     @endif

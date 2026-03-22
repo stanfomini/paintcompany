@@ -28,7 +28,14 @@ it('sitemap contains expected URLs', function () {
         ->toContain(url('/calculator'))
         ->toContain(url('/careers'))
         ->toContain(url('/terms'))
-        ->toContain(url('/privacy'));
+        ->toContain(url('/privacy'))
+        ->toContain(url('/services'))
+        ->toContain(url('/faq'))
+        ->toContain(url('/how-it-works'))
+        ->toContain(url('/visualize'))
+        ->toContain(url('/services/interior-painting'))
+        ->toContain(url('/services/exterior-painting'))
+        ->toContain(url('/services/stucco-coating'));
 });
 
 it('sitemap is valid XML', function () {

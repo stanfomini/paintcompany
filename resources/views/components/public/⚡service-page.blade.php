@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CompanySetting;
+use App\Models\ServiceArea;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Component;
@@ -46,11 +47,11 @@ new #[Layout('components.layouts.guest')] class extends Component
                 '@type' => 'HousePainter',
                 'name' => $companyName,
                 'telephone' => $company->company_phone ?? '(720) 999-9725',
-                'areaServed' => [
+                'areaServed' => ServiceArea::active()->orderBy('city')->get()->map(fn ($a) => [
                     '@type' => 'City',
-                    'name' => 'Denver',
+                    'name' => $a->city,
                     'containedInPlace' => ['@type' => 'State', 'name' => 'Colorado'],
-                ],
+                ])->values()->all(),
             ],
             'serviceType' => $this->service['title'],
             'url' => route('services.show', $this->slug),
@@ -90,7 +91,17 @@ new #[Layout('components.layouts.guest')] class extends Component
             'mainEntity' => $faqEntities,
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
-        return $serviceSchema . ',' . $howToSchema . ',' . $faqSchema;
+        $breadcrumb = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'BreadcrumbList',
+            'itemListElement' => [
+                ['@type' => 'ListItem', 'position' => 1, 'name' => 'Home', 'item' => url('/')],
+                ['@type' => 'ListItem', 'position' => 2, 'name' => 'Services', 'item' => url('/services')],
+                ['@type' => 'ListItem', 'position' => 3, 'name' => $this->service['title']],
+            ],
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        return $serviceSchema . ',' . $howToSchema . ',' . $faqSchema . ',' . $breadcrumb;
     }
 
     #[Computed]
