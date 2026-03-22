@@ -6,6 +6,8 @@ use App\Models\EmailMessage;
 use App\Models\PushSubscription;
 use App\Services\ChatService;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Minishlink\WebPush\Subscription;
 use Minishlink\WebPush\WebPush;
 
@@ -48,8 +50,17 @@ class WebPushChannel
         }
 
         foreach ($webPush->flush() as $report) {
+            $endpoint = Str::limit($report->getEndpoint(), 60);
+
             if ($report->isSubscriptionExpired()) {
                 PushSubscription::where('endpoint', $report->getEndpoint())->delete();
+                Log::warning('WebPush: subscription expired, removed', ['endpoint' => $endpoint]);
+            } elseif (! $report->isSuccess()) {
+                Log::error('WebPush: delivery failed', [
+                    'endpoint' => $endpoint,
+                    'status' => $report->getResponse()?->getStatusCode(),
+                    'reason' => $report->getReason(),
+                ]);
             }
         }
     }

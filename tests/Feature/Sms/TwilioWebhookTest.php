@@ -211,3 +211,125 @@ it('extends session TTL after routing reply', function () {
     $session->refresh();
     expect($session->expires_at->gt($originalExpiry))->toBeTrue();
 });
+
+it('reuses existing sms thread when session has expired for unknown number', function () {
+    User::factory()->internal()->create(['is_active' => true]);
+
+    // Simulate a previous SMS thread that was created for this phone
+    $existingThread = ChatThread::factory()->create([
+        'type' => ChatThread::TYPE_SUPPORT,
+        'source' => ChatThread::SOURCE_SMS_INBOUND,
+        'subject' => 'SMS from +15559876543',
+        'last_message_at' => now()->subDays(3),
+    ]);
+
+    // The old session has expired
+    SmsSession::create([
+        'user_id' => null,
+        'thread_id' => $existingThread->id,
+        'phone_number' => '+15559876543',
+        'expires_at' => now()->subDay(),
+    ]);
+
+    $this->mock(TwilioService::class, function ($mock) {
+        $mock->shouldReceive('validateWebhookSignature')->andReturn(true);
+        $mock->shouldReceive('formatE164')->with('+15559876543')->andReturn('+15559876543');
+    });
+
+    $this->mock(ChatService::class, function ($mock) {
+        $mock->shouldReceive('sendGuestMessage')->once();
+    });
+
+    $this->post(route('webhooks.twilio.sms'), [
+        'Body' => 'Hello again',
+        'From' => '+15559876543',
+    ]);
+
+    // Should NOT create a new thread — should reuse the existing one
+    $threads = ChatThread::where('source', ChatThread::SOURCE_SMS_INBOUND)
+        ->where('subject', 'LIKE', '%5559876543%')
+        ->get();
+
+    expect($threads)->toHaveCount(1);
+    expect($threads->first()->id)->toBe($existingThread->id);
+
+    // A new session should be created pointing to the existing thread
+    $newSession = SmsSession::where('phone_number', '+15559876543')
+        ->where('expires_at', '>', now())
+        ->first();
+
+    expect($newSession)->not->toBeNull();
+    expect($newSession->thread_id)->toBe($existingThread->id);
+});
+
+it('creates new thread for first-time sms from unknown number', function () {
+    User::factory()->internal()->create(['is_active' => true]);
+
+    $this->mock(TwilioService::class, function ($mock) {
+        $mock->shouldReceive('validateWebhookSignature')->andReturn(true);
+        $mock->shouldReceive('formatE164')->with('+15550001111')->andReturn('+15550001111');
+    });
+
+    $this->mock(ChatService::class, function ($mock) {
+        $mock->shouldReceive('sendGuestMessage')->once();
+    });
+
+    // No existing thread for this phone
+    expect(ChatThread::where('subject', 'LIKE', '%5550001111%')->count())->toBe(0);
+
+    $this->post(route('webhooks.twilio.sms'), [
+        'Body' => 'First time here',
+        'From' => '+15550001111',
+    ]);
+
+    $thread = ChatThread::where('source', ChatThread::SOURCE_SMS_INBOUND)
+        ->where('subject', 'LIKE', '%5550001111%')
+        ->first();
+
+    expect($thread)->not->toBeNull();
+    expect($thread->subject)->toBe('SMS from +15550001111');
+    expect($thread->type)->toBe(ChatThread::TYPE_SUPPORT);
+});
+
+it('links customer to reused thread when customer was created after first sms', function () {
+    User::factory()->internal()->create(['is_active' => true]);
+
+    // Previous thread with no customer
+    $existingThread = ChatThread::factory()->create([
+        'type' => ChatThread::TYPE_SUPPORT,
+        'source' => ChatThread::SOURCE_SMS_INBOUND,
+        'subject' => 'SMS from +15553334444',
+        'customer_id' => null,
+        'last_message_at' => now()->subDays(2),
+    ]);
+
+    SmsSession::create([
+        'user_id' => null,
+        'thread_id' => $existingThread->id,
+        'phone_number' => '+15553334444',
+        'expires_at' => now()->subDay(),
+    ]);
+
+    // Customer was created after the first SMS (e.g., manually added)
+    $customer = \App\Models\Customer::factory()->create([
+        'phone' => '+15553334444',
+        'user_id' => null,
+    ]);
+
+    $this->mock(TwilioService::class, function ($mock) {
+        $mock->shouldReceive('validateWebhookSignature')->andReturn(true);
+        $mock->shouldReceive('formatE164')->with('+15553334444')->andReturn('+15553334444');
+    });
+
+    $this->mock(ChatService::class, function ($mock) {
+        $mock->shouldReceive('sendGuestMessage')->once();
+    });
+
+    $this->post(route('webhooks.twilio.sms'), [
+        'Body' => 'Update on my project',
+        'From' => '+15553334444',
+    ]);
+
+    $existingThread->refresh();
+    expect($existingThread->customer_id)->toBe($customer->id);
+});

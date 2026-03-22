@@ -246,7 +246,7 @@ class TwilioWebhookController extends Controller
             }
         } else {
             // Known non-customer user (crew, agent, etc.) — create support thread
-            $thread = $this->createSmsSupporThread($phone);
+            $thread = $this->findOrCreateSmsThread($phone);
             $thread->addParticipant($sender);
             $isNewSupportThread = true;
         }
@@ -292,7 +292,8 @@ class TwilioWebhookController extends Controller
         $customer = $this->findCustomerByPhone($phone)
             ?? $this->findCustomerByPhoneIncludingLinked($phone);
 
-        $thread = $this->createSmsSupporThread($phone, $customer);
+        $thread = $this->findOrCreateSmsThread($phone, $customer);
+        $isNewThread = $thread->wasRecentlyCreated;
 
         if ($body !== '') {
             $this->chatService->sendGuestMessage(
@@ -304,21 +305,24 @@ class TwilioWebhookController extends Controller
 
         $this->createMediaAttachments($thread, $mediaUrls, ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer?->id]);
 
-        SmsSession::create([
-            'user_id' => null,
-            'customer_id' => $customer?->id,
-            'thread_id' => $thread->id,
-            'phone_number' => $phone,
-            'expires_at' => now()->addHours(24),
-        ]);
+        SmsSession::updateOrCreate(
+            ['phone_number' => $phone, 'thread_id' => $thread->id],
+            [
+                'user_id' => null,
+                'customer_id' => $customer?->id,
+                'expires_at' => now()->addHours(24),
+            ]
+        );
 
-        // Broadcast new thread notification AFTER message is saved (non-critical)
-        $this->safeBroadcastNewThread($thread);
+        if ($isNewThread) {
+            $this->safeBroadcastNewThread($thread);
+        }
 
         Log::info('Twilio webhook: routed cold inbound from unknown number', [
             'from' => $phone,
             'thread_id' => $thread->id,
             'customer_id' => $customer?->id,
+            'reused_thread' => ! $isNewThread,
         ]);
     }
 
@@ -327,7 +331,8 @@ class TwilioWebhookController extends Controller
      */
     private function routeKnownCustomerWithoutAccount(Customer $customer, string $phone, string $body, array $mediaUrls = []): void
     {
-        $thread = $this->createSmsSupporThread($phone, $customer);
+        $thread = $this->findOrCreateSmsThread($phone, $customer);
+        $isNewThread = $thread->wasRecentlyCreated;
 
         if ($body !== '') {
             $this->chatService->sendGuestMessage(
@@ -339,29 +344,53 @@ class TwilioWebhookController extends Controller
 
         $this->createMediaAttachments($thread, $mediaUrls, ['source' => 'sms', 'phone' => $phone, 'customer_id' => $customer->id]);
 
-        SmsSession::create([
-            'user_id' => null,
-            'customer_id' => $customer->id,
-            'thread_id' => $thread->id,
-            'phone_number' => $phone,
-            'expires_at' => now()->addHours(24),
-        ]);
+        SmsSession::updateOrCreate(
+            ['phone_number' => $phone, 'thread_id' => $thread->id],
+            [
+                'user_id' => null,
+                'customer_id' => $customer->id,
+                'expires_at' => now()->addHours(24),
+            ]
+        );
 
-        // Broadcast new thread notification AFTER message is saved (non-critical)
-        $this->safeBroadcastNewThread($thread);
+        if ($isNewThread) {
+            $this->safeBroadcastNewThread($thread);
+        }
 
         Log::info('Twilio webhook: routed cold inbound from known customer without account', [
             'from' => $phone,
             'customer_id' => $customer->id,
             'thread_id' => $thread->id,
+            'reused_thread' => ! $isNewThread,
         ]);
     }
 
     /**
-     * Create a support thread for inbound SMS and add internal users with chat.view_website_leads.
+     * Find an existing SMS support thread for this phone, or create a new one.
+     * Prevents duplicate threads when the same number texts after session expiry.
      */
-    private function createSmsSupporThread(string $phone, ?Customer $customer = null): ChatThread
+    private function findOrCreateSmsThread(string $phone, ?Customer $customer = null): ChatThread
     {
+        $digits = preg_replace('/\D/', '', $phone);
+        $last10 = substr($digits, -10);
+
+        // Search for an existing SMS inbound support thread for this phone
+        $existingThread = ChatThread::where('type', ChatThread::TYPE_SUPPORT)
+            ->where('source', ChatThread::SOURCE_SMS_INBOUND)
+            ->where('subject', 'LIKE', "%{$last10}%")
+            ->latest('last_message_at')
+            ->first();
+
+        if ($existingThread) {
+            if ($customer && ! $existingThread->customer_id) {
+                $existingThread->update(['customer_id' => $customer->id]);
+            }
+
+            $existingThread->update(['last_message_at' => now()]);
+
+            return $existingThread;
+        }
+
         $thread = ChatThread::create([
             'type' => ChatThread::TYPE_SUPPORT,
             'source' => ChatThread::SOURCE_SMS_INBOUND,
