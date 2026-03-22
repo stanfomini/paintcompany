@@ -73,6 +73,15 @@ Route::livewire('/how-it-works', 'public.how-it-works')
     ->name('how-it-works')
     ->middleware('throttle:60,1');
 
+// Painting Services Guide
+Route::livewire('/services', 'public.services-index')
+    ->name('services.index')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/services/{slug}', 'public.service-page')
+    ->name('services.show')
+    ->middleware('throttle:60,1');
+
 // Service area location pages (local SEO)
 Route::livewire('/areas', 'public.areas-index')
     ->name('areas.index')

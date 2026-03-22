@@ -25,6 +25,7 @@
                     <div class="mt-3 flex justify-center flex-wrap gap-4">
                         <a href="{{ route('how-it-works') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">How It Works</a>
                         <a href="{{ route('faq') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">FAQ</a>
+                        <a href="{{ route('services.index') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Services Guide</a>
                         <a href="{{ route('visualize') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Color Visualizer</a>
                         <a href="{{ route('areas.index') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Service Areas</a>
                         <a href="{{ route('legal.privacy') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Privacy Policy</a>

@@ -50,3 +50,32 @@ Painting Made Easy Denver has built a custom digital platform that includes:
 - Audio transcription for voice notes and project descriptions
 - Blueprint PDF processing for accurate room measurements
 - Automated workflow engine for lead-to-completion project management
+
+## Painting Service Guides
+
+Detailed how-to guides for every type of painting service, with step-by-step instructions, materials lists, Denver-specific pro tips, and cost factors.
+
+### Residential
+- [Interior House Painting](https://paintingmadeeasydenver.com/services/interior-painting)
+- [Exterior House Painting](https://paintingmadeeasydenver.com/services/exterior-painting)
+- [Cabinet Painting & Refinishing](https://paintingmadeeasydenver.com/services/cabinet-painting)
+- [Deck & Fence Staining](https://paintingmadeeasydenver.com/services/deck-fence-staining)
+- [Garage Floor Coating](https://paintingmadeeasydenver.com/services/garage-floor-coating)
+- [Popcorn Ceiling Removal & Repainting](https://paintingmadeeasydenver.com/services/popcorn-ceiling-removal)
+- [Drywall Repair & Patching](https://paintingmadeeasydenver.com/services/drywall-repair)
+- [Trim, Door & Molding Painting](https://paintingmadeeasydenver.com/services/trim-door-painting)
+- [Wallpaper Removal & Repainting](https://paintingmadeeasydenver.com/services/wallpaper-removal)
+
+### Commercial
+- [Commercial Interior Painting](https://paintingmadeeasydenver.com/services/commercial-interior)
+- [Commercial Exterior Painting](https://paintingmadeeasydenver.com/services/commercial-exterior)
+- [Warehouse & Industrial Painting](https://paintingmadeeasydenver.com/services/warehouse-industrial)
+- [HOA & Multi-Unit Painting](https://paintingmadeeasydenver.com/services/hoa-multiunit)
+
+### Specialty
+- [Parking Lot & Line Striping](https://paintingmadeeasydenver.com/services/line-striping)
+- [Pressure Washing & Surface Prep](https://paintingmadeeasydenver.com/services/pressure-washing)
+- [Color Consultation & Design](https://paintingmadeeasydenver.com/services/color-consultation)
+- [Elastomeric & Stucco Coating](https://paintingmadeeasydenver.com/services/stucco-coating)
+
+All guides include detailed step-by-step instructions, complete materials and tools lists, Denver/Colorado climate-specific pro tips (altitude, UV, dry air, temperature), cost factors, and FAQs.
