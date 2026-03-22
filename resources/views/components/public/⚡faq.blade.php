@@ -94,7 +94,7 @@ new #[Layout('components.layouts.guest')] #[Title('Frequently Asked Questions | 
                     ],
                     [
                         'q' => 'Do I need to move my furniture?',
-                        'a' => 'No. Our crew handles all furniture moving and protection as part of every job. We cover floors, move furniture to the center of the room, and put everything back when we are done. It is all included in your quote — no surprises.',
+                        'a' => 'We recommend moving small items and valuables before the crew arrives. For larger furniture, we offer furniture moving as an add-on service — you can include it in your estimate when building your quote. If selected, our crew will move furniture to the center of the room, cover and protect it during painting, and put everything back when we are done. We always protect your floors and surfaces regardless.',
                     ],
                     [
                         'q' => 'What paint brands do you use?',
