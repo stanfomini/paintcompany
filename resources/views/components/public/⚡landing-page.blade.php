@@ -20,10 +20,12 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         $company = CompanySetting::getInstance();
         $name = $company->company_name ?? config('app.name');
         $phone = $company->company_phone ?? '';
-        $address = $company->company_address ?? '';
-        $city = $company->company_city ?? 'Denver';
-        $state = $company->company_state ?? 'CO';
-        $zip = $company->company_zip ?? '';
+        $address = $company->address_line_1 ?? '';
+        $city = $company->city ?? 'Denver';
+        $state = $company->state ?? 'CO';
+        $zip = $company->zip_code ?? '';
+
+        $serviceAreas = \App\Models\ServiceArea::active()->orderBy('city')->get();
 
         $localBusiness = json_encode([
             '@context' => 'https://schema.org',
@@ -41,19 +43,23 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                 'postalCode' => $zip,
                 'addressCountry' => 'US',
             ],
-            'areaServed' => [
-                ['@type' => 'City', 'name' => 'Denver', 'sameAs' => 'https://en.wikipedia.org/wiki/Denver'],
-                ['@type' => 'City', 'name' => 'Lakewood'],
-                ['@type' => 'City', 'name' => 'Aurora'],
-                ['@type' => 'City', 'name' => 'Arvada'],
-                ['@type' => 'City', 'name' => 'Westminster'],
-                ['@type' => 'City', 'name' => 'Thornton'],
-                ['@type' => 'City', 'name' => 'Centennial'],
-                ['@type' => 'City', 'name' => 'Littleton'],
-                ['@type' => 'City', 'name' => 'Highlands Ranch'],
-                ['@type' => 'City', 'name' => 'Golden'],
+            'geo' => [
+                '@type' => 'GeoCoordinates',
+                'latitude' => 39.7392,
+                'longitude' => -104.9903,
             ],
+            'areaServed' => $serviceAreas->map(fn ($a) => [
+                '@type' => 'City',
+                'name' => $a->city,
+                'containedInPlace' => ['@type' => 'State', 'name' => 'Colorado'],
+            ])->values()->all(),
             'priceRange' => '$$',
+            'openingHoursSpecification' => [
+                '@type' => 'OpeningHoursSpecification',
+                'dayOfWeek' => ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+                'opens' => $company->business_hours_start ?? '08:00',
+                'closes' => $company->business_hours_end ?? '17:00',
+            ],
             'knowsAbout' => [
                 'AI color visualization for house painting',
                 'instant digital painting estimates',
@@ -68,6 +74,11 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                 'bestRating' => '5',
                 'worstRating' => '1',
             ],
+            'sameAs' => array_values(array_filter([
+                // 'https://www.google.com/maps/place/...',
+                // 'https://www.facebook.com/...',
+                // 'https://www.yelp.com/biz/...',
+            ])),
             'review' => [
                 [
                     '@type' => 'Review',
@@ -109,11 +120,11 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         $services = json_encode([
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Interior House Painting', 'description' => 'Professional interior painting for Denver homes. Instant digital pricing for every room, AI color visualization to preview colors on your walls, and real-time project tracking through our customer portal. Walls, ceilings, trim, doors, and cabinets.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Exterior House Painting', 'description' => 'Professional exterior painting and staining for Denver homes. Upload a photo of your home and our AI color visualizer shows you exactly what it will look like in your chosen color. Digital proposals, e-signatures, and real-time progress tracking. Siding, trim, decks, and fences.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Cabinet Painting', 'description' => 'Kitchen and bathroom cabinet painting and refinishing in Denver. Get an instant quote, sign digitally, and track your project in real time through our customer portal.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Deck and Fence Staining', 'description' => 'Professional deck and fence staining in Denver with digital estimates and real-time project tracking.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'AI Color Visualization', 'description' => 'Upload a photo of any room or exterior surface and see it in any paint color instantly. Our AI color visualizer works with Sherwin-Williams, Benjamin Moore, Behr, and PPG paint colors. Free to use.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Interior House Painting', 'description' => 'Professional interior painting for Denver homes. Instant digital pricing for every room, AI color visualization to preview colors on your walls, and real-time project tracking through our customer portal. Walls, ceilings, trim, doors, and cabinets.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => $serviceAreas->map(fn ($a) => ['@type' => 'City', 'name' => $a->city])->values()->all()],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Exterior House Painting', 'description' => 'Professional exterior painting and staining for Denver homes. Upload a photo of your home and our AI color visualizer shows you exactly what it will look like in your chosen color. Digital proposals, e-signatures, and real-time progress tracking. Siding, trim, decks, and fences.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => $serviceAreas->map(fn ($a) => ['@type' => 'City', 'name' => $a->city])->values()->all()],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Cabinet Painting', 'description' => 'Kitchen and bathroom cabinet painting and refinishing in Denver. Get an instant quote, sign digitally, and track your project in real time through our customer portal.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => $serviceAreas->map(fn ($a) => ['@type' => 'City', 'name' => $a->city])->values()->all()],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Deck and Fence Staining', 'description' => 'Professional deck and fence staining in Denver with digital estimates and real-time project tracking.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => $serviceAreas->map(fn ($a) => ['@type' => 'City', 'name' => $a->city])->values()->all()],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'AI Color Visualization', 'description' => 'Upload a photo of any room or exterior surface and see it in any paint color instantly. Our AI color visualizer works with Sherwin-Williams, Benjamin Moore, Behr, and PPG paint colors. Free to use.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => $serviceAreas->map(fn ($a) => ['@type' => 'City', 'name' => $a->city])->values()->all()],
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         $faq = json_encode([
@@ -1923,11 +1934,28 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         </div>
     </section>
 
+    {{-- Service Area Map --}}
+    @php $footerAreas = \App\Models\ServiceArea::active()->orderBy('city')->get(); @endphp
+    @if($footerAreas->where('latitude', '!=', null)->isNotEmpty())
+    <section class="bg-zinc-50 py-16">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6">
+            <div class="text-center mb-8">
+                <h2 class="text-3xl sm:text-4xl font-bold text-zinc-900 mb-3">{{ __('Denver to Fort Collins — We\'ve Got You Covered') }}</h2>
+                <p class="text-lg text-zinc-600">{{ __('30+ cities along the Front Range and I-25 corridor') }}</p>
+            </div>
+            @include('partials.service-area-map', [
+                'areas' => $footerAreas,
+                'center' => [39.95, -104.99],
+                'zoom' => 8,
+            ])
+        </div>
+    </section>
+    @endif
+
     {{-- Section 14: Footer --}}
     <footer class="bg-[#1B2D4F] text-white py-10 pwa-safe-bottom">
         <div class="max-w-5xl mx-auto px-6">
             {{-- Service Areas Links --}}
-            @php $footerAreas = \App\Models\ServiceArea::active()->orderBy('city')->get(); @endphp
             @if($footerAreas->isNotEmpty())
             <div class="mb-8 pb-8 border-b border-white/10">
                 <h3 class="text-sm font-bold text-blue-200 uppercase tracking-wider mb-4">{{ __('Service Areas') }}</h3>
