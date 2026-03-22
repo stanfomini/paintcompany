@@ -77,6 +77,7 @@ new class extends Component
             'overhead-tracking' => ['label' => __('Overhead'), 'icon' => 'building-office-2'],
             'marketing-tracking' => ['label' => __('Marketing'), 'icon' => 'megaphone'],
             'fb-ads-report' => ['label' => __('FB Ads'), 'icon' => 'signal'],
+            'messenger-report' => ['label' => __('Messenger'), 'icon' => 'chat-bubble-left-right'],
             'vendors' => ['label' => __('Vendors'), 'icon' => 'building-storefront'],
             'chart-of-accounts' => ['label' => __('Chart of Accounts'), 'icon' => 'list-bullet'],
             'journal-entries' => ['label' => __('Journal'), 'icon' => 'book-open'],
@@ -316,6 +317,8 @@ new class extends Component
             <livewire:dynamic-component :component="'business-plan.marketing-tracking'" :key="'marketing-tab'" />
         @elseif ($activeTab === 'fb-ads-report')
             <livewire:dynamic-component :component="'business-plan.fb-ads-report'" :key="'fb-ads-tab'" />
+        @elseif ($activeTab === 'messenger-report')
+            <livewire:dynamic-component :component="'business-plan.messenger-report'" :key="'messenger-tab'" />
         @elseif ($activeTab === 'vendors')
             <livewire:dynamic-component :component="'business-plan.vendors'" :key="'vendors-tab'" />
         @elseif ($activeTab === 'chart-of-accounts')

@@ -27,10 +27,10 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 
         $localBusiness = json_encode([
             '@context' => 'https://schema.org',
-            '@type' => 'LocalBusiness',
+            '@type' => 'HousePainter',
             '@id' => url('/').'#business',
             'name' => $name,
-            'description' => 'Professional house painting services in Denver, CO. Interior & exterior painting with real-time project tracking and a satisfaction guarantee.',
+            'description' => 'Denver\'s technology-driven painting company. AI color visualization lets you see paint colors on your walls before committing. Instant digital pricing, automated SMS project management, interactive online proposals with e-signatures, and a real-time customer portal to track every stage of your project. Interior and exterior painting for the Denver metro area.',
             'url' => url('/'),
             'telephone' => $phone,
             'address' => [
@@ -41,8 +41,26 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                 'postalCode' => $zip,
                 'addressCountry' => 'US',
             ],
-            'areaServed' => ['@type' => 'City', 'name' => 'Denver', 'sameAs' => 'https://en.wikipedia.org/wiki/Denver'],
+            'areaServed' => [
+                ['@type' => 'City', 'name' => 'Denver', 'sameAs' => 'https://en.wikipedia.org/wiki/Denver'],
+                ['@type' => 'City', 'name' => 'Lakewood'],
+                ['@type' => 'City', 'name' => 'Aurora'],
+                ['@type' => 'City', 'name' => 'Arvada'],
+                ['@type' => 'City', 'name' => 'Westminster'],
+                ['@type' => 'City', 'name' => 'Thornton'],
+                ['@type' => 'City', 'name' => 'Centennial'],
+                ['@type' => 'City', 'name' => 'Littleton'],
+                ['@type' => 'City', 'name' => 'Highlands Ranch'],
+                ['@type' => 'City', 'name' => 'Golden'],
+            ],
             'priceRange' => '$$',
+            'knowsAbout' => [
+                'AI color visualization for house painting',
+                'instant digital painting estimates',
+                'real-time painting project tracking',
+                'digital painting proposals with e-signatures',
+                'automated SMS painting consultations',
+            ],
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         $organization = json_encode([
@@ -61,29 +79,53 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         $services = json_encode([
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Interior House Painting', 'description' => 'Professional interior painting for homes in the Denver metro area. Walls, ceilings, trim, and cabinets.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Exterior House Painting', 'description' => 'Professional exterior painting and staining for Denver homes. Siding, trim, decks, and fences.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
-            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Cabinet Painting', 'description' => 'Kitchen and bathroom cabinet painting and refinishing in Denver, CO.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Interior House Painting', 'description' => 'Professional interior painting for Denver homes. Instant digital pricing for every room, AI color visualization to preview colors on your walls, and real-time project tracking through our customer portal. Walls, ceilings, trim, doors, and cabinets.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Exterior House Painting', 'description' => 'Professional exterior painting and staining for Denver homes. Upload a photo of your home and our AI color visualizer shows you exactly what it will look like in your chosen color. Digital proposals, e-signatures, and real-time progress tracking. Siding, trim, decks, and fences.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Cabinet Painting', 'description' => 'Kitchen and bathroom cabinet painting and refinishing in Denver. Get an instant quote, sign digitally, and track your project in real time through our customer portal.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'Deck and Fence Staining', 'description' => 'Professional deck and fence staining in Denver with digital estimates and real-time project tracking.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
+            ['@context' => 'https://schema.org', '@type' => 'Service', 'name' => 'AI Color Visualization', 'description' => 'Upload a photo of any room or exterior surface and see it in any paint color instantly. Our AI color visualizer works with Sherwin-Williams, Benjamin Moore, Behr, and PPG paint colors. Free to use.', 'provider' => ['@id' => url('/').'#business'], 'areaServed' => ['@type' => 'City', 'name' => 'Denver']],
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         $faq = json_encode([
             '@context' => 'https://schema.org',
             '@type' => 'FAQPage',
             'mainEntity' => [
-                ['@type' => 'Question', 'name' => 'How long does it take to paint a house?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Most interior projects take 2-5 days depending on the number of rooms and prep work needed. Exterior projects typically take 3-7 days. We provide a detailed timeline with your estimate so you know exactly what to expect.']],
-                ['@type' => 'Question', 'name' => 'What paint brands do you use?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'We use premium paints from Sherwin-Williams and Benjamin Moore. Our most popular choices include Sherwin-Williams Duration for exteriors and Benjamin Moore Regal Select for interiors. We are happy to work with your preferred brand and color.']],
+                ['@type' => 'Question', 'name' => 'How much does it cost to paint a house in Denver?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Interior painting in Denver typically ranges from $2,500 to $8,000 for an average home, depending on the number of rooms, prep work, and paint quality. Exterior projects range from $4,000 to $12,000. Painting Made Easy Denver offers instant digital pricing — select your rooms, pick a size, and get an accurate quote in seconds calculated from industry production rates for every surface.']],
+                ['@type' => 'Question', 'name' => 'Can I see what paint colors will look like on my walls before painting?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Yes. Painting Made Easy Denver offers a free AI color visualizer. Upload a photo of your room or home exterior, choose any color from Sherwin-Williams, Benjamin Moore, Behr, or PPG, and our AI generates a realistic preview showing exactly what it will look like. No guessing, no sample swatches on the wall — see the full result instantly.']],
+                ['@type' => 'Question', 'name' => 'How do I get a painting estimate in Denver?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'You can get a painting estimate three ways: text us and our SMS bot walks you through your project step by step collecting photos and details, use our website to get instant digital pricing by selecting rooms, or request a traditional in-home estimate. Most customers love the instant pricing because they see a real number in seconds, not days.']],
+                ['@type' => 'Question', 'name' => 'How do I track my painting project?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Through your personal customer portal. Painting Made Easy Denver provides real-time project tracking with five stages from estimate acceptance through completion. You can confirm dates, approve paint colors, review prep plans, view progress photos, and chat directly with your crew — all from your phone. Both you and the crew confirm every step before it moves forward.']],
+                ['@type' => 'Question', 'name' => 'What does the painting estimate look like?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'You receive a digital proposal you can open on any device. It shows every line item with detailed pricing, lets you choose add-on options, select between packages, and view project photos. When you are ready, sign electronically right on the page. No PDFs emailed back and forth, no printing, no scanning.']],
+                ['@type' => 'Question', 'name' => 'What paint brands do you use?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'We use premium paints from Sherwin-Williams and Benjamin Moore. Our most popular choices include Sherwin-Williams Duration for exteriors and Benjamin Moore Regal Select for interiors. You can preview any color on your actual walls using our AI color visualizer before making a decision.']],
+                ['@type' => 'Question', 'name' => 'How long does it take to paint a house?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Most interior projects take 2-5 days depending on the number of rooms and prep work needed. Exterior projects typically take 3-7 days. You will see a detailed timeline in your digital proposal and can track progress in real time through our customer portal with daily photo updates.']],
                 ['@type' => 'Question', 'name' => 'Do I need to move my furniture?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'No. Our crew handles all furniture moving and protection as part of every job. We cover floors, move furniture to the center of the room, and put everything back when we are done. It is all included in your quote.']],
-                ['@type' => 'Question', 'name' => 'How do virtual estimates work?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Simply submit photos of the areas you want painted through our customer portal. Our estimator reviews them, measures using advanced tools, and delivers a detailed quote, usually within 24 hours. No need to schedule an in-home visit.']],
                 ['@type' => 'Question', 'name' => 'Are you licensed and insured?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Yes. We are fully licensed, bonded, and insured in the state of Colorado. We carry general liability and workers compensation coverage on every job for your peace of mind.']],
                 ['@type' => 'Question', 'name' => 'What is included in your guarantee?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Every project comes with our Cleaner Than We Found It guarantee. If you find any drips, missed spots, or mess after we leave, we come back and fix it at no charge. We also warranty our workmanship for two years.']],
-                ['@type' => 'Question', 'name' => 'How much does it cost to paint a house in Denver?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Interior painting in Denver typically ranges from $2,500 to $8,000 for an average home, depending on the number of rooms, prep work, and paint quality. Exterior projects range from $4,000 to $12,000. Get a free, no-obligation estimate for your specific project.']],
+                ['@type' => 'Question', 'name' => 'What makes Painting Made Easy Denver different from other painters?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'Technology. We built a complete digital platform that transforms the painting experience. AI color visualization shows you results before we start. Instant digital pricing gives you accurate quotes in seconds. Our SMS bot and customer portal keep you connected to every step. Digital proposals with e-signatures eliminate paperwork. Real-time project tracking with photo updates provides full transparency. No other painting company in Denver offers this level of technology and customer experience.']],
+                ['@type' => 'Question', 'name' => 'How does payment work?', 'acceptedAnswer' => ['@type' => 'Answer', 'text' => 'We offer digital invoicing through Stripe. Pay securely online with credit card or bank transfer. No checks, no cash, no hassle. You receive your invoice digitally and can pay from any device.']],
             ],
+        ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
+
+        $webApp = json_encode([
+            '@context' => 'https://schema.org',
+            '@type' => 'WebApplication',
+            'name' => 'Painting Made Easy Denver Color Visualizer',
+            'description' => 'Free AI-powered color visualization tool. Upload a photo of any room or home exterior and see it in any paint color from Sherwin-Williams, Benjamin Moore, Behr, or PPG instantly. Uses computer vision to generate realistic previews.',
+            'url' => url('/visualize'),
+            'applicationCategory' => 'DesignApplication',
+            'operatingSystem' => 'Any',
+            'offers' => [
+                '@type' => 'Offer',
+                'price' => '0',
+                'priceCurrency' => 'USD',
+            ],
+            'provider' => ['@id' => url('/').'#business'],
         ], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 
         return '<script type="application/ld+json">'.$localBusiness.'</script>'
             .'<script type="application/ld+json">'.$organization.'</script>'
             .'<script type="application/ld+json">'.$services.'</script>'
-            .'<script type="application/ld+json">'.$faq.'</script>';
+            .'<script type="application/ld+json">'.$faq.'</script>'
+            .'<script type="application/ld+json">'.$webApp.'</script>';
     }
 
     public string $first_name = '';

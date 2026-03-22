@@ -21,6 +21,7 @@ class MessengerConversation extends Model
         'answers',
         'customer_id',
         'deal_id',
+        'entry_source',
         'booking_token',
         'booking_token_expires_at',
         'taken_over_by',

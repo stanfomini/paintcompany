@@ -13,7 +13,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Layout('components.layouts.guest')] #[Title('Special Offer')] class extends Component
+new #[Layout('components.layouts.guest-light')] #[Title('Special Offer')] class extends Component
 {
     public string $slug = '';
 

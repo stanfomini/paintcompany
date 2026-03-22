@@ -36,7 +36,7 @@ it('includes JSON-LD structured data', function () {
 
     $response->assertSuccessful()
         ->assertSee('application/ld+json', false)
-        ->assertSee('"@type": "LocalBusiness"', false)
+        ->assertSee('"@type": "HousePainter"', false)
         ->assertSee('"@type": "FAQPage"', false);
 });
 

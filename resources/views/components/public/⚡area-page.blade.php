@@ -42,9 +42,9 @@ new #[Layout('components.layouts.guest')] class extends Component
     {
         return json_encode([
             '@context' => 'https://schema.org',
-            '@type' => 'LocalBusiness',
+            '@type' => 'HousePainter',
             'name' => ($this->company->company_name ?? 'Painting Made Easy Denver') . ' - ' . $this->area->city,
-            'description' => $this->area->meta_description,
+            'description' => 'Professional house painting in ' . $this->area->city . ' with AI color visualization, instant digital pricing, real-time project tracking, and digital proposals with e-signatures. ' . ($this->area->meta_description ?? ''),
             '@id' => route('areas.show', $this->area->slug),
             'url' => route('areas.show', $this->area->slug),
             'telephone' => $this->company->company_phone,

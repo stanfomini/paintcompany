@@ -8,4 +8,38 @@ Disallow: /studio/
 Disallow: /walkie-talkie/
 Allow: /
 
+# AI Crawlers - Welcome
+User-agent: GPTBot
+Allow: /
+Disallow: /customer/
+Disallow: /agent/
+Disallow: /crew/
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /customer/
+Disallow: /agent/
+Disallow: /crew/
+
+User-agent: PerplexityBot
+Allow: /
+Disallow: /customer/
+Disallow: /agent/
+Disallow: /crew/
+
+User-agent: Google-Extended
+Allow: /
+Disallow: /customer/
+Disallow: /agent/
+Disallow: /crew/
+
+User-agent: Applebot-Extended
+Allow: /
+Disallow: /customer/
+Disallow: /agent/
+Disallow: /crew/
+
 Sitemap: https://paintingmadeeasydenver.com/sitemap.xml

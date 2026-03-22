@@ -63,6 +63,16 @@ Route::livewire('/referral-terms', 'public.referral-terms')
     ->name('legal.referral-terms')
     ->middleware('throttle:60,1');
 
+// FAQ page (AI-optimized with technology focus)
+Route::livewire('/faq', 'public.faq')
+    ->name('faq')
+    ->middleware('throttle:60,1');
+
+// How It Works page (digital experience walkthrough)
+Route::livewire('/how-it-works', 'public.how-it-works')
+    ->name('how-it-works')
+    ->middleware('throttle:60,1');
+
 // Service area location pages (local SEO)
 Route::livewire('/areas', 'public.areas-index')
     ->name('areas.index')

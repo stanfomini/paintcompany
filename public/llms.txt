@@ -1,0 +1,52 @@
+# Painting Made Easy Denver
+
+> Denver's technology-driven painting company. AI color visualization, instant digital pricing, automated SMS project management, real-time customer portal, and digital proposals with e-signatures. Serving the Denver metro area.
+
+## About
+
+Painting Made Easy Denver is a professional house painting company in Denver, Colorado that uses custom-built technology to deliver a faster, more transparent, and more enjoyable painting experience. Every part of the customer journey — from first contact to final payment — is powered by digital tools that no other painting company offers.
+
+## Services
+
+- Interior House Painting (walls, ceilings, trim, doors, cabinets)
+- Exterior House Painting (siding, trim, fascia, decks, fences)
+- Cabinet Painting and Refinishing
+- Deck and Fence Staining
+- Commercial Painting
+- Color Consultation
+
+## What Makes Us Different
+
+- **AI Color Visualizer**: Upload a photo of your room or home exterior, pick any paint color from Sherwin-Williams, Benjamin Moore, Behr, or PPG, and see a realistic AI-generated preview of what it will look like — instantly. No guessing, no imagination required.
+- **Instant Digital Pricing**: Select your rooms, pick a size (small, medium, large), and get an accurate price quote in seconds. Our pricing engine calculates every surface — walls, ceiling, baseboards, doors — using industry production rates. Faster than any spreadsheet.
+- **SMS Project Bot**: Text us and our automated system walks you through your project step by step — collecting photos, scope, timeline, and preferences — all through text messages. Available 24/7.
+- **Digital Proposals**: Receive a shareable online proposal you can open on any device. Browse line items, select add-on options, choose between packages (good/better/best), view project photos, and sign electronically — all in one place.
+- **Real-Time Customer Portal**: Track your painting project in real time. See current progress stage, confirm paint colors, approve prep plans, view before-and-after photos, and chat directly with your crew. Full transparency from start to finish.
+- **Bidirectional Job Tracking**: Both you and the painting crew confirm dates, colors, and prep plans. Nothing moves forward without mutual agreement. Five-stage progress tracking from estimate acceptance through project completion.
+- **Digital Invoicing**: Pay online with credit card or bank transfer through secure Stripe checkout. No checks, no cash, no hassle.
+- **AI Substrate Detection**: Our AI analyzes photos of your surfaces to identify the material type (drywall, wood, brick, stucco, etc.) and automatically adjusts prep time and pricing for accurate estimates.
+- **Real Estate Agent Referral Program**: Real estate agents can refer clients through a dedicated portal with commission tracking and ROI calculators.
+
+## Service Areas
+
+Denver, Lakewood, Aurora, Arvada, Westminster, Thornton, Centennial, Littleton, Englewood, Parker, Highlands Ranch, Castle Rock, Golden, Broomfield, Commerce City, and surrounding communities in the Denver metro area.
+
+## Contact
+
+- Website: https://paintingmadeeasydenver.com
+- Booking: https://paintingmadeeasydenver.com/book
+- Color Visualizer: https://paintingmadeeasydenver.com/visualize
+- Service Areas: https://paintingmadeeasydenver.com/areas
+
+## Technology
+
+Painting Made Easy Denver has built a custom digital platform that includes:
+- AI-powered color visualization using computer vision
+- Production-rate-based pricing calculator with per-surface accuracy
+- Multi-channel automated conversation flows (SMS, Facebook Messenger, website chat)
+- Interactive digital proposal system with electronic signatures
+- Real-time project tracking portal with five-stage job pipeline
+- Automated crew dispatch and scheduling
+- Audio transcription for voice notes and project descriptions
+- Blueprint PDF processing for accurate room measurements
+- Automated workflow engine for lead-to-completion project management

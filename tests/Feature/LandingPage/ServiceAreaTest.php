@@ -74,7 +74,7 @@ it('renders area page with JSON-LD structured data', function () {
 
     $response->assertSuccessful();
     $response->assertSee('application/ld+json', false);
-    $response->assertSee('LocalBusiness', false);
+    $response->assertSee('HousePainter', false);
 });
 
 it('renders other service areas links on area page', function () {

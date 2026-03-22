@@ -19,7 +19,7 @@ class MessengerBotFlowService
     /**
      * Start a new bot conversation for a thread if an active flow exists.
      */
-    public function startConversation(ChatThread $thread, string $psid, ?MessengerBotFlow $flowOverride = null): ?MessengerConversation
+    public function startConversation(ChatThread $thread, string $psid, ?MessengerBotFlow $flowOverride = null, ?string $entrySource = null): ?MessengerConversation
     {
         $flow = $flowOverride ?? $this->getActiveFlow();
         if (! $flow) {
@@ -34,6 +34,7 @@ class MessengerBotFlowService
             'thread_id' => $thread->id,
             'facebook_psid' => $psid,
             'fb_profile_data' => array_filter($fbProfile, fn ($v) => $v !== null) ?: null,
+            'entry_source' => $entrySource,
             'status' => 'in_progress',
             'answers' => [],
             'started_at' => now(),

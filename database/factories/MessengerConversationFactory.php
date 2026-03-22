@@ -23,6 +23,7 @@ class MessengerConversationFactory extends Factory
             'fb_profile_data' => null,
             'customer_id' => null,
             'deal_id' => null,
+            'entry_source' => null,
             'booking_token' => null,
             'booking_token_expires_at' => null,
             'started_at' => now(),
