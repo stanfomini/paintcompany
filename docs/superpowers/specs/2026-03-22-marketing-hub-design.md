@@ -16,22 +16,25 @@ The Bot Tracker is the default tab because every marketing strategy ultimately f
 ## Navigation & Permissions
 
 ### Sidebar
-- **Location**: Sales group in the internal sidebar (`resources/views/layouts/app/sidebar.blade.php`)
+- **Location**: Platform group in the internal sidebar (`resources/views/layouts/app/sidebar.blade.php`)
 - **Icon**: `megaphone`
 - **Label**: "Marketing"
 - **Route**: `/marketing` (defaults to Bot Tracker tab)
 - **Current detection**: `request()->routeIs('marketing.*')`
+- **Visibility**: `@can('marketing.view')`
+
+Placed in Platform group (not Sales) because the Sales group is gated by `@canany(['sales_territories.view', ...])` — placing it there would hide Marketing from users who have `marketing.view` but no sales permissions.
 
 ### Permissions
 | Permission | Roles | Purpose |
 |------------|-------|---------|
-| `marketing.view` | owner, admin, manager | View dashboard, bot tracker, playbooks |
+| `marketing.view` | owner, admin, manager, estimator | View dashboard, bot tracker, playbooks |
 | `marketing.manage` | owner, admin | Configure automations, activate/pause strategies, edit settings |
 
-Add to `RolesAndPermissionsSeeder.php` in a new `'marketing'` group.
+Add to `RolesAndPermissionsSeeder.php` in a new `'marketing'` group. Owner gets all permissions automatically via `syncPermissions(Permission::all())`. Explicitly add `marketing.view` to admin, manager, and estimator role arrays. Add `marketing.manage` to admin role array only.
 
 ### Routes
-New route file: `routes/marketing.php`
+Routes defined in `routes/web.php` inside the existing `middleware(['auth', 'verified', 'auth.internal'])` group, matching the pattern used by Media Hub, Business Plan, and other internal feature routes. Not a separate route file.
 
 ```
 GET  /marketing                    → marketing.index (redirects to bot-tracker)
@@ -43,9 +46,7 @@ GET  /marketing/new-homeowners     → marketing.new-homeowners
 GET  /marketing/partnerships       → marketing.partnerships
 ```
 
-All wrapped in `middleware(['auth', 'verified', 'auth.internal', 'permission:marketing.view'])`.
-
-Register in `bootstrap/app.php` like existing route files.
+All additionally wrapped in `middleware('permission:marketing.view')`.
 
 ---
 
@@ -89,6 +90,20 @@ marketing_strategies
 | `vehicle_wraps` | partnerships | Vehicle Wraps & QR Codes |
 | `yard_signs` | partnerships | Yard Signs & Door Hangers |
 | `events` | partnerships | Events & Home Shows |
+
+### Required Schema Changes (Existing Tables)
+
+**Migration: Add columns to `sms_conversations`**
+`SmsConversation` is missing columns that `MessengerConversation` has and that the Bot Tracker needs:
+- `entry_source` (string, nullable) — 'keyword', 'new_lead', 'webhook', 'manual'
+- `customer_id` (FK to customers, nullable) — direct link to customer created from conversation
+- `started_at` (datetime, nullable) — explicit start timestamp (currently only `created_at`)
+
+**Migration: Add `facebook_ad_id` to `messenger_conversations`**
+Currently there is no way to attribute a specific conversation to a specific Facebook ad. `MessengerAdFlowMapping` maps ads to flows, but multiple ads can map to the same flow. Adding `facebook_ad_id` (string, nullable, indexed) to `messenger_conversations` enables per-ad attribution. Populated from the referral data in `FacebookMessengerService::handleMessage()` when `entry_source = 'ad'`.
+
+**Migration: Add `sms_marketing_consent` to `customers`**
+The re-engagement automation needs to check SMS marketing consent per customer. Add `sms_marketing_consent` (boolean, default false) and `sms_consented_at` (datetime, nullable) to `customers` table. Populated from lead form submissions and Twilio opt-in/opt-out handling.
 
 ---
 
@@ -139,10 +154,11 @@ Query `MessengerConversation` grouped by `entry_source`:
 - **Default**: Organic/direct conversations — count, completion rate
 
 ### Ad Campaign Attribution Table
-From `MessengerAdFlowMapping` joined with `MessengerConversation`:
+Join `MessengerConversation.facebook_ad_id` → `MessengerAdFlowMapping.facebook_ad_id` (new column added in schema migration above):
 - Campaign Name | Ad Name | Conversations | Completed | Leads | Conversion Rate
 - Sortable columns
 - Links to flow builder for the mapped bot flow
+- Only shows conversations where `entry_source = 'ad'` and `facebook_ad_id` is not null
 
 ### Bot Flow Performance Table
 From `MessengerBotFlow` + `SmsBotFlow` with conversation counts:
@@ -153,6 +169,7 @@ From `MessengerBotFlow` + `SmsBotFlow` with conversation counts:
 For each flow, show completion rate at each step:
 - Step 1: 100% → Step 2: 82% → Step 3: 71% → ... → Completed: 58%
 - Highlights the step with biggest drop-off
+- **Query approach**: Count conversations that have a `step_{id}` key in their `answers` JSON column. Use `JSON_CONTAINS_PATH` for MySQL. For abandoned conversations, `current_step_id` indicates the step where they dropped off.
 
 ### Live Conversation Feed (Collapsible)
 Recent conversations (last 24h) as a scrollable list:
@@ -384,7 +401,7 @@ Tracks automated campaign executions.
 ```
 marketing_campaign_logs
 ├── id (bigint, PK)
-├── strategy_key (string) — FK-like to MarketingStrategy.key
+├── marketing_strategy_id (bigint, FK to marketing_strategies) — proper FK, not string key
 ├── trigger_type (string) — 'job_completed', 'scheduled', 'manual'
 ├── trigger_id (nullable bigint) — Job ID, Customer ID, etc.
 ├── trigger_model (nullable string) — 'App\Models\Job', etc.
@@ -397,22 +414,30 @@ marketing_campaign_logs
 ├── created_at, updated_at
 ```
 
-### Job Completed Event Listener
+### Job Completed Automation Hook
 
-New listener: `App\Listeners\TriggerMarketingCampaigns`
+**Problem**: `JobService::completeJob()` does not dispatch a standard Laravel event. It calls `$job->update()` directly and runs side effects inline (commissions, invoices, cost cards).
 
-Listens to Job stage transition to `completed`. Checks each automated strategy:
+**Solution**: Add marketing campaign logic directly into `JobService::completeJob()`, matching the existing pattern where other side effects (commissions, invoices) are already called inline. This is consistent with how the codebase handles job completion side effects.
+
+Add a call to `MarketingCampaignService::onJobCompleted($job)` at the end of `completeJob()`. This new service checks each automated strategy:
 1. Is `neighborhood_campaigns` active? → Log campaign with job address
-2. Is `referral_program` active? → Schedule SMS after delay
-3. Is `review_requests` active? → Schedule SMS after delay
+2. Is `referral_program` active? → Dispatch delayed SMS job
+3. Is `review_requests` active? → Dispatch delayed SMS job
 
-Uses existing `TwilioService` for SMS sending. Delay handled via `dispatch()->delay()`.
+**New file**: `App\Services\MarketingCampaignService`
+- `onJobCompleted(Job $job)` — Checks strategy status, dispatches delayed jobs
+- `sendReferralSms(Job $job)` — Sends referral SMS using TwilioService
+- `sendReviewRequest(Job $job)` — Sends review request SMS using TwilioService
+- `logNeighborhoodCampaign(Job $job)` — Creates campaign log entry for manual fulfillment
+
+Delayed jobs verify the Job is still in `completed` status before sending, in case the stage is reverted during the delay period.
 
 ### Scheduled Re-engagement Check
 
 New scheduled command (daily): `marketing:check-reengagement`
 
-Queries customers whose last completed job was X months ago, no active deal, has SMS consent. Queues re-engagement SMS for each.
+Queries customers whose last completed Job was X months ago, no active Deal, has `sms_marketing_consent = true` (new column on customers table). Queues re-engagement SMS for each. Creates `MarketingCampaignLog` entries for tracking.
 
 ---
 
@@ -421,9 +446,8 @@ Queries customers whose last completed job was X months ago, no active deal, has
 ### New Files
 | File | Purpose |
 |------|---------|
-| `routes/marketing.php` | Marketing routes |
 | `resources/views/pages/marketing/layout.blade.php` | Shared sidebar nav |
-| `resources/views/pages/marketing/⚡bot-tracker.blade.php` | Bot Tracker tab |
+| `resources/views/pages/marketing/⚡bot-tracker.blade.php` | Bot Tracker tab (default) |
 | `resources/views/pages/marketing/⚡dashboard.blade.php` | Dashboard tab |
 | `resources/views/pages/marketing/⚡automated.blade.php` | Automated campaigns tab |
 | `resources/views/pages/marketing/⚡paid-ads.blade.php` | Paid advertising tab |
@@ -431,20 +455,28 @@ Queries customers whose last completed job was X months ago, no active deal, has
 | `resources/views/pages/marketing/⚡partnerships.blade.php` | Partnerships tab |
 | `app/Models/MarketingStrategy.php` | Strategy status/config model |
 | `app/Models/MarketingCampaignLog.php` | Campaign execution log |
+| `app/Services/MarketingCampaignService.php` | Automation service (job completed hooks) |
 | `database/migrations/..._create_marketing_strategies_table.php` | Strategy table |
 | `database/migrations/..._create_marketing_campaign_logs_table.php` | Campaign log table |
+| `database/migrations/..._add_marketing_columns_to_sms_conversations.php` | entry_source, customer_id, started_at |
+| `database/migrations/..._add_facebook_ad_id_to_messenger_conversations.php` | Per-ad attribution |
+| `database/migrations/..._add_sms_marketing_consent_to_customers.php` | SMS consent tracking |
 | `database/seeders/MarketingStrategySeeder.php` | Seed all 16 strategies |
 | `database/factories/MarketingStrategyFactory.php` | Test factory |
 | `database/factories/MarketingCampaignLogFactory.php` | Test factory |
-| `app/Listeners/TriggerMarketingCampaigns.php` | Job completed listener |
 | `app/Console/Commands/MarketingCheckReengagement.php` | Daily re-engagement check |
 
 ### Modified Files
 | File | Change |
 |------|--------|
-| `resources/views/layouts/app/sidebar.blade.php` | Add Marketing nav item |
+| `resources/views/layouts/app/sidebar.blade.php` | Add Marketing nav item in Platform group |
 | `database/seeders/RolesAndPermissionsSeeder.php` | Add marketing.view, marketing.manage |
-| `bootstrap/app.php` | Register marketing routes |
+| `routes/web.php` | Add marketing routes in auth.internal group |
+| `app/Services/JobService.php` | Add MarketingCampaignService::onJobCompleted() call |
+| `app/Services/FacebookMessengerService.php` | Store facebook_ad_id on conversation creation |
+| `app/Models/SmsConversation.php` | Add entry_source, customer_id, started_at to fillable/casts |
+| `app/Models/MessengerConversation.php` | Add facebook_ad_id to fillable |
+| `app/Models/Customer.php` | Add sms_marketing_consent, sms_consented_at to fillable/casts |
 
 ---
 
