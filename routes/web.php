@@ -852,4 +852,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->middleware('permission:phone.make_calls');
 });
 
+// Marketing Hub
+Route::middleware(['auth', 'verified', 'auth.internal', 'permission:marketing.view'])->group(function () {
+    Route::get('/marketing', fn () => redirect()->route('marketing.bot-tracker'))->name('marketing.index');
+    Route::livewire('/marketing/bot-tracker', 'pages::marketing.bot-tracker')->name('marketing.bot-tracker');
+    Route::livewire('/marketing/dashboard', 'pages::marketing.dashboard')->name('marketing.dashboard');
+    Route::livewire('/marketing/automated', 'pages::marketing.automated')->name('marketing.automated');
+    Route::livewire('/marketing/paid-ads', 'pages::marketing.paid-ads')->name('marketing.paid-ads');
+    Route::livewire('/marketing/new-homeowners', 'pages::marketing.new-homeowners')->name('marketing.new-homeowners');
+    Route::livewire('/marketing/partnerships', 'pages::marketing.partnerships')->name('marketing.partnerships');
+});
+
 require __DIR__.'/settings.php';

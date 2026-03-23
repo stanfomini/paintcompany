@@ -86,6 +86,11 @@
                             {{ __('Bookings') }}
                         </flux:sidebar.item>
                     @endcan
+                    @can('marketing.view')
+                        <flux:sidebar.item icon="megaphone" :href="route('marketing.bot-tracker')" :current="request()->routeIs('marketing.*')" wire:navigate>
+                            {{ __('Marketing') }}
+                        </flux:sidebar.item>
+                    @endcan
                 </flux:sidebar.group>
 
                 @canany(['sales_territories.view', 'door_knocks.record', 'territory_dispatch.claim'])

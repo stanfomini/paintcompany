@@ -268,6 +268,10 @@ class RolesAndPermissionsSeeder extends Seeder
             // AI Features
             'ai.workflow_builder',
             'ai.estimate_builder',
+
+            // Marketing
+            'marketing.view',
+            'marketing.manage',
         ];
 
         foreach ($permissions as $permission) {
@@ -378,6 +382,8 @@ class RolesAndPermissionsSeeder extends Seeder
             // AI Features
             'ai.workflow_builder',
             'ai.estimate_builder',
+            // Marketing
+            'marketing.view', 'marketing.manage',
         ]);
 
         // Manager - view + edit, no management or deletion
@@ -461,6 +467,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'phone.view_company_voicemails', 'phone.manage_voicemails',
             // Bookings
             'bookings.manage',
+            // Marketing (view only)
+            'marketing.view',
         ]);
 
         // Estimator - focused on estimates, properties, deals
@@ -514,6 +522,8 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.own',
             // Phone System
             'phone.view_call_history', 'phone.make_calls', 'phone.receive_calls',
+            // Marketing (view only)
+            'marketing.view',
         ]);
 
         // HR Manager - focused on employee management, hiring, onboarding, payroll

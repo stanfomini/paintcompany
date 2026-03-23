@@ -305,6 +305,9 @@ class JobService
 
         $this->plannerAutomation->onJobCompleted($job);
 
+        // Trigger marketing campaigns (referral SMS, review requests, neighborhood campaigns)
+        app(MarketingCampaignService::class)->onJobCompleted($job);
+
         // Also complete the deal
         $job->deal?->moveTo('completed');
 
