@@ -72,7 +72,7 @@ it('includes structured data with ItemList schema', function () {
 it('includes meta description', function () {
     $this->get('/services')
         ->assertSuccessful()
-        ->assertSee('Complete painting services guide for Denver homeowners', false);
+        ->assertSee('Denver painting services guide', false);
 });
 
 it('includes the CTA section', function () {

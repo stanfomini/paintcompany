@@ -469,19 +469,13 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 }; ?>
 
 <div>
-    @push('seo_meta')
-    <meta name="description" content="Denver house painting with AI color preview, instant pricing &amp; real-time tracking. Interior, exterior &amp; cabinets. Free estimates.">
-    <link rel="canonical" href="{{ url('/') }}">
-    <meta name="robots" content="index, follow">
-    <meta property="og:title" content="Professional House Painting Denver | Painting Made Easy Denver">
-    <meta property="og:description" content="Denver homeowners get a stress-free painting experience with real-time project tracking, daily photo updates, and a satisfaction guarantee.">
-    <meta property="og:url" content="{{ url('/') }}">
-    <meta property="og:type" content="website">
-    <meta property="og:locale" content="{{ str_replace('_', '-', app()->getLocale()) }}">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Professional House Painting Denver | Painting Made Easy Denver">
-    <meta name="twitter:description" content="Denver homeowners get a stress-free painting experience with real-time project tracking, daily photo updates, and a satisfaction guarantee.">
-    @endpush
+    @section('meta_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Interior, exterior & cabinets. Free estimates.')
+    @section('canonical', url('/'))
+    @section('robots', 'index, follow')
+    @section('og_title', 'Professional House Painting Denver | Painting Made Easy Denver')
+    @section('og_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Free estimates.')
+    @section('og_url', url('/'))
+    @section('og_type', 'website')
 
     @push('structured_data')
     {!! $this->structuredData !!}

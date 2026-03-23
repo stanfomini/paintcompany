@@ -168,18 +168,13 @@ new #[Layout('components.layouts.guest')] #[Title('Painting Services Guide | Pai
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
-    @push('seo_meta')
-    <meta name="description" content="Denver painting services guide. Interior, exterior, cabinet, commercial &amp; specialty painting with Colorado climate tips.">
-    <link rel="canonical" href="{{ route('services.index') }}">
-    <meta name="robots" content="index, follow">
-    <meta property="og:title" content="Painting Services Guide | Painting Made Easy Denver">
-    <meta property="og:description" content="Complete painting services guide for Denver homeowners and businesses. Expert tips for Colorado's climate.">
-    <meta property="og:url" content="{{ route('services.index') }}">
-    <meta property="og:type" content="website">
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Painting Services Guide | Painting Made Easy Denver">
-    <meta name="twitter:description" content="Complete painting services guide for Denver homeowners and businesses. Expert tips for Colorado's climate.">
-    @endpush
+    @section('meta_description', 'Denver painting services guide. Interior, exterior, cabinet, commercial & specialty painting with Colorado climate tips.')
+    @section('canonical', route('services.index'))
+    @section('robots', 'index, follow')
+    @section('og_title', 'Painting Services Guide | Painting Made Easy Denver')
+    @section('og_description', 'Denver painting services guide. Interior, exterior, cabinet, commercial & specialty painting with Colorado tips.')
+    @section('og_url', route('services.index'))
+    @section('og_type', 'website')
 
     {{-- Hero --}}
     <section class="bg-gradient-to-br from-[#1B2D4F] via-[#1e3a6e] to-[#2563EB] text-white pt-12">
