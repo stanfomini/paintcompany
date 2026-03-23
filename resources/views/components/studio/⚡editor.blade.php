@@ -1535,4 +1535,7 @@ class extends Component {
         </div>
     </flux:modal>
 
+    @assets
+    @vite('resources/js/studio-editor.js')
+    @endassets
 </div>

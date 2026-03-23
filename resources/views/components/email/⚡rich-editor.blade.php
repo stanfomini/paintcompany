@@ -39,4 +39,8 @@ new class extends Component {
         class="{{ $minimal ? 'rounded-lg border' : 'rounded-b-lg border border-t-0' }} border-zinc-200 dark:border-zinc-700"
         @tiptap-update.window="$wire.set('content', $event.detail.content)">
     </div>
+
+    @assets
+    @vite('resources/js/tiptap-editor.js')
+    @endassets
 </div>

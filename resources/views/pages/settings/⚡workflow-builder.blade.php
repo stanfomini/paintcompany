@@ -1489,4 +1489,9 @@ new class extends Component {
             </div>
         </flux:modal>
     @endcan
+
+    @assets
+    @vite('resources/js/workflow-builder.js')
+    @vite('resources/js/tiptap-editor.js')
+    @endassets
 </div>

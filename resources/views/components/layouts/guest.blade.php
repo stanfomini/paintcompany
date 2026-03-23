@@ -18,7 +18,7 @@
         gtag('config', 'G-D4F4V2J77S');
         </script>
         @endproduction
-        @include('partials.head')
+        @include('partials.head-public')
         @isset($structuredData)
         <script type="application/ld+json">
         {!! $structuredData !!}

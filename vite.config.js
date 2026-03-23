@@ -11,6 +11,11 @@ export default defineConfig({
             input: [
                 'resources/css/app.css',
                 'resources/js/app.js',
+                'resources/js/app-public.js',
+                'resources/js/studio-editor.js',
+                'resources/js/tiptap-editor.js',
+                'resources/js/workflow-builder.js',
+                'resources/js/territory-map.js',
                 'resources/js/video-player.tsx',
                 'resources/js/photo-annotator.js',
                 'resources/js/promo-player.tsx',
