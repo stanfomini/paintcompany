@@ -22,7 +22,7 @@ class CallGroupFactory extends Factory
         return [
             'name' => fake()->words(2, true).' Team',
             'description' => fake()->optional()->sentence(),
-            'ring_timeout_seconds' => fake()->randomElement([15, 20, 25, 30]),
+            'ring_timeout_seconds' => fake()->randomElement([12, 15, 17, 20]),
             'is_active' => true,
             'sort_order' => 0,
         ];

@@ -47,8 +47,7 @@ class ProcessCallRecordingJob implements ShouldQueue
         }
 
         try {
-            // Download the recording from Twilio (append .mp3 for MP3 format)
-            $recordingUrl = rtrim($callLog->recording_url, '/').'.mp3';
+            $recordingUrl = $callLog->getPlayableRecordingUrl();
 
             $response = Http::timeout(60)->get($recordingUrl);
 

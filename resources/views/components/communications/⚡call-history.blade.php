@@ -250,13 +250,13 @@ new class extends Component
                         @if ($log->hasRecording())
                             <div class="mt-2">
                                 <button
-                                    @click="togglePlay('{{ $log->recording_url }}'); $wire.markListened({{ $log->id }})"
+                                    @click="togglePlay('{{ $log->getPlayableRecordingUrl() }}'); $wire.markListened({{ $log->id }})"
                                     class="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
                                 >
-                                    <template x-if="currentUrl === '{{ $log->recording_url }}' && playing">
+                                    <template x-if="currentUrl === '{{ $log->getPlayableRecordingUrl() }}' && playing">
                                         <flux:icon name="pause" class="w-3.5 h-3.5" />
                                     </template>
-                                    <template x-if="currentUrl !== '{{ $log->recording_url }}' || !playing">
+                                    <template x-if="currentUrl !== '{{ $log->getPlayableRecordingUrl() }}' || !playing">
                                         <flux:icon name="play" class="w-3.5 h-3.5" />
                                     </template>
                                     <span>

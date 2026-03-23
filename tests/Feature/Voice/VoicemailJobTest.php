@@ -20,7 +20,7 @@ describe('TranscribeVoicemailJob', function () {
 
         $this->mock(PythonBridgeService::class, function ($mock) {
             $mock->shouldReceive('transcribeAudio')
-                ->with('https://api.twilio.com/recordings/REtest123')
+                ->with('https://api.twilio.com/recordings/REtest123.mp3')
                 ->once()
                 ->andReturn([
                     'success' => true,

@@ -472,3 +472,22 @@ it('can clear extension by saving empty value', function () {
     $user->refresh();
     expect($user->extension)->toBeNull();
 });
+
+// --- Ring Timeout Defaults ---
+
+it('defaults ring timeout to 17 seconds', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->assertSet('ringTimeout', 17);
+});
+
+it('shows cell phone voicemail warning when ring timeout exceeds 20 seconds', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ringTimeout', 25)
+        ->assertSee('Most cell phones route to voicemail after 20-25 seconds');
+});
+
+it('does not show cell phone voicemail warning when ring timeout is 20 or under', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ringTimeout', 17)
+        ->assertDontSee('Most cell phones route to voicemail after 20-25 seconds');
+});

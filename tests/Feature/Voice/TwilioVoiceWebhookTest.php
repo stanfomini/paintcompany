@@ -192,7 +192,7 @@ describe('recording webhook', function () {
 
         $callLog->refresh();
         expect($callLog->recording_sid)->toBe('REabc123')
-            ->and($callLog->recording_url)->toBe($recordingUrl)
+            ->and($callLog->recording_url)->toBe($recordingUrl.'.mp3')
             ->and($callLog->recording_duration_seconds)->toBe(30);
 
         // Voicemail status triggers transcription job

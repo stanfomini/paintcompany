@@ -195,6 +195,12 @@ class TwilioVoiceWebhookController extends Controller
         $recordingUrl = $request->input('RecordingUrl', '');
         $recordingDuration = $request->input('RecordingDuration');
 
+        // Twilio returns recording URLs without file extension (returns JSON).
+        // Append .mp3 so the URL is directly playable in browsers and by services.
+        if (! empty($recordingUrl) && ! str_ends_with($recordingUrl, '.mp3')) {
+            $recordingUrl = rtrim($recordingUrl, '/').'.mp3';
+        }
+
         $callLog = CallLog::where('twilio_call_sid', $callSid)->first();
 
         if (! $callLog) {

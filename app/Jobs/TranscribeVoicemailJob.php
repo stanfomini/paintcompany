@@ -49,7 +49,7 @@ class TranscribeVoicemailJob implements ShouldQueue
         }
 
         try {
-            $result = $pythonBridge->transcribeAudio($callLog->recording_url);
+            $result = $pythonBridge->transcribeAudio($callLog->getPlayableRecordingUrl());
 
             if (! ($result['success'] ?? false)) {
                 Log::warning('TranscribeVoicemailJob: Transcription failed', [

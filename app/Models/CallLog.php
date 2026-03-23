@@ -178,6 +178,24 @@ class CallLog extends Model
         return $this->voicemail_for_user_id !== null;
     }
 
+    /**
+     * Get the playable recording URL (ensures .mp3 extension for Twilio URLs).
+     */
+    public function getPlayableRecordingUrl(): ?string
+    {
+        if (empty($this->recording_url)) {
+            return null;
+        }
+
+        $url = $this->recording_url;
+
+        if (str_contains($url, 'api.twilio.com') && ! str_ends_with($url, '.mp3')) {
+            $url = rtrim($url, '/').'.mp3';
+        }
+
+        return $url;
+    }
+
     public function isMissedCall(): bool
     {
         return $this->status === 'no-answer';

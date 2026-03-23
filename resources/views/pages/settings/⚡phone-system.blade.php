@@ -31,7 +31,7 @@ new class extends Component {
     public ?int $editingGroupId = null;
     public string $groupName = '';
     public string $groupDescription = '';
-    public int $ringTimeout = 30;
+    public int $ringTimeout = 17;
     public array $groupMembers = [];
     public bool $showDeleteGroupModal = false;
     public ?int $deletingGroupId = null;
@@ -289,7 +289,7 @@ new class extends Component {
         $this->editingGroupId = null;
         $this->groupName = '';
         $this->groupDescription = '';
-        $this->ringTimeout = 30;
+        $this->ringTimeout = 17;
         $this->groupMembers = [];
     }
 
@@ -779,7 +779,16 @@ new class extends Component {
 
             <flux:input wire:model="groupName" :label="__('Group Name')" :placeholder="__('e.g., Sales Team, Support')" required />
             <flux:textarea wire:model="groupDescription" :label="__('Description')" :placeholder="__('Optional description')" rows="2" />
-            <flux:input wire:model="ringTimeout" :label="__('Ring Timeout (seconds)')" type="number" min="5" max="120" :description="__('How long to ring this group before timing out')" />
+            <flux:input wire:model.live="ringTimeout" :label="__('Ring Timeout (seconds)')" type="number" min="5" max="120" :description="__('How long to ring this group before going to voicemail')" />
+
+            @if ($ringTimeout > 20)
+                <div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+                    <div class="flex gap-2">
+                        <flux:icon name="exclamation-triangle" class="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                        <flux:text size="sm" class="text-amber-700 dark:text-amber-300">{{ __('Most cell phones route to voicemail after 20-25 seconds. Callers may reach personal cell voicemail instead of your company voicemail. We recommend 17 seconds or less.') }}</flux:text>
+                    </div>
+                </div>
+            @endif
 
             <flux:separator />
 
