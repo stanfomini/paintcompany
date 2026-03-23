@@ -18,6 +18,8 @@ new class extends Component
         }
     }
 
+    public ?int $customerId = null;
+
     public string $filter = 'all';
 
     public string $search = '';
@@ -39,6 +41,11 @@ new class extends Component
         $query = CallLog::query()
             ->with(['customer', 'callerUser', 'answeredByUser', 'voicemailForUser', 'userInteractions'])
             ->latest('started_at');
+
+        // Scope to specific customer when viewing per-contact calls
+        if ($this->customerId) {
+            $query->where('customer_id', $this->customerId);
+        }
 
         // For missed/voicemail/unhandled filters, apply visibility scoping
         if (in_array($this->filter, ['missed', 'voicemail', 'unhandled'])) {

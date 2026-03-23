@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CallLog;
 use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\EmailAccount;
@@ -184,6 +185,26 @@ new class extends Component
         }
 
         return $this->contacts->firstWhere('id', $this->contactId);
+    }
+
+    /**
+     * Whether the currently selected view is the global phone system.
+     */
+    public function isPhoneView(): bool
+    {
+        return $this->contactId === 'phone';
+    }
+
+    /**
+     * Get the customer ID for the currently selected contact (for scoping calls).
+     */
+    public function getContactCustomerId(): ?int
+    {
+        if (! $this->selectedContact) {
+            return null;
+        }
+
+        return Customer::where('user_id', $this->selectedContact->id)->value('id');
     }
 
     /**
@@ -410,9 +431,12 @@ new class extends Component
             $this->selectedContact
         );
 
-        // Add calls unhandled count
+        // Add calls count scoped to this contact's customer
         if (auth()->user()->can('phone.view_call_history')) {
-            $counts['calls'] = app(MissedCallVoicemailService::class)->getUnhandledCountForUser(auth()->user());
+            $customerId = $this->getContactCustomerId();
+            $counts['calls'] = $customerId
+                ? CallLog::where('customer_id', $customerId)->missed()->unhandled()->count()
+                : 0;
         } else {
             $counts['calls'] = 0;
         }
@@ -881,6 +905,30 @@ new class extends Component
 
         {{-- Contact List --}}
         <div class="flex-1 overflow-y-auto">
+            {{-- Pinned Phone System entry --}}
+            @can('phone.view_call_history')
+                @php $phoneUnhandled = app(MissedCallVoicemailService::class)->getUnhandledCountForUser(auth()->user()); @endphp
+                <button
+                    wire:click="selectContact('phone')"
+                    class="w-full text-left px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors {{ $contactId === 'phone' ? 'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500' : '' }}"
+                >
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
+                            <flux:icon name="phone" class="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Phone System') }}</span>
+                            <p class="text-xs text-zinc-500 mt-0.5">{{ __('Call history & voicemails') }}</p>
+                        </div>
+                        @if ($phoneUnhandled > 0)
+                            <span class="bg-red-500 text-white text-[10px] rounded-full min-w-5 h-5 flex items-center justify-center px-1.5 font-bold">
+                                {{ $phoneUnhandled > 99 ? '99+' : $phoneUnhandled }}
+                            </span>
+                        @endif
+                    </div>
+                </button>
+            @endcan
+
             @forelse ($this->contacts as $contact)
                 <button
                     wire:key="contact-{{ $contact['id'] }}"
@@ -945,7 +993,24 @@ new class extends Component
 
     {{-- Right Panel --}}
     <div class="{{ $contactId ? 'flex' : 'hidden md:flex' }} flex-1 flex-col min-w-0 h-full">
-        @if ($this->isSmsContact() && $this->selectedSmsData)
+        @if ($this->isPhoneView())
+            {{-- PHONE SYSTEM VIEW --}}
+            <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">
+                <button wire:click="clearContact" class="md:hidden shrink-0 p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800">
+                    <flux:icon name="arrow-left" class="size-5" />
+                </button>
+                <div class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
+                    <flux:icon name="phone" class="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div class="min-w-0 flex-1">
+                    <flux:heading size="sm">{{ __('Phone System') }}</flux:heading>
+                    <flux:text size="xs" class="text-zinc-500">{{ __('Call history, missed calls & voicemails') }}</flux:text>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 sm:p-4">
+                @livewire('communications.call-history', key('phone-system'))
+            </div>
+        @elseif ($this->isSmsContact() && $this->selectedSmsData)
             {{-- SMS INBOUND CONTACT --}}
             @php $smsContact = $this->selectedSmsData; @endphp
             <div class="px-3 sm:px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center gap-3 shrink-0">
@@ -1475,9 +1540,9 @@ new class extends Component
                         @endif
                     </div>
                 @elseif ($activeTab === 'calls')
-                    {{-- CALL HISTORY TAB: Renders as standalone Livewire component --}}
+                    {{-- CALL HISTORY TAB: Scoped to this contact's customer --}}
                     <div class="flex-1 overflow-y-auto p-3 sm:p-4">
-                        @livewire('communications.call-history', key('calls-tab'))
+                        @livewire('communications.call-history', ['customerId' => $this->getContactCustomerId()], key('calls-' . $contactId))
                     </div>
                 @elseif ($this->contactItems->isEmpty())
                     <div class="text-center py-12 px-4">
