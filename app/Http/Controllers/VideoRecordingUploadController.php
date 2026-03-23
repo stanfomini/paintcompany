@@ -21,6 +21,7 @@ class VideoRecordingUploadController extends Controller
             'recordable_type' => ['nullable', 'string'],
             'recordable_id' => ['nullable', 'integer'],
             'title' => ['nullable', 'string', 'max:255'],
+            'visibility' => ['nullable', 'string', 'in:public,internal,unlisted'],
         ]);
 
         $user = $request->user();
@@ -41,6 +42,7 @@ class VideoRecordingUploadController extends Controller
             'disk' => $diskName,
             'recordable_type' => $request->input('recordable_type'),
             'recordable_id' => $request->input('recordable_id'),
+            'visibility' => $request->input('visibility', 'unlisted'),
         ]);
 
         // Dispatch processing job
@@ -66,6 +68,7 @@ class VideoRecordingUploadController extends Controller
             'recordable_id' => ['nullable', 'integer'],
             'title' => ['nullable', 'string', 'max:255'],
             'mime_type' => ['required', 'string'],
+            'visibility' => ['nullable', 'string', 'in:public,internal,unlisted'],
         ]);
 
         $user = $request->user();
@@ -95,6 +98,7 @@ class VideoRecordingUploadController extends Controller
             'mime_type' => $request->input('mime_type'),
             'recordable_type' => $request->input('recordable_type'),
             'recordable_id' => $request->input('recordable_id'),
+            'visibility' => $request->input('visibility', 'unlisted'),
             'metadata' => ['temp_chunk_path' => $tempPath],
         ]);
 
@@ -200,6 +204,7 @@ class VideoRecordingUploadController extends Controller
         return response()->json([
             'id' => $recording->id,
             'status' => 'processing',
+            'share_token' => $recording->share_token,
         ]);
     }
 

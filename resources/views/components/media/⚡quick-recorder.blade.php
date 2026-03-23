@@ -310,6 +310,7 @@ Alpine.data('quickRecorder', (config) => ({
 
     // Chunked streaming properties
     recordingId: null,
+    shareToken: null,
     chunkIndex: 0,
     uploadQueue: [],
     isUploading: false,
@@ -457,13 +458,14 @@ Alpine.data('quickRecorder', (config) => ({
                     'X-CSRF-TOKEN': config.csrfToken,
                     'Accept': 'application/json',
                 },
-                body: JSON.stringify({ mime_type: mimeType }),
+                body: JSON.stringify({ mime_type: mimeType, visibility: 'public' }),
             });
 
             if (!response.ok) throw new Error('Failed to start upload session');
 
             const data = await response.json();
             this.recordingId = data.id;
+            this.shareToken = data.share_token;
         } catch (e) {
             console.warn('Chunked upload init failed, will use legacy upload:', e);
             this.useChunkedUpload = false;
@@ -586,6 +588,7 @@ Alpine.data('quickRecorder', (config) => ({
         this.recordedChunks = [];
         this.videoTitle = '';
         this.recordingId = null;
+        this.shareToken = null;
         this.chunkIndex = 0;
         this.uploadQueue = [];
         this.totalUploaded = 0;
@@ -641,14 +644,11 @@ Alpine.data('quickRecorder', (config) => ({
 
             if (!finalizeResponse.ok) throw new Error('Finalize failed');
 
-            // Show post-save actions via Livewire
-            const statusResp = await fetch(`/api/video-recordings/${this.recordingId}/status`, {
-                headers: { 'Accept': 'application/json' },
-            });
-            const statusData = await statusResp.json();
+            // Use share token stored from /start response, with finalize response as fallback
+            const finalizeData = await finalizeResponse.json();
 
             this.$wire.set('lastRecordingId', this.recordingId);
-            this.$wire.set('lastShareToken', statusData.share_url ? statusData.share_url.split('/v/')[1] : null);
+            this.$wire.set('lastShareToken', this.shareToken ?? finalizeData.share_token);
             this.$wire.set('showPostActions', true);
 
             this.stage = 'processing';
@@ -656,6 +656,7 @@ Alpine.data('quickRecorder', (config) => ({
             this.recordedChunks = [];
             this.videoTitle = '';
             this.recordingId = null;
+            this.shareToken = null;
             this.totalUploaded = 0;
 
             setTimeout(async () => {
@@ -744,6 +745,7 @@ Alpine.data('quickRecorder', (config) => ({
         this.recordedChunks = [];
         this.videoTitle = '';
         this.recordingId = null;
+        this.shareToken = null;
         this.chunkIndex = 0;
         this.uploadQueue = [];
         this.totalUploaded = 0;

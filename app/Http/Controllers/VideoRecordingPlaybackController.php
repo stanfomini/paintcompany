@@ -15,11 +15,26 @@ class VideoRecordingPlaybackController extends Controller
      */
     public function show(Request $request, string $shareToken): View
     {
-        $recording = VideoRecording::where('share_token', $shareToken)
-            ->where('status', 'ready')
-            ->firstOrFail();
+        $recording = VideoRecording::where('share_token', $shareToken)->firstOrFail();
 
         $company = CompanySetting::getInstance();
+
+        // Show processing interstitial for videos that aren't ready yet
+        if (in_array($recording->status, ['uploading', 'processing'])) {
+            return view('public.video-recording-processing', [
+                'recording' => $recording,
+                'company' => $company,
+            ]);
+        }
+
+        // Show error page for failed recordings
+        if ($recording->status === 'failed') {
+            return view('public.video-recording-processing', [
+                'recording' => $recording,
+                'company' => $company,
+                'failed' => true,
+            ]);
+        }
 
         // Handle email click tracking
         if ($request->query('ref') === 'email' && $eid = $request->query('eid')) {

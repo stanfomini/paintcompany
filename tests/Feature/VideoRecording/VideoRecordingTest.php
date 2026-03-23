@@ -296,7 +296,8 @@ it('can finalize a chunked upload', function () {
     $this->actingAs($user)
         ->postJson(route('video-recordings.finalize', $recording))
         ->assertSuccessful()
-        ->assertJsonPath('status', 'processing');
+        ->assertJsonPath('status', 'processing')
+        ->assertJsonStructure(['id', 'status', 'share_token']);
 
     expect($recording->fresh()->status)->toBe('processing');
 });
@@ -383,6 +384,37 @@ it('allows customer users to use chunked upload', function () {
             'mime_type' => 'video/webm',
         ])
         ->assertCreated();
+});
+
+it('can start chunked upload with visibility parameter', function () {
+    Storage::fake('video-recordings');
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('video-recordings.start'), [
+            'mime_type' => 'video/webm',
+            'visibility' => 'public',
+        ])
+        ->assertCreated();
+
+    $recording = VideoRecording::latest()->first();
+    expect($recording->visibility)->toBe('public');
+});
+
+it('defaults visibility to unlisted when not specified', function () {
+    Storage::fake('video-recordings');
+
+    $user = User::factory()->internal()->withFullAccess()->create();
+
+    $this->actingAs($user)
+        ->postJson(route('video-recordings.start'), [
+            'mime_type' => 'video/webm',
+        ])
+        ->assertCreated();
+
+    $recording = VideoRecording::latest()->first();
+    expect($recording->visibility)->toBe('unlisted');
 });
 
 // ── Mime Type Extension Mapping Tests ────────────────────────────────────
@@ -521,11 +553,20 @@ it('returns 404 for non-existent share token', function () {
         ->assertNotFound();
 });
 
-it('returns 404 for non-ready recording share token', function () {
+it('shows processing page for non-ready recording share token', function () {
     $recording = VideoRecording::factory()->processing()->create();
 
     $this->get(route('video-recording.public', $recording->share_token))
-        ->assertNotFound();
+        ->assertSuccessful()
+        ->assertSee('Your video is being processed');
+});
+
+it('shows error page for failed recording share token', function () {
+    $recording = VideoRecording::factory()->failed()->create();
+
+    $this->get(route('video-recording.public', $recording->share_token))
+        ->assertSuccessful()
+        ->assertSee('Video Unavailable');
 });
 
 // ── Walkarounds Livewire Component Tests ───────────────────────────────

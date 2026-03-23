@@ -43,15 +43,14 @@
             </div>
 
             {{-- Video Player --}}
-            <div class="bg-black rounded-xl overflow-hidden" style="max-height: 80vh;">
+            <div class="bg-black rounded-xl overflow-hidden flex items-center justify-center">
                 <video
                     src="{{ $recording->getVideoUrl() }}"
                     controls
-                    autoplay
                     playsinline
                     data-track-id="{{ $recording->id }}"
                     data-track-source="{{ request()->query('ref') === 'email' ? 'email' : 'link' }}"
-                    class="w-full h-full object-contain"
+                    class="w-full max-h-[80vh]"
                     @if ($recording->getThumbnailUrl())
                         poster="{{ $recording->getThumbnailUrl() }}"
                     @endif
