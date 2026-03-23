@@ -129,19 +129,30 @@ class CallRoutingService
     }
 
     /**
-     * Resolve which call group an IVR digit maps to.
+     * Resolve what an IVR digit maps to (call group or voicemail).
+     *
+     * @return array{action: string, call_group: ?CallGroup}
      */
-    public function resolveIvrOption(string $digit, array $ivrMenu): ?CallGroup
+    public function resolveIvrOption(string $digit, array $ivrMenu): array
     {
         $options = $ivrMenu['options'] ?? [];
 
         foreach ($options as $option) {
             if (($option['digit'] ?? '') === $digit) {
-                return CallGroup::find($option['call_group_id'] ?? null);
+                $action = $option['action'] ?? 'route_to_group';
+
+                if ($action === 'voicemail') {
+                    return ['action' => 'voicemail', 'call_group' => null];
+                }
+
+                return [
+                    'action' => 'route_to_group',
+                    'call_group' => CallGroup::find($option['call_group_id'] ?? null),
+                ];
             }
         }
 
-        return null;
+        return ['action' => 'not_found', 'call_group' => null];
     }
 
     /**

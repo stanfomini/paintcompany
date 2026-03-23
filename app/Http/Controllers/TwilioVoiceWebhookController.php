@@ -364,10 +364,27 @@ class TwilioVoiceWebhookController extends Controller
      */
     private function handleIvrMenuOption(CallLog $log, string $digit, array $ivrMenu): Response
     {
-        $callGroup = $this->routing->resolveIvrOption($digit, $ivrMenu);
+        $result = $this->routing->resolveIvrOption($digit, $ivrMenu);
 
-        if ($callGroup) {
-            // Update call log with group assignment
+        // Direct to voicemail
+        if ($result['action'] === 'voicemail') {
+            $log->update([
+                'status' => 'voicemail',
+                'metadata' => array_merge($log->metadata ?? [], [
+                    'ivr_option' => $digit,
+                    'ivr_action' => 'voicemail',
+                ]),
+            ]);
+
+            $twiml = $this->voice->generateVoicemailTwiml($log);
+
+            return $this->twimlResponse($twiml);
+        }
+
+        // Route to call group
+        if ($result['action'] === 'route_to_group' && $result['call_group']) {
+            $callGroup = $result['call_group'];
+
             $log->update([
                 'call_group_id' => $callGroup->id,
                 'metadata' => array_merge($log->metadata ?? [], [

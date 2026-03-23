@@ -173,11 +173,12 @@ describe('resolveIvrOption', function () {
         $service = app(CallRoutingService::class);
         $result = $service->resolveIvrOption('1', $ivrMenu);
 
-        expect($result)->not->toBeNull()
-            ->and($result->id)->toBe($group->id);
+        expect($result['action'])->toBe('route_to_group')
+            ->and($result['call_group'])->not->toBeNull()
+            ->and($result['call_group']->id)->toBe($group->id);
     });
 
-    it('returns null for unmatched digit', function () {
+    it('returns not_found for unmatched digit', function () {
         $ivrMenu = [
             'options' => [
                 ['digit' => '1', 'label' => 'Sales', 'call_group_id' => 1],
@@ -187,17 +188,19 @@ describe('resolveIvrOption', function () {
         $service = app(CallRoutingService::class);
         $result = $service->resolveIvrOption('9', $ivrMenu);
 
-        expect($result)->toBeNull();
+        expect($result['action'])->toBe('not_found')
+            ->and($result['call_group'])->toBeNull();
     });
 
-    it('returns null when options array is empty', function () {
+    it('returns not_found when options array is empty', function () {
         $service = app(CallRoutingService::class);
         $result = $service->resolveIvrOption('1', ['options' => []]);
 
-        expect($result)->toBeNull();
+        expect($result['action'])->toBe('not_found')
+            ->and($result['call_group'])->toBeNull();
     });
 
-    it('returns null when call_group_id does not exist', function () {
+    it('returns null call_group when call_group_id does not exist', function () {
         $ivrMenu = [
             'options' => [
                 ['digit' => '1', 'label' => 'Nonexistent', 'call_group_id' => 99999],
@@ -207,7 +210,22 @@ describe('resolveIvrOption', function () {
         $service = app(CallRoutingService::class);
         $result = $service->resolveIvrOption('1', $ivrMenu);
 
-        expect($result)->toBeNull();
+        expect($result['action'])->toBe('route_to_group')
+            ->and($result['call_group'])->toBeNull();
+    });
+
+    it('returns voicemail action for voicemail IVR option', function () {
+        $ivrMenu = [
+            'options' => [
+                ['digit' => '9', 'label' => 'Leave a voicemail', 'action' => 'voicemail'],
+            ],
+        ];
+
+        $service = app(CallRoutingService::class);
+        $result = $service->resolveIvrOption('9', $ivrMenu);
+
+        expect($result['action'])->toBe('voicemail')
+            ->and($result['call_group'])->toBeNull();
     });
 });
 

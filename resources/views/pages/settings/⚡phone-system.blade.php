@@ -90,7 +90,11 @@ new class extends Component {
         // IVR
         $this->ivrEnabled = (bool) $settings->ivr_enabled;
         $ivrMenu = $settings->ivr_menu ?? [];
-        $this->ivrOptions = $ivrMenu['options'] ?? [];
+        $this->ivrOptions = array_map(function ($option) {
+            $option['action'] = $option['action'] ?? 'route_to_group';
+
+            return $option;
+        }, $ivrMenu['options'] ?? []);
         $this->timeoutAction = $ivrMenu['timeout_action'] ?? 'ring_default';
 
         // Voicemail
@@ -339,6 +343,7 @@ new class extends Component {
         $this->ivrOptions[] = [
             'digit' => $nextDigit,
             'label' => '',
+            'action' => 'route_to_group',
             'call_group_id' => null,
         ];
     }
@@ -358,6 +363,7 @@ new class extends Component {
             'ivrOptions' => ['array'],
             'ivrOptions.*.digit' => ['required', 'string', 'size:1'],
             'ivrOptions.*.label' => ['required', 'string', 'max:100'],
+            'ivrOptions.*.action' => ['required', 'string', 'in:route_to_group,voicemail'],
             'ivrOptions.*.call_group_id' => ['nullable', 'exists:call_groups,id'],
             'timeoutAction' => ['required', 'in:ring_default,voicemail'],
         ]);
@@ -625,14 +631,22 @@ new class extends Component {
                                     <div class="flex-1">
                                         <flux:input wire:model="ivrOptions.{{ $index }}.label" :label="__('Label')" :placeholder="__('e.g., Estimates, Scheduling')" />
                                     </div>
-                                    <div class="w-48">
-                                        <flux:select wire:model="ivrOptions.{{ $index }}.call_group_id" :label="__('Route To')">
-                                            <flux:select.option value="">{{ __('Default Group') }}</flux:select.option>
-                                            @foreach ($this->callGroups as $group)
-                                                <flux:select.option value="{{ $group->id }}">{{ $group->name }}</flux:select.option>
-                                            @endforeach
+                                    <div class="w-36">
+                                        <flux:select wire:model.live="ivrOptions.{{ $index }}.action" :label="__('Action')">
+                                            <flux:select.option value="route_to_group">{{ __('Ring Group') }}</flux:select.option>
+                                            <flux:select.option value="voicemail">{{ __('Voicemail') }}</flux:select.option>
                                         </flux:select>
                                     </div>
+                                    @if (($option['action'] ?? 'route_to_group') === 'route_to_group')
+                                        <div class="w-48">
+                                            <flux:select wire:model="ivrOptions.{{ $index }}.call_group_id" :label="__('Route To')">
+                                                <flux:select.option value="">{{ __('Default Group') }}</flux:select.option>
+                                                @foreach ($this->callGroups as $group)
+                                                    <flux:select.option value="{{ $group->id }}">{{ $group->name }}</flux:select.option>
+                                                @endforeach
+                                            </flux:select>
+                                        </div>
+                                    @endif
                                     <flux:button size="sm" variant="ghost" icon="trash" wire:click="removeIvrOption({{ $index }})" class="mt-5" />
                                 </div>
                             @endforeach
