@@ -58,7 +58,7 @@ class ServiceArea extends Model
 
     public function getMetaDescriptionAttribute(?string $value): string
     {
-        return $value ?? "Looking for a house painter in {$this->city}, {$this->state}? Painting Made Easy Denver offers interior & exterior painting with real-time tracking, daily photo updates, and a satisfaction guarantee. Free estimates.";
+        return $value ?? "Professional house painting in {$this->city}, {$this->state}. Interior & exterior with real-time tracking. Free estimates.";
     }
 
     public function getUrlAttribute(): string

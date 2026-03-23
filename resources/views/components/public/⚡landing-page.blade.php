@@ -470,7 +470,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
 
 <div>
     @push('seo_meta')
-    <meta name="description" content="Professional house painting services in Denver, CO. Interior &amp; exterior painting with real-time project tracking, daily photo updates, and a Cleaner Than We Found It guarantee. Free estimates in 24 hours.">
+    <meta name="description" content="Denver house painting with AI color preview, instant pricing &amp; real-time tracking. Interior, exterior &amp; cabinets. Free estimates.">
     <link rel="canonical" href="{{ url('/') }}">
     <meta name="robots" content="index, follow">
     <meta property="og:title" content="Professional House Painting Denver | Painting Made Easy Denver">

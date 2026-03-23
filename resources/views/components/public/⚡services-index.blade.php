@@ -169,7 +169,7 @@ new #[Layout('components.layouts.guest')] #[Title('Painting Services Guide | Pai
 
 <div>
     @push('seo_meta')
-    <meta name="description" content="Complete painting services guide for Denver homeowners and businesses. Step-by-step guides for interior, exterior, cabinet, commercial painting and more. Expert tips for Colorado's climate.">
+    <meta name="description" content="Denver painting services guide. Interior, exterior, cabinet, commercial &amp; specialty painting with Colorado climate tips.">
     <link rel="canonical" href="{{ route('services.index') }}">
     <meta name="robots" content="index, follow">
     <meta property="og:title" content="Painting Services Guide | Painting Made Easy Denver">
