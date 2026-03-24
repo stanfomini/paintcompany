@@ -54,6 +54,11 @@ class LandingPageSectionPhoto extends Model
             return null;
         }
 
+        // Use Bunny CDN for optimized delivery when enabled
+        if (config('services.bunny.enabled')) {
+            return cdn_image($path, updatedAt: $this->updated_at);
+        }
+
         $diskName = $this->disk ?? config('filesystems.default');
         $disk = Storage::disk($diskName);
 
