@@ -74,6 +74,12 @@ return [
         'pixel_id' => env('META_PIXEL_ID'),
     ],
 
+    'bunny' => [
+        'cdn_url' => env('BUNNY_CDN_URL', ''),
+        'enabled' => env('BUNNY_CDN_ENABLED', false),
+        'token_key' => env('BUNNY_TOKEN_KEY', ''),
+    ],
+
     'color_visualizer' => [
         'enabled' => env('COLOR_VISUALIZER_ENABLED', false),
         'free_limit' => env('COLOR_VISUALIZER_FREE_LIMIT', 2),
