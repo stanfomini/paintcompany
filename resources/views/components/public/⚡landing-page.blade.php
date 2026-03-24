@@ -468,6 +468,12 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
     }
 }; ?>
 
+@push('preload')
+@if($this->showcasePhotos->first())
+<link rel="preload" as="image" href="{{ $this->showcasePhotos->first()->before_url }}" fetchpriority="high">
+@endif
+@endpush
+
 <div>
     @section('meta_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Interior, exterior & cabinets. Free estimates.')
     @section('canonical', url('/'))
@@ -670,10 +676,10 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
                                     x-show="currentPair === {{ $index }}" x-cloak>
                                     <img src="{{ $pair->before_url }}" alt="{{ $pair->caption ? $pair->caption . ' - ' . __('Before') : __('Before') }}"
                                         class="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
-                                        :class="showAfter ? 'opacity-0' : 'opacity-100'" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" />
+                                        :class="showAfter ? 'opacity-0' : 'opacity-100'" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" @if($index === 0) fetchpriority="high" @endif />
                                     <img src="{{ $pair->after_url }}" alt="{{ $pair->caption ? $pair->caption . ' - ' . __('After') : __('After') }}"
                                         class="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
-                                        :class="showAfter ? 'opacity-100' : 'opacity-0'" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" />
+                                        :class="showAfter ? 'opacity-100' : 'opacity-0'" loading="{{ $index === 0 ? 'eager' : 'lazy' }}" @if($index === 0) fetchpriority="high" @endif />
                                 </div>
                             @endforeach
                             {{-- Toggle label --}}
