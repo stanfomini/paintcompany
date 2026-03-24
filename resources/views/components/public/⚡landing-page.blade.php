@@ -1955,6 +1955,7 @@ new #[Layout('components.layouts.guest')] #[Title('Professional House Painting D
                 'areas' => $footerAreas,
                 'center' => [39.95, -104.99],
                 'zoom' => 8,
+                'lazy' => true,
             ])
         </div>
     </section>
