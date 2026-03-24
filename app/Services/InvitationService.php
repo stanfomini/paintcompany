@@ -222,6 +222,15 @@ class InvitationService
             $this->createCrewProfile($user, $invitation);
         }
 
+        // Send welcome SMS to new agents
+        if ($user->type === 'agent' && $user->phone) {
+            \App\Jobs\SendWelcomeSmsJob::dispatch(
+                $user->phone,
+                null,
+                $user->id,
+            )->delay(now()->addSeconds(5));
+        }
+
         // Mark invitation as accepted
         $invitation->markAsAccepted();
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CompanySetting;
 use App\Models\SmsBotFlow;
 use App\Models\SmsBotStep;
 use App\Models\SmsConversation;
@@ -339,4 +340,69 @@ it('saves media_message step with media_url', function () {
     expect($step)->not->toBeNull()
         ->and($step->media_url)->toBe('color-tutorial')
         ->and($step->message_text)->toBe('Check this out!');
+});
+
+it('renders welcome sms section on settings page', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.sms-bot')
+        ->assertSee('Welcome SMS')
+        ->assertSee('Automatically send a welcome text');
+});
+
+it('toggles welcome sms enabled', function () {
+    $settings = CompanySetting::getInstance();
+    $settings->update(['welcome_sms_enabled' => true]);
+
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.sms-bot')
+        ->assertSet('welcomeSmsEnabled', true)
+        ->call('toggleWelcomeSms')
+        ->assertSet('welcomeSmsEnabled', false);
+
+    expect(CompanySetting::getInstance()->fresh()->welcome_sms_enabled)->toBeFalse();
+});
+
+it('saves welcome sms message templates', function () {
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.sms-bot')
+        ->set('welcomeSmsWithDeal', 'Hi {name}! Your portal: {portal_link}')
+        ->set('welcomeSmsWithoutDeal', 'Hi {name}! Welcome to {company}.')
+        ->call('saveWelcomeSmsSettings');
+
+    $settings = CompanySetting::getInstance()->fresh();
+    expect($settings->welcome_sms_with_deal)->toBe('Hi {name}! Your portal: {portal_link}')
+        ->and($settings->welcome_sms_without_deal)->toBe('Hi {name}! Welcome to {company}.');
+});
+
+it('saves empty welcome sms templates as null', function () {
+    $settings = CompanySetting::getInstance();
+    $settings->update([
+        'welcome_sms_with_deal' => 'existing message',
+        'welcome_sms_without_deal' => 'existing message',
+    ]);
+
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.sms-bot')
+        ->set('welcomeSmsWithDeal', '')
+        ->set('welcomeSmsWithoutDeal', '')
+        ->call('saveWelcomeSmsSettings');
+
+    $settings = CompanySetting::getInstance()->fresh();
+    expect($settings->welcome_sms_with_deal)->toBeNull()
+        ->and($settings->welcome_sms_without_deal)->toBeNull();
+});
+
+it('loads existing welcome sms settings on mount', function () {
+    $settings = CompanySetting::getInstance();
+    $settings->update([
+        'welcome_sms_enabled' => false,
+        'welcome_sms_with_deal' => 'Custom deal message',
+        'welcome_sms_without_deal' => 'Custom no-deal message',
+    ]);
+
+    Livewire::actingAs($this->internalUser)
+        ->test('pages::settings.sms-bot')
+        ->assertSet('welcomeSmsEnabled', false)
+        ->assertSet('welcomeSmsWithDeal', 'Custom deal message')
+        ->assertSet('welcomeSmsWithoutDeal', 'Custom no-deal message');
 });

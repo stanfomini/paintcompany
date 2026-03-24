@@ -36,9 +36,19 @@ class Deal extends Model
                     'status' => 'active',
                 ]);
 
-                // Auto-send portal link to customer (if enabled in settings)
+                // Send welcome SMS (replaces preview link SMS when enabled)
                 $settings = CompanySetting::getInstance();
-                if ($settings->preview_link_auto_send && ($customer->email || $customer->phone)) {
+                $welcomeEnabled = $settings->welcome_sms_enabled ?? true;
+                if ($welcomeEnabled && $customer->phone && ! $customer->welcome_sms_sent_at) {
+                    // Skip the preview link SMS notification since welcome SMS handles it
+                    \App\Jobs\SendWelcomeSmsJob::dispatch(
+                        $customer->phone,
+                        $customer->id,
+                        $customer->user_id,
+                        $deal->id,
+                    )->delay(now()->addSeconds(5));
+                } elseif ($settings->preview_link_auto_send && ($customer->email || $customer->phone)) {
+                    // Fall back to existing preview link notification when welcome SMS is disabled
                     $preview = ProjectPreview::where('deal_id', $deal->id)->first();
                     if ($preview && ! $preview->preview_link_sent_at) {
                         try {

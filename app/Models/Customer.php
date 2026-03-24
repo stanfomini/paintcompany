@@ -54,6 +54,14 @@ class Customer extends Model
             if ($customer->phone) {
                 static::autoLinkSmsThreads($customer);
             }
+
+            // Dispatch welcome SMS for customers created without a deal (with delay to allow deal creation)
+            if ($customer->phone && ! $customer->welcome_sms_sent_at) {
+                \App\Jobs\SendWelcomeSmsJob::dispatch(
+                    $customer->phone,
+                    $customer->id,
+                )->delay(now()->addSeconds(15));
+            }
         });
 
         static::updated(function (Customer $customer) {
@@ -96,6 +104,7 @@ class Customer extends Model
         'notes',
         'status',
         'sms_marketing_consent_at',
+        'welcome_sms_sent_at',
         'source',
         'estimate_preference',
     ];
@@ -105,6 +114,7 @@ class Customer extends Model
         return [
             'deleted_at' => 'datetime',
             'sms_marketing_consent_at' => 'datetime',
+            'welcome_sms_sent_at' => 'datetime',
         ];
     }
 

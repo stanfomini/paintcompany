@@ -47,6 +47,7 @@ class User extends Authenticatable
         'notification_preferences',
         'sms_opted_out_at',
         'sms_consented_at',
+        'welcome_sms_sent_at',
         'forwarding_number',
         'extension',
         'personal_room_slug',
@@ -80,6 +81,7 @@ class User extends Authenticatable
             'notification_preferences' => 'array',
             'sms_opted_out_at' => 'datetime',
             'sms_consented_at' => 'datetime',
+            'welcome_sms_sent_at' => 'datetime',
         ];
     }
 

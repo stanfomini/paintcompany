@@ -141,6 +141,10 @@ class CompanySetting extends Model
         'visualizer_image_prompt',
         'default_visualization_colors',
         'sms_bot_enabled',
+        // Welcome SMS
+        'welcome_sms_enabled',
+        'welcome_sms_with_deal',
+        'welcome_sms_without_deal',
         // Preview Link Settings
         'preview_link_auto_send',
         'preview_link_sms_message',
@@ -255,6 +259,7 @@ class CompanySetting extends Model
             // Color Visualizer / SMS Bot
             'default_visualization_colors' => 'array',
             'sms_bot_enabled' => 'boolean',
+            'welcome_sms_enabled' => 'boolean',
             // Preview Link Settings
             'preview_link_auto_send' => 'boolean',
             // Phone System

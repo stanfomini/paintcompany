@@ -26,6 +26,11 @@ new class extends Component {
     public string $previewLinkEmailSubject = '';
     public string $previewLinkEmailBody = '';
 
+    // Welcome SMS
+    public bool $welcomeSmsEnabled = true;
+    public string $welcomeSmsWithDeal = '';
+    public string $welcomeSmsWithoutDeal = '';
+
     public function boot(): void
     {
         if (! auth()->user()?->can('settings.company')) {
@@ -47,6 +52,11 @@ new class extends Component {
         $this->previewLinkSmsMessage = $settings->preview_link_sms_message ?? '';
         $this->previewLinkEmailSubject = $settings->preview_link_email_subject ?? '';
         $this->previewLinkEmailBody = $settings->preview_link_email_body ?? '';
+
+        // Welcome SMS settings
+        $this->welcomeSmsEnabled = (bool) ($settings->welcome_sms_enabled ?? true);
+        $this->welcomeSmsWithDeal = $settings->welcome_sms_with_deal ?? '';
+        $this->welcomeSmsWithoutDeal = $settings->welcome_sms_without_deal ?? '';
     }
 
     #[Computed]
@@ -76,6 +86,22 @@ new class extends Component {
     {
         $this->previewLinkAutoSend = ! $this->previewLinkAutoSend;
         CompanySetting::getInstance()->update(['preview_link_auto_send' => $this->previewLinkAutoSend]);
+    }
+
+    public function toggleWelcomeSms(): void
+    {
+        $this->welcomeSmsEnabled = ! $this->welcomeSmsEnabled;
+        CompanySetting::getInstance()->update(['welcome_sms_enabled' => $this->welcomeSmsEnabled]);
+    }
+
+    public function saveWelcomeSmsSettings(): void
+    {
+        CompanySetting::getInstance()->update([
+            'welcome_sms_with_deal' => $this->welcomeSmsWithDeal ?: null,
+            'welcome_sms_without_deal' => $this->welcomeSmsWithoutDeal ?: null,
+        ]);
+
+        session()->flash('welcome-sms-saved', true);
     }
 
     public function savePreviewLinkSettings(): void
@@ -174,6 +200,49 @@ new class extends Component {
                 </flux:text>
             </div>
             <flux:switch wire:click="toggleBot" :checked="$botEnabled" />
+        </div>
+
+        <flux:separator />
+
+        {{-- Welcome SMS --}}
+        <div class="my-6 w-full space-y-6">
+            <div class="flex items-center justify-between rounded-xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                <div>
+                    <div class="flex items-center gap-2">
+                        <flux:icon name="device-phone-mobile" class="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+                        <flux:heading size="sm">{{ __('Welcome SMS') }}</flux:heading>
+                    </div>
+                    <flux:text class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+                        {{ __('Automatically send a welcome text to every new customer and agent when they enter the system.') }}
+                    </flux:text>
+                </div>
+                <flux:switch wire:click="toggleWelcomeSms" :checked="$welcomeSmsEnabled" />
+            </div>
+
+            <form wire:submit="saveWelcomeSmsSettings" class="space-y-4">
+                <flux:textarea
+                    wire:model="welcomeSmsWithDeal"
+                    :label="__('With Deal (includes portal link)')"
+                    :description="__('Sent when the contact has a deal. Available placeholders: {name}, {company}, {portal_link}')"
+                    placeholder="Hi {name}! Welcome to {company}. Your project portal is ready — view details, photos, and updates here: {portal_link}"
+                    rows="3"
+                />
+
+                <flux:textarea
+                    wire:model="welcomeSmsWithoutDeal"
+                    :label="__('Without Deal (standard welcome)')"
+                    :description="__('Sent when the contact has no deal. Available placeholders: {name}, {company}')"
+                    placeholder="Hi {name}! Welcome to {company}. We're glad to have you! Reply to this message anytime if you need help."
+                    rows="3"
+                />
+
+                <div class="flex items-center gap-3">
+                    <flux:button type="submit" variant="primary">{{ __('Save') }}</flux:button>
+                    @if (session('welcome-sms-saved'))
+                        <flux:text class="text-sm text-green-600 dark:text-green-400">{{ __('Saved!') }}</flux:text>
+                    @endif
+                </div>
+            </form>
         </div>
 
         <flux:separator />
