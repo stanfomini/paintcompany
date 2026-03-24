@@ -10,7 +10,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
-new #[Layout('components.layouts.guest')] #[Title('Professional House Painting Denver | Painting Made Easy Denver')] class extends Component
+new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landing'])] #[Title('Professional House Painting Denver | Painting Made Easy Denver')] class extends Component
 {
     public string $referralCode = '';
 

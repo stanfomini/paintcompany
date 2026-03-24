@@ -33,7 +33,7 @@
         })();
         </script>
         @endproduction
-        @include('partials.head-public')
+        @include($headPartial ?? 'partials.head-public')
         @isset($structuredData)
         <script type="application/ld+json">
         {!! $structuredData !!}
