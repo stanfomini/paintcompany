@@ -1,7 +1,4 @@
-{{-- Facebook Messenger Chat Plugin --}}
-{{-- Note: Facebook has been transitioning their Chat Plugin. If deprecated at implementation time,
-     alternatives include Send-to-Messenger button or m.me/PAGE_ID URLs.
-     The backend integration remains the same regardless. --}}
+{{-- Facebook Messenger Chat Plugin — deferred until user interaction --}}
 @php
     $messengerSettings = \App\Models\MessengerSetting::getInstance();
 @endphp
@@ -17,18 +14,24 @@
         logged_out_greeting="{{ $messengerSettings->widget_greeting_logged_out ?? 'Hi! Need a painting quote?' }}">
     </div>
     <script>
-        window.fbAsyncInit = function() {
-            FB.init({
-                xfbml: true,
-                version: 'v19.0'
-            });
-        };
-        (function(d, s, id) {
-            var js, fjs = d.getElementsByTagName(s)[0];
+    (function() {
+        var loaded = false;
+        function loadMessenger() {
+            if (loaded) return;
+            loaded = true;
+            window.fbAsyncInit = function() {
+                FB.init({ xfbml: true, version: 'v19.0' });
+            };
+            var d = document, s = 'script', id = 'facebook-jssdk';
             if (d.getElementById(id)) return;
-            js = d.createElement(s); js.id = id;
+            var js = d.createElement(s); js.id = id;
             js.src = 'https://connect.facebook.net/en_US/sdk/xfbml.customerchat.js';
-            fjs.parentNode.insertBefore(js, fjs);
-        }(document, 'script', 'facebook-jssdk'));
+            d.getElementsByTagName(s)[0].parentNode.insertBefore(js, d.getElementsByTagName(s)[0]);
+        }
+        ['scroll','mousemove','touchstart','keydown'].forEach(function(e) {
+            window.addEventListener(e, loadMessenger, {once: true, passive: true});
+        });
+        setTimeout(loadMessenger, 5000);
+    })();
     </script>
 @endif
