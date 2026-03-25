@@ -2,6 +2,7 @@
 
 use App\Models\CallLog;
 use App\Models\Customer;
+use App\Models\User;
 use App\Services\TwilioService;
 
 beforeEach(function () {
@@ -54,7 +55,24 @@ describe('whisper webhook', function () {
         expect($response->getContent())->toContain('+13035551234');
     });
 
-    it('identifies transferred calls', function () {
+    it('identifies transferred calls and includes who transferred', function () {
+        $transferredBy = User::factory()->internal()->create(['name' => 'Jane Target']);
+
+        $callLog = CallLog::factory()->create([
+            'metadata' => [
+                'transferred' => true,
+                'transferred_from_user_id' => $transferredBy->id,
+            ],
+        ]);
+
+        $response = $this->post("/webhooks/twilio/voice/whisper/{$callLog->ulid}");
+
+        $response->assertStatus(200);
+        expect($response->getContent())->toContain('Transferred call')
+            ->and($response->getContent())->toContain('transferred by Jane Target');
+    });
+
+    it('handles transferred call without transferred_from_user_id', function () {
         $callLog = CallLog::factory()->create([
             'metadata' => ['transferred' => true],
         ]);
@@ -62,7 +80,8 @@ describe('whisper webhook', function () {
         $response = $this->post("/webhooks/twilio/voice/whisper/{$callLog->ulid}");
 
         $response->assertStatus(200);
-        expect($response->getContent())->toContain('Transferred call');
+        expect($response->getContent())->toContain('Transferred call')
+            ->and($response->getContent())->not->toContain('transferred by');
     });
 
     it('identifies extension calls', function () {
@@ -84,7 +103,7 @@ describe('whisper webhook', function () {
         $response = $this->post("/webhooks/twilio/voice/whisper/{$callLog->ulid}");
 
         $response->assertStatus(200);
-        expect($response->getContent())->toContain('Inbound call, Estimates');
+        expect($response->getContent())->toContain('Inbound call for Estimates');
     });
 
     it('defaults to inbound call when no metadata', function () {

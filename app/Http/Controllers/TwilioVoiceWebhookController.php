@@ -691,12 +691,25 @@ class TwilioVoiceWebhookController extends Controller
 
         // Determine call type from metadata
         $metadata = $log->metadata ?? [];
+        $extra = '';
+
         if (! empty($metadata['transferred'])) {
             $callType = 'Transferred call';
+            // Include who transferred the call
+            if (! empty($metadata['transferred_from_user_id'])) {
+                try {
+                    $transferredBy = \App\Models\User::find($metadata['transferred_from_user_id']);
+                    if ($transferredBy) {
+                        $extra = ', transferred by '.$transferredBy->name;
+                    }
+                } catch (\Throwable) {
+                    // Skip if user lookup fails
+                }
+            }
         } elseif (! empty($metadata['extension_dialed'])) {
             $callType = 'Extension call';
         } elseif (! empty($metadata['call_group_name'])) {
-            $callType = 'Inbound call, '.$metadata['call_group_name'];
+            $callType = 'Inbound call for '.$metadata['call_group_name'];
         } else {
             $callType = 'Inbound call';
         }
@@ -716,7 +729,7 @@ class TwilioVoiceWebhookController extends Controller
 
         $response = new \Twilio\TwiML\VoiceResponse;
         $settings = \App\Models\CompanySetting::getInstance();
-        $response->say("{$callType} from {$callerName}.", ['voice' => $settings->tts_voice ?? 'Polly.Joanna']);
+        $response->say("{$callType} from {$callerName}{$extra}.", ['voice' => $settings->tts_voice ?? 'Polly.Joanna']);
 
         return $this->twimlResponse($response->__toString());
     }
