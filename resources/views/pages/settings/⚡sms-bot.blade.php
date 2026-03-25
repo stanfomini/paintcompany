@@ -2,6 +2,7 @@
 
 use App\Models\CompanySetting;
 use App\Models\SmsBotFlow;
+use App\Models\SmsBotStep;
 use App\Models\SmsConversation;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -173,6 +174,57 @@ new class extends Component {
         }
 
         $flow->update(['status' => $newStatus]);
+        unset($this->flows);
+    }
+
+    public function duplicateFlow(int $flowId): void
+    {
+        $original = SmsBotFlow::with('steps')->findOrFail($flowId);
+
+        $copy = $original->replicate();
+        $copy->name = $original->name . ' (Copy)';
+        $copy->status = 'draft';
+        $copy->save();
+
+        // First pass: clone steps and build ID map
+        $stepMap = [];
+        foreach ($original->steps as $step) {
+            $newStep = $step->replicate(['next_step_id', 'source_step_id']);
+            $newStep->flow_id = $copy->id;
+            $newStep->next_step_id = null;
+            $newStep->source_step_id = null;
+            $newStep->save();
+            $stepMap[$step->id] = $newStep->id;
+        }
+
+        // Second pass: remap branching references
+        foreach ($original->steps as $step) {
+            $newStepId = $stepMap[$step->id];
+            $updates = [];
+
+            if ($step->next_step_id && isset($stepMap[$step->next_step_id])) {
+                $updates['next_step_id'] = $stepMap[$step->next_step_id];
+            }
+
+            if ($step->source_step_id && isset($stepMap[$step->source_step_id])) {
+                $updates['source_step_id'] = $stepMap[$step->source_step_id];
+            }
+
+            if (! empty($step->quick_reply_options)) {
+                $updates['quick_reply_options'] = collect($step->quick_reply_options)->map(function (array $opt) use ($stepMap) {
+                    if (! empty($opt['next_step_id']) && isset($stepMap[$opt['next_step_id']])) {
+                        $opt['next_step_id'] = $stepMap[$opt['next_step_id']];
+                    }
+
+                    return $opt;
+                })->all();
+            }
+
+            if (! empty($updates)) {
+                SmsBotStep::where('id', $newStepId)->update($updates);
+            }
+        }
+
         unset($this->flows);
     }
 
@@ -379,6 +431,7 @@ new class extends Component {
                                     {{ ucfirst($flow->status) }}
                                 </flux:badge>
                                 <flux:button size="sm" variant="ghost" :href="route('settings.sms-bot.flows.edit', $flow)" wire:navigate icon="pencil-square" />
+                                <flux:button size="sm" variant="ghost" wire:click="duplicateFlow({{ $flow->id }})" icon="document-duplicate" />
                                 <flux:button size="sm" variant="ghost" wire:click="toggleFlowStatus({{ $flow->id }})" :icon="$flow->status === 'active' ? 'pause' : 'play'" />
                                 <flux:button size="sm" variant="ghost" wire:click="deleteFlow({{ $flow->id }})" wire:confirm="{{ __('Are you sure you want to delete this flow?') }}" icon="trash" class="text-red-500 hover:text-red-700" />
                             </div>

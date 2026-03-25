@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\MessengerBotFlow;
+use App\Models\MessengerBotStep;
 use App\Models\MessengerResponder;
 use App\Models\MessengerSetting;
 use App\Models\User;
@@ -241,6 +242,56 @@ new class extends Component {
     {
         $this->botTestMode = ! $this->botTestMode;
         MessengerSetting::getInstance()->update(['bot_test_mode' => $this->botTestMode]);
+    }
+
+    public function duplicateFlow(int $flowId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $original = MessengerBotFlow::with('steps')->findOrFail($flowId);
+
+        $copy = $original->replicate();
+        $copy->name = $original->name . ' (Copy)';
+        $copy->status = 'draft';
+        $copy->save();
+
+        // First pass: clone steps and build ID map
+        $stepMap = [];
+        foreach ($original->steps as $step) {
+            $newStep = $step->replicate(['next_step_id']);
+            $newStep->flow_id = $copy->id;
+            $newStep->next_step_id = null;
+            $newStep->save();
+            $stepMap[$step->id] = $newStep->id;
+        }
+
+        // Second pass: remap branching references
+        foreach ($original->steps as $step) {
+            $newStepId = $stepMap[$step->id];
+            $updates = [];
+
+            if ($step->next_step_id && isset($stepMap[$step->next_step_id])) {
+                $updates['next_step_id'] = $stepMap[$step->next_step_id];
+            }
+
+            if (! empty($step->quick_reply_options)) {
+                $updates['quick_reply_options'] = collect($step->quick_reply_options)->map(function (array $opt) use ($stepMap) {
+                    if (! empty($opt['next_step_id']) && isset($stepMap[$opt['next_step_id']])) {
+                        $opt['next_step_id'] = $stepMap[$opt['next_step_id']];
+                    }
+
+                    return $opt;
+                })->all();
+            }
+
+            if (! empty($updates)) {
+                MessengerBotStep::where('id', $newStepId)->update($updates);
+            }
+        }
+
+        $this->loadFlows();
     }
 
     public function deleteFlow(int $flowId): void
@@ -602,6 +653,7 @@ new class extends Component {
                                 <a href="{{ route('messenger.flows.edit', $flow['id']) }}" wire:navigate>
                                     <flux:button size="sm" variant="ghost" icon="pencil-square" />
                                 </a>
+                                <flux:button size="sm" variant="ghost" wire:click="duplicateFlow({{ $flow['id'] }})" icon="document-duplicate" />
                                 <flux:button size="sm" variant="ghost" wire:click="deleteFlow({{ $flow['id'] }})" wire:confirm="{{ __('Are you sure you want to delete this flow?') }}" icon="trash" class="text-red-500 hover:text-red-700" />
                             </div>
                         </div>
