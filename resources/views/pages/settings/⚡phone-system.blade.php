@@ -25,6 +25,7 @@ new class extends Component {
     public bool $phoneSystemEnabled = false;
     public string $phoneRoutingMode = 'ring_all';
     public bool $callRecordingEnabled = false;
+    public string $ttsVoice = 'Polly.Joanna';
 
     // Section 2: Call Groups
     public bool $showGroupModal = false;
@@ -52,6 +53,12 @@ new class extends Component {
     public array $ivrOptions = [];
     public string $timeoutAction = 'ring_default';
 
+    // IVR Greeting
+    public string $ivrGreetingType = 'auto';
+    public string $ivrGreetingText = '';
+    public $ivrGreetingFile = null;
+    public ?string $existingIvrGreetingPath = null;
+
     // Section 5: Voicemail
     public string $voicemailGreetingType = 'tts';
     public string $voicemailGreetingText = '';
@@ -76,6 +83,7 @@ new class extends Component {
         $this->phoneSystemEnabled = (bool) $settings->phone_system_enabled;
         $this->phoneRoutingMode = $settings->phone_routing_mode ?? 'ring_all';
         $this->callRecordingEnabled = (bool) $settings->call_recording_enabled;
+        $this->ttsVoice = $settings->tts_voice ?? 'Polly.Joanna';
 
         // Call Group Defaults
         $this->defaultCallGroupId = $settings->default_call_group_id;
@@ -97,6 +105,11 @@ new class extends Component {
         }, $ivrMenu['options'] ?? []);
         $this->timeoutAction = $ivrMenu['timeout_action'] ?? 'ring_default';
 
+        // IVR Greeting
+        $this->ivrGreetingType = $settings->ivr_greeting_type ?? 'auto';
+        $this->ivrGreetingText = $settings->ivr_greeting_text ?? '';
+        $this->existingIvrGreetingPath = $settings->ivr_greeting_path;
+
         // Voicemail
         $this->voicemailGreetingType = $settings->voicemail_greeting_type ?? 'tts';
         $this->voicemailGreetingText = $settings->voicemail_greeting_text ?? '';
@@ -110,10 +123,15 @@ new class extends Component {
     {
         $this->ensureInternalUser();
 
+        $this->validate([
+            'ttsVoice' => ['required', 'string', 'in:Polly.Joanna,Polly.Matthew,Polly.Salli,Polly.Kendra,Polly.Joey,Polly.Ruth,Polly.Stephen'],
+        ]);
+
         CompanySetting::getInstance()->update([
             'phone_system_enabled' => $this->phoneSystemEnabled,
             'phone_routing_mode' => $this->phoneRoutingMode,
             'call_recording_enabled' => $this->callRecordingEnabled,
+            'tts_voice' => $this->ttsVoice,
         ]);
 
         $this->dispatch('general-saved');
@@ -360,6 +378,9 @@ new class extends Component {
 
         $this->validate([
             'ivrEnabled' => ['boolean'],
+            'ivrGreetingType' => ['required', 'string', 'in:auto,tts,upload'],
+            'ivrGreetingText' => ['nullable', 'string', 'max:1000'],
+            'ivrGreetingFile' => ['nullable', 'file', 'mimes:mp3,wav,ogg,m4a', 'max:10240'],
             'ivrOptions' => ['array'],
             'ivrOptions.*.digit' => ['required', 'string', 'size:1'],
             'ivrOptions.*.label' => ['required', 'string', 'max:100'],
@@ -368,13 +389,24 @@ new class extends Component {
             'timeoutAction' => ['required', 'in:ring_default,voicemail'],
         ]);
 
-        CompanySetting::getInstance()->update([
+        $data = [
             'ivr_enabled' => $this->ivrEnabled,
+            'ivr_greeting_type' => $this->ivrGreetingType,
+            'ivr_greeting_text' => $this->ivrGreetingText ?: null,
             'ivr_menu' => [
                 'options' => $this->ivrOptions,
                 'timeout_action' => $this->timeoutAction,
             ],
-        ]);
+        ];
+
+        if ($this->ivrGreetingFile) {
+            $path = $this->ivrGreetingFile->store('ivr-greetings', 'public');
+            $data['ivr_greeting_path'] = $path;
+            $this->existingIvrGreetingPath = $path;
+        }
+
+        CompanySetting::getInstance()->update($data);
+        $this->ivrGreetingFile = null;
 
         $this->dispatch('ivr-saved');
     }
@@ -502,6 +534,16 @@ new class extends Component {
                     </flux:select>
 
                     <flux:switch wire:model="callRecordingEnabled" :label="__('Call Recording')" :description="__('Record all calls for quality assurance and training')" />
+
+                    <flux:select wire:model="ttsVoice" :label="__('TTS Voice')" :description="__('Voice used for all text-to-speech (voicemail, IVR, call announcements)')">
+                        <flux:select.option value="Polly.Joanna">{{ __('Joanna — Female (Standard)') }}</flux:select.option>
+                        <flux:select.option value="Polly.Matthew">{{ __('Matthew — Male (Standard)') }}</flux:select.option>
+                        <flux:select.option value="Polly.Salli">{{ __('Salli — Female (Standard)') }}</flux:select.option>
+                        <flux:select.option value="Polly.Kendra">{{ __('Kendra — Female (Standard)') }}</flux:select.option>
+                        <flux:select.option value="Polly.Joey">{{ __('Joey — Male (Standard)') }}</flux:select.option>
+                        <flux:select.option value="Polly.Ruth">{{ __('Ruth — Female (Neural)') }}</flux:select.option>
+                        <flux:select.option value="Polly.Stephen">{{ __('Stephen — Male (Neural)') }}</flux:select.option>
+                    </flux:select>
                 </div>
 
                 <div class="mt-4 flex items-center gap-4">
@@ -624,6 +666,31 @@ new class extends Component {
                     <flux:switch wire:model.live="ivrEnabled" :label="__('Enable IVR Menu')" :description="__('When enabled, callers hear a menu before being routed')" />
 
                     @if ($ivrEnabled)
+                        <flux:separator class="my-3" />
+
+                        <flux:select wire:model.live="ivrGreetingType" :label="__('Greeting Type')">
+                            <flux:select.option value="auto">{{ __('Auto-generate from menu options') }}</flux:select.option>
+                            <flux:select.option value="tts">{{ __('Custom Text-to-Speech') }}</flux:select.option>
+                            <flux:select.option value="upload">{{ __('Upload Audio File') }}</flux:select.option>
+                        </flux:select>
+
+                        @if ($ivrGreetingType === 'tts')
+                            <flux:textarea wire:model="ivrGreetingText" :label="__('IVR Greeting Message')" :placeholder="__('Welcome to Painting Made Easy. For estimates, press 1. For scheduling, press 2. To leave a voicemail, press 9.')" rows="3" />
+                        @elseif ($ivrGreetingType === 'upload')
+                            <flux:field>
+                                <flux:label>{{ __('Upload IVR Greeting') }}</flux:label>
+                                <input type="file" wire:model="ivrGreetingFile" accept=".mp3,.wav,.ogg,.m4a" class="block w-full text-sm text-zinc-500 file:mr-4 file:rounded file:border-0 file:bg-zinc-100 file:px-4 file:py-2 file:text-sm file:font-medium hover:file:bg-zinc-200 dark:text-zinc-400 dark:file:bg-zinc-700 dark:hover:file:bg-zinc-600" />
+                                @if ($existingIvrGreetingPath)
+                                    <flux:text class="mt-1 text-xs text-zinc-500">{{ __('Current file') }}: {{ basename($existingIvrGreetingPath) }}</flux:text>
+                                @endif
+                                @error('ivrGreetingFile')
+                                    <flux:text class="mt-1 text-xs text-red-500">{{ $message }}</flux:text>
+                                @enderror
+                            </flux:field>
+                        @endif
+
+                        <flux:separator class="my-3" />
+
                         <div class="space-y-3">
                             @foreach ($ivrOptions as $index => $option)
                                 <div wire:key="ivr-{{ $index }}" class="flex items-center gap-3 rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-700 dark:bg-zinc-800">

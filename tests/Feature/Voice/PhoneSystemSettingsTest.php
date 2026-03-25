@@ -73,6 +73,23 @@ it('can enable call recording', function () {
     expect(CompanySetting::getInstance()->call_recording_enabled)->toBeTrue();
 });
 
+it('can update TTS voice in general settings', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ttsVoice', 'Polly.Matthew')
+        ->call('saveGeneral')
+        ->assertDispatched('general-saved');
+
+    CompanySetting::clearInstanceCache();
+    expect(CompanySetting::getInstance()->tts_voice)->toBe('Polly.Matthew');
+});
+
+it('validates TTS voice must be a valid option', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ttsVoice', 'InvalidVoice')
+        ->call('saveGeneral')
+        ->assertHasErrors(['ttsVoice']);
+});
+
 // --- Section 2: Call Groups ---
 
 it('can create a new call group', function () {
@@ -309,6 +326,38 @@ it('can set IVR timeout action', function () {
 
     CompanySetting::clearInstanceCache();
     expect(CompanySetting::getInstance()->ivr_menu['timeout_action'])->toBe('voicemail');
+});
+
+it('can save IVR greeting type as tts with custom text', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ivrEnabled', true)
+        ->set('ivrGreetingType', 'tts')
+        ->set('ivrGreetingText', 'Welcome to our company.')
+        ->call('saveIvr')
+        ->assertDispatched('ivr-saved');
+
+    CompanySetting::clearInstanceCache();
+    $settings = CompanySetting::getInstance();
+    expect($settings->ivr_greeting_type)->toBe('tts')
+        ->and($settings->ivr_greeting_text)->toBe('Welcome to our company.');
+});
+
+it('can save IVR greeting type as auto', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ivrEnabled', true)
+        ->set('ivrGreetingType', 'auto')
+        ->call('saveIvr')
+        ->assertDispatched('ivr-saved');
+
+    CompanySetting::clearInstanceCache();
+    expect(CompanySetting::getInstance()->ivr_greeting_type)->toBe('auto');
+});
+
+it('validates IVR greeting type must be valid option', function () {
+    Livewire::test('pages::settings.phone-system')
+        ->set('ivrGreetingType', 'invalid')
+        ->call('saveIvr')
+        ->assertHasErrors(['ivrGreetingType']);
 });
 
 it('validates IVR option labels are required', function () {
