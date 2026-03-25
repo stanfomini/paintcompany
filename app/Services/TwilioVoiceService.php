@@ -150,14 +150,13 @@ class TwilioVoiceService
         $menu = $settings->ivr_menu ?? [];
         $options = $menu['options'] ?? [];
         $extensionPrompt = $menu['extension_prompt'] ?? false;
+        $voice = $this->getTtsVoice($settings);
 
         $gatherOptions = [
             'input' => 'dtmf',
             'timeout' => 5,
         ];
 
-        // If extensions are enabled, don't limit digits (let finishOnKey="#" handle it)
-        // Otherwise, limit to single digit for simple menu selection
         if ($extensionPrompt) {
             $gatherOptions['finishOnKey'] = '#';
         } else {
@@ -174,22 +173,31 @@ class TwilioVoiceService
 
         $gather = $response->gather($gatherOptions);
 
-        // Build menu text from IVR options
-        $menuText = 'Thank you for calling. ';
-        foreach ($options as $option) {
-            $digit = $option['digit'] ?? '';
-            $label = $option['label'] ?? "Option {$digit}";
-            $menuText .= "Press {$digit} for {$label}. ";
+        // Determine greeting based on ivr_greeting_type
+        $greetingType = $settings->ivr_greeting_type ?? 'auto';
+
+        if ($greetingType === 'upload' && ! empty($settings->ivr_greeting_path)) {
+            $gather->play(storage_url($settings->ivr_greeting_path));
+        } elseif ($greetingType === 'tts' && ! empty($settings->ivr_greeting_text)) {
+            $gather->say($settings->ivr_greeting_text, ['voice' => $voice]);
+        } else {
+            // Auto-generate from menu options (default/fallback)
+            $menuText = 'Thank you for calling. ';
+            foreach ($options as $option) {
+                $digit = $option['digit'] ?? '';
+                $label = $option['label'] ?? "Option {$digit}";
+                $menuText .= "Press {$digit} for {$label}. ";
+            }
+
+            if ($extensionPrompt) {
+                $menuText .= 'Or dial your party\'s extension at any time.';
+            }
+
+            $gather->say($menuText, ['voice' => $voice]);
         }
 
-        if ($extensionPrompt) {
-            $menuText .= 'Or dial your party\'s extension at any time.';
-        }
-
-        $gather->say($menuText, ['voice' => $this->getTtsVoice($settings)]);
-
-        // No input fallback: go to voicemail
-        $response->say('We did not receive your selection.', ['voice' => $this->getTtsVoice($settings)]);
+        // No input fallback
+        $response->say('We did not receive your selection.', ['voice' => $voice]);
         $response->redirect(route('webhooks.twilio.voice.voicemail-fallback', [
             'callLog' => $callLog->ulid,
         ]));

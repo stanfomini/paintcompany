@@ -103,6 +103,125 @@ describe('generateIvrMenuTwiml', function () {
             ->and($twiml)->toContain('<Gather')
             ->and($twiml)->toContain('Thank you for calling.');
     });
+
+    it('uses custom TTS greeting when ivr_greeting_type is tts', function () {
+        $settings = CompanySetting::getInstance();
+        $settings->update([
+            'ivr_enabled' => true,
+            'ivr_greeting_type' => 'tts',
+            'ivr_greeting_text' => 'Welcome to Painting Made Easy. For estimates press one, for scheduling press two.',
+            'ivr_menu' => [
+                'options' => [
+                    ['digit' => '1', 'label' => 'Estimates', 'call_group_id' => 1],
+                ],
+                'extension_prompt' => false,
+                'timeout_action' => 'ring_default',
+            ],
+        ]);
+        CompanySetting::clearInstanceCache();
+
+        $callLog = CallLog::factory()->create();
+        $service = app(TwilioVoiceService::class);
+        $twiml = $service->generateIvrMenuTwiml($callLog);
+
+        expect($twiml)->toContain('Welcome to Painting Made Easy')
+            ->and($twiml)->not->toContain('Press 1 for Estimates');
+    });
+
+    it('plays uploaded audio when ivr_greeting_type is upload', function () {
+        $settings = CompanySetting::getInstance();
+        $settings->update([
+            'ivr_enabled' => true,
+            'ivr_greeting_type' => 'upload',
+            'ivr_greeting_path' => 'ivr-greetings/custom-ivr.mp3',
+            'ivr_menu' => [
+                'options' => [
+                    ['digit' => '1', 'label' => 'Estimates', 'call_group_id' => 1],
+                ],
+                'extension_prompt' => false,
+                'timeout_action' => 'ring_default',
+            ],
+        ]);
+        CompanySetting::clearInstanceCache();
+
+        $callLog = CallLog::factory()->create();
+        $service = app(TwilioVoiceService::class);
+        $twiml = $service->generateIvrMenuTwiml($callLog);
+
+        expect($twiml)->toContain('<Play')
+            ->and($twiml)->toContain('custom-ivr.mp3')
+            ->and($twiml)->not->toContain('Press 1 for');
+    });
+
+    it('falls back to auto-generated greeting when tts type has empty text', function () {
+        $settings = CompanySetting::getInstance();
+        $settings->update([
+            'ivr_enabled' => true,
+            'ivr_greeting_type' => 'tts',
+            'ivr_greeting_text' => '',
+            'ivr_menu' => [
+                'options' => [
+                    ['digit' => '1', 'label' => 'Estimates', 'call_group_id' => 1],
+                ],
+                'extension_prompt' => false,
+                'timeout_action' => 'ring_default',
+            ],
+        ]);
+        CompanySetting::clearInstanceCache();
+
+        $callLog = CallLog::factory()->create();
+        $service = app(TwilioVoiceService::class);
+        $twiml = $service->generateIvrMenuTwiml($callLog);
+
+        expect($twiml)->toContain('Press 1 for Estimates');
+    });
+
+    it('falls back to auto-generated greeting when upload type has no file', function () {
+        $settings = CompanySetting::getInstance();
+        $settings->update([
+            'ivr_enabled' => true,
+            'ivr_greeting_type' => 'upload',
+            'ivr_greeting_path' => null,
+            'ivr_menu' => [
+                'options' => [
+                    ['digit' => '1', 'label' => 'Estimates', 'call_group_id' => 1],
+                ],
+                'extension_prompt' => false,
+                'timeout_action' => 'ring_default',
+            ],
+        ]);
+        CompanySetting::clearInstanceCache();
+
+        $callLog = CallLog::factory()->create();
+        $service = app(TwilioVoiceService::class);
+        $twiml = $service->generateIvrMenuTwiml($callLog);
+
+        expect($twiml)->toContain('Press 1 for Estimates');
+    });
+
+    it('uses configured tts voice for IVR greeting', function () {
+        $settings = CompanySetting::getInstance();
+        $settings->update([
+            'ivr_enabled' => true,
+            'tts_voice' => 'Polly.Stephen',
+            'ivr_greeting_type' => 'auto',
+            'ivr_menu' => [
+                'options' => [
+                    ['digit' => '1', 'label' => 'Sales', 'call_group_id' => 1],
+                ],
+                'extension_prompt' => false,
+                'timeout_action' => 'ring_default',
+            ],
+        ]);
+        CompanySetting::clearInstanceCache();
+
+        $callLog = CallLog::factory()->create();
+        $service = app(TwilioVoiceService::class);
+        $twiml = $service->generateIvrMenuTwiml($callLog);
+
+        expect($twiml)->toContain('Polly.Stephen')
+            ->and($twiml)->not->toContain('Polly.Joanna');
+    });
 });
 
 // ---------------------------------------------------------------------------
