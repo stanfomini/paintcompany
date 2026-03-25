@@ -47,9 +47,15 @@ class ProcessCallRecordingJob implements ShouldQueue
         }
 
         try {
-            $recordingUrl = $callLog->getPlayableRecordingUrl();
+            $recordingUrl = $callLog->getRawRecordingUrl();
 
-            $response = Http::timeout(60)->get($recordingUrl);
+            // Twilio recording URLs require Basic Auth (Account SID + Auth Token)
+            $response = Http::timeout(60)
+                ->withBasicAuth(
+                    config('services.twilio.sid'),
+                    config('services.twilio.token')
+                )
+                ->get($recordingUrl);
 
             if (! $response->successful()) {
                 Log::warning('ProcessCallRecordingJob: Failed to download recording', [

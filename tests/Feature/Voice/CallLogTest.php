@@ -125,22 +125,22 @@ it('casts timestamps as datetime', function () {
     expect($callLog->started_at)->toBeInstanceOf(\Carbon\CarbonInterface::class);
 });
 
-it('returns playable recording URL with .mp3 for twilio URLs', function () {
+it('returns raw recording URL with .mp3 for twilio URLs', function () {
     $callLog = CallLog::factory()->create([
         'recording_url' => 'https://api.twilio.com/2010-04-01/Accounts/ACtest/Recordings/REtest',
     ]);
 
-    expect($callLog->getPlayableRecordingUrl())->toBe(
+    expect($callLog->getRawRecordingUrl())->toBe(
         'https://api.twilio.com/2010-04-01/Accounts/ACtest/Recordings/REtest.mp3'
     );
 });
 
-it('does not double-append .mp3 to recording URL', function () {
+it('does not double-append .mp3 to raw recording URL', function () {
     $callLog = CallLog::factory()->create([
         'recording_url' => 'https://api.twilio.com/recordings/REtest.mp3',
     ]);
 
-    expect($callLog->getPlayableRecordingUrl())->toBe(
+    expect($callLog->getRawRecordingUrl())->toBe(
         'https://api.twilio.com/recordings/REtest.mp3'
     );
 });
@@ -149,12 +149,23 @@ it('returns null for empty recording URL', function () {
     $callLog = CallLog::factory()->create(['recording_url' => null]);
 
     expect($callLog->getPlayableRecordingUrl())->toBeNull();
+    expect($callLog->getRawRecordingUrl())->toBeNull();
 });
 
-it('returns non-twilio URLs unchanged', function () {
+it('returns non-twilio raw URLs unchanged', function () {
     $callLog = CallLog::factory()->create([
         'recording_url' => 'https://example.com/recording.wav',
     ]);
 
-    expect($callLog->getPlayableRecordingUrl())->toBe('https://example.com/recording.wav');
+    expect($callLog->getRawRecordingUrl())->toBe('https://example.com/recording.wav');
+});
+
+it('returns proxy route URL for playable recording', function () {
+    $callLog = CallLog::factory()->create([
+        'recording_url' => 'https://api.twilio.com/recordings/REtest.mp3',
+    ]);
+
+    expect($callLog->getPlayableRecordingUrl())->toBe(
+        route('calls.recording', $callLog)
+    );
 });

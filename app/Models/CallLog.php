@@ -179,9 +179,10 @@ class CallLog extends Model
     }
 
     /**
-     * Get the playable recording URL (ensures .mp3 extension for Twilio URLs).
+     * Get the raw recording URL with .mp3 extension for Twilio URLs.
+     * Used internally for downloading from Twilio (with auth).
      */
-    public function getPlayableRecordingUrl(): ?string
+    public function getRawRecordingUrl(): ?string
     {
         if (empty($this->recording_url)) {
             return null;
@@ -194,6 +195,23 @@ class CallLog extends Model
         }
 
         return $url;
+    }
+
+    /**
+     * Get the playable recording URL for the browser.
+     * Returns our proxy route (handles Twilio auth and local storage).
+     */
+    public function getPlayableRecordingUrl(): ?string
+    {
+        if (empty($this->recording_url)) {
+            return null;
+        }
+
+        try {
+            return route('calls.recording', $this);
+        } catch (\Throwable) {
+            return $this->getRawRecordingUrl();
+        }
     }
 
     public function isMissedCall(): bool

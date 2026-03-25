@@ -850,6 +850,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/calls/{callLog}/hangup', [\App\Http\Controllers\CallController::class, 'hangup'])
         ->name('calls.hangup')
         ->middleware('permission:phone.make_calls');
+    Route::get('/calls/{callLog}/recording', \App\Http\Controllers\CallRecordingController::class)
+        ->name('calls.recording');
 });
 
 // Marketing Hub
