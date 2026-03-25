@@ -26,6 +26,16 @@ class TwilioVoiceService
     }
 
     /**
+     * Get the configured TTS voice from company settings.
+     */
+    private function getTtsVoice(?CompanySetting $settings = null): string
+    {
+        $settings ??= CompanySetting::getInstance();
+
+        return $settings->tts_voice ?? 'Polly.Joanna';
+    }
+
+    /**
      * Generate TwiML to ring all members of a call group.
      */
     public function generateRingGroupTwiml(CallGroup $group, CallLog $callLog): string
@@ -99,7 +109,7 @@ class TwilioVoiceService
         } else {
             $greetingText = $settings->voicemail_greeting_text
                 ?? 'We are unable to take your call right now. Please leave a message after the beep and we will get back to you as soon as possible.';
-            $response->say($greetingText, ['voice' => 'Polly.Joanna']);
+            $response->say($greetingText, ['voice' => $this->getTtsVoice($settings)]);
         }
 
         // Record voicemail
@@ -124,7 +134,7 @@ class TwilioVoiceService
         $response->record($recordOptions);
 
         // If they hang up without leaving a message
-        $response->say('We did not receive a recording. Goodbye.', ['voice' => 'Polly.Joanna']);
+        $response->say('We did not receive a recording. Goodbye.', ['voice' => $this->getTtsVoice($settings)]);
         $response->hangup();
 
         return $response->__toString();
@@ -176,10 +186,10 @@ class TwilioVoiceService
             $menuText .= 'Or dial your party\'s extension at any time.';
         }
 
-        $gather->say($menuText, ['voice' => 'Polly.Joanna']);
+        $gather->say($menuText, ['voice' => $this->getTtsVoice($settings)]);
 
         // No input fallback: go to voicemail
-        $response->say('We did not receive your selection.', ['voice' => 'Polly.Joanna']);
+        $response->say('We did not receive your selection.', ['voice' => $this->getTtsVoice($settings)]);
         $response->redirect(route('webhooks.twilio.voice.voicemail-fallback', [
             'callLog' => $callLog->ulid,
         ]));

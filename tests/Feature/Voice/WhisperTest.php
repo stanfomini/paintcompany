@@ -22,7 +22,7 @@ describe('whisper webhook', function () {
         $xml = simplexml_load_string($response->getContent());
         expect($xml)->not->toBeFalse()
             ->and($response->getContent())->toContain('<Say')
-            ->and($response->getContent())->toContain('Polly.Joanna');
+            ->and($response->getContent())->toContain('voice=');
     });
 
     it('includes customer name when customer is identified', function () {

@@ -250,6 +250,25 @@ it('reports disabled when voice is disabled', function () {
     expect($service->isEnabled())->toBeFalse();
 });
 
+it('uses configured tts voice in voicemail greeting', function () {
+    CompanySetting::clearInstanceCache();
+    $settings = CompanySetting::getInstance();
+    $settings->update([
+        'tts_voice' => 'Polly.Matthew',
+        'voicemail_greeting_type' => 'tts',
+        'voicemail_greeting_text' => 'Hello from test',
+    ]);
+    CompanySetting::clearInstanceCache();
+
+    $callLog = CallLog::factory()->create();
+
+    $service = app(TwilioVoiceService::class);
+    $twiml = $service->generateVoicemailTwiml($callLog);
+
+    expect($twiml)->toContain('Polly.Matthew')
+        ->and($twiml)->not->toContain('Polly.Joanna');
+});
+
 it('excludes inactive members from ring group twiml', function () {
     $activeUser = User::factory()->internal()->create(['forwarding_number' => '+13035551111']);
     $inactiveUser = User::factory()->internal()->create(['forwarding_number' => '+13035553333']);

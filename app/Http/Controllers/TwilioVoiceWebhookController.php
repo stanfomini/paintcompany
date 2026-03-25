@@ -715,7 +715,8 @@ class TwilioVoiceWebhookController extends Controller
         }
 
         $response = new \Twilio\TwiML\VoiceResponse;
-        $response->say("{$callType} from {$callerName}.", ['voice' => 'Polly.Joanna']);
+        $settings = \App\Models\CompanySetting::getInstance();
+        $response->say("{$callType} from {$callerName}.", ['voice' => $settings->tts_voice ?? 'Polly.Joanna']);
 
         return $this->twimlResponse($response->__toString());
     }
