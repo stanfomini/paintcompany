@@ -165,6 +165,10 @@ class CompanySetting extends Model
         'phone_business_days',
         'ivr_enabled',
         'ivr_menu',
+        'tts_voice',
+        'ivr_greeting_type',
+        'ivr_greeting_text',
+        'ivr_greeting_path',
         // Brand Ambassador Program
         'brand_ambassador_spots',
     ];
