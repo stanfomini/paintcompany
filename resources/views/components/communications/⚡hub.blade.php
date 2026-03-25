@@ -92,6 +92,7 @@ new class extends Component
             "echo-private:email.user.{$userId},.email.received" => 'refreshData',
             "echo-private:call.user.{$userId},.voicemail.received" => 'refreshData',
             'message-sent' => 'onChildMessageSent',
+            'customer-quick-added' => 'onCustomerQuickAdded',
         ];
 
         // Listen to the specific thread channel for instant message updates
@@ -126,6 +127,11 @@ new class extends Component
     public function onChildMessageSent(): void
     {
         unset($this->threadMessages, $this->contactItems, $this->contacts, $this->tabUnreadCounts);
+    }
+
+    public function onCustomerQuickAdded(): void
+    {
+        unset($this->contacts, $this->contactItems);
     }
 
     public function refreshData(): void
@@ -943,7 +949,20 @@ new class extends Component
     <div class="{{ $contactId ? 'hidden md:flex' : 'flex' }} w-full md:w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-700 flex-col h-full">
         {{-- Header --}}
         <div class="p-3 sm:p-4 border-b border-zinc-200 dark:border-zinc-700">
-            <flux:heading size="lg" class="mb-3">{{ __('Communications') }}</flux:heading>
+            <div class="flex items-center justify-between mb-3">
+                <flux:heading size="lg">{{ __('Communications') }}</flux:heading>
+                <flux:dropdown>
+                    <flux:button variant="ghost" size="sm" icon="plus" />
+                    <flux:menu>
+                        <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
+                            {{ __('Add Customer') }}
+                        </flux:menu.item>
+                        <flux:menu.item icon="envelope" wire:click="$dispatch('open-send-invitation')">
+                            {{ __('Send Invitation') }}
+                        </flux:menu.item>
+                    </flux:menu>
+                </flux:dropdown>
+            </div>
             <flux:input wire:model.live.debounce.300ms="search" type="search" :placeholder="__('Search contacts...')" icon="magnifying-glass" size="sm" />
             <div class="mt-2">
                 <flux:select wire:model.live="typeFilter" size="sm">
@@ -1960,4 +1979,8 @@ new class extends Component
             </form>
         </div>
     </flux:modal>
+
+    {{-- Quick Add Customer & Send Invitation child components --}}
+    @livewire('communications.quick-add-customer', key('quick-add-customer'))
+    @livewire('invitations.send-invitation', key('hub-send-invitation'))
 </div>

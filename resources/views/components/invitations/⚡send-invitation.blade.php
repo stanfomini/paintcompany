@@ -5,6 +5,7 @@ use App\Services\InvitationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
+use Livewire\Attributes\On;
 use Livewire\Component;
 
 new class extends Component {
@@ -35,6 +36,7 @@ new class extends Component {
         }
     }
 
+    #[On('open-send-invitation')]
     public function openModal(): void
     {
         $this->showModal = true;
