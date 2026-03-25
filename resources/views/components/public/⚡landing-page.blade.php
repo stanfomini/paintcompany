@@ -775,21 +775,7 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
         </div>
         <div class="w-full max-w-[1600px] mx-auto">
             <div id="promo-player-root" class="w-full aspect-video bg-zinc-900"></div>
-            {{-- Lazy-load React+Remotion (~400KB) only when video section scrolls into view --}}
-            <script type="module">
-                const root = document.getElementById('promo-player-root');
-                if (root) {
-                    const observer = new IntersectionObserver((entries) => {
-                        entries.forEach(entry => {
-                            if (entry.isIntersecting) {
-                                observer.disconnect();
-                                import(/* @vite-ignore */ '{{ Vite::asset("resources/js/promo-player.tsx") }}');
-                            }
-                        });
-                    }, { rootMargin: '200px' });
-                    observer.observe(root);
-                }
-            </script>
+            @vite('resources/js/promo-player.tsx')
         </div>
     </section>
 

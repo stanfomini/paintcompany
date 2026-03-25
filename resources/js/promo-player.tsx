@@ -122,6 +122,10 @@ const PromoPlayerApp: React.FC = () => {
 // Mount
 const container = document.getElementById('promo-player-root');
 if (container) {
-  const root = createRoot(container);
-  root.render(<PromoPlayerApp />);
+  try {
+    const root = createRoot(container);
+    root.render(<PromoPlayerApp />);
+  } catch (err) {
+    console.error('[promo-player] Render failed:', err);
+  }
 }
