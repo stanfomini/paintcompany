@@ -92,7 +92,9 @@ new class extends Component
             "echo-private:email.user.{$userId},.email.received" => 'refreshData',
             "echo-private:call.user.{$userId},.voicemail.received" => 'refreshData',
             'message-sent' => 'onChildMessageSent',
-            'customer-quick-added' => 'onCustomerQuickAdded',
+            'customer-quick-added' => 'onQuickAdded',
+            'agent-quick-added' => 'onQuickAdded',
+            'crew-quick-added' => 'onQuickAdded',
         ];
 
         // Listen to the specific thread channel for instant message updates
@@ -129,7 +131,7 @@ new class extends Component
         unset($this->threadMessages, $this->contactItems, $this->contacts, $this->tabUnreadCounts);
     }
 
-    public function onCustomerQuickAdded(): void
+    public function onQuickAdded(): void
     {
         unset($this->contacts, $this->contactItems);
     }
@@ -949,20 +951,7 @@ new class extends Component
     <div class="{{ $contactId ? 'hidden md:flex' : 'flex' }} w-full md:w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-700 flex-col h-full">
         {{-- Header --}}
         <div class="p-3 sm:p-4 border-b border-zinc-200 dark:border-zinc-700">
-            <div class="flex items-center justify-between mb-3">
-                <flux:heading size="lg">{{ __('Communications') }}</flux:heading>
-                <flux:dropdown>
-                    <flux:button variant="ghost" size="sm" icon="plus" />
-                    <flux:menu>
-                        <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
-                            {{ __('Add Customer') }}
-                        </flux:menu.item>
-                        <flux:menu.item icon="envelope" wire:click="$dispatch('open-send-invitation')">
-                            {{ __('Send Invitation') }}
-                        </flux:menu.item>
-                    </flux:menu>
-                </flux:dropdown>
-            </div>
+            <flux:heading size="lg" class="mb-3">{{ __('Communications') }}</flux:heading>
             <flux:input wire:model.live.debounce.300ms="search" type="search" :placeholder="__('Search contacts...')" icon="magnifying-glass" size="sm" />
             <div class="mt-2">
                 <flux:select wire:model.live="typeFilter" size="sm">
@@ -1100,8 +1089,8 @@ new class extends Component
                     </div>
                     <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Inbound SMS conversation') }}</flux:text>
                 </div>
-                @if ($this->contactProjectPreview)
-                    <div class="flex items-center gap-1 shrink-0">
+                <div class="flex items-center gap-1 shrink-0">
+                    @if ($this->contactProjectPreview)
                         <flux:button
                             size="sm"
                             variant="ghost"
@@ -1117,8 +1106,22 @@ new class extends Component
                             target="_blank"
                             title="{{ __('Open preview') }}"
                         />
-                    </div>
-                @endif
+                    @endif
+                    <flux:dropdown>
+                        <flux:button variant="ghost" size="sm" icon="plus" />
+                        <flux:menu>
+                            <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
+                                {{ __('Add Customer') }}
+                            </flux:menu.item>
+                            <flux:menu.item icon="building-office" wire:click="$dispatch('open-quick-add-agent')">
+                                {{ __('Add Agent') }}
+                            </flux:menu.item>
+                            <flux:menu.item icon="paint-brush" wire:click="$dispatch('open-quick-add-crew')">
+                                {{ __('Add Crew') }}
+                            </flux:menu.item>
+                        </flux:menu>
+                    </flux:dropdown>
+                </div>
             </div>
 
             {{-- SMS Tab Bar --}}
@@ -1204,6 +1207,20 @@ new class extends Component
                     </div>
                     <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Appointment setter support chat') }}</flux:text>
                 </div>
+                <flux:dropdown>
+                    <flux:button variant="ghost" size="sm" icon="plus" />
+                    <flux:menu>
+                        <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
+                            {{ __('Add Customer') }}
+                        </flux:menu.item>
+                        <flux:menu.item icon="building-office" wire:click="$dispatch('open-quick-add-agent')">
+                            {{ __('Add Agent') }}
+                        </flux:menu.item>
+                        <flux:menu.item icon="paint-brush" wire:click="$dispatch('open-quick-add-crew')">
+                            {{ __('Add Crew') }}
+                        </flux:menu.item>
+                    </flux:menu>
+                </flux:dropdown>
             </div>
 
             {{-- Setter thread as full messenger view --}}
@@ -1292,16 +1309,30 @@ new class extends Component
                     </div>
                     <flux:text size="xs" class="text-zinc-500 truncate">{{ __('Facebook Messenger conversation') }}</flux:text>
                 </div>
-                @if ($this->canConvertMessenger)
-                    <div class="flex items-center gap-1.5 shrink-0">
+                <div class="flex items-center gap-1.5 shrink-0">
+                    @if ($this->canConvertMessenger)
                         <flux:button size="sm" variant="primary" wire:click="openConvertModal" icon="user-plus">
                             <span class="hidden sm:inline">{{ __('Convert') }}</span>
                         </flux:button>
                         <flux:button size="sm" wire:click="sendBookingLink" icon="link" wire:confirm="{{ __('Send a booking form link to this Messenger user?') }}">
                             <span class="hidden sm:inline">{{ __('Send Link') }}</span>
                         </flux:button>
-                    </div>
-                @endif
+                    @endif
+                    <flux:dropdown>
+                        <flux:button variant="ghost" size="sm" icon="plus" />
+                        <flux:menu>
+                            <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
+                                {{ __('Add Customer') }}
+                            </flux:menu.item>
+                            <flux:menu.item icon="building-office" wire:click="$dispatch('open-quick-add-agent')">
+                                {{ __('Add Agent') }}
+                            </flux:menu.item>
+                            <flux:menu.item icon="paint-brush" wire:click="$dispatch('open-quick-add-crew')">
+                                {{ __('Add Crew') }}
+                            </flux:menu.item>
+                        </flux:menu>
+                    </flux:dropdown>
+                </div>
             </div>
 
             {{-- Messenger thread as full messenger view --}}
@@ -1423,6 +1454,20 @@ new class extends Component
                     @elseif ($this->selectedContact->isCrew())
                         <flux:button size="sm" variant="ghost" icon="user" :href="route('crews.show', $this->selectedContact)" wire:navigate />
                     @endif
+                    <flux:dropdown>
+                        <flux:button variant="ghost" size="sm" icon="plus" />
+                        <flux:menu>
+                            <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
+                                {{ __('Add Customer') }}
+                            </flux:menu.item>
+                            <flux:menu.item icon="building-office" wire:click="$dispatch('open-quick-add-agent')">
+                                {{ __('Add Agent') }}
+                            </flux:menu.item>
+                            <flux:menu.item icon="paint-brush" wire:click="$dispatch('open-quick-add-crew')">
+                                {{ __('Add Crew') }}
+                            </flux:menu.item>
+                        </flux:menu>
+                    </flux:dropdown>
                 </div>
             </div>
 
@@ -1980,7 +2025,8 @@ new class extends Component
         </div>
     </flux:modal>
 
-    {{-- Quick Add Customer & Send Invitation child components --}}
+    {{-- Quick Add child components --}}
     @livewire('communications.quick-add-customer', key('quick-add-customer'))
-    @livewire('invitations.send-invitation', key('hub-send-invitation'))
+    @livewire('communications.quick-add-agent', key('quick-add-agent'))
+    @livewire('communications.quick-add-crew', key('quick-add-crew'))
 </div>
