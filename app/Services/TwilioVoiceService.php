@@ -46,7 +46,7 @@ class TwilioVoiceService
 
         $dialOptions = [
             'timeout' => $group->ring_timeout_seconds,
-            'callerId' => $callLog->from_number,
+            'callerId' => config('services.twilio.from'),
         ];
 
         // Set action URL for handling what happens after dial attempt
@@ -71,8 +71,15 @@ class TwilioVoiceService
 
         $dial = $response->dial('', $dialOptions);
 
+        $numberAttrs = [];
+        try {
+            $numberAttrs['url'] = route('webhooks.twilio.voice.whisper', ['callLog' => $callLog->ulid]);
+        } catch (\Throwable) {
+            // Route may not exist yet
+        }
+
         foreach ($numbers as $number) {
-            $dial->number($number);
+            $dial->number($number, $numberAttrs);
         }
 
         return $response->__toString();
@@ -286,7 +293,15 @@ class TwilioVoiceService
         }
 
         $dial = $response->dial('', $dialOptions);
-        $dial->number($targetUser->forwarding_number);
+
+        $numberAttrs = [];
+        try {
+            $numberAttrs['url'] = route('webhooks.twilio.voice.whisper', ['callLog' => $callLog->ulid]);
+        } catch (\Throwable) {
+            // Route may not exist yet
+        }
+
+        $dial->number($targetUser->forwarding_number, $numberAttrs);
 
         // Update the live call via Twilio REST API
         $this->twilio->getClient()->calls($callSid)->update([

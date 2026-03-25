@@ -94,7 +94,7 @@ describe('TwilioVoiceService::transferCall', function () {
             ->toThrow(\InvalidArgumentException::class, 'No internal user found');
     });
 
-    it('updates twilio call with twiml containing target number', function () {
+    it('updates twilio call with twiml containing target number and whisper url', function () {
         $callLog = CallLog::factory()->create([
             'twilio_call_sid' => 'CAtransfer'.str_repeat('b', 24),
             'status' => 'in-progress',
@@ -104,11 +104,13 @@ describe('TwilioVoiceService::transferCall', function () {
         $callContext = Mockery::mock(CallContext::class);
         $callContext->shouldReceive('update')
             ->once()
-            ->withArgs(function ($params) {
+            ->withArgs(function ($params) use ($callLog) {
                 return isset($params['twiml'])
                     && str_contains($params['twiml'], '+13035552222')
                     && str_contains($params['twiml'], '<Dial')
-                    && str_contains($params['twiml'], 'callerId');
+                    && str_contains($params['twiml'], 'callerId')
+                    && str_contains($params['twiml'], 'whisper')
+                    && str_contains($params['twiml'], $callLog->ulid);
             })
             ->andReturn($this->callInstanceMock);
 

@@ -453,7 +453,7 @@ class TwilioVoiceWebhookController extends Controller
             $response = new \Twilio\TwiML\VoiceResponse;
             $dialOptions = [
                 'timeout' => 17,
-                'callerId' => $log->from_number,
+                'callerId' => config('services.twilio.from'),
             ];
 
             try {
@@ -465,7 +465,15 @@ class TwilioVoiceWebhookController extends Controller
             }
 
             $dial = $response->dial('', $dialOptions);
-            $dial->number($user->forwarding_number);
+
+            $numberAttrs = [];
+            try {
+                $numberAttrs['url'] = route('webhooks.twilio.voice.whisper', ['callLog' => $log->ulid]);
+            } catch (\Throwable) {
+                // Route may not exist yet
+            }
+
+            $dial->number($user->forwarding_number, $numberAttrs);
 
             return $this->twimlResponse($response->__toString());
         }
@@ -663,6 +671,53 @@ class TwilioVoiceWebhookController extends Controller
 
         // Fall back to user's default forwarding number
         return \App\Models\User::where('forwarding_number', 'LIKE', '%'.$last10)->value('id');
+    }
+
+    /**
+     * Play a whisper announcement to the answering agent before connecting.
+     * POST /webhooks/twilio/voice/whisper/{callLog}
+     */
+    public function whisper(Request $request, string $callLog): Response
+    {
+        if (! $this->twilio->validateWebhookSignature($request)) {
+            return response('Forbidden', 403);
+        }
+
+        $log = CallLog::where('ulid', $callLog)->first();
+
+        if (! $log) {
+            return $this->twimlResponse('<Response><Hangup/></Response>');
+        }
+
+        // Determine call type from metadata
+        $metadata = $log->metadata ?? [];
+        if (! empty($metadata['transferred'])) {
+            $callType = 'Transferred call';
+        } elseif (! empty($metadata['extension_dialed'])) {
+            $callType = 'Extension call';
+        } elseif (! empty($metadata['call_group_name'])) {
+            $callType = 'Inbound call, '.$metadata['call_group_name'];
+        } else {
+            $callType = 'Inbound call';
+        }
+
+        // Identify caller
+        $callerName = $log->from_number;
+        try {
+            if ($log->customer_id) {
+                $customer = $log->customer;
+                if ($customer) {
+                    $callerName = $customer->full_name ?: $log->from_number;
+                }
+            }
+        } catch (\Throwable) {
+            // Fall back to phone number
+        }
+
+        $response = new \Twilio\TwiML\VoiceResponse;
+        $response->say("{$callType} from {$callerName}.", ['voice' => 'Polly.Joanna']);
+
+        return $this->twimlResponse($response->__toString());
     }
 
     private function twimlResponse(string $twiml): Response

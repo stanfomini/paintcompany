@@ -318,6 +318,8 @@ describe('ivrSelect webhook — extension dialing', function () {
     it('dials forwarding number for valid extension', function () {
         Event::fake([IncomingCall::class]);
 
+        config(['services.twilio.from' => '+15551234567']);
+
         $user = User::factory()->internal()->create([
             'extension' => '101',
             'forwarding_number' => '+13035559999',
@@ -334,15 +336,22 @@ describe('ivrSelect webhook — extension dialing', function () {
         ]);
         CompanySetting::clearInstanceCache();
 
-        $callLog = CallLog::factory()->create(['status' => 'ringing']);
+        $callLog = CallLog::factory()->create([
+            'status' => 'ringing',
+            'from_number' => '+17205559999',
+        ]);
 
         $response = $this->post("/webhooks/twilio/voice/ivr-select/{$callLog->ulid}", [
             'Digits' => '101',
         ]);
 
         $response->assertStatus(200);
-        expect($response->getContent())->toContain('<Dial')
-            ->and($response->getContent())->toContain('+13035559999');
+        $content = $response->getContent();
+        expect($content)->toContain('<Dial')
+            ->and($content)->toContain('+13035559999')
+            ->and($content)->toContain('callerId="+15551234567"')
+            ->and($content)->not->toContain('callerId="+17205559999"')
+            ->and($content)->toContain('whisper');
 
         // Metadata should record extension info
         $callLog->refresh();

@@ -838,6 +838,9 @@ Route::post('/webhooks/twilio/voice/voicemail-fallback/{callLog}', [\App\Http\Co
 Route::post('/webhooks/twilio/voice/outbound-connect/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'outboundConnect'])
     ->name('webhooks.twilio.voice.outbound-connect')
     ->middleware('throttle:120,1');
+Route::post('/webhooks/twilio/voice/whisper/{callLog}', [\App\Http\Controllers\TwilioVoiceWebhookController::class, 'whisper'])
+    ->name('webhooks.twilio.voice.whisper')
+    ->middleware('throttle:120,1');
 
 // Call management (authenticated, internal users)
 Route::middleware(['auth', 'verified'])->group(function () {

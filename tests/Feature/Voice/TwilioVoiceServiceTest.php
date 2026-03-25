@@ -42,6 +42,43 @@ it('generates ring group twiml with valid xml', function () {
         ->and($twiml)->toContain('<Number');
 });
 
+it('uses company number as caller id for ring group', function () {
+    $user = User::factory()->internal()->create(['forwarding_number' => '+13035551111']);
+    $group = CallGroup::factory()->create();
+    CallGroupMember::create([
+        'call_group_id' => $group->id,
+        'user_id' => $user->id,
+        'is_active' => true,
+        'sort_order' => 0,
+    ]);
+    $callLog = CallLog::factory()->create(['from_number' => '+17205559999']);
+
+    $service = app(TwilioVoiceService::class);
+    $twiml = $service->generateRingGroupTwiml($group, $callLog);
+
+    expect($twiml)->toContain('callerId="+15551234567"')
+        ->and($twiml)->not->toContain('callerId="+17205559999"');
+});
+
+it('includes whisper url on number elements in ring group', function () {
+    $user = User::factory()->internal()->create(['forwarding_number' => '+13035551111']);
+    $group = CallGroup::factory()->create();
+    CallGroupMember::create([
+        'call_group_id' => $group->id,
+        'user_id' => $user->id,
+        'is_active' => true,
+        'sort_order' => 0,
+    ]);
+    $callLog = CallLog::factory()->create();
+
+    $service = app(TwilioVoiceService::class);
+    $twiml = $service->generateRingGroupTwiml($group, $callLog);
+
+    expect($twiml)->toContain('url=')
+        ->and($twiml)->toContain('whisper')
+        ->and($twiml)->toContain($callLog->ulid);
+});
+
 it('includes correct forwarding numbers from group members', function () {
     $user1 = User::factory()->internal()->create(['forwarding_number' => '+13035551111']);
     $user2 = User::factory()->internal()->create(['forwarding_number' => '+13035552222']);
