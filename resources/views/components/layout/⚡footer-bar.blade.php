@@ -1,8 +1,8 @@
 <?php
 
-use App\Models\CallLog;
 use App\Models\EmailMessage;
 use App\Services\ChatService;
+use App\Services\MissedCallVoicemailService;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -61,10 +61,7 @@ new class extends Component
             return 0;
         }
 
-        return CallLog::inbound()
-            ->missed()
-            ->where('created_at', '>=', now()->startOfDay())
-            ->count();
+        return app(MissedCallVoicemailService::class)->getUnhandledCountForUser($user);
     }
 
     #[Computed]

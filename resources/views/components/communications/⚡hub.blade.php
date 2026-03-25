@@ -50,6 +50,7 @@ new class extends Component
 
     // SMS contact state
     public ?int $smsThreadId = null;
+    public string $smsActiveTab = 'texts';
 
     // Email thread viewer state
     public ?int $viewingEmailThreadId = null;
@@ -213,6 +214,53 @@ new class extends Component
     public function isSmsContact(): bool
     {
         return $this->contactId && str_starts_with($this->contactId, 'sms-');
+    }
+
+    /**
+     * Get the phone number for the currently selected SMS contact.
+     */
+    public function getSmsContactPhoneNumber(): ?string
+    {
+        if (! $this->isSmsContact() || ! $this->smsThreadId) {
+            return null;
+        }
+        $thread = ChatThread::find($this->smsThreadId);
+        if (! $thread) {
+            return null;
+        }
+        // Extract from subject "SMS from +1XXXXXXXXXX"
+        $phone = str_replace('SMS from ', '', $thread->subject ?? '');
+        if (! empty($phone) && str_starts_with($phone, '+')) {
+            return $phone;
+        }
+        // Fallback to thread's customer phone
+        if ($thread->customer_id) {
+            return Customer::where('id', $thread->customer_id)->value('phone');
+        }
+        return null;
+    }
+
+    /**
+     * Set the active tab for SMS contacts.
+     */
+    public function setSmsTab(string $tab): void
+    {
+        $this->smsActiveTab = $tab;
+    }
+
+    /**
+     * Get the phone number for the currently selected regular contact.
+     */
+    public function getContactPhoneNumber(): ?string
+    {
+        if (! $this->selectedContact) {
+            return null;
+        }
+        $customer = Customer::where('user_id', $this->selectedContact->id)->first();
+        if ($customer?->phone) {
+            return $customer->phone;
+        }
+        return $this->selectedContact->phone ?? null;
     }
 
     /**
@@ -431,12 +479,17 @@ new class extends Component
             $this->selectedContact
         );
 
-        // Add calls count scoped to this contact's customer
+        // Add calls count scoped to this contact's customer or phone number
         if (auth()->user()->can('phone.view_call_history')) {
             $customerId = $this->getContactCustomerId();
-            $counts['calls'] = $customerId
-                ? CallLog::where('customer_id', $customerId)->missed()->unhandled()->count()
-                : 0;
+            if ($customerId) {
+                $counts['calls'] = CallLog::where('customer_id', $customerId)->missed()->unhandled()->count();
+            } else {
+                $phone = $this->getContactPhoneNumber();
+                $counts['calls'] = $phone
+                    ? CallLog::where(fn ($q) => $q->where('from_number', $phone)->orWhere('to_number', $phone))->missed()->unhandled()->count()
+                    : 0;
+            }
         } else {
             $counts['calls'] = 0;
         }
@@ -486,6 +539,7 @@ new class extends Component
         $this->setterThreadId = null;
         $this->messengerThreadId = null;
         $this->smsThreadId = null;
+        $this->smsActiveTab = 'texts';
 
         // If this is an SMS contact, extract the thread ID
         if (str_starts_with($contactId, 'sms-')) {
@@ -1048,8 +1102,28 @@ new class extends Component
                 @endif
             </div>
 
-            {{-- SMS thread as full messenger view --}}
-            @if ($smsThreadId)
+            {{-- SMS Tab Bar --}}
+            @can('phone.view_call_history')
+                <div class="flex items-center gap-0.5 px-2 sm:px-4 border-b border-zinc-200 dark:border-zinc-700 shrink-0">
+                    @foreach (['texts' => __('Texts'), 'calls' => __('Calls')] as $tabKey => $tabLabel)
+                        <button
+                            wire:click="setSmsTab('{{ $tabKey }}')"
+                            wire:key="sms-tab-{{ $tabKey }}"
+                            class="px-2.5 sm:px-3 py-2.5 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition-colors {{ $smsActiveTab === $tabKey ? 'border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300' }}"
+                        >
+                            {{ $tabLabel }}
+                        </button>
+                    @endforeach
+                </div>
+            @endcan
+
+            @if ($smsActiveTab === 'calls' && auth()->user()?->can('phone.view_call_history'))
+                {{-- SMS Calls Tab --}}
+                <div class="flex-1 overflow-y-auto p-3 sm:p-4">
+                    @livewire('communications.call-history', ['phoneNumber' => $this->getSmsContactPhoneNumber()], key('calls-sms-' . $smsThreadId))
+                </div>
+            @elseif ($smsThreadId)
+                {{-- SMS Texts Tab (messenger view) --}}
                 <div class="flex flex-col flex-1 min-h-0">
                     <div
                         x-data="{
@@ -1540,9 +1614,12 @@ new class extends Component
                         @endif
                     </div>
                 @elseif ($activeTab === 'calls')
-                    {{-- CALL HISTORY TAB: Scoped to this contact's customer --}}
+                    {{-- CALL HISTORY TAB: Scoped to this contact's customer or phone number --}}
                     <div class="flex-1 overflow-y-auto p-3 sm:p-4">
-                        @livewire('communications.call-history', ['customerId' => $this->getContactCustomerId()], key('calls-' . $contactId))
+                        @livewire('communications.call-history', [
+                            'customerId' => $this->getContactCustomerId(),
+                            'phoneNumber' => $this->getContactPhoneNumber(),
+                        ], key('calls-' . $contactId))
                     </div>
                 @elseif ($this->contactItems->isEmpty())
                     <div class="text-center py-12 px-4">
@@ -1648,11 +1725,39 @@ new class extends Component
                                     {{-- Item Header --}}
                                     <div class="flex items-start gap-2 sm:gap-3 p-3 sm:p-4 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
                                         <div class="shrink-0 mt-0.5">
-                                            <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center {{ $item['type'] === 'email' ? 'bg-amber-100 dark:bg-amber-900/30' : ($item['channel'] === 'facebook' ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-zinc-100 dark:bg-zinc-800') }}">
-                                                <flux:icon :name="$item['icon']" class="w-3.5 h-3.5 sm:w-4 sm:h-4 {{ $item['type'] === 'email' ? 'text-amber-600 dark:text-amber-400' : ($item['channel'] === 'facebook' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500') }}" />
-                                            </div>
+                                            @if ($item['type'] === 'call')
+                                                @php
+                                                    $callBg = match ($item['call_status'] ?? '') {
+                                                        'no-answer' => 'bg-red-100 dark:bg-red-900/30',
+                                                        'voicemail' => 'bg-amber-100 dark:bg-amber-900/30',
+                                                        default => ($item['direction'] ?? '') === 'inbound' ? 'bg-green-100 dark:bg-green-900/30' : 'bg-blue-100 dark:bg-blue-900/30',
+                                                    };
+                                                    $callText = match ($item['call_status'] ?? '') {
+                                                        'no-answer' => 'text-red-600 dark:text-red-400',
+                                                        'voicemail' => 'text-amber-600 dark:text-amber-400',
+                                                        default => ($item['direction'] ?? '') === 'inbound' ? 'text-green-600 dark:text-green-400' : 'text-blue-600 dark:text-blue-400',
+                                                    };
+                                                @endphp
+                                                <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center {{ $callBg }}">
+                                                    <flux:icon :name="$item['icon']" class="w-3.5 h-3.5 sm:w-4 sm:h-4 {{ $callText }}" />
+                                                </div>
+                                            @else
+                                                <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center {{ $item['type'] === 'email' ? 'bg-amber-100 dark:bg-amber-900/30' : ($item['channel'] === 'facebook' ? 'bg-blue-100 dark:bg-blue-900/30' : 'bg-zinc-100 dark:bg-zinc-800') }}">
+                                                    <flux:icon :name="$item['icon']" class="w-3.5 h-3.5 sm:w-4 sm:h-4 {{ $item['type'] === 'email' ? 'text-amber-600 dark:text-amber-400' : ($item['channel'] === 'facebook' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-500') }}" />
+                                                </div>
+                                            @endif
                                         </div>
-                                        @if ($item['type'] === 'chat' && $item['thread_id'])
+                                        @if ($item['type'] === 'call')
+                                            <div class="flex-1 min-w-0">
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <flux:text class="font-medium text-sm">{{ $item['label'] }}</flux:text>
+                                                    <flux:badge size="sm" color="{{ match($item['call_status'] ?? '') { 'no-answer' => 'red', 'voicemail' => 'yellow', default => 'zinc' } }}">{{ __('Phone') }}</flux:badge>
+                                                </div>
+                                                @if ($item['preview'])
+                                                    <flux:text size="sm" class="text-zinc-500 truncate mt-0.5">{{ $item['preview'] }}</flux:text>
+                                                @endif
+                                            </div>
+                                        @elseif ($item['type'] === 'chat' && $item['thread_id'])
                                             <button wire:click="expandThread({{ $item['thread_id'] }})" class="flex-1 min-w-0 text-left">
                                                 <div class="flex items-center gap-2 flex-wrap">
                                                     <flux:text class="font-medium text-sm">{{ $item['label'] }}</flux:text>
@@ -1688,7 +1793,9 @@ new class extends Component
                                             @if ($item['date'])
                                                 <flux:text size="xs" class="text-zinc-400">{{ $item['date']->diffForHumans() }}</flux:text>
                                             @endif
-                                            @if ($item['type'] === 'chat' && $item['thread_id'])
+                                            @if ($item['type'] === 'call' && ($item['call_duration'] ?? 0) > 0)
+                                                <flux:text size="xs" class="text-zinc-400">{{ gmdate($item['call_duration'] >= 3600 ? 'G:i:s' : 'i:s', $item['call_duration']) }}</flux:text>
+                                            @elseif ($item['type'] === 'chat' && $item['thread_id'])
                                                 <div class="flex items-center gap-1 mt-1">
                                                     <flux:button size="xs" variant="ghost" icon="{{ $expandedThreadId === $item['thread_id'] ? 'chevron-up' : 'chevron-down' }}" wire:click="expandThread({{ $item['thread_id'] }})" />
                                                     <flux:button size="xs" variant="ghost" icon="arrow-top-right-on-square" :href="$item['url']" wire:navigate title="{{ __('Open in full view') }}" />

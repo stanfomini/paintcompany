@@ -20,6 +20,8 @@ new class extends Component
 
     public ?int $customerId = null;
 
+    public ?string $phoneNumber = null;
+
     public string $filter = 'all';
 
     public string $search = '';
@@ -42,9 +44,12 @@ new class extends Component
             ->with(['customer', 'callerUser', 'answeredByUser', 'voicemailForUser', 'userInteractions'])
             ->latest('started_at');
 
-        // Scope to specific customer when viewing per-contact calls
+        // Scope to specific customer or phone number when viewing per-contact calls
         if ($this->customerId) {
             $query->where('customer_id', $this->customerId);
+        } elseif ($this->phoneNumber) {
+            $query->where(fn ($q) => $q->where('from_number', $this->phoneNumber)
+                ->orWhere('to_number', $this->phoneNumber));
         }
 
         // For missed/voicemail/unhandled filters, apply visibility scoping

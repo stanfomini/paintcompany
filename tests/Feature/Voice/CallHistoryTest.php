@@ -129,3 +129,39 @@ it('resets page when filter changes', function () {
         ->call('setFilter', 'missed')
         ->assertSet('filter', 'missed');
 });
+
+it('scopes by phone number when phoneNumber prop is set', function () {
+    $targetPhone = '+13035551234';
+    $otherPhone = '+17205559999';
+
+    CallLog::factory()->inbound()->create(['from_number' => $targetPhone]);
+    CallLog::factory()->outbound()->create(['to_number' => $targetPhone]);
+    CallLog::factory()->inbound()->create(['from_number' => $otherPhone]);
+
+    Livewire::test('communications.call-history', ['phoneNumber' => $targetPhone])
+        ->assertSee($targetPhone)
+        ->assertDontSee($otherPhone);
+});
+
+it('prefers customerId over phoneNumber when both provided', function () {
+    $customer = Customer::factory()->create(['first_name' => 'Bob', 'last_name' => 'Jones']);
+    $targetPhone = '+13035551234';
+
+    // Call linked to customer but from a different number
+    CallLog::factory()->inbound()->create([
+        'customer_id' => $customer->id,
+        'from_number' => '+10001111111',
+    ]);
+
+    // Call from the phone number but not linked to customer
+    CallLog::factory()->inbound()->create([
+        'from_number' => $targetPhone,
+    ]);
+
+    Livewire::test('communications.call-history', [
+        'customerId' => $customer->id,
+        'phoneNumber' => $targetPhone,
+    ])
+        ->assertSee('Bob Jones')
+        ->assertDontSee($targetPhone);
+});

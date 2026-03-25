@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\CallLog;
 use App\Models\ChatParticipant;
 use App\Models\ChatThread;
 use App\Models\Customer;
@@ -608,6 +609,7 @@ class CommunicationsContactService
 
         $shouldIncludeChat = in_array($tab, ['all', 'messenger', 'deals', 'direct']);
         $shouldIncludeEmail = in_array($tab, ['all', 'emails']);
+        $shouldIncludeCalls = ($tab === 'all') && $viewer->can('phone.view_call_history');
 
         // --- Chat threads ---
         if ($shouldIncludeChat) {
@@ -627,6 +629,12 @@ class CommunicationsContactService
         if ($shouldIncludeEmail) {
             $emailItems = $this->getContactEmailItems($contact);
             $items = $items->merge($emailItems);
+        }
+
+        // --- Call log entries ---
+        if ($shouldIncludeCalls) {
+            $callItems = $this->getContactCallLogItems($contact);
+            $items = $items->merge($callItems);
         }
 
         // Sort by date descending
@@ -851,5 +859,99 @@ class CommunicationsContactService
             'support' => $thread->subject ?? 'Support',
             default => $thread->subject ?? 'Chat',
         };
+    }
+
+    /**
+     * Get call log items for a contact (by customer_id with phone fallback).
+     */
+    public function getContactCallLogItems(User $contact): Collection
+    {
+        $customer = Customer::where('user_id', $contact->id)->first();
+
+        if (! $customer) {
+            return collect();
+        }
+
+        $phone = $customer->phone;
+        $query = CallLog::query()
+            ->with(['customer'])
+            ->where(function ($q) use ($customer, $phone) {
+                $q->where('customer_id', $customer->id);
+                if ($phone) {
+                    $q->orWhere('from_number', $phone)
+                        ->orWhere('to_number', $phone);
+                }
+            })
+            ->latest('started_at')
+            ->limit(50);
+
+        return $query->get()->map(fn (CallLog $log) => $this->buildCallLogItem($log));
+    }
+
+    /**
+     * Get call log items by phone number (for SMS contacts without a user).
+     */
+    public function getCallLogItemsByPhone(string $phoneNumber): Collection
+    {
+        return CallLog::query()
+            ->with(['customer'])
+            ->where(function ($q) use ($phoneNumber) {
+                $q->where('from_number', $phoneNumber)
+                    ->orWhere('to_number', $phoneNumber);
+            })
+            ->latest('started_at')
+            ->limit(50)
+            ->get()
+            ->map(fn (CallLog $log) => $this->buildCallLogItem($log));
+    }
+
+    /**
+     * Build a standardized communication item from a call log.
+     */
+    public function buildCallLogItem(CallLog $callLog): array
+    {
+        $isInbound = $callLog->direction === 'inbound';
+
+        $icon = match (true) {
+            $callLog->isVoicemail() => 'inbox',
+            $callLog->isMissedCall() => 'phone-x-mark',
+            $isInbound => 'phone-arrow-down-left',
+            default => 'phone-arrow-up-right',
+        };
+
+        $label = match (true) {
+            $callLog->isVoicemail() => __('Voicemail'),
+            $callLog->isMissedCall() => __('Missed Call'),
+            $isInbound => __('Inbound Call'),
+            default => __('Outbound Call'),
+        };
+
+        $preview = '';
+        if ($callLog->voicemail_transcription) {
+            $preview = Str::limit($callLog->voicemail_transcription, 80);
+        } elseif ($callLog->duration_seconds > 0) {
+            $preview = __('Duration').': '.$callLog->getFormattedDuration();
+        }
+
+        $contactNumber = $isInbound ? $callLog->from_number : $callLog->to_number;
+
+        return [
+            'type' => 'call',
+            'channel' => 'phone',
+            'thread_type' => null,
+            'source' => null,
+            'icon' => $icon,
+            'label' => $label,
+            'preview' => $preview ?: $contactNumber,
+            'sender' => $isInbound ? ($callLog->customer?->full_name ?? $contactNumber) : null,
+            'date' => $callLog->started_at ?? $callLog->created_at,
+            'thread_id' => null,
+            'url' => '#',
+            'message_id' => null,
+            'direction' => $callLog->direction,
+            'call_log_id' => $callLog->id,
+            'call_status' => $callLog->status,
+            'call_duration' => $callLog->duration_seconds,
+        ];
     }
 }

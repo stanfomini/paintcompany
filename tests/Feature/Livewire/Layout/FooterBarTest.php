@@ -95,16 +95,13 @@ it('hides phone button for users without phone.make_calls permission', function 
         ->assertDontSee(__('Phone'));
 });
 
-it('shows missed call count badge', function () {
+it('shows missed call count badge for unhandled calls', function () {
     $user = User::factory()->internal()->create();
     $user->givePermissionTo('phone.make_calls');
 
-    CallLog::factory()->inbound()->missed()->create([
-        'created_at' => now(),
-    ]);
-    CallLog::factory()->inbound()->missed()->create([
-        'created_at' => now(),
-    ]);
+    // Assign calls to user so they're visible via visibleTo scope
+    CallLog::factory()->inbound()->missed()->forUser($user)->create();
+    CallLog::factory()->inbound()->missed()->forUser($user)->create();
 
     $this->actingAs($user);
 
@@ -123,57 +120,64 @@ it('does not show missed call badge when no missed calls', function () {
         ->assertDontSeeHtml('bg-red-500 text-white text-[10px]');
 });
 
-it('excludes yesterday missed calls from count', function () {
+it('includes unhandled missed calls from previous days in count', function () {
     $user = User::factory()->internal()->create();
     $user->givePermissionTo('phone.make_calls');
 
-    CallLog::factory()->inbound()->missed()->create([
+    // Yesterday's unhandled missed call should still count (needs attention)
+    CallLog::factory()->inbound()->missed()->forUser($user)->create([
         'created_at' => now()->subDay(),
     ]);
 
     $this->actingAs($user);
 
-    // Yesterday's missed calls should not produce a badge count
-    $count = CallLog::inbound()->missed()
-        ->where('created_at', '>=', now()->startOfDay())
-        ->count();
-
-    expect($count)->toBe(0);
+    Livewire::test('layout.footer-bar')
+        ->assertSee('1');
 });
 
-it('excludes completed inbound calls from missed count', function () {
+it('excludes completed calls from missed count', function () {
     $user = User::factory()->internal()->create();
     $user->givePermissionTo('phone.make_calls');
 
-    CallLog::factory()->inbound()->completed()->create([
-        'created_at' => now(),
-    ]);
-
-    $this->actingAs($user);
-
-    $count = CallLog::inbound()->missed()
-        ->where('created_at', '>=', now()->startOfDay())
-        ->count();
-
-    expect($count)->toBe(0);
-});
-
-it('counts only today missed inbound calls', function () {
-    $user = User::factory()->internal()->create();
-    $user->givePermissionTo('phone.make_calls');
-
-    // Today's missed calls
-    CallLog::factory()->inbound()->missed()->create(['created_at' => now()]);
-    CallLog::factory()->inbound()->voicemail()->create(['created_at' => now()]);
-
-    // Yesterday (should not count)
-    CallLog::factory()->inbound()->missed()->create(['created_at' => now()->subDay()]);
-
-    // Completed today (should not count)
-    CallLog::factory()->inbound()->completed()->create(['created_at' => now()]);
+    CallLog::factory()->inbound()->completed()->forUser($user)->create();
 
     $this->actingAs($user);
 
     Livewire::test('layout.footer-bar')
-        ->assertSee('2');
+        ->assertDontSeeHtml('bg-red-500 text-white text-[10px]');
+});
+
+it('counts all unhandled missed calls and voicemails', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('phone.make_calls');
+
+    // Unhandled missed calls (should count)
+    CallLog::factory()->inbound()->missed()->forUser($user)->create();
+    CallLog::factory()->inbound()->voicemail()->forUser($user)->create();
+
+    // Older unhandled (should still count)
+    CallLog::factory()->inbound()->missed()->forUser($user)->create(['created_at' => now()->subDay()]);
+
+    // Completed (should not count)
+    CallLog::factory()->inbound()->completed()->forUser($user)->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('layout.footer-bar')
+        ->assertSee('3');
+});
+
+it('excludes handled missed calls from badge count', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('phone.make_calls');
+
+    $call = CallLog::factory()->inbound()->missed()->forUser($user)->create();
+
+    // Mark as handled
+    $call->markHandledBy($user, 'called_back');
+
+    $this->actingAs($user);
+
+    Livewire::test('layout.footer-bar')
+        ->assertDontSeeHtml('bg-red-500 text-white text-[10px]');
 });
