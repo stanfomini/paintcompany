@@ -130,7 +130,11 @@ class TwilioVoiceWebhookController extends Controller
             return response('OK', 200);
         }
 
-        $updateData = ['status' => $status];
+        // Preserve voicemail status when Twilio sends 'completed' for a call
+        // that already reached our voicemail system (caller hung up during greeting)
+        $wasVoicemail = $callLog->status === 'voicemail';
+
+        $updateData = ['status' => ($wasVoicemail && $status === 'completed') ? 'voicemail' : $status];
 
         if ($duration !== null) {
             $updateData['duration_seconds'] = (int) $duration;
@@ -147,8 +151,8 @@ class TwilioVoiceWebhookController extends Controller
             $this->safeBroadcast(new CallEnded($callLog, $userId));
         }
 
-        // Dispatch missed call processing for no-answer status
-        if ($status === 'no-answer') {
+        // Dispatch missed call processing for no-answer or voicemail calls
+        if ($status === 'no-answer' || $wasVoicemail) {
             ProcessMissedCallJob::dispatch($callLog->id)->delay(now()->addSeconds(5));
         }
 
@@ -269,6 +273,10 @@ class TwilioVoiceWebhookController extends Controller
 
         // Not answered — go to voicemail
         $log->update(['status' => 'voicemail']);
+
+        // Safety-net notification in case caller hangs up during greeting
+        ProcessMissedCallJob::dispatch($log->id)->delay(now()->addSeconds(30));
+
         $twiml = $this->voice->generateVoicemailTwiml($log);
 
         return $this->twimlResponse($twiml);
@@ -291,6 +299,9 @@ class TwilioVoiceWebhookController extends Controller
                 'status' => 'voicemail',
                 'ended_at' => now(),
             ]);
+
+            // Notify about voicemail (idempotent — skips if already processed)
+            ProcessMissedCallJob::dispatch($log->id)->delay(now()->addSeconds(5));
         }
 
         // Return empty TwiML to end the call
@@ -375,6 +386,9 @@ class TwilioVoiceWebhookController extends Controller
                     'ivr_action' => 'voicemail',
                 ]),
             ]);
+
+            // Safety-net notification in case caller hangs up during greeting
+            ProcessMissedCallJob::dispatch($log->id)->delay(now()->addSeconds(30));
 
             $twiml = $this->voice->generateVoicemailTwiml($log);
 
@@ -494,6 +508,10 @@ class TwilioVoiceWebhookController extends Controller
 
         // Default fallback: voicemail
         $log->update(['status' => 'voicemail']);
+
+        // Safety-net notification in case caller hangs up during greeting
+        ProcessMissedCallJob::dispatch($log->id)->delay(now()->addSeconds(30));
+
         $twiml = $this->voice->generateVoicemailTwiml($log);
 
         return $this->twimlResponse($twiml);
@@ -562,6 +580,12 @@ class TwilioVoiceWebhookController extends Controller
         }
 
         $log->update(['status' => 'voicemail']);
+
+        // Safety-net notification: if caller hangs up during greeting before <Record>
+        // fires, no recording callbacks will trigger. This ensures we still get notified.
+        // The job is idempotent — it skips if already processed via recording callbacks.
+        ProcessMissedCallJob::dispatch($log->id)->delay(now()->addSeconds(30));
+
         $twiml = $this->voice->generateVoicemailTwiml($log);
 
         return $this->twimlResponse($twiml);

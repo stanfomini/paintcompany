@@ -267,6 +267,12 @@ new class extends Component
                                     </span>
                                 </button>
                             </div>
+                        @elseif ($log->isVoicemail())
+                            <div class="mt-2">
+                                <flux:text size="sm" class="text-zinc-400 dark:text-zinc-500 italic">
+                                    {{ __('No message left — caller hung up before recording') }}
+                                </flux:text>
+                            </div>
                         @endif
                     </div>
 
