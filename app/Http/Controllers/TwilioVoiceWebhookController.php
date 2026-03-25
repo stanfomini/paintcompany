@@ -572,13 +572,52 @@ class TwilioVoiceWebhookController extends Controller
      */
     private function resolveAnsweringUser(Request $request, CallLog $callLog): ?int
     {
-        $dialedNumber = $request->input('DialBridged') ?? $request->input('Called');
+        // Primary: Use DialCallSid to fetch the child call and get the answered number
+        $dialCallSid = $request->input('DialCallSid');
 
-        if (! $dialedNumber) {
-            return null;
+        if ($dialCallSid) {
+            try {
+                $childCall = $this->twilio->getClient()->calls($dialCallSid)->fetch();
+
+                if ($childCall->to) {
+                    $userId = $this->matchForwardingNumberToUser($childCall->to, $callLog->call_group_id);
+
+                    if ($userId) {
+                        return $userId;
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Twilio voice: failed to fetch child call for user resolution', [
+                    'dial_call_sid' => $dialCallSid,
+                    'call_log_id' => $callLog->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
-        $formatted = $this->twilio->formatE164($dialedNumber);
+        // Fallback: If call group has exactly one active member, it must be them
+        if ($callLog->call_group_id) {
+            $members = $callLog->callGroup?->members()
+                ->where('is_active', true)
+                ->whereNotNull('user_id')
+                ->pluck('user_id');
+
+            if ($members && $members->count() === 1) {
+                return $members->first();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Match a phone number to a user by their forwarding number.
+     * Checks call group member overrides first, then user defaults.
+     */
+    private function matchForwardingNumberToUser(string $phoneNumber, ?int $callGroupId = null): ?int
+    {
+        $formatted = $this->twilio->formatE164($phoneNumber);
+
         if (! $formatted) {
             return null;
         }
@@ -586,9 +625,20 @@ class TwilioVoiceWebhookController extends Controller
         $digits = preg_replace('/\D/', '', $formatted);
         $last10 = substr($digits, -10);
 
-        $user = \App\Models\User::where('forwarding_number', 'LIKE', '%'.$last10)->first();
+        // Check call group member overrides first (more specific)
+        if ($callGroupId) {
+            $member = \App\Models\CallGroupMember::where('call_group_id', $callGroupId)
+                ->where('forwarding_number', 'LIKE', '%'.$last10)
+                ->where('is_active', true)
+                ->first();
 
-        return $user?->id;
+            if ($member?->user_id) {
+                return $member->user_id;
+            }
+        }
+
+        // Fall back to user's default forwarding number
+        return \App\Models\User::where('forwarding_number', 'LIKE', '%'.$last10)->value('id');
     }
 
     private function twimlResponse(string $twiml): Response
