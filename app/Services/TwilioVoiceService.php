@@ -94,7 +94,7 @@ class TwilioVoiceService
         $settings = CompanySetting::getInstance();
 
         // Play greeting
-        if ($settings->voicemail_greeting_type === 'audio' && $settings->voicemail_greeting_path) {
+        if ($settings->voicemail_greeting_type === 'upload' && $settings->voicemail_greeting_path) {
             $response->play(storage_url($settings->voicemail_greeting_path));
         } else {
             $greetingText = $settings->voicemail_greeting_text

@@ -168,7 +168,7 @@ it('uses custom greeting text from company setting', function () {
     CompanySetting::clearInstanceCache();
     $settings = CompanySetting::getInstance();
     $settings->update([
-        'voicemail_greeting_type' => 'text',
+        'voicemail_greeting_type' => 'tts',
         'voicemail_greeting_text' => 'Hello from Apex Painting!',
     ]);
     CompanySetting::clearInstanceCache();
@@ -179,6 +179,25 @@ it('uses custom greeting text from company setting', function () {
     $twiml = $service->generateVoicemailTwiml($callLog);
 
     expect($twiml)->toContain('Hello from Apex Painting!');
+});
+
+it('plays uploaded audio file when greeting type is upload', function () {
+    CompanySetting::clearInstanceCache();
+    $settings = CompanySetting::getInstance();
+    $settings->update([
+        'voicemail_greeting_type' => 'upload',
+        'voicemail_greeting_path' => 'voicemail-greetings/custom-greeting.mp3',
+    ]);
+    CompanySetting::clearInstanceCache();
+
+    $callLog = CallLog::factory()->create();
+
+    $service = app(TwilioVoiceService::class);
+    $twiml = $service->generateVoicemailTwiml($callLog);
+
+    expect($twiml)->toContain('<Play')
+        ->and($twiml)->toContain('custom-greeting.mp3')
+        ->and($twiml)->not->toContain('We are unable to take your call');
 });
 
 it('uses default greeting when none configured', function () {
