@@ -7,6 +7,7 @@ use App\Events\VoicemailReceived;
 use App\Jobs\ProcessCallRecordingJob;
 use App\Jobs\TranscribeVoicemailJob;
 use App\Models\CallLog;
+use App\Models\User;
 use App\Services\CallRoutingService;
 use App\Services\TwilioService;
 use Illuminate\Support\Facades\Event;
@@ -298,6 +299,273 @@ describe('dial status webhook', function () {
 
         $response->assertStatus(200);
         expect($response->getContent())->toContain('Hangup');
+    });
+
+    it('broadcasts CallConnected when inbound call is answered and user resolved via Twilio API', function () {
+        Event::fake([CallConnected::class]);
+
+        $user = User::factory()->internal()->create([
+            'forwarding_number' => '+13035551111',
+            'extension' => '100',
+        ]);
+
+        $callGroup = \App\Models\CallGroup::factory()->create();
+        \App\Models\CallGroupMember::create([
+            'call_group_id' => $callGroup->id,
+            'user_id' => $user->id,
+            'is_active' => true,
+            'sort_order' => 0,
+        ]);
+
+        $callLog = CallLog::factory()->create([
+            'status' => 'ringing',
+            'answered_at' => null,
+            'direction' => 'inbound',
+            'call_group_id' => $callGroup->id,
+        ]);
+
+        // Mock Twilio client to return child call with the user's forwarding number
+        $childCallInstance = Mockery::mock(\Twilio\Rest\Api\V2010\Account\CallInstance::class);
+        $childCallInstance->to = '+13035551111';
+
+        $childCallContext = Mockery::mock(\Twilio\Rest\Api\V2010\Account\CallContext::class);
+        $childCallContext->shouldReceive('fetch')->once()->andReturn($childCallInstance);
+
+        $client = Mockery::mock(\Twilio\Rest\Client::class);
+        $client->shouldReceive('calls')
+            ->once()
+            ->with('CAchild123abc')
+            ->andReturn($childCallContext);
+
+        $this->twilioMock->shouldReceive('getClient')->andReturn($client);
+        $this->twilioMock->shouldReceive('formatE164')
+            ->with('+13035551111')
+            ->andReturn('+13035551111');
+
+        $response = $this->post("/webhooks/twilio/voice/dial-status/{$callLog->ulid}", [
+            'DialCallStatus' => 'completed',
+            'DialCallSid' => 'CAchild123abc',
+        ]);
+
+        $response->assertStatus(200);
+
+        $callLog->refresh();
+        expect($callLog->status)->toBe('in-progress')
+            ->and($callLog->answered_by_user_id)->toBe($user->id)
+            ->and($callLog->answered_at)->not->toBeNull();
+
+        Event::assertDispatched(CallConnected::class, function ($event) use ($callLog, $user) {
+            return $event->callLog->id === $callLog->id
+                && $event->answeredByUserId === $user->id;
+        });
+    });
+
+    it('falls back to single call group member when Twilio API fails', function () {
+        Event::fake([CallConnected::class]);
+
+        $user = User::factory()->internal()->create([
+            'forwarding_number' => '+13035552222',
+            'extension' => '101',
+        ]);
+
+        $callGroup = \App\Models\CallGroup::factory()->create();
+        \App\Models\CallGroupMember::create([
+            'call_group_id' => $callGroup->id,
+            'user_id' => $user->id,
+            'is_active' => true,
+            'sort_order' => 0,
+        ]);
+
+        $callLog = CallLog::factory()->create([
+            'status' => 'ringing',
+            'answered_at' => null,
+            'direction' => 'inbound',
+            'call_group_id' => $callGroup->id,
+        ]);
+
+        // Mock Twilio client to throw exception (API failure)
+        $client = Mockery::mock(\Twilio\Rest\Client::class);
+        $client->shouldReceive('calls')
+            ->once()
+            ->andThrow(new \Exception('Twilio API error'));
+
+        $this->twilioMock->shouldReceive('getClient')->andReturn($client);
+
+        $response = $this->post("/webhooks/twilio/voice/dial-status/{$callLog->ulid}", [
+            'DialCallStatus' => 'completed',
+            'DialCallSid' => 'CAchildfail',
+        ]);
+
+        $response->assertStatus(200);
+
+        $callLog->refresh();
+        expect($callLog->answered_by_user_id)->toBe($user->id);
+
+        Event::assertDispatched(CallConnected::class, function ($event) use ($user) {
+            return $event->answeredByUserId === $user->id;
+        });
+    });
+
+    it('tries call group fallback when Twilio API returns unrecognized number', function () {
+        Event::fake([CallConnected::class]);
+
+        $user = User::factory()->internal()->create([
+            'forwarding_number' => '+13035553333',
+            'extension' => '102',
+        ]);
+
+        $callGroup = \App\Models\CallGroup::factory()->create();
+        \App\Models\CallGroupMember::create([
+            'call_group_id' => $callGroup->id,
+            'user_id' => $user->id,
+            'is_active' => true,
+            'sort_order' => 0,
+        ]);
+
+        $callLog = CallLog::factory()->create([
+            'status' => 'ringing',
+            'answered_at' => null,
+            'direction' => 'inbound',
+            'call_group_id' => $callGroup->id,
+        ]);
+
+        // Mock Twilio client to return a number that doesn't match any user
+        $childCallInstance = Mockery::mock(\Twilio\Rest\Api\V2010\Account\CallInstance::class);
+        $childCallInstance->to = '+19995550000';
+
+        $childCallContext = Mockery::mock(\Twilio\Rest\Api\V2010\Account\CallContext::class);
+        $childCallContext->shouldReceive('fetch')->once()->andReturn($childCallInstance);
+
+        $client = Mockery::mock(\Twilio\Rest\Client::class);
+        $client->shouldReceive('calls')
+            ->once()
+            ->with('CAchildunknown')
+            ->andReturn($childCallContext);
+
+        $this->twilioMock->shouldReceive('getClient')->andReturn($client);
+        $this->twilioMock->shouldReceive('formatE164')
+            ->with('+19995550000')
+            ->andReturn('+19995550000');
+
+        $response = $this->post("/webhooks/twilio/voice/dial-status/{$callLog->ulid}", [
+            'DialCallStatus' => 'completed',
+            'DialCallSid' => 'CAchildunknown',
+        ]);
+
+        $response->assertStatus(200);
+
+        $callLog->refresh();
+        // Should fall back to single-member group
+        expect($callLog->answered_by_user_id)->toBe($user->id);
+
+        Event::assertDispatched(CallConnected::class);
+    });
+
+    it('does not broadcast CallConnected when user cannot be resolved in multi-member group', function () {
+        Event::fake([CallConnected::class]);
+
+        $user1 = User::factory()->internal()->create(['forwarding_number' => '+13035554444']);
+        $user2 = User::factory()->internal()->create(['forwarding_number' => '+13035555555']);
+
+        $callGroup = \App\Models\CallGroup::factory()->create();
+        \App\Models\CallGroupMember::create([
+            'call_group_id' => $callGroup->id,
+            'user_id' => $user1->id,
+            'is_active' => true,
+            'sort_order' => 0,
+        ]);
+        \App\Models\CallGroupMember::create([
+            'call_group_id' => $callGroup->id,
+            'user_id' => $user2->id,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $callLog = CallLog::factory()->create([
+            'status' => 'ringing',
+            'answered_at' => null,
+            'direction' => 'inbound',
+            'call_group_id' => $callGroup->id,
+        ]);
+
+        // Mock Twilio client to throw (simulating API failure)
+        $client = Mockery::mock(\Twilio\Rest\Client::class);
+        $client->shouldReceive('calls')
+            ->once()
+            ->andThrow(new \Exception('Twilio API error'));
+
+        $this->twilioMock->shouldReceive('getClient')->andReturn($client);
+
+        $response = $this->post("/webhooks/twilio/voice/dial-status/{$callLog->ulid}", [
+            'DialCallStatus' => 'completed',
+            'DialCallSid' => 'CAchildmulti',
+        ]);
+
+        $response->assertStatus(200);
+
+        $callLog->refresh();
+        expect($callLog->status)->toBe('in-progress')
+            ->and($callLog->answered_by_user_id)->toBeNull();
+
+        Event::assertNotDispatched(CallConnected::class);
+    });
+
+    it('resolves user via call group member forwarding number override', function () {
+        Event::fake([CallConnected::class]);
+
+        $user = User::factory()->internal()->create([
+            'forwarding_number' => '+13035556666',
+            'extension' => '103',
+        ]);
+
+        $callGroup = \App\Models\CallGroup::factory()->create();
+        // Member has a different forwarding number override
+        \App\Models\CallGroupMember::create([
+            'call_group_id' => $callGroup->id,
+            'user_id' => $user->id,
+            'forwarding_number' => '+13035557777',
+            'is_active' => true,
+            'sort_order' => 0,
+        ]);
+
+        $callLog = CallLog::factory()->create([
+            'status' => 'ringing',
+            'answered_at' => null,
+            'direction' => 'inbound',
+            'call_group_id' => $callGroup->id,
+        ]);
+
+        // Twilio child call returns the override number, not the user's default
+        $childCallInstance = Mockery::mock(\Twilio\Rest\Api\V2010\Account\CallInstance::class);
+        $childCallInstance->to = '+13035557777';
+
+        $childCallContext = Mockery::mock(\Twilio\Rest\Api\V2010\Account\CallContext::class);
+        $childCallContext->shouldReceive('fetch')->once()->andReturn($childCallInstance);
+
+        $client = Mockery::mock(\Twilio\Rest\Client::class);
+        $client->shouldReceive('calls')
+            ->once()
+            ->with('CAchildoverride')
+            ->andReturn($childCallContext);
+
+        $this->twilioMock->shouldReceive('getClient')->andReturn($client);
+        $this->twilioMock->shouldReceive('formatE164')
+            ->with('+13035557777')
+            ->andReturn('+13035557777');
+
+        $response = $this->post("/webhooks/twilio/voice/dial-status/{$callLog->ulid}", [
+            'DialCallStatus' => 'completed',
+            'DialCallSid' => 'CAchildoverride',
+        ]);
+
+        $response->assertStatus(200);
+
+        $callLog->refresh();
+        expect($callLog->answered_by_user_id)->toBe($user->id);
+
+        Event::assertDispatched(CallConnected::class, function ($event) use ($user) {
+            return $event->answeredByUserId === $user->id;
+        });
     });
 });
 
