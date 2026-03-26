@@ -369,6 +369,22 @@ new class extends Component
             $items = $items->merge($recentMessages);
         }
 
+        // 5. Deal description (website submission notes)
+        if ($this->activeDeal && $this->activeDeal->description) {
+            $items->push([
+                'type' => 'note',
+                'icon' => 'document-text',
+                'title' => __('Customer Notes from Website'),
+                'subtitle' => $this->activeDeal->description,
+                'user' => null,
+                'date' => $this->activeDeal->created_at,
+                'source' => 'Deal',
+                'is_completed' => null,
+                'activity_id' => null,
+                'activity_type_label' => __('Website Notes'),
+            ]);
+        }
+
         return $items->sortByDesc('date')->take(30)->values();
     }
 
@@ -967,10 +983,82 @@ new class extends Component
             </div>
         @endif
 
-        {{-- Two-Column Layout --}}
-        <div class="flex flex-col lg:flex-row gap-6 mb-6">
-            {{-- Main Column --}}
-            <div class="lg:w-2/3 space-y-4">
+        {{-- Contact & Properties --}}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            {{-- Contact Info Card --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                <flux:heading size="sm" class="mb-3">{{ __('Contact') }}</flux:heading>
+                <div class="space-y-2.5">
+                    @if ($customer->phone)
+                        <div class="flex items-center gap-2">
+                            <a href="tel:{{ $customer->phone }}" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
+                                <flux:icon name="phone" class="w-4 h-4 shrink-0" />
+                                <span class="truncate">{{ $customer->phone }}</span>
+                            </a>
+                            <flux:button size="xs" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')" variant="ghost" class="shrink-0">
+                                {{ __('SMS') }}
+                            </flux:button>
+                        </div>
+                    @endif
+                    @if ($customer->email)
+                        <button wire:click="openCompose" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
+                            <flux:icon name="envelope" class="w-4 h-4 shrink-0" />
+                            <span class="truncate">{{ $customer->email }}</span>
+                        </button>
+                    @endif
+                    @if ($customer->full_address)
+                        <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($customer->full_address) }}" target="_blank" rel="noopener" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors group">
+                            <flux:icon name="map-pin" class="w-4 h-4 shrink-0" />
+                            <span class="truncate">{{ $customer->full_address }}</span>
+                            <flux:icon name="arrow-top-right-on-square" class="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </a>
+                    @endif
+                </div>
+
+                @if ($customer->referredBy || $customer->createdBy)
+                    <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        @if ($customer->referredBy)
+                            <p>{{ __('Referred by') }} {{ $customer->referredBy->name }}</p>
+                        @endif
+                        @if ($customer->createdBy)
+                            <p>{{ __('Created by') }} {{ $customer->createdBy->name }}</p>
+                        @endif
+                    </div>
+                @endif
+            </div>
+
+            {{-- Properties Card --}}
+            <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                    <flux:heading size="sm">{{ __('Properties') }}</flux:heading>
+                    @can('people.create')
+                        <flux:button size="xs" icon="plus" wire:click="openAddProperty">{{ __('Add') }}</flux:button>
+                    @endcan
+                </div>
+                @if ($customer->properties->count() > 0)
+                    <div class="space-y-1">
+                        @foreach ($customer->properties as $property)
+                            <div wire:key="prop-top-{{ $property->id }}" class="flex items-start justify-between gap-2 p-2 -mx-1 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
+                                <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($property->address . ', ' . $property->city . ', ' . $property->state . ' ' . $property->zip) }}" target="_blank" rel="noopener" class="flex items-start gap-2 min-w-0 text-sm text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                                    <flux:icon name="home" class="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
+                                    <div class="min-w-0">
+                                        <span class="font-medium block truncate">{{ $property->address }}</span>
+                                        <span class="text-xs text-zinc-500">{{ $property->city }}, {{ $property->state }}</span>
+                                    </div>
+                                    <flux:icon name="arrow-top-right-on-square" class="w-3 h-3 text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1" />
+                                </a>
+                                <flux:badge size="sm" color="zinc" class="shrink-0">{{ ucfirst($property->type) }}</flux:badge>
+                            </div>
+                        @endforeach
+                    </div>
+                @else
+                    <flux:text size="sm" class="text-zinc-500">{{ __('No properties yet.') }}</flux:text>
+                @endif
+            </div>
+        </div>
+
+        {{-- Main Content --}}
+        <div class="space-y-4 mb-6">
                 @if ($this->activeDeals->count() > 0 && $this->activeDeal)
 
                     {{-- Deal Status Bar (compact) --}}
@@ -1028,7 +1116,7 @@ new class extends Component
                             @endif
                         </div>
                         @if ($this->activeDeal->description)
-                            <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-2 italic">"{{ Str::limit($this->activeDeal->description, 200) }}"</p>
+                            <p class="text-sm text-zinc-600 dark:text-zinc-400 mt-2 italic whitespace-pre-line">"{{ $this->activeDeal->description }}"</p>
                         @endif
                     </div>
 
@@ -1239,7 +1327,7 @@ new class extends Component
                             <flux:button size="xs" icon="plus" wire:click="openAddActivity">{{ __('Add') }}</flux:button>
                         </div>
                         @if ($this->unifiedActivityFeed->count() > 0)
-                            <div class="space-y-3 max-h-96 overflow-y-auto lg:max-h-none lg:overflow-visible">
+                            <div class="space-y-3 max-h-[600px] overflow-y-auto">
                                 @foreach ($this->unifiedActivityFeed as $index => $item)
                                     <div wire:key="feed-{{ $index }}" class="flex gap-3 {{ ($item['is_completed'] ?? false) ? 'opacity-60' : '' }}">
                                         <div class="shrink-0 mt-0.5">
@@ -1262,6 +1350,11 @@ new class extends Component
                                             <flux:text class="{{ ($item['is_completed'] ?? false) ? 'line-through' : '' }} text-sm">
                                                 {{ $item['title'] }}
                                             </flux:text>
+                                            @if (!empty($item['subtitle']) && $item['type'] === 'note')
+                                                <flux:text size="xs" class="text-zinc-500 dark:text-zinc-400 mt-0.5 whitespace-pre-line">
+                                                    {{ $item['subtitle'] }}
+                                                </flux:text>
+                                            @endif
                                             <div class="flex flex-wrap items-center gap-2 mt-0.5">
                                                 @php
                                                     $sourceColors = [
@@ -1313,131 +1406,55 @@ new class extends Component
                 @endif
             </div>
 
-            {{-- Sidebar (renders first on mobile) --}}
-            <div class="order-first lg:order-none lg:w-1/3 space-y-4">
-                {{-- Contact & Properties — 2 columns side by side --}}
-                <div class="grid grid-cols-2 gap-4">
-                    {{-- Contact Info Card --}}
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
-                        <flux:heading size="sm" class="mb-3">{{ __('Contact') }}</flux:heading>
-                        <div class="space-y-2.5">
-                            @if ($customer->phone)
-                                <div class="flex items-center gap-2">
-                                    <a href="tel:{{ $customer->phone }}" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
-                                        <flux:icon name="phone" class="w-4 h-4 shrink-0" />
-                                        <span class="truncate">{{ $customer->phone }}</span>
-                                    </a>
-                                    <flux:button size="xs" icon="chat-bubble-left" wire:click="$dispatch('open-send-sms-modal')" variant="ghost" class="shrink-0">
-                                        {{ __('SMS') }}
-                                    </flux:button>
-                                </div>
-                            @endif
-                            @if ($customer->email)
-                                <button wire:click="openCompose" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors">
-                                    <flux:icon name="envelope" class="w-4 h-4 shrink-0" />
-                                    <span class="truncate">{{ $customer->email }}</span>
-                                </button>
-                            @endif
-                            @if ($customer->full_address)
-                                <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($customer->full_address) }}" target="_blank" rel="noopener" class="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors group">
-                                    <flux:icon name="map-pin" class="w-4 h-4 shrink-0" />
-                                    <span class="truncate">{{ $customer->full_address }}</span>
-                                    <flux:icon name="arrow-top-right-on-square" class="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                </a>
-                            @endif
-                        </div>
-
-                        @if ($customer->referredBy || $customer->createdBy)
-                            <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-1 text-xs text-zinc-500 dark:text-zinc-400">
-                                @if ($customer->referredBy)
-                                    <p>{{ __('Referred by') }} {{ $customer->referredBy->name }}</p>
-                                @endif
-                                @if ($customer->createdBy)
-                                    <p>{{ __('Created by') }} {{ $customer->createdBy->name }}</p>
-                                @endif
-                            </div>
-                        @endif
-                    </div>
-
-                    {{-- Properties Card --}}
-                    <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
-                        <div class="flex items-center justify-between mb-3">
-                            <flux:heading size="sm">{{ __('Properties') }}</flux:heading>
-                            @can('people.create')
-                                <flux:button size="xs" icon="plus" wire:click="openAddProperty">{{ __('Add') }}</flux:button>
-                            @endcan
-                        </div>
-                        @if ($customer->properties->count() > 0)
-                            <div class="space-y-1">
-                                @foreach ($customer->properties as $property)
-                                    <div wire:key="prop-{{ $property->id }}" class="flex items-start justify-between gap-2 p-2 -mx-1 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group">
-                                        <a href="https://www.google.com/maps/search/?api=1&query={{ urlencode($property->address . ', ' . $property->city . ', ' . $property->state . ' ' . $property->zip) }}" target="_blank" rel="noopener" class="flex items-start gap-2 min-w-0 text-sm text-zinc-700 dark:text-zinc-300 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
-                                            <flux:icon name="home" class="w-4 h-4 text-zinc-400 shrink-0 mt-0.5" />
-                                            <div class="min-w-0">
-                                                <span class="font-medium block truncate">{{ $property->address }}</span>
-                                                <span class="text-xs text-zinc-500">{{ $property->city }}, {{ $property->state }}</span>
-                                            </div>
-                                            <flux:icon name="arrow-top-right-on-square" class="w-3 h-3 text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1" />
-                                        </a>
-                                        <flux:badge size="sm" color="zinc" class="shrink-0">{{ ucfirst($property->type) }}</flux:badge>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @else
-                            <flux:text size="sm" class="text-zinc-500">{{ __('No properties yet.') }}</flux:text>
-                        @endif
-                    </div>
-                </div>
-
                 {{-- Actions Card (only when deal is active) --}}
                 @if ($this->activeDeal)
                     <div class="border border-zinc-200 dark:border-zinc-700 rounded-lg p-4">
                         <flux:heading size="sm" class="mb-3">{{ __('Actions') }}</flux:heading>
-                        <div class="flex flex-wrap gap-2 lg:flex-col">
+                        <div class="flex flex-wrap gap-2">
                             @can('estimates.create')
-                                <flux:button :href="route('estimates.create', $this->activeDeal)" variant="primary" icon="document-text" wire:navigate class="lg:w-full lg:justify-start" size="sm">
-                                    <span class="hidden lg:inline">{{ __('Create Estimate') }}</span>
+                                <flux:button :href="route('estimates.create', $this->activeDeal)" variant="primary" icon="document-text" wire:navigate size="sm">
+                                    {{ __('Create Estimate') }}
                                 </flux:button>
                             @endcan
                             @can('people.edit')
-                                <flux:button variant="ghost" icon="check-circle" wire:click="openAddActivity" class="lg:w-full lg:justify-start" size="sm">
-                                    <span class="hidden lg:inline">{{ __('Log Activity') }}</span>
+                                <flux:button variant="ghost" icon="check-circle" wire:click="openAddActivity" size="sm">
+                                    {{ __('Log Activity') }}
                                 </flux:button>
                             @endcan
-                            <flux:button variant="ghost" icon="chat-bubble-left-right" wire:click="$dispatch('open-communications-drawer')" class="lg:w-full lg:justify-start" size="sm">
-                                <span class="hidden lg:inline">{{ __('Communications') }}</span>
+                            <flux:button variant="ghost" icon="chat-bubble-left-right" wire:click="$dispatch('open-communications-drawer')" size="sm">
+                                {{ __('Communications') }}
                             </flux:button>
-                            <flux:button variant="ghost" icon="arrow-top-right-on-square" :href="route('deals.show', $this->activeDeal)" wire:navigate class="lg:w-full lg:justify-start" size="sm">
-                                <span class="hidden lg:inline">{{ __('Deal Details') }}</span>
+                            <flux:button variant="ghost" icon="arrow-top-right-on-square" :href="route('deals.show', $this->activeDeal)" wire:navigate size="sm">
+                                {{ __('Deal Details') }}
                             </flux:button>
                             @can('deals.edit')
                                 @if ($this->activeDeal->stage !== 'lost')
-                                    <flux:button variant="ghost" icon="x-circle" wire:click="changeActiveDealStage('lost')" wire:confirm="{{ __('Mark this deal as lost?') }}" class="lg:w-full lg:justify-start text-red-600 hover:text-red-700 dark:text-red-400" size="sm">
-                                        <span class="hidden lg:inline">{{ __('Mark Lost') }}</span>
+                                    <flux:button variant="ghost" icon="x-circle" wire:click="changeActiveDealStage('lost')" wire:confirm="{{ __('Mark this deal as lost?') }}" class="text-red-600 hover:text-red-700 dark:text-red-400" size="sm">
+                                        {{ __('Mark Lost') }}
                                     </flux:button>
                                 @endif
                             @endcan
                         </div>
 
-                        {{-- Secondary actions (desktop only, mobile uses overflow menu) --}}
-                        <div class="hidden lg:block mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 space-y-1">
+                        {{-- Secondary actions --}}
+                        <div class="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex flex-wrap gap-1">
                             @can('people.create')
-                                <flux:button variant="ghost" icon="home" wire:click="openAddProperty" class="w-full justify-start" size="sm">
+                                <flux:button variant="ghost" icon="home" wire:click="openAddProperty" size="sm">
                                     {{ __('Add Property') }}
                                 </flux:button>
                             @endcan
                             @can('people.edit')
                                 @if (!$customer->hasPortalAccess())
-                                    <flux:button variant="ghost" icon="envelope" wire:click="sendPortalInvite" wire:confirm="{{ __('Send portal invitation to') }} {{ $customer->email }}?" class="w-full justify-start" size="sm">
+                                    <flux:button variant="ghost" icon="envelope" wire:click="sendPortalInvite" wire:confirm="{{ __('Send portal invitation to') }} {{ $customer->email }}?" size="sm">
                                         {{ __('Send Invite') }}
                                     </flux:button>
                                 @endif
-                                <flux:button variant="ghost" wire:click="toggleStatus" wire:confirm="{{ __('Change customer status to') }} {{ $customer->status === 'active' ? __('inactive') : __('active') }}?" class="w-full justify-start" size="sm">
+                                <flux:button variant="ghost" wire:click="toggleStatus" wire:confirm="{{ __('Change customer status to') }} {{ $customer->status === 'active' ? __('inactive') : __('active') }}?" size="sm">
                                     {{ $customer->status === 'active' ? __('Deactivate') : __('Reactivate') }}
                                 </flux:button>
                             @endcan
                             @can('people.delete')
-                                <flux:button variant="ghost" icon="trash" wire:click="confirmDelete" class="w-full justify-start text-red-600 hover:text-red-700 dark:text-red-400" size="sm">
+                                <flux:button variant="ghost" icon="trash" wire:click="confirmDelete" class="text-red-600 hover:text-red-700 dark:text-red-400" size="sm">
                                     {{ __('Delete Customer') }}
                                 </flux:button>
                             @endcan
@@ -1585,8 +1602,6 @@ new class extends Component
                         @endif
                     </div>
                 @endif
-            </div>
-        </div>
 
         {{-- Past Deals (collapsible) --}}
         @if ($this->pastDeals->count() > 0)
