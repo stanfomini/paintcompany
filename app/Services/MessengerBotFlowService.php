@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ChatMessage;
 use App\Models\ChatThread;
 use App\Models\MessengerBotFlow;
 use App\Models\MessengerBotStep;
@@ -43,7 +44,9 @@ class MessengerBotFlowService
 
         // Send greeting if flow has one
         if ($flow->greeting_message) {
-            $this->messengerService->sendTextMessage($psid, $this->sanitizeForSending($this->replaceMessageVariables($flow->greeting_message, $conversation)));
+            $greetingText = $this->sanitizeForSending($this->replaceMessageVariables($flow->greeting_message, $conversation));
+            $this->messengerService->sendTextMessage($psid, $greetingText);
+            $this->storeBotMessage($conversation, $greetingText);
         }
 
         // Advance to first step
@@ -110,11 +113,13 @@ class MessengerBotFlowService
         switch ($nextStep->step_type) {
             case MessengerBotStep::TYPE_GREETING:
                 $this->messengerService->sendTextMessage($psid, $messageText);
+                $this->storeBotMessage($conversation, $messageText);
                 $this->advanceToNextStep($conversation);
                 break;
 
             case MessengerBotStep::TYPE_TEXT_QUESTION:
                 $this->messengerService->sendTextMessage($psid, $messageText);
+                $this->storeBotMessage($conversation, $messageText);
                 break;
 
             case MessengerBotStep::TYPE_QUICK_REPLY:
@@ -132,34 +137,62 @@ class MessengerBotFlowService
                 } else {
                     $this->messengerService->sendTextMessage($psid, $messageText);
                 }
+                $this->storeBotMessage($conversation, $messageText);
                 break;
 
             case MessengerBotStep::TYPE_DELAY:
                 $this->messengerService->sendTypingIndicator($psid, true);
                 $this->messengerService->sendTextMessage($psid, $messageText);
+                $this->storeBotMessage($conversation, $messageText);
                 $this->advanceToNextStep($conversation);
                 break;
 
             case MessengerBotStep::TYPE_HANDOFF:
                 $this->messengerService->sendTextMessage($psid, $messageText);
+                $this->storeBotMessage($conversation, $messageText);
                 $this->triggerHumanTakeover($conversation);
                 break;
 
             case MessengerBotStep::TYPE_MEDIA_MESSAGE:
                 if ($nextStep->media_url) {
                     $this->messengerService->sendImageMessage($psid, $nextStep->media_url);
+                    $this->storeBotMessage($conversation, '[Image]');
                 }
                 if ($messageText) {
                     $this->messengerService->sendTextMessage($psid, $messageText);
+                    $this->storeBotMessage($conversation, $messageText);
                 }
                 $this->advanceToNextStep($conversation);
                 break;
 
             case MessengerBotStep::TYPE_PHOTO_PROMPT:
                 $this->messengerService->sendTextMessage($psid, $messageText);
+                $this->storeBotMessage($conversation, $messageText);
                 // Wait for user to send a photo
                 break;
         }
+    }
+
+    /**
+     * Store a bot-sent message in the chat thread so it appears in the hub.
+     */
+    private function storeBotMessage(MessengerConversation $conversation, string $content): void
+    {
+        if (! $conversation->thread_id || $content === '') {
+            return;
+        }
+
+        ChatMessage::create([
+            'thread_id' => $conversation->thread_id,
+            'user_id' => null,
+            'content' => $content,
+            'type' => ChatMessage::TYPE_TEXT,
+            'is_internal' => false,
+            'metadata' => [
+                'source' => 'bot',
+                'psid' => $conversation->facebook_psid,
+            ],
+        ]);
     }
 
     /**

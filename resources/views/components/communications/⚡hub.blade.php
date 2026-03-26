@@ -951,7 +951,23 @@ new class extends Component
     <div class="{{ $contactId ? 'hidden md:flex' : 'flex' }} w-full md:w-80 shrink-0 border-r border-zinc-200 dark:border-zinc-700 flex-col h-full">
         {{-- Header --}}
         <div class="p-3 sm:p-4 border-b border-zinc-200 dark:border-zinc-700">
-            <flux:heading size="lg" class="mb-3">{{ __('Communications') }}</flux:heading>
+            <div class="flex items-center justify-between mb-3">
+                <flux:heading size="lg">{{ __('Communications') }}</flux:heading>
+                <flux:dropdown>
+                    <flux:button variant="ghost" size="sm" icon="plus" />
+                    <flux:menu>
+                        <flux:menu.item icon="user-plus" wire:click="$dispatch('open-quick-add-customer')">
+                            {{ __('Add Customer') }}
+                        </flux:menu.item>
+                        <flux:menu.item icon="building-office" wire:click="$dispatch('open-quick-add-agent')">
+                            {{ __('Add Agent') }}
+                        </flux:menu.item>
+                        <flux:menu.item icon="paint-brush" wire:click="$dispatch('open-quick-add-crew')">
+                            {{ __('Add Crew') }}
+                        </flux:menu.item>
+                    </flux:menu>
+                </flux:dropdown>
+            </div>
             <flux:input wire:model.live.debounce.300ms="search" type="search" :placeholder="__('Search contacts...')" icon="magnifying-glass" size="sm" />
             <div class="mt-2">
                 <flux:select wire:model.live="typeFilter" size="sm">
@@ -1349,13 +1365,18 @@ new class extends Component
                         class="flex-1 overflow-y-auto p-3 sm:p-4 space-y-3"
                     >
                         @forelse ($this->threadMessages as $msg)
-                            @php $isOwn = $msg->user_id === auth()->id(); @endphp
+                            @php
+                                $isBot = ($msg->metadata['source'] ?? '') === 'bot';
+                                $isOwn = $msg->user_id === auth()->id() || $isBot;
+                            @endphp
                             <div wire:key="msg-messenger-{{ $msg->id }}" class="flex {{ $isOwn ? 'justify-end' : 'justify-start' }}">
                                 <div class="max-w-[80%] sm:max-w-[70%]">
                                     @if (! $isOwn)
                                         <p class="text-[11px] text-zinc-400 mb-0.5 px-1">{{ $msg->user?->name ?? ($messenger['name'] ?? 'Messenger User') }}</p>
+                                    @elseif ($isBot)
+                                        <p class="text-[11px] text-zinc-400 mb-0.5 px-1 text-right">Bot</p>
                                     @endif
-                                    <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? 'bg-blue-600 text-white rounded-br-md' : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
+                                    <div class="rounded-2xl px-3.5 py-2 text-sm {{ $isOwn ? ($isBot ? 'bg-emerald-600 text-white rounded-br-md' : 'bg-blue-600 text-white rounded-br-md') : 'bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 border border-zinc-200 dark:border-zinc-600 rounded-bl-md' }}">
                                         @if ($msg->isAudio())
                                             @include('components.communications._audio-message', ['message' => $msg, 'isOwn' => $isOwn])
                                         @elseif ($msg->needsTranslationFor(app()->getLocale()))

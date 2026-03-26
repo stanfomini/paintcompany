@@ -255,6 +255,7 @@ new class extends Component {
         $copy = $original->replicate();
         $copy->name = $original->name . ' (Copy)';
         $copy->status = 'draft';
+        $copy->trigger_keyword = null;
         $copy->save();
 
         // First pass: clone steps and build ID map

@@ -58,7 +58,7 @@ it('can duplicate a messenger bot flow', function () {
     $copy = MessengerBotFlow::where('name', 'Lead Qualifier (Copy)')->first();
     expect($copy)->not->toBeNull()
         ->and($copy->status)->toBe('draft')
-        ->and($copy->trigger_keyword)->toBe('PAINT')
+        ->and($copy->trigger_keyword)->toBeNull()
         ->and($copy->greeting_message)->toBe('Hello!')
         ->and($copy->business_hours_only)->toBeTrue()
         ->and($copy->steps)->toHaveCount(2);
@@ -166,7 +166,7 @@ it('can duplicate an sms bot flow', function () {
     expect($copy)->not->toBeNull()
         ->and($copy->status)->toBe('draft')
         ->and($copy->trigger_type)->toBe('keyword')
-        ->and($copy->trigger_keyword)->toBe('PAINT')
+        ->and($copy->trigger_keyword)->toBeNull()
         ->and($copy->steps)->toHaveCount(2);
 
     $copiedSteps = $copy->steps->sortBy('sort_order')->values();
