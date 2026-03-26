@@ -19,6 +19,7 @@ class Invitation extends Model
         'service_category_id',
         'deal_id',
         'inviter_id',
+        'existing_user_id',
         'expires_at',
         'accepted_at',
         'first_viewed_at',
@@ -48,6 +49,11 @@ class Invitation extends Model
     public function inviter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'inviter_id');
+    }
+
+    public function existingUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'existing_user_id');
     }
 
     public function isExpired(): bool
