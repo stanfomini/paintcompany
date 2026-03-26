@@ -1,9 +1,15 @@
 <?php
 
-use App\Models\AgentProfile;
+use App\Models\CompanySetting;
+use App\Models\Deal;
+use App\Models\Estimate;
+use App\Models\Property;
 use App\Models\User;
+use App\Notifications\AgentListingSubmitted;
 use App\Services\InvitationService;
+use App\Services\TwilioService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -13,6 +19,7 @@ new class extends Component
 
     public bool $showSuccessModal = false;
 
+    // Top fields (always required)
     public string $first_name = '';
 
     public string $last_name = '';
@@ -22,6 +29,19 @@ new class extends Component
     public string $phone = '';
 
     public string $company_name = '';
+
+    // Listing fields (optional — triggers tier 2 when address + city filled)
+    public string $address = '';
+
+    public string $city = '';
+
+    public string $state = '';
+
+    public string $zip = '';
+
+    public ?string $listing_price = null;
+
+    public string $intent = 'selling';
 
     public ?int $createdAgentId = null;
 
@@ -35,9 +55,11 @@ new class extends Component
     {
         $this->showModal = false;
         $this->reset([
-            'first_name', 'last_name', 'email', 'phone',
-            'company_name', 'createdAgentId',
+            'first_name', 'last_name', 'email', 'phone', 'company_name',
+            'address', 'city', 'state', 'zip', 'listing_price', 'intent',
+            'createdAgentId',
         ]);
+        $this->intent = 'selling';
         $this->resetValidation();
     }
 
@@ -49,33 +71,111 @@ new class extends Component
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'phone' => ['nullable', 'string', 'max:30'],
             'company_name' => ['nullable', 'string', 'max:255'],
+            'address' => ['nullable', 'string', 'max:255'],
+            'city' => ['nullable', 'string', 'max:100'],
+            'state' => ['nullable', 'string', 'max:50'],
+            'zip' => ['nullable', 'string', 'max:20'],
+            'listing_price' => ['nullable', 'numeric', 'min:0'],
+            'intent' => ['required', 'in:selling,buying'],
         ]);
 
-        $user = DB::transaction(function () use ($validated) {
-            $user = User::create([
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
+        $isFullForm = ! empty($validated['address']) && ! empty($validated['city']);
+
+        $user = DB::transaction(function () use ($validated, $isFullForm) {
+            // Set type BEFORE save so boot hook creates AgentProfile
+            $user = new User([
+                'name' => trim($validated['first_name'].' '.$validated['last_name']),
                 'email' => $validated['email'],
                 'phone' => $validated['phone'] ?? null,
-                'type' => 'agent',
                 'password' => bcrypt(str()->random(32)),
+                'needs_onboarding' => ! $isFullForm,
             ]);
+            $user->type = 'agent';
+            $user->is_active = true;
+            $user->save(); // created hook fires with type='agent' → AgentProfile auto-created
 
-            AgentProfile::create([
-                'user_id' => $user->id,
+            // Update the auto-created AgentProfile with form data
+            $user->agentProfile->update([
                 'company_name' => $validated['company_name'] ?? null,
                 'phone' => $validated['phone'] ?? null,
             ]);
+
+            // Tier 2: Create property, deal, and estimate
+            if ($isFullForm) {
+                $property = Property::create([
+                    'agent_id' => $user->id,
+                    'source' => 'agent_referral',
+                    'address' => $validated['address'],
+                    'city' => $validated['city'],
+                    'state' => ! empty($validated['state']) ? strtoupper($validated['state']) : null,
+                    'zip' => $validated['zip'] ?? null,
+                    'listing_status' => 'active',
+                    'listing_price' => $validated['listing_price'] ?: null,
+                ]);
+
+                $deal = Deal::create([
+                    'property_id' => $property->id,
+                    'agent_id' => $user->id,
+                    'title' => $validated['address'].', '.$validated['city'],
+                    'stage' => 'lead',
+                    'estimated_value' => $validated['listing_price'] ?: null,
+                    'agent_intent' => $validated['intent'],
+                    'listing_value' => $validated['listing_price'] ?: null,
+                    'roi_scope' => 'interior',
+                ]);
+
+                Estimate::create([
+                    'deal_id' => $deal->id,
+                    'created_by' => auth()->id(),
+                    'title' => 'Paint Estimate - '.$validated['address'],
+                    'status' => 'draft',
+                    'project_type' => 'interior',
+                ]);
+
+                // Notify internal team
+                $internalUsers = User::where('type', 'internal')->get();
+                foreach ($internalUsers as $internalUser) {
+                    $internalUser->notify(new AgentListingSubmitted($deal, $user));
+                }
+            }
 
             return $user;
         });
 
         // Send invitation email
+        $invitation = null;
         try {
             $invitationService = app(InvitationService::class);
-            $invitationService->sendInvitation(auth()->user(), $validated['email'], 'agent');
+            $invitation = $invitationService->sendInvitation(
+                inviter: auth()->user(),
+                email: $validated['email'],
+                invitedUserType: 'agent',
+                existingUserId: $user->id,
+            );
         } catch (\InvalidArgumentException $e) {
-            // Invitation permissions issue — agent still created
+            Log::warning('Quick-add agent: invitation failed', ['error' => $e->getMessage()]);
+        }
+
+        // Send SMS with invite link
+        if ($invitation && ! empty($validated['phone'])) {
+            try {
+                $twilio = app(TwilioService::class);
+                if ($twilio->isEnabled()) {
+                    $acceptUrl = app(InvitationService::class)->generateAcceptUrl($invitation);
+                    $companyName = CompanySetting::getInstance()->company_name ?? config('app.name');
+
+                    $twilio->sendSms(
+                        $validated['phone'],
+                        __("Hi :name! You've been invited to join :company. Set up your account here: :link", [
+                            'name' => $validated['first_name'],
+                            'company' => $companyName,
+                            'link' => $acceptUrl,
+                        ]),
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::warning('Quick-add agent: SMS failed', ['error' => $e->getMessage()]);
+            }
         }
 
         $this->createdAgentId = $user->id;
@@ -93,9 +193,11 @@ new class extends Component
         $this->showSuccessModal = false;
         $this->dispatch('agent-quick-added');
         $this->reset([
-            'first_name', 'last_name', 'email', 'phone',
-            'company_name', 'createdAgentId',
+            'first_name', 'last_name', 'email', 'phone', 'company_name',
+            'address', 'city', 'state', 'zip', 'listing_price', 'intent',
+            'createdAgentId',
         ]);
+        $this->intent = 'selling';
     }
 };
 ?>
@@ -107,7 +209,7 @@ new class extends Component
             <div>
                 <flux:heading size="lg">{{ __('Quick Add Agent') }}</flux:heading>
                 <flux:text class="mt-1 text-zinc-600 dark:text-zinc-400">
-                    {{ __('Create a real estate agent account. They\'ll receive an invitation email.') }}
+                    {{ __('Create a real estate agent account. They\'ll receive an invitation email and SMS.') }}
                 </flux:text>
             </div>
 
@@ -142,6 +244,61 @@ new class extends Component
                     @error('company_name') <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text> @enderror
                 </flux:field>
 
+                {{-- Listing Details (optional — expands to tier 2) --}}
+                <div x-data="{ expanded: false }">
+                    <button type="button" @click="expanded = !expanded" class="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 hover:underline">
+                        <flux:icon x-show="!expanded" name="plus" class="size-4" />
+                        <flux:icon x-show="expanded" name="minus" class="size-4" x-cloak />
+                        <span x-text="expanded ? '{{ __('Hide Listing Details') }}' : '{{ __('Add Listing Details (optional)') }}'"></span>
+                    </button>
+
+                    <div x-show="expanded" x-cloak class="mt-3 space-y-4 border-t border-zinc-200 dark:border-zinc-700 pt-4">
+                        <flux:text class="text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ __('Fill these out to skip agent onboarding and create a deal + estimate automatically.') }}
+                        </flux:text>
+
+                        <flux:field>
+                            <flux:input wire:model="address" label="{{ __('Property Address') }}" placeholder="123 Main St" />
+                            @error('address') <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text> @enderror
+                        </flux:field>
+
+                        <div class="grid grid-cols-3 gap-3">
+                            <flux:field>
+                                <flux:input wire:model="city" label="{{ __('City') }}" placeholder="Denver" />
+                                @error('city') <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text> @enderror
+                            </flux:field>
+                            <flux:field>
+                                <flux:input wire:model="state" label="{{ __('State') }}" placeholder="CO" />
+                                @error('state') <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text> @enderror
+                            </flux:field>
+                            <flux:field>
+                                <flux:input wire:model="zip" label="{{ __('Zip') }}" placeholder="80202" />
+                                @error('zip') <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text> @enderror
+                            </flux:field>
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:field>
+                                <flux:input wire:model="listing_price" type="number" label="{{ __('Listing Price') }}" placeholder="450000" />
+                                @error('listing_price') <flux:text class="text-red-500 text-sm mt-1">{{ $message }}</flux:text> @enderror
+                            </flux:field>
+                            <flux:field>
+                                <flux:text class="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">{{ __('Intent') }}</flux:text>
+                                <div class="flex gap-4">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" wire:model="intent" value="selling" class="text-blue-600 focus:ring-blue-500" />
+                                        <span class="text-sm text-zinc-700 dark:text-zinc-300">{{ __('Selling') }}</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" wire:model="intent" value="buying" class="text-blue-600 focus:ring-blue-500" />
+                                        <span class="text-sm text-zinc-700 dark:text-zinc-300">{{ __('Buying') }}</span>
+                                    </label>
+                                </div>
+                            </flux:field>
+                        </div>
+                    </div>
+                </div>
+
                 {{-- Actions --}}
                 <div class="flex justify-end gap-3 pt-4">
                     <flux:button type="button" wire:click="closeModal" variant="ghost">
@@ -165,7 +322,7 @@ new class extends Component
             <div>
                 <flux:heading size="lg">{{ __('Agent Created!') }}</flux:heading>
                 <flux:text class="mt-1 text-zinc-600 dark:text-zinc-400">
-                    {{ __('Invitation email sent.') }}
+                    {{ __('Invitation email and SMS sent.') }}
                 </flux:text>
             </div>
             <div class="flex flex-col gap-2 pt-2">
