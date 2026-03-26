@@ -1,9 +1,13 @@
 <?php
 
+use App\Models\Customer;
+use App\Models\ProjectPreview;
 use App\Models\ServiceCategory;
+use App\Notifications\CustomerPreviewNotification;
 use App\Services\InvitationService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -59,10 +63,57 @@ new class extends Component {
         $user = Auth::user();
 
         try {
-            $invitationService->sendInvitation($user, $this->email, $this->invitedUserType, $this->serviceCategoryId);
+            if ($this->invitedUserType === 'customer') {
+                // Customer: send preview page email instead of invite
+                $customer = Customer::where('email', $this->email)->first();
+
+                if (! $customer) {
+                    $this->addError('email', __('No customer found with this email address. Use Quick Add Customer to create one first.'));
+
+                    return;
+                }
+
+                $deal = $customer->deals()->latest()->first();
+                $preview = null;
+
+                if ($deal) {
+                    $preview = ProjectPreview::where('customer_id', $customer->id)
+                        ->where('deal_id', $deal->id)
+                        ->first();
+
+                    if (! $preview) {
+                        $preview = ProjectPreview::create([
+                            'customer_id' => $customer->id,
+                            'deal_id' => $deal->id,
+                            'estimate_id' => $deal->estimates()->first()?->id,
+                            'first_name' => $customer->first_name,
+                            'last_name' => $customer->last_name,
+                            'email' => $customer->email,
+                            'phone' => $customer->phone,
+                        ]);
+                    }
+                }
+
+                if (! $preview) {
+                    $this->addError('email', __('This customer has no deals yet. Create a deal first.'));
+
+                    return;
+                }
+
+                $customer->notify(new CustomerPreviewNotification(
+                    preview: $preview,
+                    customerName: $customer->first_name,
+                ));
+            } else {
+                // Agent/Crew/Internal: standard invite flow
+                $invitationService->sendInvitation($user, $this->email, $this->invitedUserType, $this->serviceCategoryId);
+            }
 
             $this->dispatch('invitation-sent');
-            session()->flash('success', __('Invitation sent to :email', ['email' => $this->email]));
+            $flashMessage = $this->invitedUserType === 'customer'
+                ? __('Preview link sent to :email', ['email' => $this->email])
+                : __('Invitation sent to :email', ['email' => $this->email]);
+            session()->flash('success', $flashMessage);
             $this->closeModal();
         } catch (\InvalidArgumentException $e) {
             $this->addError('email', $e->getMessage());

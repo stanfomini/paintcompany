@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Services\InvitationService;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Livewire\Livewire;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
 
@@ -437,5 +438,29 @@ describe('Invitation factory', function () {
 
         expect($invitation->inviter->type)->toBe('agent');
         expect($invitation->invited_user_type)->toBe('customer');
+    });
+});
+
+describe('Send invitation component — customer type', function () {
+    it('sends preview notification instead of invite when type is customer', function () {
+        Notification::fake();
+
+        $inviter = User::factory()->internal()->create();
+        $customer = Customer::factory()->create(['email' => 'existing@customer.com']);
+        $deal = Deal::factory()->create(['customer_id' => $customer->id]);
+
+        $this->actingAs($inviter);
+
+        Livewire::test('invitations.send-invitation')
+            ->set('email', 'existing@customer.com')
+            ->set('invitedUserType', 'customer')
+            ->call('sendInvitation');
+
+        Notification::assertSentTo(
+            $customer,
+            \App\Notifications\CustomerPreviewNotification::class,
+        );
+
+        expect(Invitation::where('email', 'existing@customer.com')->count())->toBe(0);
     });
 });
