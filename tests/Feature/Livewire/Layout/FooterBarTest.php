@@ -181,3 +181,31 @@ it('excludes handled missed calls from badge count', function () {
     Livewire::test('layout.footer-bar')
         ->assertDontSeeHtml('bg-red-500 text-white text-[10px]');
 });
+
+it('shows company-wide missed call count for user with receive_calls permission', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('phone.make_calls');
+    $user->givePermissionTo('phone.receive_calls');
+
+    // Company-wide missed calls (voicemail_for_user_id = null)
+    CallLog::factory()->inbound()->missed()->companyWide()->create();
+    CallLog::factory()->inbound()->missed()->companyWide()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('layout.footer-bar')
+        ->assertSee('2');
+});
+
+it('does not show company-wide missed calls for user with only make_calls', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('phone.make_calls');
+
+    // Company-wide missed calls — user has no receive_calls or view permissions
+    CallLog::factory()->inbound()->missed()->companyWide()->create();
+
+    $this->actingAs($user);
+
+    Livewire::test('layout.footer-bar')
+        ->assertDontSeeHtml('bg-red-500 text-white text-[10px]');
+});

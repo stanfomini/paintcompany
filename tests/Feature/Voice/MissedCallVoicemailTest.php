@@ -1,5 +1,7 @@
 <?php
 
+use App\Channels\WebPushChannel;
+use App\Events\MissedCallReceived;
 use App\Jobs\ProcessMissedCallJob;
 use App\Models\Activity;
 use App\Models\CallGroup;
@@ -124,6 +126,34 @@ it('scopes visible to user with view_all_voicemails permission', function () {
     $visible = CallLog::visibleTo($user)->get();
 
     expect($visible)->toHaveCount(3);
+});
+
+it('scopes visible to user with receive_calls permission sees company-wide', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('phone.receive_calls');
+    $otherUser = User::factory()->internal()->create();
+
+    $ownVoicemail = CallLog::factory()->voicemail()->forUser($user)->create();
+    CallLog::factory()->voicemail()->forUser($otherUser)->create();
+    $companyMissed = CallLog::factory()->missed()->companyWide()->create();
+
+    $visible = CallLog::visibleTo($user)->get();
+
+    expect($visible)->toHaveCount(2)
+        ->and($visible->pluck('id')->sort()->values()->toArray())
+        ->toBe(collect([$ownVoicemail->id, $companyMissed->id])->sort()->values()->toArray());
+});
+
+it('scopes visible to user with only make_calls does not see company-wide', function () {
+    $user = User::factory()->internal()->create();
+    $user->givePermissionTo('phone.make_calls');
+
+    CallLog::factory()->missed()->companyWide()->create();
+    CallLog::factory()->voicemail()->companyWide()->create();
+
+    $visible = CallLog::visibleTo($user)->get();
+
+    expect($visible)->toHaveCount(0);
 });
 
 it('marks call log as listened by user', function () {
@@ -608,4 +638,122 @@ it('marks handled idempotently via updateOrCreate', function () {
         ->count();
 
     expect($pivotCount)->toBe(1);
+});
+
+// ── Group 6: Notification WebPush Channels ───────────────────────────
+
+it('MissedCallNotification via includes WebPushChannel when user wants push', function () {
+    $user = User::factory()->internal()->create();
+    $user->update(['notification_preferences' => ['phone_calls' => ['push' => true, 'email' => false]]]);
+    \App\Models\PushSubscription::create([
+        'user_id' => $user->id,
+        'endpoint' => 'https://example.com/push',
+        'public_key' => 'test-key',
+        'auth_token' => 'test-token',
+    ]);
+
+    $callLog = CallLog::factory()->missed()->create();
+    $notification = new MissedCallNotification($callLog);
+
+    $channels = $notification->via($user);
+
+    expect($channels)->toContain(WebPushChannel::class)
+        ->and($channels)->not->toContain('mail');
+});
+
+it('MissedCallNotification via includes mail when user wants email', function () {
+    $user = User::factory()->internal()->create();
+    $user->update(['notification_preferences' => ['phone_calls' => ['push' => false, 'email' => true]]]);
+
+    $callLog = CallLog::factory()->missed()->create();
+    $notification = new MissedCallNotification($callLog);
+
+    $channels = $notification->via($user);
+
+    expect($channels)->toContain('mail')
+        ->and($channels)->not->toContain(WebPushChannel::class);
+});
+
+it('MissedCallNotification toWebPush returns valid message', function () {
+    $customer = Customer::factory()->create();
+    $callLog = CallLog::factory()->missed()->create(['customer_id' => $customer->id]);
+    $notification = new MissedCallNotification($callLog);
+
+    $user = User::factory()->internal()->create();
+    $message = $notification->toWebPush($user);
+
+    expect($message->title)->toBe(__('Missed Call'))
+        ->and($message->body)->toContain($customer->full_name)
+        ->and($message->url)->toBe('/communications')
+        ->and($message->tag)->toBe("missed-call-{$callLog->id}");
+});
+
+it('VoicemailReceivedNotification via includes WebPushChannel when user wants push', function () {
+    $user = User::factory()->internal()->create();
+    $user->update(['notification_preferences' => ['phone_calls' => ['push' => true, 'email' => false]]]);
+    \App\Models\PushSubscription::create([
+        'user_id' => $user->id,
+        'endpoint' => 'https://example.com/push',
+        'public_key' => 'test-key',
+        'auth_token' => 'test-token',
+    ]);
+
+    $callLog = CallLog::factory()->voicemail()->create();
+    $notification = new VoicemailReceivedNotification($callLog);
+
+    $channels = $notification->via($user);
+
+    expect($channels)->toContain(WebPushChannel::class)
+        ->and($channels)->not->toContain('mail');
+});
+
+it('VoicemailReceivedNotification toWebPush includes transcription', function () {
+    $callLog = CallLog::factory()->voicemail()->create([
+        'voicemail_transcription' => 'Hey, please call me back about the paint job.',
+    ]);
+    $notification = new VoicemailReceivedNotification($callLog);
+
+    $user = User::factory()->internal()->create();
+    $message = $notification->toWebPush($user);
+
+    expect($message->title)->toBe(__('New Voicemail'))
+        ->and($message->body)->toContain('paint job')
+        ->and($message->tag)->toBe("voicemail-{$callLog->id}");
+});
+
+// ── Group 7: MissedCallReceived Event ────────────────────────────────
+
+it('MissedCallReceived broadcasts to users with receive_calls permission', function () {
+    $receiver = User::factory()->internal()->create();
+    $receiver->givePermissionTo('phone.receive_calls');
+
+    $noPermUser = User::factory()->internal()->create();
+
+    $callLog = CallLog::factory()->missed()->companyWide()->create();
+    $event = new MissedCallReceived($callLog);
+
+    $channels = $event->broadcastOn();
+    $channelNames = collect($channels)->map(fn ($ch) => $ch->name)->toArray();
+
+    expect($channelNames)->toContain('private-call.user.'.$receiver->id)
+        ->and($channelNames)->not->toContain('private-call.user.'.$noPermUser->id);
+});
+
+it('MissedCallReceived uses correct broadcast name', function () {
+    $callLog = CallLog::factory()->missed()->create();
+    $event = new MissedCallReceived($callLog);
+
+    expect($event->broadcastAs())->toBe('missed_call.received');
+});
+
+it('MissedCallReceived includes correct broadcast data', function () {
+    $customer = Customer::factory()->create();
+    $callLog = CallLog::factory()->missed()->create(['customer_id' => $customer->id]);
+    $event = new MissedCallReceived($callLog);
+
+    $data = $event->broadcastWith();
+
+    expect($data)->toHaveKeys(['call_log_id', 'ulid', 'from_number', 'caller_name', 'customer_id', 'status'])
+        ->and($data['call_log_id'])->toBe($callLog->id)
+        ->and($data['status'])->toBe('no-answer');
 });

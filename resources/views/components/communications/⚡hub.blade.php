@@ -91,6 +91,7 @@ new class extends Component
             "echo-private:chat.user.{$userId},.thread.created" => 'refreshData',
             "echo-private:email.user.{$userId},.email.received" => 'refreshData',
             "echo-private:call.user.{$userId},.voicemail.received" => 'refreshData',
+            "echo-private:call.user.{$userId},.missed_call.received" => 'refreshData',
             'message-sent' => 'onChildMessageSent',
             'customer-quick-added' => 'onQuickAdded',
             'agent-quick-added' => 'onQuickAdded',

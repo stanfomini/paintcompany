@@ -17,6 +17,7 @@ new class extends Component
             "echo-private:chat.user.{$userId},.message.sent" => 'refreshCount',
             "echo-private:email.user.{$userId},.email.received" => 'refreshCount',
             "echo-private:call.user.{$userId},.voicemail.received" => 'refreshCount',
+            "echo-private:call.user.{$userId},.missed_call.received" => 'refreshCount',
             'message-sent' => 'refreshCount',
             'refresh-notification-counts' => 'refreshCount',
         ];

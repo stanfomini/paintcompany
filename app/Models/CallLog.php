@@ -148,7 +148,7 @@ class CallLog extends Model
         $query->where(function (Builder $q) use ($user) {
             $q->where('voicemail_for_user_id', $user->id);
 
-            if ($user->can('phone.view_company_voicemails')) {
+            if ($user->can('phone.view_company_voicemails') || $user->can('phone.receive_calls')) {
                 $q->orWhereNull('voicemail_for_user_id');
             }
 

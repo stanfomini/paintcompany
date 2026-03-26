@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\CallConnected;
 use App\Events\CallEnded;
 use App\Events\IncomingCall;
+use App\Events\MissedCallReceived;
 use App\Events\VoicemailReceived;
 use App\Jobs\ProcessCallRecordingJob;
 use App\Jobs\ProcessMissedCallJob;
@@ -154,6 +155,11 @@ class TwilioVoiceWebhookController extends Controller
         // Dispatch missed call processing for no-answer or voicemail calls
         if ($status === 'no-answer' || $wasVoicemail) {
             ProcessMissedCallJob::dispatch($callLog->id)->delay(now()->addSeconds(5));
+        }
+
+        // Broadcast missed call event for real-time counter updates
+        if ($status === 'no-answer') {
+            $this->safeBroadcast(new MissedCallReceived($callLog));
         }
 
         // Auto-complete follow-up when calling back a missed caller
