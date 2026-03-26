@@ -40,6 +40,14 @@ new #[Layout('components.layouts.agent', ['title' => 'Welcome'])] class extends 
 
             return;
         }
+
+        // Pre-populate from AgentProfile if data was set by quick-add
+        $profile = $user->agentProfile;
+        if ($profile) {
+            $this->companyName = $profile->company_name ?? '';
+            $this->phone = $profile->phone ?? '';
+            $this->licenseNumber = $profile->license_number ?? '';
+        }
     }
 
     public function nextStep(): void

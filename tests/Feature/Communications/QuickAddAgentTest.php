@@ -128,3 +128,19 @@ it('shows success modal after creation', function () {
         ->assertSet('showSuccessModal', true)
         ->assertSet('showModal', false);
 });
+
+it('pre-populates agent onboarding with profile data from quick-add', function () {
+    $user = User::factory()->agent()->create([
+        'needs_onboarding' => true,
+    ]);
+    $user->agentProfile->update([
+        'company_name' => 'Pre-filled Brokerage',
+        'phone' => '3035557777',
+    ]);
+
+    $this->actingAs($user, 'agent');
+
+    Livewire::test('agent.onboarding')
+        ->assertSet('companyName', 'Pre-filled Brokerage')
+        ->assertSet('phone', '3035557777');
+});
