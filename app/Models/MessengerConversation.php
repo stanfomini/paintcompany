@@ -69,7 +69,8 @@ class MessengerConversation extends Model
 
     public function scopeInProgress($query)
     {
-        return $query->where('status', 'in_progress');
+        return $query->where('status', 'in_progress')
+            ->where('last_activity_at', '>', now()->subHours(24));
     }
 
     public function scopeTimedOut($query, ?int $minutes = null)

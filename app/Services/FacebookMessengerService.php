@@ -240,16 +240,17 @@ class FacebookMessengerService
             return;
         }
 
-        // Returning customer — skip bot, let message sit for human follow-up
-        if ($this->isReturningCustomer($psid)) {
-            return;
-        }
-
-        // Check for keyword-triggered flow
+        // Check for keyword-triggered flow (before returning customer check —
+        // keywords should engage anyone at any time, only default flows are gated)
         $keywordFlow = MessengerBotFlow::findByKeyword($text);
         if ($keywordFlow) {
             app(MessengerBotFlowService::class)->startConversation($thread, $psid, $keywordFlow, 'keyword');
 
+            return;
+        }
+
+        // Returning customer — skip bot, let message sit for human follow-up
+        if ($this->isReturningCustomer($psid)) {
             return;
         }
 
@@ -290,6 +291,14 @@ class FacebookMessengerService
 
         if ($conversation) {
             app(MessengerBotFlowService::class)->processResponse($conversation, $postback['title'] ?? $payload);
+
+            return;
+        }
+
+        // Check for keyword-triggered flow (before returning customer check)
+        $keywordFlow = MessengerBotFlow::findByKeyword($postback['title'] ?? $payload);
+        if ($keywordFlow) {
+            app(MessengerBotFlowService::class)->startConversation($thread, $psid, $keywordFlow, 'keyword');
 
             return;
         }

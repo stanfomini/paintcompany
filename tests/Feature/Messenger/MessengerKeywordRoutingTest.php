@@ -144,8 +144,13 @@ it('falls back to default flow when no keyword match', function () {
     expect($conversation->status)->toBe('in_progress');
 });
 
-it('skips keyword routing for returning customers', function () {
-    Http::fake();
+it('triggers keyword flow for returning customers', function () {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response([
+            'first_name' => 'Returning',
+            'last_name' => 'Customer',
+        ]),
+    ]);
 
     $keywordFlow = MessengerBotFlow::factory()->active()->create([
         'trigger_keyword' => 'COLOR',
@@ -182,12 +187,13 @@ it('skips keyword routing for returning customers', function () {
         ]],
     ]);
 
-    // Should NOT create a new conversation — returning customer is handled before keyword check
+    // Keyword flows should trigger even for returning customers
     $conversations = MessengerConversation::where('facebook_psid', 'returning-psid-1')
         ->where('status', 'in_progress')
         ->get();
 
-    expect($conversations)->toHaveCount(0);
+    expect($conversations)->toHaveCount(1);
+    expect($conversations->first()->flow_id)->toBe($keywordFlow->id);
 });
 
 it('does not trigger keyword flow when bot conversation is already in progress', function () {
@@ -231,4 +237,95 @@ it('does not trigger keyword flow when bot conversation is already in progress',
     // The existing conversation should still reference the original flow
     $existingConversation->refresh();
     expect($existingConversation->flow_id)->toBe($existingFlow->id);
+});
+
+it('does not start default flow for returning customers', function () {
+    Http::fake();
+
+    $flow = MessengerBotFlow::factory()->active()->create();
+    MessengerBotStep::factory()->textQuestion()->create([
+        'flow_id' => $flow->id,
+        'sort_order' => 1,
+        'message_text' => 'A question',
+    ]);
+
+    $oldFlow = MessengerBotFlow::factory()->create();
+    $thread = \App\Models\ChatThread::factory()->facebook('returning-default-1')->create();
+    $customer = \App\Models\Customer::factory()->create();
+
+    MessengerConversation::create([
+        'flow_id' => $oldFlow->id,
+        'thread_id' => $thread->id,
+        'facebook_psid' => 'returning-default-1',
+        'customer_id' => $customer->id,
+        'status' => 'completed',
+        'answers' => [],
+        'started_at' => now()->subDay(),
+        'completed_at' => now()->subDay(),
+        'last_activity_at' => now()->subDay(),
+    ]);
+
+    $service = app(FacebookMessengerService::class);
+    $service->processIncomingMessage([
+        'messaging' => [[
+            'sender' => ['id' => 'returning-default-1'],
+            'message' => ['mid' => 'mid.retdef1', 'text' => 'Hey I need another quote'],
+        ]],
+    ]);
+
+    // Non-keyword text from returning customer should NOT start default flow
+    $conversations = MessengerConversation::where('facebook_psid', 'returning-default-1')
+        ->where('status', 'in_progress')
+        ->get();
+
+    expect($conversations)->toHaveCount(0);
+});
+
+it('does not match stale in_progress conversation older than 24 hours', function () {
+    Http::fake([
+        'graph.facebook.com/*' => Http::response([
+            'first_name' => 'Stale',
+            'last_name' => 'User',
+        ]),
+    ]);
+
+    $keywordFlow = MessengerBotFlow::factory()->active()->create([
+        'trigger_keyword' => 'COLOR',
+    ]);
+
+    MessengerBotStep::factory()->textQuestion()->create([
+        'flow_id' => $keywordFlow->id,
+        'sort_order' => 1,
+        'message_text' => 'Color question',
+    ]);
+
+    $staleFlow = MessengerBotFlow::factory()->active()->create();
+    $thread = \App\Models\ChatThread::factory()->facebook('stale-psid-1')->create();
+
+    // Create a stale in_progress conversation (25 hours old)
+    MessengerConversation::create([
+        'flow_id' => $staleFlow->id,
+        'thread_id' => $thread->id,
+        'facebook_psid' => 'stale-psid-1',
+        'status' => 'in_progress',
+        'answers' => [],
+        'started_at' => now()->subHours(25),
+        'last_activity_at' => now()->subHours(25),
+    ]);
+
+    $service = app(FacebookMessengerService::class);
+    $service->processIncomingMessage([
+        'messaging' => [[
+            'sender' => ['id' => 'stale-psid-1'],
+            'message' => ['mid' => 'mid.stale1', 'text' => 'COLOR'],
+        ]],
+    ]);
+
+    // Stale conversation should not block keyword flow
+    $newConversation = MessengerConversation::where('facebook_psid', 'stale-psid-1')
+        ->where('flow_id', $keywordFlow->id)
+        ->where('status', 'in_progress')
+        ->first();
+
+    expect($newConversation)->not->toBeNull();
 });
