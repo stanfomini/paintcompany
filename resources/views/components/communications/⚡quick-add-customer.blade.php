@@ -1,7 +1,9 @@
 <?php
 
-use App\Services\InvitationService;
+use App\Models\ProjectPreview;
+use App\Notifications\CustomerPreviewNotification;
 use App\Services\LeadDeduplicationService;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -110,12 +112,31 @@ new class extends Component
             }
         }
 
-        // Send invitation email
+        // Send preview page email (not invite — customers access via preview page)
         try {
-            $invitationService = app(InvitationService::class);
-            $invitationService->sendInvitation(auth()->user(), $validated['email'], 'customer');
-        } catch (\InvalidArgumentException $e) {
-            // User may already exist — that's okay, customer/deal still created
+            $preview = ProjectPreview::where('customer_id', $customer->id)
+                ->where('deal_id', $deal->id)
+                ->first();
+
+            if (! $preview) {
+                $preview = ProjectPreview::create([
+                    'customer_id' => $customer->id,
+                    'deal_id' => $deal->id,
+                    'estimate_id' => $deal->estimates()->first()?->id,
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $validated['last_name'],
+                    'email' => $validated['email'],
+                    'phone' => $validated['phone'] ?? null,
+                    'address' => $validated['address'] ?? null,
+                ]);
+            }
+
+            $customer->notify(new CustomerPreviewNotification(
+                preview: $preview,
+                customerName: $validated['first_name'],
+            ));
+        } catch (\Exception $e) {
+            Log::warning('Quick-add customer: preview notification failed', ['error' => $e->getMessage()]);
         }
 
         $this->createdCustomerId = $customer->id;
@@ -244,7 +265,7 @@ new class extends Component
             <div>
                 <flux:heading size="lg">{{ __('Customer Created!') }}</flux:heading>
                 <flux:text class="mt-1 text-zinc-600 dark:text-zinc-400">
-                    {{ __('Invitation email sent. Welcome SMS will be delivered shortly.') }}
+                    {{ __('Preview page email sent. Welcome SMS will be delivered shortly.') }}
                 </flux:text>
             </div>
             <div class="flex flex-col gap-2 pt-2">
