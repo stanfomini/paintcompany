@@ -338,11 +338,18 @@ new class extends Component {
             return;
         }
 
-        MessengerBotFlow::where('id', '!=', $this->flowId)
-            ->where('status', 'active')
-            ->update(['status' => 'inactive']);
+        $flow = MessengerBotFlow::find($this->flowId);
 
-        MessengerBotFlow::where('id', $this->flowId)->update(['status' => 'active']);
+        // Keyword flows can all be active simultaneously.
+        // Only deactivate other non-keyword (default) flows when activating a non-keyword flow.
+        if (! $flow->trigger_keyword) {
+            MessengerBotFlow::where('id', '!=', $this->flowId)
+                ->where('status', 'active')
+                ->whereNull('trigger_keyword')
+                ->update(['status' => 'inactive']);
+        }
+
+        $flow->update(['status' => 'active']);
         $this->flowStatus = 'active';
     }
 

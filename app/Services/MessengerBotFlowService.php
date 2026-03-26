@@ -414,11 +414,12 @@ class MessengerBotFlowService
     }
 
     /**
-     * Get the currently active bot flow.
+     * Get the currently active default (non-keyword) bot flow.
      */
     public function getActiveFlow(): ?MessengerBotFlow
     {
-        return MessengerBotFlow::query()->active()->first();
+        return MessengerBotFlow::query()->active()->whereNull('trigger_keyword')->first()
+            ?? MessengerBotFlow::query()->active()->first();
     }
 
     /**
