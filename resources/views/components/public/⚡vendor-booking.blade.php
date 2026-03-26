@@ -259,6 +259,8 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                 session()->getId(),
             );
 
+            $preview = $booking->deal?->projectPreview;
+
             $this->bookingResult = [
                 'token' => $booking->booking_token,
                 'date' => $booking->booked_date->format('l, F j, Y'),
@@ -266,6 +268,7 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                 'end_time' => Carbon::parse($booking->booked_end_time)->format('g:i A'),
                 'estimator' => $booking->estimator->name ?? 'TBD',
                 'address' => $this->address,
+                'preview_url' => $preview?->getPortalUrl(),
             ];
 
             $this->dispatch('booking-completed');
@@ -668,6 +671,30 @@ new #[Layout('components.layouts.public')] #[Title('Book an Appointment')] class
                         {{ __('We\'ve sent a confirmation email to') }} <strong>{{ $email }}</strong>.
                     </flux:text>
                 </div>
+
+                {{-- Auto-redirect to preview page --}}
+                @if (!empty($bookingResult['preview_url']))
+                    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 text-center"
+                         x-data="{ seconds: 5 }"
+                         x-init="
+                             let timer = setInterval(() => {
+                                 seconds--;
+                                 if (seconds <= 0) {
+                                     clearInterval(timer);
+                                     window.location.href = '{{ $bookingResult['preview_url'] }}';
+                                 }
+                             }, 1000)
+                         ">
+                        <flux:text class="text-blue-700 dark:text-blue-300">
+                            {{ __('Redirecting to your project page in') }}
+                            <strong x-text="seconds"></strong>
+                            {{ __('seconds...') }}
+                        </flux:text>
+                        <a href="{{ $bookingResult['preview_url'] }}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline mt-1 inline-block">
+                            {{ __('Go now') }}
+                        </a>
+                    </div>
+                @endif
 
                 {{-- Booking summary --}}
                 <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 p-6 space-y-4">

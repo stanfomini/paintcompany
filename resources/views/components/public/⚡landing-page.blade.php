@@ -267,9 +267,9 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
         $smsMarketingConsent = $validated['smsMarketingConsent'] ?? false;
         unset($validated['smsServiceConsent'], $validated['smsMarketingConsent']);
         $validated['sms_marketing_consent'] = $smsMarketingConsent;
-        $service->createFromLeadForm($validated, $referralCode ?: null);
+        $result = $service->createFromLeadForm($validated, $referralCode ?: null);
 
-        // Store prefill data for onboarding
+        // Store prefill data for onboarding (if customer logs in later)
         session()->put('landing_page_prefill', [
             'first_name' => $this->first_name,
             'last_name' => $this->last_name,
@@ -282,30 +282,31 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
             'description' => $this->description,
         ]);
 
-        // Create invitation and redirect to accept URL
+        // Send invitation via email (fire-and-forget for later account setup)
         try {
             $invitationService = app(\App\Services\InvitationService::class);
             $firstInternal = User::where('type', 'internal')->first();
 
             if ($firstInternal) {
-                $invitation = $invitationService->sendInvitation(
+                $invitationService->sendInvitation(
                     $firstInternal,
                     $validated['email'],
                     'customer'
                 );
-                $acceptUrl = $invitationService->generateAcceptUrl($invitation);
-                $this->dispatch('lead-submitted');
-                $this->redirect($acceptUrl);
-
-                return;
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('Auto-invite failed: '.$e->getMessage());
         }
 
-        // Fallback if invitation creation fails
         $this->dispatch('lead-submitted');
-        $this->redirect(route('next-steps'));
+
+        // Redirect to preview page instead of onboarding
+        $preview = $result['deal']->projectPreview;
+        if ($preview) {
+            $this->redirect($preview->getPortalUrl());
+        } else {
+            $this->redirect(route('next-steps'));
+        }
     }
 
     public function openScarcityModal(string $preference): void
@@ -352,30 +353,31 @@ new #[Layout('components.layouts.guest', ['headPartial' => 'partials.head-landin
             'estimate_preference' => $this->scarcityPreference,
         ]);
 
-        // Create invitation and redirect to accept URL
+        // Send invitation via email (fire-and-forget for later account setup)
         try {
             $invitationService = app(\App\Services\InvitationService::class);
             $firstInternal = User::where('type', 'internal')->first();
 
             if ($firstInternal) {
-                $invitation = $invitationService->sendInvitation(
+                $invitationService->sendInvitation(
                     $firstInternal,
                     $this->scarcityEmail,
                     'customer'
                 );
-                $acceptUrl = $invitationService->generateAcceptUrl($invitation);
-                $this->dispatch('lead-submitted');
-                $this->redirect($acceptUrl);
-
-                return;
             }
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::warning('Scarcity invite failed: '.$e->getMessage());
         }
 
-        // Fallback
         $this->dispatch('lead-submitted');
-        $this->redirect(route('next-steps'));
+
+        // Redirect to preview page instead of onboarding
+        $preview = $result['deal']->projectPreview;
+        if ($preview) {
+            $this->redirect($preview->getPortalUrl());
+        } else {
+            $this->redirect(route('next-steps'));
+        }
     }
 
     public function submitAgentSignup(): void
