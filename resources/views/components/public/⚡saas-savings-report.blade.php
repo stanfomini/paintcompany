@@ -94,6 +94,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div x-data="saasSavingsPublic()"
      data-tools='@json(self::getToolDefaults())'
      data-user-count="{{ $userCount }}"

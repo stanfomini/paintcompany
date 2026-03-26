@@ -56,6 +56,8 @@ new class extends Component
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="min-h-screen bg-zinc-50 dark:bg-zinc-950">
     <div class="mx-auto max-w-2xl px-4 py-12">
         @if (! $invoice)

@@ -17,9 +17,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="@yield('og_title', $title ?? config('app.name'))">
 <meta name="twitter:description" content="@yield('og_description', 'Denver house painting with AI color preview, instant pricing & real-time tracking. Free estimates.')">
-@hasSection('canonical')
-<link rel="canonical" href="@yield('canonical')">
-@endif
+<link rel="canonical" href="@yield('canonical', url()->current())">
 @hasSection('robots')
 <meta name="robots" content="@yield('robots')">
 @endif

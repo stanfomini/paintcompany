@@ -441,6 +441,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
     {{-- Appointment Reminder Banner --}}
     @if($this->booking && $this->booking->booked_date && $this->booking->status === 'confirmed')

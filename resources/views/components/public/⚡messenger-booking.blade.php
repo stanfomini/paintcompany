@@ -333,6 +333,8 @@ new #[Layout('components.layouts.public')] class extends Component
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="py-8 px-4 sm:py-12">
     <div class="mx-auto max-w-5xl">
         {{-- Header --}}

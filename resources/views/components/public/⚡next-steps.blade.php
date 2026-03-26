@@ -68,6 +68,8 @@ new #[Layout('components.layouts.guest')] class extends Component {
     }
 }; ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="min-h-screen bg-zinc-50 flex items-center justify-center p-6">
     <div class="w-full max-w-2xl">
         {{-- Header --}}

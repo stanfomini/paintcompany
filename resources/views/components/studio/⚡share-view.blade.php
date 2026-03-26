@@ -18,6 +18,8 @@ class extends Component {
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="min-h-[calc(100vh-200px)] bg-zinc-900 flex items-center justify-center">
     <div class="max-w-4xl w-full mx-auto px-4 py-8">
         @if($videoProject->renderedVideo)

@@ -84,6 +84,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="max-w-4xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
     {{-- Contract Header --}}
     <div class="mb-8">

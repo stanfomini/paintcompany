@@ -95,6 +95,8 @@ new #[Layout('components.layouts.public')] class extends Component {
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="py-8 px-4 sm:px-6 lg:px-8">
     <div class="max-w-3xl mx-auto space-y-8">
 

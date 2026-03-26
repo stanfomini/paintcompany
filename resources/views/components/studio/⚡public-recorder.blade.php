@@ -50,6 +50,8 @@ class extends Component {
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="flex flex-col min-h-screen bg-zinc-900 text-white">
     {{-- Header bar --}}
     <div class="shrink-0 border-b border-zinc-800 px-4 py-3">

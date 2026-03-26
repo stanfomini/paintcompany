@@ -80,6 +80,8 @@ new #[Layout('components.layouts.public')] #[Title('Booking Confirmed')] class e
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div class="min-h-screen bg-zinc-50 dark:bg-zinc-900 py-8 px-4">
     <div class="mx-auto max-w-lg">
         {{-- Header --}}

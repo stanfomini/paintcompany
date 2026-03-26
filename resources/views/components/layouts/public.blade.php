@@ -7,6 +7,11 @@
 
         <title>{{ $title ?? config('app.name') }}</title>
 
+        <link rel="canonical" href="@yield('canonical', url()->current())">
+        @hasSection('robots')
+        <meta name="robots" content="@yield('robots')">
+        @endif
+
         <link rel="icon" href="/favicon.ico" sizes="any">
         <link rel="icon" href="/favicon.svg" type="image/svg+xml">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">

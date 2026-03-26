@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\ServiceArea;
+use App\Models\VideoChannel;
 use Illuminate\Console\Command;
 
 class GenerateSitemapCommand extends Command
@@ -59,6 +60,27 @@ class GenerateSitemapCommand extends Command
                 'priority' => '0.8',
             ]);
         });
+
+        // Watch channels and their videos
+        VideoChannel::query()
+            ->public()
+            ->active()
+            ->with('videos')
+            ->each(function (VideoChannel $channel) use ($urls, $baseUrl) {
+                $urls->push([
+                    'loc' => $baseUrl.'/watch/'.$channel->slug,
+                    'changefreq' => 'weekly',
+                    'priority' => '0.5',
+                ]);
+
+                $channel->videos->each(function ($video) use ($urls, $baseUrl, $channel) {
+                    $urls->push([
+                        'loc' => $baseUrl.'/watch/'.$channel->slug.'/'.$video->id,
+                        'changefreq' => 'monthly',
+                        'priority' => '0.4',
+                    ]);
+                });
+            });
 
         // Build XML
         $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n";

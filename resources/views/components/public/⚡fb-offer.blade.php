@@ -226,6 +226,8 @@ new #[Layout('components.layouts.guest-light')] #[Title('Special Offer')] class 
 };
 ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div>
     @php
         $offer = $this->offer;

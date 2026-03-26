@@ -92,6 +92,8 @@ new #[Layout('components.layouts.guest')] class extends Component
     }
 }; ?>
 
+@section('robots', 'noindex, nofollow')
+
 <div>
     {{-- Nav Bar --}}
     <nav class="fixed top-0 inset-x-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200/60 dark:bg-zinc-900/80 dark:border-zinc-700/60">
