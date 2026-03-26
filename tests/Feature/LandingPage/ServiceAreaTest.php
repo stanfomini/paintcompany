@@ -61,7 +61,7 @@ it('renders area page with meta title and description', function () {
     $response = $this->get(route('areas.show', 'boulder-co'));
 
     $response->assertSuccessful();
-    $response->assertSee('Professional Painting Services in Boulder', false);
+    $response->assertSee('House Painting in Boulder, Colorado');
 });
 
 it('renders area page with JSON-LD structured data', function () {
@@ -89,6 +89,9 @@ it('renders other service areas links on area page', function () {
 
 it('renders services list on area page', function () {
     ServiceArea::factory()->create(['city' => 'Golden', 'slug' => 'golden-co']);
+    \App\Models\Service::factory()->create(['title' => 'Interior Painting', 'slug' => 'interior-painting']);
+    \App\Models\Service::factory()->create(['title' => 'Exterior Painting', 'slug' => 'exterior-painting']);
+    \App\Models\Service::factory()->create(['title' => 'Cabinet Painting', 'slug' => 'cabinet-painting']);
 
     $response = $this->get(route('areas.show', 'golden-co'));
 

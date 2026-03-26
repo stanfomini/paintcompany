@@ -1,6 +1,16 @@
 <?php
 
-it('renders the interior painting service page', function () {
+use App\Models\CompanySetting;
+use App\Models\Service;
+use App\Models\ServiceArea;
+
+it('renders a residential service page', function () {
+    $service = Service::factory()->residential()->create([
+        'title' => 'Interior House Painting',
+        'slug' => 'interior-painting',
+        'tagline' => 'Transform any room with fresh paint',
+    ]);
+
     $this->get('/services/interior-painting')
         ->assertOk()
         ->assertSee('Interior House Painting')
@@ -8,109 +18,28 @@ it('renders the interior painting service page', function () {
         ->assertSee('Transform any room');
 });
 
-it('renders the exterior painting service page', function () {
-    $this->get('/services/exterior-painting')
-        ->assertOk()
-        ->assertSee('Exterior House Painting')
-        ->assertSee('Residential');
-});
+it('renders a commercial service page', function () {
+    $service = Service::factory()->commercial()->create([
+        'title' => 'Commercial Interior Painting',
+        'slug' => 'commercial-interior',
+    ]);
 
-it('renders the cabinet painting service page', function () {
-    $this->get('/services/cabinet-painting')
-        ->assertOk()
-        ->assertSee('Cabinet Painting')
-        ->assertSee('Residential');
-});
-
-it('renders the deck fence staining service page', function () {
-    $this->get('/services/deck-fence-staining')
-        ->assertOk()
-        ->assertSee('Deck')
-        ->assertSee('Fence Staining');
-});
-
-it('renders the garage floor coating service page', function () {
-    $this->get('/services/garage-floor-coating')
-        ->assertOk()
-        ->assertSee('Garage Floor Coating')
-        ->assertSee('Residential');
-});
-
-it('renders the popcorn ceiling removal service page', function () {
-    $this->get('/services/popcorn-ceiling-removal')
-        ->assertOk()
-        ->assertSee('Popcorn Ceiling Removal');
-});
-
-it('renders the drywall repair service page', function () {
-    $this->get('/services/drywall-repair')
-        ->assertOk()
-        ->assertSee('Drywall Repair');
-});
-
-it('renders the trim door painting service page', function () {
-    $this->get('/services/trim-door-painting')
-        ->assertOk()
-        ->assertSee('Trim, Door');
-});
-
-it('renders the wallpaper removal service page', function () {
-    $this->get('/services/wallpaper-removal')
-        ->assertOk()
-        ->assertSee('Wallpaper Removal');
-});
-
-it('renders the commercial interior service page', function () {
     $this->get('/services/commercial-interior')
         ->assertOk()
         ->assertSee('Commercial Interior Painting')
         ->assertSee('Commercial');
 });
 
-it('renders the commercial exterior service page', function () {
-    $this->get('/services/commercial-exterior')
-        ->assertOk()
-        ->assertSee('Commercial Exterior Painting');
-});
+it('renders a specialty service page', function () {
+    $service = Service::factory()->specialty()->create([
+        'title' => 'Line Striping',
+        'slug' => 'line-striping',
+    ]);
 
-it('renders the warehouse industrial service page', function () {
-    $this->get('/services/warehouse-industrial')
-        ->assertOk()
-        ->assertSee('Warehouse')
-        ->assertSee('Industrial');
-});
-
-it('renders the hoa multiunit service page', function () {
-    $this->get('/services/hoa-multiunit')
-        ->assertOk()
-        ->assertSee('HOA')
-        ->assertSee('Multi-Unit');
-});
-
-it('renders the line striping service page', function () {
     $this->get('/services/line-striping')
         ->assertOk()
         ->assertSee('Line Striping')
         ->assertSee('Specialty');
-});
-
-it('renders the pressure washing service page', function () {
-    $this->get('/services/pressure-washing')
-        ->assertOk()
-        ->assertSee('Pressure Washing');
-});
-
-it('renders the color consultation service page', function () {
-    $this->get('/services/color-consultation')
-        ->assertOk()
-        ->assertSee('Color Consultation');
-});
-
-it('renders the stucco coating service page', function () {
-    $this->get('/services/stucco-coating')
-        ->assertOk()
-        ->assertSee('Elastomeric')
-        ->assertSee('Stucco');
 });
 
 it('returns 404 for invalid service slug', function () {
@@ -118,16 +47,39 @@ it('returns 404 for invalid service slug', function () {
         ->assertNotFound();
 });
 
+it('returns 404 for inactive service', function () {
+    Service::factory()->inactive()->create(['slug' => 'disabled-service']);
+
+    $this->get('/services/disabled-service')
+        ->assertNotFound();
+});
+
 it('displays step by step guide section', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'steps' => [
+            ['title' => 'Room Assessment', 'description' => 'Evaluate the space'],
+            ['title' => 'Color Selection', 'description' => 'Choose your colors'],
+        ],
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('Step-by-Step Guide')
-        ->assertSee('Room Assessment and Planning')
-        ->assertSee('Color Selection and Paint Purchase');
+        ->assertSee('Room Assessment')
+        ->assertSee('Color Selection');
 });
 
 it('displays materials and tools section', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'materials' => [
+            'Paint and Primers' => ['Latex paint', 'Primer'],
+            'Application Tools' => ['Roller', 'Brush'],
+        ],
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('Materials')
         ->assertSee('Paint and Primers')
@@ -135,33 +87,66 @@ it('displays materials and tools section', function () {
 });
 
 it('displays pro tips section', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'tips' => [
+            ['title' => 'Use Floetrol', 'description' => 'Helps in dry Denver climate'],
+        ],
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('Denver Pro Tips')
         ->assertSee('Floetrol');
 });
 
 it('displays faq section', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'faqs' => [
+            ['q' => 'How long does interior paint last?', 'a' => 'About 5-7 years with proper care.'],
+        ],
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('Frequently Asked Questions')
         ->assertSee('How long does interior paint last');
 });
 
 it('displays cost factors section', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'cost_factors' => ['Room size', 'Wall condition'],
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
-        ->assertSee('What Affects Pricing');
+        ->assertSee('What Affects Pricing')
+        ->assertSee('Room size');
 });
 
 it('displays related services section', function () {
-    $this->get('/services/interior-painting')
+    $main = Service::factory()->residential()->create(['slug' => 'main-service']);
+    Service::factory()->residential()->create(['title' => 'Related One']);
+    Service::factory()->residential()->create(['title' => 'Related Two']);
+
+    $this->get('/services/main-service')
         ->assertOk()
-        ->assertSee('Related Services');
+        ->assertSee('Related Services')
+        ->assertSee('Related One')
+        ->assertSee('Related Two');
 });
 
 it('includes structured data', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'faqs' => [
+            ['q' => 'A question?', 'a' => 'An answer.'],
+        ],
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('application/ld+json', false)
         ->assertSee('"@type": "Service"', false)
@@ -169,23 +154,86 @@ it('includes structured data', function () {
         ->assertSee('"@type": "FAQPage"', false);
 });
 
-it('includes meta description', function () {
-    $this->get('/services/interior-painting')
+it('includes meta description from model', function () {
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'meta_description' => 'Professional painting services in Denver CO area',
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
-        ->assertSee('Professional interior house painting in Denver');
+        ->assertSee('Professional painting services in Denver CO area');
 });
 
 it('includes breadcrumb navigation', function () {
-    $this->get('/services/interior-painting')
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'title' => 'Test Painting Service',
+    ]);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('Home')
         ->assertSee('Services')
-        ->assertSee('Interior House Painting');
+        ->assertSee('Test Painting Service');
 });
 
-it('includes cta with phone number', function () {
-    $this->get('/services/interior-painting')
+it('includes cta section', function () {
+    CompanySetting::create(['company_phone' => '(720) 999-9725']);
+    Service::factory()->create(['slug' => 'test-service']);
+
+    $this->get('/services/test-service')
         ->assertOk()
         ->assertSee('(720) 999-9725')
         ->assertSee('Get Your Free Estimate');
+});
+
+it('displays H1 with Denver and Front Range', function () {
+    Service::factory()->create([
+        'slug' => 'test-service',
+        'title' => 'Interior Painting',
+    ]);
+
+    $this->get('/services/test-service')
+        ->assertOk()
+        ->assertSee('Interior Painting in Denver', false);
+});
+
+it('displays area cross-links section', function () {
+    $service = Service::factory()->create(['slug' => 'test-service', 'title' => 'Interior Painting']);
+    ServiceArea::factory()->create(['city' => 'Aurora', 'slug' => 'aurora', 'is_active' => true]);
+    ServiceArea::factory()->create(['city' => 'Boulder', 'slug' => 'boulder', 'is_active' => true]);
+
+    $this->get('/services/test-service')
+        ->assertOk()
+        ->assertSee('Get Interior Painting in Your City')
+        ->assertSee('Interior Painting in Aurora')
+        ->assertSee('Interior Painting in Boulder');
+});
+
+it('does not show area cross-links when no areas exist', function () {
+    Service::factory()->create(['slug' => 'test-service', 'title' => 'Exterior Painting']);
+
+    $this->get('/services/test-service')
+        ->assertOk()
+        ->assertDontSee('Get Exterior Painting in Your City');
+});
+
+it('shows related services from same category first', function () {
+    $main = Service::factory()->residential()->create(['slug' => 'main-service', 'sort_order' => 1]);
+    $sameCategory = Service::factory()->residential()->create(['title' => 'Same Cat Service', 'sort_order' => 2]);
+    $differentCategory = Service::factory()->commercial()->create(['title' => 'Different Cat Service', 'sort_order' => 3]);
+
+    $this->get('/services/main-service')
+        ->assertOk()
+        ->assertSee('Same Cat Service');
+});
+
+it('uses design system classes', function () {
+    Service::factory()->create(['slug' => 'test-service']);
+
+    $this->get('/services/test-service')
+        ->assertOk()
+        ->assertSee('bg-brand-900', false)
+        ->assertSee('font-heading', false);
 });

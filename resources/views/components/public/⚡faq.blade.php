@@ -180,38 +180,28 @@ new #[Layout('components.layouts.guest')] #[Title('Frequently Asked Questions | 
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
+    @section('meta_title', 'FAQ | House Painting Questions | Painting Made Easy Denver')
     @section('meta_description', 'Frequently asked questions about Painting Made Easy Denver. Learn about our AI color visualizer, instant digital pricing, real-time project tracking, digital proposals, and more.')
     @section('canonical', route('faq'))
     @section('robots', 'index, follow')
 
+    {{-- Breadcrumb --}}
+    <div class="bg-brand-900 pt-12">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-4">
+            @include('partials.public-breadcrumb', ['items' => [['label' => 'FAQ']]])
+        </div>
+    </div>
+
     {{-- Hero --}}
-    <section class="bg-gradient-to-br from-[#1B2D4F] via-[#1e3a6e] to-[#2563EB] text-white pt-12">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-12 sm:pb-16 text-center">
-            <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">Frequently Asked Questions</h1>
-            <p class="text-lg sm:text-xl text-blue-100 max-w-2xl mx-auto">Everything you need to know about our painting services, AI color visualizer, instant pricing, project tracking, and the digital experience that makes us different.</p>
+    <section class="bg-brand-900 text-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-8 sm:pt-16 pb-12 sm:pb-16 text-center">
+            <h1 class="font-heading text-4xl sm:text-5xl tracking-tight mb-6">Frequently Asked <span class="text-accent-gold">Questions</span></h1>
+            <p class="text-lg sm:text-xl text-zinc-300 max-w-2xl mx-auto">Everything you need to know about our painting services, AI color visualizer, instant pricing, project tracking, and the digital experience that makes us different.</p>
         </div>
     </section>
 
-    {{-- Social Proof Strip --}}
-    <section class="bg-white border-b border-zinc-100">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 text-sm">
-            <div class="flex items-center gap-1.5">
-                <div class="flex">
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                </div>
-                <span class="font-semibold text-zinc-900">4.9/5</span>
-                <span class="text-zinc-500">from 47 reviews</span>
-            </div>
-            <span class="hidden sm:inline text-zinc-300">|</span>
-            <span class="text-zinc-500">Trusted by Denver homeowners since 2024</span>
-            <span class="hidden sm:inline text-zinc-300">|</span>
-            <a href="tel:+17209999725" class="font-medium text-emerald-600 hover:text-emerald-700 transition-colors">(720) 999-9725</a>
-        </div>
-    </section>
+    {{-- Trust Strip --}}
+    @include('partials.public-trust-strip', ['variant' => 'light'])
 
     {{-- FAQ Content --}}
     <section class="bg-white py-16 sm:py-20">
@@ -221,8 +211,8 @@ new #[Layout('components.layouts.guest')] #[Title('Frequently Asked Questions | 
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-6 pb-3 border-b border-zinc-200">{{ $category['category'] }}</h2>
                     <div class="space-y-6">
                         @foreach($category['questions'] as $qa)
-                            <details class="group bg-zinc-50 rounded-xl" x-data="{ open: false }" x-on:toggle="open = $el.open">
-                                <summary class="flex items-center justify-between cursor-pointer p-6 font-semibold text-zinc-900 text-lg hover:text-blue-600 transition-colors list-none">
+                            <details class="group bg-warm-50 rounded-xl" x-data="{ open: false }" x-on:toggle="open = $el.open">
+                                <summary class="flex items-center justify-between cursor-pointer p-6 font-semibold text-zinc-900 text-lg hover:text-brand-700 transition-colors list-none">
                                     <span>{{ $qa['q'] }}</span>
                                     <svg class="w-5 h-5 shrink-0 ml-4 text-zinc-400 transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
@@ -240,18 +230,5 @@ new #[Layout('components.layouts.guest')] #[Title('Frequently Asked Questions | 
     </section>
 
     {{-- CTA --}}
-    <section class="bg-zinc-50 py-16">
-        <div class="max-w-2xl mx-auto px-4 sm:px-6 text-center">
-            <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">Ready to Get Started?</h2>
-            <p class="text-lg text-zinc-600 mb-8">Get an instant price quote, try our AI color visualizer, or text us to start your project.</p>
-            <div class="flex flex-col sm:flex-row gap-4 justify-center">
-                <a href="{{ route('home') }}#get-estimate" class="inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-lg">
-                    Get Your Free Estimate
-                </a>
-                <a href="{{ route('visualize') }}" class="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-lg">
-                    Try Color Visualizer
-                </a>
-            </div>
-        </div>
-    </section>
+    @include('partials.public-cta-section', ['heading' => 'Ready to Get Started?', 'description' => 'Get an instant price quote, try our AI color visualizer, or text us to start your project.'])
 </div>

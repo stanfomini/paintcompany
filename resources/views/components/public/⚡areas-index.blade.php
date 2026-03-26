@@ -53,6 +53,7 @@ class extends Component
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
+    @section('meta_title', 'Painting Service Areas | Denver Metro & Front Range | Painting Made Easy Denver')
     @section('meta_description', 'Professional painting services across the Denver metro area. Find your local painting team in Denver, Aurora, Lakewood, Arvada, Boulder, Broomfield, and 15+ more Colorado cities.')
     @section('canonical', route('areas.index'))
     @section('og_title', 'Service Areas | Painting Made Easy Denver')
@@ -62,28 +63,72 @@ class extends Component
     @section('robots', 'index, follow')
 
     {{-- Hero --}}
-    <section class="bg-gradient-to-br from-[#1B2D4F] via-[#1e3a6e] to-[#2563EB] text-white pt-20 pb-16">
+    <section class="bg-brand-900 text-white pt-20 pb-16">
         <div class="max-w-5xl mx-auto px-4 sm:px-6 text-center">
-            <h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-4">{{ __('Our Service Areas') }}</h1>
-            <p class="text-lg text-blue-100 max-w-2xl mx-auto">{{ __('Professional painting services across the Denver metro area. Find your local team and get a free estimate today.') }}</p>
+            @include('partials.public-breadcrumb', ['items' => [
+                ['label' => __('Service Areas')],
+            ]])
+            <h1 class="font-heading text-4xl sm:text-5xl tracking-tight mb-4">{{ __('Our Service Areas') }}</h1>
+            <p class="text-lg text-zinc-300 max-w-2xl mx-auto">{{ __('Professional painting services across the Denver metro area. Find your local team and get a free estimate today.') }}</p>
         </div>
     </section>
 
+    {{-- Trust Strip --}}
+    @include('partials.public-trust-strip', ['variant' => 'light'])
+
+    {{-- Google Map --}}
+    @if($this->areas->where('latitude', '!=', null)->isNotEmpty())
+    <section class="bg-warm-50 py-12 sm:py-16">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6">
+            <div class="text-center mb-8">
+                <h2 class="font-heading text-2xl sm:text-3xl text-zinc-900 mb-2">{{ __('Denver to Fort Collins — We\'ve Got You Covered') }}</h2>
+                <p class="text-zinc-600">{{ $this->areas->count() }}{{ __('+ cities along the Front Range and I-25 corridor') }}</p>
+            </div>
+            @include('partials.google-map', [
+                'areas' => $this->areas,
+                'center' => [39.95, -104.99],
+                'zoom' => 8,
+                'lazy' => false,
+            ])
+        </div>
+    </section>
+    @endif
+
     {{-- Area Grid --}}
-    <section class="bg-zinc-50 py-16">
+    <section class="bg-white py-16 sm:py-20">
         <div class="max-w-6xl mx-auto px-4 sm:px-6">
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div class="text-center mb-12">
+                <h2 class="font-heading text-3xl sm:text-4xl text-zinc-900 mb-3">{{ __('Find Your Local Team') }}</h2>
+                <p class="text-lg text-zinc-600 max-w-2xl mx-auto">{{ __('Select your city for neighborhood-specific painting information, local tips, and a free estimate.') }}</p>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 @foreach($this->areas as $area)
-                    <a href="{{ route('areas.show', $area->slug) }}" wire:key="area-{{ $area->id }}" class="group bg-white rounded-xl p-5 shadow-sm border border-zinc-200 hover:shadow-md hover:border-blue-300 transition-all">
-                        <div class="flex items-start gap-3">
-                            <div class="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-blue-100 text-blue-600 shrink-0 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    @php
+                        $neighborhoods = $area->local_content['neighborhoods'] ?? [];
+                        $housingTypes = $area->local_content['housing_types'] ?? [];
+                    @endphp
+                    <a href="{{ route('areas.show', $area->slug) }}" wire:key="area-{{ $area->id }}" class="group bg-white rounded-xl p-6 border border-zinc-200 hover:border-accent-gold/40 shadow-sm hover:shadow-md transition-all">
+                        <div class="flex items-start gap-4">
+                            <div class="inline-flex items-center justify-center w-11 h-11 rounded-lg bg-brand-50 text-brand-700 shrink-0 group-hover:bg-brand-700 group-hover:text-white transition-colors">
                                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>
                             </div>
-                            <div>
-                                <h2 class="font-bold text-zinc-900 group-hover:text-blue-600 transition-colors">{{ $area->city }}</h2>
-                                <p class="text-sm text-zinc-500">{{ $area->state }}</p>
+                            <div class="min-w-0">
+                                <h3 class="font-bold text-zinc-900 group-hover:text-brand-700 transition-colors text-lg">{{ $area->city }}</h3>
+                                <p class="text-sm text-zinc-500 mb-2">{{ $area->state }}</p>
+                                @if(!empty($neighborhoods))
+                                    <p class="text-xs text-zinc-400 leading-relaxed">{{ implode(' · ', array_slice($neighborhoods, 0, 3)) }}</p>
+                                @endif
                             </div>
                         </div>
+                        @if(!empty($housingTypes))
+                            <div class="mt-3 pt-3 border-t border-zinc-100">
+                                <div class="flex flex-wrap gap-1.5">
+                                    @foreach(array_slice($housingTypes, 0, 2) as $type)
+                                        <span class="text-xs bg-warm-100 text-zinc-600 px-2 py-0.5 rounded-full">{{ $type }}</span>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
                     </a>
                 @endforeach
             </div>
@@ -91,29 +136,11 @@ class extends Component
     </section>
 
     {{-- CTA --}}
-    <section class="bg-gradient-to-r from-emerald-500 to-emerald-600 py-12">
-        <div class="max-w-4xl mx-auto px-6 text-center">
-            <h2 class="text-2xl sm:text-3xl font-bold text-white mb-4">{{ __('Don\'t see your city?') }}</h2>
-            <p class="text-emerald-100 text-lg mb-6">{{ __('We serve the entire Denver metro area. Contact us for a free estimate no matter where you are.') }}</p>
-            <a href="{{ route('home') }}#get-estimate" class="inline-flex items-center gap-2 bg-white text-emerald-700 font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-xl hover:bg-zinc-50">
-                {{ __('Get Your Free Estimate') }}
-            </a>
-        </div>
-    </section>
-
-    {{-- Footer --}}
-    <footer class="bg-[#1B2D4F] text-white py-10">
-        <div class="max-w-5xl mx-auto px-6">
-            <div class="flex flex-col sm:flex-row items-center justify-between gap-6">
-                <p class="text-sm text-blue-200">&copy; {{ date('Y') }} {{ config('app.name') }}. {{ __('All rights reserved.') }}</p>
-                <div class="flex flex-wrap items-center gap-4 text-sm">
-                    <a href="{{ route('home') }}" class="text-blue-200 hover:text-white transition-colors">{{ __('Home') }}</a>
-                    <span class="text-blue-400">|</span>
-                    <a href="{{ route('legal.terms') }}" class="text-blue-200 hover:text-white transition-colors">{{ __('Terms') }}</a>
-                    <span class="text-blue-400">|</span>
-                    <a href="{{ route('legal.privacy') }}" class="text-blue-200 hover:text-white transition-colors">{{ __('Privacy') }}</a>
-                </div>
-            </div>
-        </div>
-    </footer>
+    @include('partials.public-cta-section', [
+        'heading' => __('Don\'t See Your City?'),
+        'description' => __('We serve the entire Denver metro area. Contact us for a free estimate no matter where you are.'),
+        'ctaText' => __('Get Your Free Estimate'),
+        'ctaUrl' => route('home') . '#get-estimate',
+        'variant' => 'accent',
+    ])
 </div>

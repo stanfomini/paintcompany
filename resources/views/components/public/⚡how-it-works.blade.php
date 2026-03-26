@@ -75,51 +75,41 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
 <x-slot:structuredData>{!! $this->structuredData !!}</x-slot:structuredData>
 
 <div>
+    @section('meta_title', 'How It Works | AI Color Preview & Instant Pricing | Painting Made Easy Denver')
     @section('meta_description', 'See how Painting Made Easy Denver transforms house painting with AI color visualization, instant digital pricing, SMS project management, digital proposals with e-signatures, and real-time customer portal tracking.')
     @section('canonical', route('how-it-works'))
     @section('robots', 'index, follow')
 
+    {{-- Breadcrumb --}}
+    <div class="bg-brand-900 pt-12">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-4">
+            @include('partials.public-breadcrumb', ['items' => [['label' => 'How It Works']]])
+        </div>
+    </div>
+
     {{-- Hero --}}
-    <section class="bg-gradient-to-br from-[#1B2D4F] via-[#1e3a6e] to-[#2563EB] text-white pt-12">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-16 sm:pt-24 pb-12 sm:pb-16 text-center">
-            <h1 class="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight mb-6 leading-tight">How Painting Made Easy Denver Works</h1>
-            <p class="text-lg sm:text-xl text-blue-100 max-w-3xl mx-auto leading-relaxed">AI color visualization. Instant digital pricing. Real-time project tracking. A complete digital experience that makes painting your home faster, easier, and completely transparent.</p>
+    <section class="bg-brand-900 text-white">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-8 sm:pt-16 pb-12 sm:pb-16 text-center">
+            <h1 class="font-heading text-4xl sm:text-5xl lg:text-6xl tracking-tight mb-6 leading-tight">How <span class="text-accent-gold">Painting Made Easy</span> Denver Works</h1>
+            <p class="text-lg sm:text-xl text-zinc-300 max-w-3xl mx-auto leading-relaxed">AI color visualization. Instant digital pricing. Real-time project tracking. A complete digital experience that makes painting your home faster, easier, and completely transparent.</p>
         </div>
     </section>
 
-    {{-- Social Proof Strip --}}
-    <section class="bg-white border-b border-zinc-100">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-6 text-sm">
-            <div class="flex items-center gap-1.5">
-                <div class="flex">
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                    <svg class="w-4 h-4 text-amber-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
-                </div>
-                <span class="font-semibold text-zinc-900">4.9/5</span>
-                <span class="text-zinc-500">from 47 reviews</span>
-            </div>
-            <span class="hidden sm:inline text-zinc-300">|</span>
-            <span class="text-zinc-500">Trusted by Denver homeowners since 2024</span>
-            <span class="hidden sm:inline text-zinc-300">|</span>
-            <a href="tel:+17209999725" class="font-medium text-emerald-600 hover:text-emerald-700 transition-colors">(720) 999-9725</a>
-        </div>
-    </section>
+    {{-- Trust Strip --}}
+    @include('partials.public-trust-strip', ['variant' => 'light'])
 
     {{-- Step 1: Color Visualizer --}}
     <section class="bg-white py-16 sm:py-20" id="color-visualizer">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <div class="flex items-start gap-6">
-                <div class="shrink-0 w-14 h-14 rounded-2xl bg-blue-100 flex items-center justify-center">
-                    <span class="text-2xl font-extrabold text-blue-600">1</span>
+                <div class="shrink-0 w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center">
+                    <span class="text-2xl font-extrabold text-brand-700">1</span>
                 </div>
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">See Your Colors Before You Commit</h2>
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6">Upload a photo of your room or home exterior to our <strong>free AI color visualizer</strong>. Choose any color from Sherwin-Williams, Benjamin Moore, Behr, or PPG. Our AI generates a realistic preview showing exactly what your space will look like — preserving textures, lighting, and architectural details.</p>
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6">Try as many colors as you want. Compare options side by side. Find the perfect shade before a single brush stroke. No guessing, no tiny swatches on the wall — see the full transformation instantly.</p>
-                    <a href="{{ route('visualize') }}" class="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-xl transition-colors">
+                    <a href="{{ route('visualize') }}" class="inline-flex items-center gap-2 bg-cta hover:bg-cta-hover text-white font-bold px-6 py-3 rounded-xl transition-colors">
                         <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.763m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
                         Try the Color Visualizer Free
                     </a>
@@ -129,18 +119,18 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
     </section>
 
     {{-- Step 2: Instant Pricing --}}
-    <section class="bg-zinc-50 py-16 sm:py-20" id="instant-pricing">
+    <section class="bg-warm-50 py-16 sm:py-20" id="instant-pricing">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <div class="flex items-start gap-6">
-                <div class="shrink-0 w-14 h-14 rounded-2xl bg-emerald-100 flex items-center justify-center">
-                    <span class="text-2xl font-extrabold text-emerald-600">2</span>
+                <div class="shrink-0 w-14 h-14 rounded-2xl bg-warm-100 flex items-center justify-center">
+                    <span class="text-2xl font-extrabold text-brand-700">2</span>
                 </div>
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">Get an Accurate Price in Seconds</h2>
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6">Select your rooms, pick a size, and our pricing engine calculates an accurate quote instantly. We don't guess — our system uses <strong>industry production rates</strong> for every surface type: walls, ceiling, baseboards, doors. It factors in coats, prep time, materials, and labor to give you a real number, not a ballpark.</p>
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6">Prefer to text? Send us a message and our <strong>SMS bot</strong> walks you through your project step by step — collecting photos, room details, and preferences. You can also request a traditional in-home estimate. However you prefer to get started, we make it easy.</p>
                     <div class="flex flex-wrap gap-4">
-                        <a href="{{ route('home') }}#get-estimate" class="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-6 py-3 rounded-xl transition-colors">
+                        <a href="{{ route('home') }}#get-estimate" class="inline-flex items-center gap-2 bg-cta hover:bg-cta-hover text-white font-bold px-6 py-3 rounded-xl transition-colors">
                             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                             Get Instant Pricing
                         </a>
@@ -158,27 +148,27 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
     <section class="bg-white py-16 sm:py-20" id="digital-proposals">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <div class="flex items-start gap-6">
-                <div class="shrink-0 w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center">
-                    <span class="text-2xl font-extrabold text-violet-600">3</span>
+                <div class="shrink-0 w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center">
+                    <span class="text-2xl font-extrabold text-brand-700">3</span>
                 </div>
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">Review and Sign Your Proposal Digitally</h2>
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6">We send you a link to your <strong>interactive digital proposal</strong> — open it on your phone, tablet, or computer. See every line item, browse project photos, and choose the options that fit your needs.</p>
                     <ul class="space-y-3 text-zinc-600 text-lg mb-6">
                         <li class="flex items-start gap-3">
-                            <svg class="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <svg class="w-6 h-6 text-cta shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                             <span><strong>Packages</strong> — Choose between good, better, and best options</span>
                         </li>
                         <li class="flex items-start gap-3">
-                            <svg class="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <svg class="w-6 h-6 text-cta shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                             <span><strong>Add-ons</strong> — Select optional upgrades with transparent pricing</span>
                         </li>
                         <li class="flex items-start gap-3">
-                            <svg class="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <svg class="w-6 h-6 text-cta shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                             <span><strong>E-signature</strong> — Sign electronically right on the page, no printing needed</span>
                         </li>
                         <li class="flex items-start gap-3">
-                            <svg class="w-6 h-6 text-emerald-500 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                            <svg class="w-6 h-6 text-cta shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
                             <span><strong>Photos</strong> — View annotated project photos and color selections</span>
                         </li>
                     </ul>
@@ -188,11 +178,11 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
     </section>
 
     {{-- Step 4: Confirm Colors & Schedule --}}
-    <section class="bg-zinc-50 py-16 sm:py-20" id="confirmation">
+    <section class="bg-warm-50 py-16 sm:py-20" id="confirmation">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <div class="flex items-start gap-6">
-                <div class="shrink-0 w-14 h-14 rounded-2xl bg-amber-100 flex items-center justify-center">
-                    <span class="text-2xl font-extrabold text-amber-600">4</span>
+                <div class="shrink-0 w-14 h-14 rounded-2xl bg-warm-100 flex items-center justify-center">
+                    <span class="text-2xl font-extrabold text-brand-700">4</span>
                 </div>
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">Confirm Your Colors and Schedule</h2>
@@ -207,16 +197,16 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
     <section class="bg-white py-16 sm:py-20" id="project-tracking">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <div class="flex items-start gap-6">
-                <div class="shrink-0 w-14 h-14 rounded-2xl bg-sky-100 flex items-center justify-center">
-                    <span class="text-2xl font-extrabold text-sky-600">5</span>
+                <div class="shrink-0 w-14 h-14 rounded-2xl bg-brand-50 flex items-center justify-center">
+                    <span class="text-2xl font-extrabold text-brand-700">5</span>
                 </div>
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">Track Your Project in Real Time</h2>
                     <p class="text-lg text-zinc-600 leading-relaxed mb-6">Your customer portal shows you exactly where your project stands at every moment. Our <strong>five-stage tracking system</strong> takes you from estimate acceptance through completion:</p>
                     <div class="grid grid-cols-1 sm:grid-cols-5 gap-3 mb-6">
                         @foreach(['Accepted' => 'Estimate signed', 'Colors' => 'Colors & date confirmed', 'Prep' => 'Prep plan approved', 'Painting' => 'Crew at work', 'Complete' => 'Final walkthrough'] as $stage => $desc)
-                            <div class="bg-sky-50 rounded-xl p-4 text-center">
-                                <div class="font-bold text-sky-700 text-sm">{{ $stage }}</div>
+                            <div class="bg-brand-50 rounded-xl p-4 text-center">
+                                <div class="font-bold text-brand-700 text-sm">{{ $stage }}</div>
                                 <div class="text-xs text-zinc-500 mt-1">{{ $desc }}</div>
                             </div>
                         @endforeach
@@ -228,11 +218,11 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
     </section>
 
     {{-- Step 6: Payment --}}
-    <section class="bg-zinc-50 py-16 sm:py-20" id="payment">
+    <section class="bg-warm-50 py-16 sm:py-20" id="payment">
         <div class="max-w-4xl mx-auto px-4 sm:px-6">
             <div class="flex items-start gap-6">
-                <div class="shrink-0 w-14 h-14 rounded-2xl bg-green-100 flex items-center justify-center">
-                    <span class="text-2xl font-extrabold text-green-600">6</span>
+                <div class="shrink-0 w-14 h-14 rounded-2xl bg-warm-100 flex items-center justify-center">
+                    <span class="text-2xl font-extrabold text-brand-700">6</span>
                 </div>
                 <div>
                     <h2 class="text-2xl sm:text-3xl font-bold text-zinc-900 mb-4">Pay Securely Online</h2>
@@ -243,14 +233,14 @@ new #[Layout('components.layouts.guest')] #[Title('How It Works | AI Color Visua
     </section>
 
     {{-- Why We Built This --}}
-    <section class="bg-gradient-to-br from-[#1B2D4F] via-[#1e3a6e] to-[#2563EB] text-white py-16 sm:py-20">
+    <section class="bg-brand-900 text-white py-16 sm:py-20">
         <div class="max-w-3xl mx-auto px-4 sm:px-6 text-center">
-            <h2 class="text-2xl sm:text-3xl font-bold mb-6">Why We Built This</h2>
-            <p class="text-lg text-blue-100 leading-relaxed mb-6">We believe getting your home painted should be exciting, not stressful. So we built the technology to make it that way. Every tool — the AI color visualizer, the instant pricing, the digital proposals, the customer portal — exists because we asked: <em>how can we make this easier and more transparent for the homeowner?</em></p>
-            <p class="text-lg text-blue-100 leading-relaxed mb-8">No other painting company in Denver offers this. Because no other painting company built it.</p>
-            <a href="{{ route('home') }}#get-estimate" class="inline-flex items-center gap-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold px-8 py-4 rounded-xl text-lg transition-colors shadow-xl">
-                Get Started — It's Free
-            </a>
+            <h2 class="font-heading text-2xl sm:text-3xl mb-6">Why We Built This</h2>
+            <p class="text-lg text-zinc-300 leading-relaxed mb-6">We believe getting your home painted should be exciting, not stressful. So we built the technology to make it that way. Every tool — the AI color visualizer, the instant pricing, the digital proposals, the customer portal — exists because we asked: <em>how can we make this easier and more transparent for the homeowner?</em></p>
+            <p class="text-lg text-zinc-300 leading-relaxed mb-8">No other painting company in Denver offers this. Because no other painting company built it.</p>
         </div>
     </section>
+
+    {{-- CTA --}}
+    @include('partials.public-cta-section')
 </div>

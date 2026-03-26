@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Service;
 use Illuminate\Support\Facades\File;
 
 afterEach(function () {
@@ -18,6 +19,10 @@ it('generates sitemap.xml via artisan command', function () {
 });
 
 it('sitemap contains expected URLs', function () {
+    Service::factory()->create(['slug' => 'interior-painting']);
+    Service::factory()->create(['slug' => 'exterior-painting']);
+    Service::factory()->create(['slug' => 'stucco-coating']);
+
     $this->artisan('sitemap:generate')->assertSuccessful();
 
     $content = File::get(public_path('sitemap.xml'));

@@ -91,6 +91,10 @@ Route::livewire('/areas/{slug}', 'public.area-page')
     ->name('areas.show')
     ->middleware('throttle:60,1');
 
+Route::livewire('/areas/{areaSlug}/{serviceSlug}', 'public.area-service-page')
+    ->name('areas.service')
+    ->middleware('throttle:60,1');
+
 Route::livewire('dashboard', 'dashboard')
     ->middleware(['auth', 'verified', 'auth.internal'])
     ->name('dashboard');

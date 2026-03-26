@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Service;
 use App\Models\ServiceArea;
 use App\Models\VideoChannel;
 use Illuminate\Console\Command;
@@ -35,31 +36,36 @@ class GenerateSitemapCommand extends Command
         $urls->push(['loc' => $baseUrl.'/how-it-works', 'changefreq' => 'monthly', 'priority' => '0.7']);
         $urls->push(['loc' => $baseUrl.'/visualize', 'changefreq' => 'monthly', 'priority' => '0.7']);
 
-        // Individual service guide pages
-        $serviceSlugs = [
-            'interior-painting', 'exterior-painting', 'cabinet-painting',
-            'deck-fence-staining', 'garage-floor-coating', 'popcorn-ceiling-removal',
-            'drywall-repair', 'trim-door-painting', 'wallpaper-removal',
-            'commercial-interior', 'commercial-exterior', 'warehouse-industrial',
-            'hoa-multiunit', 'line-striping', 'pressure-washing',
-            'color-consultation', 'stucco-coating',
-        ];
-        foreach ($serviceSlugs as $slug) {
+        // Individual service guide pages (sourced from database)
+        $activeServices = Service::active()->orderBy('sort_order')->get();
+        foreach ($activeServices as $service) {
             $urls->push([
-                'loc' => $baseUrl.'/services/'.$slug,
+                'loc' => $baseUrl.'/services/'.$service->slug,
                 'changefreq' => 'monthly',
                 'priority' => '0.7',
             ]);
         }
 
         // Dynamic service area pages
-        ServiceArea::active()->orderBy('city')->each(function (ServiceArea $area) use ($urls, $baseUrl) {
+        $activeAreas = ServiceArea::active()->orderBy('city')->get();
+        $activeAreas->each(function (ServiceArea $area) use ($urls, $baseUrl) {
             $urls->push([
                 'loc' => $baseUrl.'/areas/'.$area->slug,
                 'changefreq' => 'weekly',
                 'priority' => '0.8',
             ]);
         });
+
+        // Area + service combo pages
+        foreach ($activeAreas as $area) {
+            foreach ($activeServices as $service) {
+                $urls->push([
+                    'loc' => $baseUrl.'/areas/'.$area->slug.'/'.$service->slug,
+                    'changefreq' => 'monthly',
+                    'priority' => '0.7',
+                ]);
+            }
+        }
 
         // Watch channels and their videos
         VideoChannel::query()

@@ -233,15 +233,19 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
 ?>
 
 <div class="min-h-screen">
-    {{-- Hero Section --}}
-    <section class="relative overflow-hidden bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 py-16 sm:py-24">
-        <div class="absolute inset-0 opacity-10">
-            <div class="absolute inset-0 bg-gradient-to-r from-blue-500/20 to-purple-500/20"></div>
+    {{-- Breadcrumb --}}
+    <div class="bg-brand-900 pt-12">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 pt-4">
+            @include('partials.public-breadcrumb', ['items' => [['label' => 'Color Visualizer']]])
         </div>
+    </div>
+
+    {{-- Hero Section --}}
+    <section class="relative overflow-hidden bg-brand-900 py-16 sm:py-24">
         <div class="relative mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
-            <h1 class="text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+            <h1 class="font-heading text-4xl tracking-tight text-white sm:text-5xl lg:text-6xl">
                 See Your Home in
-                <span class="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">New Colors</span>
+                <span class="text-accent-gold">New Colors</span>
             </h1>
             <p class="mt-4 text-lg text-zinc-300 sm:text-xl">
                 Upload a photo. Pick your colors. Our AI shows you the transformation instantly.
@@ -252,7 +256,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
     <section class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
         {{-- Lead form modal --}}
         @if($showLeadForm)
-        <div class="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-6 shadow-lg dark:border-blue-800 dark:bg-blue-950/50">
+        <div class="mb-8 rounded-xl border border-warm-200 bg-warm-50 p-6 shadow-lg dark:border-zinc-700 dark:bg-zinc-800/50">
             <h2 class="text-xl font-semibold text-zinc-900 dark:text-white">Get Unlimited Visualizations + a Free Estimate</h2>
             <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Share your details to continue using the visualizer and receive a personalized painting estimate.</p>
 
@@ -364,11 +368,11 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                     </div>
 
                     {{-- CTA --}}
-                    <div class="mt-6 rounded-lg bg-gradient-to-r from-blue-50 to-purple-50 p-4 dark:from-blue-950/30 dark:to-purple-950/30">
+                    <div class="mt-6 rounded-lg bg-warm-50 p-4 dark:bg-zinc-900/50">
                         <p class="font-medium text-zinc-900 dark:text-white">Love this look?</p>
                         <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">Get a free, no-obligation painting estimate for your home.</p>
                         <a href="{{ route('booking.general') }}"
-                           class="mt-3 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
+                           class="mt-3 inline-flex items-center gap-2 rounded-lg bg-cta px-4 py-2 text-sm font-medium text-white hover:bg-cta-hover">
                             Book a Free Estimate
                             <flux:icon.arrow-right variant="micro" />
                         </a>
@@ -503,7 +507,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                                 wire:click="selectBrand({{ $brand->id }})"
                                 class="px-4 py-2 rounded-lg text-sm font-medium transition-all
                                     {{ $selectedBrandId === $brand->id
-                                        ? 'bg-blue-600 text-white shadow-md'
+                                        ? 'bg-brand-700 text-white shadow-md'
                                         : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700' }}"
                             >
                                 {{ $brand->name }}
@@ -607,7 +611,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
         <div class="mt-12 text-center">
             <p class="text-sm text-zinc-500 dark:text-zinc-400">Want to skip ahead?</p>
             <a href="{{ route('booking.general') }}"
-               class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+               class="mt-2 inline-flex items-center gap-1 text-sm font-medium text-cta hover:text-cta-hover dark:text-accent-gold dark:hover:text-white">
                 Book a free painting estimate
                 <flux:icon.arrow-right variant="micro" />
             </a>

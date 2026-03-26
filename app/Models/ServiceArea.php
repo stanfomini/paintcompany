@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class ServiceArea extends Model
 {
@@ -23,6 +24,7 @@ class ServiceArea extends Model
         'meta_description',
         'hero_text',
         'specialties_text',
+        'local_content',
         'is_active',
     ];
 
@@ -30,6 +32,7 @@ class ServiceArea extends Model
     {
         return [
             'zip_codes' => 'array',
+            'local_content' => 'array',
             'latitude' => 'decimal:7',
             'longitude' => 'decimal:7',
             'is_active' => 'boolean',
@@ -53,12 +56,28 @@ class ServiceArea extends Model
 
     public function getMetaTitleAttribute(?string $value): string
     {
-        return $value ?? "Professional Painting Services in {$this->city}, {$this->state} | Painting Made Easy Denver";
+        return $value ?? "House Painting {$this->city} CO | Interior & Exterior | Painting Made Easy Denver";
     }
 
     public function getMetaDescriptionAttribute(?string $value): string
     {
-        return $value ?? "Professional house painting in {$this->city}, {$this->state}. Interior & exterior with real-time tracking. Free estimates.";
+        if ($value) {
+            return $value;
+        }
+
+        $neighborhoods = $this->local_content['neighborhoods'] ?? [];
+        $neighborhoodText = ! empty($neighborhoods)
+            ? ' Serving '.implode(', ', array_slice($neighborhoods, 0, 3)).' and more.'
+            : '';
+
+        return "Professional house painting in {$this->city}, Colorado. Interior & exterior with real-time tracking. Free estimates.{$neighborhoodText}";
+    }
+
+    public function services(): BelongsToMany
+    {
+        return $this->belongsToMany(Service::class, 'service_area_service')
+            ->withPivot('custom_h1', 'custom_intro', 'is_featured', 'sort_order')
+            ->withTimestamps();
     }
 
     public function getUrlAttribute(): string

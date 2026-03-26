@@ -39,6 +39,7 @@
         {!! $structuredData !!}
         </script>
         @endisset
+        @stack('google-maps')
     </head>
     <body class="min-h-screen bg-zinc-50 antialiased dark:bg-zinc-900">
         @production
@@ -52,26 +53,84 @@
                 {{ $slot }}
             </main>
 
-            <footer class="py-6 px-6">
-                <div class="max-w-4xl mx-auto text-center">
-                    <div class="flex justify-center flex-wrap items-center gap-x-4 gap-y-1">
-                        <a href="tel:+17209999725" class="text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 text-sm font-medium">(720) 999-9725</a>
-                        <span class="text-zinc-300 dark:text-zinc-600">|</span>
-                        <flux:text size="sm" class="text-zinc-500 dark:text-zinc-400">Denver, CO</flux:text>
+            <footer class="bg-brand-900 text-white">
+                @php
+                    $footerCompany = \App\Models\CompanySetting::getInstance();
+                    $footerPhone = $footerCompany->company_phone ?? '(720) 999-9725';
+                    $footerName = $footerCompany->company_name ?? config('app.name');
+                    $footerAreas = \App\Models\ServiceArea::active()->orderBy('city')->limit(12)->get(['city', 'slug']);
+                @endphp
+                {{-- Top strip --}}
+                <div class="border-b border-white/10">
+                    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+                        <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div class="text-center sm:text-left">
+                                <p class="font-heading text-2xl sm:text-3xl">{{ $footerName }}</p>
+                                <p class="text-sm text-zinc-400 mt-1">{{ __('Licensed | Insured | Bonded') }}</p>
+                            </div>
+                            <a href="tel:{{ $footerPhone }}" class="inline-flex items-center gap-2 text-accent-gold hover:text-white text-xl sm:text-2xl font-semibold transition-colors">
+                                <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 6.75c0 8.284 6.716 15 15 15h2.25a2.25 2.25 0 002.25-2.25v-1.372c0-.516-.351-.966-.852-1.091l-4.423-1.106c-.44-.11-.902.055-1.173.417l-.97 1.293c-.282.376-.769.542-1.21.38a12.035 12.035 0 01-7.143-7.143c-.162-.441.004-.928.38-1.21l1.293-.97c.363-.271.527-.734.417-1.173L6.963 3.102a1.125 1.125 0 00-1.091-.852H4.5A2.25 2.25 0 002.25 4.5v2.25z" /></svg>
+                                {{ $footerPhone }}
+                            </a>
+                        </div>
                     </div>
-                    <flux:text size="xs" class="mt-1 text-zinc-400 dark:text-zinc-500">Serving the Denver Metro Area</flux:text>
-                    <div class="mt-3 flex justify-center flex-wrap gap-4">
-                        <a href="{{ route('how-it-works') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">How It Works</a>
-                        <a href="{{ route('faq') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">FAQ</a>
-                        <a href="{{ route('services.index') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Services Guide</a>
-                        <a href="{{ route('visualize') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Color Visualizer</a>
-                        <a href="{{ route('areas.index') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Service Areas</a>
-                        <a href="{{ route('legal.privacy') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Privacy Policy</a>
-                        <a href="{{ route('legal.terms') }}" class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xs underline">Terms &amp; Conditions</a>
+                </div>
+
+                {{-- Navigation columns --}}
+                <div class="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-12">
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-8">
+                        {{-- Services --}}
+                        <div>
+                            <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">{{ __('Services') }}</h4>
+                            <ul class="space-y-2">
+                                <li><a href="{{ route('services.show', 'interior-painting') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Interior Painting') }}</a></li>
+                                <li><a href="{{ route('services.show', 'exterior-painting') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Exterior Painting') }}</a></li>
+                                <li><a href="{{ route('services.show', 'cabinet-painting') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Cabinet Painting') }}</a></li>
+                                <li><a href="{{ route('services.show', 'deck-fence-staining') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Deck & Fence Staining') }}</a></li>
+                                <li><a href="{{ route('services.index') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('All Services') }}</a></li>
+                            </ul>
+                        </div>
+
+                        {{-- Service Areas --}}
+                        <div>
+                            <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">{{ __('Service Areas') }}</h4>
+                            <ul class="space-y-2">
+                                @foreach ($footerAreas as $footerArea)
+                                    <li><a href="{{ route('areas.show', $footerArea->slug) }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ $footerArea->city }}</a></li>
+                                @endforeach
+                                <li><a href="{{ route('areas.index') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('All Areas') }}</a></li>
+                            </ul>
+                        </div>
+
+                        {{-- Company --}}
+                        <div>
+                            <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">{{ __('Company') }}</h4>
+                            <ul class="space-y-2">
+                                <li><a href="{{ route('how-it-works') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('How It Works') }}</a></li>
+                                <li><a href="{{ route('faq') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('FAQ') }}</a></li>
+                                <li><a href="{{ route('careers') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Careers') }}</a></li>
+                                <li><a href="{{ route('visualize') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Color Visualizer') }}</a></li>
+                                <li><a href="{{ route('calculator') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Property Value Calculator') }}</a></li>
+                            </ul>
+                        </div>
+
+                        {{-- Legal --}}
+                        <div>
+                            <h4 class="text-sm font-semibold text-white uppercase tracking-wider mb-4">{{ __('Legal') }}</h4>
+                            <ul class="space-y-2">
+                                <li><a href="{{ route('legal.privacy') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Privacy Policy') }}</a></li>
+                                <li><a href="{{ route('legal.terms') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Terms & Conditions') }}</a></li>
+                            </ul>
+                        </div>
                     </div>
-                    <flux:text size="sm" class="mt-3 text-zinc-500 dark:text-zinc-400">
-                        &copy; {{ date('Y') }} {{ config('app.name') }}. All rights reserved.
-                    </flux:text>
+                </div>
+
+                {{-- Bottom copyright --}}
+                <div class="border-t border-white/10">
+                    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+                        <p class="text-xs text-zinc-500">&copy; {{ date('Y') }} {{ $footerName }}. {{ __('All rights reserved.') }}</p>
+                        <p class="text-xs text-zinc-500">{{ __('Serving the Denver Metro Area — Fort Collins to Castle Rock') }}</p>
+                    </div>
                 </div>
             </footer>
         </div>
