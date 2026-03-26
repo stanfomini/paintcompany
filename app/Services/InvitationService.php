@@ -59,7 +59,7 @@ class InvitationService
      *
      * @throws \InvalidArgumentException
      */
-    public function sendInvitation(User $inviter, string $email, string $invitedUserType, ?int $serviceCategoryId = null, ?int $dealId = null): Invitation
+    public function sendInvitation(User $inviter, string $email, string $invitedUserType, ?int $serviceCategoryId = null, ?int $dealId = null, ?int $existingUserId = null): Invitation
     {
         if (! $this->canInvite($inviter, $invitedUserType)) {
             throw new \InvalidArgumentException(
@@ -75,6 +75,11 @@ class InvitationService
             ->first();
 
         if ($existingInvitation) {
+            // Update existing_user_id if this is a quick-add re-invite
+            if ($existingUserId && ! $existingInvitation->existing_user_id) {
+                $existingInvitation->update(['existing_user_id' => $existingUserId]);
+            }
+
             // Resend the existing invitation to the invitee's email
             $notification = $invitedUserType === 'agent'
                 ? new AgentInvitationNotification($existingInvitation)
@@ -87,7 +92,7 @@ class InvitationService
         // Check if user already exists with this email (unique constraint on email)
         $existingUser = User::where('email', $email)->first();
 
-        if ($existingUser) {
+        if ($existingUser && ! $existingUserId) {
             $existingType = $existingUser->type;
 
             throw new \InvalidArgumentException(
@@ -112,6 +117,10 @@ class InvitationService
         // Attach deal for agent-sourced customer invitations
         if ($dealId) {
             $invitationData['deal_id'] = $dealId;
+        }
+
+        if ($existingUserId) {
+            $invitationData['existing_user_id'] = $existingUserId;
         }
 
         $invitation = Invitation::create($invitationData);
@@ -176,59 +185,71 @@ class InvitationService
             throw new \InvalidArgumentException('This invitation has already been accepted.');
         }
 
-        // Check if user already exists with this email
-        $existingUser = User::where('email', $invitation->email)->first();
+        // Check if this invitation is for a pre-created user (from quick-add)
+        if ($invitation->existing_user_id) {
+            $user = User::findOrFail($invitation->existing_user_id);
+            $user->update([
+                'name' => $userData['name'],
+                'password' => bcrypt($userData['password']),
+            ]);
+            // Preserve existing needs_onboarding value — do NOT override
+        } else {
+            // Check if user already exists with this email
+            $existingUser = User::where('email', $invitation->email)->first();
 
-        if ($existingUser) {
-            throw new \InvalidArgumentException(
-                'A user with this email already exists. Please log in with your existing account instead.'
-            );
+            if ($existingUser) {
+                throw new \InvalidArgumentException(
+                    'A user with this email already exists. Please log in with your existing account instead.'
+                );
+            }
+
+            // Create the user
+            $user = User::create([
+                'name' => $userData['name'],
+                'email' => $invitation->email,
+                'password' => bcrypt($userData['password']),
+                'needs_onboarding' => in_array($invitation->invited_user_type, ['customer', 'agent', 'crew'], true),
+            ]);
+            $user->type = $invitation->invited_user_type;
+            $user->is_active = true;
+            $user->save();
         }
 
-        // Create the user
-        $user = User::create([
-            'name' => $userData['name'],
-            'email' => $invitation->email,
-            'password' => bcrypt($userData['password']),
-            'needs_onboarding' => in_array($invitation->invited_user_type, ['customer', 'agent', 'crew'], true),
-        ]);
-        $user->type = $invitation->invited_user_type;
-        $user->is_active = true;
-        $user->save();
+        if (! $invitation->existing_user_id) {
+            // Link or create Customer record for this user (for customer invitations)
+            if ($invitation->invited_user_type === 'customer') {
+                $customer = $this->linkCustomerToUser($user, $invitation);
 
-        // Link or create Customer record for this user (for customer invitations)
-        if ($invitation->invited_user_type === 'customer') {
-            $customer = $this->linkCustomerToUser($user, $invitation);
+                // Handle collaborator invitation (deal_id set)
+                if ($invitation->deal_id && $customer) {
+                    DealCollaborator::create([
+                        'deal_id' => $invitation->deal_id,
+                        'customer_id' => $customer->id,
+                        'invited_by' => $invitation->inviter_id,
+                        'expires_at' => now()->addDays(30),
+                    ]);
 
-            // Handle collaborator invitation (deal_id set)
-            if ($invitation->deal_id && $customer) {
-                DealCollaborator::create([
-                    'deal_id' => $invitation->deal_id,
-                    'customer_id' => $customer->id,
-                    'invited_by' => $invitation->inviter_id,
-                    'expires_at' => now()->addDays(30),
-                ]);
-
-                $deal = Deal::find($invitation->deal_id);
-                if ($deal) {
-                    $thread = $deal->getOrCreateChatThread();
-                    $thread->addParticipant($user);
+                    $deal = Deal::find($invitation->deal_id);
+                    if ($deal) {
+                        $thread = $deal->getOrCreateChatThread();
+                        $thread->addParticipant($user);
+                    }
                 }
             }
-        }
 
-        // Create crew profile with service category (for crew invitations)
-        if ($invitation->invited_user_type === 'crew') {
-            $this->createCrewProfile($user, $invitation);
-        }
+            // Create crew profile with service category (for crew invitations)
+            if ($invitation->invited_user_type === 'crew') {
+                $this->createCrewProfile($user, $invitation);
+            }
 
-        // Send welcome SMS to new agents
-        if ($user->type === 'agent' && $user->phone) {
-            \App\Jobs\SendWelcomeSmsJob::dispatch(
-                $user->phone,
-                null,
-                $user->id,
-            )->delay(now()->addSeconds(5));
+            // Send welcome SMS to new agents
+            if ($user->type === 'agent' && $user->phone) {
+                \App\Jobs\SendWelcomeSmsJob::dispatch(
+                    $user->phone,
+                    null,
+                    $user->id,
+                )->delay(now()->addSeconds(5));
+            }
         }
 
         // Mark invitation as accepted

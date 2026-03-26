@@ -6,6 +6,7 @@ use App\Models\Deal;
 use App\Models\Invitation;
 use App\Models\User;
 use App\Services\InvitationService;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 
 uses(\Illuminate\Foundation\Testing\RefreshDatabase::class);
@@ -361,6 +362,58 @@ describe('Invitation routes', function () {
             ->get(route('invitations'));
 
         $response->assertOk();
+    });
+});
+
+describe('InvitationService pre-existing user support', function () {
+    it('sends invitation for pre-existing user when existingUserId is provided', function () {
+        Notification::fake();
+
+        $inviter = User::factory()->internal()->create();
+        $agent = User::factory()->agent()->create(['email' => 'agent@test.com']);
+
+        $invitationService = app(InvitationService::class);
+
+        $invitation = $invitationService->sendInvitation(
+            inviter: $inviter,
+            email: 'agent@test.com',
+            invitedUserType: 'agent',
+            existingUserId: $agent->id,
+        );
+
+        expect($invitation)->toBeInstanceOf(\App\Models\Invitation::class)
+            ->and($invitation->existing_user_id)->toBe($agent->id)
+            ->and($invitation->email)->toBe('agent@test.com');
+    });
+
+    it('accepts invitation for pre-existing user by updating password and name', function () {
+        $inviter = User::factory()->internal()->create();
+        $agent = User::factory()->agent()->create([
+            'email' => 'preagent@test.com',
+            'needs_onboarding' => false,
+        ]);
+        $agent->agentProfile->update(['company_name' => 'Test Brokerage']);
+
+        $invitation = \App\Models\Invitation::create([
+            'email' => 'preagent@test.com',
+            'invited_user_type' => 'agent',
+            'inviter_id' => $inviter->id,
+            'existing_user_id' => $agent->id,
+        ]);
+
+        $invitationService = app(InvitationService::class);
+        $user = $invitationService->acceptInvitation($invitation, [
+            'name' => 'New Agent Name',
+            'password' => 'password123',
+        ]);
+
+        expect($user->id)->toBe($agent->id)
+            ->and($user->name)->toBe('New Agent Name')
+            ->and($user->needs_onboarding)->toBeFalse()
+            ->and(Hash::check('password123', $user->password))->toBeTrue()
+            ->and($user->agentProfile->company_name)->toBe('Test Brokerage');
+
+        expect($invitation->fresh()->accepted_at)->not->toBeNull();
     });
 });
 
