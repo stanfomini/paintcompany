@@ -1,9 +1,11 @@
 <?php
 
-use App\Models\CrewProfile;
+use App\Models\CompanySetting;
 use App\Models\User;
 use App\Services\InvitationService;
+use App\Services\TwilioService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
@@ -52,17 +54,20 @@ new class extends Component
         ]);
 
         $user = DB::transaction(function () use ($validated) {
-            $user = User::create([
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
+            // Set type BEFORE save so boot hook creates CrewProfile
+            $user = new User([
+                'name' => trim($validated['first_name'].' '.$validated['last_name']),
                 'email' => $validated['email'],
                 'phone' => $validated['phone'] ?? null,
-                'type' => 'crew',
                 'password' => bcrypt(str()->random(32)),
+                'needs_onboarding' => true,
             ]);
+            $user->type = 'crew';
+            $user->is_active = true;
+            $user->save(); // created hook fires with type='crew' → CrewProfile auto-created
 
-            CrewProfile::create([
-                'user_id' => $user->id,
+            // Update the auto-created CrewProfile with form data
+            $user->crewProfile->update([
                 'company_name' => $validated['company_name'] ?? null,
                 'phone' => $validated['phone'] ?? null,
             ]);
@@ -70,12 +75,41 @@ new class extends Component
             return $user;
         });
 
-        // Send invitation email
+        // Send invitation email (with existingUserId to bypass user-exists check)
+        $invitation = null;
         try {
             $invitationService = app(InvitationService::class);
-            $invitationService->sendInvitation(auth()->user(), $validated['email'], 'crew');
+            $invitation = $invitationService->sendInvitation(
+                inviter: auth()->user(),
+                email: $validated['email'],
+                invitedUserType: 'crew',
+                existingUserId: $user->id,
+            );
         } catch (\InvalidArgumentException $e) {
-            // Invitation permissions issue — crew member still created
+            Log::warning('Quick-add crew: invitation failed', ['error' => $e->getMessage()]);
+        }
+
+        // Send SMS with invite link
+        if ($invitation && ! empty($validated['phone'])) {
+            try {
+                $twilio = app(TwilioService::class);
+                if ($twilio->isEnabled()) {
+                    $invitationService = app(InvitationService::class);
+                    $acceptUrl = $invitationService->generateAcceptUrl($invitation);
+                    $companyName = CompanySetting::getInstance()->company_name ?? config('app.name');
+
+                    $twilio->sendSms(
+                        $validated['phone'],
+                        __("Hi :name! You've been invited to join :company. Set up your account here: :link", [
+                            'name' => $validated['first_name'],
+                            'company' => $companyName,
+                            'link' => $acceptUrl,
+                        ]),
+                    );
+                }
+            } catch (\Exception $e) {
+                Log::warning('Quick-add crew: SMS failed', ['error' => $e->getMessage()]);
+            }
         }
 
         $this->createdCrewId = $user->id;
