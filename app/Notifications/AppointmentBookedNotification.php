@@ -4,6 +4,8 @@ namespace App\Notifications;
 
 use App\Channels\SmsChannel;
 use App\Channels\SmsMessage;
+use App\Channels\WebPushChannel;
+use App\Channels\WebPushMessage;
 use App\Models\AppointmentBooking;
 use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
@@ -32,6 +34,11 @@ class AppointmentBookedNotification extends Notification implements ShouldQueue
             }
         } else {
             $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush')
+            && $notifiable->wantsPush($this->pushCategory)) {
+            $channels[] = WebPushChannel::class;
         }
 
         if ($this->shouldSendSms($notifiable)) {
@@ -73,6 +80,19 @@ class AppointmentBookedNotification extends Notification implements ShouldQueue
             'date' => $this->booking->booked_date->toDateString(),
             'time' => $this->booking->booked_start_time,
         ];
+    }
+
+    public function toWebPush(object $notifiable): WebPushMessage
+    {
+        $date = $this->booking->booked_date->format('M j, Y');
+        $time = $this->booking->booked_start_time;
+
+        return new WebPushMessage(
+            title: __('Appointment Confirmed'),
+            body: "Estimate appointment on {$date} at {$time}",
+            url: '/dashboard',
+            tag: "booking-{$this->booking->id}",
+        );
     }
 
     public function toSms(object $notifiable): SmsMessage
