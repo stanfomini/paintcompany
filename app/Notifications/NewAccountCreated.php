@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\User;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,7 +17,7 @@ use Illuminate\Notifications\Notification;
 
 class NewAccountCreated extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
@@ -46,10 +49,24 @@ class NewAccountCreated extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $name = $this->newUser->name ?? 'Someone';
+
+        return new SmsMessage(
+            body: "New account created for {$name}.",
+            deepLink: url('/dashboard'),
+        );
     }
 
     public function toMail(object $notifiable): MailMessage

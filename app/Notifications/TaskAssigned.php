@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Activity;
+use App\Notifications\Concerns\HasSmsChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -12,7 +15,7 @@ use Illuminate\Notifications\Notification;
 
 class TaskAssigned extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'tasks';
 
@@ -44,10 +47,22 @@ class TaskAssigned extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        return new SmsMessage(
+            body: "Task assigned: {$this->activity->title}",
+            deepLink: url('/dashboard'),
+        );
     }
 
     /**

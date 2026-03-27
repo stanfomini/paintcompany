@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\MessengerConversation;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,7 +16,7 @@ use Illuminate\Notifications\Notification;
 
 class MessengerHumanTakeoverNeeded extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
@@ -47,10 +50,24 @@ class MessengerHumanTakeoverNeeded extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $customerName = $this->conversation->customer?->full_name ?? 'A customer';
+
+        return new SmsMessage(
+            body: "{$customerName} needs human help in Messenger. Please take over.",
+            deepLink: url("/deals/{$this->conversation->deal_id}"),
+        );
     }
 
     public function toMail(object $notifiable): MailMessage

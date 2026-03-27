@@ -2,10 +2,13 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Deal;
 use App\Models\Estimate;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,7 +17,7 @@ use Illuminate\Notifications\Notification;
 
 class EstimateReadyForAgent extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only agent users should receive this */
     protected array $allowedUserTypes = ['agent'];
@@ -49,10 +52,22 @@ class EstimateReadyForAgent extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        return new SmsMessage(
+            body: "Estimate #{$this->estimate->estimate_number} is ready for your review.",
+            deepLink: route('estimates.show', $this->estimate),
+        );
     }
 
     public function toMail(object $notifiable): MailMessage

@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\Estimate;
+use App\Notifications\Concerns\HasSmsChannel;
 use App\Notifications\Concerns\RestrictsToUserTypes;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,7 +17,7 @@ use Illuminate\Notifications\Notification;
 
 class ProposalViewed extends Notification implements ShouldQueue
 {
-    use Queueable, RestrictsToUserTypes;
+    use HasSmsChannel, Queueable, RestrictsToUserTypes;
 
     /** @var array<string> Only internal users should receive this */
     protected array $allowedUserTypes = ['internal'];
@@ -48,10 +51,24 @@ class ProposalViewed extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $customerName = $this->estimate->deal?->customer?->full_name ?? 'Customer';
+
+        return new SmsMessage(
+            body: "{$customerName} viewed estimate #{$this->estimate->estimate_number}.",
+            deepLink: route('estimates.show', $this->estimate),
+        );
     }
 
     public function toMail(object $notifiable): MailMessage

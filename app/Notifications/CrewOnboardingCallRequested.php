@@ -2,9 +2,12 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\User;
+use App\Notifications\Concerns\HasSmsChannel;
 use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -13,7 +16,7 @@ use Illuminate\Notifications\Notification;
 
 class CrewOnboardingCallRequested extends Notification implements ShouldQueue
 {
-    use Queueable;
+    use HasSmsChannel, Queueable;
 
     public string $pushCategory = 'jobs';
 
@@ -42,10 +45,24 @@ class CrewOnboardingCallRequested extends Notification implements ShouldQueue
             $channels[] = WebPushChannel::class;
         }
 
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
+
         $channels[] = 'database';
         $channels[] = 'broadcast';
 
         return $channels;
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $crewName = $this->crew->user?->name ?? 'A crew member';
+
+        return new SmsMessage(
+            body: "{$crewName} requested an onboarding call.",
+            deepLink: url('/crew'),
+        );
     }
 
     public function toMail(object $notifiable): MailMessage
