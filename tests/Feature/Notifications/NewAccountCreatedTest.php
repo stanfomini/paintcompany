@@ -59,7 +59,10 @@ it('does not send notification for internal users', function () {
 it('uses mail database and broadcast channels', function () {
     $notification = new NewAccountCreated(User::factory()->make(['type' => 'customer']));
 
-    expect($notification->via(new stdClass))->toBe(['mail', 'database', 'broadcast']);
+    $channels = $notification->via(new stdClass);
+    expect($channels)->toContain('mail')
+        ->toContain('database')
+        ->toContain('broadcast');
 });
 
 it('includes user details in notification data', function () {

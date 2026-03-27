@@ -8,14 +8,12 @@ use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\EmailMessage;
 use App\Notifications\Concerns\HasSmsChannel;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class EmailReceivedNotification extends Notification implements ShouldQueue
+class EmailReceivedNotification extends Notification
 {
-    use HasSmsChannel, Queueable;
+    use HasSmsChannel;
 
     public string $pushCategory = 'email_messages';
 

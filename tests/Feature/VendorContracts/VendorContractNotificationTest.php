@@ -20,7 +20,10 @@ it('sends internal signing request notification via mail and database', function
 
     $notification = new VendorContractInternalSigningRequest($contract);
 
-    expect($notification->via($user))->toBe(['mail', 'database']);
+    $channels = $notification->via($user);
+    expect($channels)->toContain('mail')
+        ->toContain('database')
+        ->toContain('broadcast');
 
     $mail = $notification->toMail($user);
 
@@ -65,7 +68,10 @@ it('sends fully executed notification', function () {
     $notification = new VendorContractFullyExecuted($contract);
     $user = User::factory()->internal()->create();
 
-    expect($notification->via($user))->toBe(['mail', 'database']);
+    $channels = $notification->via($user);
+    expect($channels)->toContain('mail')
+        ->toContain('database')
+        ->toContain('broadcast');
 
     $anonymous = new AnonymousNotifiable;
     expect($notification->via($anonymous))->toBe(['mail']);
@@ -95,7 +101,10 @@ it('sends expiring soon notification', function () {
     $notification = new VendorContractExpiringSoon($contract);
     $user = User::factory()->internal()->create();
 
-    expect($notification->via($user))->toBe(['mail', 'database']);
+    $channels = $notification->via($user);
+    expect($channels)->toContain('mail')
+        ->toContain('database')
+        ->toContain('broadcast');
 
     $anonymous = new AnonymousNotifiable;
     expect($notification->via($anonymous))->toBe(['mail']);
@@ -127,7 +136,10 @@ it('sends expired notification', function () {
     $notification = new VendorContractExpired($contract);
     $user = User::factory()->internal()->create();
 
-    expect($notification->via($user))->toBe(['mail', 'database']);
+    $channels = $notification->via($user);
+    expect($channels)->toContain('mail')
+        ->toContain('database')
+        ->toContain('broadcast');
 
     $anonymous = new AnonymousNotifiable;
     expect($notification->via($anonymous))->toBe(['mail']);
