@@ -576,10 +576,19 @@ new class extends Component
             $this->expandedThreadId = $threadId;
         }
 
+        // Mark thread as read when selecting any contact with an auto-expanded thread
+        if ($this->expandedThreadId) {
+            $thread = ChatThread::find($this->expandedThreadId);
+            if ($thread) {
+                app(ChatService::class)->markThreadAsRead($thread, auth()->user());
+            }
+        }
+
         $this->viewingEmailThreadId = null;
         $this->composingReply = false;
         $this->resetReplyState();
         unset($this->contactItems, $this->selectedContact, $this->selectedSetterData, $this->selectedMessengerData, $this->selectedSmsData, $this->tabUnreadCounts, $this->threadMessages, $this->emailThreadMessages);
+        $this->dispatch('refresh-notification-counts');
     }
 
     public function clearContact(): void
@@ -619,6 +628,7 @@ new class extends Component
                 if ($thread) {
                     app(ChatService::class)->markThreadAsRead($thread, auth()->user());
                     unset($this->contacts, $this->tabUnreadCounts);
+                    $this->dispatch('refresh-notification-counts');
                 }
             }
         }
@@ -651,6 +661,7 @@ new class extends Component
         if ($thread) {
             app(ChatService::class)->markThreadAsRead($thread, auth()->user());
             unset($this->contacts, $this->tabUnreadCounts);
+            $this->dispatch('refresh-notification-counts');
         }
     }
 
