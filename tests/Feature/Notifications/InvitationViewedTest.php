@@ -75,10 +75,10 @@ it('includes correct data in notification payload', function () {
     });
 });
 
-it('uses database and broadcast channels only', function () {
+it('uses database, broadcast, and mail channels by default', function () {
     $notification = new InvitationViewed(Invitation::factory()->create());
 
-    expect($notification->via(new stdClass))->toBe(['database', 'broadcast']);
+    expect($notification->via(new stdClass))->toBe(['database', 'broadcast', 'mail']);
 });
 
 it('does not notify for expired invitations', function () {

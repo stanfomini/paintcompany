@@ -2,13 +2,21 @@
 
 namespace App\Notifications;
 
+use App\Channels\SmsChannel;
+use App\Channels\SmsMessage;
 use App\Channels\WebPushChannel;
 use App\Channels\WebPushMessage;
 use App\Models\EmailMessage;
+use App\Notifications\Concerns\HasSmsChannel;
+use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class EmailReceivedNotification extends Notification
+class EmailReceivedNotification extends Notification implements ShouldQueue
 {
+    use HasSmsChannel, Queueable;
+
     public string $pushCategory = 'email_messages';
 
     public function __construct(public EmailMessage $message) {}
@@ -18,14 +26,22 @@ class EmailReceivedNotification extends Notification
      */
     public function via(object $notifiable): array
     {
-        $channels = [];
+        $channels = ['database', 'broadcast'];
 
-        if (method_exists($notifiable, 'wantsPush') && $notifiable->wantsPush($this->pushCategory)) {
+        if (method_exists($notifiable, 'wantsEmail')
+            ? $notifiable->wantsEmail($this->pushCategory)
+            : true) {
+            $channels[] = 'mail';
+        }
+
+        if (method_exists($notifiable, 'wantsPush')
+            && $notifiable->wantsPush($this->pushCategory)) {
             $channels[] = WebPushChannel::class;
         }
 
-        $channels[] = 'database';
-        $channels[] = 'broadcast';
+        if ($this->shouldSendSms($notifiable)) {
+            $channels[] = SmsChannel::class;
+        }
 
         return $channels;
     }
@@ -46,6 +62,28 @@ class EmailReceivedNotification extends Notification
             'subject' => $this->message->subject,
             'message' => "New email from {$sender}",
         ];
+    }
+
+    public function toMail(object $notifiable): MailMessage
+    {
+        $sender = $this->message->from_name ?? $this->message->from_address;
+
+        return (new MailMessage)
+            ->subject(__('New Email from :sender', ['sender' => $sender]))
+            ->line(__('You received a new email.'))
+            ->line('**'.__('From').':** '.$sender)
+            ->line('**'.__('Subject').':** '.$this->message->subject)
+            ->action(__('View Email'), url("/email?threadId={$this->message->email_thread_id}"));
+    }
+
+    public function toSms(object $notifiable): SmsMessage
+    {
+        $sender = $this->message->from_name ?? $this->message->from_address;
+
+        return new SmsMessage(
+            body: "New email from {$sender}: {$this->message->subject}",
+            deepLink: url("/email?threadId={$this->message->email_thread_id}"),
+        );
     }
 
     public function toWebPush(object $notifiable): WebPushMessage
