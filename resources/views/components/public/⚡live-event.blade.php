@@ -36,9 +36,25 @@ new #[Layout('components.layouts.public')] class extends Component
     {
         $this->event = $liveEvent->load('serviceArea', 'service', 'host', 'chatThread');
         $this->livekitUrl = (string) config('services.livekit.url', '');
+
+        // Restore viewer session after redirect (from joinStream)
+        $sessionKey = 'live-event-viewer-'.$this->event->id;
+        if (session()->has($sessionKey)) {
+            $this->viewerName = session($sessionKey);
+            $this->hasJoined = true;
+
+            try {
+                $this->livekitToken = app(LiveKitService::class)->generateViewerToken(
+                    $this->event,
+                    $this->viewerName
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('LiveKit viewer token error', ['error' => $e->getMessage()]);
+            }
+        }
     }
 
-    public function joinStream(): void
+    public function joinStream()
     {
         if ($this->event->access_type === 'registration') {
             $this->validate([
@@ -58,22 +74,10 @@ new #[Layout('components.layouts.public')] class extends Component
             ]);
         }
 
-        try {
-            $liveKitService = app(LiveKitService::class);
-            $this->livekitToken = $liveKitService->generateViewerToken(
-                $this->event,
-                $this->viewerName
-            );
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('LiveKit viewer token error', [
-                'event_id' => $this->event->id,
-                'error' => $e->getMessage(),
-            ]);
-        }
+        // Store name in session and redirect for clean Alpine initialization
+        session()->put('live-event-viewer-'.$this->event->id, $this->viewerName);
 
-        $this->hasJoined = true;
-
-        $this->dispatch('livekit-viewer-connect', token: $this->livekitToken, url: $this->livekitUrl);
+        return $this->redirect(route('live.show', $this->event->slug), navigate: false);
     }
 
     public function registerForEvent(): void
