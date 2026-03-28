@@ -452,7 +452,11 @@ class extends Component
             'type' => 'text',
             'content' => $this->overlayText,
             'x' => 0.05,
-            'y' => 0.9,
+            'y' => 0.02,
+            'fontSize' => 28,
+            'fontWeight' => '700',
+            'color' => '#ffffff',
+            'bg' => '#000000cc',
         ];
 
         $this->event->update(['overlays' => $overlays]);
@@ -1554,6 +1558,21 @@ class extends Component
                         }
                     });
 
+                    // Re-sync overlays when they change via Livewire
+                    this.$wire.$watch('event.overlays', (newOverlays) => {
+                        if (newOverlays) {
+                            this.overlayConfigs = newOverlays;
+                            if (compositor) {
+                                compositor.setOverlays(newOverlays);
+                            }
+                            // Reset visibility tracking
+                            this.overlayVisible = {};
+                            newOverlays.forEach((_, idx) => {
+                                this.overlayVisible[idx] = true;
+                            });
+                        }
+                    });
+
                     this.$wire.on('guest-bring-on', ({ identity, name, guestId }) => {
                         if (room) {
                             const encoder = new TextEncoder();
@@ -1602,7 +1621,8 @@ class extends Component
                             // Clean up guest feed if it was a guest
                             const identity = participant.identity;
                             if (identity && identity.startsWith('guest-')) {
-                                delete this.guestFeeds[identity];
+                                const { [identity]: _, ...rest } = this.guestFeeds;
+                                this.guestFeeds = rest;
                                 if (compositor) {
                                     compositor.removeFeedSource(identity);
                                 }
@@ -1624,25 +1644,38 @@ class extends Component
                                 el.style.height = '100%';
                                 el.style.objectFit = 'cover';
 
-                                this.guestFeeds[identity] = {
-                                    stream: track.mediaStream,
-                                    element: el,
-                                    name: participant.name || identity,
+                                // Reassign entire object for Alpine reactivity (new keys aren't detected)
+                                this.guestFeeds = {
+                                    ...this.guestFeeds,
+                                    [identity]: {
+                                        element: el,
+                                        name: participant.name || identity,
+                                    },
                                 };
 
                                 if (compositor) {
                                     compositor.setFeedSource(identity, el);
                                 }
                             }
+
+                            // Also handle guest audio tracks
+                            if (identity && identity.startsWith('guest-') && track.kind === 'audio') {
+                                const audioEl = track.attach();
+                                audioEl.style.display = 'none';
+                                document.body.appendChild(audioEl);
+                            }
                         });
 
                         room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
                             const identity = participant.identity;
-                            if (identity && identity.startsWith('guest-') && track.kind === 'video') {
-                                track.detach();
-                                delete this.guestFeeds[identity];
-                                if (compositor) {
-                                    compositor.removeFeedSource(identity);
+                            if (identity && identity.startsWith('guest-')) {
+                                track.detach().forEach(el => el.remove());
+                                if (track.kind === 'video') {
+                                    const { [identity]: _, ...rest } = this.guestFeeds;
+                                    this.guestFeeds = rest;
+                                    if (compositor) {
+                                        compositor.removeFeedSource(identity);
+                                    }
                                 }
                             }
                         });
