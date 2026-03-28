@@ -24,6 +24,8 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
     public ?int $visualizationId = null;
     public bool $isGenerating = false;
     public bool $showLeadForm = false;
+    public ?string $reuseImagePath = null;
+    public ?string $reuseImageDisk = null;
 
     // Lead form fields
     public string $leadFirstName = '';
@@ -41,6 +43,17 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
         return $this->visualizationId
             ? ColorVisualization::find($this->visualizationId)
             : null;
+    }
+
+    #[Computed]
+    public function sessionHistory()
+    {
+        return ColorVisualization::where('session_id', session()->getId())
+            ->where('status', ColorVisualization::STATUS_COMPLETED)
+            ->whereNotNull('result_image_path')
+            ->latest()
+            ->limit(20)
+            ->get();
     }
 
     #[Computed]
@@ -124,13 +137,20 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
             return;
         }
 
+        $hasReuse = $this->reuseImagePath && $this->reuseImageDisk;
+
         $this->validate([
             'prompt' => 'required|string|min:10',
-            'uploadedPhoto' => 'required|image|max:10240',
+            'uploadedPhoto' => $hasReuse ? 'nullable' : 'required|image|max:10240',
         ]);
 
-        $disk = config('filesystems.default');
-        $path = $this->uploadedPhoto->store('visualizations/originals', $disk);
+        if ($hasReuse) {
+            $disk = $this->reuseImageDisk;
+            $path = $this->reuseImagePath;
+        } else {
+            $disk = config('filesystems.default');
+            $path = $this->uploadedPhoto->store('visualizations/originals', $disk);
+        }
 
         $visualization = ColorVisualization::create([
             'session_id' => session()->getId(),
@@ -214,11 +234,63 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
         $this->prompt = trim($this->prompt . ($this->prompt ? ', ' : '') . $colorText);
     }
 
-    public function regenerate(): void
+    public function tryDifferentColors(): void
+    {
+        $viz = $this->visualization;
+        $this->reuseImagePath = $viz?->original_image_path;
+        $this->reuseImageDisk = $viz?->disk;
+        $this->visualizationId = null;
+        $this->isGenerating = false;
+        $this->prompt = '';
+        $this->uploadedPhoto = null;
+        unset($this->sessionHistory);
+    }
+
+    public function startFresh(): void
     {
         $this->visualizationId = null;
         $this->isGenerating = false;
         $this->uploadedPhoto = null;
+        $this->reuseImagePath = null;
+        $this->reuseImageDisk = null;
+        $this->prompt = '';
+        unset($this->sessionHistory);
+    }
+
+    public function viewHistory(int $id): void
+    {
+        $viz = ColorVisualization::where('id', $id)
+            ->where('session_id', session()->getId())
+            ->first();
+
+        if ($viz) {
+            $this->visualizationId = $viz->id;
+            $this->isGenerating = false;
+            unset($this->visualization);
+        }
+    }
+
+    public function reusePhoto(int $id): void
+    {
+        $viz = ColorVisualization::where('id', $id)
+            ->where('session_id', session()->getId())
+            ->first();
+
+        if ($viz) {
+            $this->reuseImagePath = $viz->original_image_path;
+            $this->reuseImageDisk = $viz->disk;
+            $this->visualizationId = null;
+            $this->isGenerating = false;
+            $this->prompt = '';
+            $this->uploadedPhoto = null;
+            unset($this->sessionHistory);
+        }
+    }
+
+    public function clearReuse(): void
+    {
+        $this->reuseImagePath = null;
+        $this->reuseImageDisk = null;
     }
 
     public function checkStatus(): void
@@ -226,6 +298,7 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
         if ($this->visualization) {
             if ($this->visualization->isCompleted() || $this->visualization->isFailed()) {
                 $this->isGenerating = false;
+                unset($this->sessionHistory);
             }
         }
     }
@@ -254,6 +327,28 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
     </section>
 
     <section class="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+        {{-- Session History Strip --}}
+        @if($this->sessionHistory->isNotEmpty())
+            <div class="mb-8">
+                <p class="mb-2 text-sm font-medium text-zinc-500 dark:text-zinc-400">Your Visualizations</p>
+                <div class="flex gap-3 overflow-x-auto pb-2" style="scrollbar-width: thin;">
+                    @foreach($this->sessionHistory as $history)
+                        <button
+                            wire:key="history-{{ $history->id }}"
+                            wire:click="viewHistory({{ $history->id }})"
+                            class="shrink-0 group relative rounded-lg overflow-hidden border-2 transition-all hover:shadow-md
+                                {{ $visualizationId === $history->id ? 'border-blue-500 shadow-md' : 'border-zinc-200 dark:border-zinc-700' }}"
+                        >
+                            <img src="{{ storage_url($history->result_image_path, diskName: $history->disk) }}"
+                                 alt="Visualization"
+                                 class="h-20 w-28 object-cover" />
+                            <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors"></div>
+                        </button>
+                    @endforeach
+                </div>
+            </div>
+        @endif
+
         {{-- Lead form modal --}}
         @if($showLeadForm)
         <div class="mb-8 rounded-xl border border-warm-200 bg-warm-50 p-6 shadow-lg dark:border-zinc-700 dark:bg-zinc-800/50">
@@ -362,8 +457,13 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                             <flux:icon.share variant="micro" />
                             Share Result
                         </a>
-                        <flux:button wire:click="regenerate" variant="primary">
-                            Try Another Photo
+                        <flux:button wire:click="tryDifferentColors" variant="primary">
+                            <flux:icon.paint-brush variant="micro" class="mr-1" />
+                            Try Different Colors
+                        </flux:button>
+                        <flux:button wire:click="startFresh" variant="ghost">
+                            <flux:icon.photo variant="micro" class="mr-1" />
+                            Upload New Photo
                         </flux:button>
                     </div>
 
@@ -384,9 +484,14 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
                         </div>
                         <h3 class="text-lg font-semibold text-zinc-900 dark:text-white">Generation Failed</h3>
                         <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Something went wrong. Please try again with a different photo.</p>
-                        <flux:button wire:click="regenerate" variant="primary" class="mt-4">
-                            Try Again
-                        </flux:button>
+                        <div class="mt-4 flex justify-center gap-3">
+                            <flux:button wire:click="tryDifferentColors" variant="primary">
+                                Try Again (Same Photo)
+                            </flux:button>
+                            <flux:button wire:click="startFresh" variant="ghost">
+                                Upload New Photo
+                            </flux:button>
+                        </div>
                     </div>
                 @endif
             </div>
@@ -395,25 +500,52 @@ new #[Layout('components.layouts.guest')] #[Title('AI Color Visualizer | See You
         {{-- Upload & prompt form (hide when generating or showing result) --}}
         @if(!$this->visualization || $this->visualization->isFailed())
         <div class="rounded-xl border border-zinc-200 bg-white p-6 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-            <h2 class="text-xl font-semibold text-zinc-900 dark:text-white">Upload Your Photo</h2>
-            <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">Take a photo of any room or exterior and describe the colors you want.</p>
+            <h2 class="text-xl font-semibold text-zinc-900 dark:text-white">
+                {{ $reuseImagePath ? 'Try Different Colors' : 'Upload Your Photo' }}
+            </h2>
+            <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
+                {{ $reuseImagePath ? 'Describe the new colors you want for this photo.' : 'Take a photo of any room or exterior and describe the colors you want.' }}
+            </p>
 
             <form wire:submit="generateVisualization" class="mt-6 space-y-6">
-                {{-- Photo upload --}}
+                {{-- Photo upload / reuse indicator --}}
                 <div>
                     <label class="block text-sm font-medium text-zinc-700 dark:text-zinc-300">Photo</label>
                     <div class="mt-1">
-                        <label class="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 p-6 transition hover:border-blue-400 hover:bg-blue-50/50 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:border-blue-500 dark:hover:bg-blue-950/20">
-                            @if($uploadedPhoto)
-                                <img src="{{ $uploadedPhoto->temporaryUrl() }}" alt="Preview" class="mb-2 max-h-48 rounded-lg" />
-                                <span class="text-sm text-zinc-500">Click to change photo</span>
-                            @else
-                                <flux:icon.photo class="mb-2 h-10 w-10 text-zinc-400" />
-                                <span class="text-sm font-medium text-zinc-600 dark:text-zinc-400">Click to upload or drag and drop</span>
-                                <span class="mt-1 text-xs text-zinc-400">JPG, PNG up to 10MB</span>
-                            @endif
-                            <input type="file" wire:model="uploadedPhoto" accept="image/*" class="hidden" />
-                        </label>
+                        @if($reuseImagePath)
+                            {{-- Reusing a previous photo --}}
+                            <div class="relative rounded-lg border-2 border-blue-300 bg-blue-50/50 p-4 dark:border-blue-600 dark:bg-blue-950/20">
+                                <div class="flex items-center gap-4">
+                                    <img src="{{ storage_url($reuseImagePath, diskName: $reuseImageDisk) }}"
+                                         alt="Reusing photo"
+                                         class="h-24 w-auto rounded-lg border border-zinc-200 dark:border-zinc-700" />
+                                    <div class="flex-1">
+                                        <p class="text-sm font-medium text-zinc-900 dark:text-white">Using previous photo</p>
+                                        <p class="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">Describe your new color choices below.</p>
+                                        <button
+                                            type="button"
+                                            wire:click="clearReuse"
+                                            class="mt-2 inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-700 dark:text-red-400"
+                                        >
+                                            <flux:icon.x-mark variant="micro" class="size-3" />
+                                            Upload a different photo instead
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        @else
+                            <label class="flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed border-zinc-300 bg-zinc-50 p-6 transition hover:border-blue-400 hover:bg-blue-50/50 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:border-blue-500 dark:hover:bg-blue-950/20">
+                                @if($uploadedPhoto)
+                                    <img src="{{ $uploadedPhoto->temporaryUrl() }}" alt="Preview" class="mb-2 max-h-48 rounded-lg" />
+                                    <span class="text-sm text-zinc-500">Click to change photo</span>
+                                @else
+                                    <flux:icon.photo class="mb-2 h-10 w-10 text-zinc-400" />
+                                    <span class="text-sm font-medium text-zinc-600 dark:text-zinc-400">Click to upload or drag and drop</span>
+                                    <span class="mt-1 text-xs text-zinc-400">JPG, PNG up to 10MB</span>
+                                @endif
+                                <input type="file" wire:model="uploadedPhoto" accept="image/*" class="hidden" />
+                            </label>
+                        @endif
                         @error('uploadedPhoto')
                             <p class="mt-1 text-sm text-red-600">{{ $message }}</p>
                         @enderror

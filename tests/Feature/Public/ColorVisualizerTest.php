@@ -13,11 +13,19 @@ it('public visualizer page loads without auth', function () {
     $this->get(route('visualize'))->assertSuccessful();
 });
 
-it('shows popular colors on the page', function () {
+it('shows popular colors when a brand is selected', function () {
     $brand = PaintBrand::factory()->create(['name' => 'Sherwin-Williams']);
-    PaintColor::factory()->forBrand($brand)->popular()->create(['name' => 'Alabaster']);
+    PaintColor::factory()->forBrand($brand)->popular()->create([
+        'name' => 'Alabaster',
+        'code' => 'SW-7008',
+        'intended_use' => 'both',
+    ]);
 
-    $this->get(route('visualize'))->assertSee('Alabaster');
+    PaintColor::clearCache();
+
+    Livewire::test('public.color-visualizer')
+        ->call('selectBrand', $brand->id)
+        ->assertSee('Alabaster');
 });
 
 it('allows first 2 free visualizations', function () {
@@ -118,7 +126,7 @@ it('validates lead form requires name and email', function () {
         ->assertHasErrors(['leadFirstName', 'leadLastName', 'leadEmail']);
 });
 
-it('regenerate resets state for new visualization', function () {
+it('startFresh resets state for new visualization', function () {
     Queue::fake();
     Storage::fake('photos');
 
@@ -128,9 +136,10 @@ it('regenerate resets state for new visualization', function () {
         ->call('generateVisualization')
         ->assertSet('isGenerating', true);
 
-    $component->call('regenerate')
+    $component->call('startFresh')
         ->assertSet('isGenerating', false)
-        ->assertSet('visualizationId', null);
+        ->assertSet('visualizationId', null)
+        ->assertSet('reuseImagePath', null);
 });
 
 it('result page displays before and after images', function () {

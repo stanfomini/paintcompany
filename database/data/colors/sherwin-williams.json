@@ -10680,5 +10680,12 @@
     "hex": "#C29871",
     "family": "beige",
     "popular": false
+  },
+  {
+    "name": "Rain Cloud",
+    "code": "SW 9639",
+    "hex": "#B8BCC0",
+    "family": "gray",
+    "popular": true
   }
 ]

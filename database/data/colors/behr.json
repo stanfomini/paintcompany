@@ -32590,5 +32590,19 @@
     "hex": "#F9F7E8",
     "family": "yellow",
     "popular": false
+  },
+  {
+    "name": "Blank Canvas",
+    "code": "DC-003",
+    "hex": "#F5F3EB",
+    "family": "off-white",
+    "popular": true
+  },
+  {
+    "name": "Even Better Beige",
+    "code": "DC-010",
+    "hex": "#DED3C1",
+    "family": "beige",
+    "popular": true
   }
 ]

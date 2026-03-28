@@ -97,16 +97,17 @@ it('validates required fields before generating', function () {
         ->assertHasErrors(['prompt', 'uploadedPhoto']);
 });
 
-it('resets state on regenerate', function () {
+it('resets state on startFresh', function () {
     $viz = ColorVisualization::factory()->forUser($this->internalUser)->completed()->create();
 
     Livewire::actingAs($this->internalUser)
         ->test('estimates.color-visualizer')
         ->set('visualizationId', $viz->id)
         ->set('isGenerating', false)
-        ->call('regenerate')
+        ->call('startFresh')
         ->assertSet('visualizationId', null)
-        ->assertSet('isGenerating', false);
+        ->assertSet('isGenerating', false)
+        ->assertSet('reuseImagePath', null);
 });
 
 it('checks status and stops polling on completion', function () {

@@ -126,6 +126,6 @@ it('resets added state on regenerate', function () {
         ->set('visualizationId', $viz->id)
         ->call('addToEstimate')
         ->assertSet('addedToEstimate', true)
-        ->call('regenerate')
+        ->call('startFresh')
         ->assertSet('addedToEstimate', false);
 });

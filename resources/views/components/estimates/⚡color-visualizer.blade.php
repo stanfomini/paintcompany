@@ -32,6 +32,10 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
 
     public ?int $selectedBrandId = null;
 
+    public ?string $reuseImagePath = null;
+
+    public ?string $reuseImageDisk = null;
+
     public function mount(?Estimate $estimate = null): void
     {
         $this->estimate = $estimate;
@@ -117,15 +121,39 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
         return ColorVisualization::find($this->visualizationId);
     }
 
+    #[Computed]
+    public function visualizationHistory()
+    {
+        $query = ColorVisualization::where('status', ColorVisualization::STATUS_COMPLETED)
+            ->whereNotNull('result_image_path')
+            ->latest()
+            ->limit(20);
+
+        if ($this->estimate?->exists) {
+            $query->where('estimate_id', $this->estimate->id);
+        } else {
+            $query->where('user_id', auth()->id());
+        }
+
+        return $query->get();
+    }
+
     public function generateVisualization(): void
     {
+        $hasReuse = $this->reuseImagePath && $this->reuseImageDisk;
+
         $this->validate([
             'prompt' => 'required|string|min:10',
-            'uploadedPhoto' => 'required|image|max:10240',
+            'uploadedPhoto' => $hasReuse ? 'nullable' : 'required|image|max:10240',
         ]);
 
-        $disk = config('filesystems.default');
-        $path = $this->uploadedPhoto->store('visualizations/originals', $disk);
+        if ($hasReuse) {
+            $disk = $this->reuseImageDisk;
+            $path = $this->reuseImagePath;
+        } else {
+            $disk = config('filesystems.default');
+            $path = $this->uploadedPhoto->store('visualizations/originals', $disk);
+        }
 
         $visualization = ColorVisualization::create([
             'user_id' => auth()->id(),
@@ -170,12 +198,77 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
         $this->prompt = trim($this->prompt . ($this->prompt ? ', ' : '') . $colorText);
     }
 
-    public function regenerate(): void
+    public function tryDifferentColors(): void
+    {
+        $viz = $this->visualization;
+        $this->reuseImagePath = $viz?->original_image_path;
+        $this->reuseImageDisk = $viz?->disk;
+        $this->visualizationId = null;
+        $this->isGenerating = false;
+        $this->addedToEstimate = false;
+        $this->prompt = '';
+        $this->uploadedPhoto = null;
+        unset($this->visualizationHistory);
+    }
+
+    public function startFresh(): void
     {
         $this->visualizationId = null;
         $this->isGenerating = false;
         $this->addedToEstimate = false;
         $this->uploadedPhoto = null;
+        $this->reuseImagePath = null;
+        $this->reuseImageDisk = null;
+        $this->prompt = '';
+        unset($this->visualizationHistory);
+    }
+
+    public function viewHistory(int $id): void
+    {
+        $query = ColorVisualization::where('id', $id);
+
+        if ($this->estimate?->exists) {
+            $query->where('estimate_id', $this->estimate->id);
+        } else {
+            $query->where('user_id', auth()->id());
+        }
+
+        $viz = $query->first();
+        if ($viz) {
+            $this->visualizationId = $viz->id;
+            $this->isGenerating = false;
+            $this->addedToEstimate = false;
+            unset($this->visualization);
+        }
+    }
+
+    public function reusePhoto(int $id): void
+    {
+        $query = ColorVisualization::where('id', $id);
+
+        if ($this->estimate?->exists) {
+            $query->where('estimate_id', $this->estimate->id);
+        } else {
+            $query->where('user_id', auth()->id());
+        }
+
+        $viz = $query->first();
+        if ($viz) {
+            $this->reuseImagePath = $viz->original_image_path;
+            $this->reuseImageDisk = $viz->disk;
+            $this->visualizationId = null;
+            $this->isGenerating = false;
+            $this->addedToEstimate = false;
+            $this->prompt = '';
+            $this->uploadedPhoto = null;
+            unset($this->visualizationHistory);
+        }
+    }
+
+    public function clearReuse(): void
+    {
+        $this->reuseImagePath = null;
+        $this->reuseImageDisk = null;
     }
 
     public function addToEstimate(): void
@@ -226,6 +319,7 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
             $viz = ColorVisualization::find($this->visualizationId);
             if ($viz && ($viz->isCompleted() || $viz->isFailed())) {
                 $this->isGenerating = false;
+                unset($this->visualizationHistory);
             }
         }
     }
@@ -248,14 +342,57 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
         </flux:text>
     </div>
 
+    {{-- Visualization History Strip --}}
+    @if($this->visualizationHistory->isNotEmpty())
+        <div class="mb-6">
+            <flux:heading size="sm" class="mb-2">{{ __('Previous Visualizations') }}</flux:heading>
+            <div class="flex gap-3 overflow-x-auto pb-2" style="scrollbar-width: thin;">
+                @foreach($this->visualizationHistory as $history)
+                    <button
+                        wire:key="history-{{ $history->id }}"
+                        wire:click="viewHistory({{ $history->id }})"
+                        class="shrink-0 group relative rounded-lg overflow-hidden border-2 transition-all hover:shadow-md
+                            {{ $visualizationId === $history->id ? 'border-purple-500 shadow-md' : 'border-zinc-200 dark:border-zinc-700' }}"
+                    >
+                        <img src="{{ storage_url($history->result_image_path, diskName: $history->disk) }}"
+                             alt="Visualization"
+                             class="h-20 w-28 object-cover" />
+                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors"></div>
+                    </button>
+                @endforeach
+            </div>
+        </div>
+    @endif
+
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {{-- Left Column: Upload & Prompt --}}
         <div class="space-y-6">
-            {{-- Photo Upload --}}
+            {{-- Photo Upload / Reuse Indicator --}}
             <div>
                 <flux:heading size="sm" class="mb-3">{{ __('Photo') }}</flux:heading>
 
-                @if ($uploadedPhoto)
+                @if ($reuseImagePath)
+                    {{-- Reusing a previous photo --}}
+                    <div class="relative rounded-lg border-2 border-purple-300 bg-purple-50/50 p-4 dark:border-purple-600 dark:bg-purple-950/20">
+                        <div class="flex items-center gap-4">
+                            <img src="{{ storage_url($reuseImagePath, diskName: $reuseImageDisk) }}"
+                                 alt="Reusing photo"
+                                 class="h-24 w-auto rounded-lg border border-zinc-200 dark:border-zinc-700" />
+                            <div class="flex-1">
+                                <flux:text class="font-medium">{{ __('Using previous photo') }}</flux:text>
+                                <flux:text class="text-sm text-zinc-500 dark:text-zinc-400 mt-0.5">{{ __('Describe your new color choices below.') }}</flux:text>
+                                <button
+                                    type="button"
+                                    wire:click="clearReuse"
+                                    class="mt-2 inline-flex items-center gap-1 text-xs text-red-600 hover:text-red-700 dark:text-red-400"
+                                >
+                                    <flux:icon.x-mark variant="micro" class="size-3" />
+                                    {{ __('Upload a different photo instead') }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                @elseif ($uploadedPhoto)
                     <div class="relative rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-700">
                         <img src="{{ $uploadedPhoto->temporaryUrl() }}" alt="Uploaded photo" class="w-full h-auto max-h-80 object-contain bg-zinc-100 dark:bg-zinc-800" />
                         <button
@@ -551,8 +688,11 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
 
                         {{-- Actions --}}
                         <div class="flex flex-wrap gap-3">
-                            <flux:button wire:click="regenerate" variant="ghost" icon="arrow-path">
-                                {{ __('New Visualization') }}
+                            <flux:button wire:click="tryDifferentColors" variant="primary" icon="paint-brush">
+                                {{ __('Try Different Colors') }}
+                            </flux:button>
+                            <flux:button wire:click="startFresh" variant="ghost" icon="photo">
+                                {{ __('Upload New Photo') }}
                             </flux:button>
                             <a href="{{ storage_url($this->visualization->result_image_path, diskName: $this->visualization->disk) }}" download class="inline-flex">
                                 <flux:button variant="ghost" icon="arrow-down-tray">
@@ -580,9 +720,14 @@ new #[Layout('layouts.app')] #[Title('Color Visualizer')] class extends Componen
                         <flux:text class="text-zinc-500 dark:text-zinc-400 mb-4">
                             {{ $this->visualization->error_message ?? __('Something went wrong. Please try again.') }}
                         </flux:text>
-                        <flux:button wire:click="regenerate" variant="primary" icon="arrow-path">
-                            {{ __('Try Again') }}
-                        </flux:button>
+                        <div class="flex justify-center gap-3">
+                            <flux:button wire:click="tryDifferentColors" variant="primary" icon="arrow-path">
+                                {{ __('Try Again (Same Photo)') }}
+                            </flux:button>
+                            <flux:button wire:click="startFresh" variant="ghost" icon="photo">
+                                {{ __('Upload New Photo') }}
+                            </flux:button>
+                        </div>
                     </div>
                 @else
                     {{-- Pending state (selected estimate photo, waiting for prompt) --}}
