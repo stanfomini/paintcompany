@@ -1,5 +1,6 @@
 <?php
 
+use App\Events\LiveEventChatMessageSent;
 use App\Models\ChatMessage;
 use App\Models\LiveEvent;
 use App\Models\LiveEventRegistration;
@@ -31,6 +32,30 @@ new #[Layout('components.layouts.public')] class extends Component
     public string $activeTab = 'chat';
 
     public string $chatMessage = '';
+
+    /**
+     * Register Echo listeners for real-time broadcasting.
+     * Uses the presence channel with guest auth for unauthenticated viewers.
+     * Replaces all wire:poll directives with event-driven updates via Reverb.
+     */
+    public function getListeners(): array
+    {
+        // Only listen when the viewer has joined the stream
+        if (! $this->hasJoined) {
+            return [];
+        }
+
+        return [
+            // Presence channel — chat messages from host and other viewers
+            "echo-presence:live-event.{$this->event->id},.chat.message" => 'onChatMessage',
+
+            // Presence channel — viewer count updates (from host)
+            "echo-presence:live-event.{$this->event->id},.viewer.count" => 'onViewerCountUpdated',
+
+            // Presence channel — question answered (from host)
+            "echo-presence:live-event.{$this->event->id},.question.answered" => 'onQuestionAnswered',
+        ];
+    }
 
     public function mount(LiveEvent $liveEvent): void
     {
@@ -126,14 +151,49 @@ new #[Layout('components.layouts.public')] class extends Component
             return;
         }
 
-        ChatMessage::create([
+        $message = ChatMessage::create([
             'thread_id' => $this->event->chat_thread_id,
             'content' => $this->viewerName.': '.$this->chatMessage,
             'type' => ChatMessage::TYPE_TEXT,
             'is_internal' => false,
         ]);
 
+        // Broadcast chat message to all participants via Reverb
+        try {
+            broadcast(new LiveEventChatMessageSent($message, $this->event->id));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to broadcast viewer chat message', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         $this->chatMessage = '';
+        unset($this->chatMessages);
+    }
+
+    /**
+     * Echo handler: new chat message received via broadcast.
+     */
+    public function onChatMessage(array $event): void
+    {
+        unset($this->chatMessages);
+    }
+
+    /**
+     * Echo handler: viewer count updated (informational for viewers).
+     */
+    public function onViewerCountUpdated(array $event): void
+    {
+        // Viewer page could display this if needed in the future
+    }
+
+    /**
+     * Echo handler: a question was answered by the host.
+     */
+    public function onQuestionAnswered(array $event): void
+    {
+        unset($this->answeredQuestions);
     }
 
     #[Computed]
@@ -250,6 +310,50 @@ new #[Layout('components.layouts.public')] class extends Component
     @section('robots', 'index, follow')
 
     {!! $this->structuredData !!}
+
+    {{-- Initialize Echo for guest viewers so Livewire Echo listeners work --}}
+    @if ($event->status === 'live' && $hasJoined)
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                // Guest viewers won't have Echo initialized (no meta[name="user-id"]).
+                // Create an Echo instance with the guest-friendly live event auth endpoint.
+                if (!window.Echo && window.Pusher) {
+                    const EchoLib = window.EchoLib || (typeof Echo !== 'undefined' ? Echo : null);
+                    if (EchoLib) {
+                        window.Echo = new EchoLib({
+                            broadcaster: 'reverb',
+                            key: @js(config('broadcasting.connections.reverb.key')),
+                            wsHost: @js(config('broadcasting.connections.reverb.options.host')),
+                            wsPort: {{ config('broadcasting.connections.reverb.options.port', 443) }},
+                            wssPort: {{ config('broadcasting.connections.reverb.options.port', 443) }},
+                            forceTLS: @js(config('broadcasting.connections.reverb.options.scheme', 'https') === 'https'),
+                            enabledTransports: ['ws', 'wss'],
+                            authEndpoint: '/broadcasting/live-event-auth',
+                            auth: {
+                                headers: { 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                                params: {
+                                    guest_id: 'guest-' + Math.random().toString(36).substring(2, 10),
+                                    guest_name: @js($viewerName),
+                                },
+                            },
+                        });
+                    }
+                } else if (window.Echo) {
+                    // User is authenticated but Echo may use the default auth endpoint.
+                    // For the presence channel, we need the live-event guest auth which
+                    // is more permissive. Replace Echo's auth config for this page.
+                    if (window.Echo.connector?.options) {
+                        window.Echo.connector.options.authEndpoint = '/broadcasting/live-event-auth';
+                        window.Echo.connector.options.auth = window.Echo.connector.options.auth || {};
+                        window.Echo.connector.options.auth.params = {
+                            ...(window.Echo.connector.options.auth.params || {}),
+                            guest_name: @js($viewerName),
+                        };
+                    }
+                }
+            });
+        </script>
+    @endif
 
     {{-- ==================== PRE-EVENT STATE ==================== --}}
     @if ($event->status === 'scheduled')
@@ -564,7 +668,7 @@ new #[Layout('components.layouts.public')] class extends Component
                             <div class="px-4 py-2 border-b border-zinc-800">
                                 <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Live Chat</h3>
                             </div>
-                            <div class="flex-1 overflow-y-auto px-4 py-2 space-y-1.5" wire:poll.3s="$refresh" id="desktop-chat-scroll">
+                            <div class="flex-1 overflow-y-auto px-4 py-2 space-y-1.5" id="desktop-chat-scroll">
                                 @foreach ($this->chatMessages as $msg)
                                     <div class="text-sm">
                                         <span class="text-zinc-300">{{ $msg->content }}</span>
@@ -663,7 +767,7 @@ new #[Layout('components.layouts.public')] class extends Component
                         </div>
 
                         {{-- Answered Questions --}}
-                        <div class="flex-1 overflow-y-auto p-4" wire:poll.5s="$refresh">
+                        <div class="flex-1 overflow-y-auto p-4">
                             <h3 class="text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-3">Answered Questions</h3>
                             @if ($this->answeredQuestions->isNotEmpty())
                                 <div class="space-y-3">
@@ -713,7 +817,7 @@ new #[Layout('components.layouts.public')] class extends Component
                         <div class="flex-1 overflow-y-auto">
                             {{-- Chat tab --}}
                             @if ($activeTab === 'chat')
-                                <div class="flex flex-col h-full" wire:poll.3s="$refresh">
+                                <div class="flex flex-col h-full">
                                     <div class="flex-1 overflow-y-auto px-4 py-2 space-y-1.5" id="mobile-chat-scroll">
                                         @foreach ($this->chatMessages as $msg)
                                             <div class="text-sm">
@@ -771,7 +875,7 @@ new #[Layout('components.layouts.public')] class extends Component
 
                             {{-- Q&A tab --}}
                             @if ($activeTab === 'qa')
-                                <div class="p-4 space-y-4" wire:poll.5s="$refresh">
+                                <div class="p-4 space-y-4">
                                     {{-- Submit question --}}
                                     <form wire:submit="submitQuestion" class="space-y-2">
                                         <textarea

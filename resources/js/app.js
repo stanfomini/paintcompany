@@ -29,6 +29,9 @@ window.loadLiveKit = async () => {
 
 window.Pusher = Pusher;
 
+// Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
+window.EchoLib = Echo;
+
 // Only initialize Echo if user is authenticated and Reverb is configured
 if (document.querySelector('meta[name="user-id"]')) {
     window.Echo = new Echo({

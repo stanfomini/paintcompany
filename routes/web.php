@@ -264,6 +264,10 @@ Route::livewire('/video-call-test/{room?}', 'video-call.test')
 Route::post('/broadcasting/video-call-auth', \App\Http\Controllers\VideoCallGuestAuthController::class)
     ->name('video-call.auth');
 
+// Live event channel auth — handles both logged-in users and guest viewers
+Route::post('/broadcasting/live-event-auth', \App\Http\Controllers\LiveEventGuestAuthController::class)
+    ->name('live-event.auth');
+
 // Guest recording invite (public, no auth - token serves as authentication)
 Route::livewire('/record/{token}', 'studio.public-recorder')
     ->name('recording.invite')

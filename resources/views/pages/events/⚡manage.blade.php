@@ -1,5 +1,8 @@
 <?php
 
+use App\Events\LiveEventChatMessageSent;
+use App\Events\LiveEventQuestionAnswered;
+use App\Events\LiveEventViewerCountUpdated;
 use App\Models\ChatMessage;
 use App\Models\LiveEvent;
 use App\Models\LiveEventQuestion;
@@ -33,6 +36,29 @@ class extends Component
 
     // Chat
     public string $chatMessage = '';
+
+    /**
+     * Register Echo listeners for real-time broadcasting.
+     * Replaces wire:poll with event-driven updates via Reverb.
+     */
+    public function getListeners(): array
+    {
+        return [
+            // Presence channel — chat messages from all participants
+            "echo-presence:live-event.{$this->event->id},.chat.message" => 'onChatMessage',
+
+            // Presence channel — viewer count updates
+            "echo-presence:live-event.{$this->event->id},.viewer.count" => 'onViewerCountUpdated',
+
+            // Presence channel — someone joined or left
+            "echo-presence:live-event.{$this->event->id},here" => 'onPresenceHere',
+            "echo-presence:live-event.{$this->event->id},joining" => 'onPresenceJoining',
+            "echo-presence:live-event.{$this->event->id},leaving" => 'onPresenceLeaving',
+
+            // Private host channel — new questions from viewers
+            "echo-private:live-event-host.{$this->event->id},.question.received" => 'onQuestionReceived',
+        ];
+    }
 
     public function boot(): void
     {
@@ -88,6 +114,16 @@ class extends Component
 
         app(LiveEventService::class)->answerQuestion($question);
 
+        // Notify viewers that a question was answered so they can refresh their list
+        try {
+            broadcast(new LiveEventQuestionAnswered($this->event->id, $questionId));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to broadcast question answered', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         unset($this->pendingQuestions, $this->answeredQuestions);
     }
 
@@ -136,10 +172,20 @@ class extends Component
             return;
         }
 
-        $count = app(LiveKitService::class)->getParticipantCount($this->event->livekit_room_name);
+        try {
+            $count = app(LiveKitService::class)->getParticipantCount($this->event->livekit_room_name);
 
-        // Subtract 1 for the host
-        $this->viewerCount = max(0, $count - 1);
+            // Subtract 1 for the host
+            $this->viewerCount = max(0, $count - 1);
+
+            // Broadcast the updated count to all viewers
+            broadcast(new LiveEventViewerCountUpdated($this->event->id, $this->viewerCount));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to refresh viewer count', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     public function sendChatMessage(): void
@@ -154,7 +200,7 @@ class extends Component
 
         $user = auth()->user();
 
-        ChatMessage::create([
+        $message = ChatMessage::create([
             'thread_id' => $this->event->chat_thread_id,
             'user_id' => $user->id,
             'content' => $user->name.': '.$this->chatMessage,
@@ -162,8 +208,66 @@ class extends Component
             'is_internal' => false,
         ]);
 
+        // Broadcast chat message to all viewers via Reverb
+        try {
+            broadcast(new LiveEventChatMessageSent($message, $this->event->id));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to broadcast chat message', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         $this->chatMessage = '';
         unset($this->chatMessages);
+    }
+
+    /**
+     * Echo handler: new chat message received via broadcast.
+     */
+    public function onChatMessage(array $event): void
+    {
+        unset($this->chatMessages);
+    }
+
+    /**
+     * Echo handler: viewer count updated via broadcast.
+     */
+    public function onViewerCountUpdated(array $event): void
+    {
+        $this->viewerCount = $event['count'] ?? $this->viewerCount;
+    }
+
+    /**
+     * Echo handler: presence channel reports who is here on initial join.
+     */
+    public function onPresenceHere(array $event): void
+    {
+        $this->refreshViewerCount();
+    }
+
+    /**
+     * Echo handler: someone joined the presence channel.
+     */
+    public function onPresenceJoining(array $event): void
+    {
+        $this->refreshViewerCount();
+    }
+
+    /**
+     * Echo handler: someone left the presence channel.
+     */
+    public function onPresenceLeaving(array $event): void
+    {
+        $this->refreshViewerCount();
+    }
+
+    /**
+     * Echo handler: new question received from a viewer.
+     */
+    public function onQuestionReceived(array $event): void
+    {
+        unset($this->pendingQuestions);
     }
 
     #[Computed]
@@ -361,7 +465,6 @@ class extends Component
                     connect(@js($livekitToken), @js($livekitUrl));
                 @endif
             })"
-            wire:poll.10s="refreshViewerCount"
             class="flex h-[calc(100vh-4rem)] flex-col lg:flex-row"
         >
             {{-- Left column: Video + Controls --}}
@@ -497,7 +600,6 @@ class extends Component
 
                         <div
                             class="flex-1 overflow-y-auto px-4 py-2 space-y-1"
-                            wire:poll.3s="$refresh"
                             x-data
                             x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
                             x-effect="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
