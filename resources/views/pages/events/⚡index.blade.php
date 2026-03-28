@@ -106,13 +106,13 @@ class extends Component
     </div>
 
     @if (session('success'))
-        <flux:callout variant="success" icon="check-circle" class="mb-4">
+        <flux:callout color="green" icon="check-circle" class="mb-4">
             <flux:callout.text>{{ session('success') }}</flux:callout.text>
         </flux:callout>
     @endif
 
     @if (session('error'))
-        <flux:callout variant="danger" icon="exclamation-triangle" class="mb-4">
+        <flux:callout color="red" icon="exclamation-triangle" class="mb-4">
             <flux:callout.text>{{ session('error') }}</flux:callout.text>
         </flux:callout>
     @endif
@@ -120,13 +120,13 @@ class extends Component
     {{-- Filters --}}
     <div class="mb-6 flex flex-wrap items-center gap-4">
         {{-- Status tabs --}}
-        <flux:tabs wire:model.live="status" variant="segmented">
-            <flux:tab name="all">{{ __('All') }}</flux:tab>
-            <flux:tab name="upcoming">{{ __('Upcoming') }}</flux:tab>
-            <flux:tab name="live">{{ __('Live') }}</flux:tab>
-            <flux:tab name="ended">{{ __('Ended') }}</flux:tab>
-            <flux:tab name="cancelled">{{ __('Cancelled') }}</flux:tab>
-        </flux:tabs>
+        <flux:radio.group wire:model.live="status" variant="segmented">
+            <flux:radio value="all" label="{{ __('All') }}" />
+            <flux:radio value="upcoming" label="{{ __('Upcoming') }}" />
+            <flux:radio value="live" label="{{ __('Live') }}" />
+            <flux:radio value="ended" label="{{ __('Ended') }}" />
+            <flux:radio value="cancelled" label="{{ __('Cancelled') }}" />
+        </flux:radio.group>
 
         {{-- Service area filter --}}
         <flux:select wire:model.live="serviceAreaId" placeholder="{{ __('All Areas') }}" class="w-48">
