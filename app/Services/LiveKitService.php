@@ -22,7 +22,8 @@ class LiveKitService
 
     public function __construct()
     {
-        $this->url = config('services.livekit.url');
+        // Convert wss:// to https:// for the HTTP API (RoomServiceClient uses HTTP, not WebSocket)
+        $this->url = str_replace(['wss://', 'ws://'], ['https://', 'http://'], config('services.livekit.url') ?? '');
         $this->apiKey = config('services.livekit.api_key');
         $this->apiSecret = config('services.livekit.api_secret');
     }
