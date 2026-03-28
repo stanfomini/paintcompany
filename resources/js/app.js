@@ -20,6 +20,13 @@ window.loadHtml2canvas = async () => {
     return window.html2canvas;
 };
 
+window.loadLiveKit = async () => {
+    if (!window.LiveKitClient) {
+        window.LiveKitClient = await import('livekit-client');
+    }
+    return window.LiveKitClient;
+};
+
 window.Pusher = Pusher;
 
 // Only initialize Echo if user is authenticated and Reverb is configured

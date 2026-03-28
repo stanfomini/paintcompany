@@ -654,7 +654,6 @@ class extends Component
     @endif
 </div>
 
-@push('scripts')
 <script>
     function cameraPreview() {
         return {
@@ -738,7 +737,7 @@ class extends Component
             async connect(token, url) {
                 try {
                     this.connectionError = null;
-                    const { Room, RoomEvent, VideoPresets } = await import('livekit-client');
+                    const { Room, RoomEvent, VideoPresets } = await window.loadLiveKit();
                     this.room = new Room({
                         adaptiveStream: true,
                         dynacast: true,
@@ -823,4 +822,3 @@ class extends Component
         };
     }
 </script>
-@endpush

@@ -9,7 +9,7 @@ use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
 
-new #[Layout('components.layouts.guest')] #[Title('Live Events | Painting Made Easy Denver')] class extends Component
+new #[Layout('components.layouts.public')] #[Title('Live Events | Painting Made Easy Denver')] class extends Component
 {
     #[Url(as: 'area')]
     public string $selectedArea = '';
@@ -111,9 +111,7 @@ new #[Layout('components.layouts.guest')] #[Title('Live Events | Painting Made E
     @section('canonical', route('live.index'))
     @section('robots', 'index, follow')
 
-    @push('structured_data')
     {!! $this->structuredData !!}
-    @endpush
 
     {{-- Hero Section --}}
     <section class="relative bg-brand-900 overflow-hidden">

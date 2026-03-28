@@ -10,7 +10,7 @@ use Livewire\Attributes\Layout;
 use Livewire\Attributes\Validate;
 use Livewire\Component;
 
-new #[Layout('components.layouts.guest')] class extends Component
+new #[Layout('components.layouts.public')] class extends Component
 {
     public LiveEvent $event;
 
@@ -245,9 +245,7 @@ new #[Layout('components.layouts.guest')] class extends Component
     @section('canonical', route('live.show', $event->slug))
     @section('robots', 'index, follow')
 
-    @push('structured_data')
     {!! $this->structuredData !!}
-    @endpush
 
     {{-- ==================== PRE-EVENT STATE ==================== --}}
     @if ($event->status === 'scheduled')
@@ -837,7 +835,7 @@ new #[Layout('components.layouts.guest')] class extends Component
 
                     async connect(token, url) {
                         try {
-                            const { Room, RoomEvent } = await import('livekit-client');
+                            const { Room, RoomEvent } = await window.loadLiveKit();
                             this.room = new Room();
 
                             this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
