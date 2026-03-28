@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ChatMessage;
 use App\Models\LiveEvent;
 use App\Models\LiveEventQuestion;
 use App\Models\LiveEventResource;
@@ -30,6 +31,9 @@ class extends Component
 
     public string $newResourceType = 'link';
 
+    // Chat
+    public string $chatMessage = '';
+
     public function boot(): void
     {
         if (auth()->user()?->type !== 'internal') {
@@ -39,7 +43,7 @@ class extends Component
 
     public function mount(LiveEvent $liveEvent): void
     {
-        $this->event = $liveEvent->load(['questions', 'resources', 'registrations', 'serviceArea', 'service', 'host']);
+        $this->event = $liveEvent->load(['questions', 'resources', 'registrations', 'serviceArea', 'service', 'host', 'chatThread']);
         $this->livekitUrl = config('services.livekit.url') ?? '';
 
         // Auto-generate host token if event is already live (page refresh while streaming)
@@ -136,6 +140,46 @@ class extends Component
 
         // Subtract 1 for the host
         $this->viewerCount = max(0, $count - 1);
+    }
+
+    public function sendChatMessage(): void
+    {
+        $this->validate([
+            'chatMessage' => 'required|string|max:500',
+        ]);
+
+        if (! $this->event->chat_thread_id) {
+            return;
+        }
+
+        $user = auth()->user();
+
+        ChatMessage::create([
+            'thread_id' => $this->event->chat_thread_id,
+            'user_id' => $user->id,
+            'content' => $user->name.': '.$this->chatMessage,
+            'type' => ChatMessage::TYPE_TEXT,
+            'is_internal' => false,
+        ]);
+
+        $this->chatMessage = '';
+        unset($this->chatMessages);
+    }
+
+    #[Computed]
+    public function chatMessages(): \Illuminate\Support\Collection
+    {
+        if (! $this->event->chat_thread_id) {
+            return collect();
+        }
+
+        return ChatMessage::where('thread_id', $this->event->chat_thread_id)
+            ->where('is_internal', false)
+            ->latest()
+            ->take(50)
+            ->get()
+            ->reverse()
+            ->values();
     }
 
     #[Computed]
@@ -379,20 +423,31 @@ class extends Component
                 {{-- Controls bar --}}
                 <div class="flex items-center justify-center gap-3 border-t border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
                     {{-- Toggle Audio --}}
-                    <button
-                        type="button"
-                        @click="toggleAudio()"
-                        class="flex size-12 items-center justify-center rounded-full transition-colors"
-                        :class="audioEnabled ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
-                        :title="audioEnabled ? '{{ __('Mute') }}' : '{{ __('Unmute') }}'"
-                    >
-                        <template x-if="audioEnabled">
-                            <flux:icon name="microphone" class="size-5" />
-                        </template>
-                        <template x-if="!audioEnabled">
-                            <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
-                        </template>
-                    </button>
+                    <div class="relative">
+                        <button
+                            type="button"
+                            @click="toggleAudio()"
+                            class="flex size-12 items-center justify-center rounded-full transition-colors"
+                            :class="audioEnabled ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
+                            :title="audioEnabled ? '{{ __('Mute') }}' : '{{ __('Unmute') }}'"
+                        >
+                            <template x-if="audioEnabled">
+                                <flux:icon name="microphone" class="size-5" />
+                            </template>
+                            <template x-if="!audioEnabled">
+                                <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+                            </template>
+                        </button>
+                        {{-- Audio active indicator --}}
+                        <span
+                            x-show="audioEnabled && connected"
+                            x-transition
+                            class="absolute -top-0.5 -right-0.5 flex size-3"
+                        >
+                            <span class="absolute inline-flex size-full animate-ping rounded-full bg-green-400 opacity-75"></span>
+                            <span class="relative inline-flex size-3 rounded-full bg-green-500"></span>
+                        </span>
+                    </div>
 
                     {{-- Toggle Video --}}
                     <button
@@ -425,9 +480,51 @@ class extends Component
                 </div>
             </div>
 
-            {{-- Right column: Q&A + Resources --}}
+            {{-- Right column: Chat + Q&A + Resources --}}
             <div class="flex w-full flex-col border-l border-zinc-200 dark:border-zinc-700 lg:w-96">
                 <div class="flex-1 overflow-y-auto">
+                    {{-- Live Chat --}}
+                    <div class="flex flex-col border-b border-zinc-200 dark:border-zinc-700" style="height: 280px;">
+                        <div class="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                            <flux:heading size="sm" class="flex items-center gap-2">
+                                <flux:icon name="chat-bubble-oval-left" variant="micro" class="text-green-500" />
+                                {{ __('Live Chat') }}
+                            </flux:heading>
+                            @if ($this->chatMessages->isNotEmpty())
+                                <flux:badge color="green" size="sm">{{ $this->chatMessages->count() }}</flux:badge>
+                            @endif
+                        </div>
+
+                        <div
+                            class="flex-1 overflow-y-auto px-4 py-2 space-y-1"
+                            wire:poll.3s="$refresh"
+                            x-data
+                            x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
+                            x-effect="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
+                        >
+                            @forelse ($this->chatMessages as $msg)
+                                <div wire:key="chat-{{ $msg->id }}" class="text-sm">
+                                    <span class="text-zinc-700 dark:text-zinc-300">{{ $msg->content }}</span>
+                                </div>
+                            @empty
+                                <div class="flex items-center justify-center h-full">
+                                    <flux:text class="text-sm text-zinc-400">{{ __('No messages yet. Chat will appear here.') }}</flux:text>
+                                </div>
+                            @endforelse
+                        </div>
+
+                        <form wire:submit="sendChatMessage" class="flex items-center gap-2 border-t border-zinc-200 px-4 py-2 dark:border-zinc-700">
+                            <flux:input
+                                wire:model="chatMessage"
+                                placeholder="{{ __('Type a message...') }}"
+                                size="sm"
+                                class="flex-1"
+                                maxlength="500"
+                            />
+                            <flux:button type="submit" size="sm" variant="primary" icon="paper-airplane" wire:loading.attr="disabled" />
+                        </form>
+                    </div>
+
                     {{-- Q&A Queue --}}
                     <div class="border-b border-zinc-200 p-4 dark:border-zinc-700">
                         <div class="mb-3 flex items-center justify-between">

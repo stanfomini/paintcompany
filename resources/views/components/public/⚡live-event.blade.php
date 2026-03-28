@@ -524,7 +524,7 @@ new #[Layout('components.layouts.public')] class extends Component
                     <div class="flex-1 flex flex-col min-w-0">
 
                         {{-- Video Player --}}
-                        <div class="relative bg-black aspect-video lg:aspect-auto lg:flex-1" x-ref="videoContainer">
+                        <div class="relative bg-black aspect-video lg:min-h-[400px] lg:flex-1" x-ref="videoContainer">
                             <div x-ref="videoPlayer" wire:ignore class="absolute inset-0 flex items-center justify-center">
                                 <template x-if="!connected">
                                     <div class="text-center">
