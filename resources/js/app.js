@@ -251,7 +251,11 @@ document.addEventListener('alpine:init', () => {
                     await room.localParticipant.setMicrophoneEnabled(true);
 
                     const videoEl = this.$refs.hostVideo;
+                    let videoAttached = false;
+
                     const attachVideo = (track) => {
+                        if (videoAttached) return;
+                        videoAttached = true;
                         const el = track.attach();
                         el.autoplay = true;
                         el.muted = true;
@@ -265,16 +269,16 @@ document.addEventListener('alpine:init', () => {
                         el.play().catch(() => {});
                     };
 
-                    // Attach any already-published video tracks
-                    room.localParticipant.videoTrackPublications.forEach((pub) => {
-                        if (pub.track) attachVideo(pub.track);
-                    });
-
-                    // Listen for new tracks (camera may publish after connect)
+                    // Attach video from whichever fires first — the forEach (already published)
+                    // or the event (publishing after connect). The flag prevents double-attach.
                     room.localParticipant.on('localTrackPublished', (pub) => {
                         if (pub.track && pub.track.kind === 'video') {
                             attachVideo(pub.track);
                         }
+                    });
+
+                    room.localParticipant.videoTrackPublications.forEach((pub) => {
+                        if (pub.track) attachVideo(pub.track);
                     });
 
                     this.connected = true;
