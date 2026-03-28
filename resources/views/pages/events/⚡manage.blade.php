@@ -223,7 +223,7 @@ class extends Component
 
             {{-- Camera preview --}}
             <div
-                x-data="cameraPreview()"
+                x-data="cameraPreview"
                 class="relative mb-6 overflow-hidden rounded-xl bg-black shadow-lg"
                 style="aspect-ratio: 16/9;"
             >
@@ -305,7 +305,7 @@ class extends Component
     {{-- ============================================================ --}}
     @elseif ($event->status === 'live')
         <div
-            x-data="livekitHost()"
+            x-data="livekitHost"
             x-init="$nextTick(() => {
                 // If we already have a token (page refresh while live), auto-connect
                 @if ($livekitToken)
@@ -654,171 +654,3 @@ class extends Component
     @endif
 </div>
 
-<script>
-    function cameraPreview() {
-        return {
-            stream: null,
-            hasStream: false,
-            audioLevel: 0,
-            audioContext: null,
-            analyser: null,
-            animationFrame: null,
-            cameraError: null,
-
-            init() {
-                this.startPreview();
-            },
-
-            async startPreview() {
-                try {
-                    this.stream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-                        audio: { echoCancellation: true, noiseSuppression: true }
-                    });
-                    this.$refs.preview.srcObject = this.stream;
-                    this.hasStream = true;
-                    this.setupAudioMeter();
-                } catch (err) {
-                    console.error('Camera access error:', err);
-                    this.cameraError = err.name === 'NotAllowedError'
-                        ? 'Camera access denied. Please allow camera access in your browser settings.'
-                        : 'Could not access camera: ' + err.message;
-                }
-            },
-
-            setupAudioMeter() {
-                try {
-                    this.audioContext = new AudioContext();
-                    const source = this.audioContext.createMediaStreamSource(this.stream);
-                    this.analyser = this.audioContext.createAnalyser();
-                    source.connect(this.analyser);
-                    this.analyser.fftSize = 256;
-                    this.monitorAudio();
-                } catch (err) {
-                    console.warn('Audio meter setup failed:', err);
-                }
-            },
-
-            monitorAudio() {
-                if (!this.analyser) return;
-                const data = new Uint8Array(this.analyser.frequencyBinCount);
-                this.analyser.getByteFrequencyData(data);
-                this.audioLevel = Math.max(...data) / 255;
-                this.animationFrame = requestAnimationFrame(() => this.monitorAudio());
-            },
-
-            destroy() {
-                if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
-                if (this.stream) this.stream.getTracks().forEach(t => t.stop());
-                if (this.audioContext) this.audioContext.close();
-            }
-        };
-    }
-
-    function livekitHost() {
-        return {
-            room: null,
-            connected: false,
-            audioEnabled: true,
-            videoEnabled: true,
-            viewerCount: 0,
-            connectionError: null,
-
-            init() {
-                this.$wire.on('livekit-connect', ({ token, url }) => {
-                    this.connect(token, url);
-                });
-
-                this.$wire.on('livekit-disconnect', () => {
-                    this.disconnect();
-                });
-            },
-
-            async connect(token, url) {
-                try {
-                    this.connectionError = null;
-                    const { Room, RoomEvent, VideoPresets } = await window.loadLiveKit();
-                    this.room = new Room({
-                        adaptiveStream: true,
-                        dynacast: true,
-                        videoCaptureDefaults: {
-                            resolution: VideoPresets.h720.resolution,
-                        },
-                    });
-
-                    this.room.on(RoomEvent.ParticipantConnected, () => this.updateViewerCount());
-                    this.room.on(RoomEvent.ParticipantDisconnected, () => this.updateViewerCount());
-                    this.room.on(RoomEvent.Disconnected, () => {
-                        this.connected = false;
-                    });
-
-                    await this.room.connect(url, token);
-                    await this.room.localParticipant.setCameraEnabled(true);
-                    await this.room.localParticipant.setMicrophoneEnabled(true);
-
-                    // Attach local video tracks
-                    const videoEl = this.$refs.hostVideo;
-                    this.room.localParticipant.videoTrackPublications.forEach((pub) => {
-                        if (pub.track) {
-                            const el = pub.track.attach();
-                            el.style.width = '100%';
-                            el.style.height = '100%';
-                            el.style.objectFit = 'cover';
-                            videoEl.innerHTML = '';
-                            videoEl.appendChild(el);
-                        }
-                    });
-
-                    // Listen for new local tracks being published
-                    this.room.localParticipant.on('localTrackPublished', (pub) => {
-                        if (pub.track && pub.track.kind === 'video') {
-                            const el = pub.track.attach();
-                            el.style.width = '100%';
-                            el.style.height = '100%';
-                            el.style.objectFit = 'cover';
-                            videoEl.innerHTML = '';
-                            videoEl.appendChild(el);
-                        }
-                    });
-
-                    this.connected = true;
-                    this.updateViewerCount();
-                } catch (err) {
-                    console.error('LiveKit connection error:', err);
-                    this.connectionError = 'Failed to connect: ' + err.message;
-                }
-            },
-
-            updateViewerCount() {
-                if (this.room) {
-                    this.viewerCount = this.room.remoteParticipants.size;
-                    this.$wire.set('viewerCount', this.viewerCount);
-                }
-            },
-
-            async toggleAudio() {
-                if (!this.room) return;
-                this.audioEnabled = !this.audioEnabled;
-                await this.room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
-            },
-
-            async toggleVideo() {
-                if (!this.room) return;
-                this.videoEnabled = !this.videoEnabled;
-                await this.room.localParticipant.setCameraEnabled(this.videoEnabled);
-            },
-
-            async disconnect() {
-                if (this.room) {
-                    await this.room.disconnect();
-                    this.room = null;
-                    this.connected = false;
-                }
-            },
-
-            destroy() {
-                this.disconnect();
-            }
-        };
-    }
-</script>
