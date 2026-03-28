@@ -220,6 +220,11 @@ document.addEventListener('alpine:init', () => {
             videoEnabled: true,
             viewerCount: 0,
             connectionError: null,
+            cameras: [],
+            microphones: [],
+            activeCameraId: '',
+            activeMicId: '',
+            showDeviceMenu: false,
 
             init() {
                 this.$wire.on('livekit-connect', ({ token, url }) => {
@@ -272,12 +277,15 @@ document.addEventListener('alpine:init', () => {
                         el.play().catch(() => {});
                     };
 
-                    // Attach video from whichever fires first — the forEach (already published)
-                    // or the event (publishing after connect). The flag prevents double-attach.
                     room.localParticipant.on('localTrackPublished', (pub) => {
                         if (pub.track && pub.track.kind === 'video') {
                             attachVideo(pub.track);
                         }
+                    });
+
+                    // Also handle track reattach after camera switch
+                    room.localParticipant.on('localTrackUnpublished', () => {
+                        videoAttached = false;
                     });
 
                     room.localParticipant.videoTrackPublications.forEach((pub) => {
@@ -286,9 +294,62 @@ document.addEventListener('alpine:init', () => {
 
                     this.connected = true;
                     this.updateViewerCount();
+                    await this.loadDevices();
                 } catch (err) {
                     console.error('LiveKit connection error:', err);
                     this.connectionError = 'Failed to connect: ' + err.message;
+                }
+            },
+
+            async loadDevices() {
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    this.cameras = devices
+                        .filter(d => d.kind === 'videoinput')
+                        .map(d => ({ id: d.deviceId, label: d.label || `Camera ${d.deviceId.slice(0, 4)}` }));
+                    this.microphones = devices
+                        .filter(d => d.kind === 'audioinput')
+                        .map(d => ({ id: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 4)}` }));
+
+                    // Set active device IDs from current tracks
+                    if (room) {
+                        room.localParticipant.videoTrackPublications.forEach(pub => {
+                            if (pub.track) {
+                                const settings = pub.track.mediaStreamTrack?.getSettings();
+                                if (settings?.deviceId) this.activeCameraId = settings.deviceId;
+                            }
+                        });
+                        room.localParticipant.audioTrackPublications.forEach(pub => {
+                            if (pub.track) {
+                                const settings = pub.track.mediaStreamTrack?.getSettings();
+                                if (settings?.deviceId) this.activeMicId = settings.deviceId;
+                            }
+                        });
+                    }
+                } catch (err) {
+                    console.warn('Failed to enumerate devices:', err);
+                }
+            },
+
+            async switchCamera(deviceId) {
+                if (!room || deviceId === this.activeCameraId) return;
+                try {
+                    await room.switchActiveDevice('videoinput', deviceId);
+                    this.activeCameraId = deviceId;
+                    this.showDeviceMenu = false;
+                } catch (err) {
+                    console.error('Failed to switch camera:', err);
+                }
+            },
+
+            async switchMicrophone(deviceId) {
+                if (!room || deviceId === this.activeMicId) return;
+                try {
+                    await room.switchActiveDevice('audioinput', deviceId);
+                    this.activeMicId = deviceId;
+                    this.showDeviceMenu = false;
+                } catch (err) {
+                    console.error('Failed to switch microphone:', err);
                 }
             },
 
