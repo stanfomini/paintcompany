@@ -344,15 +344,21 @@ document.addEventListener('alpine:init', () => {
                     room = new Room();
 
                     room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-                        const el = track.attach();
-                        el.autoplay = true;
-                        el.playsInline = true;
-                        el.style.width = '100%';
-                        el.style.height = '100%';
-                        el.style.objectFit = 'cover';
-                        if (this.$refs.videoPlayer) {
-                            this.$refs.videoPlayer.innerHTML = '';
-                            this.$refs.videoPlayer.appendChild(el);
+                        if (track.kind === 'video') {
+                            const el = track.attach();
+                            el.autoplay = true;
+                            el.playsInline = true;
+                            el.style.width = '100%';
+                            el.style.height = '100%';
+                            el.style.objectFit = 'cover';
+                            if (this.$refs.videoPlayer) {
+                                this.$refs.videoPlayer.innerHTML = '';
+                                this.$refs.videoPlayer.appendChild(el);
+                            }
+                        } else if (track.kind === 'audio') {
+                            const el = track.attach();
+                            el.style.display = 'none';
+                            document.body.appendChild(el);
                         }
                     });
 
