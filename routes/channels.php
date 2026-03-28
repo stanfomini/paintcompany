@@ -161,23 +161,6 @@ Broadcast::channel('video-call.{roomId}', function (User $user, string $roomId) 
 }, ['guards' => ['web', 'agent', 'customer', 'crew']]);
 
 /**
- * Authorize access to a streaming studio session.
- * Only the session owner and internal users can join.
- */
-Broadcast::channel('studio.{sessionId}', function (User $user, int $sessionId) {
-    $session = \App\Models\StreamSession::find($sessionId);
-    if (! $session) {
-        return false;
-    }
-
-    if ($user->isInternal() || $session->user_id === $user->id) {
-        return ['id' => $user->id, 'name' => $user->name];
-    }
-
-    return false;
-}, ['guards' => ['web', 'agent']]);
-
-/**
  * Authorize access to a deal channel.
  * Internal users, agents on the deal, or the deal's customer can listen.
  */
@@ -299,10 +282,19 @@ Broadcast::channel('live-event.{eventId}', function (User $user, int $eventId) {
 
 /**
  * Authorize access to the live event host channel.
- * Only the event's host user can listen on this private channel.
+ * Only the event's host user and internal co-producers can listen.
  */
 Broadcast::channel('live-event-host.{eventId}', function (User $user, int $eventId) {
     $event = \App\Models\LiveEvent::find($eventId);
 
-    return $event && $event->host_user_id === $user->id;
+    return $event && $user->isInternal();
+}, ['guards' => ['web']]);
+
+/**
+ * Authorize access to the event backstage channel.
+ * Internal users (host + co-producers) can access.
+ * Guest access is handled via custom auth endpoint.
+ */
+Broadcast::channel('event-backstage.{eventId}', function (User $user, int $eventId) {
+    return $user->isInternal() && \App\Models\LiveEvent::where('id', $eventId)->exists();
 }, ['guards' => ['web']]);

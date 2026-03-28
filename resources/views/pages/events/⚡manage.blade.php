@@ -1,12 +1,15 @@
 <?php
 
+use App\Events\BackstageChatMessageSent;
 use App\Events\LiveEventChatMessageSent;
 use App\Events\LiveEventQuestionAnswered;
 use App\Events\LiveEventViewerCountUpdated;
 use App\Models\ChatMessage;
 use App\Models\LiveEvent;
+use App\Models\LiveEventGuest;
 use App\Models\LiveEventQuestion;
 use App\Models\LiveEventResource;
+use App\Models\LiveEventSceneTemplate;
 use App\Services\LiveEventService;
 use App\Services\LiveKitService;
 use Livewire\Attributes\Computed;
@@ -36,6 +39,23 @@ class extends Component
 
     // Chat
     public string $chatMessage = '';
+
+    // Guest invite form
+    public string $guestName = '';
+
+    public string $guestEmail = '';
+
+    public string $guestPhone = '';
+
+    public string $guestInstructions = '';
+
+    // Scene/overlay editing
+    public string $overlayText = '';
+
+    public string $templateName = '';
+
+    // Backstage chat
+    public string $backstageMessage = '';
 
     /**
      * Register Echo listeners for real-time broadcasting.
@@ -309,6 +329,229 @@ class extends Component
     {
         return $this->event->registrations()->count();
     }
+
+    // ─── Guest Management ───────────────────────────────────────────
+
+    #[Computed]
+    public function guests(): \Illuminate\Database\Eloquent\Collection
+    {
+        return $this->event->guests()->orderBy('slot_number')->get();
+    }
+
+    public function inviteGuest(): void
+    {
+        $this->validate([
+            'guestName' => 'required|string|max:255',
+            'guestEmail' => 'nullable|email|max:255',
+            'guestPhone' => 'nullable|string|max:50',
+            'guestInstructions' => 'nullable|string|max:1000',
+        ]);
+
+        app(LiveEventService::class)->inviteGuest($this->event, [
+            'name' => $this->guestName,
+            'email' => $this->guestEmail ?: null,
+            'phone' => $this->guestPhone ?: null,
+            'instructions' => $this->guestInstructions ?: null,
+        ]);
+
+        $this->reset('guestName', 'guestEmail', 'guestPhone', 'guestInstructions');
+        unset($this->guests);
+    }
+
+    public function removeGuest(int $guestId): void
+    {
+        $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
+
+        app(LiveEventService::class)->removeGuest($guest);
+
+        unset($this->guests);
+    }
+
+    public function copyGuestLink(int $guestId): void
+    {
+        $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
+
+        $link = app(LiveEventService::class)->generateGuestLink($guest);
+
+        $this->dispatch('copy-to-clipboard', link: $link);
+    }
+
+    // ─── Scene & Overlay Management ─────────────────────────────────
+
+    #[Computed]
+    public function sceneTemplates(): \Illuminate\Database\Eloquent\Collection
+    {
+        return LiveEventSceneTemplate::where('user_id', auth()->id())->orderBy('name')->get();
+    }
+
+    public function updateScenes(array $scenes): void
+    {
+        $this->event->update(['scenes' => $scenes]);
+        $this->event->refresh();
+    }
+
+    public function updateOverlays(array $overlays): void
+    {
+        $this->event->update(['overlays' => $overlays]);
+        $this->event->refresh();
+    }
+
+    public function toggleFrameMode(): void
+    {
+        $this->event->update(['use_frame_mode' => ! $this->event->use_frame_mode]);
+        $this->event->refresh();
+    }
+
+    public function saveAsTemplate(): void
+    {
+        $this->validate([
+            'templateName' => 'required|string|max:255',
+        ]);
+
+        LiveEventSceneTemplate::create([
+            'user_id' => auth()->id(),
+            'name' => $this->templateName,
+            'scenes' => $this->event->getScenesOrDefaults(),
+            'overlays' => $this->event->overlays ?? [],
+        ]);
+
+        $this->reset('templateName');
+        unset($this->sceneTemplates);
+    }
+
+    public function loadTemplate(int $templateId): void
+    {
+        $template = LiveEventSceneTemplate::where('user_id', auth()->id())->findOrFail($templateId);
+
+        $this->event->update([
+            'scenes' => $template->scenes,
+            'overlays' => $template->overlays,
+        ]);
+        $this->event->refresh();
+    }
+
+    public function addTextOverlay(): void
+    {
+        $this->validate([
+            'overlayText' => 'required|string|max:500',
+        ]);
+
+        $overlays = $this->event->overlays ?? [];
+        $overlays[] = [
+            'type' => 'text',
+            'content' => $this->overlayText,
+            'x' => 0.05,
+            'y' => 0.9,
+        ];
+
+        $this->event->update(['overlays' => $overlays]);
+        $this->event->refresh();
+        $this->reset('overlayText');
+    }
+
+    public function removeOverlay(int $index): void
+    {
+        $overlays = $this->event->overlays ?? [];
+
+        if (isset($overlays[$index])) {
+            unset($overlays[$index]);
+            $this->event->update(['overlays' => array_values($overlays)]);
+            $this->event->refresh();
+        }
+    }
+
+    // ─── Backstage Chat ─────────────────────────────────────────────
+
+    #[Computed]
+    public function backstageMessages(): \Illuminate\Support\Collection
+    {
+        if (! $this->event->backstage_chat_thread_id) {
+            return collect();
+        }
+
+        return ChatMessage::where('thread_id', $this->event->backstage_chat_thread_id)
+            ->latest()
+            ->take(50)
+            ->get()
+            ->reverse()
+            ->values();
+    }
+
+    public function sendBackstageMessage(): void
+    {
+        $this->validate([
+            'backstageMessage' => 'required|string|max:500',
+        ]);
+
+        $service = app(LiveEventService::class);
+        $thread = $service->ensureBackstageChatThread($this->event);
+        $this->event->refresh();
+
+        $user = auth()->user();
+
+        $message = ChatMessage::create([
+            'thread_id' => $thread->id,
+            'user_id' => $user->id,
+            'content' => $user->name.': '.$this->backstageMessage,
+            'type' => ChatMessage::TYPE_TEXT,
+            'is_internal' => false,
+        ]);
+
+        try {
+            broadcast(new BackstageChatMessageSent($message, $this->event->id));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to broadcast backstage message', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        $this->backstageMessage = '';
+        unset($this->backstageMessages);
+    }
+
+    // ─── Live Production Controls ──────────────────────────────────
+
+    public function switchScene(int $index): void
+    {
+        $scenes = $this->event->getScenesOrDefaults();
+
+        if (! isset($scenes[$index])) {
+            return;
+        }
+
+        $this->event->update(['active_scene_index' => $index]);
+        $this->event->refresh();
+
+        $this->dispatch('scene-switched', scene: $scenes[$index], index: $index);
+    }
+
+    public function bringGuestOn(int $guestId): void
+    {
+        $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
+
+        app(LiveEventService::class)->markGuestLive($guest);
+
+        $this->dispatch('guest-bring-on', identity: $guest->getLivekitIdentity(), name: $guest->name);
+
+        unset($this->guests);
+    }
+
+    public function takeGuestOff(int $guestId): void
+    {
+        $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
+
+        app(LiveEventService::class)->markGuestOffAir($guest);
+
+        $this->dispatch('guest-take-off', identity: $guest->getLivekitIdentity());
+
+        unset($this->guests);
+    }
+
+    public function refreshGuestStatuses(): void
+    {
+        unset($this->guests);
+    }
 }; ?>
 
 <div>
@@ -410,6 +653,253 @@ class extends Component
                 </div>
             </div>
 
+            {{-- ============================================================ --}}
+            {{-- PRODUCTION SETUP --}}
+            {{-- ============================================================ --}}
+            <div class="mb-6">
+                <flux:heading size="lg" class="mb-4">{{ __('Production Setup') }}</flux:heading>
+
+                <div class="grid gap-6 lg:grid-cols-2">
+                    {{-- Left Column: Scenes + Overlays --}}
+                    <div class="space-y-6">
+                        {{-- Scene Configuration --}}
+                        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+                            <flux:heading size="sm" class="mb-3">{{ __('Scene Presets') }}</flux:heading>
+
+                            @php
+                                $defaultScenes = \App\Models\LiveEventSceneTemplate::defaultScenes();
+                                $currentScenes = $event->getScenesOrDefaults();
+                                $currentSceneNames = collect($currentScenes)->pluck('name')->toArray();
+                                $sceneIcons = [
+                                    'Solo' => ['slots' => 1, 'layout' => 'full'],
+                                    'Interview' => ['slots' => 2, 'layout' => 'split'],
+                                    'Guest Spotlight' => ['slots' => 1, 'layout' => 'full-guest'],
+                                    'Screen Share' => ['slots' => 1, 'layout' => 'screen'],
+                                    'Picture-in-Picture' => ['slots' => 2, 'layout' => 'pip'],
+                                ];
+                            @endphp
+
+                            <div class="grid grid-cols-3 gap-2 sm:grid-cols-5">
+                                @foreach ($defaultScenes as $index => $scene)
+                                    @php $layout = $sceneIcons[$scene['name']]['layout'] ?? 'full'; @endphp
+                                    <button
+                                        type="button"
+                                        wire:click="updateScenes(@js([$scene]))"
+                                        class="group flex flex-col items-center rounded-lg border-2 p-3 text-center transition-all
+                                            {{ in_array($scene['name'], $currentSceneNames) ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-zinc-200 bg-zinc-50 hover:border-zinc-300 dark:border-zinc-600 dark:bg-zinc-900 dark:hover:border-zinc-500' }}"
+                                    >
+                                        {{-- Visual layout representation --}}
+                                        <div class="mb-2 flex h-10 w-full items-end justify-center gap-0.5">
+                                            @if ($layout === 'full')
+                                                <div class="h-full w-full rounded bg-blue-500/60"></div>
+                                            @elseif ($layout === 'split')
+                                                <div class="h-full w-1/2 rounded-l bg-blue-500/60"></div>
+                                                <div class="h-full w-1/2 rounded-r bg-emerald-500/60"></div>
+                                            @elseif ($layout === 'full-guest')
+                                                <div class="h-full w-full rounded bg-emerald-500/60"></div>
+                                            @elseif ($layout === 'screen')
+                                                <div class="h-full w-full rounded bg-purple-500/60"></div>
+                                            @elseif ($layout === 'pip')
+                                                <div class="relative h-full w-full rounded bg-emerald-500/60">
+                                                    <div class="absolute bottom-0.5 right-0.5 h-3 w-4 rounded-sm bg-blue-500/80"></div>
+                                                </div>
+                                            @endif
+                                        </div>
+                                        <span class="text-xs font-medium text-zinc-700 dark:text-zinc-300">{{ $scene['name'] }}</span>
+                                    </button>
+                                @endforeach
+                            </div>
+
+                            {{-- Templates --}}
+                            @if ($this->sceneTemplates->isNotEmpty())
+                                <div class="mt-4" x-data="{ selectedTemplate: '' }">
+                                    <div class="flex items-center gap-2">
+                                        <flux:select x-model="selectedTemplate" size="sm" class="flex-1" placeholder="{{ __('Load template...') }}">
+                                            @foreach ($this->sceneTemplates as $template)
+                                                <flux:select.option value="{{ $template->id }}">{{ $template->name }}</flux:select.option>
+                                            @endforeach
+                                        </flux:select>
+                                        <flux:button size="sm" variant="ghost" icon="arrow-down-tray" x-on:click="if (selectedTemplate) $wire.loadTemplate(parseInt(selectedTemplate))">
+                                            {{ __('Load') }}
+                                        </flux:button>
+                                    </div>
+                                </div>
+                            @endif
+
+                            {{-- Save as template --}}
+                            <div class="mt-3 flex items-center gap-2">
+                                <flux:input wire:model="templateName" placeholder="{{ __('Template name...') }}" size="sm" class="flex-1" />
+                                <flux:button size="sm" variant="ghost" icon="bookmark" wire:click="saveAsTemplate" wire:loading.attr="disabled">
+                                    {{ __('Save') }}
+                                </flux:button>
+                            </div>
+                            @error('templateName') <span class="mt-1 text-xs text-red-500">{{ $message }}</span> @enderror
+                        </div>
+
+                        {{-- Overlay Editor --}}
+                        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+                            <flux:heading size="sm" class="mb-3">{{ __('Overlays') }}</flux:heading>
+
+                            {{-- Current overlays --}}
+                            @if (! empty($event->overlays))
+                                <div class="mb-3 space-y-2">
+                                    @foreach ($event->overlays as $index => $overlay)
+                                        <div class="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
+                                            <span class="text-sm text-zinc-700 dark:text-zinc-300 truncate">
+                                                <flux:badge size="sm" color="zinc" class="mr-1">{{ ucfirst($overlay['type'] ?? 'text') }}</flux:badge>
+                                                {{ $overlay['content'] ?? '' }}
+                                            </span>
+                                            <flux:button size="xs" variant="ghost" icon="trash" wire:click="removeOverlay({{ $index }})" />
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @else
+                                <flux:text class="mb-3 text-sm">{{ __('No overlays configured.') }}</flux:text>
+                            @endif
+
+                            {{-- Add text overlay --}}
+                            <form wire:submit="addTextOverlay" class="flex items-center gap-2">
+                                <flux:input wire:model="overlayText" placeholder="{{ __('Overlay text...') }}" size="sm" class="flex-1" />
+                                <flux:button type="submit" size="sm" variant="primary" icon="plus" wire:loading.attr="disabled">
+                                    {{ __('Add') }}
+                                </flux:button>
+                            </form>
+                            @error('overlayText') <span class="mt-1 text-xs text-red-500">{{ $message }}</span> @enderror
+
+                            {{-- Frame mode toggle --}}
+                            <div class="mt-4 flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900">
+                                <div>
+                                    <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ __('Frame Mode') }}</span>
+                                    <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Add decorative frame around video') }}</p>
+                                </div>
+                                <flux:switch wire:click="toggleFrameMode" :checked="$event->use_frame_mode" />
+                            </div>
+                        </div>
+                    </div>
+
+                    {{-- Right Column: Guest Management --}}
+                    <div class="space-y-6">
+                        {{-- Guest Invite Panel --}}
+                        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+                            <flux:heading size="sm" class="mb-3">{{ __('Guest Management') }}</flux:heading>
+
+                            {{-- Invite form --}}
+                            <form wire:submit="inviteGuest" class="space-y-3">
+                                <flux:input wire:model="guestName" label="{{ __('Name') }}" placeholder="{{ __('Guest name') }}" size="sm" required />
+                                <div class="grid grid-cols-2 gap-2">
+                                    <flux:input wire:model="guestEmail" label="{{ __('Email') }}" placeholder="{{ __('email@example.com') }}" size="sm" type="email" />
+                                    <flux:input wire:model="guestPhone" label="{{ __('Phone') }}" placeholder="{{ __('(555) 123-4567') }}" size="sm" />
+                                </div>
+                                <flux:textarea wire:model="guestInstructions" label="{{ __('Instructions') }}" placeholder="{{ __('Notes for the guest...') }}" rows="2" size="sm" />
+                                <flux:button type="submit" size="sm" variant="primary" icon="user-plus" wire:loading.attr="disabled" class="w-full">
+                                    <span wire:loading.remove wire:target="inviteGuest">{{ __('Invite Guest') }}</span>
+                                    <span wire:loading wire:target="inviteGuest">{{ __('Inviting...') }}</span>
+                                </flux:button>
+                                @error('guestName') <span class="text-xs text-red-500">{{ $message }}</span> @enderror
+                                @error('guestEmail') <span class="text-xs text-red-500">{{ $message }}</span> @enderror
+                            </form>
+
+                            {{-- Guest list --}}
+                            @if ($this->guests->isNotEmpty())
+                                <div
+                                    class="mt-4 space-y-2"
+                                    x-data
+                                    x-on:copy-to-clipboard.window="if ($event.detail.link) { navigator.clipboard.writeText($event.detail.link); $flux.toast('{{ __('Link copied!') }}') }"
+                                >
+                                    @foreach ($this->guests as $guest)
+                                        <div wire:key="guest-{{ $guest->id }}" class="flex items-center justify-between rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                                            <div class="flex items-center gap-2 min-w-0">
+                                                {{-- Status indicator --}}
+                                                @if ($guest->isConnected() || $guest->isLive())
+                                                    <span class="flex size-2.5 shrink-0">
+                                                        <span class="absolute inline-flex size-2.5 animate-ping rounded-full bg-green-400 opacity-75"></span>
+                                                        <span class="relative inline-flex size-2.5 rounded-full bg-green-500"></span>
+                                                    </span>
+                                                @else
+                                                    <span class="inline-flex size-2.5 shrink-0 rounded-full bg-zinc-300 dark:bg-zinc-600"></span>
+                                                @endif
+
+                                                <div class="min-w-0">
+                                                    <span class="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate block">{{ $guest->name }}</span>
+                                                    @if ($guest->slot_number)
+                                                        <span class="text-xs text-zinc-400">{{ __('Slot :num', ['num' => $guest->slot_number]) }}</span>
+                                                    @endif
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <flux:badge size="sm" :color="match($guest->status) {
+                                                    'connected' => 'green',
+                                                    'live' => 'red',
+                                                    'disconnected' => 'zinc',
+                                                    default => 'blue',
+                                                }">
+                                                    {{ ucfirst($guest->status) }}
+                                                </flux:badge>
+                                                <flux:button size="xs" variant="ghost" icon="link" wire:click="copyGuestLink({{ $guest->id }})" title="{{ __('Copy invite link') }}" />
+                                                <flux:button
+                                                    size="xs"
+                                                    variant="ghost"
+                                                    icon="trash"
+                                                    wire:click="removeGuest({{ $guest->id }})"
+                                                    wire:confirm="{{ __('Remove this guest?') }}"
+                                                />
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @else
+                                <div class="mt-4 rounded-lg bg-zinc-50 p-4 text-center dark:bg-zinc-900">
+                                    <flux:icon name="user-group" class="mx-auto mb-2 size-6 text-zinc-400" />
+                                    <flux:text class="text-sm">{{ __('No guests invited yet.') }}</flux:text>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Backstage Chat (full width) --}}
+                @if ($this->guests->where('status', 'connected')->isNotEmpty() || $event->backstage_chat_thread_id)
+                    <div class="mt-6 rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+                        <div class="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-700">
+                            <flux:heading size="sm" class="flex items-center gap-2">
+                                <flux:icon name="chat-bubble-left-right" variant="micro" class="text-amber-500" />
+                                {{ __('Backstage Chat') }}
+                            </flux:heading>
+                            @if ($this->backstageMessages->isNotEmpty())
+                                <flux:badge color="amber" size="sm">{{ $this->backstageMessages->count() }}</flux:badge>
+                            @endif
+                        </div>
+
+                        <div
+                            class="h-48 overflow-y-auto px-5 py-3 space-y-1"
+                            x-data
+                            x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
+                        >
+                            @forelse ($this->backstageMessages as $msg)
+                                <div wire:key="bs-{{ $msg->id }}" class="text-sm">
+                                    <span class="text-zinc-700 dark:text-zinc-300">{{ $msg->content }}</span>
+                                </div>
+                            @empty
+                                <div class="flex items-center justify-center h-full">
+                                    <flux:text class="text-sm text-zinc-400">{{ __('Backstage chat — communicate with guests before going live.') }}</flux:text>
+                                </div>
+                            @endforelse
+                        </div>
+
+                        <form wire:submit="sendBackstageMessage" class="flex items-center gap-2 border-t border-zinc-200 px-5 py-3 dark:border-zinc-700">
+                            <flux:input
+                                wire:model="backstageMessage"
+                                placeholder="{{ __('Message your guests...') }}"
+                                size="sm"
+                                class="flex-1"
+                                maxlength="500"
+                            />
+                            <flux:button type="submit" size="sm" variant="primary" icon="paper-airplane" wire:loading.attr="disabled" />
+                        </form>
+                    </div>
+                @endif
+            </div>
+
             {{-- Go Live button --}}
             <flux:button
                 wire:click="goLive"
@@ -454,38 +944,49 @@ class extends Component
         </div>
 
     {{-- ============================================================ --}}
-    {{-- LIVE STATE --}}
+    {{-- LIVE STATE — Production Studio --}}
     {{-- ============================================================ --}}
     @elseif ($event->status === 'live')
+        @php
+            $scenes = $event->getScenesOrDefaults();
+            $activeSceneIndex = $event->active_scene_index ?? 0;
+            $activeScene = $scenes[$activeSceneIndex] ?? $scenes[0] ?? null;
+            $overlays = $event->overlays ?? [];
+            $liveGuests = $this->guests->where('status', 'live');
+            $connectedGuests = $this->guests->whereIn('status', ['connected', 'live']);
+        @endphp
         <div
-            x-data="livekitHost"
+            x-data="livekitProducer"
             x-init="$nextTick(() => {
-                // If we already have a token (page refresh while live), auto-connect
                 @if ($livekitToken)
                     connect(@js($livekitToken), @js($livekitUrl));
                 @endif
+                activeSceneIndex = @js($activeSceneIndex);
+                scenes = @js($scenes);
+                overlayConfigs = @js($overlays);
+                frameModeEnabled = @js($event->use_frame_mode);
             })"
             class="flex h-[calc(100vh-4rem)] flex-col lg:flex-row"
         >
-            {{-- Left column: Video + Controls --}}
+            {{-- Left column: Video + Feeds + Scenes + Controls --}}
             <div class="flex flex-1 flex-col overflow-hidden">
                 {{-- Header bar --}}
-                <div class="flex items-center justify-between border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
+                <div class="flex items-center justify-between border-b border-zinc-200 bg-zinc-900 px-4 py-2">
                     <div class="flex items-center gap-3">
                         <span class="relative flex size-3">
                             <span class="absolute inline-flex size-full animate-ping rounded-full bg-red-400 opacity-75"></span>
                             <span class="relative inline-flex size-3 rounded-full bg-red-500"></span>
                         </span>
-                        <flux:heading size="sm">{{ $event->title }}</flux:heading>
+                        <flux:heading size="sm" class="text-white">{{ $event->title }}</flux:heading>
                         <flux:badge color="red" size="sm">{{ __('LIVE') }}</flux:badge>
                     </div>
                     <div class="flex items-center gap-3">
-                        <span class="flex items-center gap-1 text-sm text-zinc-500 dark:text-zinc-400">
+                        <span class="flex items-center gap-1 text-sm text-zinc-400">
                             <flux:icon name="eye" variant="micro" />
                             <span x-text="viewerCount">{{ $viewerCount }}</span> {{ __('viewers') }}
                         </span>
                         @if ($event->started_at)
-                            <span class="text-sm text-zinc-500 dark:text-zinc-400"
+                            <span class="text-sm font-mono text-zinc-400"
                                 x-data="{ elapsed: '' }"
                                 x-init="
                                     const started = new Date(@js($event->started_at->toIso8601String()));
@@ -500,38 +1001,167 @@ class extends Component
                                 x-text="elapsed"
                             ></span>
                         @endif
-                        <a href="{{ route('live.show', $event->slug) }}" target="_blank" class="text-xs text-blue-500 hover:text-blue-600 underline">{{ __('Public Page') }}</a>
+                        <a href="{{ route('live.show', $event->slug) }}" target="_blank" class="text-xs text-blue-400 hover:text-blue-300 underline">{{ __('Public Page') }}</a>
                     </div>
                 </div>
 
-                {{-- Video area --}}
+                {{-- Main Preview Area --}}
                 <div class="relative flex-1 bg-black">
-                    <div x-ref="hostVideo" wire:ignore class="flex h-full w-full items-center justify-center">
-                        {{-- LiveKit will attach video elements here — wire:ignore prevents Livewire morph from destroying them --}}
+                    {{-- Canvas compositor output (what viewers see when frame mode is on) --}}
+                    <canvas
+                        x-ref="compositorCanvas"
+                        x-show="frameModeEnabled"
+                        wire:ignore
+                        class="h-full w-full object-contain"
+                        width="1280"
+                        height="720"
+                    ></canvas>
+
+                    {{-- Raw camera view (when frame mode is off) --}}
+                    <div x-ref="hostVideo" x-show="!frameModeEnabled" wire:ignore class="flex h-full w-full items-center justify-center">
                         <div x-show="!connected" class="flex flex-col items-center justify-center">
                             <div class="mb-4 size-20 animate-pulse rounded-full bg-zinc-700"></div>
                             <span class="text-sm text-zinc-400">{{ __('Connecting to stream...') }}</span>
                         </div>
                     </div>
 
-                    {{-- Connection error --}}
-                    <div x-show="connectionError" class="absolute inset-0 flex items-center justify-center bg-black/80">
+                    {{-- Connection error overlay --}}
+                    <div x-show="connectionError" x-cloak class="absolute inset-0 flex items-center justify-center bg-black/80">
                         <div class="text-center">
                             <flux:icon name="exclamation-triangle" class="mx-auto mb-2 size-8 text-red-400" />
                             <span class="text-sm text-red-400" x-text="connectionError"></span>
                         </div>
                     </div>
+
+                    {{-- Frame mode badge --}}
+                    <div x-show="frameModeEnabled && connected" x-cloak class="absolute top-3 left-3">
+                        <span class="rounded bg-purple-600/80 px-2 py-0.5 text-xs font-medium text-white">{{ __('FRAME MODE') }}</span>
+                    </div>
+
+                    {{-- Active scene label --}}
+                    <div x-show="connected" x-cloak class="absolute top-3 right-3">
+                        <span class="rounded bg-black/60 px-2 py-0.5 text-xs text-zinc-300" x-text="scenes[activeSceneIndex]?.name ?? 'Solo'"></span>
+                    </div>
                 </div>
 
+                {{-- Feed Thumbnail Row --}}
+                <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-900 px-3 py-2" wire:ignore>
+                    {{-- Host camera thumbnail --}}
+                    <div class="shrink-0">
+                        <div
+                            x-ref="hostThumb"
+                            class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                            :class="isFeedInScene('host') ? 'border-green-500' : 'border-zinc-600'"
+                        >
+                            <div class="absolute inset-0 flex items-center justify-center">
+                                <span class="text-[10px] text-zinc-500">{{ __('Loading...') }}</span>
+                            </div>
+                        </div>
+                        <span class="mt-0.5 block text-center text-[10px] font-medium text-zinc-400">{{ __('You') }}</span>
+                    </div>
+
+                    {{-- Guest feed thumbnails --}}
+                    <template x-for="(feed, identity) in guestFeeds" :key="identity">
+                        <div class="shrink-0">
+                            <div
+                                class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                                :class="isFeedInScene(identity) ? 'border-green-500' : 'border-zinc-600'"
+                                x-ref-dynamic
+                            >
+                                <video x-ref-dynamic :srcObject="feed.stream" autoplay muted playsinline class="h-full w-full object-cover"></video>
+                            </div>
+                            <span class="mt-0.5 block text-center text-[10px] font-medium text-zinc-400" x-text="feed.name"></span>
+                        </div>
+                    </template>
+
+                    {{-- Screen share thumbnail --}}
+                    <div x-show="screenStream" x-cloak class="shrink-0">
+                        <div
+                            class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                            :class="isFeedInScene('screen') ? 'border-green-500' : 'border-zinc-600'"
+                        >
+                            <video x-ref="screenThumb" autoplay muted playsinline class="h-full w-full object-cover"></video>
+                        </div>
+                        <span class="mt-0.5 block text-center text-[10px] font-medium text-purple-400">{{ __('Screen') }}</span>
+                    </div>
+                </div>
+
+                {{-- Scene Switcher Bar --}}
+                <div class="flex items-center gap-1.5 border-t border-zinc-700 bg-zinc-900 px-3 py-2">
+                    <span class="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Scenes') }}</span>
+                    @foreach ($scenes as $index => $scene)
+                        <button
+                            type="button"
+                            wire:click="switchScene({{ $index }})"
+                            class="rounded px-3 py-1.5 text-xs font-medium transition-colors"
+                            :class="activeSceneIndex === {{ $index }}
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
+                        >
+                            {{ $scene['name'] }}
+                        </button>
+                    @endforeach
+                </div>
+
+                {{-- Guest Controls (below scene switcher) --}}
+                @if ($this->guests->isNotEmpty())
+                    <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2">
+                        <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Guests') }}</span>
+                        @foreach ($this->guests as $guest)
+                            <div wire:key="live-guest-{{ $guest->id }}" class="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1.5">
+                                <span class="text-xs font-medium text-zinc-300">{{ $guest->name }}</span>
+                                <flux:badge size="sm" :color="match($guest->status) {
+                                    'connected' => 'amber',
+                                    'live' => 'green',
+                                    'disconnected' => 'zinc',
+                                    default => 'zinc',
+                                }">
+                                    {{ ucfirst($guest->status) }}
+                                </flux:badge>
+                                @if ($guest->isConnected())
+                                    <flux:button size="xs" variant="primary" wire:click="bringGuestOn({{ $guest->id }})">
+                                        {{ __('Bring On') }}
+                                    </flux:button>
+                                @elseif ($guest->isLive())
+                                    <flux:button size="xs" variant="ghost" wire:click="takeGuestOff({{ $guest->id }})">
+                                        {{ __('Take Off') }}
+                                    </flux:button>
+                                @endif
+                            </div>
+                        @endforeach
+                        <flux:button size="xs" variant="ghost" icon="arrow-path" wire:click="refreshGuestStatuses" class="shrink-0" title="{{ __('Refresh') }}" />
+                    </div>
+                @endif
+
+                {{-- Overlay Quick Controls --}}
+                @if (! empty($overlays))
+                    <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-1.5">
+                        <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Overlays') }}</span>
+                        @foreach ($overlays as $idx => $overlay)
+                            <div class="flex shrink-0 items-center gap-1 rounded bg-zinc-900 px-2 py-1">
+                                <span class="max-w-[120px] truncate text-[11px] text-zinc-400">{{ $overlay['content'] ?? $overlay['type'] }}</span>
+                                <button
+                                    type="button"
+                                    @click="toggleOverlayVisibility({{ $idx }})"
+                                    class="rounded p-0.5 transition-colors"
+                                    :class="overlayVisible[{{ $idx }}] !== false ? 'text-green-400 hover:text-green-300' : 'text-zinc-600 hover:text-zinc-500'"
+                                >
+                                    <flux:icon name="eye" variant="micro" class="size-3.5" />
+                                </button>
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+
                 {{-- Controls bar --}}
-                <div class="flex items-center justify-center gap-3 border-t border-zinc-200 bg-white px-4 py-3 dark:border-zinc-700 dark:bg-zinc-800">
+                <div class="flex items-center justify-center gap-3 border-t border-zinc-700 bg-zinc-900 px-4 py-3">
                     {{-- Toggle Audio --}}
                     <div class="relative">
                         <button
                             type="button"
                             @click="toggleAudio()"
-                            class="flex size-12 items-center justify-center rounded-full transition-colors"
-                            :class="audioEnabled ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
+                            class="flex size-11 items-center justify-center rounded-full transition-colors"
+                            :class="audioEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
                             :title="audioEnabled ? '{{ __('Mute') }}' : '{{ __('Unmute') }}'"
                         >
                             <template x-if="audioEnabled">
@@ -541,7 +1171,6 @@ class extends Component
                                 <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
                             </template>
                         </button>
-                        {{-- Audio active indicator --}}
                         <span
                             x-show="audioEnabled && connected"
                             x-transition
@@ -556,8 +1185,8 @@ class extends Component
                     <button
                         type="button"
                         @click="toggleVideo()"
-                        class="flex size-12 items-center justify-center rounded-full transition-colors"
-                        :class="videoEnabled ? 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
+                        class="flex size-11 items-center justify-center rounded-full transition-colors"
+                        :class="videoEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
                         :title="videoEnabled ? '{{ __('Turn off camera') }}' : '{{ __('Turn on camera') }}'"
                     >
                         <template x-if="videoEnabled">
@@ -567,6 +1196,30 @@ class extends Component
                             <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18" /></svg>
                         </template>
                     </button>
+
+                    {{-- Screen Share --}}
+                    <button
+                        type="button"
+                        @click="toggleScreenShare()"
+                        class="flex size-11 items-center justify-center rounded-full transition-colors"
+                        :class="screenStream ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
+                        :title="screenStream ? '{{ __('Stop sharing') }}' : '{{ __('Share screen') }}'"
+                    >
+                        <flux:icon name="computer-desktop" class="size-5" />
+                    </button>
+
+                    {{-- Frame Mode Toggle --}}
+                    <button
+                        type="button"
+                        @click="toggleFrameMode()"
+                        class="flex size-11 items-center justify-center rounded-full transition-colors"
+                        :class="frameModeEnabled ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
+                        :title="frameModeEnabled ? '{{ __('Switch to camera') }}' : '{{ __('Switch to frame mode') }}'"
+                    >
+                        <flux:icon name="photo" class="size-5" />
+                    </button>
+
+                    <div class="mx-2 h-6 w-px bg-zinc-700"></div>
 
                     {{-- End Stream --}}
                     <flux:button
@@ -583,21 +1236,50 @@ class extends Component
                 </div>
             </div>
 
-            {{-- Right column: Chat + Q&A + Resources --}}
-            <div class="flex w-full flex-col border-l border-zinc-200 dark:border-zinc-700 lg:w-96">
-                <div class="flex-1 overflow-y-auto">
-                    {{-- Live Chat --}}
-                    <div class="flex flex-col border-b border-zinc-200 dark:border-zinc-700" style="height: 280px;">
-                        <div class="flex items-center justify-between px-4 py-2 border-b border-zinc-200 dark:border-zinc-700">
-                            <flux:heading size="sm" class="flex items-center gap-2">
-                                <flux:icon name="chat-bubble-oval-left" variant="micro" class="text-green-500" />
-                                {{ __('Live Chat') }}
-                            </flux:heading>
-                            @if ($this->chatMessages->isNotEmpty())
-                                <flux:badge color="green" size="sm">{{ $this->chatMessages->count() }}</flux:badge>
-                            @endif
-                        </div>
+            {{-- Right column: Tabbed sidebar --}}
+            <div class="flex w-full flex-col border-l border-zinc-200 dark:border-zinc-700 lg:w-96" x-data="{ activeTab: 'chat' }">
+                {{-- Tab bar --}}
+                <div class="flex border-b border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+                    <button type="button" @click="activeTab = 'chat'"
+                        class="flex-1 px-3 py-2.5 text-xs font-medium transition-colors"
+                        :class="activeTab === 'chat' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                    >
+                        <flux:icon name="chat-bubble-oval-left" variant="micro" class="mr-1 inline size-3.5" />
+                        {{ __('Chat') }}
+                        @if ($this->chatMessages->isNotEmpty())
+                            <flux:badge color="green" size="sm" class="ml-1">{{ $this->chatMessages->count() }}</flux:badge>
+                        @endif
+                    </button>
+                    <button type="button" @click="activeTab = 'qa'"
+                        class="flex-1 px-3 py-2.5 text-xs font-medium transition-colors"
+                        :class="activeTab === 'qa' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                    >
+                        <flux:icon name="question-mark-circle" variant="micro" class="mr-1 inline size-3.5" />
+                        {{ __('Q&A') }}
+                        @if ($this->pendingQuestions->isNotEmpty())
+                            <flux:badge color="amber" size="sm" class="ml-1">{{ $this->pendingQuestions->count() }}</flux:badge>
+                        @endif
+                    </button>
+                    <button type="button" @click="activeTab = 'resources'"
+                        class="flex-1 px-3 py-2.5 text-xs font-medium transition-colors"
+                        :class="activeTab === 'resources' ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                    >
+                        <flux:icon name="link" variant="micro" class="mr-1 inline size-3.5" />
+                        {{ __('Resources') }}
+                    </button>
+                    <button type="button" @click="activeTab = 'backstage'"
+                        class="flex-1 px-3 py-2.5 text-xs font-medium transition-colors"
+                        :class="activeTab === 'backstage' ? 'border-b-2 border-amber-500 text-amber-600 dark:text-amber-400' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'"
+                    >
+                        <flux:icon name="chat-bubble-left-right" variant="micro" class="mr-1 inline size-3.5" />
+                        {{ __('Backstage') }}
+                    </button>
+                </div>
 
+                {{-- Tab content --}}
+                <div class="flex-1 overflow-y-auto">
+                    {{-- Chat Tab --}}
+                    <div x-show="activeTab === 'chat'" class="flex h-full flex-col">
                         <div
                             class="flex-1 overflow-y-auto px-4 py-2 space-y-1"
                             x-data
@@ -627,8 +1309,8 @@ class extends Component
                         </form>
                     </div>
 
-                    {{-- Q&A Queue --}}
-                    <div class="border-b border-zinc-200 p-4 dark:border-zinc-700">
+                    {{-- Q&A Tab --}}
+                    <div x-show="activeTab === 'qa'" x-cloak class="p-4">
                         <div class="mb-3 flex items-center justify-between">
                             <flux:heading size="sm">{{ __('Q&A Queue') }}</flux:heading>
                             @if ($this->pendingQuestions->isNotEmpty())
@@ -639,7 +1321,7 @@ class extends Component
                         @if ($this->pendingQuestions->isEmpty())
                             <div class="rounded-lg bg-zinc-50 p-4 text-center dark:bg-zinc-900">
                                 <flux:icon name="chat-bubble-left-right" class="mx-auto mb-2 size-6 text-zinc-400" />
-                                <flux:text class="text-sm">{{ __('No questions yet. They will appear here as viewers ask them.') }}</flux:text>
+                                <flux:text class="text-sm">{{ __('No questions yet.') }}</flux:text>
                             </div>
                         @else
                             <div class="space-y-3">
@@ -662,13 +1344,47 @@ class extends Component
                                 @endforeach
                             </div>
                         @endif
+
+                        {{-- Answered Questions (collapsed) --}}
+                        <div class="mt-4" x-data="{ showAnswered: false }">
+                            <button
+                                type="button"
+                                @click="showAnswered = !showAnswered"
+                                class="flex w-full items-center justify-between text-left"
+                            >
+                                <flux:heading size="sm">{{ __('Answered') }} ({{ $this->answeredQuestions->count() }})</flux:heading>
+                                <flux:icon
+                                    name="chevron-down"
+                                    variant="micro"
+                                    class="size-4 text-zinc-400 transition-transform"
+                                    ::class="showAnswered && 'rotate-180'"
+                                />
+                            </button>
+
+                            <div x-show="showAnswered" x-collapse>
+                                @if ($this->answeredQuestions->isEmpty())
+                                    <flux:text class="mt-2 text-sm">{{ __('No answered questions yet.') }}</flux:text>
+                                @else
+                                    <div class="mt-3 space-y-2">
+                                        @foreach ($this->answeredQuestions as $question)
+                                            <div wire:key="aq-{{ $question->id }}" class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
+                                                <div class="mb-1 flex items-center justify-between">
+                                                    <span class="text-xs font-medium text-green-700 dark:text-green-400">{{ $question->viewer_name }}</span>
+                                                    <span class="text-xs text-zinc-400">{{ $question->answered_at?->diffForHumans() }}</span>
+                                                </div>
+                                                <p class="text-sm text-zinc-700 dark:text-zinc-300">{{ $question->question }}</p>
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
                     </div>
 
-                    {{-- Resource Manager --}}
-                    <div class="border-b border-zinc-200 p-4 dark:border-zinc-700">
+                    {{-- Resources Tab --}}
+                    <div x-show="activeTab === 'resources'" x-cloak class="p-4">
                         <flux:heading size="sm" class="mb-3">{{ __('Resources') }}</flux:heading>
 
-                        {{-- Existing resources --}}
                         @if ($this->resources->isNotEmpty())
                             <div class="mb-3 space-y-2">
                                 @foreach ($this->resources as $resource)
@@ -693,7 +1409,6 @@ class extends Component
                             </div>
                         @endif
 
-                        {{-- Add resource form --}}
                         <form wire:submit="addResource" class="space-y-2">
                             <flux:input wire:model="newResourceTitle" placeholder="{{ __('Resource title') }}" size="sm" />
                             <flux:input wire:model="newResourceUrl" placeholder="{{ __('https://...') }}" size="sm" />
@@ -712,43 +1427,403 @@ class extends Component
                         </form>
                     </div>
 
-                    {{-- Answered Questions (collapsed) --}}
-                    <div class="p-4" x-data="{ showAnswered: false }">
-                        <button
-                            type="button"
-                            @click="showAnswered = !showAnswered"
-                            class="flex w-full items-center justify-between text-left"
+                    {{-- Backstage Tab --}}
+                    <div x-show="activeTab === 'backstage'" x-cloak class="flex h-full flex-col">
+                        <div
+                            class="flex-1 overflow-y-auto px-4 py-2 space-y-1"
+                            x-data
+                            x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
                         >
-                            <flux:heading size="sm">{{ __('Answered') }} ({{ $this->answeredQuestions->count() }})</flux:heading>
-                            <flux:icon
-                                name="chevron-down"
-                                variant="micro"
-                                class="size-4 text-zinc-400 transition-transform"
-                                ::class="showAnswered && 'rotate-180'"
-                            />
-                        </button>
-
-                        <div x-show="showAnswered" x-collapse>
-                            @if ($this->answeredQuestions->isEmpty())
-                                <flux:text class="mt-2 text-sm">{{ __('No answered questions yet.') }}</flux:text>
-                            @else
-                                <div class="mt-3 space-y-2">
-                                    @foreach ($this->answeredQuestions as $question)
-                                        <div wire:key="aq-{{ $question->id }}" class="rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
-                                            <div class="mb-1 flex items-center justify-between">
-                                                <span class="text-xs font-medium text-green-700 dark:text-green-400">{{ $question->viewer_name }}</span>
-                                                <span class="text-xs text-zinc-400">{{ $question->answered_at?->diffForHumans() }}</span>
-                                            </div>
-                                            <p class="text-sm text-zinc-700 dark:text-zinc-300">{{ $question->question }}</p>
-                                        </div>
-                                    @endforeach
+                            @forelse ($this->backstageMessages as $msg)
+                                <div wire:key="bs-{{ $msg->id }}" class="text-sm">
+                                    <span class="text-zinc-700 dark:text-zinc-300">{{ $msg->content }}</span>
                                 </div>
-                            @endif
+                            @empty
+                                <div class="flex items-center justify-center h-full">
+                                    <flux:text class="text-sm text-zinc-400">{{ __('Private backstage chat with guests.') }}</flux:text>
+                                </div>
+                            @endforelse
                         </div>
+
+                        <form wire:submit="sendBackstageMessage" class="flex items-center gap-2 border-t border-zinc-200 px-4 py-2 dark:border-zinc-700">
+                            <flux:input
+                                wire:model="backstageMessage"
+                                placeholder="{{ __('Message guests...') }}"
+                                size="sm"
+                                class="flex-1"
+                                maxlength="500"
+                            />
+                            <flux:button type="submit" size="sm" variant="primary" icon="paper-airplane" wire:loading.attr="disabled" />
+                        </form>
                     </div>
                 </div>
             </div>
         </div>
+
+        @script
+        <script>
+        Alpine.data('livekitProducer', () => {
+            let room = null;
+            let compositor = null;
+            let hostVideoEl = null;
+
+            return {
+                connected: false,
+                audioEnabled: true,
+                videoEnabled: true,
+                viewerCount: 0,
+                connectionError: null,
+                guestFeeds: {},
+                activeSceneIndex: 0,
+                scenes: [],
+                overlayConfigs: [],
+                overlayVisible: {},
+                frameModeEnabled: false,
+                screenStream: null,
+
+                init() {
+                    this.$wire.on('livekit-disconnect', () => {
+                        this.disconnect();
+                    });
+
+                    this.$wire.on('scene-switched', ({ scene, index }) => {
+                        this.activeSceneIndex = index;
+                        if (compositor) {
+                            compositor.setScene(scene);
+                        }
+                    });
+
+                    this.$wire.on('guest-bring-on', ({ identity, name }) => {
+                        if (room) {
+                            const encoder = new TextEncoder();
+                            const data = encoder.encode(JSON.stringify({
+                                type: 'bring-on',
+                                identity: identity,
+                            }));
+                            room.localParticipant.publishData(data, { reliable: true });
+                        }
+                    });
+
+                    this.$wire.on('guest-take-off', ({ identity }) => {
+                        if (room) {
+                            const encoder = new TextEncoder();
+                            const data = encoder.encode(JSON.stringify({
+                                type: 'take-off',
+                                identity: identity,
+                            }));
+                            room.localParticipant.publishData(data, { reliable: true });
+                        }
+                    });
+
+                    // Initialize overlay visibility state
+                    this.overlayConfigs.forEach((overlay, idx) => {
+                        this.overlayVisible[idx] = overlay.visible !== false;
+                    });
+                },
+
+                async connect(token, url) {
+                    try {
+                        this.connectionError = null;
+                        const { Room, RoomEvent, VideoPresets, Track } = await window.loadLiveKit();
+                        room = new Room({
+                            adaptiveStream: true,
+                            dynacast: true,
+                            videoCaptureDefaults: {
+                                resolution: VideoPresets.h720.resolution,
+                            },
+                        });
+
+                        room.on(RoomEvent.ParticipantConnected, () => this.updateViewerCount());
+                        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+                            this.updateViewerCount();
+                            // Clean up guest feed if it was a guest
+                            const identity = participant.identity;
+                            if (identity && identity.startsWith('guest-')) {
+                                delete this.guestFeeds[identity];
+                                if (compositor) {
+                                    compositor.removeFeedSource(identity);
+                                }
+                            }
+                        });
+                        room.on(RoomEvent.Disconnected, () => {
+                            this.connected = false;
+                        });
+
+                        // Handle remote tracks (guest video feeds)
+                        room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                            const identity = participant.identity;
+                            if (identity && identity.startsWith('guest-') && track.kind === 'video') {
+                                const el = track.attach();
+                                el.autoplay = true;
+                                el.muted = true;
+                                el.playsInline = true;
+                                el.style.width = '100%';
+                                el.style.height = '100%';
+                                el.style.objectFit = 'cover';
+
+                                this.guestFeeds[identity] = {
+                                    stream: track.mediaStream,
+                                    element: el,
+                                    name: participant.name || identity,
+                                };
+
+                                if (compositor) {
+                                    compositor.setFeedSource(identity, el);
+                                }
+                            }
+                        });
+
+                        room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                            const identity = participant.identity;
+                            if (identity && identity.startsWith('guest-') && track.kind === 'video') {
+                                track.detach();
+                                delete this.guestFeeds[identity];
+                                if (compositor) {
+                                    compositor.removeFeedSource(identity);
+                                }
+                            }
+                        });
+
+                        // Handle data messages from guests
+                        room.on(RoomEvent.DataReceived, (payload, participant) => {
+                            try {
+                                const decoder = new TextDecoder();
+                                const msg = JSON.parse(decoder.decode(payload));
+                                if (msg.type === 'guest-status') {
+                                    this.$wire.refreshGuestStatuses();
+                                }
+                            } catch (e) {
+                                // Ignore malformed messages
+                            }
+                        });
+
+                        await room.connect(url, token);
+                        await room.localParticipant.setCameraEnabled(true);
+                        await room.localParticipant.setMicrophoneEnabled(true);
+
+                        const videoEl = this.$refs.hostVideo;
+                        let videoAttached = false;
+
+                        const attachVideo = (track) => {
+                            if (videoAttached) return;
+                            videoAttached = true;
+                            const el = track.attach();
+                            el.autoplay = true;
+                            el.muted = true;
+                            el.playsInline = true;
+                            el.style.width = '100%';
+                            el.style.height = '100%';
+                            el.style.objectFit = 'cover';
+                            el.style.transform = 'scaleX(-1)';
+                            videoEl.innerHTML = '';
+                            videoEl.appendChild(el);
+                            el.play().catch(() => {});
+
+                            hostVideoEl = el;
+
+                            // Feed host video to compositor
+                            if (compositor) {
+                                compositor.setFeedSource('host', el);
+                            }
+
+                            // Clone for thumbnail
+                            this.$nextTick(() => {
+                                const thumbContainer = this.$refs.hostThumb;
+                                if (thumbContainer) {
+                                    const thumbEl = el.cloneNode(true);
+                                    thumbEl.style.transform = 'scaleX(-1)';
+                                    thumbEl.style.objectFit = 'cover';
+                                    thumbEl.muted = true;
+                                    thumbContainer.innerHTML = '';
+                                    thumbContainer.appendChild(thumbEl);
+                                    thumbEl.play().catch(() => {});
+                                }
+                            });
+                        };
+
+                        room.localParticipant.on('localTrackPublished', (pub) => {
+                            if (pub.track && pub.track.kind === 'video') {
+                                attachVideo(pub.track);
+                            }
+                        });
+
+                        room.localParticipant.on('localTrackUnpublished', () => {
+                            videoAttached = false;
+                        });
+
+                        room.localParticipant.videoTrackPublications.forEach((pub) => {
+                            if (pub.track) attachVideo(pub.track);
+                        });
+
+                        this.connected = true;
+                        this.updateViewerCount();
+
+                        // Initialize FrameCompositor if available and frame mode is on
+                        if (this.frameModeEnabled) {
+                            this.initCompositor();
+                        }
+                    } catch (err) {
+                        console.error('LiveKit connection error:', err);
+                        this.connectionError = 'Failed to connect: ' + err.message;
+                    }
+                },
+
+                async initCompositor() {
+                    try {
+                        const { default: FrameCompositor } = await import('/build/studio/FrameCompositor.js');
+                        const canvas = this.$refs.compositorCanvas;
+                        if (!canvas) return;
+
+                        compositor = new FrameCompositor(canvas);
+
+                        // Load active scene
+                        const scene = this.scenes[this.activeSceneIndex];
+                        if (scene) {
+                            compositor.setScene(scene);
+                        }
+
+                        // Load overlays
+                        if (this.overlayConfigs.length > 0) {
+                            compositor.setOverlays(this.overlayConfigs);
+                        }
+
+                        // Register host feed
+                        if (hostVideoEl) {
+                            compositor.setFeedSource('host', hostVideoEl);
+                        }
+
+                        // Register any existing guest feeds
+                        Object.entries(this.guestFeeds).forEach(([identity, feed]) => {
+                            compositor.setFeedSource(identity, feed.element);
+                        });
+
+                        compositor.start();
+                    } catch (e) {
+                        console.warn('FrameCompositor not available:', e.message);
+                        // Gracefully degrade -- frame mode will show canvas but no compositing
+                    }
+                },
+
+                updateViewerCount() {
+                    if (room) {
+                        this.viewerCount = room.remoteParticipants.size;
+                        this.$wire.set('viewerCount', this.viewerCount);
+                    }
+                },
+
+                async toggleAudio() {
+                    if (!room) return;
+                    this.audioEnabled = !this.audioEnabled;
+                    await room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
+                },
+
+                async toggleVideo() {
+                    if (!room) return;
+                    this.videoEnabled = !this.videoEnabled;
+                    await room.localParticipant.setCameraEnabled(this.videoEnabled);
+                },
+
+                async toggleScreenShare() {
+                    if (this.screenStream) {
+                        // Stop screen sharing
+                        this.screenStream.getTracks().forEach(t => t.stop());
+                        this.screenStream = null;
+                        if (compositor) {
+                            compositor.removeFeedSource('screen');
+                        }
+                        return;
+                    }
+
+                    try {
+                        this.screenStream = await navigator.mediaDevices.getDisplayMedia({
+                            video: true,
+                            audio: false,
+                        });
+
+                        // Create a video element for the screen share
+                        const screenVideoEl = document.createElement('video');
+                        screenVideoEl.srcObject = this.screenStream;
+                        screenVideoEl.autoplay = true;
+                        screenVideoEl.muted = true;
+                        screenVideoEl.playsInline = true;
+                        await screenVideoEl.play();
+
+                        // Feed to compositor
+                        if (compositor) {
+                            compositor.setFeedSource('screen', screenVideoEl);
+                        }
+
+                        // Set thumbnail
+                        this.$nextTick(() => {
+                            const thumbEl = this.$refs.screenThumb;
+                            if (thumbEl) {
+                                thumbEl.srcObject = this.screenStream;
+                            }
+                        });
+
+                        // Detect when user stops sharing via browser UI
+                        this.screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                            this.screenStream = null;
+                            if (compositor) {
+                                compositor.removeFeedSource('screen');
+                            }
+                        });
+                    } catch (err) {
+                        console.warn('Screen share cancelled or failed:', err.message);
+                    }
+                },
+
+                async toggleFrameMode() {
+                    this.frameModeEnabled = !this.frameModeEnabled;
+                    this.$wire.toggleFrameMode();
+
+                    if (this.frameModeEnabled && !compositor) {
+                        this.initCompositor();
+                    } else if (!this.frameModeEnabled && compositor) {
+                        compositor.stop();
+                        compositor.destroy();
+                        compositor = null;
+                    }
+                },
+
+                toggleOverlayVisibility(index) {
+                    const newState = this.overlayVisible[index] === false;
+                    this.overlayVisible[index] = newState;
+                    if (compositor) {
+                        compositor.toggleOverlay(index, newState);
+                    }
+                },
+
+                isFeedInScene(sourceKey) {
+                    const scene = this.scenes[this.activeSceneIndex];
+                    if (!scene || !scene.slots) return false;
+                    return scene.slots.some(slot => slot.source === sourceKey);
+                },
+
+                async disconnect() {
+                    if (compositor) {
+                        compositor.stop();
+                        compositor.destroy();
+                        compositor = null;
+                    }
+                    if (this.screenStream) {
+                        this.screenStream.getTracks().forEach(t => t.stop());
+                        this.screenStream = null;
+                    }
+                    if (room) {
+                        await room.disconnect();
+                        room = null;
+                        this.connected = false;
+                    }
+                },
+
+                destroy() {
+                    this.disconnect();
+                }
+            };
+        });
+        </script>
+        @endscript
 
     {{-- ============================================================ --}}
     {{-- POST-LIVE STATE (ended) --}}

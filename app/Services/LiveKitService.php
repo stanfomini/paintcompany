@@ -8,6 +8,7 @@ use Agence104\LiveKit\RoomCreateOptions;
 use Agence104\LiveKit\RoomServiceClient;
 use Agence104\LiveKit\VideoGrant;
 use App\Models\LiveEvent;
+use App\Models\LiveEventGuest;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -23,8 +24,8 @@ class LiveKitService
     public function __construct()
     {
         $this->url = config('services.livekit.url') ?? '';
-        $this->apiKey = config('services.livekit.api_key');
-        $this->apiSecret = config('services.livekit.api_secret');
+        $this->apiKey = config('services.livekit.api_key') ?? '';
+        $this->apiSecret = config('services.livekit.api_secret') ?? '';
     }
 
     /**
@@ -106,6 +107,55 @@ class LiveKitService
             'roomJoin' => true,
             'room' => $event->livekit_room_name,
             'canPublish' => false,
+            'canSubscribe' => true,
+        ]);
+
+        $token = new AccessToken($this->apiKey, $this->apiSecret, $tokenOptions);
+        $token->setGrant($videoGrant);
+
+        return $token->toJwt();
+    }
+
+    /**
+     * Generate a guest access token for a remote guest participant.
+     * Guests can publish (their camera) and subscribe (to see the stream preview).
+     */
+    public function generateGuestToken(LiveEvent $event, LiveEventGuest $guest): string
+    {
+        $tokenOptions = new AccessTokenOptions([
+            'identity' => $guest->getLivekitIdentity(),
+            'name' => $guest->name,
+            'ttl' => 4 * 60 * 60,
+        ]);
+
+        $videoGrant = new VideoGrant([
+            'roomJoin' => true,
+            'room' => $event->livekit_room_name,
+            'canPublish' => true,
+            'canSubscribe' => true,
+        ]);
+
+        $token = new AccessToken($this->apiKey, $this->apiSecret, $tokenOptions);
+        $token->setGrant($videoGrant);
+
+        return $token->toJwt();
+    }
+
+    /**
+     * Generate a co-producer access token for an internal user helping manage the stream.
+     */
+    public function generateCoproducerToken(LiveEvent $event, User $user): string
+    {
+        $tokenOptions = new AccessTokenOptions([
+            'identity' => "coproducer-{$user->id}",
+            'name' => $user->name,
+            'ttl' => 4 * 60 * 60,
+        ]);
+
+        $videoGrant = new VideoGrant([
+            'roomJoin' => true,
+            'room' => $event->livekit_room_name,
+            'canPublish' => true,
             'canSubscribe' => true,
         ]);
 

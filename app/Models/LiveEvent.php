@@ -32,6 +32,11 @@ class LiveEvent extends Model
         'cover_image',
         'chat_thread_id',
         'reminder_sent_at',
+        'scenes',
+        'active_scene_index',
+        'overlays',
+        'use_frame_mode',
+        'backstage_chat_thread_id',
     ];
 
     protected function casts(): array
@@ -42,6 +47,9 @@ class LiveEvent extends Model
             'ended_at' => 'datetime',
             'enable_recording' => 'boolean',
             'reminder_sent_at' => 'datetime',
+            'scenes' => 'array',
+            'overlays' => 'array',
+            'use_frame_mode' => 'boolean',
         ];
     }
 
@@ -107,6 +115,44 @@ class LiveEvent extends Model
     public function registrations(): HasMany
     {
         return $this->hasMany(LiveEventRegistration::class);
+    }
+
+    /**
+     * Get the guest invitations for this event.
+     */
+    public function guests(): HasMany
+    {
+        return $this->hasMany(LiveEventGuest::class);
+    }
+
+    /**
+     * Get the backstage chat thread for producer-guest communication.
+     */
+    public function backstageChatThread(): BelongsTo
+    {
+        return $this->belongsTo(ChatThread::class, 'backstage_chat_thread_id');
+    }
+
+    /**
+     * Get the active scene configuration.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getActiveScene(): ?array
+    {
+        $scenes = $this->scenes ?? [];
+
+        return $scenes[$this->active_scene_index] ?? $scenes[0] ?? null;
+    }
+
+    /**
+     * Get scenes or return default presets.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getScenesOrDefaults(): array
+    {
+        return $this->scenes ?? LiveEventSceneTemplate::defaultScenes();
     }
 
     /**

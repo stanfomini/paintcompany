@@ -312,15 +312,13 @@ Route::livewire('/studio/share/{token}', 'studio.share-view')
     ->name('studio.share')
     ->middleware('throttle:60,1');
 
-// Studio - Live Streaming (deprioritized, hidden from nav)
-Route::livewire('/studio/live/{session?}', 'studio.studio')
-    ->middleware(['auth:web,agent'])
-    ->name('studio.live');
+// Live event guest green room (token-based, no auth required)
+Route::livewire('/events/guest/{token}', 'pages::events.guest-room')
+    ->name('events.guest-room');
 
-// Guest participant join (signed URL, 24-hour expiry)
-Route::livewire('/studio/join/{token}', 'studio.guest-view')
-    ->middleware('signed')
-    ->name('studio.join');
+// Event guest auth for backstage Reverb channels
+Route::post('/broadcasting/event-guest-auth', [\App\Http\Controllers\EventGuestAuthController::class, 'authenticate'])
+    ->name('events.guest-auth');
 
 // Video call recording API (accessible by all authenticated user types)
 Route::middleware(['auth:web,customer,crew,agent'])->prefix('api/video-calls/{videoCall}')->group(function () {
