@@ -140,170 +140,179 @@ document.addEventListener('alpine:init', () => {
 });
 
 // LiveKit: Camera preview for pre-live state
+// Non-cloneable browser objects (MediaStream, AudioContext) stored in closures
+// to avoid Livewire/Alpine structuredClone errors
 document.addEventListener('alpine:init', () => {
-    Alpine.data('cameraPreview', () => ({
-        stream: null,
-        hasStream: false,
-        audioLevel: 0,
-        audioContext: null,
-        analyser: null,
-        animationFrame: null,
-        cameraError: null,
+    Alpine.data('cameraPreview', () => {
+        let stream = null;
+        let audioContext = null;
+        let analyser = null;
+        let animationFrame = null;
 
-        init() {
-            this.startPreview();
-        },
+        return {
+            hasStream: false,
+            audioLevel: 0,
+            cameraError: null,
 
-        async startPreview() {
-            try {
-                this.stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-                    audio: { echoCancellation: true, noiseSuppression: true }
-                });
-                this.$refs.preview.srcObject = this.stream;
-                this.hasStream = true;
-                this.setupAudioMeter();
-            } catch (err) {
-                console.error('Camera access error:', err);
-                this.cameraError = err.name === 'NotAllowedError'
-                    ? 'Camera access denied. Please allow camera access in your browser settings.'
-                    : 'Could not access camera: ' + err.message;
+            init() {
+                this.startPreview();
+            },
+
+            async startPreview() {
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+                        audio: { echoCancellation: true, noiseSuppression: true }
+                    });
+                    this.$refs.preview.srcObject = stream;
+                    this.hasStream = true;
+                    this.setupAudioMeter();
+                } catch (err) {
+                    console.error('Camera access error:', err);
+                    this.cameraError = err.name === 'NotAllowedError'
+                        ? 'Camera access denied. Please allow camera access in your browser settings.'
+                        : 'Could not access camera: ' + err.message;
+                }
+            },
+
+            setupAudioMeter() {
+                try {
+                    audioContext = new AudioContext();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    analyser = audioContext.createAnalyser();
+                    source.connect(analyser);
+                    analyser.fftSize = 256;
+                    this.monitorAudio();
+                } catch (err) {
+                    console.warn('Audio meter setup failed:', err);
+                }
+            },
+
+            monitorAudio() {
+                if (!analyser) return;
+                const data = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(data);
+                this.audioLevel = Math.max(...data) / 255;
+                animationFrame = requestAnimationFrame(() => this.monitorAudio());
+            },
+
+            destroy() {
+                if (animationFrame) cancelAnimationFrame(animationFrame);
+                if (stream) stream.getTracks().forEach(t => t.stop());
+                if (audioContext) audioContext.close();
             }
-        },
-
-        setupAudioMeter() {
-            try {
-                this.audioContext = new AudioContext();
-                const source = this.audioContext.createMediaStreamSource(this.stream);
-                this.analyser = this.audioContext.createAnalyser();
-                source.connect(this.analyser);
-                this.analyser.fftSize = 256;
-                this.monitorAudio();
-            } catch (err) {
-                console.warn('Audio meter setup failed:', err);
-            }
-        },
-
-        monitorAudio() {
-            if (!this.analyser) return;
-            const data = new Uint8Array(this.analyser.frequencyBinCount);
-            this.analyser.getByteFrequencyData(data);
-            this.audioLevel = Math.max(...data) / 255;
-            this.animationFrame = requestAnimationFrame(() => this.monitorAudio());
-        },
-
-        destroy() {
-            if (this.animationFrame) cancelAnimationFrame(this.animationFrame);
-            if (this.stream) this.stream.getTracks().forEach(t => t.stop());
-            if (this.audioContext) this.audioContext.close();
-        }
-    }));
+        };
+    });
 });
 
 // LiveKit: Host streaming connection for live state
+// Room object stored in closure to prevent structuredClone errors
 document.addEventListener('alpine:init', () => {
-    Alpine.data('livekitHost', () => ({
-        room: null,
-        connected: false,
-        audioEnabled: true,
-        videoEnabled: true,
-        viewerCount: 0,
-        connectionError: null,
+    Alpine.data('livekitHost', () => {
+        let room = null;
 
-        init() {
-            this.$wire.on('livekit-connect', ({ token, url }) => {
-                this.connect(token, url);
-            });
+        return {
+            connected: false,
+            audioEnabled: true,
+            videoEnabled: true,
+            viewerCount: 0,
+            connectionError: null,
 
-            this.$wire.on('livekit-disconnect', () => {
-                this.disconnect();
-            });
-        },
-
-        async connect(token, url) {
-            try {
-                this.connectionError = null;
-                const { Room, RoomEvent, VideoPresets } = await window.loadLiveKit();
-                this.room = new Room({
-                    adaptiveStream: true,
-                    dynacast: true,
-                    videoCaptureDefaults: {
-                        resolution: VideoPresets.h720.resolution,
-                    },
+            init() {
+                this.$wire.on('livekit-connect', ({ token, url }) => {
+                    this.connect(token, url);
                 });
 
-                this.room.on(RoomEvent.ParticipantConnected, () => this.updateViewerCount());
-                this.room.on(RoomEvent.ParticipantDisconnected, () => this.updateViewerCount());
-                this.room.on(RoomEvent.Disconnected, () => {
+                this.$wire.on('livekit-disconnect', () => {
+                    this.disconnect();
+                });
+            },
+
+            async connect(token, url) {
+                try {
+                    this.connectionError = null;
+                    const { Room, RoomEvent, VideoPresets } = await window.loadLiveKit();
+                    room = new Room({
+                        adaptiveStream: true,
+                        dynacast: true,
+                        videoCaptureDefaults: {
+                            resolution: VideoPresets.h720.resolution,
+                        },
+                    });
+
+                    room.on(RoomEvent.ParticipantConnected, () => this.updateViewerCount());
+                    room.on(RoomEvent.ParticipantDisconnected, () => this.updateViewerCount());
+                    room.on(RoomEvent.Disconnected, () => {
+                        this.connected = false;
+                    });
+
+                    await room.connect(url, token);
+                    await room.localParticipant.setCameraEnabled(true);
+                    await room.localParticipant.setMicrophoneEnabled(true);
+
+                    const videoEl = this.$refs.hostVideo;
+                    room.localParticipant.videoTrackPublications.forEach((pub) => {
+                        if (pub.track) {
+                            const el = pub.track.attach();
+                            el.style.width = '100%';
+                            el.style.height = '100%';
+                            el.style.objectFit = 'cover';
+                            videoEl.innerHTML = '';
+                            videoEl.appendChild(el);
+                        }
+                    });
+
+                    room.localParticipant.on('localTrackPublished', (pub) => {
+                        if (pub.track && pub.track.kind === 'video') {
+                            const el = pub.track.attach();
+                            el.style.width = '100%';
+                            el.style.height = '100%';
+                            el.style.objectFit = 'cover';
+                            videoEl.innerHTML = '';
+                            videoEl.appendChild(el);
+                        }
+                    });
+
+                    this.connected = true;
+                    this.updateViewerCount();
+                } catch (err) {
+                    console.error('LiveKit connection error:', err);
+                    this.connectionError = 'Failed to connect: ' + err.message;
+                }
+            },
+
+            updateViewerCount() {
+                if (room) {
+                    this.viewerCount = room.remoteParticipants.size;
+                    this.$wire.set('viewerCount', this.viewerCount);
+                }
+            },
+
+            async toggleAudio() {
+                if (!room) return;
+                this.audioEnabled = !this.audioEnabled;
+                await room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
+            },
+
+            async toggleVideo() {
+                if (!room) return;
+                this.videoEnabled = !this.videoEnabled;
+                await room.localParticipant.setCameraEnabled(this.videoEnabled);
+            },
+
+            async disconnect() {
+                if (room) {
+                    await room.disconnect();
+                    room = null;
                     this.connected = false;
-                });
+                }
+            },
 
-                await this.room.connect(url, token);
-                await this.room.localParticipant.setCameraEnabled(true);
-                await this.room.localParticipant.setMicrophoneEnabled(true);
-
-                const videoEl = this.$refs.hostVideo;
-                this.room.localParticipant.videoTrackPublications.forEach((pub) => {
-                    if (pub.track) {
-                        const el = pub.track.attach();
-                        el.style.width = '100%';
-                        el.style.height = '100%';
-                        el.style.objectFit = 'cover';
-                        videoEl.innerHTML = '';
-                        videoEl.appendChild(el);
-                    }
-                });
-
-                this.room.localParticipant.on('localTrackPublished', (pub) => {
-                    if (pub.track && pub.track.kind === 'video') {
-                        const el = pub.track.attach();
-                        el.style.width = '100%';
-                        el.style.height = '100%';
-                        el.style.objectFit = 'cover';
-                        videoEl.innerHTML = '';
-                        videoEl.appendChild(el);
-                    }
-                });
-
-                this.connected = true;
-                this.updateViewerCount();
-            } catch (err) {
-                console.error('LiveKit connection error:', err);
-                this.connectionError = 'Failed to connect: ' + err.message;
+            destroy() {
+                this.disconnect();
             }
-        },
-
-        updateViewerCount() {
-            if (this.room) {
-                this.viewerCount = this.room.remoteParticipants.size;
-                this.$wire.set('viewerCount', this.viewerCount);
-            }
-        },
-
-        async toggleAudio() {
-            if (!this.room) return;
-            this.audioEnabled = !this.audioEnabled;
-            await this.room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
-        },
-
-        async toggleVideo() {
-            if (!this.room) return;
-            this.videoEnabled = !this.videoEnabled;
-            await this.room.localParticipant.setCameraEnabled(this.videoEnabled);
-        },
-
-        async disconnect() {
-            if (this.room) {
-                await this.room.disconnect();
-                this.room = null;
-                this.connected = false;
-            }
-        },
-
-        destroy() {
-            this.disconnect();
-        }
-    }));
+        };
+    });
 });
 
 // Offer countdown timer
