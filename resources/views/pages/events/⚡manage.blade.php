@@ -41,9 +41,14 @@ class extends Component
     {
         $this->event = $liveEvent->load(['questions', 'resources', 'registrations', 'serviceArea', 'service', 'host']);
         $this->livekitUrl = config('services.livekit.url') ?? '';
+
+        // Auto-generate host token if event is already live (page refresh while streaming)
+        if ($this->event->status === 'live') {
+            $this->livekitToken = app(LiveKitService::class)->generateHostToken($this->event, auth()->user());
+        }
     }
 
-    public function goLive(): void
+    public function goLive()
     {
         if (! in_array($this->event->status, ['draft', 'scheduled'])) {
             session()->flash('error', __('This event cannot go live from its current status.'));
@@ -54,14 +59,9 @@ class extends Component
         $liveEventService = app(LiveEventService::class);
         $liveEventService->goLive($this->event);
 
-        $this->event->refresh();
-
-        $liveKitService = app(LiveKitService::class);
-        $token = $liveKitService->generateHostToken($this->event, auth()->user());
-
-        $this->livekitToken = $token;
-
-        $this->dispatch('livekit-connect', token: $token, url: $this->livekitUrl);
+        // Redirect to force a clean page load — Livewire's DOM morph can't handle
+        // the full template switch from pre-live to live state (different Alpine components)
+        return $this->redirect(route('events.manage', $this->event), navigate: false);
     }
 
     public function endStream(): void

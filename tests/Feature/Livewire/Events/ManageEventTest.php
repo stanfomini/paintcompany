@@ -76,7 +76,7 @@ describe('go live', function () {
         Livewire::actingAs($this->internal)
             ->test('pages::events.manage', ['liveEvent' => $this->event])
             ->call('goLive')
-            ->assertDispatched('livekit-connect');
+            ->assertRedirect(route('events.manage', $this->event));
 
         expect($this->event->fresh()->status)->toBe('live');
     });
