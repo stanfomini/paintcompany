@@ -206,9 +206,10 @@ class extends Component
 
                     {{-- Actions --}}
                     <div class="flex items-center gap-1 shrink-0">
+                        <flux:button size="sm" variant="ghost" icon="eye" :href="route('live.show', $event->slug)" target="_blank" title="{{ __('Public Page') }}" />
                         <flux:button size="sm" variant="ghost" icon="pencil" :href="route('events.edit', $event)" title="{{ __('Edit') }}" />
 
-                        @if (in_array($event->status, ['scheduled', 'live']))
+                        @if (in_array($event->status, ['draft', 'scheduled', 'live']))
                             <flux:button size="sm" variant="ghost" icon="signal" :href="route('events.manage', $event)" title="{{ __('Control Room') }}" />
                         @endif
 

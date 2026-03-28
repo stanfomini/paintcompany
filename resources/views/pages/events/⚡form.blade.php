@@ -145,12 +145,26 @@ class extends Component
             {{ __('Back to Events') }}
         </flux:button>
 
-        <flux:heading size="xl">
-            {{ $eventId ? __('Edit Event') : __('Create Event') }}
-        </flux:heading>
-        <flux:text class="mt-1">
-            {{ $eventId ? __('Update the event details below.') : __('Set up a new live event for your audience.') }}
-        </flux:text>
+        <div class="flex items-center justify-between">
+            <div>
+                <flux:heading size="xl">
+                    {{ $eventId ? __('Edit Event') : __('Create Event') }}
+                </flux:heading>
+                <flux:text class="mt-1">
+                    {{ $eventId ? __('Update the event details below.') : __('Set up a new live event for your audience.') }}
+                </flux:text>
+            </div>
+            @if ($eventId && $slug)
+                <div class="flex items-center gap-2">
+                    <flux:button size="sm" variant="ghost" icon="eye" href="{{ route('live.show', $slug) }}" target="_blank">
+                        {{ __('Public Page') }}
+                    </flux:button>
+                    <flux:button size="sm" variant="primary" icon="signal" href="{{ route('events.manage', $slug) }}">
+                        {{ __('Control Room') }}
+                    </flux:button>
+                </div>
+            @endif
+        </div>
     </div>
 
     <form wire:submit="save" class="max-w-2xl space-y-6">

@@ -198,9 +198,14 @@ class extends Component
                             @endif
                         </div>
                     </div>
-                    <flux:button size="sm" variant="ghost" icon="pencil" :href="route('events.edit', $event)">
-                        {{ __('Edit') }}
-                    </flux:button>
+                    <div class="flex items-center gap-2">
+                        <flux:button size="sm" variant="ghost" icon="eye" :href="route('live.show', $event->slug)" target="_blank">
+                            {{ __('Public Page') }}
+                        </flux:button>
+                        <flux:button size="sm" variant="ghost" icon="pencil" :href="route('events.edit', $event)">
+                            {{ __('Edit') }}
+                        </flux:button>
+                    </div>
                 </div>
 
                 @if ($event->description)
@@ -348,6 +353,7 @@ class extends Component
                                 x-text="elapsed"
                             ></span>
                         @endif
+                        <a href="{{ route('live.show', $event->slug) }}" target="_blank" class="text-xs text-blue-500 hover:text-blue-600 underline">{{ __('Public Page') }}</a>
                     </div>
                 </div>
 
