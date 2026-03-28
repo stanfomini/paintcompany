@@ -969,17 +969,20 @@ class extends Component
             $overlays = $event->overlays ?? [];
             $liveGuests = $this->guests->where('status', 'live');
             $connectedGuests = $this->guests->whereIn('status', ['connected', 'live']);
+            // Map livekit_identity → slot source key (e.g., "guest-abc123" → "guest-1")
+            $guestSlotMap = $this->guests->mapWithKeys(fn ($g) => [$g->livekit_identity => 'guest-' . $g->slot_number])->toArray();
         @endphp
         <div
             x-data="livekitProducer"
             x-init="$nextTick(() => {
-                @if ($livekitToken)
-                    connect(@js($livekitToken), @js($livekitUrl));
-                @endif
                 activeSceneIndex = @js($activeSceneIndex);
                 scenes = @js($scenes);
                 overlayConfigs = @js($overlays);
                 frameModeEnabled = @js($event->use_frame_mode);
+                guestSlotMap = @js($guestSlotMap);
+                @if ($livekitToken)
+                    connect(@js($livekitToken), @js($livekitUrl));
+                @endif
             })"
             class="flex h-[calc(100vh-4rem)] flex-col lg:flex-row"
         >
@@ -1076,18 +1079,25 @@ class extends Component
                     </div>
 
                     {{-- Guest feed thumbnails --}}
-                    <template x-for="(feed, identity) in guestFeeds" :key="identity">
+                    <template x-for="(feed, slotKey) in guestFeeds" :key="slotKey">
                         <div class="shrink-0">
                             <div
                                 class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                                :class="isFeedInScene(identity) ? 'border-green-500' : 'border-zinc-600'"
-                            >
-                                <video
-                                    x-effect="if (feed.element && $el) { $el.srcObject = feed.element.srcObject; $el.play().catch(() => {}); }"
-                                    autoplay muted playsinline
-                                    class="h-full w-full object-cover"
-                                ></video>
-                            </div>
+                                :class="isFeedInScene(slotKey) ? 'border-green-500' : 'border-zinc-600'"
+                                x-effect="
+                                    if (feed.element && $el) {
+                                        const existing = $el.querySelector('video');
+                                        if (existing) existing.remove();
+                                        const clone = feed.element.cloneNode(true);
+                                        clone.style.width = '100%';
+                                        clone.style.height = '100%';
+                                        clone.style.objectFit = 'cover';
+                                        clone.muted = true;
+                                        $el.appendChild(clone);
+                                        clone.play().catch(() => {});
+                                    }
+                                "
+                            ></div>
                             <span class="mt-0.5 block text-center text-[10px] font-medium text-zinc-400" x-text="feed.name"></span>
                         </div>
                     </template>
@@ -1539,6 +1549,7 @@ class extends Component
                 activeMicId: '',
                 showDeviceMenu: false,
                 guestFeeds: {},
+                guestSlotMap: {},
                 activeSceneIndex: 0,
                 scenes: [],
                 overlayConfigs: [],
@@ -1618,13 +1629,13 @@ class extends Component
                         room.on(RoomEvent.ParticipantConnected, () => this.updateViewerCount());
                         room.on(RoomEvent.ParticipantDisconnected, (participant) => {
                             this.updateViewerCount();
-                            // Clean up guest feed if it was a guest
                             const identity = participant.identity;
                             if (identity && identity.startsWith('guest-')) {
-                                const { [identity]: _, ...rest } = this.guestFeeds;
+                                const slotKey = this.guestSlotMap[identity] || identity;
+                                const { [slotKey]: _, ...rest } = this.guestFeeds;
                                 this.guestFeeds = rest;
                                 if (compositor) {
-                                    compositor.removeFeedSource(identity);
+                                    compositor.removeFeedSource(slotKey);
                                 }
                             }
                         });
@@ -1635,7 +1646,9 @@ class extends Component
                         // Handle remote tracks (guest video feeds)
                         room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
                             const identity = participant.identity;
-                            if (identity && identity.startsWith('guest-') && track.kind === 'video') {
+                            if (!identity || !identity.startsWith('guest-')) return;
+
+                            if (track.kind === 'video') {
                                 const el = track.attach();
                                 el.autoplay = true;
                                 el.muted = true;
@@ -1644,22 +1657,26 @@ class extends Component
                                 el.style.height = '100%';
                                 el.style.objectFit = 'cover';
 
-                                // Reassign entire object for Alpine reactivity (new keys aren't detected)
+                                // Map identity to slot source key (e.g., "guest-abc123" → "guest-1")
+                                const slotKey = this.guestSlotMap[identity] || identity;
+
+                                // Reassign entire object for Alpine reactivity
                                 this.guestFeeds = {
                                     ...this.guestFeeds,
-                                    [identity]: {
+                                    [slotKey]: {
                                         element: el,
+                                        identity: identity,
                                         name: participant.name || identity,
                                     },
                                 };
 
+                                // Register with compositor using the slot key that matches scene definitions
                                 if (compositor) {
-                                    compositor.setFeedSource(identity, el);
+                                    compositor.setFeedSource(slotKey, el);
                                 }
                             }
 
-                            // Also handle guest audio tracks
-                            if (identity && identity.startsWith('guest-') && track.kind === 'audio') {
+                            if (track.kind === 'audio') {
                                 const audioEl = track.attach();
                                 audioEl.style.display = 'none';
                                 document.body.appendChild(audioEl);
@@ -1668,14 +1685,16 @@ class extends Component
 
                         room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
                             const identity = participant.identity;
-                            if (identity && identity.startsWith('guest-')) {
-                                track.detach().forEach(el => el.remove());
-                                if (track.kind === 'video') {
-                                    const { [identity]: _, ...rest } = this.guestFeeds;
-                                    this.guestFeeds = rest;
-                                    if (compositor) {
-                                        compositor.removeFeedSource(identity);
-                                    }
+                            if (!identity || !identity.startsWith('guest-')) return;
+
+                            track.detach().forEach(el => el.remove());
+
+                            if (track.kind === 'video') {
+                                const slotKey = this.guestSlotMap[identity] || identity;
+                                const { [slotKey]: _, ...rest } = this.guestFeeds;
+                                this.guestFeeds = rest;
+                                if (compositor) {
+                                    compositor.removeFeedSource(slotKey);
                                 }
                             }
                         });
@@ -1769,7 +1788,10 @@ class extends Component
                     try {
                         const FrameCompositor = await window.loadFrameCompositor();
                         const canvas = this.$refs.compositorCanvas;
-                        if (!canvas) return;
+                        if (!canvas) {
+                            console.warn('Compositor canvas element not found');
+                            return;
+                        }
 
                         compositor = new FrameCompositor(canvas);
 
@@ -1780,24 +1802,48 @@ class extends Component
                         }
 
                         // Load overlays
-                        if (this.overlayConfigs.length > 0) {
+                        if (this.overlayConfigs && this.overlayConfigs.length > 0) {
                             compositor.setOverlays(this.overlayConfigs);
                         }
 
-                        // Register host feed
+                        // Register host feed — need to get the raw camera stream
+                        // even though we might not be publishing it to LiveKit
                         if (hostVideoEl) {
                             compositor.setFeedSource('host', hostVideoEl);
+                        } else if (room) {
+                            // Try to get host video from local participant's tracks
+                            room.localParticipant.videoTrackPublications.forEach((pub) => {
+                                if (pub.track) {
+                                    const el = pub.track.attach();
+                                    el.muted = true;
+                                    hostVideoEl = el;
+                                    compositor.setFeedSource('host', el);
+                                }
+                            });
                         }
 
-                        // Register any existing guest feeds
-                        Object.entries(this.guestFeeds).forEach(([identity, feed]) => {
-                            compositor.setFeedSource(identity, feed.element);
+                        // Register existing guest feeds (already mapped to slot keys)
+                        Object.entries(this.guestFeeds).forEach(([slotKey, feed]) => {
+                            if (feed.element) {
+                                compositor.setFeedSource(slotKey, feed.element);
+                            }
                         });
 
+                        // Register screen share if active
+                        if (this.screenStream) {
+                            const screenEl = document.createElement('video');
+                            screenEl.srcObject = this.screenStream;
+                            screenEl.autoplay = true;
+                            screenEl.muted = true;
+                            screenEl.playsInline = true;
+                            await screenEl.play();
+                            compositor.setFeedSource('screen', screenEl);
+                        }
+
                         compositor.start();
+                        console.log('FrameCompositor initialized and running');
                     } catch (e) {
                         console.warn('FrameCompositor not available:', e.message);
-                        // Gracefully degrade -- frame mode will show canvas but no compositing
                     }
                 },
 
@@ -1926,13 +1972,16 @@ class extends Component
                     this.$wire.toggleFrameMode();
 
                     if (this.frameModeEnabled) {
+                        // Start compositor if not already running
                         if (!compositor) {
                             await this.initCompositor();
                         }
+                        // Short delay to let compositor render a few frames before publishing
+                        await new Promise(r => setTimeout(r, 200));
                         // Replace published video track with canvas stream
                         await this.publishCanvasStream();
                     } else {
-                        // Switch back to raw camera
+                        // Switch back to raw camera first, then clean up compositor
                         await this.publishRawCamera();
                         if (compositor) {
                             compositor.stop();
@@ -1947,39 +1996,53 @@ class extends Component
                     try {
                         const canvasStream = compositor.getOutputStream();
                         const canvasTrack = canvasStream.getVideoTracks()[0];
-                        if (!canvasTrack) return;
-
-                        // Unpublish current camera track
-                        const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
-                        for (const pub of pubs) {
-                            if (pub.track && pub.source === 'camera') {
-                                await room.localParticipant.unpublishTrack(pub.track);
-                            }
+                        if (!canvasTrack) {
+                            console.warn('No video track from canvas stream');
+                            return;
                         }
 
-                        // Publish canvas track
-                        await room.localParticipant.publishTrack(canvasTrack, {
-                            name: 'composited-frame',
+                        // Disable camera (stops publishing it) but keep the local track for compositor
+                        await room.localParticipant.setCameraEnabled(false);
+
+                        // Publish the canvas track as a custom video source
+                        const { LocalVideoTrack } = await window.loadLiveKit();
+                        const localTrack = new LocalVideoTrack(canvasTrack, 'composited-frame', false);
+                        await room.localParticipant.publishTrack(localTrack, {
                             simulcast: false,
+                            source: 'camera',
                         });
+
+                        console.log('Canvas stream published to LiveKit');
                     } catch (err) {
                         console.error('Failed to publish canvas stream:', err);
+                        // Fallback: if LocalVideoTrack isn't available, try raw track
+                        try {
+                            const canvasStream = compositor.getOutputStream();
+                            const canvasTrack = canvasStream.getVideoTracks()[0];
+                            if (canvasTrack) {
+                                await room.localParticipant.setCameraEnabled(false);
+                                await room.localParticipant.publishTrack(canvasTrack);
+                            }
+                        } catch (fallbackErr) {
+                            console.error('Fallback canvas publish also failed:', fallbackErr);
+                        }
                     }
                 },
 
                 async publishRawCamera() {
                     if (!room) return;
                     try {
-                        // Unpublish canvas track
+                        // Unpublish all video tracks (canvas track)
                         const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
                         for (const pub of pubs) {
                             if (pub.track) {
-                                await room.localParticipant.unpublishTrack(pub.track);
+                                await room.localParticipant.unpublishTrack(pub.track, true);
                             }
                         }
 
                         // Re-enable camera
                         await room.localParticipant.setCameraEnabled(true);
+                        console.log('Raw camera republished to LiveKit');
                     } catch (err) {
                         console.error('Failed to switch to raw camera:', err);
                     }
@@ -1993,10 +2056,11 @@ class extends Component
                     }
                 },
 
-                isFeedInScene(sourceKey) {
+                isFeedInScene(slotKey) {
                     const scene = this.scenes[this.activeSceneIndex];
                     if (!scene || !scene.slots) return false;
-                    return scene.slots.some(slot => slot.source === sourceKey);
+                    // Check if this slot key matches any slot source in the active scene
+                    return scene.slots.some(slot => slot.source === slotKey);
                 },
 
                 async disconnect() {
