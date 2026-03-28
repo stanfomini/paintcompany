@@ -359,8 +359,8 @@ class extends Component
 
                 {{-- Video area --}}
                 <div class="relative flex-1 bg-black">
-                    <div x-ref="hostVideo" class="flex h-full w-full items-center justify-center">
-                        {{-- LiveKit will attach video elements here --}}
+                    <div x-ref="hostVideo" wire:ignore class="flex h-full w-full items-center justify-center">
+                        {{-- LiveKit will attach video elements here — wire:ignore prevents Livewire morph from destroying them --}}
                         <div x-show="!connected" class="flex flex-col items-center justify-center">
                             <div class="mb-4 size-20 animate-pulse rounded-full bg-zinc-700"></div>
                             <span class="text-sm text-zinc-400">{{ __('Connecting to stream...') }}</span>
