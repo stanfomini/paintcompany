@@ -259,16 +259,16 @@ new #[Layout('layouts.video-call')] class extends Component
             {{-- Main Content: Stream Preview + Camera --}}
             <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
 
-                {{-- Stream Preview (host's broadcast) --}}
-                <div class="relative bg-black" style="height: 30vh; min-height: 140px;">
+                {{-- Stream Preview (host's broadcast) — small when camera is the focus --}}
+                <div class="relative bg-black shrink-0" style="height: 25vh; min-height: 120px;">
                     <div x-ref="streamPreview" class="w-full h-full"></div>
                     <div x-show="!hostTrackAttached" class="absolute inset-0 flex items-center justify-center bg-zinc-800">
                         <div class="text-center">
-                            <svg class="w-10 h-10 text-zinc-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
-                            <p class="text-xs text-zinc-500">Waiting for host stream...</p>
+                            <svg class="w-8 h-8 text-zinc-600 mx-auto mb-1" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
+                            <p class="text-[10px] text-zinc-500">Waiting for host stream...</p>
                         </div>
                     </div>
-                    <div class="absolute top-2 left-2 px-2 py-1 rounded bg-black/60 text-xs text-zinc-300">Stream Preview</div>
+                    <div class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-[10px] text-zinc-400">Stream Preview</div>
                 </div>
 
                 {{-- Camera Preview + Controls --}}
@@ -385,7 +385,7 @@ new #[Layout('layouts.video-call')] class extends Component
                 </div>
 
                 {{-- Backstage Chat --}}
-                <div class="flex-shrink-0 bg-zinc-800 border-t border-zinc-700" style="height: 28vh; min-height: 120px;">
+                <div class="flex-shrink-0 bg-zinc-800 border-t border-zinc-700" style="height: 20vh; min-height: 100px;">
                     <div class="flex flex-col h-full">
                         <div class="px-4 py-2 border-b border-zinc-700 flex items-center gap-2">
                             <svg class="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H8.25m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0H12m4.125 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 0 1-2.555-.337A5.972 5.972 0 0 1 5.41 20.97a5.969 5.969 0 0 1-.474-.065 4.48 4.48 0 0 0 .978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25Z" /></svg>

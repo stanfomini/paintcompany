@@ -77,7 +77,18 @@ class extends Component
 
             // Private host channel — new questions from viewers
             "echo-private:live-event-host.{$this->event->id},.question.received" => 'onQuestionReceived',
+
+            // Private backstage channel — messages from guests
+            "echo-private:event-backstage.{$this->event->id},.backstage.message" => 'onBackstageMessage',
         ];
+    }
+
+    /**
+     * Echo handler: new backstage message from a guest.
+     */
+    public function onBackstageMessage(array $event): void
+    {
+        unset($this->backstageMessages);
     }
 
     public function boot(): void
@@ -1222,6 +1233,48 @@ class extends Component
                         <flux:icon name="photo" class="size-5" />
                     </button>
 
+                    {{-- Device Switcher --}}
+                    <div class="relative">
+                        <button
+                            type="button"
+                            @click="showDeviceMenu = !showDeviceMenu"
+                            class="flex size-11 items-center justify-center rounded-full bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
+                            title="{{ __('Switch devices') }}"
+                        >
+                            <flux:icon name="cog-6-tooth" class="size-5" />
+                        </button>
+                        <div
+                            x-show="showDeviceMenu"
+                            x-cloak
+                            @click.outside="showDeviceMenu = false"
+                            x-transition
+                            class="absolute bottom-14 right-0 w-64 bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl p-3 space-y-3 z-50"
+                        >
+                            <div>
+                                <label class="block text-xs font-medium text-zinc-400 mb-1">{{ __('Camera') }}</label>
+                                <select
+                                    @change="switchCamera($event.target.value)"
+                                    class="w-full bg-zinc-700 border border-zinc-600 text-sm text-white rounded-md px-2 py-1.5"
+                                >
+                                    <template x-for="cam in cameras" :key="cam.id">
+                                        <option :value="cam.id" :selected="cam.id === activeCameraId" x-text="cam.label"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-zinc-400 mb-1">{{ __('Microphone') }}</label>
+                                <select
+                                    @change="switchMicrophone($event.target.value)"
+                                    class="w-full bg-zinc-700 border border-zinc-600 text-sm text-white rounded-md px-2 py-1.5"
+                                >
+                                    <template x-for="mic in microphones" :key="mic.id">
+                                        <option :value="mic.id" :selected="mic.id === activeMicId" x-text="mic.label"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mx-2 h-6 w-px bg-zinc-700"></div>
 
                     {{-- End Stream --}}
@@ -1476,6 +1529,11 @@ class extends Component
                 videoEnabled: true,
                 viewerCount: 0,
                 connectionError: null,
+                cameras: [],
+                microphones: [],
+                activeCameraId: '',
+                activeMicId: '',
+                showDeviceMenu: false,
                 guestFeeds: {},
                 activeSceneIndex: 0,
                 scenes: [],
@@ -1662,6 +1720,7 @@ class extends Component
 
                         this.connected = true;
                         this.updateViewerCount();
+                        await this.loadDevices();
 
                         // Initialize FrameCompositor if available and frame mode is on
                         if (this.frameModeEnabled) {
@@ -1728,6 +1787,57 @@ class extends Component
                     await room.localParticipant.setCameraEnabled(this.videoEnabled);
                 },
 
+                async loadDevices() {
+                    try {
+                        const devices = await navigator.mediaDevices.enumerateDevices();
+                        this.cameras = devices
+                            .filter(d => d.kind === 'videoinput')
+                            .map(d => ({ id: d.deviceId, label: d.label || 'Camera ' + d.deviceId.slice(0, 4) }));
+                        this.microphones = devices
+                            .filter(d => d.kind === 'audioinput')
+                            .map(d => ({ id: d.deviceId, label: d.label || 'Mic ' + d.deviceId.slice(0, 4) }));
+
+                        if (room) {
+                            room.localParticipant.videoTrackPublications.forEach(pub => {
+                                if (pub.track) {
+                                    const settings = pub.track.mediaStreamTrack?.getSettings();
+                                    if (settings?.deviceId) this.activeCameraId = settings.deviceId;
+                                }
+                            });
+                            room.localParticipant.audioTrackPublications.forEach(pub => {
+                                if (pub.track) {
+                                    const settings = pub.track.mediaStreamTrack?.getSettings();
+                                    if (settings?.deviceId) this.activeMicId = settings.deviceId;
+                                }
+                            });
+                        }
+                    } catch (err) {
+                        console.warn('Failed to enumerate devices:', err);
+                    }
+                },
+
+                async switchCamera(deviceId) {
+                    if (!room || deviceId === this.activeCameraId) return;
+                    try {
+                        await room.switchActiveDevice('videoinput', deviceId);
+                        this.activeCameraId = deviceId;
+                        this.showDeviceMenu = false;
+                    } catch (err) {
+                        console.error('Failed to switch camera:', err);
+                    }
+                },
+
+                async switchMicrophone(deviceId) {
+                    if (!room || deviceId === this.activeMicId) return;
+                    try {
+                        await room.switchActiveDevice('audioinput', deviceId);
+                        this.activeMicId = deviceId;
+                        this.showDeviceMenu = false;
+                    } catch (err) {
+                        console.error('Failed to switch microphone:', err);
+                    }
+                },
+
                 async toggleScreenShare() {
                     if (this.screenStream) {
                         // Stop screen sharing
@@ -1782,12 +1892,63 @@ class extends Component
                     this.frameModeEnabled = !this.frameModeEnabled;
                     this.$wire.toggleFrameMode();
 
-                    if (this.frameModeEnabled && !compositor) {
-                        this.initCompositor();
-                    } else if (!this.frameModeEnabled && compositor) {
-                        compositor.stop();
-                        compositor.destroy();
-                        compositor = null;
+                    if (this.frameModeEnabled) {
+                        if (!compositor) {
+                            await this.initCompositor();
+                        }
+                        // Replace published video track with canvas stream
+                        await this.publishCanvasStream();
+                    } else {
+                        // Switch back to raw camera
+                        await this.publishRawCamera();
+                        if (compositor) {
+                            compositor.stop();
+                            compositor.destroy();
+                            compositor = null;
+                        }
+                    }
+                },
+
+                async publishCanvasStream() {
+                    if (!room || !compositor) return;
+                    try {
+                        const canvasStream = compositor.getOutputStream();
+                        const canvasTrack = canvasStream.getVideoTracks()[0];
+                        if (!canvasTrack) return;
+
+                        // Unpublish current camera track
+                        const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
+                        for (const pub of pubs) {
+                            if (pub.track && pub.source === 'camera') {
+                                await room.localParticipant.unpublishTrack(pub.track);
+                            }
+                        }
+
+                        // Publish canvas track
+                        await room.localParticipant.publishTrack(canvasTrack, {
+                            name: 'composited-frame',
+                            simulcast: false,
+                        });
+                    } catch (err) {
+                        console.error('Failed to publish canvas stream:', err);
+                    }
+                },
+
+                async publishRawCamera() {
+                    if (!room) return;
+                    try {
+                        // Unpublish canvas track
+                        const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
+                        for (const pub of pubs) {
+                            if (pub.track) {
+                                await room.localParticipant.unpublishTrack(pub.track);
+                            }
+                        }
+
+                        // Re-enable camera
+                        await room.localParticipant.setCameraEnabled(true);
+                    } catch (err) {
+                        console.error('Failed to switch to raw camera:', err);
                     }
                 },
 
