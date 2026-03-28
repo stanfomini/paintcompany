@@ -8,6 +8,7 @@ use App\Models\LiveEvent;
 use App\Models\LiveEventGuest;
 use App\Models\LiveEventQuestion;
 use App\Models\LiveEventRegistration;
+use App\Notifications\LiveEventGuestInvitation;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
@@ -171,13 +172,17 @@ class LiveEventService
      */
     public function inviteGuest(LiveEvent $event, array $data): LiveEventGuest
     {
-        return $event->guests()->create([
+        $guest = $event->guests()->create([
             'name' => $data['name'],
             'email' => $data['email'] ?? null,
             'phone' => $data['phone'] ?? null,
             'instructions' => $data['instructions'] ?? null,
             'slot_number' => $data['slot_number'] ?? $this->nextAvailableSlot($event),
         ]);
+
+        $this->sendGuestInviteNotifications($event, $guest);
+
+        return $guest;
     }
 
     /**
@@ -255,6 +260,45 @@ class LiveEventService
         $event->update(['backstage_chat_thread_id' => $thread->id]);
 
         return $thread;
+    }
+
+    /**
+     * Send email and/or SMS invite to a guest.
+     */
+    private function sendGuestInviteNotifications(LiveEvent $event, LiveEventGuest $guest): void
+    {
+        $link = $this->generateGuestLink($guest);
+
+        // Send email if guest has an email address
+        if ($guest->email) {
+            try {
+                Notification::route('mail', $guest->email)
+                    ->notify(new LiveEventGuestInvitation($event, $guest, $link));
+            } catch (\Throwable $e) {
+                Log::warning('LiveEvent: Failed to send guest invite email', [
+                    'guest_id' => $guest->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        // Send SMS if guest has a phone number
+        if ($guest->phone) {
+            try {
+                $twilio = app(TwilioService::class);
+
+                if ($twilio->isEnabled()) {
+                    $hostName = $event->host?->name ?? 'our team';
+                    $smsBody = "You're invited to join \"{$event->title}\" hosted by {$hostName}. Open your green room here: {$link}";
+                    $twilio->sendSms($guest->phone, $smsBody);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('LiveEvent: Failed to send guest invite SMS', [
+                    'guest_id' => $guest->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 
     /**
