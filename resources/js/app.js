@@ -251,25 +251,29 @@ document.addEventListener('alpine:init', () => {
                     await room.localParticipant.setMicrophoneEnabled(true);
 
                     const videoEl = this.$refs.hostVideo;
+                    const attachVideo = (track) => {
+                        const el = track.attach();
+                        el.autoplay = true;
+                        el.muted = true;
+                        el.playsInline = true;
+                        el.style.width = '100%';
+                        el.style.height = '100%';
+                        el.style.objectFit = 'cover';
+                        el.style.transform = 'scaleX(-1)';
+                        videoEl.innerHTML = '';
+                        videoEl.appendChild(el);
+                        el.play().catch(() => {});
+                    };
+
+                    // Attach any already-published video tracks
                     room.localParticipant.videoTrackPublications.forEach((pub) => {
-                        if (pub.track) {
-                            const el = pub.track.attach();
-                            el.style.width = '100%';
-                            el.style.height = '100%';
-                            el.style.objectFit = 'cover';
-                            videoEl.innerHTML = '';
-                            videoEl.appendChild(el);
-                        }
+                        if (pub.track) attachVideo(pub.track);
                     });
 
+                    // Listen for new tracks (camera may publish after connect)
                     room.localParticipant.on('localTrackPublished', (pub) => {
                         if (pub.track && pub.track.kind === 'video') {
-                            const el = pub.track.attach();
-                            el.style.width = '100%';
-                            el.style.height = '100%';
-                            el.style.objectFit = 'cover';
-                            videoEl.innerHTML = '';
-                            videoEl.appendChild(el);
+                            attachVideo(pub.track);
                         }
                     });
 
