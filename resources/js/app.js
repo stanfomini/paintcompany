@@ -323,6 +323,60 @@ document.addEventListener('alpine:init', () => {
     });
 });
 
+// LiveKit: Viewer connection for public event page
+// Room stored in closure to prevent structuredClone errors
+document.addEventListener('alpine:init', () => {
+    Alpine.data('livekitViewer', () => {
+        let room = null;
+
+        return {
+            connected: false,
+
+            init() {
+                this.$wire.on('livekit-viewer-connect', ({ token, url }) => {
+                    if (token && url) this.connect(token, url);
+                });
+            },
+
+            async connect(token, url) {
+                try {
+                    const { Room, RoomEvent } = await window.loadLiveKit();
+                    room = new Room();
+
+                    room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                        const el = track.attach();
+                        el.autoplay = true;
+                        el.playsInline = true;
+                        el.style.width = '100%';
+                        el.style.height = '100%';
+                        el.style.objectFit = 'cover';
+                        if (this.$refs.videoPlayer) {
+                            this.$refs.videoPlayer.innerHTML = '';
+                            this.$refs.videoPlayer.appendChild(el);
+                        }
+                    });
+
+                    room.on(RoomEvent.TrackUnsubscribed, (track) => {
+                        track.detach().forEach(el => el.remove());
+                    });
+
+                    await room.connect(url, token);
+                    this.connected = true;
+                } catch (error) {
+                    console.error('LiveKit viewer connection error:', error);
+                }
+            },
+
+            destroy() {
+                if (room) {
+                    room.disconnect();
+                    room = null;
+                }
+            }
+        };
+    });
+});
+
 // Offer countdown timer
 document.addEventListener('alpine:init', () => {
     Alpine.data('offerCountdown', (expiresAt) => ({

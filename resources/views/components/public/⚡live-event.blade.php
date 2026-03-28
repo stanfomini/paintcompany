@@ -425,7 +425,12 @@ new #[Layout('components.layouts.public')] class extends Component
     {{-- ==================== LIVE STATE ==================== --}}
     @elseif ($event->status === 'live')
         <div
-            x-data="livekitViewer()"
+            x-data="livekitViewer"
+            x-init="$nextTick(() => {
+                @if ($livekitToken)
+                    connect(@js($livekitToken), @js($livekitUrl));
+                @endif
+            })"
             class="bg-zinc-950 min-h-screen pt-14 pwa-safe-top"
         >
             {{-- Top bar --}}
@@ -520,7 +525,7 @@ new #[Layout('components.layouts.public')] class extends Component
 
                         {{-- Video Player --}}
                         <div class="relative bg-black aspect-video lg:aspect-auto lg:flex-1" x-ref="videoContainer">
-                            <div x-ref="videoPlayer" class="absolute inset-0 flex items-center justify-center">
+                            <div x-ref="videoPlayer" wire:ignore class="absolute inset-0 flex items-center justify-center">
                                 <template x-if="!connected">
                                     <div class="text-center">
                                         <div class="w-12 h-12 border-4 border-red-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
@@ -818,55 +823,6 @@ new #[Layout('components.layouts.public')] class extends Component
             @endif
         </div>
 
-        {{-- Alpine.js LiveKit viewer --}}
-        <script>
-            function livekitViewer() {
-                return {
-                    room: null,
-                    connected: false,
-
-                    init() {
-                        this.$wire.on('livekit-viewer-connect', ({ token, url }) => {
-                            if (token && url) {
-                                this.connect(token, url);
-                            }
-                        });
-                    },
-
-                    async connect(token, url) {
-                        try {
-                            const { Room, RoomEvent } = await window.loadLiveKit();
-                            this.room = new Room();
-
-                            this.room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-                                const el = track.attach();
-                                el.classList.add('w-full', 'h-full', 'object-cover');
-                                if (this.$refs.videoPlayer) {
-                                    // Clear the loading spinner
-                                    const spinner = this.$refs.videoPlayer.querySelector('[x-if]');
-                                    this.$refs.videoPlayer.appendChild(el);
-                                }
-                            });
-
-                            this.room.on(RoomEvent.TrackUnsubscribed, (track) => {
-                                track.detach().forEach(el => el.remove());
-                            });
-
-                            await this.room.connect(url, token);
-                            this.connected = true;
-                        } catch (error) {
-                            console.error('LiveKit connection error:', error);
-                        }
-                    },
-
-                    destroy() {
-                        if (this.room) {
-                            this.room.disconnect();
-                        }
-                    }
-                };
-            }
-        </script>
 
     {{-- ==================== ENDED STATE ==================== --}}
     @elseif ($event->status === 'ended')
