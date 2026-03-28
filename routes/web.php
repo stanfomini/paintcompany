@@ -95,6 +95,15 @@ Route::livewire('/areas/{areaSlug}/{serviceSlug}', 'public.area-service-page')
     ->name('areas.service')
     ->middleware('throttle:60,1');
 
+// Live events (public)
+Route::livewire('/live', 'public.live-events')
+    ->name('live.index')
+    ->middleware('throttle:60,1');
+
+Route::livewire('/live/{liveEvent:slug}', 'public.live-event')
+    ->name('live.show')
+    ->middleware('throttle:60,1');
+
 Route::livewire('dashboard', 'dashboard')
     ->middleware(['auth', 'verified', 'auth.internal'])
     ->name('dashboard');
@@ -553,6 +562,12 @@ Route::middleware(['auth', 'verified', 'auth.internal'])->group(function () {
     Route::livewire('/bookings', 'bookings.index')
         ->middleware('permission:settings.company')
         ->name('bookings.index');
+
+    // Live events admin
+    Route::livewire('/events', 'pages::events.index')->name('events.index');
+    Route::livewire('/events/create', 'pages::events.form')->name('events.create');
+    Route::livewire('/events/{liveEvent}/edit', 'pages::events.form')->name('events.edit');
+    Route::livewire('/events/{liveEvent}/manage', 'pages::events.manage')->name('events.manage');
 
     // Referrals admin
     Route::middleware(['permission:referrals.view'])->group(function () {

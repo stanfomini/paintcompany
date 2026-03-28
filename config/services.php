@@ -84,6 +84,13 @@ return [
         'token_key' => env('BUNNY_TOKEN_KEY', ''),
     ],
 
+    'livekit' => [
+        'url' => env('LIVEKIT_URL'),
+        'api_key' => env('LIVEKIT_API_KEY'),
+        'api_secret' => env('LIVEKIT_API_SECRET'),
+        'max_viewers' => (int) env('LIVEKIT_MAX_VIEWERS', 50),
+    ],
+
     'color_visualizer' => [
         'enabled' => env('COLOR_VISUALIZER_ENABLED', false),
         'free_limit' => env('COLOR_VISUALIZER_FREE_LIMIT', 2),

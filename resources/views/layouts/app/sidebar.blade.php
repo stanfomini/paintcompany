@@ -75,6 +75,9 @@
                         <flux:sidebar.item icon="film" :href="route('media.index')" :current="request()->routeIs('media.*')" wire:navigate>
                             {{ __('Media Hub') }}
                         </flux:sidebar.item>
+                        <flux:sidebar.item icon="video-camera" :href="route('events.index')" :current="request()->routeIs('events.*')" wire:navigate>
+                            {{ __('Events') }}
+                        </flux:sidebar.item>
                     @endcan
                     @can('referrals.view')
                         <flux:sidebar.item icon="gift" :href="route('referrals.index')" :current="request()->routeIs('referrals.*')" wire:navigate>

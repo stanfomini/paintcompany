@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CompanySetting;
+use App\Models\LiveEvent;
 use App\Models\Service;
 use App\Models\ServiceArea;
 use Livewire\Attributes\Computed;
@@ -56,6 +57,16 @@ new #[Layout('components.layouts.guest')] class extends Component
         }
 
         return $related;
+    }
+
+    #[Computed]
+    public function upcomingEvents(): \Illuminate\Database\Eloquent\Collection
+    {
+        return LiveEvent::upcoming()
+            ->where('service_id', $this->service->id)
+            ->with('serviceArea')
+            ->take(3)
+            ->get();
     }
 
     #[Computed]
@@ -313,6 +324,24 @@ new #[Layout('components.layouts.guest')] class extends Component
                     <a href="{{ route('areas.service', [$area->slug, $slug]) }}" wire:key="area-{{ $area->slug }}" class="bg-white rounded-lg px-4 py-3 text-sm text-zinc-700 hover:text-brand-700 hover:bg-brand-50 transition-colors text-center shadow-sm">
                         {{ $service->title }} in {{ $area->city }}
                     </a>
+                @endforeach
+            </div>
+        </div>
+    </section>
+    @endif
+
+    {{-- Upcoming Live Events --}}
+    @if($this->upcomingEvents->isNotEmpty())
+    <section class="py-12 bg-zinc-50">
+        <div class="max-w-7xl mx-auto px-4">
+            <h2 class="text-2xl font-bold text-zinc-900 mb-6">Upcoming Live Events</h2>
+            <div class="grid gap-6 md:grid-cols-3">
+                @foreach($this->upcomingEvents as $event)
+                <a href="{{ route('live.show', $event) }}" class="bg-white rounded-lg shadow-sm hover:shadow-md transition p-6">
+                    <div class="text-sm text-blue-600 font-medium">{{ $event->scheduled_at->format('M j, Y \a\t g:i A') }}</div>
+                    <h3 class="text-lg font-semibold text-zinc-900 mt-1">{{ $event->title }}</h3>
+                    <p class="text-sm text-zinc-500 mt-2 line-clamp-2">{{ $event->description }}</p>
+                </a>
                 @endforeach
             </div>
         </div>

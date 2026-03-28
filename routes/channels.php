@@ -283,3 +283,26 @@ Broadcast::channel('visualization.{uuid}', function (User $user, string $uuid) {
 Broadcast::channel('call.user.{userId}', function (User $user, int $userId) {
     return $user->id === $userId && $user->isInternal();
 }, ['guards' => ['web']]);
+
+/**
+ * Authorize access to a live event presence channel.
+ * Authenticated users get their identity for the viewer list.
+ * Guest viewers require separate handling (custom auth endpoint).
+ */
+Broadcast::channel('live-event.{eventId}', function (User $user, int $eventId) {
+    if ($user) {
+        return ['id' => $user->id, 'name' => $user->name];
+    }
+
+    return false;
+}, ['guards' => ['web', 'agent', 'customer', 'crew']]);
+
+/**
+ * Authorize access to the live event host channel.
+ * Only the event's host user can listen on this private channel.
+ */
+Broadcast::channel('live-event-host.{eventId}', function (User $user, int $eventId) {
+    $event = \App\Models\LiveEvent::find($eventId);
+
+    return $event && $event->host_user_id === $user->id;
+}, ['guards' => ['web']]);

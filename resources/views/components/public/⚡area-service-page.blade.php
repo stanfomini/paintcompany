@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\CompanySetting;
+use App\Models\LiveEvent;
 use App\Models\Service;
 use App\Models\ServiceArea;
 use Livewire\Attributes\Computed;
@@ -77,6 +78,19 @@ new #[Layout('components.layouts.guest')] class extends Component
     public function allAreas(): \Illuminate\Support\Collection
     {
         return ServiceArea::active()->orderBy('city')->get();
+    }
+
+    #[Computed]
+    public function upcomingEvents(): \Illuminate\Database\Eloquent\Collection
+    {
+        return LiveEvent::upcoming()
+            ->where(function ($q) {
+                $q->where('service_area_id', $this->serviceArea->id)
+                    ->orWhere('service_id', $this->service->id);
+            })
+            ->with('serviceArea', 'service')
+            ->take(3)
+            ->get();
     }
 
     #[Computed]
@@ -347,6 +361,24 @@ new #[Layout('components.layouts.guest')] class extends Component
                        class="block bg-white hover:bg-brand-50 rounded-lg p-3 transition-colors group">
                         <p class="font-medium text-zinc-900 group-hover:text-brand-700 text-sm">{{ $otherArea->city }}, CO</p>
                     </a>
+                @endforeach
+            </div>
+        </div>
+    </section>
+    @endif
+
+    {{-- Upcoming Live Events --}}
+    @if($this->upcomingEvents->isNotEmpty())
+    <section class="py-12 bg-zinc-50">
+        <div class="max-w-7xl mx-auto px-4">
+            <h2 class="text-2xl font-bold text-zinc-900 mb-6">Upcoming Live Events</h2>
+            <div class="grid gap-6 md:grid-cols-3">
+                @foreach($this->upcomingEvents as $event)
+                <a href="{{ route('live.show', $event) }}" class="bg-white rounded-lg shadow-sm hover:shadow-md transition p-6">
+                    <div class="text-sm text-blue-600 font-medium">{{ $event->scheduled_at->format('M j, Y \a\t g:i A') }}</div>
+                    <h3 class="text-lg font-semibold text-zinc-900 mt-1">{{ $event->title }}</h3>
+                    <p class="text-sm text-zinc-500 mt-2 line-clamp-2">{{ $event->description }}</p>
+                </a>
                 @endforeach
             </div>
         </div>

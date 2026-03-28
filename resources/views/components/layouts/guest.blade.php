@@ -111,6 +111,7 @@
                                 <li><a href="{{ route('careers') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Careers') }}</a></li>
                                 <li><a href="{{ route('visualize') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Color Visualizer') }}</a></li>
                                 <li><a href="{{ route('calculator') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Property Value Calculator') }}</a></li>
+                                <li><a href="{{ route('live.index') }}" class="text-sm text-zinc-400 hover:text-white transition-colors">{{ __('Live Events') }}</a></li>
                             </ul>
                         </div>
 

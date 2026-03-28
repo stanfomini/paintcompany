@@ -25,6 +25,9 @@
                         <a href="{{ route('watch.index') }}" class="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white">
                             {{ __('Videos') }}
                         </a>
+                        <a href="{{ route('live.index') }}" class="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white">
+                            {{ __('Live') }}
+                        </a>
                         <a href="/" class="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white">
                             {{ __('Home') }}
                         </a>
