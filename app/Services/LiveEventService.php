@@ -30,6 +30,7 @@ class LiveEventService
             'last_message_at' => now(),
         ]);
 
+        $data['status'] = 'scheduled';
         $data['livekit_room_name'] = 'event-'.Str::random(12);
         $data['slug'] = Str::slug($data['title']);
         $data['chat_thread_id'] = $chatThread->id;
