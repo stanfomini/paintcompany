@@ -27,6 +27,14 @@ window.loadLiveKit = async () => {
     return window.LiveKitClient;
 };
 
+window.loadFrameCompositor = async () => {
+    if (!window.FrameCompositor) {
+        const module = await import('./studio/FrameCompositor.js');
+        window.FrameCompositor = module.default;
+    }
+    return window.FrameCompositor;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)

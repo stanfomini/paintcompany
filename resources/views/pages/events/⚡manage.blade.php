@@ -532,7 +532,7 @@ class extends Component
 
         app(LiveEventService::class)->markGuestLive($guest);
 
-        $this->dispatch('guest-bring-on', identity: $guest->getLivekitIdentity(), name: $guest->name);
+        $this->dispatch('guest-bring-on', identity: $guest->getLivekitIdentity(), name: $guest->name, guestId: $guest->id);
 
         unset($this->guests);
     }
@@ -543,7 +543,7 @@ class extends Component
 
         app(LiveEventService::class)->markGuestOffAir($guest);
 
-        $this->dispatch('guest-take-off', identity: $guest->getLivekitIdentity());
+        $this->dispatch('guest-take-off', identity: $guest->getLivekitIdentity(), guestId: $guest->id);
 
         unset($this->guests);
     }
@@ -1066,9 +1066,12 @@ class extends Component
                             <div
                                 class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
                                 :class="isFeedInScene(identity) ? 'border-green-500' : 'border-zinc-600'"
-                                x-ref-dynamic
                             >
-                                <video x-ref-dynamic :srcObject="feed.stream" autoplay muted playsinline class="h-full w-full object-cover"></video>
+                                <video
+                                    x-effect="if (feed.element && $el) { $el.srcObject = feed.element.srcObject; $el.play().catch(() => {}); }"
+                                    autoplay muted playsinline
+                                    class="h-full w-full object-cover"
+                                ></video>
                             </div>
                             <span class="mt-0.5 block text-center text-[10px] font-medium text-zinc-400" x-text="feed.name"></span>
                         </div>
@@ -1144,7 +1147,7 @@ class extends Component
                                     type="button"
                                     @click="toggleOverlayVisibility({{ $idx }})"
                                     class="rounded p-0.5 transition-colors"
-                                    :class="overlayVisible[{{ $idx }}] !== false ? 'text-green-400 hover:text-green-300' : 'text-zinc-600 hover:text-zinc-500'"
+                                    :class="(overlayVisible[{{ $idx }}] ?? true) ? 'text-green-400 hover:text-green-300' : 'text-zinc-600 hover:text-zinc-500'"
                                 >
                                     <flux:icon name="eye" variant="micro" class="size-3.5" />
                                 </button>
@@ -1493,22 +1496,24 @@ class extends Component
                         }
                     });
 
-                    this.$wire.on('guest-bring-on', ({ identity, name }) => {
+                    this.$wire.on('guest-bring-on', ({ identity, name, guestId }) => {
                         if (room) {
                             const encoder = new TextEncoder();
                             const data = encoder.encode(JSON.stringify({
                                 type: 'bring-on',
+                                guestId: guestId,
                                 identity: identity,
                             }));
                             room.localParticipant.publishData(data, { reliable: true });
                         }
                     });
 
-                    this.$wire.on('guest-take-off', ({ identity }) => {
+                    this.$wire.on('guest-take-off', ({ identity, guestId }) => {
                         if (room) {
                             const encoder = new TextEncoder();
                             const data = encoder.encode(JSON.stringify({
                                 type: 'take-off',
+                                guestId: guestId,
                                 identity: identity,
                             }));
                             room.localParticipant.publishData(data, { reliable: true });
@@ -1589,7 +1594,7 @@ class extends Component
                             try {
                                 const decoder = new TextDecoder();
                                 const msg = JSON.parse(decoder.decode(payload));
-                                if (msg.type === 'guest-status') {
+                                if (msg.type === 'going-live' || msg.type === 'not-ready') {
                                     this.$wire.refreshGuestStatuses();
                                 }
                             } catch (e) {
@@ -1670,7 +1675,7 @@ class extends Component
 
                 async initCompositor() {
                     try {
-                        const { default: FrameCompositor } = await import('/build/studio/FrameCompositor.js');
+                        const FrameCompositor = await window.loadFrameCompositor();
                         const canvas = this.$refs.compositorCanvas;
                         if (!canvas) return;
 
