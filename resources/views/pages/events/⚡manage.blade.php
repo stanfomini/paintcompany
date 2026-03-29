@@ -1094,20 +1094,19 @@ class extends Component
                                     class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
                                     style="aspect-ratio: 16/9;"
                                     :class="isFeedInScene(slotKey) ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
-                                    x-effect="
-                                        if (feed.element && $el) {
-                                            if (!$el.querySelector('video')) {
-                                                const clone = feed.element.cloneNode(true);
-                                                clone.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
-                                                clone.muted = true;
-                                                clone.autoplay = true;
-                                                clone.playsInline = true;
-                                                $el.appendChild(clone);
-                                                clone.play().catch(() => {});
+                                >
+                                    <video
+                                        autoplay muted playsinline
+                                        class="absolute inset-0 w-full h-full object-cover"
+                                        x-effect="
+                                            const s = guestFeeds[slotKey]?.stream;
+                                            if (s && $el.srcObject !== s) {
+                                                $el.srcObject = s;
+                                                $el.play().catch(() => {});
                                             }
-                                        }
-                                    "
-                                ></div>
+                                        "
+                                    ></video>
+                                </div>
                                 <div class="mt-1 flex items-center justify-between px-0.5">
                                     <span class="text-[10px] font-semibold text-zinc-300" x-text="feed.name"></span>
                                     <span x-show="isFeedInScene(slotKey)" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
@@ -1689,11 +1688,15 @@ class extends Component
                                 // Map identity to slot source key (e.g., "guest-abc123" → "guest-1")
                                 const slotKey = this.guestSlotMap[identity] || identity;
 
+                                // Store the MediaStream — cloneNode does NOT copy streams
+                                const stream = track.mediaStream || el.srcObject;
+
                                 // Reassign entire object for Alpine reactivity
                                 this.guestFeeds = {
                                     ...this.guestFeeds,
                                     [slotKey]: {
                                         element: el,
+                                        stream: stream,
                                         identity: identity,
                                         name: participant.name || identity,
                                     },
