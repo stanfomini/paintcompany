@@ -1087,26 +1087,16 @@ class extends Component
                             </div>
                         </div>
 
-                        {{-- Guest feed sources --}}
+                        {{-- Guest feed sources — video rendered via direct DOM, not Alpine reactivity --}}
                         <template x-for="(feed, slotKey) in guestFeeds" :key="slotKey">
                             <div class="shrink-0 w-40">
                                 <div
+                                    :id="'source-monitor-' + slotKey"
                                     class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
                                     style="aspect-ratio: 16/9;"
                                     :class="isFeedInScene(slotKey) ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
-                                >
-                                    <video
-                                        autoplay muted playsinline
-                                        class="absolute inset-0 w-full h-full object-cover"
-                                        x-effect="
-                                            const s = guestFeeds[slotKey]?.stream;
-                                            if (s && $el.srcObject !== s) {
-                                                $el.srcObject = s;
-                                                $el.play().catch(() => {});
-                                            }
-                                        "
-                                    ></video>
-                                </div>
+                                    x-init="$nextTick(() => $dispatch('render-guest-video', { slotKey }))"
+                                ></div>
                                 <div class="mt-1 flex items-center justify-between px-0.5">
                                     <span class="text-[10px] font-semibold text-zinc-300" x-text="feed.name"></span>
                                     <span x-show="isFeedInScene(slotKey)" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
@@ -1565,6 +1555,11 @@ class extends Component
             let compositor = null;
             let hostVideoEl = null;
 
+            // Media objects in closure — NOT in Alpine reactive data
+            // (Alpine Proxy wrapping breaks MediaStream/srcObject)
+            const guestElements = {};   // slotKey → video element (for compositor)
+            const guestMediaStreams = {}; // slotKey → MediaStream (for display)
+
             return {
                 connected: false,
                 audioEnabled: true,
@@ -1640,6 +1635,14 @@ class extends Component
                     this.overlayConfigs.forEach((overlay, idx) => {
                         this.overlayVisible[idx] = overlay.visible !== false;
                     });
+
+                    // Listen for guest video render requests from x-for template
+                    this.$el.addEventListener('render-guest-video', (e) => {
+                        const { slotKey } = e.detail;
+                        if (slotKey) {
+                            this.$nextTick(() => this.renderGuestVideo(slotKey));
+                        }
+                    });
                 },
 
                 async connect(token, url) {
@@ -1660,6 +1663,8 @@ class extends Component
                             const identity = participant.identity;
                             if (identity && identity.startsWith('guest-')) {
                                 const slotKey = this.guestSlotMap[identity] || identity;
+                                delete guestElements[slotKey];
+                                delete guestMediaStreams[slotKey];
                                 const { [slotKey]: _, ...rest } = this.guestFeeds;
                                 this.guestFeeds = rest;
                                 if (compositor) {
@@ -1676,36 +1681,36 @@ class extends Component
                             const identity = participant.identity;
                             if (!identity || !identity.startsWith('guest-')) return;
 
+                            const slotKey = this.guestSlotMap[identity] || identity;
+
                             if (track.kind === 'video') {
+                                // Create element for compositor (stored in closure, NOT Alpine)
                                 const el = track.attach();
                                 el.autoplay = true;
                                 el.muted = true;
                                 el.playsInline = true;
-                                el.style.width = '100%';
-                                el.style.height = '100%';
-                                el.style.objectFit = 'cover';
+                                guestElements[slotKey] = el;
+                                guestMediaStreams[slotKey] = el.srcObject;
 
-                                // Map identity to slot source key (e.g., "guest-abc123" → "guest-1")
-                                const slotKey = this.guestSlotMap[identity] || identity;
-
-                                // Store the MediaStream — cloneNode does NOT copy streams
-                                const stream = track.mediaStream || el.srcObject;
-
-                                // Reassign entire object for Alpine reactivity
+                                // Only serializable data in Alpine reactive state
                                 this.guestFeeds = {
                                     ...this.guestFeeds,
                                     [slotKey]: {
-                                        element: el,
-                                        stream: stream,
-                                        identity: identity,
                                         name: participant.name || identity,
+                                        identity: identity,
+                                        hasVideo: true,
                                     },
                                 };
 
-                                // Register with compositor using the slot key that matches scene definitions
+                                // Register with compositor
                                 if (compositor) {
                                     compositor.setFeedSource(slotKey, el);
                                 }
+
+                                // Render video into source monitor via direct DOM manipulation
+                                this.$nextTick(() => {
+                                    this.renderGuestVideo(slotKey);
+                                });
                             }
 
                             if (track.kind === 'audio') {
@@ -1723,6 +1728,8 @@ class extends Component
 
                             if (track.kind === 'video') {
                                 const slotKey = this.guestSlotMap[identity] || identity;
+                                delete guestElements[slotKey];
+                                delete guestMediaStreams[slotKey];
                                 const { [slotKey]: _, ...rest } = this.guestFeeds;
                                 this.guestFeeds = rest;
                                 if (compositor) {
@@ -1773,14 +1780,16 @@ class extends Component
                                 compositor.setFeedSource('host', el);
                             }
 
-                            // Clone for thumbnail
+                            // Render host thumbnail — use srcObject, NOT cloneNode
                             this.$nextTick(() => {
                                 const thumbContainer = this.$refs.hostThumb;
-                                if (thumbContainer) {
-                                    const thumbEl = el.cloneNode(true);
-                                    thumbEl.style.transform = 'scaleX(-1)';
-                                    thumbEl.style.objectFit = 'cover';
+                                if (thumbContainer && el.srcObject) {
+                                    const thumbEl = document.createElement('video');
+                                    thumbEl.srcObject = el.srcObject;
+                                    thumbEl.autoplay = true;
                                     thumbEl.muted = true;
+                                    thumbEl.playsInline = true;
+                                    thumbEl.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1);position:absolute;inset:0;';
                                     thumbContainer.innerHTML = '';
                                     thumbContainer.appendChild(thumbEl);
                                     thumbEl.play().catch(() => {});
@@ -1854,11 +1863,9 @@ class extends Component
                             });
                         }
 
-                        // Register existing guest feeds (already mapped to slot keys)
-                        Object.entries(this.guestFeeds).forEach(([slotKey, feed]) => {
-                            if (feed.element) {
-                                compositor.setFeedSource(slotKey, feed.element);
-                            }
+                        // Register existing guest feeds from closure storage
+                        Object.entries(guestElements).forEach(([slotKey, el]) => {
+                            compositor.setFeedSource(slotKey, el);
                         });
 
                         // Register screen share if active
@@ -2088,10 +2095,30 @@ class extends Component
                     }
                 },
 
+                // Render a guest video into its source monitor container via direct DOM manipulation
+                // (bypasses Alpine reactivity — MediaStreams can't be in reactive data)
+                renderGuestVideo(slotKey) {
+                    const container = document.getElementById('source-monitor-' + slotKey);
+                    const stream = guestMediaStreams[slotKey];
+                    if (!container || !stream) return;
+
+                    // Remove any existing video
+                    const existing = container.querySelector('video');
+                    if (existing) existing.remove();
+
+                    const videoEl = document.createElement('video');
+                    videoEl.srcObject = stream;
+                    videoEl.autoplay = true;
+                    videoEl.muted = true;
+                    videoEl.playsInline = true;
+                    videoEl.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+                    container.appendChild(videoEl);
+                    videoEl.play().catch(() => {});
+                },
+
                 isFeedInScene(slotKey) {
                     const scene = this.scenes[this.activeSceneIndex];
                     if (!scene || !scene.slots) return false;
-                    // Check if this slot key matches any slot source in the active scene
                     return scene.slots.some(slot => slot.source === slotKey);
                 },
 
