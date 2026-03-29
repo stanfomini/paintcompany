@@ -416,7 +416,15 @@ document.addEventListener('alpine:init', () => {
                     room = new Room();
 
                     room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                        // Only display host or coproducer tracks — guests publish
+                        // their own camera to the room but viewers should only see
+                        // the host's composed output (or raw camera).
+                        const id = participant.identity || '';
+                        const isHost = id.startsWith('host-') || id.startsWith('coproducer-');
+
                         if (track.kind === 'video') {
+                            if (!isHost) return; // Skip guest video tracks
+
                             const el = track.attach();
                             el.autoplay = true;
                             el.playsInline = true;
@@ -428,6 +436,8 @@ document.addEventListener('alpine:init', () => {
                                 this.$refs.videoPlayer.appendChild(el);
                             }
                         } else if (track.kind === 'audio') {
+                            if (!isHost) return; // Skip guest audio for viewers
+
                             const el = track.attach();
                             el.style.display = 'none';
                             document.body.appendChild(el);

@@ -535,10 +535,28 @@ class extends Component
             return;
         }
 
-        $this->event->update(['active_scene_index' => $index]);
+        $scene = $scenes[$index];
+
+        // Auto-enable frame mode when switching to a scene that needs compositing
+        // (multiple slots or non-host sources like guests/screen)
+        $needsCompositing = count($scene['slots'] ?? []) > 1
+            || collect($scene['slots'] ?? [])->contains(fn ($s) => $s['source'] !== 'host');
+
+        $wasFrameModeOff = ! $this->event->use_frame_mode;
+
+        if ($needsCompositing && $wasFrameModeOff) {
+            $this->event->update(['use_frame_mode' => true, 'active_scene_index' => $index]);
+        } else {
+            $this->event->update(['active_scene_index' => $index]);
+        }
+
         $this->event->refresh();
 
-        $this->dispatch('scene-switched', scene: $scenes[$index], index: $index);
+        $this->dispatch('scene-switched',
+            scene: $scene,
+            index: $index,
+            autoEnableFrameMode: $needsCompositing && $wasFrameModeOff,
+        );
     }
 
     public function bringGuestOn(int $guestId): void
@@ -1598,9 +1616,20 @@ class extends Component
                         this.disconnect();
                     });
 
-                    this.$wire.on('scene-switched', ({ scene, index }) => {
+                    this.$wire.on('scene-switched', async ({ scene, index, autoEnableFrameMode }) => {
                         this.activeSceneIndex = index;
-                        if (compositor) {
+
+                        if (autoEnableFrameMode && !this.frameModeEnabled) {
+                            // Scene needs compositing — auto-start frame mode
+                            this.frameModeEnabled = true;
+                            if (!compositor) {
+                                await this.initCompositor();
+                            }
+                            compositor.setScene(scene);
+                            await new Promise(r => setTimeout(r, 200));
+                            await this.publishCanvasStream();
+                            console.log('Frame mode auto-enabled for scene:', scene.name);
+                        } else if (compositor) {
                             compositor.setScene(scene);
                         }
                     });
@@ -1698,9 +1727,11 @@ class extends Component
                         room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
                             try {
                                 const identity = participant.identity;
+                                console.log('[Studio] TrackSubscribed:', track.kind, 'from', identity);
                                 if (!identity || !identity.startsWith('guest-')) return;
 
                                 const slotKey = this.guestSlotMap[identity] || identity;
+                                console.log('[Studio] Guest track mapped to slot:', slotKey, '(map:', JSON.stringify(this.guestSlotMap), ')');
 
                                 if (track.kind === 'video') {
                                     // Create element for compositor (stored in closure, NOT Alpine)
@@ -1853,7 +1884,7 @@ class extends Component
                         const FrameCompositor = await window.loadFrameCompositor();
                         const canvas = this.$refs.compositorCanvas;
                         if (!canvas) {
-                            console.warn('Compositor canvas element not found');
+                            console.warn('[Studio] Compositor canvas element not found');
                             return;
                         }
 
@@ -1863,6 +1894,7 @@ class extends Component
                         const scene = this.scenes[this.activeSceneIndex];
                         if (scene) {
                             compositor.setScene(scene);
+                            console.log('[Studio] Scene loaded:', scene.name, 'slots:', scene.slots?.map(s => s.source));
                         }
 
                         // Load overlays
@@ -1874,6 +1906,7 @@ class extends Component
                         // even though we might not be publishing it to LiveKit
                         if (hostVideoEl) {
                             compositor.setFeedSource('host', hostVideoEl);
+                            console.log('[Studio] Host feed registered, readyState:', hostVideoEl.readyState);
                         } else if (room) {
                             // Try to get host video from local participant's tracks
                             room.localParticipant.videoTrackPublications.forEach((pub) => {
@@ -1882,13 +1915,19 @@ class extends Component
                                     el.muted = true;
                                     hostVideoEl = el;
                                     compositor.setFeedSource('host', el);
+                                    console.log('[Studio] Host feed created from pub, readyState:', el.readyState);
                                 }
                             });
+                        } else {
+                            console.warn('[Studio] No host video available for compositor');
                         }
 
                         // Register existing guest feeds from closure storage
+                        const guestKeys = Object.keys(guestElements);
+                        console.log('[Studio] Registering guest feeds:', guestKeys);
                         Object.entries(guestElements).forEach(([slotKey, el]) => {
                             compositor.setFeedSource(slotKey, el);
+                            console.log('[Studio] Guest feed registered:', slotKey, 'readyState:', el.readyState);
                         });
 
                         // Register screen share if active
@@ -1903,9 +1942,9 @@ class extends Component
                         }
 
                         compositor.start();
-                        console.log('FrameCompositor initialized and running');
+                        console.log('[Studio] FrameCompositor initialized and running');
                     } catch (e) {
-                        console.warn('FrameCompositor not available:', e.message);
+                        console.error('[Studio] FrameCompositor init failed:', e);
                     }
                 },
 
@@ -2054,36 +2093,39 @@ class extends Component
                 },
 
                 async publishCanvasStream() {
-                    if (!room || !compositor) return;
+                    if (!room || !compositor) {
+                        console.warn('[Studio] publishCanvasStream: no room or compositor');
+                        return;
+                    }
                     try {
                         const canvasStream = compositor.getOutputStream();
                         const canvasTrack = canvasStream.getVideoTracks()[0];
                         if (!canvasTrack) {
-                            console.warn('No video track from canvas stream');
+                            console.warn('[Studio] No video track from canvas stream');
                             return;
                         }
 
                         // Unpublish camera WITHOUT stopping the local capture.
                         // setCameraEnabled(false) kills the MediaStreamTrack, which
                         // breaks the compositor (host video becomes readyState 0).
-                        // unpublishTrack(track, false) keeps the capture alive.
-                        const cameraPub = Array.from(room.localParticipant.videoTrackPublications.values())
-                            .find(p => p.source === 'camera');
-                        if (cameraPub?.track) {
-                            await room.localParticipant.unpublishTrack(cameraPub.track, false);
+                        // unpublishTrack(track, false) keeps the capture alive locally.
+                        const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
+                        for (const pub of pubs) {
+                            if (pub.track) {
+                                console.log('[Studio] Unpublishing track:', pub.source);
+                                await room.localParticipant.unpublishTrack(pub.track, false);
+                            }
                         }
 
-                        // Publish canvas track — userProvidedTrack=true since we manage lifecycle
-                        const { LocalVideoTrack, Track } = await window.loadLiveKit();
-                        const localTrack = new LocalVideoTrack(canvasTrack, undefined, true);
-                        await room.localParticipant.publishTrack(localTrack, {
+                        // Publish canvas track directly — livekit-client wraps it automatically
+                        await room.localParticipant.publishTrack(canvasTrack, {
+                            name: 'composited-frame',
                             simulcast: false,
-                            source: Track.Source.Camera,
                         });
 
-                        console.log('Canvas stream published to LiveKit');
+                        console.log('[Studio] Canvas stream published to LiveKit');
                     } catch (err) {
-                        console.error('Failed to publish canvas stream:', err);
+                        console.error('[Studio] Failed to publish canvas stream:', err);
                     }
                 },
 
@@ -2094,6 +2136,7 @@ class extends Component
                         const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
                         for (const pub of pubs) {
                             if (pub.track) {
+                                console.log('[Studio] Unpublishing track for raw camera switch:', pub.source);
                                 await room.localParticipant.unpublishTrack(pub.track, true);
                             }
                         }
@@ -2103,9 +2146,9 @@ class extends Component
 
                         // Re-enable camera (creates fresh track + publishes)
                         await room.localParticipant.setCameraEnabled(true);
-                        console.log('Raw camera republished to LiveKit');
+                        console.log('[Studio] Raw camera republished to LiveKit');
                     } catch (err) {
-                        console.error('Failed to switch to raw camera:', err);
+                        console.error('[Studio] Failed to switch to raw camera:', err);
                     }
                 },
 
