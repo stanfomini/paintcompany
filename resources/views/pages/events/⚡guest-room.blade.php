@@ -738,7 +738,8 @@ new #[Layout('layouts.video-call')] class extends Component
                     }
                 },
 
-                notReady() {
+                async notReady() {
+                    await this.stopPublishing();
                     this.guestStatus = 'waiting';
                     this.sendDataMessage({ type: 'not-ready', guestId: config.guestId });
                 },
@@ -806,6 +807,10 @@ new #[Layout('layouts.video-call')] class extends Component
                 },
 
                 destroy() {
+                    // Unmute host audio in case guest was live when destroyed
+                    const hostAudio = document.getElementById('host-audio-preview');
+                    if (hostAudio) hostAudio.muted = false;
+
                     if (animationFrame) cancelAnimationFrame(animationFrame);
                     if (localStream) localStream.getTracks().forEach(t => t.stop());
                     if (audioContext) audioContext.close();

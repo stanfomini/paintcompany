@@ -550,6 +550,7 @@ class extends Component
         $this->dispatch('guest-bring-on', identity: $guest->getLivekitIdentity(), name: $guest->name, guestId: $guest->id);
 
         unset($this->guests);
+        $this->dispatchGuestSlotMap();
     }
 
     public function takeGuestOff(int $guestId): void
@@ -561,11 +562,22 @@ class extends Component
         $this->dispatch('guest-take-off', identity: $guest->getLivekitIdentity(), guestId: $guest->id);
 
         unset($this->guests);
+        $this->dispatchGuestSlotMap();
     }
 
     public function refreshGuestStatuses(): void
     {
         unset($this->guests);
+        $this->dispatchGuestSlotMap();
+    }
+
+    private function dispatchGuestSlotMap(): void
+    {
+        $map = $this->guests->mapWithKeys(
+            fn ($g) => [$g->getLivekitIdentity() => 'guest-' . $g->slot_number]
+        )->toArray();
+
+        $this->dispatch('update-guest-slot-map', map: $map);
     }
 }; ?>
 
@@ -1554,6 +1566,7 @@ class extends Component
             let room = null;
             let compositor = null;
             let hostVideoEl = null;
+            let videoAttached = false;
 
             // Media objects in closure — NOT in Alpine reactive data
             // (Alpine Proxy wrapping breaks MediaStream/srcObject)
@@ -1631,6 +1644,11 @@ class extends Component
                         }
                     });
 
+                    // Keep guest slot map in sync when guests are added/changed while live
+                    this.$wire.on('update-guest-slot-map', ({ map }) => {
+                        this.guestSlotMap = map;
+                    });
+
                     // Initialize overlay visibility state
                     this.overlayConfigs.forEach((overlay, idx) => {
                         this.overlayVisible[idx] = overlay.visible !== false;
@@ -1678,45 +1696,51 @@ class extends Component
 
                         // Handle remote tracks (guest video feeds)
                         room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                            const identity = participant.identity;
-                            if (!identity || !identity.startsWith('guest-')) return;
+                            try {
+                                const identity = participant.identity;
+                                if (!identity || !identity.startsWith('guest-')) return;
 
-                            const slotKey = this.guestSlotMap[identity] || identity;
+                                const slotKey = this.guestSlotMap[identity] || identity;
 
-                            if (track.kind === 'video') {
-                                // Create element for compositor (stored in closure, NOT Alpine)
-                                const el = track.attach();
-                                el.autoplay = true;
-                                el.muted = true;
-                                el.playsInline = true;
-                                guestElements[slotKey] = el;
-                                guestMediaStreams[slotKey] = el.srcObject;
+                                if (track.kind === 'video') {
+                                    // Create element for compositor (stored in closure, NOT Alpine)
+                                    const el = track.attach();
+                                    el.autoplay = true;
+                                    el.muted = true;
+                                    el.playsInline = true;
+                                    guestElements[slotKey] = el;
+                                    guestMediaStreams[slotKey] = el.srcObject;
 
-                                // Only serializable data in Alpine reactive state
-                                this.guestFeeds = {
-                                    ...this.guestFeeds,
-                                    [slotKey]: {
-                                        name: participant.name || identity,
-                                        identity: identity,
-                                        hasVideo: true,
-                                    },
-                                };
+                                    // Only serializable data in Alpine reactive state
+                                    this.guestFeeds = {
+                                        ...this.guestFeeds,
+                                        [slotKey]: {
+                                            name: participant.name || identity,
+                                            identity: identity,
+                                            hasVideo: true,
+                                        },
+                                    };
 
-                                // Register with compositor
-                                if (compositor) {
-                                    compositor.setFeedSource(slotKey, el);
+                                    // Register with compositor
+                                    if (compositor) {
+                                        compositor.setFeedSource(slotKey, el);
+                                    }
+
+                                    // Render video into source monitor via direct DOM manipulation
+                                    this.$nextTick(() => {
+                                        if (document.getElementById('source-monitor-' + slotKey)) {
+                                            this.renderGuestVideo(slotKey);
+                                        }
+                                    });
                                 }
 
-                                // Render video into source monitor via direct DOM manipulation
-                                this.$nextTick(() => {
-                                    this.renderGuestVideo(slotKey);
-                                });
-                            }
-
-                            if (track.kind === 'audio') {
-                                const audioEl = track.attach();
-                                audioEl.style.display = 'none';
-                                document.body.appendChild(audioEl);
+                                if (track.kind === 'audio') {
+                                    const audioEl = track.attach();
+                                    audioEl.style.display = 'none';
+                                    document.body.appendChild(audioEl);
+                                }
+                            } catch (err) {
+                                console.error('Failed to handle guest track subscription:', err);
                             }
                         });
 
@@ -1756,7 +1780,6 @@ class extends Component
                         await room.localParticipant.setMicrophoneEnabled(true);
 
                         const videoEl = this.$refs.hostVideo;
-                        let videoAttached = false;
 
                         const attachVideo = (track) => {
                             if (videoAttached) return;
@@ -2040,38 +2063,34 @@ class extends Component
                             return;
                         }
 
-                        // Disable camera (stops publishing it) but keep the local track for compositor
-                        await room.localParticipant.setCameraEnabled(false);
+                        // Unpublish camera WITHOUT stopping the local capture.
+                        // setCameraEnabled(false) kills the MediaStreamTrack, which
+                        // breaks the compositor (host video becomes readyState 0).
+                        // unpublishTrack(track, false) keeps the capture alive.
+                        const cameraPub = Array.from(room.localParticipant.videoTrackPublications.values())
+                            .find(p => p.source === 'camera');
+                        if (cameraPub?.track) {
+                            await room.localParticipant.unpublishTrack(cameraPub.track, false);
+                        }
 
-                        // Publish the canvas track as a custom video source
-                        const { LocalVideoTrack } = await window.loadLiveKit();
-                        const localTrack = new LocalVideoTrack(canvasTrack, 'composited-frame', false);
+                        // Publish canvas track — userProvidedTrack=true since we manage lifecycle
+                        const { LocalVideoTrack, Track } = await window.loadLiveKit();
+                        const localTrack = new LocalVideoTrack(canvasTrack, undefined, true);
                         await room.localParticipant.publishTrack(localTrack, {
                             simulcast: false,
-                            source: 'camera',
+                            source: Track.Source.Camera,
                         });
 
                         console.log('Canvas stream published to LiveKit');
                     } catch (err) {
                         console.error('Failed to publish canvas stream:', err);
-                        // Fallback: if LocalVideoTrack isn't available, try raw track
-                        try {
-                            const canvasStream = compositor.getOutputStream();
-                            const canvasTrack = canvasStream.getVideoTracks()[0];
-                            if (canvasTrack) {
-                                await room.localParticipant.setCameraEnabled(false);
-                                await room.localParticipant.publishTrack(canvasTrack);
-                            }
-                        } catch (fallbackErr) {
-                            console.error('Fallback canvas publish also failed:', fallbackErr);
-                        }
                     }
                 },
 
                 async publishRawCamera() {
                     if (!room) return;
                     try {
-                        // Unpublish all video tracks (canvas track)
+                        // Unpublish all video tracks (canvas track — stop it since we own it)
                         const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
                         for (const pub of pubs) {
                             if (pub.track) {
@@ -2079,7 +2098,10 @@ class extends Component
                             }
                         }
 
-                        // Re-enable camera
+                        // Reset guard so attachVideo() fires for the new camera track
+                        videoAttached = false;
+
+                        // Re-enable camera (creates fresh track + publishes)
                         await room.localParticipant.setCameraEnabled(true);
                         console.log('Raw camera republished to LiveKit');
                     } catch (err) {
