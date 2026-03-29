@@ -1023,9 +1023,11 @@ class extends Component
                     </div>
                 </div>
 
-                {{-- Main Preview Area --}}
-                <div class="relative flex-1 bg-black">
-                    {{-- Canvas compositor output (what viewers see when frame mode is on) --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- PROGRAM MONITOR — what viewers see --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div class="relative bg-black" style="aspect-ratio: 16/9; max-height: 45vh;">
+                    {{-- Canvas compositor output --}}
                     <canvas
                         x-ref="compositorCanvas"
                         x-show="frameModeEnabled"
@@ -1038,79 +1040,106 @@ class extends Component
                     {{-- Raw camera view (when frame mode is off) --}}
                     <div x-ref="hostVideo" x-show="!frameModeEnabled" wire:ignore class="flex h-full w-full items-center justify-center">
                         <div x-show="!connected" class="flex flex-col items-center justify-center">
-                            <div class="mb-4 size-20 animate-pulse rounded-full bg-zinc-700"></div>
-                            <span class="text-sm text-zinc-400">{{ __('Connecting to stream...') }}</span>
+                            <div class="mb-4 size-16 animate-pulse rounded-full bg-zinc-700"></div>
+                            <span class="text-sm text-zinc-400">{{ __('Connecting...') }}</span>
                         </div>
                     </div>
 
-                    {{-- Connection error overlay --}}
+                    {{-- Connection error --}}
                     <div x-show="connectionError" x-cloak class="absolute inset-0 flex items-center justify-center bg-black/80">
-                        <div class="text-center">
-                            <flux:icon name="exclamation-triangle" class="mx-auto mb-2 size-8 text-red-400" />
-                            <span class="text-sm text-red-400" x-text="connectionError"></span>
-                        </div>
+                        <flux:icon name="exclamation-triangle" class="mx-auto mb-2 size-8 text-red-400" />
+                        <span class="text-sm text-red-400" x-text="connectionError"></span>
                     </div>
 
-                    {{-- Frame mode badge --}}
-                    <div x-show="frameModeEnabled && connected" x-cloak class="absolute top-3 left-3">
-                        <span class="rounded bg-purple-600/80 px-2 py-0.5 text-xs font-medium text-white">{{ __('FRAME MODE') }}</span>
+                    {{-- Badges --}}
+                    <div class="absolute top-2 left-2 flex items-center gap-2">
+                        <span class="rounded bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white tracking-wider">PROGRAM</span>
+                        <span x-show="frameModeEnabled" x-cloak class="rounded bg-purple-600/80 px-2 py-0.5 text-[10px] font-medium text-white">FRAME</span>
                     </div>
-
-                    {{-- Active scene label --}}
-                    <div x-show="connected" x-cloak class="absolute top-3 right-3">
-                        <span class="rounded bg-black/60 px-2 py-0.5 text-xs text-zinc-300" x-text="scenes[activeSceneIndex]?.name ?? 'Solo'"></span>
+                    <div class="absolute top-2 right-2">
+                        <span class="rounded bg-black/60 px-2 py-0.5 text-[10px] text-zinc-300" x-text="scenes[activeSceneIndex]?.name ?? 'Solo'"></span>
                     </div>
                 </div>
 
-                {{-- Feed Thumbnail Row --}}
-                <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-900 px-3 py-2" wire:ignore>
-                    {{-- Host camera thumbnail --}}
-                    <div class="shrink-0">
-                        <div
-                            x-ref="hostThumb"
-                            class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                            :class="isFeedInScene('host') ? 'border-green-500' : 'border-zinc-600'"
-                        >
-                            <div class="absolute inset-0 flex items-center justify-center">
-                                <span class="text-[10px] text-zinc-500">{{ __('Loading...') }}</span>
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- SOURCE MONITORS — all available feeds --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div class="border-t border-zinc-700 bg-zinc-950 px-3 py-2 overflow-x-auto" wire:ignore>
+                    <div class="flex items-center gap-1 mb-1.5">
+                        <span class="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{{ __('Sources') }}</span>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        {{-- Host camera source --}}
+                        <div class="shrink-0 w-40">
+                            <div
+                                x-ref="hostThumb"
+                                class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                                style="aspect-ratio: 16/9;"
+                                :class="isFeedInScene('host') ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
+                            >
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-[10px] text-zinc-600">{{ __('Camera') }}</span>
+                                </div>
+                            </div>
+                            <div class="mt-1 flex items-center justify-between px-0.5">
+                                <span class="text-[10px] font-semibold text-zinc-300">{{ __('You (Host)') }}</span>
+                                <span x-show="isFeedInScene('host')" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
                             </div>
                         </div>
-                        <span class="mt-0.5 block text-center text-[10px] font-medium text-zinc-400">{{ __('You') }}</span>
-                    </div>
 
-                    {{-- Guest feed thumbnails --}}
-                    <template x-for="(feed, slotKey) in guestFeeds" :key="slotKey">
-                        <div class="shrink-0">
+                        {{-- Guest feed sources --}}
+                        <template x-for="(feed, slotKey) in guestFeeds" :key="slotKey">
+                            <div class="shrink-0 w-40">
+                                <div
+                                    class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                                    style="aspect-ratio: 16/9;"
+                                    :class="isFeedInScene(slotKey) ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
+                                    x-effect="
+                                        if (feed.element && $el) {
+                                            if (!$el.querySelector('video')) {
+                                                const clone = feed.element.cloneNode(true);
+                                                clone.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+                                                clone.muted = true;
+                                                clone.autoplay = true;
+                                                clone.playsInline = true;
+                                                $el.appendChild(clone);
+                                                clone.play().catch(() => {});
+                                            }
+                                        }
+                                    "
+                                ></div>
+                                <div class="mt-1 flex items-center justify-between px-0.5">
+                                    <span class="text-[10px] font-semibold text-zinc-300" x-text="feed.name"></span>
+                                    <span x-show="isFeedInScene(slotKey)" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
+                                </div>
+                            </div>
+                        </template>
+
+                        {{-- Screen share source --}}
+                        <div x-show="screenStream" x-cloak class="shrink-0 w-40">
                             <div
-                                class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                                :class="isFeedInScene(slotKey) ? 'border-green-500' : 'border-zinc-600'"
-                                x-effect="
-                                    if (feed.element && $el) {
-                                        const existing = $el.querySelector('video');
-                                        if (existing) existing.remove();
-                                        const clone = feed.element.cloneNode(true);
-                                        clone.style.width = '100%';
-                                        clone.style.height = '100%';
-                                        clone.style.objectFit = 'cover';
-                                        clone.muted = true;
-                                        $el.appendChild(clone);
-                                        clone.play().catch(() => {});
-                                    }
-                                "
-                            ></div>
-                            <span class="mt-0.5 block text-center text-[10px] font-medium text-zinc-400" x-text="feed.name"></span>
+                                class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                                style="aspect-ratio: 16/9;"
+                                :class="isFeedInScene('screen') ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
+                            >
+                                <video x-ref="screenThumb" autoplay muted playsinline class="absolute inset-0 w-full h-full object-cover"></video>
+                            </div>
+                            <div class="mt-1 flex items-center justify-between px-0.5">
+                                <span class="text-[10px] font-semibold text-purple-300">{{ __('Screen Share') }}</span>
+                                <span x-show="isFeedInScene('screen')" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
+                            </div>
                         </div>
-                    </template>
 
-                    {{-- Screen share thumbnail --}}
-                    <div x-show="screenStream" x-cloak class="shrink-0">
-                        <div
-                            class="relative h-16 w-24 overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                            :class="isFeedInScene('screen') ? 'border-green-500' : 'border-zinc-600'"
-                        >
-                            <video x-ref="screenThumb" autoplay muted playsinline class="h-full w-full object-cover"></video>
+                        {{-- Empty slot placeholder when no guests --}}
+                        <div x-show="Object.keys(guestFeeds).length === 0" class="shrink-0 w-40">
+                            <div class="relative overflow-hidden rounded border-2 border-dashed border-zinc-700 bg-zinc-900" style="aspect-ratio: 16/9;">
+                                <div class="absolute inset-0 flex flex-col items-center justify-center">
+                                    <svg class="w-5 h-5 text-zinc-700 mb-1" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
+                                    <span class="text-[9px] text-zinc-600">{{ __('No guests connected') }}</span>
+                                </div>
+                            </div>
+                            <span class="mt-1 block text-[10px] text-zinc-600 px-0.5">{{ __('Invite guests above') }}</span>
                         </div>
-                        <span class="mt-0.5 block text-center text-[10px] font-medium text-purple-400">{{ __('Screen') }}</span>
                     </div>
                 </div>
 
