@@ -1439,10 +1439,18 @@ class extends Component
                     this.$wire.on('livekit-disconnect', () => this.disconnect());
 
                     this.$wire.on('guest-bring-on', ({ identity, name, guestId }) => {
-                        console.log('[Studio] Guest brought on:', name);
+                        if (studioChannel) {
+                            studioChannel.whisper('bring-on', { guestId });
+                            console.log('[Studio] Bring-on whisper sent to guest:', guestId, name);
+                        } else {
+                            console.warn('[Studio] No studio channel — cannot signal guest');
+                        }
                     });
 
                     this.$wire.on('guest-take-off', ({ identity, guestId }) => {
+                        if (studioChannel) {
+                            studioChannel.whisper('take-off', { guestId });
+                        }
                         const slotKey = this._guestSlotKey(guestId);
                         if (sourceManager) sourceManager.removeSource(slotKey);
                         console.log('[Studio] Guest taken off:', slotKey);

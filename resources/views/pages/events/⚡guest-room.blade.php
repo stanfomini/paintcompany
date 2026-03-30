@@ -136,6 +136,7 @@ new #[Layout('layouts.video-call')] class extends Component
                 livekitUrl: @js($livekitUrl),
                 guestId: @js($guest->id),
                 guestIdentity: @js($guest->getLivekitIdentity()),
+                guestName: @js($guest->name),
                 guestToken: @js($guestToken),
                 eventId: @js($event->id),
                 backstageThreadId: @js($event->backstage_chat_thread_id),
@@ -781,7 +782,7 @@ new #[Layout('layouts.video-call')] class extends Component
                         // Signal ready to host
                         studioChannel.whisper('guest-ready', {
                             guestId: config.guestIdentity,
-                            name: config.guestIdentity,
+                            name: config.guestName || 'Guest',
                         });
                     } catch (err) {
                         console.error('[GuestRoom] Failed to go live:', err);
