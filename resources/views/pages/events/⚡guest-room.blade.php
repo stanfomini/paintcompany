@@ -656,10 +656,23 @@ new #[Layout('layouts.video-call')] class extends Component
                             });
                         }
 
-                        studioChannel = echoInstance.join(`event-studio.${config.eventId}`);
+                        studioChannel = echoInstance.join(`event-studio.${config.eventId}`)
+                            .here((users) => {
+                                console.log('[GuestRoom] Studio channel subscribed. Users:', users);
+                            })
+                            .joining((user) => {
+                                console.log('[GuestRoom] User joined studio channel:', user);
+                            })
+                            .leaving((user) => {
+                                console.log('[GuestRoom] User left studio channel:', user);
+                            })
+                            .error((error) => {
+                                console.error('[GuestRoom] Studio channel subscription FAILED:', error);
+                            });
 
                         // Listen for host commands via whispers
                         studioChannel.listenForWhisper('bring-on', (data) => {
+                            console.log('[GuestRoom] Received bring-on whisper:', data);
                             if (data.guestId && data.guestId !== config.guestId) return;
                             this.guestStatus = 'called';
                             if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -667,6 +680,7 @@ new #[Layout('layouts.video-call')] class extends Component
                         });
 
                         studioChannel.listenForWhisper('take-off', (data) => {
+                            console.log('[GuestRoom] Received take-off whisper:', data);
                             if (data.guestId && data.guestId !== config.guestId) return;
                             this.disconnectPeer();
                             this.guestStatus = 'waiting';
@@ -677,7 +691,7 @@ new #[Layout('layouts.video-call')] class extends Component
                             this.guestStatus = 'finished';
                         });
 
-                        console.log('[GuestRoom] Studio channel joined');
+                        console.log('[GuestRoom] Studio channel join requested');
                     } catch (err) {
                         console.warn('[GuestRoom] Studio channel setup failed:', err);
                     }

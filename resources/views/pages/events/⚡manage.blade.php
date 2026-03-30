@@ -1573,7 +1573,19 @@ class extends Component
                         },
                     });
 
-                    studioChannel = echoInstance.join(`event-studio.${eventId}`);
+                    studioChannel = echoInstance.join(`event-studio.${eventId}`)
+                        .here((users) => {
+                            console.log('[Studio] Studio channel subscribed. Users:', users);
+                        })
+                        .joining((user) => {
+                            console.log('[Studio] User joined studio channel:', user);
+                        })
+                        .leaving((user) => {
+                            console.log('[Studio] User left studio channel:', user);
+                        })
+                        .error((error) => {
+                            console.error('[Studio] Studio channel subscription FAILED:', error);
+                        });
                     peerManager = new PeerManager(studioChannel, 'host');
 
                     // When guest video arrives via WebRTC peer connection
