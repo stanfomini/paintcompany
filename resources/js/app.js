@@ -59,6 +59,14 @@ window.loadGuestPeerConnection = async () => {
     return window.StudioGuestPeerConnection;
 };
 
+window.loadOverlayRenderer = async () => {
+    if (!window.StudioOverlayRenderer) {
+        const module = await import('./studio/OverlayRenderer.js');
+        window.StudioOverlayRenderer = module.default;
+    }
+    return window.StudioOverlayRenderer;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
