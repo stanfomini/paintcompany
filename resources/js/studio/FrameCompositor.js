@@ -10,6 +10,9 @@
  *   2. Draw each slot's video feed (or placeholder if missing)
  *   3. Draw overlays (text with optional background, images)
  *   4. requestAnimationFrame for next frame
+ *
+ * Video elements are provided by a SourceManager instance, which
+ * guarantees they are in the DOM and playing.
  */
 
 const CANVAS_WIDTH = 1280;
@@ -18,48 +21,34 @@ const TARGET_FPS = 30;
 const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
 export default class FrameCompositor {
-    constructor(canvas, options = {}) {
+    /**
+     * @param {HTMLCanvasElement} canvas
+     * @param {SourceManager} sourceManager - Provides video elements by source key
+     * @param {Object} [options]
+     * @param {number} [options.width=1280]
+     * @param {number} [options.height=720]
+     */
+    constructor(canvas, sourceManager, options = {}) {
         this._canvas = canvas;
         this._ctx = canvas.getContext('2d');
+        this._sourceManager = sourceManager;
         this._width = options.width ?? CANVAS_WIDTH;
         this._height = options.height ?? CANVAS_HEIGHT;
 
         canvas.width = this._width;
         canvas.height = this._height;
 
-        // Scene state
         this._scene = null;
         this._overlays = [];
-
-        // Registered video elements keyed by source name
-        this._feedSources = new Map();
-
-        // Preloaded Image objects keyed by overlay src URL
         this._imageCache = new Map();
-
-        // Render loop state
         this._running = false;
         this._rafId = null;
         this._lastFrameTime = 0;
-
-        // Output stream (lazy-created)
         this._outputStream = null;
 
-        // Bind once so we can cancel cleanly
         this._renderFrame = this._renderFrame.bind(this);
     }
 
-    // =========================================================================
-    // Scene management
-    // =========================================================================
-
-    /**
-     * Load a scene configuration.
-     *
-     * @param {Object} sceneConfig
-     * @param {Array} sceneConfig.slots - Video slot definitions
-     * @param {Array} [sceneConfig.overlays] - Overlay definitions
-     */
     setScene(sceneConfig) {
         this._scene = sceneConfig;
 
@@ -70,39 +59,6 @@ export default class FrameCompositor {
         }
     }
 
-    // =========================================================================
-    // Feed source management
-    // =========================================================================
-
-    /**
-     * Register a video element for a source key (e.g. "host", "guest-1").
-     *
-     * @param {string} sourceKey
-     * @param {HTMLVideoElement} videoElement
-     */
-    setFeedSource(sourceKey, videoElement) {
-        this._feedSources.set(sourceKey, videoElement);
-    }
-
-    /**
-     * Remove a feed source by key.
-     *
-     * @param {string} sourceKey
-     */
-    removeFeedSource(sourceKey) {
-        this._feedSources.delete(sourceKey);
-    }
-
-    // =========================================================================
-    // Overlay management
-    // =========================================================================
-
-    /**
-     * Replace the entire overlay list.
-     * Preloads any image overlays so they're ready for rendering.
-     *
-     * @param {Array} overlays
-     */
     setOverlays(overlays) {
         this._overlays = overlays.map((overlay) => ({
             ...overlay,
@@ -112,33 +68,17 @@ export default class FrameCompositor {
         this._preloadImages();
     }
 
-    /**
-     * Update a text overlay's content by index.
-     *
-     * @param {number} index
-     * @param {string} text
-     */
     updateOverlayText(index, text) {
         if (this._overlays[index] && this._overlays[index].type === 'text') {
             this._overlays[index].content = text;
         }
     }
 
-    /**
-     * Show or hide an overlay by index.
-     *
-     * @param {number} index
-     * @param {boolean} visible
-     */
     toggleOverlay(index, visible) {
         if (this._overlays[index]) {
             this._overlays[index].visible = visible;
         }
     }
-
-    // =========================================================================
-    // Render loop control
-    // =========================================================================
 
     start() {
         if (this._running) {
@@ -148,6 +88,7 @@ export default class FrameCompositor {
         this._running = true;
         this._lastFrameTime = 0;
         this._rafId = requestAnimationFrame(this._renderFrame);
+        console.log('[Compositor] Started rendering');
     }
 
     stop() {
@@ -157,17 +98,9 @@ export default class FrameCompositor {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
         }
+        console.log('[Compositor] Stopped rendering');
     }
 
-    // =========================================================================
-    // Output
-    // =========================================================================
-
-    /**
-     * Returns the canvas capture stream for publishing to LiveKit.
-     *
-     * @returns {MediaStream}
-     */
     getOutputStream() {
         if (!this._outputStream) {
             this._outputStream = this._canvas.captureStream(TARGET_FPS);
@@ -176,32 +109,23 @@ export default class FrameCompositor {
         return this._outputStream;
     }
 
-    // =========================================================================
-    // Cleanup
-    // =========================================================================
-
     destroy() {
         this.stop();
 
         this._scene = null;
         this._overlays = [];
-        this._feedSources.clear();
         this._imageCache.clear();
         this._outputStream = null;
+        this._sourceManager = null;
         this._ctx = null;
         this._canvas = null;
     }
-
-    // =========================================================================
-    // Render loop (private)
-    // =========================================================================
 
     _renderFrame(timestamp) {
         if (!this._running) {
             return;
         }
 
-        // Throttle to target FPS
         const elapsed = timestamp - this._lastFrameTime;
 
         if (elapsed >= FRAME_INTERVAL) {
@@ -217,18 +141,15 @@ export default class FrameCompositor {
         const w = this._width;
         const h = this._height;
 
-        // Clear with black background
         ctx.fillStyle = '#000000';
         ctx.fillRect(0, 0, w, h);
 
-        // Draw video slots
         if (this._scene && this._scene.slots) {
             for (const slot of this._scene.slots) {
                 this._drawSlot(ctx, slot, w, h);
             }
         }
 
-        // Draw overlays
         for (const overlay of this._overlays) {
             if (!overlay.visible) {
                 continue;
@@ -242,24 +163,17 @@ export default class FrameCompositor {
         }
     }
 
-    /**
-     * Draw a single video slot. If the source video element exists and has
-     * data, draw it scaled to the slot rect. Otherwise draw a placeholder.
-     */
     _drawSlot(ctx, slot, canvasW, canvasH) {
         const x = slot.x * canvasW;
         const y = slot.y * canvasH;
         const w = slot.w * canvasW;
         const h = slot.h * canvasH;
 
-        const videoEl = this._feedSources.get(slot.source);
+        const videoEl = this._sourceManager?.getElement(slot.source);
 
         if (videoEl && videoEl.readyState >= 2) {
-            // drawImage handles aspect ratio stretching to fill the slot rect.
-            // For a production compositor you might letterbox — this keeps it simple.
             ctx.drawImage(videoEl, x, y, w, h);
         } else {
-            // Placeholder: dark gray box with source label
             ctx.fillStyle = '#1a1a1a';
             ctx.fillRect(x, y, w, h);
 
@@ -267,13 +181,13 @@ export default class FrameCompositor {
             ctx.font = '600 14px sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(slot.source, x + w / 2, y + h / 2);
+
+            const name = this._sourceManager?.getAllSources()
+                .find(s => s.key === slot.source)?.name ?? slot.source;
+            ctx.fillText(name, x + w / 2, y + h / 2);
         }
     }
 
-    /**
-     * Draw a text overlay with optional background box.
-     */
     _drawTextOverlay(ctx, overlay, canvasW, canvasH) {
         const x = overlay.x * canvasW;
         const y = overlay.y * canvasH;
@@ -285,13 +199,11 @@ export default class FrameCompositor {
         ctx.textBaseline = 'top';
         ctx.textAlign = 'left';
 
-        // Measure text for background box
         const metrics = ctx.measureText(overlay.content);
         const textWidth = metrics.width;
-        const textHeight = fontSize * 1.3; // approximate line height
+        const textHeight = fontSize * 1.3;
         const padding = fontSize * 0.3;
 
-        // Background box
         if (overlay.bg) {
             ctx.fillStyle = overlay.bg;
             ctx.fillRect(
@@ -302,14 +214,10 @@ export default class FrameCompositor {
             );
         }
 
-        // Text
         ctx.fillStyle = color;
         ctx.fillText(overlay.content, x, y);
     }
 
-    /**
-     * Draw a preloaded image overlay.
-     */
     _drawImageOverlay(ctx, overlay, canvasW, canvasH) {
         const img = this._imageCache.get(overlay.src);
 
@@ -324,10 +232,6 @@ export default class FrameCompositor {
 
         ctx.drawImage(img, x, y, w, h);
     }
-
-    // =========================================================================
-    // Image preloading (private)
-    // =========================================================================
 
     _preloadImages() {
         for (const overlay of this._overlays) {
