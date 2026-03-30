@@ -130,7 +130,7 @@ class extends Component
     }
 
     #[Computed]
-    public function queueContacts(): \Illuminate\Database\Eloquent\Collection
+    public function queueContacts(): \Illuminate\Support\Collection
     {
         if (! $this->selectedCampaignId) {
             return collect();
