@@ -219,7 +219,15 @@ export default class FrameCompositor {
                 sy = (vidH - sh) / 2;
             }
 
-            ctx.drawImage(videoEl, sx, sy, sw, sh, x, y, w, h);
+            if (slot.borderRadius) {
+                ctx.save();
+                this._roundedRect(ctx, x, y, w, h, slot.borderRadius);
+                ctx.clip();
+                ctx.drawImage(videoEl, sx, sy, sw, sh, x, y, w, h);
+                ctx.restore();
+            } else {
+                ctx.drawImage(videoEl, sx, sy, sw, sh, x, y, w, h);
+            }
         } else {
             ctx.fillStyle = '#1a1a1a';
             ctx.fillRect(x, y, w, h);
@@ -509,6 +517,20 @@ export default class FrameCompositor {
         const h = (overlay.h ?? 0.1) * canvasH;
 
         ctx.drawImage(img, x, y, w, h);
+    }
+
+    /**
+     * Draw a rounded rectangle path (for clipping or filling).
+     */
+    _roundedRect(ctx, x, y, w, h, radius) {
+        const r = Math.min(radius, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        ctx.closePath();
     }
 
     _preloadImages() {
