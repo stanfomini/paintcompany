@@ -202,22 +202,33 @@ export default class FrameCompositor {
         const videoEl = this._sourceManager?.getElement(slot.source);
 
         if (videoEl && videoEl.readyState >= 2) {
-            // Cover-style draw: maintain aspect ratio, crop overflow
+            // Cover-style draw with optional crop offset and zoom
+            // cropX/cropY: pan offset (0 = center, -0.5 to 0.5 range)
+            // cropZoom: zoom level (1 = fill, 2 = 2x zoom, etc.)
             const vidW = videoEl.videoWidth || videoEl.width || w;
             const vidH = videoEl.videoHeight || videoEl.height || h;
             const slotRatio = w / h;
             const vidRatio = vidW / vidH;
+            const zoom = Math.max(1, slot.cropZoom ?? 1);
 
-            let sx = 0, sy = 0, sw = vidW, sh = vidH;
+            let sw, sh;
             if (vidRatio > slotRatio) {
-                // Video is wider — crop sides
-                sw = vidH * slotRatio;
-                sx = (vidW - sw) / 2;
+                sh = vidH / zoom;
+                sw = sh * slotRatio;
             } else {
-                // Video is taller — crop top/bottom
-                sh = vidW / slotRatio;
-                sy = (vidH - sh) / 2;
+                sw = vidW / zoom;
+                sh = sw / slotRatio;
             }
+
+            // Center + apply crop offset (cropX/cropY: -0.5 to 0.5)
+            const cropX = slot.cropX ?? 0;
+            const cropY = slot.cropY ?? 0;
+            let sx = (vidW - sw) / 2 + cropX * (vidW - sw);
+            let sy = (vidH - sh) / 2 + cropY * (vidH - sh);
+
+            // Clamp to video bounds
+            sx = Math.max(0, Math.min(vidW - sw, sx));
+            sy = Math.max(0, Math.min(vidH - sh, sy));
 
             if (slot.borderRadius) {
                 ctx.save();
@@ -293,21 +304,24 @@ export default class FrameCompositor {
     }
 
     /**
-     * Lower-third: full-width semi-transparent bar near bottom.
-     * Line 1 = overlay.name (or overlay.label), Line 2 = overlay.content.
+     * Lower-third: semi-transparent bar with text.
+     * Uses overlay.x/y/w/h for position and size (set by drag handles).
      */
     _drawLowerThird(ctx, overlay, canvasW, canvasH) {
-        const barH = canvasH * 0.14;
-        const barY = canvasH * 0.78;
+        // Use overlay position from drag handles, with sensible defaults
+        const barX = (overlay.x ?? 0) * canvasW;
+        const barY = (overlay.y ?? 0.78) * canvasH;
+        const barW = (overlay.w ?? 1) * canvasW;
+        const barH = (overlay.h ?? 0.14) * canvasH;
         const padding = 20;
 
         const bg = overlay.bg ?? 'rgba(0, 0, 0, 0.65)';
         ctx.fillStyle = bg;
-        ctx.fillRect(0, barY, canvasW, barH);
+        ctx.fillRect(barX, barY, barW, barH);
 
         // Accent line at top of bar
         ctx.fillStyle = overlay.accentColor ?? '#4f8ef7';
-        ctx.fillRect(0, barY, canvasW, 3);
+        ctx.fillRect(barX, barY, barW, 3);
 
         const nameFontSize = overlay.nameFontSize ?? 26;
         const contentFontSize = overlay.fontSize ?? 18;
@@ -320,7 +334,7 @@ export default class FrameCompositor {
             ctx.textBaseline = 'top';
             ctx.textAlign = 'left';
             ctx.fillStyle = nameColor;
-            ctx.fillText(overlay.name, padding, barY + 10);
+            ctx.fillText(overlay.name, barX + padding, barY + 10);
         }
 
         // Content (line 2)
@@ -329,7 +343,7 @@ export default class FrameCompositor {
             ctx.textBaseline = 'top';
             ctx.textAlign = 'left';
             ctx.fillStyle = color;
-            ctx.fillText(overlay.content, padding, barY + 10 + nameFontSize * 1.3);
+            ctx.fillText(overlay.content, barX + padding, barY + 10 + nameFontSize * 1.3);
         }
     }
 
@@ -345,8 +359,9 @@ export default class FrameCompositor {
         ctx.textBaseline = 'middle';
         ctx.textAlign = 'center';
 
-        const x = canvasW / 2;
-        const y = overlay.y != null ? overlay.y * canvasH : canvasH / 2;
+        // Use overlay position from drag handles
+        const x = (overlay.x ?? 0.5) * canvasW;
+        const y = (overlay.y ?? 0.5) * canvasH;
 
         if (overlay.bg) {
             const metrics = ctx.measureText(overlay.content);
@@ -371,14 +386,16 @@ export default class FrameCompositor {
         const fontSize = overlay.fontSize ?? 20;
         const fontWeight = overlay.fontWeight ?? '400';
         const color = overlay.color ?? '#ffffff';
-        const barH = fontSize * 2;
-        const barY = overlay.y != null ? overlay.y * canvasH : canvasH - barH;
+        const barX = (overlay.x ?? 0) * canvasW;
+        const barW = (overlay.w ?? 1) * canvasW;
+        const barH = (overlay.h != null) ? overlay.h * canvasH : fontSize * 2;
+        const barY = (overlay.y ?? (1 - barH / canvasH)) * canvasH;
         const speed = overlay.tickerSpeed ?? 2;
 
         // Background bar
         const bg = overlay.bg ?? 'rgba(0, 0, 0, 0.75)';
         ctx.fillStyle = bg;
-        ctx.fillRect(0, barY, canvasW, barH);
+        ctx.fillRect(barX, barY, barW, barH);
 
         ctx.font = `${fontWeight} ${fontSize}px sans-serif`;
         ctx.textBaseline = 'middle';
@@ -396,12 +413,12 @@ export default class FrameCompositor {
         overlay._tickerOffset -= speed;
 
         // Loop back when text has fully scrolled off left edge
-        if (overlay._tickerOffset < -textW) {
-            overlay._tickerOffset = canvasW;
+        if (overlay._tickerOffset < barX - textW) {
+            overlay._tickerOffset = barX + barW;
         }
 
         ctx.save();
-        ctx.rect(0, barY, canvasW, barH);
+        ctx.rect(barX, barY, barW, barH);
         ctx.clip();
 
         ctx.fillStyle = color;
@@ -487,9 +504,10 @@ export default class FrameCompositor {
 
         const totalH = lines.length * lineHeight;
         const boxH = totalH + padding * 2;
-        const boxY = overlay.y != null ? overlay.y * canvasH : canvasH - boxH - 40;
-        const boxX = (canvasW - maxWidth) / 2 - padding;
-        const boxW = maxWidth + padding * 2;
+        // Use drag handle position if set
+        const boxX = (overlay.x ?? 0.075) * canvasW;
+        const boxY = (overlay.y ?? (1 - (boxH + 40) / canvasH)) * canvasH;
+        const boxW = (overlay.w ?? 0.85) * canvasW;
 
         // Background box
         const bg = overlay.bg ?? 'rgba(0, 0, 0, 0.7)';

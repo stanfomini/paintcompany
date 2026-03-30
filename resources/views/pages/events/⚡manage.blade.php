@@ -1295,6 +1295,33 @@ class extends Component
                                 <span class="text-[10px] text-zinc-600">px</span>
                             </div>
                         </template>
+                        {{-- Crop/Zoom (slots) --}}
+                        <template x-if="selectedItem?.type === 'slot'">
+                            <div class="flex items-center gap-2">
+                                <div class="flex items-center gap-1">
+                                    <span class="text-[10px] text-zinc-500">Zoom:</span>
+                                    <input type="range" min="1" max="4" step="0.1"
+                                           :value="getSelectedProperty('cropZoom') ?? 1"
+                                           @input="updateSelectedProperty('cropZoom', parseFloat($event.target.value))"
+                                           class="w-16 h-1 accent-green-500">
+                                    <span class="text-[10px] text-zinc-400" x-text="(getSelectedProperty('cropZoom') ?? 1).toFixed(1) + 'x'"></span>
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <span class="text-[10px] text-zinc-500">Pan X:</span>
+                                    <input type="range" min="-50" max="50" step="1"
+                                           :value="Math.round((getSelectedProperty('cropX') ?? 0) * 100)"
+                                           @input="updateSelectedProperty('cropX', $event.target.value / 100)"
+                                           class="w-14 h-1 accent-green-500">
+                                </div>
+                                <div class="flex items-center gap-1">
+                                    <span class="text-[10px] text-zinc-500">Pan Y:</span>
+                                    <input type="range" min="-50" max="50" step="1"
+                                           :value="Math.round((getSelectedProperty('cropY') ?? 0) * 100)"
+                                           @input="updateSelectedProperty('cropY', $event.target.value / 100)"
+                                           class="w-14 h-1 accent-green-500">
+                                </div>
+                            </div>
+                        </template>
                         {{-- Content (text overlays) --}}
                         <template x-if="selectedItem?.type === 'overlay' && getSelectedOverlay()?.type === 'text'">
                             <div class="flex items-center gap-1">
