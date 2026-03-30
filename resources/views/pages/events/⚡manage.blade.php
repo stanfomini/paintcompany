@@ -350,6 +350,7 @@ class extends Component
         return $this->event->guests()->orderBy('slot_number')->get();
     }
 
+    #[Renderless]
     public function inviteGuest(): void
     {
         $this->validate([
@@ -370,6 +371,7 @@ class extends Component
         unset($this->guests);
     }
 
+    #[Renderless]
     public function removeGuest(int $guestId): void
     {
         $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
@@ -379,6 +381,7 @@ class extends Component
         unset($this->guests);
     }
 
+    #[Renderless]
     public function copyGuestLink(int $guestId): void
     {
         $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
@@ -540,6 +543,7 @@ class extends Component
         $this->event->update(['active_scene_index' => $index]);
     }
 
+    #[Renderless]
     public function bringGuestOn(int $guestId): void
     {
         $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
@@ -552,6 +556,7 @@ class extends Component
         $this->dispatchGuestSlotMap();
     }
 
+    #[Renderless]
     public function takeGuestOff(int $guestId): void
     {
         $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
@@ -564,6 +569,7 @@ class extends Component
         $this->dispatchGuestSlotMap();
     }
 
+    #[Renderless]
     public function refreshGuestStatuses(): void
     {
         unset($this->guests);
