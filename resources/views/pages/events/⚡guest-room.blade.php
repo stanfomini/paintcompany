@@ -156,11 +156,11 @@ new #[Layout('layouts.video-call')] class extends Component
                         <div
                             class="w-2 h-2 rounded-full"
                             :class="{
-                                'bg-green-500': roomConnected,
-                                'bg-yellow-500 animate-pulse': !roomConnected
+                                'bg-green-500': peerConnected || viewerConnected,
+                                'bg-yellow-500 animate-pulse': !peerConnected && !viewerConnected
                             }"
                         ></div>
-                        <span class="text-xs text-zinc-400" x-text="roomConnected ? 'Connected' : 'Connecting...'"></span>
+                        <span class="text-xs text-zinc-400" x-text="peerConnected ? 'Live to host' : (viewerConnected ? 'Connected' : 'Connecting...')"></span>
                     </div>
                 </div>
 
@@ -434,17 +434,17 @@ new #[Layout('layouts.video-call')] class extends Component
         @script
         <script>
         Alpine.data('livekitGuest', (config) => {
-            let room = null;
             let localStream = null;
+            let peerConnection = null;   // GuestPeerConnection instance
+            let viewerRoom = null;       // LiveKit room (subscribe-only, for seeing broadcast)
+            let studioChannel = null;    // Echo presence channel for WebRTC signaling
             let audioContext = null;
             let analyser = null;
             let animationFrame = null;
             let echoInstance = null;
 
             return {
-                roomConnected: false,
-                guestStatus: 'waiting',
-                hostTrackAttached: false,
+                guestStatus: 'waiting',   // 'waiting' | 'called' | 'live' | 'finished'
                 cameraEnabled: true,
                 micEnabled: true,
                 audioLevel: 0,
@@ -452,19 +452,29 @@ new #[Layout('layouts.video-call')] class extends Component
                 microphones: [],
                 activeCameraId: '',
                 activeMicId: '',
+                hostTrackAttached: false,
+                peerConnected: false,     // WebRTC connection to host established
+                viewerConnected: false,   // LiveKit viewer connection
 
                 async init() {
                     // Start local camera preview immediately
                     await this.startLocalPreview();
 
-                    // Connect to LiveKit room
-                    if (config.livekitToken && config.livekitUrl) {
-                        await this.connectToRoom();
-                    }
+                    // Join Reverb channel for WebRTC signaling + bring-on/take-off signals
+                    this.setupStudioChannel();
 
                     // Set up backstage chat via Echo/Reverb
                     this.setupBackstageChat();
+
+                    // Connect to LiveKit as viewer (subscribe-only) to see broadcast output
+                    if (config.livekitToken && config.livekitUrl) {
+                        this.connectAsViewer();
+                    }
                 },
+
+                // ==============================================================
+                // Local camera preview (unchanged)
+                // ==============================================================
 
                 async startLocalPreview() {
                     try {
@@ -480,13 +490,10 @@ new #[Layout('layouts.video-call')] class extends Component
                         this.cameraEnabled = true;
                         this.micEnabled = true;
 
-                        // Set up audio metering
                         this.setupAudioMeter();
-
-                        // Enumerate devices
                         await this.loadDevices();
                     } catch (err) {
-                        console.error('Camera access error:', err);
+                        console.error('[GuestRoom] Camera access error:', err);
                     }
                 },
 
@@ -499,7 +506,7 @@ new #[Layout('layouts.video-call')] class extends Component
                         analyser.fftSize = 256;
                         this.monitorAudio();
                     } catch (err) {
-                        console.warn('Audio meter setup failed:', err);
+                        console.warn('[GuestRoom] Audio meter setup failed:', err);
                     }
                 },
 
@@ -511,6 +518,10 @@ new #[Layout('layouts.video-call')] class extends Component
                     animationFrame = requestAnimationFrame(() => this.monitorAudio());
                 },
 
+                // ==============================================================
+                // Device management (unchanged)
+                // ==============================================================
+
                 async loadDevices() {
                     try {
                         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -521,7 +532,6 @@ new #[Layout('layouts.video-call')] class extends Component
                             .filter(d => d.kind === 'audioinput')
                             .map(d => ({ id: d.deviceId, label: d.label || `Mic ${d.deviceId.slice(0, 4)}` }));
 
-                        // Set active device from current tracks
                         if (localStream) {
                             const videoTrack = localStream.getVideoTracks()[0];
                             const audioTrack = localStream.getAudioTracks()[0];
@@ -529,14 +539,13 @@ new #[Layout('layouts.video-call')] class extends Component
                             if (audioTrack) this.activeMicId = audioTrack.getSettings().deviceId || '';
                         }
                     } catch (err) {
-                        console.warn('Failed to enumerate devices:', err);
+                        console.warn('[GuestRoom] Failed to enumerate devices:', err);
                     }
                 },
 
                 async switchCamera(deviceId) {
                     if (!deviceId || deviceId === this.activeCameraId) return;
                     try {
-                        // Stop old video track
                         if (localStream) {
                             localStream.getVideoTracks().forEach(t => t.stop());
                         }
@@ -557,13 +566,8 @@ new #[Layout('layouts.video-call')] class extends Component
                         }
 
                         this.activeCameraId = deviceId;
-
-                        // If live, switch in LiveKit room too
-                        if (room && this.guestStatus === 'live') {
-                            await room.switchActiveDevice('videoinput', deviceId);
-                        }
                     } catch (err) {
-                        console.error('Failed to switch camera:', err);
+                        console.error('[GuestRoom] Failed to switch camera:', err);
                     }
                 },
 
@@ -585,19 +589,14 @@ new #[Layout('layouts.video-call')] class extends Component
                             localStream.addTrack(newTrack);
                         }
 
-                        // Reconnect audio meter
                         if (audioContext) {
                             audioContext.close();
                         }
                         this.setupAudioMeter();
 
                         this.activeMicId = deviceId;
-
-                        if (room && this.guestStatus === 'live') {
-                            await room.switchActiveDevice('audioinput', deviceId);
-                        }
                     } catch (err) {
-                        console.error('Failed to switch mic:', err);
+                        console.error('[GuestRoom] Failed to switch mic:', err);
                     }
                 },
 
@@ -607,11 +606,6 @@ new #[Layout('layouts.video-call')] class extends Component
                             t.enabled = !t.enabled;
                         });
                         this.micEnabled = !this.micEnabled;
-
-                        // Also mute in LiveKit if live
-                        if (room && this.guestStatus === 'live') {
-                            room.localParticipant.setMicrophoneEnabled(this.micEnabled);
-                        }
                     }
                 },
 
@@ -621,24 +615,87 @@ new #[Layout('layouts.video-call')] class extends Component
                             t.enabled = !t.enabled;
                         });
                         this.cameraEnabled = !this.cameraEnabled;
-
-                        if (room && this.guestStatus === 'live') {
-                            room.localParticipant.setCameraEnabled(this.cameraEnabled);
-                        }
                     }
                 },
 
-                async connectToRoom() {
+                // ==============================================================
+                // Studio channel (Reverb) — WebRTC signaling + host commands
+                // ==============================================================
+
+                setupStudioChannel() {
+                    if (!config.eventId) return;
+
                     try {
-                        const { Room, RoomEvent, DataPacket_Kind } = await window.loadLiveKit();
-                        room = new Room({
+                        const EchoLib = window.EchoLib;
+                        if (!EchoLib) {
+                            console.warn('[GuestRoom] Echo not available, peer connections disabled');
+                            return;
+                        }
+
+                        // Reuse existing echoInstance if backstage chat already created one,
+                        // otherwise create a new one
+                        if (!echoInstance) {
+                            echoInstance = new EchoLib({
+                                broadcaster: 'reverb',
+                                key: document.querySelector('meta[name="reverb-key"]')?.content,
+                                wsHost: document.querySelector('meta[name="reverb-host"]')?.content,
+                                wsPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
+                                wssPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
+                                forceTLS: (document.querySelector('meta[name="reverb-scheme"]')?.content || 'https') === 'https',
+                                enabledTransports: ['ws', 'wss'],
+                                authEndpoint: '/broadcasting/event-guest-auth',
+                                auth: {
+                                    headers: {
+                                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                                    },
+                                    params: {
+                                        guest_token: config.guestToken,
+                                    },
+                                },
+                            });
+                        }
+
+                        studioChannel = echoInstance.join(`event-studio.${config.eventId}`);
+
+                        // Listen for host commands via whispers
+                        studioChannel.listenForWhisper('bring-on', (data) => {
+                            if (data.guestId && data.guestId !== config.guestId) return;
+                            this.guestStatus = 'called';
+                            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                            console.log('[GuestRoom] Host is calling you on!');
+                        });
+
+                        studioChannel.listenForWhisper('take-off', (data) => {
+                            if (data.guestId && data.guestId !== config.guestId) return;
+                            this.disconnectPeer();
+                            this.guestStatus = 'waiting';
+                            console.log('[GuestRoom] Host took you off air');
+                        });
+
+                        studioChannel.listenForWhisper('end-event', () => {
+                            this.guestStatus = 'finished';
+                        });
+
+                        console.log('[GuestRoom] Studio channel joined');
+                    } catch (err) {
+                        console.warn('[GuestRoom] Studio channel setup failed:', err);
+                    }
+                },
+
+                // ==============================================================
+                // LiveKit viewer connection (subscribe-only)
+                // ==============================================================
+
+                async connectAsViewer() {
+                    try {
+                        const { Room, RoomEvent } = await window.loadLiveKit();
+                        viewerRoom = new Room({
                             adaptiveStream: true,
                             dynacast: true,
                         });
 
                         // Subscribe to host's published tracks (stream preview)
-                        room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-                            // Only attach host tracks (identity starts with "host-")
+                        viewerRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
                             if (!participant.identity.startsWith('host-') && !participant.identity.startsWith('coproducer-')) {
                                 return;
                             }
@@ -663,112 +720,101 @@ new #[Layout('layouts.video-call')] class extends Component
                             }
                         });
 
-                        room.on(RoomEvent.TrackUnsubscribed, (track) => {
+                        viewerRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
                             track.detach().forEach(el => el.remove());
-                            // Check if host video was removed
                             if (this.$refs.streamPreview && this.$refs.streamPreview.children.length === 0) {
                                 this.hostTrackAttached = false;
                             }
                         });
 
-                        // Listen for data messages from producer
-                        room.on(RoomEvent.DataReceived, (payload, participant) => {
-                            try {
-                                const decoder = new TextDecoder();
-                                const msg = JSON.parse(decoder.decode(payload));
-                                this.handleDataMessage(msg);
-                            } catch (e) {
-                                console.warn('Failed to parse data message:', e);
-                            }
-                        });
-
-                        room.on(RoomEvent.Disconnected, () => {
-                            this.roomConnected = false;
+                        viewerRoom.on(RoomEvent.Disconnected, () => {
+                            this.viewerConnected = false;
                             this.guestStatus = 'finished';
                         });
 
-                        // Connect but do NOT publish tracks yet (guest starts as subscriber only)
-                        await room.connect(config.livekitUrl, config.livekitToken);
-                        this.roomConnected = true;
+                        // Connect as subscriber only (canPublish: false in token)
+                        await viewerRoom.connect(config.livekitUrl, config.livekitToken);
+                        this.viewerConnected = true;
+                        console.log('[GuestRoom] Connected to LiveKit as viewer');
                     } catch (err) {
-                        console.error('LiveKit guest connection error:', err);
+                        console.error('[GuestRoom] LiveKit viewer connection error:', err);
                     }
                 },
 
-                handleDataMessage(msg) {
-                    // Only handle messages directed at this guest
-                    if (msg.guestId && msg.guestId !== config.guestId) return;
-
-                    switch (msg.type) {
-                        case 'bring-on':
-                            this.guestStatus = 'called';
-                            // Vibrate on mobile to get attention
-                            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                            break;
-
-                        case 'take-off':
-                            this.stopPublishing();
-                            this.guestStatus = 'waiting';
-                            break;
-
-                        case 'end-event':
-                            this.guestStatus = 'finished';
-                            break;
-                    }
-                },
+                // ==============================================================
+                // Go Live / Not Ready — WebRTC peer connection to host
+                // ==============================================================
 
                 async goLive() {
-                    if (!room) return;
+                    if (!studioChannel || !localStream) {
+                        console.warn('[GuestRoom] Cannot go live: no studio channel or local stream');
+                        return;
+                    }
 
                     try {
-                        // Publish camera and mic to LiveKit
-                        await room.localParticipant.setCameraEnabled(this.cameraEnabled);
-                        await room.localParticipant.setMicrophoneEnabled(this.micEnabled);
+                        const GuestPeerConnection = await window.loadGuestPeerConnection();
+                        peerConnection = new GuestPeerConnection(studioChannel, config.guestIdentity);
 
-                        this.guestStatus = 'live';
+                        peerConnection.onConnected(() => {
+                            this.peerConnected = true;
+                            this.guestStatus = 'live';
+                            console.log('[GuestRoom] Connected to host via WebRTC');
 
-                        // Mute host audio preview to prevent echo
-                        const hostAudio = document.getElementById('host-audio-preview');
-                        if (hostAudio) hostAudio.muted = true;
+                            // Mute host audio preview to prevent echo
+                            const hostAudio = document.getElementById('host-audio-preview');
+                            if (hostAudio) hostAudio.muted = true;
+                        });
 
-                        // Send data message back to producer
-                        this.sendDataMessage({ type: 'going-live', guestId: config.guestId });
+                        peerConnection.onDisconnected(() => {
+                            this.peerConnected = false;
+                            if (this.guestStatus === 'live') {
+                                this.guestStatus = 'waiting';
+                            }
+
+                            // Unmute host audio preview
+                            const hostAudio = document.getElementById('host-audio-preview');
+                            if (hostAudio) hostAudio.muted = false;
+                        });
+
+                        await peerConnection.connect(localStream);
+
+                        // Signal ready to host
+                        studioChannel.whisper('guest-ready', {
+                            guestId: config.guestIdentity,
+                            name: config.guestIdentity,
+                        });
                     } catch (err) {
-                        console.error('Failed to go live:', err);
+                        console.error('[GuestRoom] Failed to go live:', err);
                     }
                 },
 
                 async notReady() {
-                    await this.stopPublishing();
+                    this.disconnectPeer();
                     this.guestStatus = 'waiting';
-                    this.sendDataMessage({ type: 'not-ready', guestId: config.guestId });
+
+                    // Signal not-ready to host
+                    if (studioChannel) {
+                        studioChannel.whisper('guest-not-ready', {
+                            guestId: config.guestIdentity,
+                        });
+                    }
                 },
 
-                async stopPublishing() {
-                    if (!room) return;
-
-                    try {
-                        await room.localParticipant.setCameraEnabled(false);
-                        await room.localParticipant.setMicrophoneEnabled(false);
-                    } catch (err) {
-                        console.warn('Failed to stop publishing:', err);
+                disconnectPeer() {
+                    if (peerConnection) {
+                        peerConnection.disconnect();
+                        peerConnection = null;
                     }
+                    this.peerConnected = false;
 
                     // Unmute host audio preview
                     const hostAudio = document.getElementById('host-audio-preview');
                     if (hostAudio) hostAudio.muted = false;
                 },
 
-                sendDataMessage(data) {
-                    if (!room) return;
-                    try {
-                        const encoder = new TextEncoder();
-                        const payload = encoder.encode(JSON.stringify(data));
-                        room.localParticipant.publishData(payload, { reliable: true });
-                    } catch (err) {
-                        console.warn('Failed to send data message:', err);
-                    }
-                },
+                // ==============================================================
+                // Backstage chat (unchanged)
+                // ==============================================================
 
                 setupBackstageChat() {
                     if (!config.backstageThreadId || !config.eventId) return;
@@ -777,51 +823,52 @@ new #[Layout('layouts.video-call')] class extends Component
                         const EchoLib = window.EchoLib;
                         if (!EchoLib) return;
 
-                        echoInstance = new EchoLib({
-                            broadcaster: 'reverb',
-                            key: document.querySelector('meta[name="reverb-key"]')?.content,
-                            wsHost: document.querySelector('meta[name="reverb-host"]')?.content,
-                            wsPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
-                            wssPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
-                            forceTLS: (document.querySelector('meta[name="reverb-scheme"]')?.content || 'https') === 'https',
-                            enabledTransports: ['ws', 'wss'],
-                            authEndpoint: '/broadcasting/event-guest-auth',
-                            auth: {
-                                headers: {
-                                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                        // Reuse existing echoInstance or create one
+                        if (!echoInstance) {
+                            echoInstance = new EchoLib({
+                                broadcaster: 'reverb',
+                                key: document.querySelector('meta[name="reverb-key"]')?.content,
+                                wsHost: document.querySelector('meta[name="reverb-host"]')?.content,
+                                wsPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
+                                wssPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
+                                forceTLS: (document.querySelector('meta[name="reverb-scheme"]')?.content || 'https') === 'https',
+                                enabledTransports: ['ws', 'wss'],
+                                authEndpoint: '/broadcasting/event-guest-auth',
+                                auth: {
+                                    headers: {
+                                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                                    },
+                                    params: {
+                                        guest_token: config.guestToken,
+                                    },
                                 },
-                                params: {
-                                    guest_token: config.guestToken,
-                                },
-                            },
-                        });
+                            });
+                        }
 
                         echoInstance.private(`event-backstage.${config.eventId}`)
                             .listen('.backstage.message', (e) => {
-                                // Refresh backstage messages via Livewire
                                 this.$wire.$refresh();
                             });
                     } catch (err) {
-                        console.warn('Backstage chat setup failed:', err);
+                        console.warn('[GuestRoom] Backstage chat setup failed:', err);
                     }
                 },
 
+                // ==============================================================
+                // Cleanup
+                // ==============================================================
+
                 destroy() {
-                    // Unmute host audio in case guest was live when destroyed
+                    if (peerConnection) { peerConnection.disconnect(); peerConnection = null; }
+                    if (animationFrame) cancelAnimationFrame(animationFrame);
+                    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+                    if (audioContext) { audioContext.close(); audioContext = null; }
+                    if (viewerRoom) { viewerRoom.disconnect(); viewerRoom = null; }
+                    if (studioChannel) { studioChannel = null; }
+                    if (echoInstance) { echoInstance.disconnect(); echoInstance = null; }
+
                     const hostAudio = document.getElementById('host-audio-preview');
                     if (hostAudio) hostAudio.muted = false;
-
-                    if (animationFrame) cancelAnimationFrame(animationFrame);
-                    if (localStream) localStream.getTracks().forEach(t => t.stop());
-                    if (audioContext) audioContext.close();
-                    if (room) {
-                        room.disconnect();
-                        room = null;
-                    }
-                    if (echoInstance) {
-                        echoInstance.disconnect();
-                        echoInstance = null;
-                    }
                 },
             };
         });
