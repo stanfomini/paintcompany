@@ -6,8 +6,10 @@ use App\Events\Prospector\DialerCallConnected;
 use App\Events\Prospector\DialerCallEnded;
 use App\Http\Controllers\Controller;
 use App\Models\Prospector\Call;
+use App\Models\Prospector\RvmDrop;
 use App\Services\Prospector\AmdService;
 use App\Services\Prospector\ProspectorSmsService;
+use App\Services\Prospector\RvmService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -17,6 +19,7 @@ class ProspectorWebhookController extends Controller
     public function __construct(
         private AmdService $amdService,
         private ProspectorSmsService $smsService,
+        private RvmService $rvmService,
     ) {}
 
     /**
@@ -212,6 +215,144 @@ class ProspectorWebhookController extends Controller
             } elseif (in_array($messageStatus, ['failed', 'undelivered'])) {
                 $this->smsService->markFailed($messageSid, $request->input('ErrorMessage'));
             }
+        }
+
+        return response('', 200);
+    }
+
+    // ──────────────────────────────────────
+    // RVM (Ringless Voicemail) Callbacks
+    // ──────────────────────────────────────
+
+    /**
+     * POST /prospector/webhook/twilio/rvm/twiml/{drop}
+     *
+     * Returns TwiML to play the voicemail audio.
+     * Called by Twilio when AMD detects a machine (voicemail).
+     */
+    public function rvmTwiml(Request $request, int $drop): Response
+    {
+        $rvmDrop = RvmDrop::with('template')->find($drop);
+
+        if (! $rvmDrop || ! $rvmDrop->template) {
+            Log::warning('RVM TwiML: drop or template not found', ['drop_id' => $drop]);
+
+            return response('<Response><Hangup/></Response>', 200, [
+                'Content-Type' => 'text/xml',
+            ]);
+        }
+
+        $audioUrl = $rvmDrop->template->audio_path;
+        if (! str_starts_with($audioUrl, 'http')) {
+            $audioUrl = asset('storage/'.$audioUrl);
+        }
+
+        $twiml = '<Response><Play>'.htmlspecialchars($audioUrl).'</Play><Hangup/></Response>';
+
+        return response($twiml, 200, [
+            'Content-Type' => 'text/xml',
+        ]);
+    }
+
+    /**
+     * POST /prospector/webhook/twilio/rvm/amd/{drop}
+     *
+     * Async AMD result for RVM calls.
+     * If machine detected: let the TwiML play the audio.
+     * If human detected: hang up the call immediately.
+     */
+    public function rvmAmdCallback(Request $request, int $drop): Response
+    {
+        $answeredBy = $request->input('AnsweredBy', 'unknown');
+        $callSid = $request->input('CallSid');
+
+        Log::info('RVM AMD callback', [
+            'drop_id' => $drop,
+            'answered_by' => $answeredBy,
+            'call_sid' => $callSid,
+        ]);
+
+        $rvmDrop = RvmDrop::find($drop);
+
+        if (! $rvmDrop) {
+            Log::warning('RVM AMD: drop not found', ['drop_id' => $drop]);
+
+            return response('', 200);
+        }
+
+        // If a human answered, hang up — we only want voicemail
+        if (in_array($answeredBy, ['human', 'unknown'])) {
+            $rvmDrop->markFailed("Human answered ({$answeredBy}), call terminated");
+
+            // Hang up the call via Twilio
+            if ($callSid) {
+                try {
+                    $rvmDrop->loadMissing('company.mainPhoneNumber.twilioAccount');
+                    $account = $rvmDrop->company->mainPhoneNumber?->twilioAccount;
+                    if ($account) {
+                        $client = $account->getClient();
+                        $client->calls($callSid)->update(['status' => 'completed']);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('RVM AMD: failed to hang up human call', [
+                        'drop_id' => $drop,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        // Machine detected — TwiML handler will play the audio
+
+        return response('', 200);
+    }
+
+    /**
+     * POST /prospector/webhook/twilio/rvm/status/{drop}
+     *
+     * Twilio RVM call status callback.
+     */
+    public function rvmStatusCallback(Request $request, int $drop): Response
+    {
+        $callStatus = $request->input('CallStatus');
+
+        Log::info('RVM status callback', [
+            'drop_id' => $drop,
+            'call_status' => $callStatus,
+        ]);
+
+        $rvmDrop = RvmDrop::find($drop);
+
+        if (! $rvmDrop) {
+            return response('', 200);
+        }
+
+        match ($callStatus) {
+            'completed' => $rvmDrop->markDelivered(),
+            'busy', 'no-answer', 'failed', 'canceled' => $rvmDrop->markFailed("Call status: {$callStatus}"),
+            default => null,
+        };
+
+        return response('', 200);
+    }
+
+    /**
+     * POST /prospector/webhook/twilio/rvm/callback
+     *
+     * Slybroadcast delivery callback.
+     */
+    public function rvmCallback(Request $request): Response
+    {
+        $providerId = $request->input('session_id') ?? $request->input('provider_id');
+        $status = $request->input('status', 'delivered');
+
+        Log::info('RVM provider callback', [
+            'provider_id' => $providerId,
+            'status' => $status,
+        ]);
+
+        if ($providerId) {
+            $this->rvmService->handleCallback($providerId, $status);
         }
 
         return response('', 200);

@@ -36,6 +36,16 @@ Route::middleware(['auth:web', 'auth.internal'])->group(function () {
     // Phase 3 - Dialer
     Route::livewire('/dialer', 'prospector.dialer')->name('dialer');
     Route::livewire('/call-history', 'prospector.call-history')->name('call-history');
+
+    // Phase 6 - Drip Sequences
+    Route::livewire('/sequences', 'prospector.sequences')->name('sequences');
+    Route::livewire('/sequences/{sequenceId}', 'prospector.sequence-builder')->name('sequences.show');
+
+    // Phase 7 - AI Call Intelligence
+    Route::livewire('/call-intelligence', 'prospector.call-intelligence')->name('call-intelligence');
+
+    // Phase 8 - Ringless Voicemail
+    Route::livewire('/rvm', 'prospector.rvm-manager')->name('rvm');
 });
 
 // Webhook routes (no auth, CSRF exempt via bootstrap/app.php)
@@ -59,4 +69,14 @@ Route::prefix('webhook')->name('webhook.')->group(function () {
         ->name('twilio.sms.incoming');
     Route::post('/twilio/sms/status', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'smsStatus'])
         ->name('twilio.sms.status');
+
+    // RVM callbacks
+    Route::post('/twilio/rvm/twiml/{drop}', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'rvmTwiml'])
+        ->name('twilio.rvm.twiml');
+    Route::post('/twilio/rvm/amd/{drop}', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'rvmAmdCallback'])
+        ->name('twilio.rvm.amd');
+    Route::post('/twilio/rvm/status/{drop}', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'rvmStatusCallback'])
+        ->name('twilio.rvm.status');
+    Route::post('/twilio/rvm/callback', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'rvmCallback'])
+        ->name('twilio.rvm.callback');
 });

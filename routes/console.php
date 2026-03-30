@@ -28,3 +28,4 @@ Schedule::command('booking:send-reminders')->hourly();
 Schedule::command('video:cleanup-abandoned')->hourly();
 Schedule::command('vendor-contracts:check-expiration')->dailyAt('09:00');
 Schedule::command('live-events:send-reminders')->everyFifteenMinutes();
+Schedule::command('prospector:execute-sequences')->everyMinute();

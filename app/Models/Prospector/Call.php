@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class Call extends Model
@@ -95,6 +96,11 @@ class Call extends Model
     public function fromPhoneNumber(): BelongsTo
     {
         return $this->belongsTo(PhoneNumber::class, 'from_phone_number_id');
+    }
+
+    public function intelligence(): HasOne
+    {
+        return $this->hasOne(CallIntelligence::class, 'call_id');
     }
 
     // ──────────────────────────────────────
