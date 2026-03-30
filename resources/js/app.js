@@ -75,6 +75,14 @@ window.loadCaptionEngine = async () => {
     return window.StudioCaptionEngine;
 };
 
+window.loadCanvasEditor = async () => {
+    if (!window.StudioCanvasEditor) {
+        const module = await import('./studio/CanvasEditor.js');
+        window.StudioCanvasEditor = module.default;
+    }
+    return window.StudioCanvasEditor;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
