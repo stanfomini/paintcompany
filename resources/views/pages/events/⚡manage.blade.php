@@ -14,6 +14,7 @@ use App\Services\LiveEventService;
 use App\Services\LiveKitService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Renderless;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 
@@ -527,6 +528,7 @@ class extends Component
 
     // ─── Live Production Controls ──────────────────────────────────
 
+    #[Renderless]
     public function switchScene(int $index): void
     {
         $scenes = $this->event->getScenesOrDefaults();
@@ -536,7 +538,6 @@ class extends Component
         }
 
         $this->event->update(['active_scene_index' => $index]);
-        $this->event->refresh();
     }
 
     public function bringGuestOn(int $guestId): void
