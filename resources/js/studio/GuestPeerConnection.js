@@ -110,6 +110,26 @@ export default class GuestPeerConnection {
         }
     }
 
+    /**
+     * Replace a track on the live peer connection (e.g. camera or mic switch).
+     * Uses RTCRtpSender.replaceTrack() — no renegotiation needed.
+     *
+     * @param {MediaStreamTrack} newTrack
+     */
+    async replaceTrack(newTrack) {
+        if (!this._pc) return;
+
+        const senders = this._pc.getSenders();
+        const sender = senders.find(s => s.track?.kind === newTrack.kind);
+
+        if (sender) {
+            await sender.replaceTrack(newTrack);
+            console.log(`[GuestPeer] Replaced ${newTrack.kind} track`);
+        } else {
+            console.warn(`[GuestPeer] No sender found for ${newTrack.kind} track`);
+        }
+    }
+
     disconnect() {
         if (this._channel) {
             this._channel.whisper('guest-disconnect', {

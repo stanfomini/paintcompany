@@ -566,6 +566,11 @@ new #[Layout('layouts.video-call')] class extends Component
                             this.$refs.localPreview.srcObject = localStream;
                         }
 
+                        // Replace track on live peer connection (no renegotiation needed)
+                        if (peerConnection) {
+                            await peerConnection.replaceTrack(newTrack);
+                        }
+
                         this.activeCameraId = deviceId;
                     } catch (err) {
                         console.error('[GuestRoom] Failed to switch camera:', err);
@@ -588,6 +593,11 @@ new #[Layout('layouts.video-call')] class extends Component
                             const oldTrack = localStream.getAudioTracks()[0];
                             if (oldTrack) localStream.removeTrack(oldTrack);
                             localStream.addTrack(newTrack);
+                        }
+
+                        // Replace track on live peer connection
+                        if (peerConnection) {
+                            await peerConnection.replaceTrack(newTrack);
                         }
 
                         if (audioContext) {
