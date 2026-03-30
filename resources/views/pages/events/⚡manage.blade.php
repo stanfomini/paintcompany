@@ -1122,6 +1122,73 @@ class extends Component
                     </button>
                 </div>
 
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- SCENE CONFIG — Layout Picker + Source Assignment --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div class="flex flex-wrap items-center gap-2 border-t border-zinc-700 bg-zinc-850 px-3 py-2" wire:ignore>
+                    <span class="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Layout') }}</span>
+                    <select
+                        x-model="currentLayoutKey"
+                        @change="changeLayout(currentLayoutKey)"
+                        class="rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 border-zinc-600 focus:border-green-500 focus:ring-green-500"
+                    >
+                        <template x-for="layout in availableLayouts" :key="layout.key">
+                            <option :value="layout.key" x-text="layout.name"></option>
+                        </template>
+                    </select>
+
+                    <div class="mx-1 h-4 w-px bg-zinc-700"></div>
+
+                    <template x-for="(slot, slotIdx) in currentLayoutSlots" :key="slotIdx">
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] font-medium text-zinc-400" x-text="'Slot ' + slot.label + ':'"></span>
+                            <select
+                                :value="previewSlotSources[slotIdx] ?? ''"
+                                @change="assignSlotSource(slotIdx, $event.target.value)"
+                                class="rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 border-zinc-600 focus:border-green-500 focus:ring-green-500"
+                            >
+                                <option value="">{{ __('(none)') }}</option>
+                                <template x-for="source in sources" :key="source.key">
+                                    <option :value="source.key" x-text="source.name"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </template>
+                </div>
+
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- OVERLAY PANEL --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div class="border-t border-zinc-700 bg-zinc-800 px-3 py-2" wire:ignore>
+                    <div class="flex items-center gap-1 mb-1.5">
+                        <span class="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{{ __('Overlays') }}</span>
+                    </div>
+                    {{-- List of overlays with toggle/edit/remove --}}
+                    <template x-for="(overlay, idx) in overlayConfigs" :key="idx">
+                        <div class="flex items-center gap-2 py-1">
+                            <button @click="toggleOverlayVisibility(idx)"
+                                    class="size-3 rounded-full shrink-0"
+                                    :class="overlay.visible !== false ? 'bg-green-500' : 'bg-zinc-600'"></button>
+                            <span class="text-xs text-zinc-300 truncate flex-1" x-text="overlayLabel(overlay)"></span>
+                            <button @click="editOverlay(idx)" class="text-xs text-zinc-500 hover:text-zinc-300">{{ __('Edit') }}</button>
+                            <button @click="removeOverlay(idx)" class="text-xs text-zinc-500 hover:text-red-400">&times;</button>
+                        </div>
+                    </template>
+                    <div x-show="overlayConfigs.length === 0" class="py-1">
+                        <span class="text-[10px] text-zinc-600">{{ __('No overlays. Add one below.') }}</span>
+                    </div>
+                    {{-- Add buttons --}}
+                    <div class="flex gap-1 mt-1.5">
+                        <button @click="showAddOverlay('text')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('Text') }}</button>
+                        <button @click="showAddOverlay('image')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('Image') }}</button>
+                        <button @click="showAddOverlay('html')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('HTML') }}</button>
+                        <button @click="showAddOverlay('caption')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('Caption') }}</button>
+                    </div>
+                </div>
+
+                {{-- Hidden container for OverlayRenderer DOM elements --}}
+                <div x-ref="overlayRenderContainer" class="sr-only" aria-hidden="true" wire:ignore></div>
+
                 {{-- Guest Controls --}}
                 @if ($this->guests->isNotEmpty())
                     <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2">
@@ -1187,6 +1254,133 @@ class extends Component
                         {{ __('End Stream') }}
                     </flux:button>
                 </div>
+
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- OVERLAY MODALS --}}
+                {{-- ═══════════════════════════════════════════ --}}
+
+                {{-- Text Overlay Modal --}}
+                <flux:modal name="overlay-text-modal" class="w-full max-w-md">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('Text Overlay') }}</flux:heading>
+                        <flux:textarea x-model="overlayForm.content" label="{{ __('Content') }}" placeholder="{{ __('Enter text...') }}" rows="2" />
+                        <flux:select x-model="overlayForm.style" label="{{ __('Style') }}">
+                            <flux:select.option value="lower-third">{{ __('Lower Third') }}</flux:select.option>
+                            <flux:select.option value="title">{{ __('Title') }}</flux:select.option>
+                            <flux:select.option value="ticker">{{ __('Ticker') }}</flux:select.option>
+                            <flux:select.option value="custom">{{ __('Custom') }}</flux:select.option>
+                        </flux:select>
+                        <flux:select x-model="overlayForm.position" label="{{ __('Position') }}">
+                            <flux:select.option value="top-left">{{ __('Top Left') }}</flux:select.option>
+                            <flux:select.option value="top-center">{{ __('Top Center') }}</flux:select.option>
+                            <flux:select.option value="top-right">{{ __('Top Right') }}</flux:select.option>
+                            <flux:select.option value="center">{{ __('Center') }}</flux:select.option>
+                            <flux:select.option value="bottom-left">{{ __('Bottom Left') }}</flux:select.option>
+                            <flux:select.option value="bottom-center">{{ __('Bottom Center') }}</flux:select.option>
+                            <flux:select.option value="bottom-right">{{ __('Bottom Right') }}</flux:select.option>
+                            <flux:select.option value="bottom">{{ __('Full-Width Bottom') }}</flux:select.option>
+                            <flux:select.option value="custom">{{ __('Custom X/Y') }}</flux:select.option>
+                        </flux:select>
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:input x-model="overlayForm.color" label="{{ __('Text Color') }}" type="color" />
+                            <flux:input x-model="overlayForm.bg" label="{{ __('Background') }}" type="color" />
+                        </div>
+                        <flux:input x-model="overlayForm.fontSize" label="{{ __('Font Size') }}" type="number" min="12" max="72" />
+                        <div class="flex justify-end gap-2">
+                            <flux:button variant="ghost" @click="$flux.modal('overlay-text-modal').close()">{{ __('Cancel') }}</flux:button>
+                            <flux:button variant="primary" @click="saveOverlay(); $flux.modal('overlay-text-modal').close()">{{ __('Save') }}</flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
+
+                {{-- Image Overlay Modal --}}
+                <flux:modal name="overlay-image-modal" class="w-full max-w-md">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('Image Overlay') }}</flux:heading>
+                        <flux:input x-model="overlayForm.src" label="{{ __('Image URL') }}" placeholder="{{ __('https://... or /storage/...') }}" />
+                        <flux:select x-model="overlayForm.position" label="{{ __('Position') }}">
+                            <flux:select.option value="top-left">{{ __('Top Left') }}</flux:select.option>
+                            <flux:select.option value="top-center">{{ __('Top Center') }}</flux:select.option>
+                            <flux:select.option value="top-right">{{ __('Top Right') }}</flux:select.option>
+                            <flux:select.option value="center">{{ __('Center') }}</flux:select.option>
+                            <flux:select.option value="bottom-left">{{ __('Bottom Left') }}</flux:select.option>
+                            <flux:select.option value="bottom-center">{{ __('Bottom Center') }}</flux:select.option>
+                            <flux:select.option value="bottom-right">{{ __('Bottom Right') }}</flux:select.option>
+                            <flux:select.option value="custom">{{ __('Custom X/Y') }}</flux:select.option>
+                        </flux:select>
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:input x-model="overlayForm.w" label="{{ __('Width (0-1)') }}" type="number" min="0" max="1" step="0.01" />
+                            <flux:input x-model="overlayForm.h" label="{{ __('Height (0-1)') }}" type="number" min="0" max="1" step="0.01" />
+                        </div>
+                        <flux:input x-model="overlayForm.opacity" label="{{ __('Opacity') }}" type="number" min="0" max="1" step="0.1" />
+                        <div class="flex justify-end gap-2">
+                            <flux:button variant="ghost" @click="$flux.modal('overlay-image-modal').close()">{{ __('Cancel') }}</flux:button>
+                            <flux:button variant="primary" @click="saveOverlay(); $flux.modal('overlay-image-modal').close()">{{ __('Save') }}</flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
+
+                {{-- HTML Overlay Modal --}}
+                <flux:modal name="overlay-html-modal" class="w-full max-w-md">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('HTML Overlay') }}</flux:heading>
+                        <flux:select x-model="overlayForm.htmlType" label="{{ __('Type') }}">
+                            <flux:select.option value="iframe">{{ __('Iframe URL') }}</flux:select.option>
+                            <flux:select.option value="raw">{{ __('Raw HTML') }}</flux:select.option>
+                        </flux:select>
+                        <div x-show="overlayForm.htmlType === 'iframe'">
+                            <flux:input x-model="overlayForm.src" label="{{ __('URL') }}" placeholder="{{ __('https://...') }}" />
+                        </div>
+                        <div x-show="overlayForm.htmlType === 'raw'">
+                            <flux:textarea x-model="overlayForm.html" label="{{ __('HTML') }}" placeholder="{{ __('<div>...</div>') }}" rows="4" />
+                        </div>
+                        <flux:select x-model="overlayForm.position" label="{{ __('Position') }}">
+                            <flux:select.option value="bottom">{{ __('Full-Width Bottom') }}</flux:select.option>
+                            <flux:select.option value="top-left">{{ __('Top Left') }}</flux:select.option>
+                            <flux:select.option value="top-center">{{ __('Top Center') }}</flux:select.option>
+                            <flux:select.option value="center">{{ __('Center') }}</flux:select.option>
+                            <flux:select.option value="bottom-center">{{ __('Bottom Center') }}</flux:select.option>
+                            <flux:select.option value="custom">{{ __('Custom X/Y') }}</flux:select.option>
+                        </flux:select>
+                        <div class="grid grid-cols-2 gap-3">
+                            <flux:input x-model="overlayForm.w" label="{{ __('Width (0-1)') }}" type="number" min="0" max="1" step="0.01" />
+                            <flux:input x-model="overlayForm.h" label="{{ __('Height (0-1)') }}" type="number" min="0" max="1" step="0.01" />
+                        </div>
+                        <flux:input x-model="overlayForm.refreshInterval" label="{{ __('Refresh Interval (ms)') }}" type="number" min="500" max="10000" step="500" />
+                        <div class="flex justify-end gap-2">
+                            <flux:button variant="ghost" @click="$flux.modal('overlay-html-modal').close()">{{ __('Cancel') }}</flux:button>
+                            <flux:button variant="primary" @click="saveOverlay(); $flux.modal('overlay-html-modal').close()">{{ __('Save') }}</flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
+
+                {{-- Caption Overlay Modal --}}
+                <flux:modal name="overlay-caption-modal" class="w-full max-w-md">
+                    <div class="space-y-4">
+                        <flux:heading size="lg">{{ __('Caption Overlay') }}</flux:heading>
+                        <flux:select x-model="overlayForm.position" label="{{ __('Position') }}">
+                            <flux:select.option value="bottom-center">{{ __('Bottom Center') }}</flux:select.option>
+                            <flux:select.option value="top-center">{{ __('Top Center') }}</flux:select.option>
+                            <flux:select.option value="bottom-left">{{ __('Bottom Left') }}</flux:select.option>
+                            <flux:select.option value="custom">{{ __('Custom X/Y') }}</flux:select.option>
+                        </flux:select>
+                        <flux:select x-model="overlayForm.captionStyle" label="{{ __('Style') }}">
+                            <flux:select.option value="white-on-black">{{ __('White on Black') }}</flux:select.option>
+                            <flux:select.option value="yellow-on-transparent">{{ __('Yellow on Transparent') }}</flux:select.option>
+                            <flux:select.option value="custom">{{ __('Custom') }}</flux:select.option>
+                        </flux:select>
+                        <flux:input x-model="overlayForm.fontSize" label="{{ __('Font Size') }}" type="number" min="14" max="48" />
+                        <flux:input x-model="overlayForm.maxLines" label="{{ __('Max Lines') }}" type="number" min="1" max="4" />
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" x-model="overlayForm.showSpeakerName" id="showSpeakerName" class="rounded border-zinc-300 text-blue-500" />
+                            <label for="showSpeakerName" class="text-sm text-zinc-700 dark:text-zinc-300">{{ __('Show Speaker Name') }}</label>
+                        </div>
+                        <div class="flex justify-end gap-2">
+                            <flux:button variant="ghost" @click="$flux.modal('overlay-caption-modal').close()">{{ __('Cancel') }}</flux:button>
+                            <flux:button variant="primary" @click="saveOverlay(); $flux.modal('overlay-caption-modal').close()">{{ __('Save') }}</flux:button>
+                        </div>
+                    </div>
+                </flux:modal>
             </div>
 
             {{-- Right column: Tabbed sidebar (Chat, Q&A, Resources, Backstage) --}}
@@ -1423,6 +1617,21 @@ class extends Component
             let peerManager = null;
             let studioChannel = null;
             let hostAudioTrack = null; // Separate reference for mute/unmute
+            let overlayRenderer = null;
+            let captionEngine = null;
+
+            // Position preset lookup
+            const POSITION_PRESETS = {
+                'top-left':      { x: 0.02, y: 0.02 },
+                'top-center':    { x: 0.5,  y: 0.02 },
+                'top-right':     { x: 0.85, y: 0.02 },
+                'center':        { x: 0.5,  y: 0.5 },
+                'bottom-left':   { x: 0.02, y: 0.88 },
+                'bottom-center': { x: 0.5,  y: 0.88 },
+                'bottom-right':  { x: 0.85, y: 0.88 },
+                'bottom':        { x: 0,    y: 0.92 },
+                'custom':        { x: 0.5,  y: 0.5 },
+            };
 
             return {
                 connected: false,
@@ -1436,6 +1645,33 @@ class extends Component
                 scenes: [],
                 overlayConfigs: [],
                 screenStream: null,
+
+                // Scene Config state
+                currentLayoutKey: 'solo',
+                previewSlotSources: {},
+                availableLayouts: [
+                    { key: 'solo', name: 'Solo', slots: [{label: 'A', x:0, y:0, w:1, h:1}] },
+                    { key: 'interview', name: 'Interview', slots: [{label:'A', x:0, y:0, w:0.5, h:1}, {label:'B', x:0.5, y:0, w:0.5, h:1}] },
+                    { key: 'panel-3up', name: 'Panel 3-Up', slots: [{label:'A', x:0, y:0, w:0.333, h:1}, {label:'B', x:0.333, y:0, w:0.334, h:1}, {label:'C', x:0.667, y:0, w:0.333, h:1}] },
+                    { key: 'pip', name: 'PiP', slots: [{label:'A', x:0, y:0, w:1, h:1}, {label:'B', x:0.73, y:0.7, w:0.25, h:0.25}] },
+                    { key: 'sidebar', name: 'Sidebar', slots: [{label:'A', x:0, y:0, w:0.7, h:1}, {label:'B', x:0.7, y:0, w:0.3, h:1}] },
+                    { key: 'screen-speaker', name: 'Screen+Speaker', slots: [{label:'A', x:0, y:0, w:1, h:1}, {label:'B', x:0.75, y:0.72, w:0.23, h:0.25}] },
+                ],
+                get currentLayoutSlots() {
+                    const layout = this.availableLayouts.find(l => l.key === this.currentLayoutKey);
+                    return layout ? layout.slots : this.availableLayouts[0].slots;
+                },
+
+                // Overlay panel state
+                addOverlayType: null,
+                editOverlayIndex: null,
+                overlayForm: {
+                    type: '', content: '', style: 'lower-third', position: 'bottom-center',
+                    color: '#ffffff', bg: '#000000', fontSize: 28, fontWeight: '700',
+                    src: '', opacity: 0.8, w: 0.12, h: 0.08,
+                    html: '', htmlType: 'iframe', refreshInterval: 2000,
+                    captionStyle: 'white-on-black', maxLines: 2, showSpeakerName: true,
+                },
 
                 init() {
                     this.$wire.on('livekit-disconnect', () => this.disconnect());
@@ -1510,6 +1746,24 @@ class extends Component
                         previewCompositor.start();
                         programCompositor.start();
                         console.log('[Studio] Compositors started');
+
+                        // 3b. Initialize OverlayRenderer for HTML overlays
+                        try {
+                            const OverlayRendererClass = await window.loadOverlayRenderer();
+                            overlayRenderer = new OverlayRendererClass(this.$refs.overlayRenderContainer);
+                            programCompositor.setOverlayRenderer(overlayRenderer);
+                            previewCompositor.setOverlayRenderer(overlayRenderer);
+
+                            // Register any existing HTML overlays
+                            this.overlayConfigs.forEach((overlay, idx) => {
+                                if (overlay.type === 'html' && overlay.visible !== false) {
+                                    overlayRenderer.addOverlay(idx, overlay);
+                                }
+                            });
+                            console.log('[Studio] OverlayRenderer initialized');
+                        } catch (err) {
+                            console.warn('[Studio] OverlayRenderer init failed (non-critical):', err.message);
+                        }
 
                         // 4. Connect to LiveKit (broadcast output only)
                         const { Room, RoomEvent } = await window.loadLiveKit();
@@ -1682,6 +1936,229 @@ class extends Component
                 },
 
                 // ==============================================================
+                // Scene Config — Layout + Source Assignment
+                // ==============================================================
+
+                changeLayout(layoutKey) {
+                    this.currentLayoutKey = layoutKey;
+                    const layout = this.availableLayouts.find(l => l.key === layoutKey);
+                    if (!layout) return;
+
+                    // Reset slot sources
+                    this.previewSlotSources = {};
+
+                    // Build a new scene from the preset layout
+                    const scene = this.scenes[this.previewSceneIndex] ?? this.scenes[0];
+                    if (scene) {
+                        scene.slots = layout.slots.map((s, i) => ({
+                            ...s,
+                            source: scene.slots?.[i]?.source ?? null,
+                        }));
+                        if (previewCompositor) previewCompositor.setScene(scene);
+                    }
+                },
+
+                assignSlotSource(slotIndex, sourceKey) {
+                    this.previewSlotSources[slotIndex] = sourceKey;
+
+                    const scene = this.scenes[this.previewSceneIndex] ?? this.scenes[0];
+                    if (scene && scene.slots?.[slotIndex]) {
+                        scene.slots[slotIndex].source = sourceKey || null;
+                        if (previewCompositor) previewCompositor.setScene(scene);
+                    }
+                },
+
+                // ==============================================================
+                // Overlay Panel — Add/Edit/Toggle/Remove
+                // ==============================================================
+
+                showAddOverlay(type) {
+                    this.addOverlayType = type;
+                    this.editOverlayIndex = null;
+                    // Reset form with defaults
+                    this.overlayForm = {
+                        type, content: '', style: 'lower-third', position: 'bottom-center',
+                        color: '#ffffff', bg: '#000000', fontSize: 28, fontWeight: '700',
+                        src: '', opacity: 0.8, w: 0.12, h: 0.08,
+                        html: '', htmlType: 'iframe', refreshInterval: 2000,
+                        captionStyle: 'white-on-black', maxLines: 2, showSpeakerName: true,
+                    };
+                    // Set type-specific defaults
+                    if (type === 'html') {
+                        this.overlayForm.w = 1.0;
+                        this.overlayForm.h = 0.08;
+                        this.overlayForm.position = 'bottom';
+                    } else if (type === 'caption') {
+                        this.overlayForm.position = 'bottom-center';
+                        this.overlayForm.fontSize = 24;
+                    }
+                    $flux.modal('overlay-' + type + '-modal').show();
+                },
+
+                saveOverlay() {
+                    const pos = POSITION_PRESETS[this.overlayForm.position] ?? POSITION_PRESETS['bottom-center'];
+                    const type = this.overlayForm.type || this.addOverlayType;
+                    let overlay = { type, visible: true, position: this.overlayForm.position, x: pos.x, y: pos.y };
+
+                    if (type === 'text') {
+                        Object.assign(overlay, {
+                            content: this.overlayForm.content,
+                            style: this.overlayForm.style,
+                            fontSize: parseInt(this.overlayForm.fontSize) || 28,
+                            fontWeight: this.overlayForm.fontWeight,
+                            color: this.overlayForm.color,
+                            bg: this.overlayForm.bg + 'cc',
+                        });
+                    } else if (type === 'image') {
+                        Object.assign(overlay, {
+                            src: this.overlayForm.src,
+                            w: parseFloat(this.overlayForm.w) || 0.12,
+                            h: parseFloat(this.overlayForm.h) || 0.08,
+                            opacity: parseFloat(this.overlayForm.opacity) || 0.8,
+                        });
+                    } else if (type === 'html') {
+                        Object.assign(overlay, {
+                            src: this.overlayForm.htmlType === 'iframe' ? this.overlayForm.src : null,
+                            html: this.overlayForm.htmlType === 'raw' ? this.overlayForm.html : null,
+                            w: parseFloat(this.overlayForm.w) || 1.0,
+                            h: parseFloat(this.overlayForm.h) || 0.08,
+                            refreshInterval: parseInt(this.overlayForm.refreshInterval) || 2000,
+                        });
+                    } else if (type === 'caption') {
+                        Object.assign(overlay, {
+                            style: this.overlayForm.captionStyle,
+                            fontSize: parseInt(this.overlayForm.fontSize) || 24,
+                            maxLines: parseInt(this.overlayForm.maxLines) || 2,
+                            showSpeakerName: this.overlayForm.showSpeakerName,
+                            w: 0.8,
+                        });
+                    }
+
+                    if (this.editOverlayIndex !== null && this.editOverlayIndex >= 0) {
+                        this.overlayConfigs[this.editOverlayIndex] = overlay;
+                    } else {
+                        this.overlayConfigs.push(overlay);
+                    }
+
+                    this._syncOverlays();
+
+                    // Auto-start caption engine when a caption overlay is added
+                    if (type === 'caption' && !captionEngine) {
+                        this.enableCaptions();
+                    }
+
+                    this.editOverlayIndex = null;
+                    this.addOverlayType = null;
+                },
+
+                editOverlay(idx) {
+                    const overlay = this.overlayConfigs[idx];
+                    if (!overlay) return;
+
+                    this.editOverlayIndex = idx;
+                    this.addOverlayType = overlay.type;
+                    this.overlayForm = {
+                        type: overlay.type,
+                        content: overlay.content ?? '',
+                        style: overlay.style ?? 'lower-third',
+                        position: overlay.position ?? 'bottom-center',
+                        color: (overlay.color ?? '#ffffff').replace(/[a-f0-9]{2}$/i, ''),
+                        bg: (overlay.bg ?? '#000000').substring(0, 7),
+                        fontSize: overlay.fontSize ?? 28,
+                        fontWeight: overlay.fontWeight ?? '700',
+                        src: overlay.src ?? '',
+                        opacity: overlay.opacity ?? 0.8,
+                        w: overlay.w ?? 0.12,
+                        h: overlay.h ?? 0.08,
+                        html: overlay.html ?? '',
+                        htmlType: overlay.html ? 'raw' : 'iframe',
+                        refreshInterval: overlay.refreshInterval ?? 2000,
+                        captionStyle: overlay.type === 'caption' ? (overlay.style ?? 'white-on-black') : 'white-on-black',
+                        maxLines: overlay.maxLines ?? 2,
+                        showSpeakerName: overlay.showSpeakerName !== false,
+                    };
+                    $flux.modal('overlay-' + overlay.type + '-modal').show();
+                },
+
+                removeOverlay(idx) {
+                    this.overlayConfigs.splice(idx, 1);
+                    // Unregister HTML overlay from renderer
+                    if (overlayRenderer) overlayRenderer.removeOverlay(idx);
+                    this._syncOverlays();
+                },
+
+                toggleOverlayVisibility(idx) {
+                    const overlay = this.overlayConfigs[idx];
+                    if (!overlay) return;
+                    overlay.visible = !(overlay.visible !== false);
+
+                    // Toggle HTML overlay in renderer
+                    if (overlay.type === 'html' && overlayRenderer) {
+                        if (overlay.visible) {
+                            overlayRenderer.addOverlay(idx, overlay);
+                        } else {
+                            overlayRenderer.removeOverlay(idx);
+                        }
+                    }
+
+                    this._syncOverlays();
+                },
+
+                overlayLabel(overlay) {
+                    switch (overlay.type) {
+                        case 'text': return (overlay.style ?? 'Text') + ': "' + (overlay.content ?? '').substring(0, 30) + '"';
+                        case 'image': return 'Image: ' + (overlay.src ?? '').split('/').pop();
+                        case 'html': return 'HTML: ' + (overlay.src ?? overlay.html?.substring(0, 20) ?? 'custom');
+                        case 'caption': return 'Captions: ' + (overlay.style ?? 'Active Speaker');
+                        default: return overlay.type ?? 'Overlay';
+                    }
+                },
+
+                _syncOverlays() {
+                    // Update compositors
+                    if (programCompositor) programCompositor.setOverlays([...this.overlayConfigs]);
+                    if (previewCompositor) previewCompositor.setOverlays([...this.overlayConfigs]);
+
+                    // Register HTML overlays with renderer
+                    if (overlayRenderer) {
+                        this.overlayConfigs.forEach((overlay, idx) => {
+                            if (overlay.type === 'html' && overlay.visible !== false) {
+                                overlayRenderer.addOverlay(idx, overlay);
+                            }
+                        });
+                    }
+
+                    // Persist to server
+                    this.$wire.updateOverlays(this.overlayConfigs);
+                },
+
+                // ==============================================================
+                // Caption Engine
+                // ==============================================================
+
+                async enableCaptions() {
+                    try {
+                        const CaptionEngineClass = await window.loadCaptionEngine();
+                        captionEngine = new CaptionEngineClass();
+
+                        const audioSources = {
+                            host: hostAudioTrack ? { track: hostAudioTrack, name: 'Host' } : null,
+                            guests: new Map(),
+                        };
+
+                        captionEngine.onCaption(({ speaker, text }) => {
+                            if (programCompositor) programCompositor.setCaptionText(speaker, text);
+                            if (previewCompositor) previewCompositor.setCaptionText(speaker, text);
+                        });
+
+                        captionEngine.start(audioSources);
+                        console.log('[Studio] CaptionEngine started');
+                    } catch (err) {
+                        console.warn('[Studio] CaptionEngine init failed:', err.message);
+                    }
+                },
+
+                // ==============================================================
                 // Source monitor thumbnails
                 // ==============================================================
 
@@ -1736,6 +2213,8 @@ class extends Component
                 // ==============================================================
 
                 async disconnect() {
+                    if (captionEngine) { captionEngine.stop(); captionEngine = null; }
+                    if (overlayRenderer) { overlayRenderer.destroy(); overlayRenderer = null; }
                     if (peerManager) { peerManager.destroy(); peerManager = null; }
                     if (previewCompositor) { previewCompositor.stop(); previewCompositor.destroy(); previewCompositor = null; }
                     if (programCompositor) { programCompositor.stop(); programCompositor.destroy(); programCompositor = null; }
