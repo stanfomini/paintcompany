@@ -131,7 +131,7 @@ class LiveKitService
         $videoGrant = new VideoGrant([
             'roomJoin' => true,
             'room' => $event->livekit_room_name,
-            'canPublish' => true,
+            'canPublish' => false,
             'canSubscribe' => true,
         ]);
 
