@@ -298,3 +298,17 @@ Broadcast::channel('live-event-host.{eventId}', function (User $user, int $event
 Broadcast::channel('event-backstage.{eventId}', function (User $user, int $eventId) {
     return $user->isInternal() && \App\Models\LiveEvent::where('id', $eventId)->exists();
 }, ['guards' => ['web']]);
+
+/**
+ * Authorize access to the event studio presence channel.
+ * Used for WebRTC signaling between host and guests.
+ * Internal users (host + co-producers) get presence identity.
+ * Guest access is handled via custom auth endpoint (EventGuestAuthController).
+ */
+Broadcast::channel('event-studio.{eventId}', function (User $user, int $eventId) {
+    if ($user->isInternal() && \App\Models\LiveEvent::where('id', $eventId)->exists()) {
+        return ['id' => "host-{$user->id}", 'name' => $user->name];
+    }
+
+    return false;
+}, ['guards' => ['web']]);

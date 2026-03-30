@@ -1551,29 +1551,16 @@ class extends Component
 
                 async _setupPeerManager(eventId) {
                     const PeerManager = await window.loadPeerManager();
-                    const EchoLib = window.EchoLib;
-                    if (!EchoLib) {
+
+                    // Use the global Echo instance (authenticated as the host via standard Laravel auth).
+                    // The event-studio channel is registered in channels.php for internal users.
+                    // Guests use a separate Echo instance with custom auth (EventGuestAuthController).
+                    if (!window.Echo) {
                         console.warn('[Studio] Echo not available, guest connections disabled');
                         return;
                     }
 
-                    const echoInstance = new EchoLib({
-                        broadcaster: 'reverb',
-                        key: document.querySelector('meta[name="reverb-key"]')?.content,
-                        wsHost: document.querySelector('meta[name="reverb-host"]')?.content,
-                        wsPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
-                        wssPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
-                        forceTLS: (document.querySelector('meta[name="reverb-scheme"]')?.content || 'https') === 'https',
-                        enabledTransports: ['ws', 'wss'],
-                        authEndpoint: '/broadcasting/event-guest-auth',
-                        auth: {
-                            headers: {
-                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                            },
-                        },
-                    });
-
-                    studioChannel = echoInstance.join(`event-studio.${eventId}`)
+                    studioChannel = window.Echo.join(`event-studio.${eventId}`)
                         .here((users) => {
                             console.log('[Studio] Studio channel subscribed. Users:', users);
                         })
