@@ -1034,10 +1034,24 @@ class extends Component
                 {{-- ═══════════════════════════════════════════ --}}
                 <div class="flex gap-2 bg-black p-2" style="max-height: 45vh;" wire:ignore>
                     {{-- Preview Monitor --}}
-                    <div class="relative flex-1 overflow-hidden rounded-lg border-2 border-green-500/40 bg-black">
+                    <div class="relative flex-1 overflow-hidden rounded-lg border-2 bg-black"
+                         :class="editorMode ? 'border-green-400' : 'border-green-500/40'">
                         <canvas x-ref="previewCanvas" class="h-full w-full object-contain" width="1280" height="720"></canvas>
-                        <span class="absolute top-2 left-2 rounded bg-green-600/90 px-2 py-0.5 text-[10px] font-bold text-white tracking-wider">PREVIEW</span>
-                        <span class="absolute top-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[10px] text-zinc-300" x-text="scenes[previewSceneIndex]?.name ?? 'Solo'"></span>
+                        {{-- Editor handles layer — positioned over canvas --}}
+                        <div x-ref="editorHandles" x-show="editorMode"
+                             class="absolute inset-0 z-10"
+                             style="pointer-events: none;"></div>
+                        <span class="absolute top-2 left-2 rounded px-2 py-0.5 text-[10px] font-bold text-white tracking-wider z-20"
+                              :class="editorMode ? 'bg-yellow-500' : 'bg-green-600/90'"
+                              x-text="editorMode ? 'EDITOR' : 'PREVIEW'"></span>
+                        <span class="absolute top-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[10px] text-zinc-300 z-20"
+                              x-text="scenes[previewSceneIndex]?.name ?? 'Solo'"></span>
+                        {{-- Edit mode toggle --}}
+                        <button type="button" @click="toggleEditor()"
+                                class="absolute bottom-2 right-2 rounded px-2 py-1 text-[10px] font-medium transition-colors z-20"
+                                :class="editorMode ? 'bg-yellow-500 text-black hover:bg-yellow-400' : 'bg-zinc-700/80 text-zinc-300 hover:bg-zinc-600'">
+                            <span x-text="editorMode ? 'Done Editing' : 'Edit Layout'"></span>
+                        </button>
                     </div>
 
                     {{-- Program Monitor --}}
@@ -1123,6 +1137,30 @@ class extends Component
                 </div>
 
                 {{-- ═══════════════════════════════════════════ --}}
+                {{-- VERSION TABS --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div class="flex items-center gap-1.5 border-t border-zinc-700 bg-zinc-850 px-3 py-1.5" wire:ignore>
+                    <span class="mr-1 text-[9px] font-bold uppercase tracking-widest text-zinc-500">{{ __('Versions') }}</span>
+                    <template x-for="(scene, idx) in scenes" :key="idx">
+                        <button type="button"
+                                @click="previewScene(idx)"
+                                class="rounded px-2.5 py-1 text-[10px] font-medium transition-colors truncate max-w-[120px]"
+                                :class="{
+                                    'ring-1 ring-red-500 bg-red-600/20 text-red-300': liveSceneIndex === idx,
+                                    'ring-1 ring-green-500 bg-green-600/20 text-green-300': previewSceneIndex === idx && liveSceneIndex !== idx,
+                                    'bg-zinc-700 text-zinc-400 hover:bg-zinc-600 hover:text-zinc-300': previewSceneIndex !== idx && liveSceneIndex !== idx,
+                                }"
+                                x-text="scene.name || ('Version ' + (idx + 1))">
+                        </button>
+                    </template>
+                    <button type="button" @click="addVersion()" class="rounded bg-zinc-700 px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-600">+ New</button>
+                    <button type="button" @click="cloneVersion()" class="rounded bg-zinc-700 px-2 py-1 text-[10px] text-zinc-400 hover:bg-zinc-600">Clone</button>
+                    <button type="button" @click="deleteVersion()"
+                            x-show="scenes.length > 1 && previewSceneIndex !== liveSceneIndex"
+                            class="rounded bg-zinc-700 px-2 py-1 text-[10px] text-red-400 hover:bg-red-600/30">Delete</button>
+                </div>
+
+                {{-- ═══════════════════════════════════════════ --}}
                 {{-- SCENE CONFIG — Layout Picker + Source Assignment --}}
                 {{-- ═══════════════════════════════════════════ --}}
                 <div class="flex flex-wrap items-center gap-2 border-t border-zinc-700 bg-zinc-850 px-3 py-2" wire:ignore>
@@ -1183,6 +1221,82 @@ class extends Component
                         <button @click="showAddOverlay('image')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('Image') }}</button>
                         <button @click="showAddOverlay('html')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('HTML') }}</button>
                         <button @click="showAddOverlay('caption')" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">+ {{ __('Caption') }}</button>
+                    </div>
+                </div>
+
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- PROPERTIES PANEL (visible when item selected in editor) --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <div x-show="editorMode && selectedItem" x-cloak
+                     class="border-t border-zinc-700 bg-zinc-800 px-3 py-2" wire:ignore>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-[9px] font-bold uppercase tracking-widest text-zinc-500">Properties</span>
+                        <span class="text-[10px] text-zinc-400" x-text="selectedItemLabel"></span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-3">
+                        {{-- Source dropdown (slots only) --}}
+                        <template x-if="selectedItem?.type === 'slot'">
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] text-zinc-500">Source:</span>
+                                <select @change="updateSelectedProperty('source', $event.target.value)"
+                                        class="rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                                    <option value="">(none)</option>
+                                    <template x-for="source in sources" :key="source.key">
+                                        <option :value="source.key" :selected="getSelectedProperty('source') === source.key" x-text="source.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </template>
+                        {{-- Position/Size --}}
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] text-zinc-500">X:</span>
+                            <input type="number" min="0" max="100" step="1"
+                                   :value="Math.round((getSelectedProperty('x') ?? 0) * 100)"
+                                   @change="updateSelectedProperty('x', $event.target.value / 100)"
+                                   class="w-12 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] text-zinc-500">Y:</span>
+                            <input type="number" min="0" max="100" step="1"
+                                   :value="Math.round((getSelectedProperty('y') ?? 0) * 100)"
+                                   @change="updateSelectedProperty('y', $event.target.value / 100)"
+                                   class="w-12 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] text-zinc-500">W:</span>
+                            <input type="number" min="1" max="100" step="1"
+                                   :value="Math.round((getSelectedProperty('w') ?? 50) * 100)"
+                                   @change="updateSelectedProperty('w', $event.target.value / 100)"
+                                   class="w-12 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] text-zinc-500">H:</span>
+                            <input type="number" min="1" max="100" step="1"
+                                   :value="Math.round((getSelectedProperty('h') ?? 50) * 100)"
+                                   @change="updateSelectedProperty('h', $event.target.value / 100)"
+                                   class="w-12 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                        </div>
+                        {{-- Border Radius (slots) --}}
+                        <template x-if="selectedItem?.type === 'slot'">
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] text-zinc-500">Radius:</span>
+                                <input type="number" min="0" max="50" step="1"
+                                       :value="getSelectedProperty('borderRadius') ?? 0"
+                                       @change="updateSelectedProperty('borderRadius', parseInt($event.target.value))"
+                                       class="w-12 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                                <span class="text-[10px] text-zinc-600">px</span>
+                            </div>
+                        </template>
+                        {{-- Content (text overlays) --}}
+                        <template x-if="selectedItem?.type === 'overlay' && getSelectedOverlay()?.type === 'text'">
+                            <div class="flex items-center gap-1">
+                                <span class="text-[10px] text-zinc-500">Text:</span>
+                                <input type="text"
+                                       :value="getSelectedProperty('content') ?? ''"
+                                       @input="updateSelectedProperty('content', $event.target.value)"
+                                       class="w-40 rounded bg-zinc-700 px-1.5 py-0.5 text-[10px] text-zinc-200 border-zinc-600">
+                            </div>
+                        </template>
                     </div>
                 </div>
 
@@ -1619,6 +1733,7 @@ class extends Component
             let hostAudioTrack = null; // Separate reference for mute/unmute
             let overlayRenderer = null;
             let captionEngine = null;
+            let canvasEditor = null;
 
             // Position preset lookup
             const POSITION_PRESETS = {
@@ -1645,6 +1760,10 @@ class extends Component
                 scenes: [],
                 overlayConfigs: [],
                 screenStream: null,
+
+                // Editor state
+                editorMode: false,
+                selectedItem: null,
 
                 // Scene Config state
                 currentLayoutKey: 'solo',
@@ -1877,8 +1996,15 @@ class extends Component
 
                 previewScene(index) {
                     this.previewSceneIndex = index;
-                    if (previewCompositor) {
-                        previewCompositor.setScene(this.scenes[index]);
+                    const scene = this.scenes[index];
+                    if (previewCompositor && scene) {
+                        previewCompositor.setScene(scene);
+                    }
+                    // Sync editor handles if in editor mode
+                    if (canvasEditor && this.editorMode && scene) {
+                        canvasEditor.setSlots(scene.slots || []);
+                        canvasEditor.setOverlays(scene.overlays || this.overlayConfigs || []);
+                        this.selectedItem = null;
                     }
                 },
 
@@ -1933,6 +2059,140 @@ class extends Component
                     } catch (err) {
                         console.warn('[Studio] Screen share cancelled:', err.message);
                     }
+                },
+
+                // ==============================================================
+                // Canvas Editor
+                // ==============================================================
+
+                async toggleEditor() {
+                    this.editorMode = !this.editorMode;
+
+                    if (this.editorMode) {
+                        if (!canvasEditor) {
+                            const CanvasEditor = await window.loadCanvasEditor();
+                            canvasEditor = new CanvasEditor(this.$refs.previewCanvas, this.$refs.editorHandles);
+
+                            canvasEditor.onSlotChanged(({ index, x, y, w, h }) => {
+                                const scene = this.scenes[this.previewSceneIndex];
+                                if (scene?.slots?.[index]) {
+                                    Object.assign(scene.slots[index], { x, y, w, h });
+                                    if (previewCompositor) previewCompositor.setScene(scene);
+                                }
+                            });
+
+                            canvasEditor.onOverlayChanged(({ index, x, y, w, h }) => {
+                                const scene = this.scenes[this.previewSceneIndex];
+                                if (scene?.overlays?.[index]) {
+                                    Object.assign(scene.overlays[index], { x, y, w, h });
+                                    if (previewCompositor) {
+                                        previewCompositor.setOverlays(scene.overlays);
+                                    }
+                                }
+                            });
+
+                            canvasEditor.onSelect(({ type, index }) => {
+                                this.selectedItem = { type, index };
+                            });
+                        }
+
+                        // Sync handles with current preview scene
+                        const scene = this.scenes[this.previewSceneIndex];
+                        if (scene) {
+                            canvasEditor.setSlots(scene.slots || []);
+                            canvasEditor.setOverlays(scene.overlays || this.overlayConfigs || []);
+                        }
+                        canvasEditor.enable();
+                    } else {
+                        if (canvasEditor) canvasEditor.disable();
+                        this.selectedItem = null;
+                        // Persist the modified scene
+                        this.$wire.updateScenes(this.scenes);
+                    }
+                },
+
+                get selectedItemLabel() {
+                    if (!this.selectedItem) return '';
+                    const { type, index } = this.selectedItem;
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (type === 'slot') {
+                        const slot = scene?.slots?.[index];
+                        return `Slot ${slot?.label || String.fromCharCode(65 + index)}: ${slot?.source || '(none)'}`;
+                    } else {
+                        const overlay = scene?.overlays?.[index] ?? this.overlayConfigs?.[index];
+                        return overlay ? `${overlay.type}: ${overlay.content || overlay.src || ''}`.substring(0, 40) : 'Overlay';
+                    }
+                },
+
+                getSelectedProperty(prop) {
+                    if (!this.selectedItem) return null;
+                    const { type, index } = this.selectedItem;
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (type === 'slot') return scene?.slots?.[index]?.[prop];
+                    return (scene?.overlays?.[index] ?? this.overlayConfigs?.[index])?.[prop];
+                },
+
+                getSelectedOverlay() {
+                    if (!this.selectedItem || this.selectedItem.type !== 'overlay') return null;
+                    const scene = this.scenes[this.previewSceneIndex];
+                    return scene?.overlays?.[this.selectedItem.index] ?? this.overlayConfigs?.[this.selectedItem.index];
+                },
+
+                updateSelectedProperty(prop, value) {
+                    if (!this.selectedItem) return;
+                    const { type, index } = this.selectedItem;
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (!scene) return;
+
+                    if (type === 'slot' && scene.slots?.[index]) {
+                        scene.slots[index][prop] = value;
+                        if (previewCompositor) previewCompositor.setScene(scene);
+                        if (canvasEditor) canvasEditor.setSlots(scene.slots);
+                    } else if (type === 'overlay') {
+                        if (!scene.overlays) scene.overlays = [...(this.overlayConfigs || [])];
+                        if (scene.overlays[index]) {
+                            scene.overlays[index][prop] = value;
+                            if (previewCompositor) previewCompositor.setOverlays(scene.overlays);
+                            if (canvasEditor) canvasEditor.setOverlays(scene.overlays);
+                        }
+                    }
+                },
+
+                // Version management
+                addVersion() {
+                    const newScene = {
+                        name: `Version ${this.scenes.length + 1}`,
+                        layout: 'solo',
+                        slots: [{ label: 'A', source: 'host', x: 0, y: 0, w: 1, h: 1 }],
+                        overlays: [],
+                    };
+                    this.scenes.push(newScene);
+                    this.previewScene(this.scenes.length - 1);
+                    this.$wire.updateScenes(this.scenes);
+                },
+
+                cloneVersion() {
+                    const current = this.scenes[this.previewSceneIndex];
+                    if (!current) return;
+                    const clone = JSON.parse(JSON.stringify(current));
+                    clone.name = `${current.name} (copy)`;
+                    this.scenes.push(clone);
+                    this.previewScene(this.scenes.length - 1);
+                    this.$wire.updateScenes(this.scenes);
+                },
+
+                deleteVersion() {
+                    if (this.scenes.length <= 1) return;
+                    if (this.previewSceneIndex === this.liveSceneIndex) return;
+                    this.scenes.splice(this.previewSceneIndex, 1);
+                    if (this.previewSceneIndex >= this.scenes.length) {
+                        this.previewSceneIndex = this.scenes.length - 1;
+                    }
+                    if (this.liveSceneIndex >= this.scenes.length) {
+                        this.liveSceneIndex = this.scenes.length - 1;
+                    }
+                    this.previewScene(this.previewSceneIndex);
+                    this.$wire.updateScenes(this.scenes);
                 },
 
                 // ==============================================================
@@ -2213,6 +2473,7 @@ class extends Component
                 // ==============================================================
 
                 async disconnect() {
+                    if (canvasEditor) { canvasEditor.destroy(); canvasEditor = null; }
                     if (captionEngine) { captionEngine.stop(); captionEngine = null; }
                     if (overlayRenderer) { overlayRenderer.destroy(); overlayRenderer = null; }
                     if (peerManager) { peerManager.destroy(); peerManager = null; }
