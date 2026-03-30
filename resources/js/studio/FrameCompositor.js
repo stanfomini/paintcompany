@@ -202,7 +202,24 @@ export default class FrameCompositor {
         const videoEl = this._sourceManager?.getElement(slot.source);
 
         if (videoEl && videoEl.readyState >= 2) {
-            ctx.drawImage(videoEl, x, y, w, h);
+            // Cover-style draw: maintain aspect ratio, crop overflow
+            const vidW = videoEl.videoWidth || videoEl.width || w;
+            const vidH = videoEl.videoHeight || videoEl.height || h;
+            const slotRatio = w / h;
+            const vidRatio = vidW / vidH;
+
+            let sx = 0, sy = 0, sw = vidW, sh = vidH;
+            if (vidRatio > slotRatio) {
+                // Video is wider — crop sides
+                sw = vidH * slotRatio;
+                sx = (vidW - sw) / 2;
+            } else {
+                // Video is taller — crop top/bottom
+                sh = vidW / slotRatio;
+                sy = (vidH - sh) / 2;
+            }
+
+            ctx.drawImage(videoEl, sx, sy, sw, sh, x, y, w, h);
         } else {
             ctx.fillStyle = '#1a1a1a';
             ctx.fillRect(x, y, w, h);

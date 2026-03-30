@@ -785,9 +785,9 @@ new #[Layout('layouts.video-call')] class extends Component
                             this.guestStatus = 'live';
                             console.log('[GuestRoom] Connected to host via WebRTC');
 
-                            // Mute host audio preview to prevent echo
-                            const hostAudio = document.getElementById('host-audio-preview');
-                            if (hostAudio) hostAudio.muted = true;
+                            // Mute ALL viewer audio to prevent echo/feedback
+                            // (broadcast includes the guest's own voice with delay)
+                            this._muteViewerAudio(true);
                         });
 
                         peerConnection.onDisconnected(() => {
@@ -796,9 +796,8 @@ new #[Layout('layouts.video-call')] class extends Component
                                 this.guestStatus = 'waiting';
                             }
 
-                            // Unmute host audio preview
-                            const hostAudio = document.getElementById('host-audio-preview');
-                            if (hostAudio) hostAudio.muted = false;
+                            // Unmute viewer audio when off air
+                            this._muteViewerAudio(false);
                         });
 
                         await peerConnection.connect(localStream);
@@ -831,10 +830,32 @@ new #[Layout('layouts.video-call')] class extends Component
                         peerConnection = null;
                     }
                     this.peerConnected = false;
+                    this._muteViewerAudio(false);
+                },
 
-                    // Unmute host audio preview
+                /**
+                 * Mute/unmute all audio from the LiveKit viewer connection.
+                 * When the guest is live, their own voice comes back through
+                 * the broadcast with delay — muting prevents confusing echo.
+                 */
+                _muteViewerAudio(muted) {
+                    // Mute the specific host audio element if it exists
                     const hostAudio = document.getElementById('host-audio-preview');
-                    if (hostAudio) hostAudio.muted = false;
+                    if (hostAudio) hostAudio.muted = muted;
+
+                    // Also mute all audio tracks in the viewer room directly
+                    if (viewerRoom) {
+                        viewerRoom.remoteParticipants.forEach(participant => {
+                            participant.audioTrackPublications.forEach(pub => {
+                                if (pub.track) {
+                                    const els = pub.track.attachedElements;
+                                    if (els) els.forEach(el => { el.muted = muted; });
+                                }
+                            });
+                        });
+                    }
+
+                    console.log(`[GuestRoom] Viewer audio ${muted ? 'muted' : 'unmuted'}`);
                 },
 
                 // ==============================================================
@@ -884,6 +905,7 @@ new #[Layout('layouts.video-call')] class extends Component
                 // ==============================================================
 
                 destroy() {
+                    this._muteViewerAudio(false);
                     if (peerConnection) { peerConnection.disconnect(); peerConnection = null; }
                     if (animationFrame) cancelAnimationFrame(animationFrame);
                     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
@@ -891,9 +913,6 @@ new #[Layout('layouts.video-call')] class extends Component
                     if (viewerRoom) { viewerRoom.disconnect(); viewerRoom = null; }
                     if (studioChannel) { studioChannel = null; }
                     if (echoInstance) { echoInstance.disconnect(); echoInstance = null; }
-
-                    const hostAudio = document.getElementById('host-audio-preview');
-                    if (hostAudio) hostAudio.muted = false;
                 },
             };
         });
