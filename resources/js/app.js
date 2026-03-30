@@ -67,6 +67,14 @@ window.loadOverlayRenderer = async () => {
     return window.StudioOverlayRenderer;
 };
 
+window.loadCaptionEngine = async () => {
+    if (!window.StudioCaptionEngine) {
+        const module = await import('./studio/CaptionEngine.js');
+        window.StudioCaptionEngine = module.default;
+    }
+    return window.StudioCaptionEngine;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
