@@ -997,12 +997,19 @@ class extends Component
                 {{-- Header bar --}}
                 <div class="flex items-center justify-between border-b border-zinc-200 bg-zinc-900 px-4 py-2">
                     <div class="flex items-center gap-3">
-                        <span class="relative flex size-3">
-                            <span class="absolute inline-flex size-full animate-ping rounded-full bg-red-400 opacity-75"></span>
-                            <span class="relative inline-flex size-3 rounded-full bg-red-500"></span>
-                        </span>
+                        <template x-if="broadcasting">
+                            <span class="relative flex size-3">
+                                <span class="absolute inline-flex size-full animate-ping rounded-full bg-red-400 opacity-75"></span>
+                                <span class="relative inline-flex size-3 rounded-full bg-red-500"></span>
+                            </span>
+                        </template>
+                        <template x-if="!broadcasting">
+                            <span class="flex size-3 rounded-full bg-yellow-500"></span>
+                        </template>
                         <flux:heading size="sm" class="text-white">{{ $event->title }}</flux:heading>
-                        <flux:badge color="red" size="sm">{{ __('LIVE') }}</flux:badge>
+                        <span class="rounded px-2 py-0.5 text-xs font-bold"
+                              :class="broadcasting ? 'bg-red-600 text-white' : 'bg-yellow-500 text-black'"
+                              x-text="broadcasting ? 'BROADCASTING' : 'SETUP'"></span>
                     </div>
                     <div class="flex items-center gap-3">
                         <span class="flex items-center gap-1 text-sm text-zinc-400">
@@ -1304,35 +1311,46 @@ class extends Component
                 {{-- Hidden container for OverlayRenderer DOM elements --}}
                 <div x-ref="overlayRenderContainer" class="sr-only" aria-hidden="true" wire:ignore></div>
 
-                {{-- Guest Controls --}}
-                @if ($this->guests->isNotEmpty())
-                    <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2">
-                        <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Guests') }}</span>
-                        @foreach ($this->guests as $guest)
-                            <div wire:key="live-guest-{{ $guest->id }}" class="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1.5">
-                                <span class="text-xs font-medium text-zinc-300">{{ $guest->name }}</span>
-                                <flux:badge size="sm" :color="match($guest->status) {
-                                    'connected' => 'amber',
-                                    'live' => 'green',
-                                    'disconnected' => 'zinc',
-                                    default => 'zinc',
-                                }">
-                                    {{ ucfirst($guest->status) }}
-                                </flux:badge>
-                                @if ($guest->isConnected())
-                                    <flux:button size="xs" variant="primary" wire:click="bringGuestOn({{ $guest->id }})">
-                                        {{ __('Bring On') }}
-                                    </flux:button>
-                                @elseif ($guest->isLive())
-                                    <flux:button size="xs" variant="ghost" wire:click="takeGuestOff({{ $guest->id }})">
-                                        {{ __('Take Off') }}
-                                    </flux:button>
-                                @endif
-                            </div>
-                        @endforeach
-                        <flux:button size="xs" variant="ghost" icon="arrow-path" wire:click="refreshGuestStatuses" class="shrink-0" title="{{ __('Refresh') }}" />
-                    </div>
-                @endif
+                {{-- Guest Controls + Invite --}}
+                <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2">
+                    <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Guests') }}</span>
+                    @foreach ($this->guests as $guest)
+                        <div wire:key="live-guest-{{ $guest->id }}" class="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1.5">
+                            <span class="text-xs font-medium text-zinc-300">{{ $guest->name }}</span>
+                            <flux:badge size="sm" :color="match($guest->status) {
+                                'connected' => 'amber',
+                                'live' => 'green',
+                                'disconnected' => 'zinc',
+                                default => 'zinc',
+                            }">
+                                {{ ucfirst($guest->status) }}
+                            </flux:badge>
+                            @if ($guest->isConnected())
+                                <flux:button size="xs" variant="primary" wire:click="bringGuestOn({{ $guest->id }})">
+                                    {{ __('Bring On') }}
+                                </flux:button>
+                            @elseif ($guest->isLive())
+                                <flux:button size="xs" variant="ghost" wire:click="takeGuestOff({{ $guest->id }})">
+                                    {{ __('Take Off') }}
+                                </flux:button>
+                            @endif
+                            <flux:button size="xs" variant="ghost" icon="clipboard-document" wire:click="copyGuestLink({{ $guest->id }})" title="{{ __('Copy link') }}" />
+                        </div>
+                    @endforeach
+                    <flux:button size="xs" variant="ghost" icon="arrow-path" wire:click="refreshGuestStatuses" class="shrink-0" title="{{ __('Refresh') }}" />
+
+                    {{-- Quick invite --}}
+                    <div class="mx-1 h-4 w-px bg-zinc-700 shrink-0"></div>
+                    <form wire:submit="inviteGuest" class="flex shrink-0 items-center gap-1.5">
+                        <input type="text" wire:model="guestName" placeholder="{{ __('Guest name...') }}"
+                               class="w-28 rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 border-zinc-600 placeholder-zinc-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        <input type="email" wire:model="guestEmail" placeholder="{{ __('Email (optional)') }}"
+                               class="w-36 rounded bg-zinc-700 px-2 py-1 text-xs text-zinc-200 border-zinc-600 placeholder-zinc-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none" />
+                        <flux:button type="submit" size="xs" variant="primary" icon="plus" wire:loading.attr="disabled">
+                            {{ __('Invite') }}
+                        </flux:button>
+                    </form>
+                </div>
 
                 {{-- Controls bar --}}
                 <div class="flex items-center justify-center gap-3 border-t border-zinc-700 bg-zinc-900 px-4 py-3">
@@ -1362,12 +1380,24 @@ class extends Component
 
                     <div class="mx-2 h-6 w-px bg-zinc-700"></div>
 
-                    {{-- End Stream --}}
-                    <flux:button wire:click="endStream"
-                        wire:confirm="{{ __('Are you sure you want to end the stream?') }}"
-                        variant="danger" size="sm" icon="x-mark">
-                        {{ __('End Stream') }}
-                    </flux:button>
+                    {{-- Start Broadcasting / End Stream --}}
+                    <template x-if="!broadcasting">
+                        <button type="button" @click="startBroadcasting()"
+                            class="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-red-500">
+                            <span class="relative flex size-3">
+                                <span class="absolute inline-flex size-full animate-ping rounded-full bg-white/60"></span>
+                                <span class="relative inline-flex size-3 rounded-full bg-white"></span>
+                            </span>
+                            {{ __('Start Broadcasting') }}
+                        </button>
+                    </template>
+                    <template x-if="broadcasting">
+                        <flux:button wire:click="endStream"
+                            wire:confirm="{{ __('Are you sure you want to end the stream?') }}"
+                            variant="danger" size="sm" icon="x-mark">
+                            {{ __('End Stream') }}
+                        </flux:button>
+                    </template>
                 </div>
 
                 {{-- ═══════════════════════════════════════════ --}}
@@ -1751,6 +1781,7 @@ class extends Component
 
             return {
                 connected: false,
+                broadcasting: false,   // true when canvas is published to LiveKit
                 audioEnabled: true,
                 videoEnabled: true,
                 viewerCount: 0,
@@ -1819,15 +1850,22 @@ class extends Component
                 // Studio startup
                 // ==============================================================
 
+                /**
+                 * Phase 1: Set up the studio locally (camera, compositors, PeerManager).
+                 * Does NOT connect to LiveKit or start broadcasting.
+                 * Call startBroadcasting() when ready to go live to viewers.
+                 */
                 async startStudio(livekitToken, livekitUrl, eventId) {
                     try {
                         this.connectionError = null;
+                        this._livekitToken = livekitToken;
+                        this._livekitUrl = livekitUrl;
+                        this._eventId = eventId;
 
                         // 1. Initialize SourceManager
                         const SourceManager = await window.loadSourceManager();
                         sourceManager = new SourceManager(this.$refs.sourceContainer);
 
-                        // Update reactive sources array on changes
                         const syncSources = () => {
                             this.sources = sourceManager.getAllSources();
                         };
@@ -1842,8 +1880,6 @@ class extends Component
                             audio: { echoCancellation: true, noiseSuppression: true },
                         });
 
-                        // Separate audio from video — SourceManager only needs video,
-                        // audio is published independently to LiveKit
                         hostAudioTrack = cameraStream.getAudioTracks()[0];
                         const videoOnlyStream = new MediaStream(cameraStream.getVideoTracks());
                         sourceManager.addSource('host', videoOnlyStream, 'You (Host)');
@@ -1874,7 +1910,6 @@ class extends Component
                             programCompositor.setOverlayRenderer(overlayRenderer);
                             previewCompositor.setOverlayRenderer(overlayRenderer);
 
-                            // Register any existing HTML overlays
                             this.overlayConfigs.forEach((overlay, idx) => {
                                 if (overlay.type === 'html' && overlay.visible !== false) {
                                     overlayRenderer.addOverlay(idx, overlay);
@@ -1885,17 +1920,36 @@ class extends Component
                             console.warn('[Studio] OverlayRenderer init failed (non-critical):', err.message);
                         }
 
-                        // 4. Connect to LiveKit (broadcast output only)
+                        // 4. Set up PeerManager for guest WebRTC connections
+                        await this._setupPeerManager(eventId);
+
+                        this.connected = true;
+                        console.log('[Studio] Setup complete — ready to broadcast');
+
+                    } catch (err) {
+                        console.error('[Studio] Startup error:', err);
+                        this.connectionError = 'Failed to start studio: ' + err.message;
+                    }
+                },
+
+                /**
+                 * Phase 2: Connect to LiveKit and start broadcasting to viewers.
+                 * Call after startStudio() when the host is ready to go live.
+                 */
+                async startBroadcasting() {
+                    if (!programCompositor || this.broadcasting) return;
+
+                    try {
                         const { Room, RoomEvent } = await window.loadLiveKit();
                         room = new Room({ adaptiveStream: true, dynacast: true });
 
                         room.on(RoomEvent.ParticipantConnected, () => this._updateViewerCount());
                         room.on(RoomEvent.ParticipantDisconnected, () => this._updateViewerCount());
-                        room.on(RoomEvent.Disconnected, () => { this.connected = false; });
+                        room.on(RoomEvent.Disconnected, () => { this.broadcasting = false; });
 
-                        await room.connect(livekitUrl, livekitToken);
+                        await room.connect(this._livekitUrl, this._livekitToken);
 
-                        // 5. Publish PROGRAM canvas to LiveKit (ONE TIME)
+                        // Publish PROGRAM canvas to LiveKit
                         const canvasStream = programCompositor.getOutputStream();
                         const canvasTrack = canvasStream.getVideoTracks()[0];
                         await room.localParticipant.publishTrack(canvasTrack, {
@@ -1904,26 +1958,20 @@ class extends Component
                         });
                         console.log('[Broadcast] Program canvas published to LiveKit');
 
-                        // 6. Publish host audio directly to LiveKit (separate from video)
+                        // Publish host audio
                         if (hostAudioTrack) {
                             await room.localParticipant.publishTrack(hostAudioTrack, {
                                 name: 'host-mic',
                             });
-                            console.log('[Broadcast] Host audio published to LiveKit');
-                        } else {
-                            console.warn('[Broadcast] No host audio track available');
+                            console.log('[Broadcast] Host audio published');
                         }
 
-                        // 7. Set up PeerManager for guest WebRTC connections
-                        await this._setupPeerManager(eventId);
-
-                        this.connected = true;
+                        this.broadcasting = true;
                         this._updateViewerCount();
-                        console.log('[Studio] Studio fully initialized');
-
+                        console.log('[Broadcast] Now live to viewers!');
                     } catch (err) {
-                        console.error('[Studio] Startup error:', err);
-                        this.connectionError = 'Failed to start studio: ' + err.message;
+                        console.error('[Broadcast] Failed to start broadcasting:', err);
+                        this.connectionError = 'Failed to start broadcasting: ' + err.message;
                     }
                 },
 

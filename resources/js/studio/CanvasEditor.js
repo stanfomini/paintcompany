@@ -118,13 +118,17 @@ export default class CanvasEditor {
                 : overlay.type === 'html' ? 'rgba(236, 72, 153, 0.7)'            // Pink for HTML
                 : 'rgba(234, 179, 8, 0.7)';                                      // Yellow for caption
 
+            // Ensure overlay handles have a minimum visible size
+            const w = Math.max((overlay.w ?? 0.3) * 100, 15);
+            const h = Math.max((overlay.h ?? 0.08) * 100, 5);
+
             this._createHandle(key, {
                 type: 'overlay',
                 index,
                 x: (overlay.x ?? 0) * 100,
                 y: (overlay.y ?? 0) * 100,
-                w: (overlay.w ?? 0.3) * 100,
-                h: (overlay.h ?? 0.08) * 100,
+                w,
+                h,
                 label,
                 borderColor: color,
                 borderStyle: 'dashed',
@@ -194,9 +198,10 @@ export default class CanvasEditor {
             width: ${config.w}%;
             height: ${config.h}%;
             border: 2px ${config.borderStyle} ${config.borderColor};
+            background: ${config.type === 'overlay' ? 'rgba(0,0,0,0.15)' : 'transparent'};
             cursor: move;
             box-sizing: border-box;
-            transition: border-color 0.15s;
+            touch-action: none;
             z-index: ${config.type === 'overlay' ? 20 : 10};
         `;
 
