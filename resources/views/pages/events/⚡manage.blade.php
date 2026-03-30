@@ -1422,6 +1422,7 @@ class extends Component
             let programCompositor = null;
             let peerManager = null;
             let studioChannel = null;
+            let hostAudioTrack = null; // Separate reference for mute/unmute
 
             return {
                 connected: false,
@@ -1479,12 +1480,17 @@ class extends Component
                         sourceManager.on('source-removed', syncSources);
                         sourceManager.on('source-lost', syncSources);
 
-                        // 2. Get local camera and register as 'host' source
+                        // 2. Get local camera + mic
                         const cameraStream = await navigator.mediaDevices.getUserMedia({
                             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
                             audio: { echoCancellation: true, noiseSuppression: true },
                         });
-                        sourceManager.addSource('host', cameraStream, 'You (Host)');
+
+                        // Separate audio from video — SourceManager only needs video,
+                        // audio is published independently to LiveKit
+                        hostAudioTrack = cameraStream.getAudioTracks()[0];
+                        const videoOnlyStream = new MediaStream(cameraStream.getVideoTracks());
+                        sourceManager.addSource('host', videoOnlyStream, 'You (Host)');
 
                         // 3. Initialize dual compositors
                         const FrameCompositor = await window.loadFrameCompositor();
@@ -1524,13 +1530,14 @@ class extends Component
                         });
                         console.log('[Broadcast] Program canvas published to LiveKit');
 
-                        // 6. Publish host audio directly to LiveKit
-                        const audioTrack = cameraStream.getAudioTracks()[0];
-                        if (audioTrack) {
-                            await room.localParticipant.publishTrack(audioTrack, {
+                        // 6. Publish host audio directly to LiveKit (separate from video)
+                        if (hostAudioTrack) {
+                            await room.localParticipant.publishTrack(hostAudioTrack, {
                                 name: 'host-mic',
                             });
                             console.log('[Broadcast] Host audio published to LiveKit');
+                        } else {
+                            console.warn('[Broadcast] No host audio track available');
                         }
 
                         // 7. Set up PeerManager for guest WebRTC connections
@@ -1636,8 +1643,9 @@ class extends Component
 
                 async toggleAudio() {
                     this.audioEnabled = !this.audioEnabled;
-                    if (room) {
-                        await room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
+                    // Toggle the raw audio track directly (not LiveKit's managed mic)
+                    if (hostAudioTrack) {
+                        hostAudioTrack.enabled = this.audioEnabled;
                     }
                 },
 
