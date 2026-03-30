@@ -52,7 +52,7 @@ class extends Component
     }
 
     #[Computed]
-    public function twilioAccounts(): \Illuminate\Database\Eloquent\Collection
+    public function twilioAccounts(): \Illuminate\Support\Collection
     {
         return TwilioAccount::query()->active()->orderBy('name')->get();
     }

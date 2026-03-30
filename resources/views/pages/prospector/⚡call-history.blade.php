@@ -85,13 +85,13 @@ class extends Component
     }
 
     #[Computed]
-    public function companies(): \Illuminate\Database\Eloquent\Collection
+    public function companies(): \Illuminate\Support\Collection
     {
         return Company::query()->orderBy('name')->get();
     }
 
     #[Computed]
-    public function agents(): \Illuminate\Database\Eloquent\Collection
+    public function agents(): \Illuminate\Support\Collection
     {
         return Agent::query()
             ->with('user')

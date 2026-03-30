@@ -37,7 +37,7 @@ class extends Component
     }
 
     #[Computed]
-    public function accounts(): \Illuminate\Database\Eloquent\Collection
+    public function accounts(): \Illuminate\Support\Collection
     {
         return TwilioAccount::query()
             ->withCount('phoneNumbers')

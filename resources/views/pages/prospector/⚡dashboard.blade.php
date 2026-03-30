@@ -70,7 +70,7 @@ class extends Component
     }
 
     #[Computed]
-    public function activeSessions(): \Illuminate\Database\Eloquent\Collection
+    public function activeSessions(): \Illuminate\Support\Collection
     {
         return DialerSession::query()
             ->active()
@@ -80,7 +80,7 @@ class extends Component
     }
 
     #[Computed]
-    public function recentCalls(): \Illuminate\Database\Eloquent\Collection
+    public function recentCalls(): \Illuminate\Support\Collection
     {
         return Call::query()
             ->with(['agent.user', 'contact', 'campaign'])
@@ -90,7 +90,7 @@ class extends Component
     }
 
     #[Computed]
-    public function campaignPerformance(): \Illuminate\Database\Eloquent\Collection
+    public function campaignPerformance(): \Illuminate\Support\Collection
     {
         return Campaign::query()
             ->active()
@@ -101,7 +101,7 @@ class extends Component
     }
 
     #[Computed]
-    public function agentPerformance(): \Illuminate\Database\Eloquent\Collection
+    public function agentPerformance(): \Illuminate\Support\Collection
     {
         return Agent::query()
             ->online()

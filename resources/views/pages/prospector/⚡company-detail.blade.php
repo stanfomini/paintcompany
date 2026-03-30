@@ -56,7 +56,7 @@ class extends Component
     }
 
     #[Computed]
-    public function assignedNumbers(): \Illuminate\Database\Eloquent\Collection
+    public function assignedNumbers(): \Illuminate\Support\Collection
     {
         return PhoneNumber::query()
             ->where('company_id', $this->companyId)
@@ -67,7 +67,7 @@ class extends Component
     }
 
     #[Computed]
-    public function unassignedNumbers(): \Illuminate\Database\Eloquent\Collection
+    public function unassignedNumbers(): \Illuminate\Support\Collection
     {
         $twilioAccountId = $this->company->twilio_account_id;
 

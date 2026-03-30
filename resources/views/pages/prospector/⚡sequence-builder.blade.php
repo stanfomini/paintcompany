@@ -80,7 +80,7 @@ class extends Component
     }
 
     #[Computed]
-    public function steps(): \Illuminate\Database\Eloquent\Collection
+    public function steps(): \Illuminate\Support\Collection
     {
         return SequenceStep::where('sequence_id', $this->sequenceId)
             ->ordered()
@@ -98,7 +98,7 @@ class extends Component
     }
 
     #[Computed]
-    public function searchContacts(): \Illuminate\Database\Eloquent\Collection
+    public function searchContacts(): \Illuminate\Support\Collection
     {
         if (strlen($this->enrollSearch) < 2) {
             return collect();

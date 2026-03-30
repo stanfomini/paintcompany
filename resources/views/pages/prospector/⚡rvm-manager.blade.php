@@ -67,7 +67,7 @@ class extends Component
     // ──────────────────────────────────────
 
     #[Computed]
-    public function templates(): \Illuminate\Database\Eloquent\Collection
+    public function templates(): \Illuminate\Support\Collection
     {
         return RvmTemplate::query()
             ->with(['company', 'createdBy'])
@@ -90,7 +90,7 @@ class extends Component
     }
 
     #[Computed]
-    public function companies(): \Illuminate\Database\Eloquent\Collection
+    public function companies(): \Illuminate\Support\Collection
     {
         return Company::query()->orderBy('name')->get();
     }
@@ -107,7 +107,7 @@ class extends Component
     }
 
     #[Computed]
-    public function searchedContacts(): \Illuminate\Database\Eloquent\Collection
+    public function searchedContacts(): \Illuminate\Support\Collection
     {
         if (! $this->sendCompanyId || strlen($this->contactSearch) < 2) {
             return collect();

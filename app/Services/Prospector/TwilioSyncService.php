@@ -56,10 +56,10 @@ class TwilioSyncService
                     'friendly_name' => $number->friendlyName,
                     'area_code' => $areaCode,
                     'capabilities' => [
-                        'voice' => $number->capabilities['voice'] ?? false,
-                        'sms' => $number->capabilities['sms'] ?? false,
-                        'mms' => $number->capabilities['mms'] ?? false,
-                        'fax' => $number->capabilities['fax'] ?? false,
+                        'voice' => $number->capabilities->voice ?? false,
+                        'sms' => $number->capabilities->sms ?? false,
+                        'mms' => $number->capabilities->mms ?? false,
+                        'fax' => $number->capabilities->fax ?? false,
                     ],
                     'is_active' => true,
                 ]

@@ -72,7 +72,7 @@ class extends Component
     }
 
     #[Computed]
-    public function queueContacts(): \Illuminate\Database\Eloquent\Collection
+    public function queueContacts(): \Illuminate\Support\Collection
     {
         $query = CampaignContact::query()
             ->where('campaign_id', $this->campaignId)
@@ -87,7 +87,7 @@ class extends Component
     }
 
     #[Computed]
-    public function availableContacts(): \Illuminate\Database\Eloquent\Collection
+    public function availableContacts(): \Illuminate\Support\Collection
     {
         $companyId = $this->campaign->company_id;
         $existingContactIds = CampaignContact::where('campaign_id', $this->campaignId)

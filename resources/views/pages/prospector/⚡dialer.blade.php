@@ -106,7 +106,7 @@ class extends Component
     }
 
     #[Computed]
-    public function campaigns(): \Illuminate\Database\Eloquent\Collection
+    public function campaigns(): \Illuminate\Support\Collection
     {
         if (! $this->agent) {
             return collect();

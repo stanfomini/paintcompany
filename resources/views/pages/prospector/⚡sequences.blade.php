@@ -63,7 +63,7 @@ class extends Component
     }
 
     #[Computed]
-    public function companies(): \Illuminate\Database\Eloquent\Collection
+    public function companies(): \Illuminate\Support\Collection
     {
         return Company::query()->active()->orderBy('name')->get();
     }
