@@ -396,16 +396,16 @@ class extends Component
         return LiveEventSceneTemplate::where('user_id', auth()->id())->orderBy('name')->get();
     }
 
+    #[Renderless]
     public function updateScenes(array $scenes): void
     {
         $this->event->update(['scenes' => $scenes]);
-        $this->event->refresh();
     }
 
+    #[Renderless]
     public function updateOverlays(array $overlays): void
     {
         $this->event->update(['overlays' => $overlays]);
-        $this->event->refresh();
     }
 
     public function toggleFrameMode(): void
@@ -2001,6 +2001,11 @@ class extends Component
                     if (previewCompositor && scene) {
                         previewCompositor.setScene(scene);
                     }
+                    // Load per-version overlays if they exist, otherwise keep global
+                    if (scene?.overlays) {
+                        this.overlayConfigs = scene.overlays;
+                        if (previewCompositor) previewCompositor.setOverlays([...scene.overlays]);
+                    }
                     // Sync editor handles if in editor mode
                     if (canvasEditor && this.editorMode && scene) {
                         canvasEditor.setSlots(scene.slots || []);
@@ -2389,7 +2394,13 @@ class extends Component
                         });
                     }
 
-                    // Persist to server
+                    // Save overlays to the current scene version (per-version storage)
+                    const scene = this.scenes[this.previewSceneIndex];
+                    if (scene) {
+                        scene.overlays = [...this.overlayConfigs];
+                        this.$wire.updateScenes(this.scenes);
+                    }
+                    // Also update global overlays for backward compat
                     this.$wire.updateOverlays(this.overlayConfigs);
                 },
 

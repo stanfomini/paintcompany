@@ -74,7 +74,11 @@ export default class GuestPeerConnection {
             }
         };
 
+        // Use instance ID to ignore stale listeners from previous connections
+        const instanceId = this._instanceId = Math.random().toString(36).slice(2);
+
         this._channel.listenForWhisper('webrtc-answer', async (data) => {
+            if (this._instanceId !== instanceId) return; // Stale listener
             if (data.guestId !== this._guestId) return;
 
             console.log('[GuestPeer] Received answer from host');
@@ -86,6 +90,7 @@ export default class GuestPeerConnection {
         });
 
         this._channel.listenForWhisper('ice-candidate', (data) => {
+            if (this._instanceId !== instanceId) return; // Stale listener
             if (data.targetId !== this._guestId) return;
 
             if (this._pc && data.candidate) {
@@ -131,6 +136,9 @@ export default class GuestPeerConnection {
     }
 
     disconnect() {
+        // Invalidate instance ID so stale whisper listeners are ignored
+        this._instanceId = null;
+
         if (this._channel) {
             this._channel.whisper('guest-disconnect', {
                 guestId: this._guestId,
