@@ -43,6 +43,22 @@ window.loadSourceManager = async () => {
     return window.StudioSourceManager;
 };
 
+window.loadPeerManager = async () => {
+    if (!window.StudioPeerManager) {
+        const module = await import('./studio/PeerManager.js');
+        window.StudioPeerManager = module.default;
+    }
+    return window.StudioPeerManager;
+};
+
+window.loadGuestPeerConnection = async () => {
+    if (!window.StudioGuestPeerConnection) {
+        const module = await import('./studio/GuestPeerConnection.js');
+        window.StudioGuestPeerConnection = module.default;
+    }
+    return window.StudioGuestPeerConnection;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
