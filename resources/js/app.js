@@ -35,6 +35,14 @@ window.loadFrameCompositor = async () => {
     return window.FrameCompositor;
 };
 
+window.loadSourceManager = async () => {
+    if (!window.StudioSourceManager) {
+        const module = await import('./studio/SourceManager.js');
+        window.StudioSourceManager = module.default;
+    }
+    return window.StudioSourceManager;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)
