@@ -535,28 +535,8 @@ class extends Component
             return;
         }
 
-        $scene = $scenes[$index];
-
-        // Auto-enable frame mode when switching to a scene that needs compositing
-        // (multiple slots or non-host sources like guests/screen)
-        $needsCompositing = count($scene['slots'] ?? []) > 1
-            || collect($scene['slots'] ?? [])->contains(fn ($s) => $s['source'] !== 'host');
-
-        $wasFrameModeOff = ! $this->event->use_frame_mode;
-
-        if ($needsCompositing && $wasFrameModeOff) {
-            $this->event->update(['use_frame_mode' => true, 'active_scene_index' => $index]);
-        } else {
-            $this->event->update(['active_scene_index' => $index]);
-        }
-
+        $this->event->update(['active_scene_index' => $index]);
         $this->event->refresh();
-
-        $this->dispatch('scene-switched',
-            scene: $scene,
-            index: $index,
-            autoEnableFrameMode: $needsCompositing && $wasFrameModeOff,
-        );
     }
 
     public function bringGuestOn(int $guestId): void
@@ -995,28 +975,23 @@ class extends Component
         @php
             $scenes = $event->getScenesOrDefaults();
             $activeSceneIndex = $event->active_scene_index ?? 0;
-            $activeScene = $scenes[$activeSceneIndex] ?? $scenes[0] ?? null;
             $overlays = $event->overlays ?? [];
-            $liveGuests = $this->guests->where('status', 'live');
             $connectedGuests = $this->guests->whereIn('status', ['connected', 'live']);
-            // Map livekit_identity → slot source key (e.g., "guest-abc123" → "guest-1")
-            $guestSlotMap = $this->guests->mapWithKeys(fn ($g) => [$g->livekit_identity => 'guest-' . $g->slot_number])->toArray();
         @endphp
         <div
             x-data="livekitProducer"
             x-init="$nextTick(() => {
-                activeSceneIndex = @js($activeSceneIndex);
                 scenes = @js($scenes);
+                liveSceneIndex = @js($activeSceneIndex);
+                previewSceneIndex = @js($activeSceneIndex);
                 overlayConfigs = @js($overlays);
-                frameModeEnabled = @js($event->use_frame_mode);
-                guestSlotMap = @js($guestSlotMap);
                 @if ($livekitToken)
-                    connect(@js($livekitToken), @js($livekitUrl));
+                    startStudio(@js($livekitToken), @js($livekitUrl), @js($event->id));
                 @endif
             })"
             class="flex h-[calc(100vh-4rem)] flex-col lg:flex-row"
         >
-            {{-- Left column: Video + Feeds + Scenes + Controls --}}
+            {{-- Left column: Monitors + Sources + Scenes + Controls --}}
             <div class="flex flex-1 flex-col overflow-hidden">
                 {{-- Header bar --}}
                 <div class="flex items-center justify-between border-b border-zinc-200 bg-zinc-900 px-4 py-2">
@@ -1054,132 +1029,99 @@ class extends Component
                 </div>
 
                 {{-- ═══════════════════════════════════════════ --}}
-                {{-- PROGRAM MONITOR — what viewers see --}}
+                {{-- DUAL MONITORS: PREVIEW + PROGRAM --}}
                 {{-- ═══════════════════════════════════════════ --}}
-                <div class="relative bg-black" style="aspect-ratio: 16/9; max-height: 45vh;">
-                    {{-- Canvas compositor output --}}
-                    <canvas
-                        x-ref="compositorCanvas"
-                        x-show="frameModeEnabled"
-                        wire:ignore
-                        class="h-full w-full object-contain"
-                        width="1280"
-                        height="720"
-                    ></canvas>
-
-                    {{-- Raw camera view (when frame mode is off) --}}
-                    <div x-ref="hostVideo" x-show="!frameModeEnabled" wire:ignore class="flex h-full w-full items-center justify-center">
-                        <div x-show="!connected" class="flex flex-col items-center justify-center">
-                            <div class="mb-4 size-16 animate-pulse rounded-full bg-zinc-700"></div>
-                            <span class="text-sm text-zinc-400">{{ __('Connecting...') }}</span>
-                        </div>
+                <div class="flex gap-2 bg-black p-2" style="max-height: 45vh;" wire:ignore>
+                    {{-- Preview Monitor --}}
+                    <div class="relative flex-1 overflow-hidden rounded-lg border-2 border-green-500/40 bg-black">
+                        <canvas x-ref="previewCanvas" class="h-full w-full object-contain" width="1280" height="720"></canvas>
+                        <span class="absolute top-2 left-2 rounded bg-green-600/90 px-2 py-0.5 text-[10px] font-bold text-white tracking-wider">PREVIEW</span>
+                        <span class="absolute top-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[10px] text-zinc-300" x-text="scenes[previewSceneIndex]?.name ?? 'Solo'"></span>
                     </div>
 
-                    {{-- Connection error --}}
-                    <div x-show="connectionError" x-cloak class="absolute inset-0 flex items-center justify-center bg-black/80">
-                        <flux:icon name="exclamation-triangle" class="mx-auto mb-2 size-8 text-red-400" />
-                        <span class="text-sm text-red-400" x-text="connectionError"></span>
-                    </div>
-
-                    {{-- Badges --}}
-                    <div class="absolute top-2 left-2 flex items-center gap-2">
-                        <span class="rounded bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white tracking-wider">PROGRAM</span>
-                        <span x-show="frameModeEnabled" x-cloak class="rounded bg-purple-600/80 px-2 py-0.5 text-[10px] font-medium text-white">FRAME</span>
-                    </div>
-                    <div class="absolute top-2 right-2">
-                        <span class="rounded bg-black/60 px-2 py-0.5 text-[10px] text-zinc-300" x-text="scenes[activeSceneIndex]?.name ?? 'Solo'"></span>
+                    {{-- Program Monitor --}}
+                    <div class="relative flex-1 overflow-hidden rounded-lg border-2 border-red-500/40 bg-black">
+                        <canvas x-ref="programCanvas" class="h-full w-full object-contain" width="1280" height="720"></canvas>
+                        <span class="absolute top-2 left-2 rounded bg-red-600/90 px-2 py-0.5 text-[10px] font-bold text-white tracking-wider">PROGRAM</span>
+                        <span class="absolute top-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[10px] text-zinc-300" x-text="scenes[liveSceneIndex]?.name ?? 'Solo'"></span>
                     </div>
                 </div>
 
+                {{-- Hidden container for SourceManager video elements --}}
+                <div x-ref="sourceContainer" class="sr-only" aria-hidden="true" wire:ignore></div>
+
                 {{-- ═══════════════════════════════════════════ --}}
-                {{-- SOURCE MONITORS — all available feeds --}}
+                {{-- SOURCE MONITORS --}}
                 {{-- ═══════════════════════════════════════════ --}}
                 <div class="border-t border-zinc-700 bg-zinc-950 px-3 py-2 overflow-x-auto" wire:ignore>
                     <div class="flex items-center gap-1 mb-1.5">
                         <span class="text-[9px] font-bold uppercase tracking-widest text-zinc-500">{{ __('Sources') }}</span>
                     </div>
-                    <div class="flex items-start gap-2">
-                        {{-- Host camera source --}}
-                        <div class="shrink-0 w-40">
-                            <div
-                                x-ref="hostThumb"
-                                class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                                style="aspect-ratio: 16/9;"
-                                :class="isFeedInScene('host') ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
-                            >
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <span class="text-[10px] text-zinc-600">{{ __('Camera') }}</span>
+                    <div class="flex items-start gap-2" x-ref="sourceMonitors">
+                        <template x-for="source in sources" :key="source.key">
+                            <div class="shrink-0 w-36">
+                                <div class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
+                                     style="aspect-ratio: 16/9;"
+                                     :class="source.state === 'live' ? 'border-green-500/60' : 'border-zinc-700'"
+                                     :id="'source-thumb-' + source.key"
+                                     x-init="$nextTick(() => renderSourceThumb(source.key))"
+                                >
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <span class="text-[10px] text-zinc-600" x-text="source.name"></span>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="mt-1 flex items-center justify-between px-0.5">
-                                <span class="text-[10px] font-semibold text-zinc-300">{{ __('You (Host)') }}</span>
-                                <span x-show="isFeedInScene('host')" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
-                            </div>
-                        </div>
-
-                        {{-- Guest feed sources — video rendered via direct DOM, not Alpine reactivity --}}
-                        <template x-for="(feed, slotKey) in guestFeeds" :key="slotKey">
-                            <div class="shrink-0 w-40">
-                                <div
-                                    :id="'source-monitor-' + slotKey"
-                                    class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                                    style="aspect-ratio: 16/9;"
-                                    :class="isFeedInScene(slotKey) ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
-                                    x-init="$nextTick(() => $dispatch('render-guest-video', { slotKey }))"
-                                ></div>
                                 <div class="mt-1 flex items-center justify-between px-0.5">
-                                    <span class="text-[10px] font-semibold text-zinc-300" x-text="feed.name"></span>
-                                    <span x-show="isFeedInScene(slotKey)" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
+                                    <span class="text-[10px] font-semibold text-zinc-300" x-text="source.name"></span>
+                                    <span x-show="source.state === 'live'" x-cloak class="size-2 rounded-full bg-green-500"></span>
                                 </div>
                             </div>
                         </template>
 
-                        {{-- Screen share source --}}
-                        <div x-show="screenStream" x-cloak class="shrink-0 w-40">
-                            <div
-                                class="relative overflow-hidden rounded border-2 bg-zinc-800 transition-colors"
-                                style="aspect-ratio: 16/9;"
-                                :class="isFeedInScene('screen') ? 'border-green-500 shadow-[0_0_8px_rgba(34,197,94,0.3)]' : 'border-zinc-700'"
-                            >
-                                <video x-ref="screenThumb" autoplay muted playsinline class="absolute inset-0 w-full h-full object-cover"></video>
-                            </div>
-                            <div class="mt-1 flex items-center justify-between px-0.5">
-                                <span class="text-[10px] font-semibold text-purple-300">{{ __('Screen Share') }}</span>
-                                <span x-show="isFeedInScene('screen')" x-cloak class="text-[8px] font-bold text-green-400 uppercase">Live</span>
-                            </div>
-                        </div>
-
-                        {{-- Empty slot placeholder when no guests --}}
-                        <div x-show="Object.keys(guestFeeds).length === 0" class="shrink-0 w-40">
+                        {{-- Empty state --}}
+                        <div x-show="sources.length === 0" class="shrink-0 w-36">
                             <div class="relative overflow-hidden rounded border-2 border-dashed border-zinc-700 bg-zinc-900" style="aspect-ratio: 16/9;">
-                                <div class="absolute inset-0 flex flex-col items-center justify-center">
-                                    <svg class="w-5 h-5 text-zinc-700 mb-1" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" /></svg>
-                                    <span class="text-[9px] text-zinc-600">{{ __('No guests connected') }}</span>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-[9px] text-zinc-600">{{ __('No sources') }}</span>
                                 </div>
                             </div>
-                            <span class="mt-1 block text-[10px] text-zinc-600 px-0.5">{{ __('Invite guests above') }}</span>
                         </div>
                     </div>
                 </div>
 
-                {{-- Scene Switcher Bar --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                {{-- SCENE SWITCHER + TAKE --}}
+                {{-- ═══════════════════════════════════════════ --}}
                 <div class="flex items-center gap-1.5 border-t border-zinc-700 bg-zinc-900 px-3 py-2">
                     <span class="mr-1 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Scenes') }}</span>
                     @foreach ($scenes as $index => $scene)
                         <button
                             type="button"
-                            wire:click="switchScene({{ $index }})"
+                            @click="previewScene({{ $index }})"
                             class="rounded px-3 py-1.5 text-xs font-medium transition-colors"
-                            :class="activeSceneIndex === {{ $index }}
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
+                            :class="{
+                                'ring-2 ring-red-500 bg-red-600/20 text-red-300': liveSceneIndex === {{ $index }},
+                                'ring-2 ring-green-500 bg-green-600/20 text-green-300': previewSceneIndex === {{ $index }} && liveSceneIndex !== {{ $index }},
+                                'bg-zinc-700 text-zinc-300 hover:bg-zinc-600': previewSceneIndex !== {{ $index }} && liveSceneIndex !== {{ $index }},
+                            }"
                         >
                             {{ $scene['name'] }}
                         </button>
                     @endforeach
+
+                    <div class="mx-2 h-5 w-px bg-zinc-700"></div>
+
+                    {{-- TAKE button --}}
+                    <button
+                        type="button"
+                        @click="take()"
+                        class="rounded bg-red-600 px-6 py-1.5 text-xs font-bold uppercase tracking-wider text-white transition-colors hover:bg-red-500 disabled:opacity-40"
+                        :disabled="previewSceneIndex === liveSceneIndex"
+                    >
+                        {{ __('TAKE') }}
+                    </button>
                 </div>
 
-                {{-- Guest Controls (below scene switcher) --}}
+                {{-- Guest Controls --}}
                 @if ($this->guests->isNotEmpty())
                     <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2">
                         <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Guests') }}</span>
@@ -1209,152 +1151,44 @@ class extends Component
                     </div>
                 @endif
 
-                {{-- Overlay Quick Controls --}}
-                @if (! empty($overlays))
-                    <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-1.5">
-                        <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Overlays') }}</span>
-                        @foreach ($overlays as $idx => $overlay)
-                            <div class="flex shrink-0 items-center gap-1 rounded bg-zinc-900 px-2 py-1">
-                                <span class="max-w-[120px] truncate text-[11px] text-zinc-400">{{ $overlay['content'] ?? $overlay['type'] }}</span>
-                                <button
-                                    type="button"
-                                    @click="toggleOverlayVisibility({{ $idx }})"
-                                    class="rounded p-0.5 transition-colors"
-                                    :class="(overlayVisible[{{ $idx }}] ?? true) ? 'text-green-400 hover:text-green-300' : 'text-zinc-600 hover:text-zinc-500'"
-                                >
-                                    <flux:icon name="eye" variant="micro" class="size-3.5" />
-                                </button>
-                            </div>
-                        @endforeach
-                    </div>
-                @endif
-
                 {{-- Controls bar --}}
                 <div class="flex items-center justify-center gap-3 border-t border-zinc-700 bg-zinc-900 px-4 py-3">
-                    {{-- Toggle Audio --}}
-                    <div class="relative">
-                        <button
-                            type="button"
-                            @click="toggleAudio()"
-                            class="flex size-11 items-center justify-center rounded-full transition-colors"
-                            :class="audioEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
-                            :title="audioEnabled ? '{{ __('Mute') }}' : '{{ __('Unmute') }}'"
-                        >
-                            <template x-if="audioEnabled">
-                                <flux:icon name="microphone" class="size-5" />
-                            </template>
-                            <template x-if="!audioEnabled">
-                                <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
-                            </template>
-                        </button>
-                        <span
-                            x-show="audioEnabled && connected"
-                            x-transition
-                            class="absolute -top-0.5 -right-0.5 flex size-3"
-                        >
-                            <span class="absolute inline-flex size-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-                            <span class="relative inline-flex size-3 rounded-full bg-green-500"></span>
-                        </span>
-                    </div>
-
-                    {{-- Toggle Video --}}
-                    <button
-                        type="button"
-                        @click="toggleVideo()"
+                    {{-- Mic toggle --}}
+                    <button type="button" @click="toggleAudio()"
                         class="flex size-11 items-center justify-center rounded-full transition-colors"
-                        :class="videoEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
-                        :title="videoEnabled ? '{{ __('Turn off camera') }}' : '{{ __('Turn on camera') }}'"
+                        :class="audioEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
                     >
-                        <template x-if="videoEnabled">
-                            <flux:icon name="video-camera" class="size-5" />
-                        </template>
-                        <template x-if="!videoEnabled">
-                            <svg class="size-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3l18 18" /></svg>
-                        </template>
+                        <flux:icon name="microphone" class="size-5" />
                     </button>
 
-                    {{-- Screen Share --}}
-                    <button
-                        type="button"
-                        @click="toggleScreenShare()"
+                    {{-- Camera toggle --}}
+                    <button type="button" @click="toggleVideo()"
                         class="flex size-11 items-center justify-center rounded-full transition-colors"
-                        :class="screenStream ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
-                        :title="screenStream ? '{{ __('Stop sharing') }}' : '{{ __('Share screen') }}'"
+                        :class="videoEnabled ? 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600' : 'bg-red-500 text-white hover:bg-red-600'"
+                    >
+                        <flux:icon name="video-camera" class="size-5" />
+                    </button>
+
+                    {{-- Screen share --}}
+                    <button type="button" @click="toggleScreenShare()"
+                        class="flex size-11 items-center justify-center rounded-full transition-colors"
+                        :class="screenStream ? 'bg-purple-600 text-white' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
                     >
                         <flux:icon name="computer-desktop" class="size-5" />
                     </button>
 
-                    {{-- Frame Mode Toggle --}}
-                    <button
-                        type="button"
-                        @click="toggleFrameMode()"
-                        class="flex size-11 items-center justify-center rounded-full transition-colors"
-                        :class="frameModeEnabled ? 'bg-purple-600 text-white hover:bg-purple-700' : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'"
-                        :title="frameModeEnabled ? '{{ __('Switch to camera') }}' : '{{ __('Switch to frame mode') }}'"
-                    >
-                        <flux:icon name="photo" class="size-5" />
-                    </button>
-
-                    {{-- Device Switcher --}}
-                    <div class="relative">
-                        <button
-                            type="button"
-                            @click="showDeviceMenu = !showDeviceMenu"
-                            class="flex size-11 items-center justify-center rounded-full bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
-                            title="{{ __('Switch devices') }}"
-                        >
-                            <flux:icon name="cog-6-tooth" class="size-5" />
-                        </button>
-                        <div
-                            x-show="showDeviceMenu"
-                            x-cloak
-                            @click.outside="showDeviceMenu = false"
-                            x-transition
-                            class="absolute bottom-14 right-0 w-64 bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl p-3 space-y-3 z-50"
-                        >
-                            <div>
-                                <label class="block text-xs font-medium text-zinc-400 mb-1">{{ __('Camera') }}</label>
-                                <select
-                                    @change="switchCamera($event.target.value)"
-                                    class="w-full bg-zinc-700 border border-zinc-600 text-sm text-white rounded-md px-2 py-1.5"
-                                >
-                                    <template x-for="cam in cameras" :key="cam.id">
-                                        <option :value="cam.id" :selected="cam.id === activeCameraId" x-text="cam.label"></option>
-                                    </template>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-zinc-400 mb-1">{{ __('Microphone') }}</label>
-                                <select
-                                    @change="switchMicrophone($event.target.value)"
-                                    class="w-full bg-zinc-700 border border-zinc-600 text-sm text-white rounded-md px-2 py-1.5"
-                                >
-                                    <template x-for="mic in microphones" :key="mic.id">
-                                        <option :value="mic.id" :selected="mic.id === activeMicId" x-text="mic.label"></option>
-                                    </template>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-
                     <div class="mx-2 h-6 w-px bg-zinc-700"></div>
 
                     {{-- End Stream --}}
-                    <flux:button
-                        wire:click="endStream"
-                        wire:confirm="{{ __('Are you sure you want to end the stream? All viewers will be disconnected.') }}"
-                        wire:loading.attr="disabled"
-                        variant="danger"
-                        size="sm"
-                        icon="x-mark"
-                    >
-                        <span wire:loading.remove wire:target="endStream">{{ __('End Stream') }}</span>
-                        <span wire:loading wire:target="endStream">{{ __('Ending...') }}</span>
+                    <flux:button wire:click="endStream"
+                        wire:confirm="{{ __('Are you sure you want to end the stream?') }}"
+                        variant="danger" size="sm" icon="x-mark">
+                        {{ __('End Stream') }}
                     </flux:button>
                 </div>
             </div>
 
-            {{-- Right column: Tabbed sidebar --}}
+            {{-- Right column: Tabbed sidebar (Chat, Q&A, Resources, Backstage) --}}
             <div class="flex w-full flex-col border-l border-zinc-200 dark:border-zinc-700 lg:w-96" x-data="{ activeTab: 'chat' }">
                 {{-- Tab bar --}}
                 <div class="flex border-b border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
@@ -1582,14 +1416,11 @@ class extends Component
         <script>
         Alpine.data('livekitProducer', () => {
             let room = null;
-            let compositor = null;
-            let hostVideoEl = null;
-            let videoAttached = false;
-
-            // Media objects in closure — NOT in Alpine reactive data
-            // (Alpine Proxy wrapping breaks MediaStream/srcObject)
-            const guestElements = {};   // slotKey → video element (for compositor)
-            const guestMediaStreams = {}; // slotKey → MediaStream (for display)
+            let sourceManager = null;
+            let previewCompositor = null;
+            let programCompositor = null;
+            let peerManager = null;
+            let studioChannel = null;
 
             return {
                 connected: false,
@@ -1597,616 +1428,308 @@ class extends Component
                 videoEnabled: true,
                 viewerCount: 0,
                 connectionError: null,
-                cameras: [],
-                microphones: [],
-                activeCameraId: '',
-                activeMicId: '',
-                showDeviceMenu: false,
-                guestFeeds: {},
-                guestSlotMap: {},
-                activeSceneIndex: 0,
+                sources: [],
+                previewSceneIndex: 0,
+                liveSceneIndex: 0,
                 scenes: [],
                 overlayConfigs: [],
-                overlayVisible: {},
-                frameModeEnabled: false,
                 screenStream: null,
 
                 init() {
-                    this.$wire.on('livekit-disconnect', () => {
-                        this.disconnect();
-                    });
-
-                    this.$wire.on('scene-switched', async ({ scene, index, autoEnableFrameMode }) => {
-                        this.activeSceneIndex = index;
-
-                        if (autoEnableFrameMode && !this.frameModeEnabled) {
-                            // Scene needs compositing — auto-start frame mode
-                            this.frameModeEnabled = true;
-                            if (!compositor) {
-                                await this.initCompositor();
-                            }
-                            compositor.setScene(scene);
-                            await new Promise(r => setTimeout(r, 200));
-                            await this.publishCanvasStream();
-                            console.log('Frame mode auto-enabled for scene:', scene.name);
-                        } else if (compositor) {
-                            compositor.setScene(scene);
-                        }
-                    });
-
-                    // Re-sync overlays when they change via Livewire
-                    this.$wire.$watch('event.overlays', (newOverlays) => {
-                        if (newOverlays) {
-                            this.overlayConfigs = newOverlays;
-                            if (compositor) {
-                                compositor.setOverlays(newOverlays);
-                            }
-                            // Reset visibility tracking
-                            this.overlayVisible = {};
-                            newOverlays.forEach((_, idx) => {
-                                this.overlayVisible[idx] = true;
-                            });
-                        }
-                    });
+                    this.$wire.on('livekit-disconnect', () => this.disconnect());
 
                     this.$wire.on('guest-bring-on', ({ identity, name, guestId }) => {
-                        if (room) {
-                            const encoder = new TextEncoder();
-                            const data = encoder.encode(JSON.stringify({
-                                type: 'bring-on',
-                                guestId: guestId,
-                                identity: identity,
-                            }));
-                            room.localParticipant.publishData(data, { reliable: true });
-                        }
+                        console.log('[Studio] Guest brought on:', name);
                     });
 
                     this.$wire.on('guest-take-off', ({ identity, guestId }) => {
-                        if (room) {
-                            const encoder = new TextEncoder();
-                            const data = encoder.encode(JSON.stringify({
-                                type: 'take-off',
-                                guestId: guestId,
-                                identity: identity,
-                            }));
-                            room.localParticipant.publishData(data, { reliable: true });
-                        }
-                    });
-
-                    // Keep guest slot map in sync when guests are added/changed while live
-                    this.$wire.on('update-guest-slot-map', ({ map }) => {
-                        this.guestSlotMap = map;
-                    });
-
-                    // Initialize overlay visibility state
-                    this.overlayConfigs.forEach((overlay, idx) => {
-                        this.overlayVisible[idx] = overlay.visible !== false;
-                    });
-
-                    // Listen for guest video render requests from x-for template
-                    this.$el.addEventListener('render-guest-video', (e) => {
-                        const { slotKey } = e.detail;
-                        if (slotKey) {
-                            this.$nextTick(() => this.renderGuestVideo(slotKey));
-                        }
+                        const slotKey = this._guestSlotKey(guestId);
+                        if (sourceManager) sourceManager.removeSource(slotKey);
+                        console.log('[Studio] Guest taken off:', slotKey);
                     });
                 },
 
-                async connect(token, url) {
+                // ==============================================================
+                // Studio startup
+                // ==============================================================
+
+                async startStudio(livekitToken, livekitUrl, eventId) {
                     try {
                         this.connectionError = null;
-                        const { Room, RoomEvent, VideoPresets, Track } = await window.loadLiveKit();
-                        room = new Room({
-                            adaptiveStream: true,
-                            dynacast: true,
-                            videoCaptureDefaults: {
-                                resolution: VideoPresets.h720.resolution,
-                            },
-                        });
 
-                        room.on(RoomEvent.ParticipantConnected, () => this.updateViewerCount());
-                        room.on(RoomEvent.ParticipantDisconnected, (participant) => {
-                            this.updateViewerCount();
-                            const identity = participant.identity;
-                            if (identity && identity.startsWith('guest-')) {
-                                const slotKey = this.guestSlotMap[identity] || identity;
-                                delete guestElements[slotKey];
-                                delete guestMediaStreams[slotKey];
-                                const { [slotKey]: _, ...rest } = this.guestFeeds;
-                                this.guestFeeds = rest;
-                                if (compositor) {
-                                    compositor.removeFeedSource(slotKey);
-                                }
-                            }
-                        });
-                        room.on(RoomEvent.Disconnected, () => {
-                            this.connected = false;
-                        });
+                        // 1. Initialize SourceManager
+                        const SourceManager = await window.loadSourceManager();
+                        sourceManager = new SourceManager(this.$refs.sourceContainer);
 
-                        // Handle remote tracks (guest video feeds)
-                        room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
-                            try {
-                                const identity = participant.identity;
-                                console.log('[Studio] TrackSubscribed:', track.kind, 'from', identity);
-                                if (!identity || !identity.startsWith('guest-')) return;
-
-                                const slotKey = this.guestSlotMap[identity] || identity;
-                                console.log('[Studio] Guest track mapped to slot:', slotKey, '(map:', JSON.stringify(this.guestSlotMap), ')');
-
-                                if (track.kind === 'video') {
-                                    // Create element for compositor (stored in closure, NOT Alpine)
-                                    const el = track.attach();
-                                    el.autoplay = true;
-                                    el.muted = true;
-                                    el.playsInline = true;
-                                    guestElements[slotKey] = el;
-                                    guestMediaStreams[slotKey] = el.srcObject;
-
-                                    // Only serializable data in Alpine reactive state
-                                    this.guestFeeds = {
-                                        ...this.guestFeeds,
-                                        [slotKey]: {
-                                            name: participant.name || identity,
-                                            identity: identity,
-                                            hasVideo: true,
-                                        },
-                                    };
-
-                                    // Register with compositor
-                                    if (compositor) {
-                                        compositor.setFeedSource(slotKey, el);
-                                    }
-
-                                    // Render video into source monitor via direct DOM manipulation
-                                    this.$nextTick(() => {
-                                        if (document.getElementById('source-monitor-' + slotKey)) {
-                                            this.renderGuestVideo(slotKey);
-                                        }
-                                    });
-                                }
-
-                                if (track.kind === 'audio') {
-                                    const audioEl = track.attach();
-                                    audioEl.style.display = 'none';
-                                    document.body.appendChild(audioEl);
-                                }
-                            } catch (err) {
-                                console.error('Failed to handle guest track subscription:', err);
-                            }
-                        });
-
-                        room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
-                            const identity = participant.identity;
-                            if (!identity || !identity.startsWith('guest-')) return;
-
-                            track.detach().forEach(el => el.remove());
-
-                            if (track.kind === 'video') {
-                                const slotKey = this.guestSlotMap[identity] || identity;
-                                delete guestElements[slotKey];
-                                delete guestMediaStreams[slotKey];
-                                const { [slotKey]: _, ...rest } = this.guestFeeds;
-                                this.guestFeeds = rest;
-                                if (compositor) {
-                                    compositor.removeFeedSource(slotKey);
-                                }
-                            }
-                        });
-
-                        // Handle data messages from guests
-                        room.on(RoomEvent.DataReceived, (payload, participant) => {
-                            try {
-                                const decoder = new TextDecoder();
-                                const msg = JSON.parse(decoder.decode(payload));
-                                if (msg.type === 'going-live' || msg.type === 'not-ready') {
-                                    this.$wire.refreshGuestStatuses();
-                                }
-                            } catch (e) {
-                                // Ignore malformed messages
-                            }
-                        });
-
-                        await room.connect(url, token);
-                        await room.localParticipant.setCameraEnabled(true);
-                        await room.localParticipant.setMicrophoneEnabled(true);
-
-                        const videoEl = this.$refs.hostVideo;
-
-                        const attachVideo = (track) => {
-                            if (videoAttached) return;
-                            videoAttached = true;
-                            const el = track.attach();
-                            el.autoplay = true;
-                            el.muted = true;
-                            el.playsInline = true;
-                            el.style.width = '100%';
-                            el.style.height = '100%';
-                            el.style.objectFit = 'cover';
-                            el.style.transform = 'scaleX(-1)';
-                            videoEl.innerHTML = '';
-                            videoEl.appendChild(el);
-                            el.play().catch(() => {});
-
-                            hostVideoEl = el;
-
-                            // Feed host video to compositor
-                            if (compositor) {
-                                compositor.setFeedSource('host', el);
-                            }
-
-                            // Render host thumbnail — use srcObject, NOT cloneNode
-                            this.$nextTick(() => {
-                                const thumbContainer = this.$refs.hostThumb;
-                                if (thumbContainer && el.srcObject) {
-                                    const thumbEl = document.createElement('video');
-                                    thumbEl.srcObject = el.srcObject;
-                                    thumbEl.autoplay = true;
-                                    thumbEl.muted = true;
-                                    thumbEl.playsInline = true;
-                                    thumbEl.style.cssText = 'width:100%;height:100%;object-fit:cover;transform:scaleX(-1);position:absolute;inset:0;';
-                                    thumbContainer.innerHTML = '';
-                                    thumbContainer.appendChild(thumbEl);
-                                    thumbEl.play().catch(() => {});
-                                }
-                            });
+                        // Update reactive sources array on changes
+                        const syncSources = () => {
+                            this.sources = sourceManager.getAllSources();
                         };
+                        sourceManager.on('source-added', syncSources);
+                        sourceManager.on('source-ready', syncSources);
+                        sourceManager.on('source-removed', syncSources);
+                        sourceManager.on('source-lost', syncSources);
 
-                        room.localParticipant.on('localTrackPublished', (pub) => {
-                            if (pub.track && pub.track.kind === 'video') {
-                                attachVideo(pub.track);
-                            }
+                        // 2. Get local camera and register as 'host' source
+                        const cameraStream = await navigator.mediaDevices.getUserMedia({
+                            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+                            audio: { echoCancellation: true, noiseSuppression: true },
                         });
+                        sourceManager.addSource('host', cameraStream, 'You (Host)');
 
-                        room.localParticipant.on('localTrackUnpublished', () => {
-                            videoAttached = false;
-                        });
+                        // 3. Initialize dual compositors
+                        const FrameCompositor = await window.loadFrameCompositor();
 
-                        room.localParticipant.videoTrackPublications.forEach((pub) => {
-                            if (pub.track) attachVideo(pub.track);
+                        previewCompositor = new FrameCompositor(this.$refs.previewCanvas, sourceManager);
+                        programCompositor = new FrameCompositor(this.$refs.programCanvas, sourceManager);
+
+                        const scene = this.scenes[this.liveSceneIndex] ?? this.scenes[0];
+                        previewCompositor.setScene(scene);
+                        programCompositor.setScene(scene);
+
+                        if (this.overlayConfigs.length > 0) {
+                            programCompositor.setOverlays(this.overlayConfigs);
+                            previewCompositor.setOverlays(this.overlayConfigs);
+                        }
+
+                        previewCompositor.start();
+                        programCompositor.start();
+                        console.log('[Studio] Compositors started');
+
+                        // 4. Connect to LiveKit (broadcast output only)
+                        const { Room, RoomEvent } = await window.loadLiveKit();
+                        room = new Room({ adaptiveStream: true, dynacast: true });
+
+                        room.on(RoomEvent.ParticipantConnected, () => this._updateViewerCount());
+                        room.on(RoomEvent.ParticipantDisconnected, () => this._updateViewerCount());
+                        room.on(RoomEvent.Disconnected, () => { this.connected = false; });
+
+                        await room.connect(livekitUrl, livekitToken);
+
+                        // 5. Publish PROGRAM canvas to LiveKit (ONE TIME)
+                        const canvasStream = programCompositor.getOutputStream();
+                        const canvasTrack = canvasStream.getVideoTracks()[0];
+                        await room.localParticipant.publishTrack(canvasTrack, {
+                            name: 'program-output',
+                            simulcast: false,
                         });
+                        console.log('[Broadcast] Program canvas published to LiveKit');
+
+                        // 6. Publish host audio directly to LiveKit
+                        const audioTrack = cameraStream.getAudioTracks()[0];
+                        if (audioTrack) {
+                            await room.localParticipant.publishTrack(audioTrack, {
+                                name: 'host-mic',
+                            });
+                            console.log('[Broadcast] Host audio published to LiveKit');
+                        }
+
+                        // 7. Set up PeerManager for guest WebRTC connections
+                        await this._setupPeerManager(eventId);
 
                         this.connected = true;
-                        this.updateViewerCount();
-                        await this.loadDevices();
+                        this._updateViewerCount();
+                        console.log('[Studio] Studio fully initialized');
 
-                        // Initialize FrameCompositor if available and frame mode is on
-                        if (this.frameModeEnabled) {
-                            this.initCompositor();
-                        }
                     } catch (err) {
-                        console.error('LiveKit connection error:', err);
-                        this.connectionError = 'Failed to connect: ' + err.message;
+                        console.error('[Studio] Startup error:', err);
+                        this.connectionError = 'Failed to start studio: ' + err.message;
                     }
                 },
 
-                async initCompositor() {
-                    try {
-                        const FrameCompositor = await window.loadFrameCompositor();
-                        const canvas = this.$refs.compositorCanvas;
-                        if (!canvas) {
-                            console.warn('[Studio] Compositor canvas element not found');
-                            return;
-                        }
+                // ==============================================================
+                // PeerManager setup (guest WebRTC connections)
+                // ==============================================================
 
-                        compositor = new FrameCompositor(canvas);
+                async _setupPeerManager(eventId) {
+                    const PeerManager = await window.loadPeerManager();
+                    const EchoLib = window.EchoLib;
+                    if (!EchoLib) {
+                        console.warn('[Studio] Echo not available, guest connections disabled');
+                        return;
+                    }
 
-                        // Load active scene
-                        const scene = this.scenes[this.activeSceneIndex];
-                        if (scene) {
-                            compositor.setScene(scene);
-                            console.log('[Studio] Scene loaded:', scene.name, 'slots:', scene.slots?.map(s => s.source));
-                        }
+                    const echoInstance = new EchoLib({
+                        broadcaster: 'reverb',
+                        key: document.querySelector('meta[name="reverb-key"]')?.content,
+                        wsHost: document.querySelector('meta[name="reverb-host"]')?.content,
+                        wsPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
+                        wssPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
+                        forceTLS: (document.querySelector('meta[name="reverb-scheme"]')?.content || 'https') === 'https',
+                        enabledTransports: ['ws', 'wss'],
+                        authEndpoint: '/broadcasting/event-guest-auth',
+                        auth: {
+                            headers: {
+                                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                            },
+                        },
+                    });
 
-                        // Load overlays
-                        if (this.overlayConfigs && this.overlayConfigs.length > 0) {
-                            compositor.setOverlays(this.overlayConfigs);
-                        }
+                    studioChannel = echoInstance.join(`event-studio.${eventId}`);
+                    peerManager = new PeerManager(studioChannel, 'host');
 
-                        // Register host feed — need to get the raw camera stream
-                        // even though we might not be publishing it to LiveKit
-                        if (hostVideoEl) {
-                            compositor.setFeedSource('host', hostVideoEl);
-                            console.log('[Studio] Host feed registered, readyState:', hostVideoEl.readyState);
-                        } else if (room) {
-                            // Try to get host video from local participant's tracks
-                            room.localParticipant.videoTrackPublications.forEach((pub) => {
-                                if (pub.track) {
-                                    const el = pub.track.attach();
-                                    el.muted = true;
-                                    hostVideoEl = el;
-                                    compositor.setFeedSource('host', el);
-                                    console.log('[Studio] Host feed created from pub, readyState:', el.readyState);
-                                }
+                    // When guest video arrives via WebRTC peer connection
+                    peerManager.onRemoteStream(({ guestId, stream }) => {
+                        const slotKey = this._guestSlotKey(guestId);
+                        const guest = this._findGuest(guestId);
+                        const name = guest?.name ?? guestId;
+
+                        sourceManager.addSource(slotKey, stream, name);
+                        console.log(`[Studio] Guest video registered: ${slotKey} (${name})`);
+
+                        // Also publish guest audio to LiveKit for viewers
+                        const audioTrack = stream.getAudioTracks()[0];
+                        if (audioTrack && room) {
+                            room.localParticipant.publishTrack(audioTrack, {
+                                name: `${slotKey}-audio`,
+                            }).then(() => {
+                                console.log(`[Broadcast] Guest audio published: ${slotKey}`);
+                            }).catch(err => {
+                                console.warn(`[Broadcast] Failed to publish guest audio:`, err);
                             });
-                        } else {
-                            console.warn('[Studio] No host video available for compositor');
                         }
+                    });
 
-                        // Register existing guest feeds from closure storage
-                        const guestKeys = Object.keys(guestElements);
-                        console.log('[Studio] Registering guest feeds:', guestKeys);
-                        Object.entries(guestElements).forEach(([slotKey, el]) => {
-                            compositor.setFeedSource(slotKey, el);
-                            console.log('[Studio] Guest feed registered:', slotKey, 'readyState:', el.readyState);
-                        });
+                    peerManager.onGuestReady(({ guestId, name }) => {
+                        console.log(`[Studio] Guest ready in green room: ${name}`);
+                        this.$wire.refreshGuestStatuses();
+                    });
 
-                        // Register screen share if active
-                        if (this.screenStream) {
-                            const screenEl = document.createElement('video');
-                            screenEl.srcObject = this.screenStream;
-                            screenEl.autoplay = true;
-                            screenEl.muted = true;
-                            screenEl.playsInline = true;
-                            await screenEl.play();
-                            compositor.setFeedSource('screen', screenEl);
-                        }
+                    peerManager.onGuestDisconnect(({ guestId }) => {
+                        const slotKey = this._guestSlotKey(guestId);
+                        if (sourceManager) sourceManager.removeSource(slotKey);
+                        this.$wire.refreshGuestStatuses();
+                    });
+                },
 
-                        compositor.start();
-                        console.log('[Studio] FrameCompositor initialized and running');
-                    } catch (e) {
-                        console.error('[Studio] FrameCompositor init failed:', e);
+                // ==============================================================
+                // Preview / Program / TAKE
+                // ==============================================================
+
+                previewScene(index) {
+                    this.previewSceneIndex = index;
+                    if (previewCompositor) {
+                        previewCompositor.setScene(this.scenes[index]);
                     }
                 },
 
-                updateViewerCount() {
+                take() {
+                    this.liveSceneIndex = this.previewSceneIndex;
+                    if (programCompositor) {
+                        programCompositor.setScene(this.scenes[this.liveSceneIndex]);
+                    }
+                    this.$wire.switchScene(this.liveSceneIndex);
+                    console.log('[Studio] TAKE:', this.scenes[this.liveSceneIndex]?.name);
+                },
+
+                // ==============================================================
+                // Controls
+                // ==============================================================
+
+                async toggleAudio() {
+                    this.audioEnabled = !this.audioEnabled;
+                    if (room) {
+                        await room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
+                    }
+                },
+
+                async toggleVideo() {
+                    this.videoEnabled = !this.videoEnabled;
+                    const hostEl = sourceManager?.getElement('host');
+                    if (hostEl) {
+                        const tracks = hostEl.srcObject?.getVideoTracks();
+                        if (tracks?.[0]) tracks[0].enabled = this.videoEnabled;
+                    }
+                },
+
+                async toggleScreenShare() {
+                    if (this.screenStream) {
+                        this.screenStream.getTracks().forEach(t => t.stop());
+                        this.screenStream = null;
+                        if (sourceManager) sourceManager.removeSource('screen');
+                        return;
+                    }
+
+                    try {
+                        this.screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                        if (sourceManager) {
+                            sourceManager.addSource('screen', this.screenStream, 'Screen Share');
+                        }
+
+                        this.screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+                            this.screenStream = null;
+                            if (sourceManager) sourceManager.removeSource('screen');
+                        });
+                    } catch (err) {
+                        console.warn('[Studio] Screen share cancelled:', err.message);
+                    }
+                },
+
+                // ==============================================================
+                // Source monitor thumbnails
+                // ==============================================================
+
+                renderSourceThumb(key) {
+                    const container = document.getElementById('source-thumb-' + key);
+                    const el = sourceManager?.getElement(key);
+                    if (!container || !el?.srcObject) return;
+
+                    const existing = container.querySelector('video');
+                    if (existing) existing.remove();
+
+                    const thumbEl = document.createElement('video');
+                    thumbEl.srcObject = el.srcObject;
+                    thumbEl.autoplay = true;
+                    thumbEl.muted = true;
+                    thumbEl.playsInline = true;
+                    thumbEl.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
+                    container.appendChild(thumbEl);
+                    thumbEl.play().catch(() => {});
+                },
+
+                // ==============================================================
+                // Helpers
+                // ==============================================================
+
+                _guestSlotKey(guestId) {
+                    if (!this._guestSlotMap) this._guestSlotMap = {};
+                    if (this._guestSlotMap[guestId]) return this._guestSlotMap[guestId];
+
+                    const usedSlots = Object.values(this._guestSlotMap);
+                    let slotNum = 1;
+                    while (usedSlots.includes('guest-' + slotNum)) slotNum++;
+                    this._guestSlotMap[guestId] = 'guest-' + slotNum;
+                    return 'guest-' + slotNum;
+                },
+
+                _findGuest(guestId) {
+                    // guestId from PeerManager is the livekit_identity string
+                    // We check against the Livewire guests data for the name
+                    return null;
+                },
+
+                _updateViewerCount() {
                     if (room) {
                         this.viewerCount = room.remoteParticipants.size;
                         this.$wire.set('viewerCount', this.viewerCount);
                     }
                 },
 
-                async toggleAudio() {
-                    if (!room) return;
-                    this.audioEnabled = !this.audioEnabled;
-                    await room.localParticipant.setMicrophoneEnabled(this.audioEnabled);
-                },
-
-                async toggleVideo() {
-                    if (!room) return;
-                    this.videoEnabled = !this.videoEnabled;
-                    await room.localParticipant.setCameraEnabled(this.videoEnabled);
-                },
-
-                async loadDevices() {
-                    try {
-                        const devices = await navigator.mediaDevices.enumerateDevices();
-                        this.cameras = devices
-                            .filter(d => d.kind === 'videoinput')
-                            .map(d => ({ id: d.deviceId, label: d.label || 'Camera ' + d.deviceId.slice(0, 4) }));
-                        this.microphones = devices
-                            .filter(d => d.kind === 'audioinput')
-                            .map(d => ({ id: d.deviceId, label: d.label || 'Mic ' + d.deviceId.slice(0, 4) }));
-
-                        if (room) {
-                            room.localParticipant.videoTrackPublications.forEach(pub => {
-                                if (pub.track) {
-                                    const settings = pub.track.mediaStreamTrack?.getSettings();
-                                    if (settings?.deviceId) this.activeCameraId = settings.deviceId;
-                                }
-                            });
-                            room.localParticipant.audioTrackPublications.forEach(pub => {
-                                if (pub.track) {
-                                    const settings = pub.track.mediaStreamTrack?.getSettings();
-                                    if (settings?.deviceId) this.activeMicId = settings.deviceId;
-                                }
-                            });
-                        }
-                    } catch (err) {
-                        console.warn('Failed to enumerate devices:', err);
-                    }
-                },
-
-                async switchCamera(deviceId) {
-                    if (!room || deviceId === this.activeCameraId) return;
-                    try {
-                        await room.switchActiveDevice('videoinput', deviceId);
-                        this.activeCameraId = deviceId;
-                        this.showDeviceMenu = false;
-                    } catch (err) {
-                        console.error('Failed to switch camera:', err);
-                    }
-                },
-
-                async switchMicrophone(deviceId) {
-                    if (!room || deviceId === this.activeMicId) return;
-                    try {
-                        await room.switchActiveDevice('audioinput', deviceId);
-                        this.activeMicId = deviceId;
-                        this.showDeviceMenu = false;
-                    } catch (err) {
-                        console.error('Failed to switch microphone:', err);
-                    }
-                },
-
-                async toggleScreenShare() {
-                    if (this.screenStream) {
-                        // Stop screen sharing
-                        this.screenStream.getTracks().forEach(t => t.stop());
-                        this.screenStream = null;
-                        if (compositor) {
-                            compositor.removeFeedSource('screen');
-                        }
-                        return;
-                    }
-
-                    try {
-                        this.screenStream = await navigator.mediaDevices.getDisplayMedia({
-                            video: true,
-                            audio: false,
-                        });
-
-                        // Create a video element for the screen share
-                        const screenVideoEl = document.createElement('video');
-                        screenVideoEl.srcObject = this.screenStream;
-                        screenVideoEl.autoplay = true;
-                        screenVideoEl.muted = true;
-                        screenVideoEl.playsInline = true;
-                        await screenVideoEl.play();
-
-                        // Feed to compositor
-                        if (compositor) {
-                            compositor.setFeedSource('screen', screenVideoEl);
-                        }
-
-                        // Set thumbnail
-                        this.$nextTick(() => {
-                            const thumbEl = this.$refs.screenThumb;
-                            if (thumbEl) {
-                                thumbEl.srcObject = this.screenStream;
-                            }
-                        });
-
-                        // Detect when user stops sharing via browser UI
-                        this.screenStream.getVideoTracks()[0].addEventListener('ended', () => {
-                            this.screenStream = null;
-                            if (compositor) {
-                                compositor.removeFeedSource('screen');
-                            }
-                        });
-                    } catch (err) {
-                        console.warn('Screen share cancelled or failed:', err.message);
-                    }
-                },
-
-                async toggleFrameMode() {
-                    this.frameModeEnabled = !this.frameModeEnabled;
-                    this.$wire.toggleFrameMode();
-
-                    if (this.frameModeEnabled) {
-                        // Start compositor if not already running
-                        if (!compositor) {
-                            await this.initCompositor();
-                        }
-                        // Short delay to let compositor render a few frames before publishing
-                        await new Promise(r => setTimeout(r, 200));
-                        // Replace published video track with canvas stream
-                        await this.publishCanvasStream();
-                    } else {
-                        // Switch back to raw camera first, then clean up compositor
-                        await this.publishRawCamera();
-                        if (compositor) {
-                            compositor.stop();
-                            compositor.destroy();
-                            compositor = null;
-                        }
-                    }
-                },
-
-                async publishCanvasStream() {
-                    if (!room || !compositor) {
-                        console.warn('[Studio] publishCanvasStream: no room or compositor');
-                        return;
-                    }
-                    try {
-                        const canvasStream = compositor.getOutputStream();
-                        const canvasTrack = canvasStream.getVideoTracks()[0];
-                        if (!canvasTrack) {
-                            console.warn('[Studio] No video track from canvas stream');
-                            return;
-                        }
-
-                        // Unpublish camera WITHOUT stopping the local capture.
-                        // setCameraEnabled(false) kills the MediaStreamTrack, which
-                        // breaks the compositor (host video becomes readyState 0).
-                        // unpublishTrack(track, false) keeps the capture alive locally.
-                        const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
-                        for (const pub of pubs) {
-                            if (pub.track) {
-                                console.log('[Studio] Unpublishing track:', pub.source);
-                                await room.localParticipant.unpublishTrack(pub.track, false);
-                            }
-                        }
-
-                        // Publish canvas track directly — livekit-client wraps it automatically
-                        await room.localParticipant.publishTrack(canvasTrack, {
-                            name: 'composited-frame',
-                            simulcast: false,
-                        });
-
-                        console.log('[Studio] Canvas stream published to LiveKit');
-                    } catch (err) {
-                        console.error('[Studio] Failed to publish canvas stream:', err);
-                    }
-                },
-
-                async publishRawCamera() {
-                    if (!room) return;
-                    try {
-                        // Unpublish all video tracks (canvas track — stop it since we own it)
-                        const pubs = Array.from(room.localParticipant.videoTrackPublications.values());
-                        for (const pub of pubs) {
-                            if (pub.track) {
-                                console.log('[Studio] Unpublishing track for raw camera switch:', pub.source);
-                                await room.localParticipant.unpublishTrack(pub.track, true);
-                            }
-                        }
-
-                        // Reset guard so attachVideo() fires for the new camera track
-                        videoAttached = false;
-
-                        // Re-enable camera (creates fresh track + publishes)
-                        await room.localParticipant.setCameraEnabled(true);
-                        console.log('[Studio] Raw camera republished to LiveKit');
-                    } catch (err) {
-                        console.error('[Studio] Failed to switch to raw camera:', err);
-                    }
-                },
-
-                toggleOverlayVisibility(index) {
-                    const newState = this.overlayVisible[index] === false;
-                    this.overlayVisible[index] = newState;
-                    if (compositor) {
-                        compositor.toggleOverlay(index, newState);
-                    }
-                },
-
-                // Render a guest video into its source monitor container via direct DOM manipulation
-                // (bypasses Alpine reactivity — MediaStreams can't be in reactive data)
-                renderGuestVideo(slotKey) {
-                    const container = document.getElementById('source-monitor-' + slotKey);
-                    const stream = guestMediaStreams[slotKey];
-                    if (!container || !stream) return;
-
-                    // Remove any existing video
-                    const existing = container.querySelector('video');
-                    if (existing) existing.remove();
-
-                    const videoEl = document.createElement('video');
-                    videoEl.srcObject = stream;
-                    videoEl.autoplay = true;
-                    videoEl.muted = true;
-                    videoEl.playsInline = true;
-                    videoEl.style.cssText = 'width:100%;height:100%;object-fit:cover;position:absolute;inset:0;';
-                    container.appendChild(videoEl);
-                    videoEl.play().catch(() => {});
-                },
-
-                isFeedInScene(slotKey) {
-                    const scene = this.scenes[this.activeSceneIndex];
-                    if (!scene || !scene.slots) return false;
-                    return scene.slots.some(slot => slot.source === slotKey);
-                },
+                // ==============================================================
+                // Cleanup
+                // ==============================================================
 
                 async disconnect() {
-                    if (compositor) {
-                        compositor.stop();
-                        compositor.destroy();
-                        compositor = null;
-                    }
-                    if (this.screenStream) {
-                        this.screenStream.getTracks().forEach(t => t.stop());
-                        this.screenStream = null;
-                    }
-                    if (room) {
-                        await room.disconnect();
-                        room = null;
-                        this.connected = false;
-                    }
+                    if (peerManager) { peerManager.destroy(); peerManager = null; }
+                    if (previewCompositor) { previewCompositor.stop(); previewCompositor.destroy(); previewCompositor = null; }
+                    if (programCompositor) { programCompositor.stop(); programCompositor.destroy(); programCompositor = null; }
+                    if (sourceManager) { sourceManager.destroy(); sourceManager = null; }
+                    if (this.screenStream) { this.screenStream.getTracks().forEach(t => t.stop()); this.screenStream = null; }
+                    if (room) { await room.disconnect(); room = null; }
+                    this.connected = false;
                 },
 
-                destroy() {
-                    this.disconnect();
-                }
+                destroy() { this.disconnect(); }
             };
         });
         </script>
