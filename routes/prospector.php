@@ -16,36 +16,36 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(['auth:web', 'auth.internal'])->group(function () {
     // Dashboard
     Route::get('/', fn () => redirect()->route('prospector.dashboard'))->name('home');
-    Route::livewire('/dashboard', 'prospector.dashboard')->name('dashboard');
+    Route::livewire('/dashboard', 'pages::prospector.dashboard')->name('dashboard');
 
     // Settings (Twilio account connection)
-    Route::livewire('/settings', 'prospector.settings')->name('settings');
+    Route::livewire('/settings', 'pages::prospector.settings')->name('settings');
 
     // Companies
-    Route::livewire('/companies', 'prospector.companies')->name('companies');
-    Route::livewire('/companies/{companyId}', 'prospector.company-detail')->name('companies.show');
+    Route::livewire('/companies', 'pages::prospector.companies')->name('companies');
+    Route::livewire('/companies/{companyId}', 'pages::prospector.company-detail')->name('companies.show');
 
     // Phone Numbers
-    Route::livewire('/phone-numbers', 'prospector.phone-numbers')->name('phone-numbers');
+    Route::livewire('/phone-numbers', 'pages::prospector.phone-numbers')->name('phone-numbers');
 
-    // Phase 2 - Contacts & Campaigns
-    Route::livewire('/contacts', 'prospector.contacts')->name('contacts');
-    Route::livewire('/campaigns', 'prospector.campaigns')->name('campaigns');
-    Route::livewire('/campaigns/{campaignId}', 'prospector.campaign-detail')->name('campaigns.show');
+    // Contacts & Campaigns
+    Route::livewire('/contacts', 'pages::prospector.contacts')->name('contacts');
+    Route::livewire('/campaigns', 'pages::prospector.campaigns')->name('campaigns');
+    Route::livewire('/campaigns/{campaignId}', 'pages::prospector.campaign-detail')->name('campaigns.show');
 
-    // Phase 3 - Dialer
-    Route::livewire('/dialer', 'prospector.dialer')->name('dialer');
-    Route::livewire('/call-history', 'prospector.call-history')->name('call-history');
+    // Dialer
+    Route::livewire('/dialer', 'pages::prospector.dialer')->name('dialer');
+    Route::livewire('/call-history', 'pages::prospector.call-history')->name('call-history');
 
-    // Phase 6 - Drip Sequences
-    Route::livewire('/sequences', 'prospector.sequences')->name('sequences');
-    Route::livewire('/sequences/{sequenceId}', 'prospector.sequence-builder')->name('sequences.show');
+    // Drip Sequences
+    Route::livewire('/sequences', 'pages::prospector.sequences')->name('sequences');
+    Route::livewire('/sequences/{sequenceId}', 'pages::prospector.sequence-builder')->name('sequences.show');
 
-    // Phase 7 - AI Call Intelligence
-    Route::livewire('/call-intelligence', 'prospector.call-intelligence')->name('call-intelligence');
+    // AI Call Intelligence
+    Route::livewire('/call-intelligence', 'pages::prospector.call-intelligence')->name('call-intelligence');
 
-    // Phase 8 - Ringless Voicemail
-    Route::livewire('/rvm', 'prospector.rvm-manager')->name('rvm');
+    // Ringless Voicemail
+    Route::livewire('/rvm', 'pages::prospector.rvm-manager')->name('rvm');
 });
 
 // Webhook routes (no auth, CSRF exempt via bootstrap/app.php)
