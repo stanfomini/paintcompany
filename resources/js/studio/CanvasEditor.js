@@ -42,7 +42,8 @@ export default class CanvasEditor {
 
     enable() {
         this._enabled = true;
-        this._container.style.pointerEvents = 'auto';
+        // Container visibility is managed by Alpine :style binding
+        // Just ensure handles are visible
         for (const [, entry] of this._handles) {
             entry.element.style.display = '';
         }
@@ -51,11 +52,8 @@ export default class CanvasEditor {
 
     disable() {
         this._enabled = false;
-        this._container.style.pointerEvents = 'none';
-        for (const [, entry] of this._handles) {
-            entry.element.style.display = 'none';
-        }
-        this._selectedKey = null;
+        this.clearSelection();
+        // Container visibility is managed by Alpine :style binding
         console.log('[CanvasEditor] Disabled');
     }
 
@@ -214,12 +212,12 @@ export default class CanvasEditor {
         `;
         el.appendChild(label);
 
-        // Resize handle (bottom-right corner)
+        // Resize handle (bottom-right corner, inside the handle)
         const resizeHandle = document.createElement('div');
         resizeHandle.className = 'ce-resize';
         resizeHandle.style.cssText = `
-            position: absolute; right: -4px; bottom: -4px;
-            width: 10px; height: 10px; background: white; border: 1px solid #333;
+            position: absolute; right: 2px; bottom: 2px;
+            width: 12px; height: 12px; background: white; border: 2px solid #333;
             cursor: se-resize; border-radius: 2px; z-index: 5;
         `;
         el.appendChild(resizeHandle);

@@ -1034,13 +1034,14 @@ class extends Component
                 {{-- ═══════════════════════════════════════════ --}}
                 <div class="flex gap-2 bg-black p-2" style="max-height: 45vh;" wire:ignore>
                     {{-- Preview Monitor --}}
-                    <div class="relative flex-1 overflow-hidden rounded-lg border-2 bg-black"
-                         :class="editorMode ? 'border-green-400' : 'border-green-500/40'">
-                        <canvas x-ref="previewCanvas" class="h-full w-full object-contain" width="1280" height="720"></canvas>
-                        {{-- Editor handles layer — positioned over canvas --}}
-                        <div x-ref="editorHandles" x-show="editorMode"
+                    <div class="relative flex-1 rounded-lg border-2 bg-black"
+                         :class="editorMode ? 'border-green-400' : 'border-green-500/40'"
+                         style="aspect-ratio: 16/9;">
+                        <canvas x-ref="previewCanvas" class="absolute inset-0 w-full h-full" width="1280" height="720"></canvas>
+                        {{-- Editor handles layer — exact same size as canvas, on top --}}
+                        <div x-ref="editorHandles"
                              class="absolute inset-0 z-10"
-                             style="pointer-events: none;"></div>
+                             :style="editorMode ? 'pointer-events: auto;' : 'pointer-events: none; display: none;'"></div>
                         <span class="absolute top-2 left-2 rounded px-2 py-0.5 text-[10px] font-bold text-white tracking-wider z-20"
                               :class="editorMode ? 'bg-yellow-500' : 'bg-green-600/90'"
                               x-text="editorMode ? 'EDITOR' : 'PREVIEW'"></span>
