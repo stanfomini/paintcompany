@@ -27,6 +27,7 @@ export default class FrameCompositor {
      * @param {Object} [options]
      * @param {number} [options.width=1280]
      * @param {number} [options.height=720]
+     * @param {Object|null} [options.overlayRenderer=null] - Renderer with getCapturedImage(index)
      */
     constructor(canvas, sourceManager, options = {}) {
         this._canvas = canvas;
@@ -45,6 +46,10 @@ export default class FrameCompositor {
         this._rafId = null;
         this._lastFrameTime = 0;
         this._outputStream = null;
+
+        this._overlayRenderer = options.overlayRenderer ?? null;
+        this._captionText = '';
+        this._captionSpeaker = '';
 
         this._renderFrame = this._renderFrame.bind(this);
     }
@@ -78,6 +83,26 @@ export default class FrameCompositor {
         if (this._overlays[index]) {
             this._overlays[index].visible = visible;
         }
+    }
+
+    /**
+     * Update the live caption text displayed by caption-type overlays.
+     *
+     * @param {string} speaker
+     * @param {string} text
+     */
+    setCaptionText(speaker, text) {
+        this._captionSpeaker = speaker;
+        this._captionText = text;
+    }
+
+    /**
+     * Set (or replace) the overlay renderer used by html-type overlays.
+     *
+     * @param {Object|null} renderer - Object with getCapturedImage(index): ImageBitmap|null
+     */
+    setOverlayRenderer(renderer) {
+        this._overlayRenderer = renderer;
     }
 
     start() {
@@ -117,6 +142,7 @@ export default class FrameCompositor {
         this._imageCache.clear();
         this._outputStream = null;
         this._sourceManager = null;
+        this._overlayRenderer = null;
         this._ctx = null;
         this._canvas = null;
     }
@@ -159,6 +185,10 @@ export default class FrameCompositor {
                 this._drawTextOverlay(ctx, overlay, w, h);
             } else if (overlay.type === 'image') {
                 this._drawImageOverlay(ctx, overlay, w, h);
+            } else if (overlay.type === 'html') {
+                this._drawHtmlOverlay(ctx, overlay, w, h);
+            } else if (overlay.type === 'caption') {
+                this._drawCaptionOverlay(ctx, overlay, w, h);
             }
         }
     }
@@ -189,6 +219,25 @@ export default class FrameCompositor {
     }
 
     _drawTextOverlay(ctx, overlay, canvasW, canvasH) {
+        const style = overlay.style;
+
+        if (style === 'lower-third') {
+            this._drawLowerThird(ctx, overlay, canvasW, canvasH);
+        } else if (style === 'title') {
+            this._drawTitleOverlay(ctx, overlay, canvasW, canvasH);
+        } else if (style === 'ticker') {
+            this._drawTickerOverlay(ctx, overlay, canvasW, canvasH);
+        } else {
+            // Default: existing behavior (custom or undefined style)
+            this._drawDefaultTextOverlay(ctx, overlay, canvasW, canvasH);
+        }
+    }
+
+    /**
+     * Original text rendering — unchanged from initial implementation.
+     * This is the fallback for overlays without a style field.
+     */
+    _drawDefaultTextOverlay(ctx, overlay, canvasW, canvasH) {
         const x = overlay.x * canvasW;
         const y = overlay.y * canvasH;
         const fontSize = overlay.fontSize ?? 24;
@@ -216,6 +265,213 @@ export default class FrameCompositor {
 
         ctx.fillStyle = color;
         ctx.fillText(overlay.content, x, y);
+    }
+
+    /**
+     * Lower-third: full-width semi-transparent bar near bottom.
+     * Line 1 = overlay.name (or overlay.label), Line 2 = overlay.content.
+     */
+    _drawLowerThird(ctx, overlay, canvasW, canvasH) {
+        const barH = canvasH * 0.14;
+        const barY = canvasH * 0.78;
+        const padding = 20;
+
+        const bg = overlay.bg ?? 'rgba(0, 0, 0, 0.65)';
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, barY, canvasW, barH);
+
+        // Accent line at top of bar
+        ctx.fillStyle = overlay.accentColor ?? '#4f8ef7';
+        ctx.fillRect(0, barY, canvasW, 3);
+
+        const nameFontSize = overlay.nameFontSize ?? 26;
+        const contentFontSize = overlay.fontSize ?? 18;
+        const color = overlay.color ?? '#ffffff';
+        const nameColor = overlay.nameColor ?? '#ffffff';
+
+        // Name (line 1)
+        if (overlay.name) {
+            ctx.font = `700 ${nameFontSize}px sans-serif`;
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = nameColor;
+            ctx.fillText(overlay.name, padding, barY + 10);
+        }
+
+        // Content (line 2)
+        if (overlay.content) {
+            ctx.font = `400 ${contentFontSize}px sans-serif`;
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = color;
+            ctx.fillText(overlay.content, padding, barY + 10 + nameFontSize * 1.3);
+        }
+    }
+
+    /**
+     * Title: centered text with large font, optional semi-transparent background box.
+     */
+    _drawTitleOverlay(ctx, overlay, canvasW, canvasH) {
+        const fontSize = overlay.fontSize ?? 48;
+        const fontWeight = overlay.fontWeight ?? '700';
+        const color = overlay.color ?? '#ffffff';
+
+        ctx.font = `${fontWeight} ${fontSize}px sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'center';
+
+        const x = canvasW / 2;
+        const y = overlay.y != null ? overlay.y * canvasH : canvasH / 2;
+
+        if (overlay.bg) {
+            const metrics = ctx.measureText(overlay.content);
+            const textW = metrics.width;
+            const textH = fontSize * 1.4;
+            const padX = fontSize * 0.6;
+            const padY = fontSize * 0.3;
+
+            ctx.fillStyle = overlay.bg;
+            ctx.fillRect(x - textW / 2 - padX, y - textH / 2 - padY, textW + padX * 2, textH + padY * 2);
+        }
+
+        ctx.fillStyle = color;
+        ctx.fillText(overlay.content, x, y);
+    }
+
+    /**
+     * Ticker: text scrolls from right to left across the canvas.
+     * Tracks x offset in overlay._tickerOffset, incremented each frame.
+     */
+    _drawTickerOverlay(ctx, overlay, canvasW, canvasH) {
+        const fontSize = overlay.fontSize ?? 20;
+        const fontWeight = overlay.fontWeight ?? '400';
+        const color = overlay.color ?? '#ffffff';
+        const barH = fontSize * 2;
+        const barY = overlay.y != null ? overlay.y * canvasH : canvasH - barH;
+        const speed = overlay.tickerSpeed ?? 2;
+
+        // Background bar
+        const bg = overlay.bg ?? 'rgba(0, 0, 0, 0.75)';
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, barY, canvasW, barH);
+
+        ctx.font = `${fontWeight} ${fontSize}px sans-serif`;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+
+        const metrics = ctx.measureText(overlay.content);
+        const textW = metrics.width + 80; // padding between loops
+
+        // Initialize offset on first draw
+        if (overlay._tickerOffset == null) {
+            overlay._tickerOffset = canvasW;
+        }
+
+        // Advance the ticker
+        overlay._tickerOffset -= speed;
+
+        // Loop back when text has fully scrolled off left edge
+        if (overlay._tickerOffset < -textW) {
+            overlay._tickerOffset = canvasW;
+        }
+
+        ctx.save();
+        ctx.rect(0, barY, canvasW, barH);
+        ctx.clip();
+
+        ctx.fillStyle = color;
+        ctx.fillText(overlay.content, overlay._tickerOffset, barY + barH / 2);
+
+        ctx.restore();
+    }
+
+    /**
+     * HTML overlay: draws a captured image from the overlay renderer.
+     * Expects overlay._rendererIndex to identify which renderer slot to use.
+     */
+    _drawHtmlOverlay(ctx, overlay, canvasW, canvasH) {
+        const image = this._overlayRenderer?.getCapturedImage(overlay._rendererIndex);
+
+        if (!image) {
+            return;
+        }
+
+        const x = (overlay.x ?? 0) * canvasW;
+        const y = (overlay.y ?? 0) * canvasH;
+        const w = (overlay.w ?? 1) * canvasW;
+        const h = (overlay.h ?? 1) * canvasH;
+
+        ctx.drawImage(image, x, y, w, h);
+    }
+
+    /**
+     * Caption overlay: renders live caption text with speaker prefix.
+     * Supports word-wrap to overlay.maxLines (default 2).
+     */
+    _drawCaptionOverlay(ctx, overlay, canvasW, canvasH) {
+        if (!this._captionText) {
+            return;
+        }
+
+        const fontSize = overlay.fontSize ?? 22;
+        const fontWeight = overlay.fontWeight ?? '600';
+        const color = overlay.color ?? '#ffffff';
+        const maxLines = overlay.maxLines ?? 2;
+        const padding = fontSize * 0.6;
+        const lineHeight = fontSize * 1.4;
+        const maxWidth = canvasW * 0.85;
+
+        ctx.font = `${fontWeight} ${fontSize}px sans-serif`;
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';
+
+        // Build full text with speaker prefix
+        const fullText = this._captionSpeaker
+            ? `${this._captionSpeaker}: ${this._captionText}`
+            : this._captionText;
+
+        // Word-wrap
+        const words = fullText.split(' ');
+        const lines = [];
+        let currentLine = '';
+
+        for (const word of words) {
+            const testLine = currentLine ? `${currentLine} ${word}` : word;
+            const { width } = ctx.measureText(testLine);
+
+            if (width > maxWidth && currentLine) {
+                lines.push(currentLine);
+                currentLine = word;
+
+                if (lines.length >= maxLines) {
+                    break;
+                }
+            } else {
+                currentLine = testLine;
+            }
+        }
+
+        if (currentLine && lines.length < maxLines) {
+            lines.push(currentLine);
+        }
+
+        const totalH = lines.length * lineHeight;
+        const boxH = totalH + padding * 2;
+        const boxY = overlay.y != null ? overlay.y * canvasH : canvasH - boxH - 40;
+        const boxX = (canvasW - maxWidth) / 2 - padding;
+        const boxW = maxWidth + padding * 2;
+
+        // Background box
+        const bg = overlay.bg ?? 'rgba(0, 0, 0, 0.7)';
+        ctx.fillStyle = bg;
+        ctx.fillRect(boxX, boxY, boxW, boxH);
+
+        // Draw each line
+        ctx.fillStyle = color;
+
+        for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], boxX + padding, boxY + padding + i * lineHeight);
+        }
     }
 
     _drawImageOverlay(ctx, overlay, canvasW, canvasH) {
