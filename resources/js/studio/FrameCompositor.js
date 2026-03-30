@@ -407,18 +407,23 @@ export default class FrameCompositor {
      * Expects overlay._rendererIndex to identify which renderer slot to use.
      */
     _drawHtmlOverlay(ctx, overlay, canvasW, canvasH) {
-        const image = this._overlayRenderer?.getCapturedImage(overlay._rendererIndex);
+        try {
+            const image = this._overlayRenderer?.getCapturedImage(overlay._rendererIndex);
 
-        if (!image) {
-            return;
+            if (!image || !image.complete || image.naturalWidth === 0) {
+                return; // No capture yet or broken image — skip silently
+            }
+
+            const x = (overlay.x ?? 0) * canvasW;
+            const y = (overlay.y ?? 0) * canvasH;
+            const w = (overlay.w ?? 1) * canvasW;
+            const h = (overlay.h ?? 1) * canvasH;
+
+            ctx.drawImage(image, x, y, w, h);
+        } catch (err) {
+            // Never let a broken HTML overlay crash the render loop
+            console.warn('[Compositor] HTML overlay draw error:', err.message);
         }
-
-        const x = (overlay.x ?? 0) * canvasW;
-        const y = (overlay.y ?? 0) * canvasH;
-        const w = (overlay.w ?? 1) * canvasW;
-        const h = (overlay.h ?? 1) * canvasH;
-
-        ctx.drawImage(image, x, y, w, h);
     }
 
     /**

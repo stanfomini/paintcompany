@@ -10,59 +10,51 @@ export default class OverlayRenderer {
         if (!containerEl) throw new Error('[OverlayRenderer] containerEl required');
         this._container = containerEl;
         this._overlays = new Map(); // index → {element, timer, image, config}
+        this._capturing = false; // Prevent concurrent captures
     }
 
     addOverlay(index, config) {
         this.removeOverlay(index); // Clean up if exists
 
-        const wrapper = document.createElement('div');
-        wrapper.style.cssText = 'position:absolute;left:-9999px;top:-9999px;';
-        // Size proportional to canvas (1280x720)
         const width = Math.round(1280 * (config.w ?? 1));
         const height = Math.round(720 * (config.h ?? 0.08));
-        wrapper.style.width = width + 'px';
-        wrapper.style.height = height + 'px';
-        wrapper.style.overflow = 'hidden';
 
-        if (config.src && config.type === 'html') {
+        // For raw HTML: render in a visible-but-offscreen div and capture
+        // For iframes: capture is unreliable due to cross-origin restrictions,
+        // so we render the iframe in the hidden container and try to capture.
+        // If capture fails, the overlay just won't render (no crash).
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = `position:fixed;left:-9999px;top:0;width:${width}px;height:${height}px;overflow:hidden;z-index:-1;opacity:0;pointer-events:none;`;
+
+        if (config.html) {
+            // Raw HTML overlay — render directly
+            const content = document.createElement('div');
+            content.style.cssText = 'width:100%;height:100%;';
+            content.innerHTML = config.html;
+            wrapper.appendChild(content);
+        } else if (config.src) {
             // Iframe overlay
             const iframe = document.createElement('iframe');
             iframe.src = config.src;
             iframe.style.cssText = 'width:100%;height:100%;border:none;';
+            iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
             wrapper.appendChild(iframe);
-        } else if (config.html) {
-            // Raw HTML overlay
-            wrapper.innerHTML = config.html;
         }
 
         this._container.appendChild(wrapper);
 
-        const entry = { element: wrapper, timer: null, image: null, config };
-
-        // Start capture timer
-        const interval = config.refreshInterval ?? 2000;
-        const capture = async () => {
-            try {
-                // Dynamic import html2canvas
-                const { default: html2canvas } = await import('html2canvas');
-                const canvas = await html2canvas(wrapper, {
-                    width, height, scale: 1, logging: false, useCORS: true,
-                });
-                const img = new Image();
-                img.src = canvas.toDataURL();
-                await new Promise(r => { img.onload = r; });
-                entry.image = img;
-            } catch (err) {
-                console.warn(`[OverlayRenderer] Capture failed for index ${index}:`, err.message);
-            }
-        };
-
-        // Initial capture after a short delay (let iframe load)
-        setTimeout(() => capture(), 500);
-        entry.timer = setInterval(() => capture(), interval);
-
+        const entry = { element: wrapper, timer: null, image: null, config, width, height };
         this._overlays.set(index, entry);
-        console.log(`[OverlayRenderer] Added overlay ${index}`);
+
+        // Start capture timer — each capture is isolated and can't crash the compositor
+        const interval = config.refreshInterval ?? 3000;
+        const capture = () => this._captureOverlay(index);
+
+        // Initial capture after iframe loads
+        setTimeout(capture, 1500);
+        entry.timer = setInterval(capture, interval);
+
+        console.log(`[OverlayRenderer] Added overlay ${index} (${width}x${height})`);
     }
 
     removeOverlay(index) {
@@ -81,6 +73,53 @@ export default class OverlayRenderer {
     destroy() {
         for (const [index] of this._overlays) {
             this.removeOverlay(index);
+        }
+    }
+
+    async _captureOverlay(index) {
+        const entry = this._overlays.get(index);
+        if (!entry || this._capturing) return;
+
+        this._capturing = true;
+        try {
+            const { default: html2canvas } = await import('html2canvas');
+
+            // Temporarily make visible for capture (html2canvas needs visibility)
+            entry.element.style.left = '0';
+            entry.element.style.opacity = '1';
+
+            const canvas = await html2canvas(entry.element, {
+                width: entry.width,
+                height: entry.height,
+                scale: 1,
+                logging: false,
+                useCORS: true,
+                allowTaint: true, // Allow cross-origin images to render (even if tainted)
+                foreignObjectRendering: false, // More compatible
+                removeContainer: true,
+            });
+
+            // Hide again
+            entry.element.style.left = '-9999px';
+            entry.element.style.opacity = '0';
+
+            const img = new Image();
+            img.src = canvas.toDataURL();
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = reject;
+                setTimeout(reject, 3000); // Timeout
+            });
+            entry.image = img;
+        } catch (err) {
+            // Hide element even on error
+            if (entry?.element) {
+                entry.element.style.left = '-9999px';
+                entry.element.style.opacity = '0';
+            }
+            console.warn(`[OverlayRenderer] Capture failed for ${index}:`, err?.message ?? err);
+        } finally {
+            this._capturing = false;
         }
     }
 }
