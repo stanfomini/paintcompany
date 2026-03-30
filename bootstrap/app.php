@@ -38,6 +38,12 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->name('crew.')
                 ->group(base_path('routes/crew.php'));
 
+            // Prospector dialer hub
+            Route::middleware('web')
+                ->prefix('prospector')
+                ->name('prospector.')
+                ->group(base_path('routes/prospector.php'));
+
             // AI & MCP routes
             require base_path('routes/ai.php');
         },
@@ -61,6 +67,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/video-views',
             'api/remotion/*',
             'broadcasting/video-call-auth',
+            'prospector/webhook/*',
         ]);
 
         $middleware->alias([

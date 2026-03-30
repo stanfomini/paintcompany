@@ -1,0 +1,406 @@
+<?php
+
+use App\Models\Prospector\TwilioAccount;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
+use Livewire\Attributes\Title;
+use Livewire\Component;
+
+new
+#[Layout('layouts.app')]
+#[Title('Prospector Settings')]
+class extends Component
+{
+    // Form state
+    public bool $showModal = false;
+    public ?int $editingId = null;
+    public string $name = '';
+    public string $accountSid = '';
+    public string $authToken = '';
+
+    // Sync results
+    public ?array $syncResults = null;
+    public ?int $syncingAccountId = null;
+
+    // Delete
+    public bool $showDeleteModal = false;
+    public ?int $deletingId = null;
+    public string $deletingName = '';
+
+    public function boot(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+    }
+
+    #[Computed]
+    public function accounts(): \Illuminate\Database\Eloquent\Collection
+    {
+        return TwilioAccount::query()
+            ->withCount('phoneNumbers')
+            ->orderBy('name')
+            ->get();
+    }
+
+    public function openAddModal(): void
+    {
+        $this->resetForm();
+        $this->showModal = true;
+    }
+
+    public function openEditModal(int $id): void
+    {
+        $account = TwilioAccount::findOrFail($id);
+        $this->editingId = $account->id;
+        $this->name = $account->name;
+        $this->accountSid = '';
+        $this->authToken = '';
+        $this->showModal = true;
+    }
+
+    public function closeModal(): void
+    {
+        $this->showModal = false;
+        $this->resetForm();
+    }
+
+    public function save(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $rules = [
+            'name' => [
+                'required',
+                'string',
+                'max:100',
+                Rule::unique('prospector_twilio_accounts', 'name')->ignore($this->editingId),
+            ],
+        ];
+
+        if (! $this->editingId) {
+            $rules['accountSid'] = ['required', 'string', 'max:100'];
+            $rules['authToken'] = ['required', 'string', 'max:100'];
+        } else {
+            $rules['accountSid'] = ['nullable', 'string', 'max:100'];
+            $rules['authToken'] = ['nullable', 'string', 'max:100'];
+        }
+
+        $this->validate($rules);
+
+        if ($this->editingId) {
+            $account = TwilioAccount::findOrFail($this->editingId);
+            $data = ['name' => $this->name];
+
+            if (! empty($this->accountSid)) {
+                $data['account_sid'] = $this->accountSid;
+            }
+            if (! empty($this->authToken)) {
+                $data['auth_token'] = $this->authToken;
+            }
+
+            $account->update($data);
+        } else {
+            TwilioAccount::create([
+                'name' => $this->name,
+                'account_sid' => $this->accountSid,
+                'auth_token' => $this->authToken,
+                'is_active' => true,
+            ]);
+        }
+
+        $this->closeModal();
+        unset($this->accounts);
+    }
+
+    public function syncNumbers(int $accountId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $account = TwilioAccount::findOrFail($accountId);
+        $this->syncingAccountId = $accountId;
+        $this->syncResults = null;
+
+        try {
+            $service = app(\App\Services\Prospector\TwilioSyncService::class);
+            $this->syncResults = $service->syncNumbers($account);
+            unset($this->accounts);
+        } catch (\Throwable $e) {
+            $this->syncResults = [
+                'error' => $e->getMessage(),
+                'created' => 0,
+                'updated' => 0,
+                'removed' => 0,
+            ];
+        }
+    }
+
+    public function dismissSyncResults(): void
+    {
+        $this->syncResults = null;
+        $this->syncingAccountId = null;
+    }
+
+    public function toggleActive(int $id): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $account = TwilioAccount::findOrFail($id);
+        $account->update(['is_active' => ! $account->is_active]);
+        unset($this->accounts);
+    }
+
+    public function confirmDelete(int $id): void
+    {
+        $account = TwilioAccount::findOrFail($id);
+        $this->deletingId = $id;
+        $this->deletingName = $account->name;
+        $this->showDeleteModal = true;
+    }
+
+    public function delete(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        if (! $this->deletingId) {
+            return;
+        }
+
+        $account = TwilioAccount::findOrFail($this->deletingId);
+
+        if ($account->phoneNumbers()->exists()) {
+            session()->flash('error', __('Cannot delete account with phone numbers. Remove numbers first.'));
+            $this->cancelDelete();
+
+            return;
+        }
+
+        $account->delete();
+        $this->cancelDelete();
+        unset($this->accounts);
+    }
+
+    public function cancelDelete(): void
+    {
+        $this->showDeleteModal = false;
+        $this->deletingId = null;
+        $this->deletingName = '';
+    }
+
+    protected function resetForm(): void
+    {
+        $this->editingId = null;
+        $this->name = '';
+        $this->accountSid = '';
+        $this->authToken = '';
+    }
+}; ?>
+
+<div>
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <flux:heading size="xl">{{ __('Prospector Settings') }}</flux:heading>
+            <flux:text class="mt-1">{{ __('Connect your Twilio accounts to manage phone numbers for prospecting.') }}</flux:text>
+        </div>
+
+        <flux:button variant="primary" icon="plus" wire:click="openAddModal">
+            {{ __('Add Account') }}
+        </flux:button>
+    </div>
+
+    @if (session('error'))
+        <flux:callout color="red" icon="exclamation-triangle" class="mb-4">
+            <flux:callout.text>{{ session('error') }}</flux:callout.text>
+        </flux:callout>
+    @endif
+
+    {{-- Sync Results Banner --}}
+    @if ($syncResults && $syncingAccountId)
+        <div class="mb-4">
+            @if (isset($syncResults['error']))
+                <flux:callout color="red" icon="exclamation-triangle">
+                    <flux:callout.heading>{{ __('Sync Failed') }}</flux:callout.heading>
+                    <flux:callout.text>{{ $syncResults['error'] }}</flux:callout.text>
+                </flux:callout>
+            @else
+                <flux:callout color="green" icon="check-circle">
+                    <flux:callout.heading>{{ __('Sync Complete') }}</flux:callout.heading>
+                    <flux:callout.text>
+                        {{ __(':created created, :updated updated, :removed removed', [
+                            'created' => $syncResults['created'] ?? 0,
+                            'updated' => $syncResults['updated'] ?? 0,
+                            'removed' => $syncResults['removed'] ?? 0,
+                        ]) }}
+                    </flux:callout.text>
+                </flux:callout>
+            @endif
+            <div class="mt-2">
+                <flux:button size="sm" variant="ghost" wire:click="dismissSyncResults">{{ __('Dismiss') }}</flux:button>
+            </div>
+        </div>
+    @endif
+
+    {{-- Accounts list --}}
+    @if ($this->accounts->isEmpty())
+        <div class="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-800">
+            <flux:icon name="phone" class="mx-auto mb-3 size-12 text-zinc-400" />
+            <flux:heading size="lg">{{ __('No Twilio accounts connected') }}</flux:heading>
+            <flux:text class="mt-1">{{ __('Add a Twilio account to start managing phone numbers.') }}</flux:text>
+            <div class="mt-4">
+                <flux:button variant="primary" icon="plus" wire:click="openAddModal">
+                    {{ __('Add Account') }}
+                </flux:button>
+            </div>
+        </div>
+    @else
+        <div class="space-y-3">
+            @foreach ($this->accounts as $account)
+                <div
+                    wire:key="acct-{{ $account->id }}"
+                    @class([
+                        'flex items-center justify-between rounded-lg border p-4 bg-white dark:bg-zinc-800',
+                        'border-zinc-200 dark:border-zinc-700' => $account->is_active,
+                        'border-zinc-200 dark:border-zinc-700 opacity-50' => ! $account->is_active,
+                    ])
+                >
+                    <div class="flex items-center gap-4 min-w-0 flex-1">
+                        <div class="shrink-0 flex size-10 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                            <flux:icon name="server" variant="mini" />
+                        </div>
+
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="font-medium truncate">{{ $account->name }}</span>
+                                @if ($account->is_primary)
+                                    <flux:badge size="sm" color="green">{{ __('Primary') }}</flux:badge>
+                                @endif
+                                @if (! $account->is_active)
+                                    <flux:badge size="sm" color="amber">{{ __('Inactive') }}</flux:badge>
+                                @endif
+                            </div>
+
+                            <div class="mt-1 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+                                <span class="flex items-center gap-1">
+                                    <flux:icon name="key" variant="micro" />
+                                    {{ $account->getMaskedSid() }}
+                                </span>
+
+                                <span class="flex items-center gap-1">
+                                    <flux:icon name="phone" variant="micro" />
+                                    {{ $account->phone_numbers_count }} {{ __('numbers') }}
+                                </span>
+
+                                @if ($account->last_synced_at)
+                                    <span class="flex items-center gap-1">
+                                        <flux:icon name="arrow-path" variant="micro" />
+                                        {{ __('Synced') }} {{ $account->last_synced_at->diffForHumans() }}
+                                    </span>
+                                @else
+                                    <span class="flex items-center gap-1 text-amber-500">
+                                        <flux:icon name="exclamation-triangle" variant="micro" />
+                                        {{ __('Never synced') }}
+                                    </span>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 shrink-0">
+                        <flux:button
+                            size="sm"
+                            variant="ghost"
+                            icon="arrow-path"
+                            wire:click="syncNumbers({{ $account->id }})"
+                            wire:loading.attr="disabled"
+                            wire:target="syncNumbers({{ $account->id }})"
+                            title="{{ __('Sync Numbers') }}"
+                        >
+                            <span wire:loading.remove wire:target="syncNumbers({{ $account->id }})">{{ __('Sync') }}</span>
+                            <span wire:loading wire:target="syncNumbers({{ $account->id }})">{{ __('Syncing...') }}</span>
+                        </flux:button>
+
+                        <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $account->id }})" title="{{ __('Edit') }}" />
+                        <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $account->id }})" title="{{ __('Delete') }}" />
+
+                        <flux:switch
+                            wire:click="toggleActive({{ $account->id }})"
+                            :checked="$account->is_active"
+                            size="sm"
+                        />
+                    </div>
+                </div>
+            @endforeach
+        </div>
+    @endif
+
+    {{-- Add/Edit Modal --}}
+    <flux:modal wire:model="showModal" variant="flyout" class="w-[420px]">
+        <form wire:submit="save" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ $editingId ? __('Edit Account') : __('Add Twilio Account') }}</flux:heading>
+                <flux:text class="mt-2">
+                    {{ $editingId
+                        ? __('Update the account details. Leave SID and token blank to keep existing values.')
+                        : __('Enter your Twilio account credentials. These are encrypted at rest.')
+                    }}
+                </flux:text>
+            </div>
+
+            <flux:input
+                wire:model="name"
+                :label="__('Account Name')"
+                :placeholder="__('e.g., Main Account, Denver Office')"
+                required
+            />
+
+            <flux:input
+                wire:model="accountSid"
+                :label="__('Account SID')"
+                :placeholder="$editingId ? __('Leave blank to keep current') : __('ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
+                :required="! $editingId"
+            />
+
+            <flux:input
+                wire:model="authToken"
+                type="password"
+                :label="__('Auth Token')"
+                :placeholder="$editingId ? __('Leave blank to keep current') : __('Your Twilio auth token')"
+                :required="! $editingId"
+            />
+
+            <div class="flex gap-2">
+                <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary" class="flex-1">
+                    {{ $editingId ? __('Update Account') : __('Add Account') }}
+                </flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    {{-- Delete Confirmation Modal --}}
+    <flux:modal wire:model="showDeleteModal" class="max-w-sm">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Delete Account') }}</flux:heading>
+                <flux:text class="mt-2">
+                    {{ __('Are you sure you want to delete') }} <strong>{{ $deletingName }}</strong>{{ __('? This action cannot be undone.') }}
+                </flux:text>
+            </div>
+
+            <div class="flex gap-2">
+                <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="danger" wire:click="delete" class="flex-1">{{ __('Delete') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+</div>

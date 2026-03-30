@@ -312,3 +312,29 @@ Broadcast::channel('event-studio.{eventId}', function (User $user, int $eventId)
 
     return false;
 }, ['guards' => ['web']]);
+
+/**
+ * Authorize access to a prospector agent's personal dialer channel.
+ * The authenticated user must own the agent record.
+ */
+Broadcast::channel('prospector.agent.{agentId}', function (User $user, int $agentId) {
+    return \App\Models\Prospector\Agent::where('id', $agentId)
+        ->where('user_id', $user->id)
+        ->exists();
+}, ['guards' => ['web']]);
+
+/**
+ * Authorize access to a prospector company channel.
+ * Only internal users can listen to company-wide events.
+ */
+Broadcast::channel('prospector.company.{companyId}', function (User $user, int $companyId) {
+    return $user->isInternal();
+}, ['guards' => ['web']]);
+
+/**
+ * Authorize access to the prospector supervisor channel.
+ * Only internal users can listen for supervisor-level events.
+ */
+Broadcast::channel('prospector.supervisor', function (User $user) {
+    return $user->isInternal();
+}, ['guards' => ['web']]);
