@@ -490,9 +490,8 @@ class extends Component
                         variant="primary"
                         wire:click="assignNumbers"
                         class="flex-1"
-                        :disabled="empty($selectedNumbers)"
                     >
-                        {{ __('Assign Selected') }}
+                        {{ __('Assign Selected') }} @if(count($selectedNumbers))({{ count($selectedNumbers) }})@endif
                     </flux:button>
                 </div>
             @endif
