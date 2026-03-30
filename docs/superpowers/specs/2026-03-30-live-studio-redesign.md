@@ -245,7 +245,138 @@ When a guest disconnects:
 
 ---
 
-## Layer 4: Broadcast — LiveKit Output Only
+## Layer 4: Preview/Program Dual Monitor
+
+The control room uses an OBS-style Preview/Program workflow. Two monitors side by side, each rendering a scene with actual video feeds. The host can see exactly what a scene will look like before making it live.
+
+### Two Compositors, One SourceManager
+
+```
+                          SourceManager (shared)
+                         ┌──────────────────────┐
+                         │  host: <video>        │
+                         │  guest-1: <video>     │
+                         │  screen: <video>      │
+                         └───────┬──────┬────────┘
+                                 │      │
+                    ┌────────────┘      └────────────┐
+                    ▼                                ▼
+          Preview Compositor               Program Compositor
+          (preview canvas)                 (program canvas)
+          renders previewScene             renders liveScene
+          GREEN border                     RED border
+          NOT published                    → captureStream → LiveKit → Viewers
+```
+
+Both compositors are instances of FrameCompositor. Both read from the same SourceManager. A single `<video>` element can be drawn by multiple canvases simultaneously — `drawImage()` just reads the current frame.
+
+### Layout
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ┌──── PREVIEW ─────────┐  ┌──── PROGRAM (LIVE) ──────┐│
+│  │ green border          │  │ red border                ││
+│  │                       │  │                           ││
+│  │  [Interview scene     │  │  [Solo scene              ││
+│  │   with actual feeds]  │  │   currently broadcasting] ││
+│  │                       │  │                           ││
+│  └───────────────────────┘  └───────────────────────────┘│
+│                                                          │
+│  Sources: [🟢 Host] [🟢 Guest 1] [⬜ Screen]            │
+│                                                          │
+│  Scenes: [Solo] [Interview] [Spotlight] [PiP] [Screen]  │
+│                                                          │
+│  [━━━━━━━━━━ TAKE ━━━━━━━━━━]   ← transitions preview  │
+│                                     to program           │
+│  Controls: [🎤] [📷] [🖥️] [⚙️]  [End Stream]           │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Workflow
+
+1. **Click a scene button** → loads it into the **Preview** monitor (green border)
+   - Preview compositor renders the scene with current sources
+   - Program monitor stays unchanged — viewers see no change
+   - Host can inspect: are the feeds in the right positions? Does it look good?
+
+2. **Click TAKE** → transitions the preview scene to **Program** (live)
+   - Program compositor switches to the preview's scene
+   - Viewers see the change immediately (continuous canvas stream)
+   - Preview stays showing the same scene (now both match)
+   - Host can then click a different scene to preview the next transition
+
+3. **Scene buttons highlight state:**
+   - Red outline = currently live (in Program)
+   - Green outline = currently previewed (in Preview)
+   - No outline = available to preview
+
+### Pre-Live Preview
+
+Before clicking "Go Live", the host gets a setup screen where:
+- Camera is active, feeds to SourceManager
+- Both Preview and Program monitors are running (rendering locally)
+- Host can cycle through scenes, see themselves in different layouts
+- Check that guest feeds (if connected in green room) appear correctly
+- Nothing is published to LiveKit yet — just local preview
+- Once satisfied, click "Go Live" → Program canvas stream gets published
+
+This eliminates the "go live and hope it works" problem. The host verifies everything visually first.
+
+### Template Structure
+
+```html
+<!-- Dual monitor container -->
+<div class="flex gap-2" style="max-height: 45vh;">
+    <!-- Preview Monitor -->
+    <div class="relative flex-1 border-2 border-green-500/50 rounded-lg overflow-hidden bg-black">
+        <canvas x-ref="previewCanvas" wire:ignore
+                class="w-full h-full object-contain" width="1280" height="720"></canvas>
+        <span class="absolute top-2 left-2 rounded bg-green-600/90 px-2 py-0.5 text-[10px]
+                     font-bold text-white tracking-wider">PREVIEW</span>
+        <span class="absolute top-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[10px]
+                     text-zinc-300" x-text="previewSceneName"></span>
+    </div>
+
+    <!-- Program Monitor -->
+    <div class="relative flex-1 border-2 border-red-500/50 rounded-lg overflow-hidden bg-black">
+        <canvas x-ref="programCanvas" wire:ignore
+                class="w-full h-full object-contain" width="1280" height="720"></canvas>
+        <span class="absolute top-2 left-2 rounded bg-red-600/90 px-2 py-0.5 text-[10px]
+                     font-bold text-white tracking-wider">PROGRAM</span>
+        <span class="absolute top-2 right-2 rounded bg-black/60 px-2 py-0.5 text-[10px]
+                     text-zinc-300" x-text="liveSceneName"></span>
+    </div>
+</div>
+```
+
+### Alpine State
+
+```javascript
+// Scene state
+previewSceneIndex: 0,     // Scene loaded in Preview monitor
+liveSceneIndex: 0,        // Scene currently live in Program
+
+// Compositor instances
+let previewCompositor = null;  // Renders preview canvas
+let programCompositor = null;  // Renders program canvas → published to LiveKit
+
+// TAKE action
+take() {
+    this.liveSceneIndex = this.previewSceneIndex;
+    programCompositor.setScene(this.scenes[this.liveSceneIndex]);
+    this.$wire.switchScene(this.liveSceneIndex);
+}
+
+// Scene preview (does NOT change what's live)
+previewScene(index) {
+    this.previewSceneIndex = index;
+    previewCompositor.setScene(this.scenes[index]);
+}
+```
+
+---
+
+## Layer 5: Broadcast — LiveKit Output Only
 
 ### Going Live Flow
 
@@ -255,15 +386,18 @@ When a guest disconnects:
 3. Alpine:
    a. Get local camera MediaStream
    b. sourceManager.addSource('host', cameraStream)
-   c. compositor = new FrameCompositor(canvas, sourceManager)
-   d. compositor.setScene(soloScene)
-   e. compositor.start()
-   f. canvasStream = compositor.getOutputStream()
-   g. canvasTrack = canvasStream.getVideoTracks()[0]
-   h. Connect to LiveKit room
-   i. Publish canvasTrack to LiveKit (ONE TIME)
-   j. Publish audio track to LiveKit (host mic, direct — not through compositor)
-4. Viewers subscribe and see the canvas output
+   c. programCompositor = new FrameCompositor(programCanvas, sourceManager)
+   d. previewCompositor = new FrameCompositor(previewCanvas, sourceManager)
+   e. programCompositor.setScene(soloScene)
+   f. previewCompositor.setScene(soloScene)
+   g. programCompositor.start()
+   h. previewCompositor.start()
+   i. canvasStream = programCompositor.getOutputStream()
+   j. canvasTrack = canvasStream.getVideoTracks()[0]
+   k. Connect to LiveKit room
+   l. Publish canvasTrack to LiveKit (ONE TIME — program canvas only)
+   m. Publish audio track to LiveKit (host mic, direct)
+4. Viewers subscribe and see the program canvas output
 ```
 
 ### Audio Handling
@@ -275,18 +409,9 @@ Audio is NOT composited through the canvas. Audio tracks are published directly:
 
 This is important: canvas `captureStream()` doesn't carry audio. Audio must be handled separately.
 
-### Host Program Monitor
-
-The host sees the canvas directly in the control room (same as today):
-```html
-<canvas x-ref="compositorCanvas" class="h-full w-full" width="1280" height="720"></canvas>
-```
-
-No `x-show` toggle needed — the canvas is always visible when live.
-
 ### Source Monitor Thumbnails
 
-The source monitor strip below the program monitor shows each source:
+The source monitor strip shows each available source with live video:
 ```html
 <template x-for="source in sources" :key="source.key">
     <div class="w-40">
@@ -330,12 +455,13 @@ Sources come from SourceManager events, so the strip updates automatically when 
 ## Verification Plan
 
 ### Manual Testing
-1. **Host solo:** Go live → verify canvas shows host camera → viewer sees it
-2. **Guest connect:** Guest opens room → clicks Go Live → verify video appears in source monitor AND compositor
-3. **Scene switch:** Switch Solo → Interview → verify host + guest appear side by side → viewer sees composed output
-4. **Guest disconnect:** Guest closes browser → verify source removed cleanly → compositor shows placeholder → switch back to Solo
-5. **Multiple guests:** Two guests connected → switch to custom scene → verify both render
-6. **Quality check:** Compare guest video quality between source monitor (direct) and viewer output (through canvas)
+1. **Pre-live preview:** Open control room before going live → verify Preview and Program monitors render host camera in Solo layout → try switching scenes in Preview → verify feeds appear in correct positions
+2. **Go live:** Click Go Live → verify Program monitor shows live indicator → viewer sees composed output
+3. **Preview/Take workflow:** Click "Interview" scene → verify Preview shows host+guest layout → click TAKE → verify Program switches → viewer sees interview layout
+4. **Guest connect:** Guest opens room → clicks Go Live → verify video appears in source monitor, Preview, AND Program (if scene includes that guest slot)
+5. **Scene preview before switch:** With guest connected, preview Guest Spotlight → see guest full-screen in Preview while Program still shows Solo → click TAKE → viewer sees spotlight
+6. **Guest disconnect:** Guest closes browser → verify source removed cleanly → compositor shows placeholder → TAKE back to Solo
+7. **Quality check:** Compare guest video quality between source monitor (direct peer) and viewer output (through canvas)
 
 ### Console Logging
 Every layer logs with prefixes:
