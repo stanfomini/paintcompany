@@ -300,6 +300,8 @@ class extends Component
     public function onPresenceHere(array $event): void
     {
         $this->refreshViewerCount();
+        unset($this->guests);
+        $this->dispatchGuestList();
     }
 
     /**
@@ -309,6 +311,8 @@ class extends Component
     public function onPresenceJoining(array $event): void
     {
         $this->refreshViewerCount();
+        unset($this->guests);
+        $this->dispatchGuestList();
     }
 
     /**
@@ -318,6 +322,8 @@ class extends Component
     public function onPresenceLeaving(array $event): void
     {
         $this->refreshViewerCount();
+        unset($this->guests);
+        $this->dispatchGuestList();
     }
 
     /**
@@ -397,6 +403,7 @@ class extends Component
 
         $this->reset('guestName', 'guestEmail', 'guestPhone', 'guestInstructions');
         unset($this->guests);
+        $this->dispatchGuestList();
     }
 
     #[Renderless]
@@ -407,6 +414,7 @@ class extends Component
         app(LiveEventService::class)->removeGuest($guest);
 
         unset($this->guests);
+        $this->dispatchGuestList();
     }
 
     #[Renderless]
@@ -613,6 +621,7 @@ class extends Component
 
         unset($this->guests);
         $this->dispatchGuestSlotMap();
+        $this->dispatchGuestList();
     }
 
     #[Renderless]
@@ -626,6 +635,7 @@ class extends Component
 
         unset($this->guests);
         $this->dispatchGuestSlotMap();
+        $this->dispatchGuestList();
     }
 
     #[Renderless]
@@ -633,6 +643,7 @@ class extends Component
     {
         unset($this->guests);
         $this->dispatchGuestSlotMap();
+        $this->dispatchGuestList();
     }
 
     private function dispatchGuestSlotMap(): void
@@ -642,6 +653,19 @@ class extends Component
         )->toArray();
 
         $this->dispatch('update-guest-slot-map', map: $map);
+    }
+
+    private function dispatchGuestList(): void
+    {
+        $guests = $this->guests->map(fn ($g) => [
+            'id' => $g->id,
+            'name' => $g->name,
+            'status' => $g->status,
+            'slot_number' => $g->slot_number,
+            'identity' => $g->getLivekitIdentity(),
+        ])->values()->toArray();
+
+        $this->dispatch('guests-updated', guests: $guests);
     }
 }; ?>
 
@@ -1055,6 +1079,7 @@ class extends Component
                 liveSceneIndex = @js($activeSceneIndex);
                 previewSceneIndex = @js($activeSceneIndex);
                 overlayConfigs = @js($overlays);
+                liveGuests = @js($connectedGuests->merge($this->guests)->unique('id')->map(fn ($g) => ['id' => $g->id, 'name' => $g->name, 'status' => $g->status, 'slot_number' => $g->slot_number, 'identity' => $g->getLivekitIdentity()])->values()->toArray());
                 @if ($livekitToken)
                     startStudio(@js($livekitToken), @js($livekitUrl), @js($event->id));
                 @endif
@@ -1409,33 +1434,43 @@ class extends Component
                 {{-- Hidden container for OverlayRenderer DOM elements --}}
                 <div x-ref="overlayRenderContainer" class="sr-only" aria-hidden="true" wire:ignore></div>
 
-                {{-- Guest Controls + Invite --}}
-                <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2">
+                {{-- Guest Controls + Invite (Alpine-rendered for real-time updates) --}}
+                <div class="flex items-center gap-2 overflow-x-auto border-t border-zinc-700 bg-zinc-800 px-3 py-2" wire:ignore>
                     <span class="mr-1 shrink-0 text-[10px] font-semibold uppercase tracking-wider text-zinc-500">{{ __('Guests') }}</span>
-                    @foreach ($this->guests as $guest)
-                        <div wire:key="live-guest-{{ $guest->id }}" class="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1.5">
-                            <span class="text-xs font-medium text-zinc-300">{{ $guest->name }}</span>
-                            <flux:badge size="sm" :color="match($guest->status) {
-                                'connected' => 'amber',
-                                'live' => 'green',
-                                'disconnected' => 'zinc',
-                                default => 'zinc',
-                            }">
-                                {{ ucfirst($guest->status) }}
-                            </flux:badge>
-                            @if ($guest->isConnected())
-                                <flux:button size="xs" variant="primary" wire:click="bringGuestOn({{ $guest->id }})">
-                                    {{ __('Bring On') }}
-                                </flux:button>
-                            @elseif ($guest->isLive())
-                                <flux:button size="xs" variant="ghost" wire:click="takeGuestOff({{ $guest->id }})">
-                                    {{ __('Take Off') }}
-                                </flux:button>
-                            @endif
-                            <flux:button size="xs" variant="ghost" icon="clipboard-document" wire:click="copyGuestLink({{ $guest->id }})" title="{{ __('Copy link') }}" />
+                    <template x-for="guest in liveGuests" :key="guest.id">
+                        <div class="flex shrink-0 items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1.5">
+                            <span class="text-xs font-medium text-zinc-300" x-text="guest.name"></span>
+                            <span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset"
+                                :class="{
+                                    'bg-amber-400/10 text-amber-400 ring-amber-400/20': guest.status === 'connected',
+                                    'bg-green-400/10 text-green-400 ring-green-400/20': guest.status === 'live',
+                                    'bg-zinc-400/10 text-zinc-400 ring-zinc-400/20': guest.status === 'disconnected' || guest.status === 'invited',
+                                }"
+                                x-text="guest.status.charAt(0).toUpperCase() + guest.status.slice(1)">
+                            </span>
+                            <button x-show="guest.status === 'connected'" type="button"
+                                @click="$wire.bringGuestOn(guest.id)"
+                                class="rounded-md bg-blue-600 px-2 py-1 text-[10px] font-medium text-white hover:bg-blue-500 transition-colors">
+                                {{ __('Bring On') }}
+                            </button>
+                            <button x-show="guest.status === 'live'" type="button"
+                                @click="$wire.takeGuestOff(guest.id)"
+                                class="rounded-md bg-zinc-700 px-2 py-1 text-[10px] font-medium text-zinc-300 hover:bg-zinc-600 transition-colors">
+                                {{ __('Take Off') }}
+                            </button>
+                            <button type="button" @click="$wire.copyGuestLink(guest.id)"
+                                class="rounded-md bg-zinc-700 p-1 text-zinc-400 hover:text-zinc-200 transition-colors" title="{{ __('Copy link') }}">
+                                <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9.75a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184" /></svg>
+                            </button>
                         </div>
-                    @endforeach
-                    <flux:button size="xs" variant="ghost" icon="arrow-path" wire:click="refreshGuestStatuses" class="shrink-0" title="{{ __('Refresh') }}" />
+                    </template>
+                    <template x-if="liveGuests.length === 0">
+                        <span class="text-[10px] text-zinc-600">{{ __('No guests') }}</span>
+                    </template>
+                    <button type="button" wire:click="refreshGuestStatuses"
+                        class="shrink-0 rounded-md bg-zinc-700 p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors" title="{{ __('Refresh') }}">
+                        <svg class="size-3.5" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182" /></svg>
+                    </button>
 
                     {{-- Quick invite --}}
                     <div class="mx-1 h-4 w-px bg-zinc-700 shrink-0"></div>
@@ -1940,6 +1975,7 @@ class extends Component
                 viewerCount: 0,
                 connectionError: null,
                 sources: [],
+                liveGuests: [],
                 previewSceneIndex: 0,
                 liveSceneIndex: 0,
                 scenes: [],
@@ -2023,6 +2059,10 @@ class extends Component
                     this.$wire.on('question-updated', ({ questionId, action }) => {
                         const el = document.getElementById(`question-${questionId}`);
                         if (el) el.remove();
+                    });
+
+                    this.$wire.on('guests-updated', ({ guests }) => {
+                        this.liveGuests = guests;
                     });
 
                     this.$wire.on('template-loaded', ({ scenes, overlays }) => {
