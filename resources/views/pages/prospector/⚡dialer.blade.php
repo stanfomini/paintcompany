@@ -1320,24 +1320,45 @@ class extends Component
             }
         },
 
+        connectionDebug: null,
+
         async connectToConference(conferenceName) {
+            this.connectionDebug = 'Joining conference...';
             // Wait for device to be ready (handles company switching delay)
             if (!this.deviceReady && this.twilioDevice) {
-                for (let i = 0; i < 20; i++) {
-                    await new Promise(r => setTimeout(r, 100));
+                this.connectionDebug = 'Waiting for device...';
+                for (let i = 0; i < 30; i++) {
+                    await new Promise(r => setTimeout(r, 200));
                     if (this.deviceReady) break;
                 }
             }
-            if (!this.twilioDevice || !this.deviceReady) {
-                console.error('Twilio Device not ready, cannot join conference');
+            if (!this.twilioDevice) {
+                this.phoneError = 'Phone not initialized — cannot join call';
+                this.connectionDebug = 'FAIL: no device';
+                return;
+            }
+            if (!this.deviceReady) {
+                this.phoneError = 'Phone not ready — cannot join call';
+                this.connectionDebug = 'FAIL: not registered';
                 return;
             }
             try {
+                this.connectionDebug = 'Connecting WebRTC...';
                 this.activeConnection = await this.twilioDevice.connect({
                     params: { conference: conferenceName }
                 });
-                this.activeConnection.on('disconnect', () => { this.activeConnection = null; });
+                this.connectionDebug = 'Connected';
+                this.activeConnection.on('disconnect', () => {
+                    this.activeConnection = null;
+                    this.connectionDebug = null;
+                });
+                this.activeConnection.on('error', (err) => {
+                    this.phoneError = 'Call error: ' + (err.message || err);
+                    this.connectionDebug = 'ERROR: ' + (err.message || err);
+                });
             } catch (err) {
+                this.phoneError = 'Failed to join call: ' + (err.message || err);
+                this.connectionDebug = 'FAIL: ' + (err.message || err);
                 console.error('Failed to connect to conference:', err);
             }
         },
@@ -1354,6 +1375,11 @@ class extends Component
             if (this.activeConnection) {
                 this.activeConnection.disconnect();
                 this.activeConnection = null;
+            }
+            this.connectionDebug = null;
+            // Also tell the server to end the call if browser connection was broken
+            if ($wire.activeCallId) {
+                $wire.skipContact();
             }
         },
 
@@ -1848,6 +1874,9 @@ class extends Component
                             ></span>
                             <template x-if="phoneError">
                                 <span class="text-xs text-red-500 dark:text-red-400" x-text="phoneError"></span>
+                            </template>
+                            <template x-if="connectionDebug && !phoneError">
+                                <span class="text-xs text-blue-500 dark:text-blue-400" x-text="connectionDebug"></span>
                             </template>
                         </div>
                         <div class="flex items-center gap-2">
