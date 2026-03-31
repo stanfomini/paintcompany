@@ -183,6 +183,25 @@ class extends Component
         return $this->queueContacts->count();
     }
 
+    /**
+     * Return the full queue as a JSON-serializable array.
+     * Called by Alpine on mount and every 30s for background sync.
+     */
+    public function syncQueue(): array
+    {
+        if (! $this->agent) {
+            return [];
+        }
+
+        return app(SmartQueueService::class)->getQueueAsArray(
+            agent: $this->agent,
+            companyId: $this->filterCompanyId,
+            pipelineStageId: null, // Stage filtering is client-side
+            search: $this->queueSearch ?: null,
+            limit: 50,
+        );
+    }
+
     #[Computed]
     public function dispositions(): array
     {
@@ -1105,6 +1124,33 @@ class extends Component
         showCallbackPicker: false,
         showScript: true,
 
+        // Smart Queue state
+        queueItems: [],
+        queueFilter: 'all',
+        syncInterval: null,
+
+        async loadQueue() {
+            this.queueItems = await $wire.syncQueue();
+        },
+
+        get filteredQueue() {
+            if (this.queueFilter === 'all') return this.queueItems;
+            return this.queueItems.filter(c => String(c.pipeline_stage_id) === String(this.queueFilter));
+        },
+
+        get stageCounts() {
+            const counts = { all: this.queueItems.length };
+            this.queueItems.forEach(c => {
+                const key = String(c.pipeline_stage_id);
+                counts[key] = (counts[key] || 0) + 1;
+            });
+            return counts;
+        },
+
+        removeFromQueue(contactId) {
+            this.queueItems = this.queueItems.filter(c => c.id !== contactId);
+        },
+
         startTimer() {
             this.callTimer = 0;
             this.timerInterval = setInterval(() => { this.callTimer++ }, 1000);
@@ -1187,6 +1233,16 @@ class extends Component
                 this.connectToConference(conferenceName);
             });
 
+            // Load initial queue
+            this.loadQueue();
+
+            // Background sync every 30 seconds
+            this.syncInterval = setInterval(() => { this.loadQueue(); }, 30000);
+
+            // Re-fetch queue when server-side filters change
+            $watch('$wire.filterCompanyId', () => { this.loadQueue(); });
+            $watch('$wire.queueSearch', () => { this.loadQueue(); });
+
             if (typeof Echo !== 'undefined' && $wire.agentId) {
                 Echo.private('prospector.agent.' + $wire.agentId)
                     .listen('.dialer.call.ringing', (e) => {
@@ -1230,10 +1286,15 @@ class extends Component
                                 });
                             }
 
-                            $wire.$refresh();
+                            this.loadQueue();
                         })
                         .listen('.queue.updated', (e) => {
-                            $wire.$refresh();
+                            this.loadQueue();
+                        })
+                        .listen('.queue.item.claimed', (e) => {
+                            if (e.claimed_by_agent_id !== $wire.agentId) {
+                                this.removeFromQueue(e.contact_id);
+                            }
                         });
 
                     if ('Notification' in window && Notification.permission === 'default') {
@@ -1246,6 +1307,10 @@ class extends Component
         destroy() {
             this.stopTimer();
             this.hangUp();
+            if (this.syncInterval) {
+                clearInterval(this.syncInterval);
+                this.syncInterval = null;
+            }
             if (this.twilioDevice) {
                 this.twilioDevice.unregister();
                 this.twilioDevice.destroy();
@@ -1267,79 +1332,106 @@ class extends Component
                         <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
                     @endforeach
                 </flux:select>
-                <flux:select wire:model.live="filterStageId" size="sm" placeholder="All Stages" class="w-40">
-                    @foreach ($this->pipelineStages as $stage)
-                        <flux:select.option value="{{ $stage->id }}">{{ $stage->pipeline->name }}: {{ $stage->name }}</flux:select.option>
-                    @endforeach
-                </flux:select>
                 <flux:input wire:model.live.debounce.300ms="queueSearch" size="sm" placeholder="Search..." class="w-48" icon="magnifying-glass" />
-                <span class="ml-auto text-xs text-zinc-500">{{ $this->queueContacts->count() }} in queue</span>
+                <span class="ml-auto text-xs text-zinc-500"><span x-text="queueItems.length"></span> in queue</span>
             </div>
 
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- LIVE QUEUE BAR (Horizontal, scrollable)                            --}}
+    {{-- STAGE FILTER TABS                                                  --}}
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-            <div class="flex items-center gap-3 px-4 py-2">
-                <div class="flex shrink-0 items-center gap-2">
-                    <flux:badge size="sm" color="zinc">Queue ({{ $this->queuedCount }})</flux:badge>
-                </div>
+            <div class="flex items-center gap-1 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700 overflow-x-auto">
+                <button
+                    type="button"
+                    x-on:click="queueFilter = 'all'"
+                    :class="queueFilter === 'all'
+                        ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                        : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'"
+                    class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium transition"
+                >
+                    All
+                    <span class="rounded-full bg-white/20 px-1.5 text-[10px]" x-text="stageCounts.all || 0"></span>
+                </button>
+                @foreach ($this->pipelineStages as $stage)
+                    <button
+                        type="button"
+                        x-on:click="queueFilter = '{{ $stage->id }}'"
+                        :class="queueFilter === '{{ $stage->id }}'
+                            ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900'
+                            : 'bg-zinc-100 text-zinc-700 hover:bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-600'"
+                        class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium transition"
+                    >
+                        {{ $stage->name }}
+                        <span class="rounded-full bg-white/20 px-1.5 text-[10px]" x-text="stageCounts['{{ $stage->id }}'] || 0"></span>
+                    </button>
+                @endforeach
+            </div>
 
-                <div class="flex flex-1 gap-2 overflow-x-auto py-1">
-                    @foreach ($this->queueContacts->take(20) as $contact)
-                        @php
-                            $isPriority = ($contact->queue_priority ?? 5) <= 3;
-                            $isActive = ($activeContact && ($activeContact['id'] ?? null) === $contact->id)
-                                || $previewContactId === $contact->id;
-                            $contactedToday = $contact->wasContactedToday();
-                            $followUp = $contact->follow_up_at;
-                            $isNew = $contact->created_at?->gt(now()->subMinutes(5));
-                            $borderClass = 'border-zinc-200 dark:border-zinc-600';
-                            if ($isActive) {
-                                $borderClass = 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20';
-                            } elseif ($isPriority) {
-                                $borderClass = 'bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700 ring-1 ring-red-400';
-                            } elseif ($contactedToday) {
-                                $borderClass = 'border-green-400 dark:border-green-600';
-                            } elseif ($followUp && $followUp->isPast()) {
-                                $borderClass = 'border-red-400 dark:border-red-600';
-                            } elseif ($followUp && $followUp->isToday()) {
-                                $borderClass = 'border-amber-400 dark:border-amber-600 animate-pulse';
-                            }
-                        @endphp
-                        <button
-                            type="button"
-                            wire:click="previewContact({{ $contact->id }})"
-                            class="relative flex shrink-0 items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-700/50 {{ $borderClass }}"
-                        >
-                            @if ($isPriority)
-                                @php
-                                    $priorityLabel = match((int) ($contact->queue_priority ?? 5)) {
-                                        1 => 'CALL',
-                                        2 => 'SMS',
-                                        3 => 'MISSED',
-                                        default => 'HOT',
-                                    };
-                                @endphp
-                                <span class="absolute -right-1 -top-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white">{{ $priorityLabel }}</span>
-                            @elseif ($isNew)
-                                <span class="absolute -right-1 -top-1 rounded bg-blue-600 px-1 text-[9px] font-bold text-white">NEW</span>
-                            @endif
-                            <div>
-                                <div class="max-w-[120px] truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">{{ $contact->getFullName() }}</div>
-                                <div class="max-w-[120px] truncate text-[10px] text-zinc-500">{{ $contact->company?->name ?? '' }}</div>
-                            </div>
-                        </button>
-                    @endforeach
-
-                    @if ($this->queuedCount > 20)
-                        <div class="flex shrink-0 items-center px-2 text-xs text-zinc-400">
-                            +{{ $this->queuedCount - 20 }} more
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+    {{-- SMART QUEUE (Vertical, Alpine-driven)                              --}}
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+            <div class="max-h-[360px] overflow-y-auto divide-y divide-zinc-100 dark:divide-zinc-700/50">
+                <template x-for="contact in filteredQueue" :key="contact.id">
+                    <button
+                        type="button"
+                        x-on:click="$wire.previewContact(contact.id)"
+                        :class="{
+                            'bg-blue-50 dark:bg-blue-900/20 border-l-2 border-l-blue-500': contact.id === $wire.previewContactId,
+                            'bg-red-50/50 dark:bg-red-900/10': contact.queue_priority <= 2 && contact.id !== $wire.previewContactId,
+                            'hover:bg-zinc-50 dark:hover:bg-zinc-700/50': contact.id !== $wire.previewContactId,
+                        }"
+                        class="flex w-full items-center gap-3 px-3 py-2 text-left transition"
+                    >
+                        {{-- Priority badge --}}
+                        <div class="flex w-16 shrink-0 justify-center">
+                            <template x-if="contact.queue_priority === 1">
+                                <span class="inline-flex items-center rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">CALL</span>
+                            </template>
+                            <template x-if="contact.queue_priority === 2">
+                                <span class="inline-flex items-center rounded bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">NEW</span>
+                            </template>
+                            <template x-if="contact.queue_priority === 3">
+                                <span class="inline-flex items-center rounded bg-blue-500 px-1.5 py-0.5 text-[10px] font-bold text-white">SMS</span>
+                            </template>
+                            <template x-if="contact.queue_priority === 4">
+                                <span class="inline-flex items-center rounded bg-orange-500 px-1.5 py-0.5 text-[10px] font-bold text-white">MISSED</span>
+                            </template>
+                            <template x-if="contact.queue_priority === 5">
+                                <span class="inline-flex items-center rounded bg-purple-500 px-1.5 py-0.5 text-[10px] font-bold text-white">CALLBACK</span>
+                            </template>
+                            <template x-if="contact.queue_priority >= 6">
+                                <span class="text-[10px] text-zinc-400" x-text="contact.last_contacted_at ? new Date(contact.last_contacted_at).toLocaleDateString() : 'new'"></span>
+                            </template>
                         </div>
-                    @endif
-                </div>
 
+                        {{-- Contact info --}}
+                        <div class="min-w-0 flex-1">
+                            <div class="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100" x-text="contact.name"></div>
+                            <div class="flex items-center gap-2 text-xs text-zinc-500">
+                                <span x-text="contact.phone"></span>
+                                <span>&middot;</span>
+                                <span x-text="contact.company_name"></span>
+                            </div>
+                        </div>
+
+                        {{-- Stage pill --}}
+                        <span class="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400" x-text="contact.pipeline_stage_name"></span>
+                    </button>
+                </template>
+
+                <template x-if="filteredQueue.length === 0">
+                    <div class="px-4 py-8 text-center text-sm text-zinc-400">
+                        No contacts in queue
+                    </div>
+                </template>
+            </div>
+
+            {{-- Queue footer with dial next --}}
+            <div class="flex items-center justify-between border-t border-zinc-200 px-3 py-2 dark:border-zinc-700">
+                <span class="text-xs text-zinc-500">
+                    <span x-text="filteredQueue.length"></span> contacts
+                </span>
                 @if ($agentStatus === 'available' && $callStatus === 'idle' && ! $showDisposition)
-                    <flux:button size="xs" variant="primary" icon="phone-arrow-up-right" wire:click="dialNext" class="shrink-0">
+                    <flux:button size="xs" variant="primary" icon="phone-arrow-up-right" wire:click="dialNext">
                         Dial Next
                     </flux:button>
                 @endif
