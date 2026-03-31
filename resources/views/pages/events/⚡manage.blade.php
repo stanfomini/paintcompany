@@ -120,11 +120,14 @@ class extends Component
             return;
         }
 
+        // Reset any live guests back to connected so they can be re-brought-on after redirect
+        $this->event->guests()->where('status', 'live')->update(['status' => 'connected']);
+
         $liveEventService = app(LiveEventService::class);
         $liveEventService->goLive($this->event);
 
-        // Redirect to force a clean page load — Livewire's DOM morph can't handle
-        // the full template switch from pre-live to live state (different Alpine components)
+        // Redirect to force a clean page load — the live template is different from setup.
+        // Guests will need to be brought on again after the page reloads.
         return $this->redirect(route('events.manage', $this->event), navigate: false);
     }
 
@@ -2276,6 +2279,18 @@ class extends Component
 
                     this.connected = true;
                     console.log('[Studio] Setup complete — ready to broadcast');
+
+                    // Auto-bring-on any connected guests after page load
+                    // (guests were connected before goLive redirect but need to be re-signaled)
+                    setTimeout(() => {
+                        const connectedGuests = this.liveGuests.filter(g => g.status === 'connected');
+                        if (connectedGuests.length > 0) {
+                            console.log('[Studio] Auto-bringing on connected guests:', connectedGuests.map(g => g.name));
+                            connectedGuests.forEach(g => {
+                                this.$wire.bringGuestOn(g.id);
+                            });
+                        }
+                    }, 2000); // Wait 2s for PeerManager and Echo channel to fully establish
                 },
 
                 /**
@@ -2425,9 +2440,22 @@ class extends Component
 
                 async toggleAudio() {
                     this.audioEnabled = !this.audioEnabled;
-                    // Toggle the raw audio track directly (not LiveKit's managed mic)
+                    // Toggle the raw audio track
                     if (hostAudioTrack) {
                         hostAudioTrack.enabled = this.audioEnabled;
+                    }
+                    // Also mute/unmute in LiveKit so viewers don't hear it
+                    if (room && room.localParticipant) {
+                        const audioPubs = Array.from(room.localParticipant.audioTrackPublications.values());
+                        for (const pub of audioPubs) {
+                            if (pub.track) {
+                                if (this.audioEnabled) {
+                                    pub.unmute();
+                                } else {
+                                    pub.mute();
+                                }
+                            }
+                        }
                     }
                 },
 
