@@ -132,6 +132,86 @@ test('grantPublish uses guest getLivekitIdentity for identity', function () {
     $service->grantPublish($event, $guest);
 });
 
+// ============================================================
+// Token Generation Verification
+// ============================================================
+
+test('guest token has canPublish false by default', function () {
+    config([
+        'services.livekit.url' => 'https://livekit.test',
+        'services.livekit.api_key' => 'test-api-key',
+        'services.livekit.api_secret' => 'test-secret-key-that-is-long-enough',
+    ]);
+
+    $event = LiveEvent::factory()->live()->create();
+    $guest = LiveEventGuest::factory()->create([
+        'live_event_id' => $event->id,
+        'livekit_identity' => 'guest-test-1',
+    ]);
+
+    $service = app(LiveKitService::class);
+    $jwt = $service->generateGuestToken($event, $guest);
+
+    $parts = explode('.', $jwt);
+    $payload = json_decode(base64_decode($parts[1]), true);
+    $videoGrant = $payload['video'] ?? [];
+
+    expect($videoGrant['roomJoin'])->toBeTrue()
+        ->and($videoGrant['room'])->toBe($event->livekit_room_name)
+        ->and($videoGrant['canPublish'])->toBeFalse()
+        ->and($videoGrant['canSubscribe'])->toBeTrue();
+});
+
+test('host token has canPublish true', function () {
+    config([
+        'services.livekit.url' => 'https://livekit.test',
+        'services.livekit.api_key' => 'test-api-key',
+        'services.livekit.api_secret' => 'test-secret-key-that-is-long-enough',
+    ]);
+
+    $event = LiveEvent::factory()->live()->create();
+    $user = \App\Models\User::factory()->internal()->create();
+
+    $service = app(LiveKitService::class);
+    $jwt = $service->generateHostToken($event, $user);
+
+    $parts = explode('.', $jwt);
+    $payload = json_decode(base64_decode($parts[1]), true);
+    $videoGrant = $payload['video'] ?? [];
+
+    expect($videoGrant['roomJoin'])->toBeTrue()
+        ->and($videoGrant['room'])->toBe($event->livekit_room_name)
+        ->and($videoGrant['canPublish'])->toBeTrue()
+        ->and($videoGrant['canSubscribe'])->toBeTrue();
+});
+
+test('viewer token has canPublish false and canSubscribe true', function () {
+    config([
+        'services.livekit.url' => 'https://livekit.test',
+        'services.livekit.api_key' => 'test-api-key',
+        'services.livekit.api_secret' => 'test-secret-key-that-is-long-enough',
+    ]);
+
+    $event = LiveEvent::factory()->live()->create();
+
+    $service = app(LiveKitService::class);
+    $jwt = $service->generateViewerToken($event, 'Test Viewer', userId: 42);
+
+    $parts = explode('.', $jwt);
+    $payload = json_decode(base64_decode($parts[1]), true);
+    $videoGrant = $payload['video'] ?? [];
+
+    expect($videoGrant['roomJoin'])->toBeTrue()
+        ->and($videoGrant['room'])->toBe($event->livekit_room_name)
+        ->and($videoGrant['canPublish'])->toBeFalse()
+        ->and($videoGrant['canSubscribe'])->toBeTrue()
+        ->and($payload['sub'])->toBe('viewer-42');
+});
+
+// ============================================================
+// Logging
+// ============================================================
+
 test('updateParticipantPermissions logs the permission change', function () {
     $mockRoomClient = Mockery::mock(RoomServiceClient::class);
     $mockRoomClient->shouldReceive('updateParticipant')->once();
