@@ -252,7 +252,7 @@ class LiveKitService
     /**
      * Create a RoomServiceClient instance with config credentials.
      */
-    private function getRoomClient(): RoomServiceClient
+    protected function getRoomClient(): RoomServiceClient
     {
         return new RoomServiceClient(
             $this->url,
