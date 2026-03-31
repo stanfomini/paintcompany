@@ -81,7 +81,7 @@ class PhoneNumberService
             $this->demoteExistingMain($company, $number);
         }
 
-        return DB::transaction(function () use ($number, $company, $role, $callerIdOverride) {
+        $result = DB::transaction(function () use ($number, $company, $role, $callerIdOverride) {
             $number->update([
                 'company_id' => $company->id,
                 'role' => $role,
@@ -103,6 +103,18 @@ class PhoneNumberService
 
             return $number->refresh();
         });
+
+        // Auto-configure Twilio webhooks for the newly assigned number
+        try {
+            $this->configureWebhooks($result);
+        } catch (\Exception $e) {
+            Log::warning('Auto-webhook config failed on assign', [
+                'phone_number_id' => $result->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        return $result;
     }
 
     /**
@@ -524,6 +536,118 @@ class PhoneNumberService
                 'caller_id_shadow' => $companyNumbers->where('role', 'caller_id_shadow')->values(),
             ];
         })->values();
+    }
+
+    /**
+     * Get the webhook URLs that Prospector numbers should point to.
+     *
+     * @return array{voiceUrl: string, voiceMethod: string, smsUrl: string, smsMethod: string, statusCallback: string, statusCallbackMethod: string}
+     */
+    public function getWebhookUrls(): array
+    {
+        return [
+            'voiceUrl' => route('prospector.webhook.twilio.voice.inbound'),
+            'voiceMethod' => 'POST',
+            'smsUrl' => route('prospector.webhook.twilio.sms.incoming'),
+            'smsMethod' => 'POST',
+            'statusCallback' => route('prospector.webhook.twilio.voice.status'),
+            'statusCallbackMethod' => 'POST',
+        ];
+    }
+
+    /**
+     * Configure Twilio webhook URLs on a single phone number.
+     *
+     * Sets voiceUrl, smsUrl, and statusCallback to point to Prospector's endpoints.
+     *
+     * @return array{phone_number: string, status: string, error?: string}
+     */
+    public function configureWebhooks(PhoneNumber $number): array
+    {
+        if (! $number->twilio_sid || ! $number->is_active) {
+            return [
+                'phone_number' => $number->phone_number,
+                'status' => 'skipped',
+                'error' => 'No Twilio SID or number inactive',
+            ];
+        }
+
+        $number->load('twilioAccount');
+        $account = $number->twilioAccount;
+
+        if (! $account) {
+            return [
+                'phone_number' => $number->phone_number,
+                'status' => 'error',
+                'error' => 'No Twilio account associated',
+            ];
+        }
+
+        try {
+            $client = $account->getClient();
+            $urls = $this->getWebhookUrls();
+
+            $client->incomingPhoneNumbers($number->twilio_sid)->update([
+                'voiceUrl' => $urls['voiceUrl'],
+                'voiceMethod' => $urls['voiceMethod'],
+                'smsUrl' => $urls['smsUrl'],
+                'smsMethod' => $urls['smsMethod'],
+                'statusCallback' => $urls['statusCallback'],
+                'statusCallbackMethod' => $urls['statusCallbackMethod'],
+            ]);
+
+            Log::info('Configured webhooks on Twilio number', [
+                'phone_number_id' => $number->id,
+                'phone_number' => $number->phone_number,
+                'twilio_sid' => $number->twilio_sid,
+            ]);
+
+            return [
+                'phone_number' => $number->phone_number,
+                'status' => 'configured',
+            ];
+        } catch (\Exception $e) {
+            Log::error('Failed to configure webhooks on Twilio number', [
+                'phone_number_id' => $number->id,
+                'twilio_sid' => $number->twilio_sid,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'phone_number' => $number->phone_number,
+                'status' => 'error',
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
+     * Configure webhooks on all active numbers for a company.
+     *
+     * @param  bool  $dryRun  If true, returns what would be configured without calling Twilio
+     * @return array<int, array{phone_number: string, status: string, error?: string}>
+     */
+    public function configureWebhooksForCompany(Company $company, bool $dryRun = false): array
+    {
+        $numbers = PhoneNumber::where('company_id', $company->id)
+            ->where('is_active', true)
+            ->whereNotNull('twilio_sid')
+            ->get();
+
+        $results = [];
+
+        foreach ($numbers as $number) {
+            if ($dryRun) {
+                $results[] = [
+                    'phone_number' => $number->phone_number,
+                    'status' => 'would_configure',
+                ];
+            } else {
+                $results[] = $this->configureWebhooks($number);
+            }
+        }
+
+        return $results;
     }
 
     /**
