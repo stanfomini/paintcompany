@@ -68,6 +68,72 @@ class extends Component
         return app(PhoneNumberService::class)->getWebhookUrls();
     }
 
+    #[Computed]
+    public function messagingServices(): \Illuminate\Support\Collection
+    {
+        return MessagingService::with(['twilioAccount', 'company'])
+            ->orderBy('friendly_name')
+            ->get();
+    }
+
+    #[Computed]
+    public function companies(): \Illuminate\Support\Collection
+    {
+        return Company::where('is_active', true)->orderBy('name')->get();
+    }
+
+    public function openCreateServiceModal(): void
+    {
+        $this->serviceName = '';
+        $this->serviceAccountId = null;
+        $this->serviceCompanyId = null;
+        $this->showCreateServiceModal = true;
+    }
+
+    public function closeCreateServiceModal(): void
+    {
+        $this->showCreateServiceModal = false;
+        $this->serviceName = '';
+        $this->serviceAccountId = null;
+        $this->serviceCompanyId = null;
+    }
+
+    public function createMessagingService(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $this->validate([
+            'serviceName' => ['required', 'string', 'max:100'],
+            'serviceAccountId' => ['required', 'exists:prospector_twilio_accounts,id'],
+            'serviceCompanyId' => ['nullable', 'exists:prospector_companies,id'],
+        ]);
+
+        try {
+            $account = TwilioAccount::findOrFail($this->serviceAccountId);
+            $service = app(TwilioComplianceService::class);
+            $service->createMessagingService($account, $this->serviceName, $this->serviceCompanyId);
+            $this->closeCreateServiceModal();
+            unset($this->messagingServices);
+        } catch (\Throwable $e) {
+            session()->flash('error', __('Failed to create messaging service: ') . $e->getMessage());
+            $this->closeCreateServiceModal();
+        }
+    }
+
+    public function refreshComplianceStatus(int $serviceId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $messagingService = MessagingService::findOrFail($serviceId);
+        $service = app(TwilioComplianceService::class);
+        $service->refreshStatus($messagingService);
+        unset($this->messagingServices);
+    }
+
     public function openAddModal(): void
     {
         $this->resetForm();
@@ -269,7 +335,6 @@ class extends Component
         </div>
 
         <div class="flex items-center gap-4">
-            {{-- Twilio Connection Status --}}
             @php
                 $hasActiveAccount = $this->accounts->contains(fn ($a) => $a->is_active);
             @endphp
@@ -279,10 +344,6 @@ class extends Component
                     {{ $hasActiveAccount ? __('Twilio Connected') : __('No Active Account') }}
                 </span>
             </div>
-
-            <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
-                {{ __('Add Account') }}
-            </flux:button>
         </div>
     </div>
 
@@ -292,166 +353,307 @@ class extends Component
         </flux:callout>
     @endif
 
-    {{-- Sync Results Banner --}}
-    @if ($syncResults && $syncingAccountId)
-        <div class="mb-4">
-            @if (isset($syncResults['error']))
-                <flux:callout color="red" icon="exclamation-triangle">
-                    <flux:callout.heading>{{ __('Sync Failed') }}</flux:callout.heading>
-                    <flux:callout.text>{{ $syncResults['error'] }}</flux:callout.text>
-                </flux:callout>
-            @else
-                <flux:callout color="green" icon="check-circle">
-                    <flux:callout.heading>{{ __('Sync Complete') }}</flux:callout.heading>
-                    <flux:callout.text>
-                        {{ __(':created created, :updated updated, :removed removed', [
-                            'created' => $syncResults['created'] ?? 0,
-                            'updated' => $syncResults['updated'] ?? 0,
-                            'removed' => $syncResults['removed'] ?? 0,
-                        ]) }}
-                    </flux:callout.text>
-                </flux:callout>
-            @endif
-            <div class="mt-2">
-                <flux:button size="sm" variant="ghost" wire:click="dismissSyncResults">{{ __('Dismiss') }}</flux:button>
-            </div>
-        </div>
-    @endif
+    {{-- Tabs --}}
+    <div class="mb-6 flex items-center gap-1 border-b border-zinc-200 dark:border-zinc-700">
+        <button
+            wire:click="$set('activeTab', 'accounts')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'accounts',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'accounts',
+            ])
+        >
+            {{ __('Twilio Accounts') }}
+        </button>
+        <button
+            wire:click="$set('activeTab', 'compliance')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'compliance',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'compliance',
+            ])
+        >
+            {{ __('A2P Compliance') }}
+        </button>
+        <button
+            wire:click="$set('activeTab', 'webhooks')"
+            @class([
+                'px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+                'border-blue-500 text-blue-600 dark:text-blue-400' => $activeTab === 'webhooks',
+                'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200' => $activeTab !== 'webhooks',
+            ])
+        >
+            {{ __('Webhook URLs') }}
+        </button>
+    </div>
 
-    {{-- Test Connection Result Banner --}}
-    @if ($testResult && $testingAccountId)
-        <div class="mb-4">
-            @if ($testResult['success'] ?? false)
-                <flux:callout color="green" icon="check-circle">
-                    <flux:callout.heading>{{ __('Connection Successful') }}</flux:callout.heading>
-                    <flux:callout.text>
-                        {{ __('Account ":name" is :status.', [
-                            'name' => $testResult['friendly_name'] ?? 'Unknown',
-                            'status' => $testResult['status'] ?? 'active',
-                        ]) }}
-                    </flux:callout.text>
-                </flux:callout>
-            @else
-                <flux:callout color="red" icon="exclamation-triangle">
-                    <flux:callout.heading>{{ __('Connection Failed') }}</flux:callout.heading>
-                    <flux:callout.text>{{ $testResult['error'] ?? __('Unknown error') }}</flux:callout.text>
-                </flux:callout>
-            @endif
-            <div class="mt-2">
-                <flux:button size="sm" variant="ghost" wire:click="dismissTestResult">{{ __('Dismiss') }}</flux:button>
-            </div>
-        </div>
-    @endif
-
-    {{-- Accounts list --}}
-    @if ($this->accounts->isEmpty())
-        <div class="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-800">
-            <flux:icon name="phone" class="mx-auto mb-3 size-12 text-zinc-400" />
-            <flux:heading size="lg">{{ __('No Twilio accounts connected') }}</flux:heading>
-            <flux:text class="mt-1">{{ __('Add a Twilio account to start managing phone numbers.') }}</flux:text>
-            <div class="mt-4">
-                <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
-                    {{ __('Add Account') }}
-                </flux:button>
-            </div>
-        </div>
-    @else
-        <div class="space-y-3">
-            @foreach ($this->accounts as $account)
-                <div
-                    wire:key="acct-{{ $account->id }}"
-                    @class([
-                        'flex items-center justify-between rounded-lg border p-4 bg-white dark:bg-zinc-800',
-                        'border-zinc-200 dark:border-zinc-700' => $account->is_active,
-                        'border-zinc-200 dark:border-zinc-700 opacity-50' => ! $account->is_active,
-                    ])
-                >
-                    <div class="flex items-center gap-4 min-w-0 flex-1">
-                        <div class="shrink-0 flex size-10 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
-                            <flux:icon name="server" variant="mini" />
-                        </div>
-
-                        <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="font-medium truncate">{{ $account->name }}</span>
-                                @if ($account->is_primary)
-                                    <flux:badge size="sm" color="green">{{ __('Primary') }}</flux:badge>
-                                @endif
-                                @if (! $account->is_active)
-                                    <flux:badge size="sm" color="amber">{{ __('Inactive') }}</flux:badge>
-                                @endif
-                            </div>
-
-                            <div class="mt-1 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
-                                <span class="flex items-center gap-1">
-                                    <flux:icon name="key" variant="micro" />
-                                    {{ $account->getMaskedSid() }}
-                                </span>
-
-                                <span class="flex items-center gap-1">
-                                    <flux:icon name="phone" variant="micro" />
-                                    {{ $account->phone_numbers_count }} {{ __('numbers') }}
-                                </span>
-
-                                @if ($account->last_synced_at)
-                                    <span class="flex items-center gap-1">
-                                        <flux:icon name="arrow-path" variant="micro" />
-                                        {{ __('Synced') }} {{ $account->last_synced_at->diffForHumans() }}
-                                    </span>
-                                @else
-                                    <span class="flex items-center gap-1 text-amber-500">
-                                        <flux:icon name="exclamation-triangle" variant="micro" />
-                                        {{ __('Never synced') }}
-                                    </span>
-                                @endif
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex items-center gap-1 shrink-0">
-                        <flux:button
-                            size="sm"
-                            variant="ghost"
-                            icon="signal"
-                            wire:click="testConnection({{ $account->id }})"
-                            wire:loading.attr="disabled"
-                            wire:target="testConnection({{ $account->id }})"
-                            title="{{ __('Test Connection') }}"
-                        >
-                            <span wire:loading.remove wire:target="testConnection({{ $account->id }})">{{ __('Test') }}</span>
-                            <span wire:loading wire:target="testConnection({{ $account->id }})">{{ __('Testing...') }}</span>
-                        </flux:button>
-
-                        <flux:button
-                            size="sm"
-                            variant="ghost"
-                            icon="arrow-path"
-                            wire:click="syncNumbers({{ $account->id }})"
-                            wire:loading.attr="disabled"
-                            wire:target="syncNumbers({{ $account->id }})"
-                            title="{{ __('Sync Numbers') }}"
-                        >
-                            <span wire:loading.remove wire:target="syncNumbers({{ $account->id }})">{{ __('Sync') }}</span>
-                            <span wire:loading wire:target="syncNumbers({{ $account->id }})">{{ __('Syncing...') }}</span>
-                        </flux:button>
-
-                        <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Edit') }}" />
-                        <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Delete') }}" />
-
-                        <flux:switch
-                            wire:click="toggleActive({{ $account->id }})"
-                            :checked="$account->is_active"
-                            size="sm"
-                        />
-                    </div>
+    {{-- ===================== Twilio Accounts Tab ===================== --}}
+    @if ($activeTab === 'accounts')
+        {{-- Sync Results Banner --}}
+        @if ($syncResults && $syncingAccountId)
+            <div class="mb-4">
+                @if (isset($syncResults['error']))
+                    <flux:callout color="red" icon="exclamation-triangle">
+                        <flux:callout.heading>{{ __('Sync Failed') }}</flux:callout.heading>
+                        <flux:callout.text>{{ $syncResults['error'] }}</flux:callout.text>
+                    </flux:callout>
+                @else
+                    <flux:callout color="green" icon="check-circle">
+                        <flux:callout.heading>{{ __('Sync Complete') }}</flux:callout.heading>
+                        <flux:callout.text>
+                            {{ __(':created created, :updated updated, :removed removed', [
+                                'created' => $syncResults['created'] ?? 0,
+                                'updated' => $syncResults['updated'] ?? 0,
+                                'removed' => $syncResults['removed'] ?? 0,
+                            ]) }}
+                        </flux:callout.text>
+                    </flux:callout>
+                @endif
+                <div class="mt-2">
+                    <flux:button size="sm" variant="ghost" wire:click="dismissSyncResults">{{ __('Dismiss') }}</flux:button>
                 </div>
-            @endforeach
+            </div>
+        @endif
+
+        {{-- Test Connection Result Banner --}}
+        @if ($testResult && $testingAccountId)
+            <div class="mb-4">
+                @if ($testResult['success'] ?? false)
+                    <flux:callout color="green" icon="check-circle">
+                        <flux:callout.heading>{{ __('Connection Successful') }}</flux:callout.heading>
+                        <flux:callout.text>
+                            {{ __('Account ":name" is :status.', [
+                                'name' => $testResult['friendly_name'] ?? 'Unknown',
+                                'status' => $testResult['status'] ?? 'active',
+                            ]) }}
+                        </flux:callout.text>
+                    </flux:callout>
+                @else
+                    <flux:callout color="red" icon="exclamation-triangle">
+                        <flux:callout.heading>{{ __('Connection Failed') }}</flux:callout.heading>
+                        <flux:callout.text>{{ $testResult['error'] ?? __('Unknown error') }}</flux:callout.text>
+                    </flux:callout>
+                @endif
+                <div class="mt-2">
+                    <flux:button size="sm" variant="ghost" wire:click="dismissTestResult">{{ __('Dismiss') }}</flux:button>
+                </div>
+            </div>
+        @endif
+
+        <div class="mb-4 flex justify-end">
+            <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
+                {{ __('Add Account') }}
+            </flux:button>
         </div>
+
+        @if ($this->accounts->isEmpty())
+            <div class="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:icon name="phone" class="mx-auto mb-3 size-12 text-zinc-400" />
+                <flux:heading size="lg">{{ __('No Twilio accounts connected') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Add a Twilio account to start managing phone numbers.') }}</flux:text>
+                <div class="mt-4">
+                    <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
+                        {{ __('Add Account') }}
+                    </flux:button>
+                </div>
+            </div>
+        @else
+            <div class="space-y-3">
+                @foreach ($this->accounts as $account)
+                    <div
+                        wire:key="acct-{{ $account->id }}"
+                        @class([
+                            'flex items-center justify-between rounded-lg border p-4 bg-white dark:bg-zinc-800',
+                            'border-zinc-200 dark:border-zinc-700' => $account->is_active,
+                            'border-zinc-200 dark:border-zinc-700 opacity-50' => ! $account->is_active,
+                        ])
+                    >
+                        <div class="flex items-center gap-4 min-w-0 flex-1">
+                            <div class="shrink-0 flex size-10 items-center justify-center rounded-lg bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">
+                                <flux:icon name="server" variant="mini" />
+                            </div>
+
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-medium truncate">{{ $account->name }}</span>
+                                    @if ($account->is_primary)
+                                        <flux:badge size="sm" color="green">{{ __('Primary') }}</flux:badge>
+                                    @endif
+                                    @if (! $account->is_active)
+                                        <flux:badge size="sm" color="amber">{{ __('Inactive') }}</flux:badge>
+                                    @endif
+                                </div>
+
+                                <div class="mt-1 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+                                    <span class="flex items-center gap-1">
+                                        <flux:icon name="key" variant="micro" />
+                                        {{ $account->getMaskedSid() }}
+                                    </span>
+
+                                    <span class="flex items-center gap-1">
+                                        <flux:icon name="phone" variant="micro" />
+                                        {{ $account->phone_numbers_count }} {{ __('numbers') }}
+                                    </span>
+
+                                    @if ($account->last_synced_at)
+                                        <span class="flex items-center gap-1">
+                                            <flux:icon name="arrow-path" variant="micro" />
+                                            {{ __('Synced') }} {{ $account->last_synced_at->diffForHumans() }}
+                                        </span>
+                                    @else
+                                        <span class="flex items-center gap-1 text-amber-500">
+                                            <flux:icon name="exclamation-triangle" variant="micro" />
+                                            {{ __('Never synced') }}
+                                        </span>
+                                    @endif
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-1 shrink-0">
+                            <flux:button
+                                size="sm"
+                                variant="ghost"
+                                icon="signal"
+                                wire:click="testConnection({{ $account->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="testConnection({{ $account->id }})"
+                                title="{{ __('Test Connection') }}"
+                            >
+                                <span wire:loading.remove wire:target="testConnection({{ $account->id }})">{{ __('Test') }}</span>
+                                <span wire:loading wire:target="testConnection({{ $account->id }})">{{ __('Testing...') }}</span>
+                            </flux:button>
+
+                            <flux:button
+                                size="sm"
+                                variant="ghost"
+                                icon="arrow-path"
+                                wire:click="syncNumbers({{ $account->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="syncNumbers({{ $account->id }})"
+                                title="{{ __('Sync Numbers') }}"
+                            >
+                                <span wire:loading.remove wire:target="syncNumbers({{ $account->id }})">{{ __('Sync') }}</span>
+                                <span wire:loading wire:target="syncNumbers({{ $account->id }})">{{ __('Syncing...') }}</span>
+                            </flux:button>
+
+                            <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Edit') }}" />
+                            <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Delete') }}" />
+
+                            <flux:switch
+                                wire:click="toggleActive({{ $account->id }})"
+                                :checked="$account->is_active"
+                                size="sm"
+                            />
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
     @endif
 
-    {{-- Webhook URLs --}}
-    <div class="mt-8">
-        <flux:heading size="lg" class="mb-3">{{ __('Webhook URLs') }}</flux:heading>
+    {{-- ===================== A2P Compliance Tab ===================== --}}
+    @if ($activeTab === 'compliance')
+        <div class="mb-4 flex items-center justify-between">
+            <div>
+                <flux:text>{{ __('Manage A2P 10DLC brand and campaign registrations for SMS compliance.') }}</flux:text>
+            </div>
+            <flux:button variant="primary" icon="plus" wire:click="openCreateServiceModal" wire:loading.attr="disabled">
+                {{ __('Create Messaging Service') }}
+            </flux:button>
+        </div>
+
+        @if ($this->messagingServices->isEmpty())
+            <div class="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:icon name="shield-check" class="mx-auto mb-3 size-12 text-zinc-400" />
+                <flux:heading size="lg">{{ __('No messaging services') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Create a Twilio Messaging Service to start A2P 10DLC registration.') }}</flux:text>
+                <div class="mt-4">
+                    <flux:button variant="primary" icon="plus" wire:click="openCreateServiceModal" wire:loading.attr="disabled">
+                        {{ __('Create Messaging Service') }}
+                    </flux:button>
+                </div>
+            </div>
+        @else
+            <div class="space-y-3">
+                @foreach ($this->messagingServices as $ms)
+                    <div wire:key="ms-{{ $ms->id }}" class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3 min-w-0 flex-1">
+                                <div class="shrink-0 flex size-10 items-center justify-center rounded-lg bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300">
+                                    <flux:icon name="shield-check" variant="mini" />
+                                </div>
+
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-medium truncate">{{ $ms->friendly_name }}</span>
+                                        @if ($ms->isFullyCompliant())
+                                            <flux:badge size="sm" color="green">{{ __('Compliant') }}</flux:badge>
+                                        @endif
+                                    </div>
+
+                                    <div class="mt-1 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+                                        @if ($ms->twilioAccount)
+                                            <span class="flex items-center gap-1">
+                                                <flux:icon name="server" variant="micro" />
+                                                {{ $ms->twilioAccount->name }}
+                                            </span>
+                                        @endif
+
+                                        @if ($ms->company)
+                                            <span class="flex items-center gap-1">
+                                                <flux:icon name="building-office" variant="micro" />
+                                                {{ $ms->company->name }}
+                                            </span>
+                                        @endif
+
+                                        <span class="flex items-center gap-1">
+                                            <flux:icon name="phone" variant="micro" />
+                                            {{ $ms->phone_number_count }} {{ __('numbers') }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="flex items-center gap-2 shrink-0">
+                                {{-- Brand Status --}}
+                                <div class="text-center">
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{{ __('Brand') }}</div>
+                                    <flux:badge size="sm" :color="$ms->getBrandStatusColor()">
+                                        {{ $ms->brand_status ?? __('Not Started') }}
+                                    </flux:badge>
+                                </div>
+
+                                {{-- Campaign Status --}}
+                                <div class="text-center">
+                                    <div class="text-xs text-zinc-500 dark:text-zinc-400 mb-1">{{ __('Campaign') }}</div>
+                                    <flux:badge size="sm" :color="$ms->getCampaignStatusColor()">
+                                        {{ $ms->campaign_status ?? __('Not Started') }}
+                                    </flux:badge>
+                                </div>
+
+                                <flux:button
+                                    size="sm"
+                                    variant="ghost"
+                                    icon="arrow-path"
+                                    wire:click="refreshComplianceStatus({{ $ms->id }})"
+                                    wire:loading.attr="disabled"
+                                    wire:target="refreshComplianceStatus({{ $ms->id }})"
+                                    title="{{ __('Refresh Status') }}"
+                                >
+                                    <span wire:loading.remove wire:target="refreshComplianceStatus({{ $ms->id }})">{{ __('Refresh') }}</span>
+                                    <span wire:loading wire:target="refreshComplianceStatus({{ $ms->id }})">{{ __('Refreshing...') }}</span>
+                                </flux:button>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    @endif
+
+    {{-- ===================== Webhook URLs Tab ===================== --}}
+    @if ($activeTab === 'webhooks')
         <flux:text class="mb-4">{{ __('These are the endpoints Twilio numbers are configured to send requests to. Webhooks are auto-configured when numbers are assigned.') }}</flux:text>
 
         <div class="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
@@ -473,7 +675,7 @@ class extends Component
                 <flux:badge size="sm" color="zinc">{{ $this->webhookUrls['statusCallbackMethod'] }}</flux:badge>
             </div>
         </div>
-    </div>
+    @endif
 
     {{-- Add/Edit Modal --}}
     <flux:modal wire:model="showModal" variant="flyout" class="w-[420px]">
@@ -538,5 +740,50 @@ class extends Component
                 </flux:button>
             </div>
         </div>
+    </flux:modal>
+
+    {{-- Create Messaging Service Modal --}}
+    <flux:modal wire:model="showCreateServiceModal" variant="flyout" class="w-[420px]">
+        <form wire:submit="createMessagingService" class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Create Messaging Service') }}</flux:heading>
+                <flux:text class="mt-2">{{ __('Create a Twilio Messaging Service for A2P 10DLC registration.') }}</flux:text>
+            </div>
+
+            <flux:input
+                wire:model="serviceName"
+                :label="__('Service Name')"
+                :placeholder="__('e.g., Denver Painting Outreach')"
+                required
+            />
+
+            <div>
+                <flux:label>{{ __('Twilio Account') }}</flux:label>
+                <select wire:model="serviceAccountId" class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 sm:text-sm" required>
+                    <option value="">{{ __('Select account...') }}</option>
+                    @foreach ($this->accounts as $account)
+                        <option value="{{ $account->id }}">{{ $account->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div>
+                <flux:label>{{ __('Company (optional)') }}</flux:label>
+                <select wire:model="serviceCompanyId" class="mt-1 block w-full rounded-md border-zinc-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 sm:text-sm">
+                    <option value="">{{ __('No company') }}</option>
+                    @foreach ($this->companies as $company)
+                        <option value="{{ $company->id }}">{{ $company->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            <div class="flex gap-2">
+                <flux:button type="button" variant="ghost" wire:click="closeCreateServiceModal" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary" class="flex-1" wire:loading.attr="disabled" wire:target="createMessagingService">
+                    <span wire:loading.remove wire:target="createMessagingService">{{ __('Create Service') }}</span>
+                    <span wire:loading wire:target="createMessagingService">{{ __('Creating...') }}</span>
+                </flux:button>
+            </div>
+        </form>
     </flux:modal>
 </div>

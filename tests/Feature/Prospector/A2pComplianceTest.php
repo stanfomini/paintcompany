@@ -84,4 +84,4 @@ it('settings page shows compliance tab', function () {
         ->test('pages::prospector.settings')
         ->assertSee('A2P Compliance')
         ->assertStatus(200);
-})->todo('UI added in Task 5');
+});
