@@ -128,6 +128,7 @@ class extends Component
         return $this->redirect(route('events.manage', $this->event), navigate: false);
     }
 
+    #[Renderless]
     public function endStream(): void
     {
         if ($this->event->status !== 'live') {
@@ -438,12 +439,24 @@ class extends Component
     #[Renderless]
     public function updateScenes(array $scenes): void
     {
+        foreach ($scenes as $scene) {
+            if (! isset($scene['name'], $scene['slots'])) {
+                return;
+            }
+        }
+
         $this->event->update(['scenes' => $scenes]);
     }
 
     #[Renderless]
     public function updateOverlays(array $overlays): void
     {
+        foreach ($overlays as $overlay) {
+            if (! isset($overlay['type'])) {
+                return;
+            }
+        }
+
         $this->event->update(['overlays' => $overlays]);
     }
 
@@ -465,6 +478,13 @@ class extends Component
         $scenesToSave = ! empty($scenes) ? $scenes : $this->event->getScenesOrDefaults();
         $overlaysToSave = ! empty($overlays) ? $overlays : ($this->event->overlays ?? []);
 
+        // Validate scene structure before saving
+        foreach ($scenesToSave as $scene) {
+            if (! isset($scene['name'], $scene['slots'])) {
+                return;
+            }
+        }
+
         $template = LiveEventSceneTemplate::create([
             'user_id' => auth()->id(),
             'name' => $this->templateName,
@@ -482,14 +502,26 @@ class extends Component
     {
         $template = LiveEventSceneTemplate::where('user_id', auth()->id())->findOrFail($templateId);
 
-        $this->event->update([
-            'scenes' => $template->scenes,
-            'overlays' => $template->overlays,
-        ]);
+        // Validate template data before loading
+        $scenes = $template->scenes ?? [];
+        foreach ($scenes as $scene) {
+            if (! isset($scene['name'], $scene['slots'])) {
+                return;
+            }
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($template, $scenes) {
+            $this->event->update([
+                'scenes' => $scenes,
+                'overlays' => $template->overlays,
+                'active_scene_index' => 0,
+            ]);
+        });
+
         $this->event->refresh();
 
         // Push loaded data to Alpine so compositors update
-        $this->dispatch('template-loaded', scenes: $template->scenes, overlays: $template->overlays ?? []);
+        $this->dispatch('template-loaded', scenes: $this->event->getScenesOrDefaults(), overlays: $this->event->overlays ?? []);
     }
 
     #[Renderless]
@@ -603,11 +635,20 @@ class extends Component
     {
         $scenes = $this->event->getScenesOrDefaults();
 
-        if (! isset($scenes[$index])) {
+        if ($index < 0 || $index >= count($scenes)) {
             return;
         }
 
         $this->event->update(['active_scene_index' => $index]);
+
+        try {
+            broadcast(new \App\Events\LiveEventSceneChanged($this->event, $index));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to broadcast scene change', [
+                'event_id' => $this->event->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     #[Renderless]
