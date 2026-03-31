@@ -207,7 +207,7 @@ it('quick-adds a contact from the dialer', function () {
 
     Livewire::actingAs($this->user)
         ->test('pages::prospector.dialer')
-        ->set('selectedCampaignId', $campaign->id)
+        ->set('filterCampaignId', $campaign->id)
         ->call('quickAddContact', 'Jane', '+15551234567');
 
     $contact = Contact::where('first_name', 'Jane')->where('phone', '+15551234567')->first();
@@ -286,7 +286,7 @@ it('loads active script for campaign', function () {
 
     Livewire::actingAs($this->user)
         ->test('pages::prospector.dialer')
-        ->set('selectedCampaignId', $campaign->id)
+        ->set('filterCampaignId', $campaign->id)
         ->assertOk();
 
     $found = CallScript::where('company_id', $this->company->id)

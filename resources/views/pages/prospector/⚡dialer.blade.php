@@ -13,11 +13,13 @@ use App\Models\Prospector\DialerSession;
 use App\Models\Prospector\PipelineStage;
 use App\Models\Prospector\RvmTemplate;
 use App\Models\Prospector\SmsMessage;
+use App\Services\Prospector\AgentStateService;
 use App\Services\Prospector\ConferenceService;
 use App\Services\Prospector\ParallelDialerService;
 use App\Services\Prospector\PowerDialerService;
 use App\Services\Prospector\ProspectorSmsService;
 use App\Services\Prospector\RvmService;
+use App\Services\Prospector\SmartQueueService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -29,10 +31,11 @@ new
 #[Title('Power Dialer')]
 class extends Component
 {
-    // Session state
-    public ?int $selectedCampaignId = null;
-    public ?int $activeSessionId = null;
-    public string $sessionStatus = 'idle'; // idle, active, paused
+    // Queue filters
+    public ?int $filterCompanyId = null;
+    public ?int $filterCampaignId = null;
+    public ?int $filterStageId = null;
+    public string $queueSearch = '';
     public string $dialerMode = 'single'; // single, parallel
 
     // Active call state
@@ -102,42 +105,37 @@ class extends Component
     public function mount(): void
     {
         $user = Auth::user();
+        $agent = Agent::where('user_id', $user->id)->first();
 
-        // Find or create agent record for the first company
-        $company = Company::where('is_active', true)->first();
-
-        if ($company) {
-            $agent = Agent::firstOrCreate(
-                ['user_id' => $user->id, 'company_id' => $company->id],
-                ['status' => 'offline', 'max_concurrent_lines' => 1, 'wrap_up_seconds' => 30],
-            );
-
-            $this->agentId = $agent->id;
-            $this->agentStatus = $agent->status;
-
-            // Check for active session
-            $activeSession = DialerSession::where('agent_id', $agent->id)
-                ->whereIn('status', ['active', 'paused'])
-                ->latest()
-                ->first();
-
-            if ($activeSession) {
-                $this->activeSessionId = $activeSession->id;
-                $this->selectedCampaignId = $activeSession->campaign_id;
-                $this->sessionStatus = $activeSession->status === 'active' ? 'active' : 'paused';
-                $this->dialerMode = $activeSession->mode;
+        if (! $agent) {
+            $company = Company::where('is_active', true)->first();
+            if (! $company) {
+                return;
             }
+            $agent = Agent::create([
+                'user_id' => $user->id,
+                'company_id' => $company->id,
+                'status' => 'available',
+                'max_concurrent_lines' => 1,
+                'wrap_up_seconds' => 30,
+            ]);
+            $agent->companies()->attach($company->id);
+        }
 
-            // Auto-preview first contact so columns aren't empty
-            $firstContact = Contact::where('company_id', $company->id)
-                ->where('do_not_call', false)
-                ->orderByDesc('updated_at')
-                ->first();
+        $this->agentId = $agent->id;
+        $this->agentStatus = $agent->status;
 
-            if ($firstContact) {
-                $this->previewContactId = $firstContact->id;
-                $this->loadContactState($firstContact->id);
-            }
+        if ($agent->status === 'offline') {
+            $agent->goAvailable();
+            $this->agentStatus = 'available';
+        }
+
+        // Auto-preview first queue item
+        $smartQueue = app(SmartQueueService::class);
+        $first = $smartQueue->getNext($agent);
+        if ($first) {
+            $this->previewContactId = $first->contact_id;
+            $this->loadContactState($first->contact_id);
         }
     }
 
@@ -157,68 +155,51 @@ class extends Component
         if (! $this->agent) {
             return collect();
         }
+        $companyIds = $this->agent->getCompanyIds();
 
-        return Campaign::where('company_id', $this->agent->company_id)
+        return Campaign::whereIn('company_id', $companyIds)
             ->where('status', 'active')
             ->withCount(['campaignContacts as queued_count' => fn ($q) => $q->where('status', 'queued')])
+            ->with('company')
+            ->orderBy('priority')
             ->orderBy('name')
             ->get();
     }
 
     #[Computed]
-    public function session(): ?DialerSession
+    public function assignedCompanies(): \Illuminate\Support\Collection
     {
-        if (! $this->activeSessionId) {
-            return null;
+        if (! $this->agent) {
+            return collect();
         }
 
-        return DialerSession::with('campaign', 'agent')->find($this->activeSessionId);
+        return Company::whereIn('id', $this->agent->getCompanyIds())
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
     }
 
     #[Computed]
     public function queueContacts(): \Illuminate\Support\Collection
     {
-        // If a campaign is selected, show campaign queue
-        if ($this->selectedCampaignId) {
-            return CampaignContact::where('campaign_id', $this->selectedCampaignId)
-                ->where('status', 'queued')
-                ->with('contact.company')
-                ->orderBy('sort_order')
-                ->limit(25)
-                ->get()
-                ->map(fn ($cc) => $cc->contact)
-                ->filter();
-        }
-
-        // Otherwise show all company contacts
         if (! $this->agent) {
             return collect();
         }
 
-        return Contact::where('company_id', $this->agent->company_id)
-            ->where('do_not_call', false)
-            ->with('company')
-            ->orderByDesc('updated_at')
-            ->limit(25)
-            ->get();
+        return app(SmartQueueService::class)->getQueue(
+            agent: $this->agent,
+            companyId: $this->filterCompanyId,
+            campaignId: $this->filterCampaignId,
+            pipelineStageId: $this->filterStageId,
+            search: $this->queueSearch ?: null,
+            limit: 50,
+        );
     }
 
     #[Computed]
     public function queuedCount(): int
     {
-        if ($this->selectedCampaignId) {
-            return CampaignContact::where('campaign_id', $this->selectedCampaignId)
-                ->where('status', 'queued')
-                ->count();
-        }
-
-        if (! $this->agent) {
-            return 0;
-        }
-
-        return Contact::where('company_id', $this->agent->company_id)
-            ->where('do_not_call', false)
-            ->count();
+        return $this->queueContacts->count();
     }
 
     #[Computed]
@@ -304,14 +285,14 @@ class extends Component
     #[Computed]
     public function activeScript(): ?CallScript
     {
-        if (! $this->agent || ! $this->selectedCampaignId) {
+        if (! $this->agent || ! $this->filterCampaignId) {
             return null;
         }
 
         return CallScript::where('company_id', $this->agent->company_id)
             ->active()
             ->where(function ($q) {
-                $q->where('campaign_id', $this->selectedCampaignId)
+                $q->where('campaign_id', $this->filterCampaignId)
                     ->orWhereNull('campaign_id');
             })
             ->orderByRaw('campaign_id IS NULL')
@@ -537,10 +518,10 @@ class extends Component
         $call = Call::create([
             'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
             'company_id' => $company->id,
-            'campaign_id' => $this->selectedCampaignId,
+            'campaign_id' => $this->filterCampaignId,
             'agent_id' => $agent->id,
             'contact_id' => $contact->id,
-            'dialer_session_id' => $this->activeSessionId,
+            'dialer_session_id' => null,
             'from_phone_number_id' => $fromNumber->id,
             'from_number' => $fromNumber->getEffectiveCallerId(),
             'to_number' => $contact->phone,
@@ -586,11 +567,11 @@ class extends Component
             'source' => 'manual',
         ]);
 
-        if ($this->selectedCampaignId) {
-            $maxSort = CampaignContact::where('campaign_id', $this->selectedCampaignId)->max('sort_order') ?? 0;
+        if ($this->filterCampaignId) {
+            $maxSort = CampaignContact::where('campaign_id', $this->filterCampaignId)->max('sort_order') ?? 0;
 
             CampaignContact::create([
-                'campaign_id' => $this->selectedCampaignId,
+                'campaign_id' => $this->filterCampaignId,
                 'contact_id' => $contact->id,
                 'status' => 'queued',
                 'sort_order' => $maxSort + 1,
@@ -602,84 +583,21 @@ class extends Component
     }
 
     // ──────────────────────────────────────
-    // Session Controls
+    // Agent Presence
     // ──────────────────────────────────────
 
-    public function startSession(): void
+    public function setAgentStatus(string $status): void
     {
-        if (! $this->selectedCampaignId || ! $this->agentId) {
+        if (! $this->agentId) {
             return;
         }
-
         $agent = Agent::findOrFail($this->agentId);
-        $campaign = Campaign::findOrFail($this->selectedCampaignId);
-
-        // Use campaign's dialer mode and parallel lines settings
-        $mode = $campaign->dialer_mode ?? 'single';
-        $parallelLines = $campaign->parallel_lines ?? 3;
-
-        $service = app(PowerDialerService::class);
-        $session = $service->startSession($agent, $campaign, $mode, $parallelLines);
-
-        $this->activeSessionId = $session->id;
-        $this->sessionStatus = 'active';
-        $this->agentStatus = 'available';
-        $this->dialerMode = $mode;
-
-        $this->clearCaches();
-
-        // Auto-dial first contact(s)
-        $this->dialNext();
-    }
-
-    public function pauseSession(): void
-    {
-        if (! $this->activeSessionId) {
+        $validStatuses = ['available', 'break', 'offline'];
+        if (! in_array($status, $validStatuses)) {
             return;
         }
-
-        $session = DialerSession::findOrFail($this->activeSessionId);
-        $service = app(PowerDialerService::class);
-        $service->pauseSession($session);
-
-        $this->sessionStatus = 'paused';
-        $this->agentStatus = 'break';
-        $this->clearCaches();
-    }
-
-    public function resumeSession(): void
-    {
-        if (! $this->activeSessionId) {
-            return;
-        }
-
-        $session = DialerSession::findOrFail($this->activeSessionId);
-        $service = app(PowerDialerService::class);
-        $service->resumeSession($session);
-
-        $this->sessionStatus = 'active';
-        $this->agentStatus = 'available';
-        $this->clearCaches();
-    }
-
-    public function endSession(): void
-    {
-        if (! $this->activeSessionId) {
-            return;
-        }
-
-        $session = DialerSession::findOrFail($this->activeSessionId);
-        $service = app(PowerDialerService::class);
-        $service->endSession($session);
-
-        $this->activeSessionId = null;
-        $this->sessionStatus = 'idle';
-        $this->agentStatus = 'offline';
-        $this->dialerMode = 'single';
-        $this->parallelLines = [];
-        $this->connectedLineIndex = null;
-        $this->resetCallState();
-        $this->clearCaches();
+        app(AgentStateService::class)->setStatus($agent, $status);
+        $this->agentStatus = $status;
     }
 
     // ──────────────────────────────────────
@@ -688,17 +606,24 @@ class extends Component
 
     public function dialNext(): void
     {
-        if (! $this->activeSessionId) {
+        if (! $this->agentId || $this->agentStatus === 'offline') {
+            return;
+        }
+        $agent = Agent::findOrFail($this->agentId);
+        $service = app(PowerDialerService::class);
+        $call = $service->dialForAgent($agent, $this->filterCampaignId);
+
+        if (! $call) {
             return;
         }
 
-        $session = DialerSession::findOrFail($this->activeSessionId);
-
-        if ($this->dialerMode === 'parallel') {
-            $this->dialNextParallel($session);
-        } else {
-            $this->dialNextSingle($session);
-        }
+        $call->load('contact');
+        $this->setActiveCallFromCall($call);
+        $this->agentStatus = 'ringing';
+        $this->showDisposition = false;
+        $conferenceName = $call->twilio_conference_sid;
+        $this->dispatch('join-conference', conferenceName: $conferenceName);
+        $this->clearCaches();
     }
 
     private function dialNextSingle(DialerSession $session): void
@@ -801,15 +726,6 @@ class extends Component
             }
         }
 
-        // Clear parallel batch lock if in parallel mode
-        if ($this->dialerMode === 'parallel' && $this->activeSessionId) {
-            $session = DialerSession::find($this->activeSessionId);
-
-            if ($session) {
-                app(ParallelDialerService::class)->clearBatchLock($session);
-            }
-        }
-
         $this->resetCallState();
         $this->agentStatus = 'wrap_up';
         $this->dispositionNotes = '';
@@ -818,8 +734,8 @@ class extends Component
         $this->connectedLineIndex = null;
         $this->clearCaches();
 
-        // Auto-advance to next contact
-        if ($this->sessionStatus === 'active') {
+        // Auto-advance to next contact if agent is active
+        if ($this->agentStatus !== 'offline') {
             $this->dialNext();
         }
     }
@@ -1160,7 +1076,7 @@ class extends Component
         unset(
             $this->agent,
             $this->campaigns,
-            $this->session,
+            $this->assignedCompanies,
             $this->queueContacts,
             $this->queuedCount,
             $this->activeCall,
@@ -1371,17 +1287,43 @@ class extends Component
     }"
 >
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- LIVE QUEUE BAR (Horizontal, scrollable)                            --}}
+    {{-- QUEUE FILTER BAR                                                   --}}
     {{-- ════════════════════════════════════════════════════════════════════ --}}
         <div class="mb-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="flex items-center gap-2 px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+                <flux:select wire:model.live="filterCompanyId" size="sm" placeholder="All Companies" class="w-40">
+                    @foreach ($this->assignedCompanies as $company)
+                        <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:select wire:model.live="filterCampaignId" size="sm" placeholder="All Campaigns" class="w-40">
+                    @foreach ($this->campaigns as $campaign)
+                        <flux:select.option value="{{ $campaign->id }}">{{ $campaign->name }} ({{ $campaign->queued_count }})</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:select wire:model.live="filterStageId" size="sm" placeholder="All Stages" class="w-40">
+                    @foreach ($this->pipelineStages as $stage)
+                        <flux:select.option value="{{ $stage->id }}">{{ $stage->pipeline->name }}: {{ $stage->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+                <flux:input wire:model.live.debounce.300ms="queueSearch" size="sm" placeholder="Search..." class="w-48" icon="magnifying-glass" />
+                <span class="ml-auto text-xs text-zinc-500">{{ $this->queueContacts->count() }} in queue</span>
+            </div>
+
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
+    {{-- LIVE QUEUE BAR (Horizontal, scrollable)                            --}}
+    {{-- ════════════════════════════════════════════════════════════════════ --}}
             <div class="flex items-center gap-3 px-4 py-2">
                 <div class="flex shrink-0 items-center gap-2">
                     <flux:badge size="sm" color="zinc">Queue ({{ $this->queuedCount }})</flux:badge>
                 </div>
 
                 <div class="flex flex-1 gap-2 overflow-x-auto py-1">
-                    @foreach ($this->queueContacts->take(20) as $contact)
+                    @foreach ($this->queueContacts->take(20) as $queueItem)
                         @php
+                            $contact = $queueItem->contact;
+                            if (! $contact) continue;
+                            $isPriority = $queueItem->is_priority;
                             $isActive = ($activeContact && ($activeContact['id'] ?? null) === $contact->id)
                                 || $previewContactId === $contact->id;
                             $contactedToday = $contact->wasContactedToday();
@@ -1390,6 +1332,8 @@ class extends Component
                             $borderClass = 'border-zinc-200 dark:border-zinc-600';
                             if ($isActive) {
                                 $borderClass = 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20';
+                            } elseif ($isPriority) {
+                                $borderClass = 'bg-red-50 border-red-300 dark:bg-red-900/20 dark:border-red-700 ring-1 ring-red-400';
                             } elseif ($contactedToday) {
                                 $borderClass = 'border-green-400 dark:border-green-600';
                             } elseif ($followUp && $followUp->isPast()) {
@@ -1403,7 +1347,9 @@ class extends Component
                             wire:click="previewContact({{ $contact->id }})"
                             class="relative flex shrink-0 items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-700/50 {{ $borderClass }}"
                         >
-                            @if ($isNew)
+                            @if ($isPriority)
+                                <span class="absolute -right-1 -top-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white">{{ $queueItem->priority_reason ?? 'HOT' }}</span>
+                            @elseif ($isNew)
                                 <span class="absolute -right-1 -top-1 rounded bg-blue-600 px-1 text-[9px] font-bold text-white">NEW</span>
                             @endif
                             <div>
@@ -1420,9 +1366,9 @@ class extends Component
                     @endif
                 </div>
 
-                @if ($sessionStatus === 'active' && $callStatus === 'idle' && ! $showDisposition)
+                @if ($agentStatus === 'available' && $callStatus === 'idle' && ! $showDisposition)
                     <flux:button size="xs" variant="primary" icon="phone-arrow-up-right" wire:click="dialNext" class="shrink-0">
-                        {{ $dialerMode === 'parallel' ? 'Dial Batch' : 'Dial Next' }}
+                        Dial Next
                     </flux:button>
                 @endif
             </div>
@@ -2104,97 +2050,30 @@ class extends Component
                     </div>
                 @endif
 
-                {{-- Session Stats --}}
-                @if ($this->session)
-                    <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
-                        <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                            <flux:heading size="sm">Session</flux:heading>
-                        </div>
-                        <div class="space-y-2 p-4 text-sm">
-                            <div class="flex justify-between">
-                                <span class="text-zinc-500 dark:text-zinc-400">Campaign</span>
-                                <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $this->session->campaign?->name ?? 'Unknown' }}</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-zinc-500 dark:text-zinc-400">Mode</span>
-                                <span class="font-medium text-zinc-900 dark:text-zinc-100">
-                                    {{ ucfirst($this->session->mode) }}
-                                    @if ($this->session->isParallel())
-                                        <span class="text-xs text-zinc-400">({{ $this->session->parallel_lines }} lines)</span>
-                                    @endif
-                                </span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-zinc-500 dark:text-zinc-400">Attempted</span>
-                                <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $this->session->calls_attempted }}</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-zinc-500 dark:text-zinc-400">Connected</span>
-                                <span class="font-medium text-zinc-900 dark:text-zinc-100">{{ $this->session->calls_connected }}</span>
-                            </div>
-                            <div class="flex justify-between">
-                                <span class="text-zinc-500 dark:text-zinc-400">Talk Time</span>
-                                <span class="font-mono font-medium text-zinc-900 dark:text-zinc-100">
-                                    {{ gmdate('H:i:s', $this->session->total_talk_seconds) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                @endif
             </div>
         </div>
 
         {{-- ════════════════════════════════════════════════════════════════════ --}}
-        {{-- SESSION BAR (Bottom, sticky — always visible)                       --}}
+        {{-- AGENT PRESENCE BAR (Bottom, sticky)                                --}}
         {{-- ════════════════════════════════════════════════════════════════════ --}}
-        <div class="sticky bottom-0 z-10 mt-4 rounded-lg border border-zinc-200 bg-white px-4 py-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-            <div class="flex items-center justify-between gap-4">
-                {{-- Left: Agent status + campaign selector --}}
-                <div class="flex items-center gap-4">
-                    <div class="flex items-center gap-2">
-                        <span class="inline-flex size-2.5 rounded-full {{ $this->getStatusDotClass($agentStatus) }}"></span>
-                        <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">{{ ucfirst(str_replace('_', ' ', $agentStatus)) }}</span>
-                    </div>
-
-                    @if ($dialerMode === 'parallel')
-                        <flux:badge size="sm" color="indigo">Parallel</flux:badge>
-                    @endif
-
-                    {{-- Campaign selector --}}
-                    <select
-                        wire:model="selectedCampaignId"
-                        class="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-                        @if ($sessionStatus !== 'idle') disabled @endif
-                    >
-                        <option value="">Select campaign...</option>
-                        @foreach ($this->campaigns as $campaign)
-                            <option value="{{ $campaign->id }}">
-                                {{ $campaign->name }} ({{ $campaign->queued_count }})
-                            </option>
-                        @endforeach
-                    </select>
-
-                    @if ($this->session)
-                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
-                            {{ $this->session->calls_attempted }} attempted &middot; {{ $this->session->calls_connected }} connected &middot; {{ gmdate('H:i:s', $this->session->total_talk_seconds) }}
-                        </span>
-                    @endif
-                </div>
-
-                {{-- Right: Session controls --}}
-                <div class="flex items-center gap-2">
-                    @if ($sessionStatus === 'idle')
-                        <flux:button size="sm" variant="primary" icon="phone" wire:click="startSession" :disabled="! $selectedCampaignId">
-                            Start Session
-                        </flux:button>
-                    @elseif ($sessionStatus === 'active')
-                        <flux:button size="sm" variant="filled" icon="pause" wire:click="pauseSession">Pause</flux:button>
-                        <flux:button size="sm" variant="danger" icon="stop" wire:click="endSession">Stop</flux:button>
-                    @elseif ($sessionStatus === 'paused')
-                        <flux:button size="sm" variant="primary" icon="play" wire:click="resumeSession">Resume</flux:button>
-                        <flux:button size="sm" variant="danger" icon="stop" wire:click="endSession">Stop</flux:button>
-                    @endif
-                </div>
+        <div class="flex items-center gap-3 border-t border-zinc-200 bg-white px-4 py-2 dark:border-zinc-700 dark:bg-zinc-800 sticky bottom-0 z-10 mt-4 rounded-lg border shadow-lg">
+            <span class="text-xs font-medium text-zinc-500">Status:</span>
+            <div class="flex gap-1">
+                <button wire:click="setAgentStatus('available')"
+                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'available' ? 'bg-green-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
+                    Available
+                </button>
+                <button wire:click="setAgentStatus('break')"
+                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'break' ? 'bg-amber-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
+                    Break
+                </button>
+                <button wire:click="setAgentStatus('offline')"
+                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'offline' ? 'bg-zinc-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
+                    Offline
+                </button>
             </div>
+            @if ($agentStatus === 'on_call')
+                <flux:badge color="red" size="sm">On Call</flux:badge>
+            @endif
         </div>
 </div>
