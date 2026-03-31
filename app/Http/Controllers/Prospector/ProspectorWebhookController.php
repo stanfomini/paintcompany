@@ -62,6 +62,16 @@ class ProspectorWebhookController extends Controller
 
         $updateData = ['status' => $mappedStatus];
 
+        // Handle answered/in-progress — broadcast connected event as fallback
+        // (AMD callback handles this when AMD is enabled, but this covers non-AMD calls)
+        if ($status === 'in-progress' && ! $call->answered_at) {
+            $updateData['answered_at'] = now();
+            $call->update($updateData);
+            broadcast(new DialerCallConnected($call->fresh(), $call->agent_id));
+
+            return response('', 200);
+        }
+
         if (in_array($mappedStatus, ['completed', 'busy', 'no_answer', 'failed', 'canceled'])) {
             $updateData['ended_at'] = now();
 

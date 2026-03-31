@@ -645,12 +645,14 @@ class extends Component
                 $amdService = app(\App\Services\Prospector\AmdService::class);
                 $amdParams = $amdService->getAmdParams();
             }
-            $conferenceService->dialContactIntoConference($conferenceName, $contact, $fromNumber, $amdParams);
+            $callSid = $conferenceService->dialContactIntoConference($conferenceName, $contact, $fromNumber, $amdParams);
+            $call->update(['twilio_call_sid' => $callSid]);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error('Failed to dial contact', [
                 'contact_id' => $contact->id,
                 'error' => $e->getMessage(),
             ]);
+            $call->markFailed();
             $this->resetCallState();
             $this->dispatch('dial-error', message: $e->getMessage());
         }
@@ -1904,7 +1906,10 @@ class extends Component
                                 <div class="mt-2">
                                     <flux:badge color="amber">Ringing...</flux:badge>
                                 </div>
-                                <div class="mt-3">
+                                <div class="mt-3 flex justify-center gap-2">
+                                    <flux:button size="sm" variant="danger" icon="phone-x-mark" x-on:click="hangUp()">
+                                        Hang Up
+                                    </flux:button>
                                     <flux:button size="sm" variant="ghost" icon="forward" wire:click="skipContact">Skip</flux:button>
                                 </div>
                             </div>

@@ -426,10 +426,11 @@ class ConferenceService
     {
         $account = \App\Models\Prospector\TwilioAccount::where('is_primary', true)
             ->where('is_active', true)
-            ->first();
+            ->first()
+            ?? \App\Models\Prospector\TwilioAccount::where('is_active', true)->first();
 
         if (! $account) {
-            throw new RuntimeException('No primary active Twilio account configured.');
+            throw new RuntimeException('No active Twilio account configured.');
         }
 
         return $account->getClient();
