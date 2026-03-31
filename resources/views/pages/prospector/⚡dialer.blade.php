@@ -127,6 +127,17 @@ class extends Component
                 $this->sessionStatus = $activeSession->status === 'active' ? 'active' : 'paused';
                 $this->dialerMode = $activeSession->mode;
             }
+
+            // Auto-preview first contact so columns aren't empty
+            $firstContact = Contact::where('company_id', $company->id)
+                ->where('do_not_call', false)
+                ->orderByDesc('updated_at')
+                ->first();
+
+            if ($firstContact) {
+                $this->previewContactId = $firstContact->id;
+                $this->loadContactState($firstContact->id);
+            }
         }
     }
 
@@ -167,14 +178,27 @@ class extends Component
     #[Computed]
     public function queueContacts(): \Illuminate\Support\Collection
     {
-        if (! $this->selectedCampaignId) {
+        // If a campaign is selected, show campaign queue
+        if ($this->selectedCampaignId) {
+            return CampaignContact::where('campaign_id', $this->selectedCampaignId)
+                ->where('status', 'queued')
+                ->with('contact.company')
+                ->orderBy('sort_order')
+                ->limit(25)
+                ->get()
+                ->map(fn ($cc) => $cc->contact)
+                ->filter();
+        }
+
+        // Otherwise show all company contacts
+        if (! $this->agent) {
             return collect();
         }
 
-        return CampaignContact::where('campaign_id', $this->selectedCampaignId)
-            ->where('status', 'queued')
-            ->with('contact')
-            ->orderBy('sort_order')
+        return Contact::where('company_id', $this->agent->company_id)
+            ->where('do_not_call', false)
+            ->with('company')
+            ->orderByDesc('updated_at')
             ->limit(25)
             ->get();
     }
@@ -182,12 +206,18 @@ class extends Component
     #[Computed]
     public function queuedCount(): int
     {
-        if (! $this->selectedCampaignId) {
+        if ($this->selectedCampaignId) {
+            return CampaignContact::where('campaign_id', $this->selectedCampaignId)
+                ->where('status', 'queued')
+                ->count();
+        }
+
+        if (! $this->agent) {
             return 0;
         }
 
-        return CampaignContact::where('campaign_id', $this->selectedCampaignId)
-            ->where('status', 'queued')
+        return Contact::where('company_id', $this->agent->company_id)
+            ->where('do_not_call', false)
             ->count();
     }
 
@@ -453,18 +483,94 @@ class extends Component
     {
         $number = preg_replace('/[^0-9+]/', '', $this->manualDialNumber);
 
-        if (strlen($number) < 10) {
+        if (strlen($number) < 10 || ! $this->agent) {
             return;
         }
 
-        $contact = Contact::where('phone', 'like', '%' . substr($number, -10))
+        // Find or create contact
+        $contact = Contact::where('company_id', $this->agent->company_id)
+            ->where('phone', 'like', '%' . substr($number, -10))
             ->first();
 
-        if ($contact) {
-            $this->previewContact($contact->id);
+        if (! $contact) {
+            $contact = Contact::create([
+                'company_id' => $this->agent->company_id,
+                'first_name' => 'Manual Dial',
+                'phone' => $number,
+                'source' => 'manual',
+            ]);
         }
 
+        $this->dialContact($contact->id);
         $this->manualDialNumber = '';
+    }
+
+    public function dialContact(int $contactId): void
+    {
+        if (! $this->agent) {
+            return;
+        }
+
+        $contact = Contact::find($contactId);
+
+        if (! $contact) {
+            return;
+        }
+
+        $agent = Agent::findOrFail($this->agentId);
+        $company = $agent->company;
+
+        // Select phone number
+        $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
+
+        try {
+            $fromNumber = $numberService->selectNumber($contact, $company, null);
+        } catch (\RuntimeException $e) {
+            return;
+        }
+
+        // Create conference
+        $conferenceService = app(ConferenceService::class);
+        $conferenceName = 'manual-' . \Illuminate\Support\Str::ulid();
+
+        // Create call record
+        $call = Call::create([
+            'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
+            'company_id' => $company->id,
+            'campaign_id' => $this->selectedCampaignId,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'dialer_session_id' => $this->activeSessionId,
+            'from_phone_number_id' => $fromNumber->id,
+            'from_number' => $fromNumber->getEffectiveCallerId(),
+            'to_number' => $contact->phone,
+            'direction' => 'outbound',
+            'status' => 'ringing',
+            'started_at' => now(),
+            'twilio_conference_sid' => $conferenceName,
+        ]);
+
+        // Set active call state
+        $this->setActiveCallFromCall($call->load('contact'));
+        $this->agentStatus = 'ringing';
+        $this->showDisposition = false;
+
+        // Dispatch the conference dial to Twilio (async — the browser will join via the Alpine event)
+        $this->dispatch('join-conference', conferenceName: $conferenceName);
+
+        // Dial the contact into the conference via Twilio REST API
+        try {
+            $amdParams = [];
+            if (config('prospector.defaults.amd_enabled')) {
+                $amdService = app(\App\Services\Prospector\AmdService::class);
+                $amdParams = $amdService->getAmdParams();
+            }
+            $conferenceService->dialContactIntoConference($conferenceName, $contact, $fromNumber, $amdParams);
+        } catch (\Exception $e) {
+            $this->resetCallState();
+        }
+
+        $this->clearCaches();
     }
 
     public function quickAddContact(string $firstName, string $phone): void
@@ -1189,6 +1295,11 @@ class extends Component
             // Initialize Twilio Voice SDK
             this.initTwilio();
 
+            // Listen for Livewire join-conference dispatch
+            this.$wire.on('join-conference', ({ conferenceName }) => {
+                this.connectToConference(conferenceName);
+            });
+
             if (typeof Echo !== 'undefined' && $wire.agentId) {
                 Echo.private('prospector.agent.' + $wire.agentId)
                     .listen('.dialer.call.ringing', (e) => {
@@ -1269,39 +1380,37 @@ class extends Component
                 </div>
 
                 <div class="flex flex-1 gap-2 overflow-x-auto py-1">
-                    @foreach ($this->queueContacts->take(20) as $entry)
-                        @if ($entry->contact)
-                            @php
-                                $isActive = ($activeContact && ($activeContact['id'] ?? null) === $entry->contact->id)
-                                    || $previewContactId === $entry->contact->id;
-                                $contactedToday = $entry->contact->wasContactedToday();
-                                $followUp = $entry->contact->follow_up_at;
-                                $isNew = $entry->created_at?->gt(now()->subMinutes(5));
-                                $borderClass = 'border-zinc-200 dark:border-zinc-600';
-                                if ($isActive) {
-                                    $borderClass = 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20';
-                                } elseif ($contactedToday) {
-                                    $borderClass = 'border-green-400 dark:border-green-600';
-                                } elseif ($followUp && $followUp->isPast()) {
-                                    $borderClass = 'border-red-400 dark:border-red-600';
-                                } elseif ($followUp && $followUp->isToday()) {
-                                    $borderClass = 'border-amber-400 dark:border-amber-600 animate-pulse';
-                                }
-                            @endphp
-                            <button
-                                type="button"
-                                wire:click="previewContact({{ $entry->contact->id }})"
-                                class="relative flex shrink-0 items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-700/50 {{ $borderClass }}"
-                            >
-                                @if ($isNew)
-                                    <span class="absolute -right-1 -top-1 rounded bg-blue-600 px-1 text-[9px] font-bold text-white">NEW</span>
-                                @endif
-                                <div>
-                                    <div class="max-w-[120px] truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">{{ $entry->contact->getFullName() }}</div>
-                                    <div class="max-w-[120px] truncate text-[10px] text-zinc-500">{{ $entry->contact->company?->name ?? '' }}</div>
-                                </div>
-                            </button>
-                        @endif
+                    @foreach ($this->queueContacts->take(20) as $contact)
+                        @php
+                            $isActive = ($activeContact && ($activeContact['id'] ?? null) === $contact->id)
+                                || $previewContactId === $contact->id;
+                            $contactedToday = $contact->wasContactedToday();
+                            $followUp = $contact->follow_up_at;
+                            $isNew = $contact->created_at?->gt(now()->subMinutes(5));
+                            $borderClass = 'border-zinc-200 dark:border-zinc-600';
+                            if ($isActive) {
+                                $borderClass = 'border-blue-400 dark:border-blue-500 bg-blue-50 dark:bg-blue-900/20';
+                            } elseif ($contactedToday) {
+                                $borderClass = 'border-green-400 dark:border-green-600';
+                            } elseif ($followUp && $followUp->isPast()) {
+                                $borderClass = 'border-red-400 dark:border-red-600';
+                            } elseif ($followUp && $followUp->isToday()) {
+                                $borderClass = 'border-amber-400 dark:border-amber-600 animate-pulse';
+                            }
+                        @endphp
+                        <button
+                            type="button"
+                            wire:click="previewContact({{ $contact->id }})"
+                            class="relative flex shrink-0 items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-700/50 {{ $borderClass }}"
+                        >
+                            @if ($isNew)
+                                <span class="absolute -right-1 -top-1 rounded bg-blue-600 px-1 text-[9px] font-bold text-white">NEW</span>
+                            @endif
+                            <div>
+                                <div class="max-w-[120px] truncate text-xs font-medium text-zinc-900 dark:text-zinc-100">{{ $contact->getFullName() }}</div>
+                                <div class="max-w-[120px] truncate text-[10px] text-zinc-500">{{ $contact->company?->name ?? '' }}</div>
+                            </div>
+                        </button>
                     @endforeach
 
                     @if ($this->queuedCount > 20)
@@ -1365,7 +1474,14 @@ class extends Component
                     {{-- Contact Info --}}
                     <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
                         <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                            <flux:heading size="sm">Contact</flux:heading>
+                            <div class="flex items-center justify-between">
+                                <flux:heading size="sm">Contact</flux:heading>
+                                @if ($callStatus === 'idle')
+                                    <flux:button size="xs" variant="primary" icon="phone" wire:click="dialContact({{ $cd->id }})">
+                                        Call
+                                    </flux:button>
+                                @endif
+                            </div>
                         </div>
                         <div class="space-y-3 p-4">
                             <div class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ $cd->getFullName() }}</div>
