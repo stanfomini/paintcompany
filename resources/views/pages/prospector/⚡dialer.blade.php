@@ -164,6 +164,18 @@ class extends Component
             ->get();
     }
 
+    /**
+     * Return all company IDs the agent is assigned to (for Alpine Echo subscriptions).
+     */
+    public function getAssignedCompanyIds(): array
+    {
+        if (! $this->agent) {
+            return [];
+        }
+
+        return $this->agent->getCompanyIds();
+    }
+
     #[Computed]
     public function queueContacts(): \Illuminate\Support\Collection
     {
@@ -519,16 +531,16 @@ class extends Component
             return;
         }
 
-        $contact = Contact::find($contactId);
+        $contact = Contact::with('company')->find($contactId);
         $template = RvmTemplate::find($templateId);
 
-        if (! $contact || ! $template) {
+        if (! $contact || ! $template || ! $contact->company) {
             return;
         }
 
         try {
             $service = app(RvmService::class);
-            $service->drop($this->agent->company, $contact, $template);
+            $service->drop($contact->company, $contact, $template);
         } catch (\Exception $e) {
             // Error logged by service
         }
@@ -546,15 +558,19 @@ class extends Component
             return;
         }
 
-        // Find or create contact
-        $contact = Contact::where('company_id', $this->agent->company_id)
+        // Use the filtered company if set, otherwise the agent's default
+        $companyId = $this->filterCompanyId ?? $this->agent->company_id;
+        $company = Company::find($companyId) ?? $this->agent->company;
+
+        // Find or create contact under the active company
+        $contact = Contact::where('company_id', $company->id)
             ->where('phone', 'like', '%' . substr($number, -10))
             ->first();
 
         if (! $contact) {
             $intake = app(\App\Services\Prospector\ContactIntakeService::class);
             $result = $intake->findOrCreate(
-                $this->agent->company,
+                $company,
                 $number,
                 ['first_name' => 'Manual Dial', 'source' => 'manual'],
             );
@@ -571,21 +587,23 @@ class extends Component
             return;
         }
 
-        $contact = Contact::find($contactId);
+        $contact = Contact::with('company.twilioAccount')->find($contactId);
 
-        if (! $contact) {
+        if (! $contact || ! $contact->company) {
             return;
         }
 
         $agent = Agent::findOrFail($this->agentId);
-        $company = $agent->company;
+        $company = $contact->company;
 
-        // Select phone number
+        // Select phone number using the CONTACT's company (not the agent's)
         $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
 
         try {
             $fromNumber = $numberService->selectNumber($company, $contact, null);
         } catch (\RuntimeException $e) {
+            $this->dispatch('dial-error', message: $e->getMessage());
+
             return;
         }
 
@@ -613,6 +631,9 @@ class extends Component
         $this->setActiveCallFromCall($call->load('contact'));
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
+
+        // Ensure the Voice SDK is connected to the correct company before joining
+        $this->dispatch('ensure-voice-company', companyId: $company->id);
 
         // Dispatch the conference dial to Twilio (async — the browser will join via the Alpine event)
         $this->dispatch('join-conference', conferenceName: $conferenceName);
@@ -858,18 +879,14 @@ class extends Component
             return;
         }
 
-        $contact = Contact::find($this->smsContactId);
+        $contact = Contact::with('company')->find($this->smsContactId);
 
-        if (! $contact) {
+        if (! $contact || ! $contact->company) {
             return;
         }
 
         $agent = $this->agentId ? Agent::find($this->agentId) : null;
-        $company = $agent?->company ?? Company::where('is_active', true)->first();
-
-        if (! $company) {
-            return;
-        }
+        $company = $contact->company;
 
         try {
             $service = app(ProspectorSmsService::class);
@@ -1199,6 +1216,7 @@ class extends Component
         twilioDevice: null,
         activeConnection: null,
         deviceReady: false,
+        activeVoiceCompanyId: null,
 
         // Stage 4 UI state
         showDtmf: false,
@@ -1253,10 +1271,20 @@ class extends Component
 
         phoneError: null,
 
-        async initTwilio() {
+        async initTwilio(companyId = null) {
             try {
+                // Destroy existing device if re-initializing for a different company
+                if (this.twilioDevice) {
+                    this.deviceReady = false;
+                    this.twilioDevice.destroy();
+                    this.twilioDevice = null;
+                }
+
                 const Device = await window.loadTwilioVoice();
-                const res = await fetch('/prospector/voice/token');
+                const tokenUrl = companyId
+                    ? '/prospector/voice/token?company_id=' + companyId
+                    : '/prospector/voice/token';
+                const res = await fetch(tokenUrl);
                 const data = await res.json();
 
                 if (!res.ok || data.error) {
@@ -1264,6 +1292,8 @@ class extends Component
                     console.error('Phone token error:', this.phoneError);
                     return;
                 }
+
+                this.activeVoiceCompanyId = data.company_id || null;
 
                 this.twilioDevice = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
@@ -1281,7 +1311,7 @@ class extends Component
                 this.twilioDevice.on('incoming', (call) => { call.accept(); this.activeConnection = call; });
 
                 await this.twilioDevice.register();
-                console.log('Twilio Device registered');
+                console.log('Twilio Device registered for company', this.activeVoiceCompanyId);
             } catch (err) {
                 this.phoneError = err.message || 'Failed to connect phone';
                 console.error('Failed to initialize Twilio Device:', err);
@@ -1289,7 +1319,17 @@ class extends Component
         },
 
         async connectToConference(conferenceName) {
-            if (!this.twilioDevice) return;
+            // Wait for device to be ready (handles company switching delay)
+            if (!this.deviceReady && this.twilioDevice) {
+                for (let i = 0; i < 20; i++) {
+                    await new Promise(r => setTimeout(r, 100));
+                    if (this.deviceReady) break;
+                }
+            }
+            if (!this.twilioDevice || !this.deviceReady) {
+                console.error('Twilio Device not ready, cannot join conference');
+                return;
+            }
             try {
                 this.activeConnection = await this.twilioDevice.connect({
                     params: { conference: conferenceName }
@@ -1321,6 +1361,9 @@ class extends Component
             }
         },
 
+        // Track subscribed company channel IDs for cleanup
+        subscribedCompanyIds: [],
+
         init() {
             // Initialize Twilio Voice SDK
             this.initTwilio();
@@ -1339,6 +1382,14 @@ class extends Component
                 setTimeout(() => { this.phoneError = null; }, 10000);
             });
 
+            // When dialContact detects the contact's company differs from the active
+            // Voice SDK company, it dispatches this event to switch credentials first
+            this.$wire.on('ensure-voice-company', async ({ companyId }) => {
+                if (companyId && companyId !== this.activeVoiceCompanyId) {
+                    await this.initTwilio(companyId);
+                }
+            });
+
             // Load initial queue
             this.loadQueue();
 
@@ -1346,7 +1397,13 @@ class extends Component
             this.syncInterval = setInterval(() => { this.loadQueue(); }, 30000);
 
             // Re-fetch queue when server-side filters change
-            $watch('$wire.filterCompanyId', () => { this.loadQueue(); });
+            $watch('$wire.filterCompanyId', (newVal) => {
+                this.loadQueue();
+                // Re-init Voice SDK for the selected company
+                if (newVal && newVal !== this.activeVoiceCompanyId) {
+                    this.initTwilio(newVal);
+                }
+            });
             $watch('$wire.queueSearch', () => { this.loadQueue(); });
 
             if (typeof Echo !== 'undefined' && $wire.agentId) {
@@ -1372,41 +1429,44 @@ class extends Component
                         $wire.onSupervisorJoined(e);
                     });
 
-                const companyId = $wire.agent?.company_id;
-                if (companyId) {
-                    Echo.private('prospector.company.' + companyId)
-                        .listen('.sms.received', (e) => {
-                            $wire.onSmsReceived(e);
-                        })
-                        .listen('.lead.arrived', (e) => {
-                            try {
-                                const audio = new Audio('/sounds/new-lead.wav');
-                                audio.volume = 0.5;
-                                audio.play().catch(() => {});
-                            } catch (err) {}
+                // Subscribe to ALL assigned company channels (not just the agent's FK)
+                $wire.getAssignedCompanyIds().then((companyIds) => {
+                    this.subscribedCompanyIds = companyIds || [];
+                    this.subscribedCompanyIds.forEach((cid) => {
+                        Echo.private('prospector.company.' + cid)
+                            .listen('.sms.received', (e) => {
+                                $wire.onSmsReceived(e);
+                            })
+                            .listen('.lead.arrived', (e) => {
+                                try {
+                                    const audio = new Audio('/sounds/new-lead.wav');
+                                    audio.volume = 0.5;
+                                    audio.play().catch(() => {});
+                                } catch (err) {}
 
-                            if ('Notification' in window && Notification.permission === 'granted') {
-                                new Notification('New Lead!', {
-                                    body: e.contact_name + ' - ' + e.company_name,
-                                    icon: '/favicon.ico',
-                                });
-                            }
+                                if ('Notification' in window && Notification.permission === 'granted') {
+                                    new Notification('New Lead!', {
+                                        body: e.contact_name + ' - ' + e.company_name,
+                                        icon: '/favicon.ico',
+                                    });
+                                }
 
-                            this.loadQueue();
-                        })
-                        .listen('.queue.updated', (e) => {
-                            this.loadQueue();
-                        })
-                        .listen('.queue.item.claimed', (e) => {
-                            if (e.claimed_by_agent_id !== $wire.agentId) {
-                                this.removeFromQueue(e.contact_id);
-                            }
-                        });
+                                this.loadQueue();
+                            })
+                            .listen('.queue.updated', (e) => {
+                                this.loadQueue();
+                            })
+                            .listen('.queue.item.claimed', (e) => {
+                                if (e.claimed_by_agent_id !== $wire.agentId) {
+                                    this.removeFromQueue(e.contact_id);
+                                }
+                            });
+                    });
 
                     if ('Notification' in window && Notification.permission === 'default') {
                         Notification.requestPermission();
                     }
-                }
+                });
             }
         },
 
@@ -1416,6 +1476,12 @@ class extends Component
             if (this.syncInterval) {
                 clearInterval(this.syncInterval);
                 this.syncInterval = null;
+            }
+            // Leave all subscribed company channels
+            if (typeof Echo !== 'undefined') {
+                this.subscribedCompanyIds.forEach((cid) => {
+                    Echo.leave('prospector.company.' + cid);
+                });
             }
             if (this.twilioDevice) {
                 this.twilioDevice.unregister();

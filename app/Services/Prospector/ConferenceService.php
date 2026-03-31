@@ -3,6 +3,7 @@
 namespace App\Services\Prospector;
 
 use App\Models\Prospector\Agent;
+use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
 use App\Models\Prospector\DialerSession;
 use App\Models\Prospector\PhoneNumber;
@@ -20,11 +21,16 @@ class ConferenceService
      * The token includes a VoiceGrant scoped to the TwiML App,
      * allowing the agent to make and receive calls via the JS SDK.
      */
-    public function generateAccessToken(Agent $agent): string
+    public function generateAccessToken(Agent $agent, ?Company $company = null): string
     {
-        $agent->load('company.twilioAccount');
-
-        $twilioAccount = $agent->company->twilioAccount;
+        if ($company) {
+            $company->load('twilioAccount');
+            $twilioAccount = $company->twilioAccount;
+        } else {
+            $agent->load('company.twilioAccount');
+            $twilioAccount = $agent->company->twilioAccount;
+            $company = $agent->company;
+        }
 
         if (! $twilioAccount) {
             throw new RuntimeException(

@@ -33,9 +33,10 @@ it('returns a voice token for authenticated internal user', function () {
         ->getJson(route('prospector.voice.token'));
 
     $response->assertOk()
-        ->assertJsonStructure(['token']);
+        ->assertJsonStructure(['token', 'company_id']);
 
     expect($response->json('token'))->toBeString()->not->toBeEmpty();
+    expect($response->json('company_id'))->toBe($this->company->id);
 });
 
 it('returns 422 when no active company exists for token', function () {

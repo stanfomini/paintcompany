@@ -33,18 +33,47 @@ class TwilioVoiceController extends Controller
      * Generate a Twilio Access Token for the authenticated agent's
      * browser WebRTC connection via the Twilio Voice JS SDK.
      */
-    public function token(): JsonResponse
+    public function token(Request $request): JsonResponse
     {
         $user = Auth::user();
+        $requestedCompanyId = $request->query('company_id');
 
-        // Find a company with fully configured Twilio credentials (API key set)
-        $company = Company::where('is_active', true)
-            ->whereHas('twilioAccount', function ($q) {
-                $q->whereNotNull('api_key_sid')
-                    ->whereNotNull('api_key_secret')
-                    ->where('is_active', true);
-            })
-            ->first();
+        // Credentials can live in the DB (per-account) or fall back to config
+        $hasConfigCredentials = config('prospector.twilio.api_key_sid') && config('prospector.twilio.api_key_secret');
+
+        if ($requestedCompanyId) {
+            // Specific company requested — must have an active Twilio account
+            $company = Company::where('id', $requestedCompanyId)
+                ->where('is_active', true)
+                ->whereHas('twilioAccount', function ($q) use ($hasConfigCredentials) {
+                    $q->where('is_active', true);
+                    if (! $hasConfigCredentials) {
+                        $q->whereNotNull('api_key_sid')->whereNotNull('api_key_secret');
+                    }
+                })
+                ->first();
+
+            if (! $company) {
+                return response()->json([
+                    'error' => 'Requested company does not have Voice SDK credentials configured.',
+                ], 422);
+            }
+        } else {
+            // Find company with DB credentials first, then any with active account (config fallback)
+            $company = Company::where('is_active', true)
+                ->whereHas('twilioAccount', function ($q) {
+                    $q->whereNotNull('api_key_sid')
+                        ->whereNotNull('api_key_secret')
+                        ->where('is_active', true);
+                })
+                ->first();
+
+            if (! $company && $hasConfigCredentials) {
+                $company = Company::where('is_active', true)
+                    ->whereHas('twilioAccount', fn ($q) => $q->where('is_active', true))
+                    ->first();
+            }
+        }
 
         if (! $company) {
             // Fall back to any active company so the agent record still gets created
@@ -71,12 +100,15 @@ class TwilioVoiceController extends Controller
         );
 
         try {
-            $token = $this->conferenceService->generateAccessToken($agent);
+            $token = $this->conferenceService->generateAccessToken($agent, $company);
         } catch (\RuntimeException $e) {
             return response()->json(['error' => $e->getMessage()], 422);
         }
 
-        return response()->json(['token' => $token]);
+        return response()->json([
+            'token' => $token,
+            'company_id' => $company->id,
+        ]);
     }
 
     /**
