@@ -74,8 +74,8 @@ it('processes incoming SMS and matches contact', function () {
     Event::assertDispatched(SmsReceived::class);
 });
 
-it('creates incoming SMS with null contact when no match', function () {
-    Event::fake([SmsReceived::class]);
+it('auto-creates contact when incoming SMS from unknown number', function () {
+    Event::fake([SmsReceived::class, \App\Events\Prospector\NewLeadArrived::class]);
 
     $sms = $this->service->handleIncoming(
         from: '+15551239999',
@@ -83,8 +83,14 @@ it('creates incoming SMS with null contact when no match', function () {
         body: 'Who is this?',
     );
 
-    expect($sms->contact_id)->toBeNull();
+    expect($sms->contact_id)->not->toBeNull();
     expect($sms->direction)->toBe('inbound');
+
+    $contact = \App\Models\Prospector\Contact::find($sms->contact_id);
+    expect($contact)->not->toBeNull();
+    expect($contact->phone)->toBe('+15551239999');
+    expect($contact->source)->toBe('inbound_sms');
+    expect($contact->company_id)->toBe($this->company->id);
 });
 
 it('throws when incoming SMS to unknown number', function () {

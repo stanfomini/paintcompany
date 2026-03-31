@@ -241,7 +241,19 @@ class extends Component
             $contact = Contact::findOrFail($this->editingId);
             $contact->update($data);
         } else {
-            Contact::create($data);
+            $intake = app(\App\Services\Prospector\ContactIntakeService::class);
+            $intake->findOrCreate(
+                Company::find($this->companyId),
+                $this->phone,
+                [
+                    'first_name' => $this->firstName,
+                    'last_name' => $this->lastName ?: null,
+                    'email' => $this->email ?: null,
+                    'address' => $this->address ?: null,
+                    'tags' => $tags,
+                    'source' => 'manual',
+                ],
+            );
         }
 
         $this->closeModal();

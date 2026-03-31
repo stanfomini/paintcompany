@@ -450,12 +450,13 @@ class extends Component
             ->first();
 
         if (! $contact) {
-            $contact = Contact::create([
-                'company_id' => $this->agent->company_id,
-                'first_name' => 'Manual Dial',
-                'phone' => $number,
-                'source' => 'manual',
-            ]);
+            $intake = app(\App\Services\Prospector\ContactIntakeService::class);
+            $result = $intake->findOrCreate(
+                $this->agent->company,
+                $number,
+                ['first_name' => 'Manual Dial', 'source' => 'manual'],
+            );
+            $contact = $result->contact;
         }
 
         $this->dialContact($contact->id);
@@ -535,20 +536,14 @@ class extends Component
             return;
         }
 
-        // Assign to first pipeline stage so they appear in queue
-        $defaultStage = PipelineStage::whereHas('pipeline', fn ($q) => $q->where('is_default', true))
-            ->orderBy('sort_order')
-            ->first();
+        $intake = app(\App\Services\Prospector\ContactIntakeService::class);
+        $result = $intake->findOrCreate(
+            $this->agent->company,
+            $phone,
+            ['first_name' => $firstName, 'source' => 'manual'],
+        );
 
-        $contact = Contact::create([
-            'company_id' => $this->agent->company_id,
-            'first_name' => $firstName,
-            'phone' => $phone,
-            'source' => 'manual',
-            'pipeline_stage_id' => $defaultStage?->id,
-        ]);
-
-        $this->previewContact($contact->id);
+        $this->previewContact($result->contact->id);
         $this->clearCaches();
     }
 

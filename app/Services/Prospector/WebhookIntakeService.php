@@ -2,13 +2,11 @@
 
 namespace App\Services\Prospector;
 
-use App\Events\Prospector\NewLeadArrived;
 use App\Events\Prospector\QueueUpdated;
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
-use App\Models\Prospector\Pipeline;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -62,44 +60,37 @@ class WebhookIntakeService
             ];
         }
 
-        // Find existing contact by phone within company (dedup)
-        $existing = Contact::where('company_id', $company->id)
-            ->where('phone', $phone)
-            ->first();
+        // Use ContactIntakeService for creation with pipeline stage + broadcasting
+        $intake = app(ContactIntakeService::class);
+        $result = $intake->findOrCreate($company, $phone, [
+            'source' => 'webhook',
+            'first_name' => $data['first_name'],
+            'last_name' => $data['last_name'] ?? null,
+            'phone_2' => isset($data['phone_2']) ? $this->formatPhone($data['phone_2']) : null,
+            'email' => $data['email'] ?? null,
+            'address' => $data['address'] ?? null,
+            'city' => $data['city'] ?? null,
+            'state' => $data['state'] ?? null,
+            'zip' => $data['zip'] ?? null,
+            'timezone' => $data['timezone'] ?? null,
+            'tags' => $data['tags'] ?? null,
+            'custom_fields' => $data['custom_fields'] ?? null,
+            'external_id' => $data['external_id'] ?? null,
+            'priority' => $data['priority'] ?? 0,
+        ]);
 
-        $created = false;
+        $contact = $result->contact;
+        $created = $result->wasCreated;
         $campaignEnrolled = false;
 
-        if ($existing) {
-            // Update non-null fields, merge tags (don't overwrite)
-            $updateData = $this->buildUpdateData($data, $existing);
-            $existing->update($updateData);
-            $contact = $existing->refresh();
-        } else {
-            // Create new contact with source = 'webhook'
-            $contact = Contact::create([
-                'company_id' => $company->id,
-                'source' => 'webhook',
-                'first_name' => $data['first_name'],
-                'last_name' => $data['last_name'] ?? null,
-                'phone' => $phone,
-                'phone_2' => isset($data['phone_2']) ? $this->formatPhone($data['phone_2']) : null,
-                'email' => $data['email'] ?? null,
-                'address' => $data['address'] ?? null,
-                'city' => $data['city'] ?? null,
-                'state' => $data['state'] ?? null,
-                'zip' => $data['zip'] ?? null,
-                'timezone' => $data['timezone'] ?? null,
-                'tags' => $data['tags'] ?? null,
-                'custom_fields' => $data['custom_fields'] ?? null,
-                'external_id' => $data['external_id'] ?? null,
-                'priority' => $data['priority'] ?? 0,
-            ]);
-            $created = true;
+        // If existing, update non-null fields
+        if (! $created) {
+            $updateData = $this->buildUpdateData($data, $contact);
+            $contact->update($updateData);
+            $contact->refresh();
         }
 
         // Enroll in campaign if campaign_ulid provided
-        $enrolledCampaign = null;
         if (! empty($data['campaign_ulid'])) {
             $campaign = Campaign::where('company_id', $company->id)
                 ->where('ulid', $data['campaign_ulid'])
@@ -108,9 +99,6 @@ class WebhookIntakeService
 
             if ($campaign) {
                 $campaignEnrolled = $this->enrollInCampaign($contact, $campaign);
-                if ($campaignEnrolled) {
-                    $enrolledCampaign = $campaign;
-                }
             }
         }
 
@@ -119,25 +107,10 @@ class WebhookIntakeService
             $defaultCampaign = Campaign::find($company->default_campaign_id);
             if ($defaultCampaign && $defaultCampaign->isActive()) {
                 $campaignEnrolled = $this->enrollAtFront($contact, $defaultCampaign);
-                if ($campaignEnrolled) {
-                    $enrolledCampaign = $defaultCampaign;
-
-                    // Set default pipeline stage if pipeline exists
-                    $defaultPipeline = Pipeline::where('is_default', true)->first();
-                    if ($defaultPipeline) {
-                        $firstStage = $defaultPipeline->stages()->orderBy('sort_order')->first();
-                        if ($firstStage) {
-                            $contact->update(['pipeline_stage_id' => $firstStage->id]);
-                        }
-                    }
-                }
             }
         }
 
-        // Broadcast new lead event if contact was just created
-        if ($created) {
-            broadcast(new NewLeadArrived($contact, $company, $enrolledCampaign));
-        }
+        // NewLeadArrived is broadcast by ContactIntakeService on creation
 
         Log::info('Webhook lead processed', [
             'company_id' => $company->id,

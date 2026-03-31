@@ -111,11 +111,12 @@ class TwilioVoiceController extends Controller
 
         $company = $phoneNumber->company;
 
-        // Find or create contact from caller
-        $contact = Contact::firstOrCreate(
-            ['company_id' => $company->id, 'phone' => $fromNumber],
-            ['first_name' => 'Unknown', 'source' => 'inbound_call'],
-        );
+        // Find or create contact with pipeline stage + broadcasting
+        $intake = app(\App\Services\Prospector\ContactIntakeService::class);
+        $result = $intake->findOrCreate($company, $fromNumber, [
+            'source' => 'inbound_call',
+        ]);
+        $contact = $result->contact;
 
         // Flag this contact as priority in any active campaign queues
         $queueEntries = CampaignContact::where('contact_id', $contact->id)

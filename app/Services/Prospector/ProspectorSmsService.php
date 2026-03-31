@@ -149,17 +149,16 @@ class ProspectorSmsService
 
         $company = $phoneNumber->company;
 
-        // Try to match the sender to an existing contact
-        $contact = Contact::where('company_id', $company->id)
-            ->where(function ($query) use ($from) {
-                $query->where('phone', $from)
-                    ->orWhere('phone_2', $from);
-            })
-            ->first();
+        // Find or create contact — unknown SMS senders auto-create contacts
+        $intake = app(ContactIntakeService::class);
+        $result = $intake->findOrCreate($company, $from, [
+            'source' => 'inbound_sms',
+        ]);
+        $contact = $result->contact;
 
         $smsMessage = SmsMessage::create([
             'company_id' => $company->id,
-            'contact_id' => $contact?->id,
+            'contact_id' => $contact->id,
             'agent_id' => null,
             'direction' => 'inbound',
             'from_number' => $from,
@@ -171,32 +170,30 @@ class ProspectorSmsService
         ]);
 
         // Update the contact's SMS count
-        if ($contact) {
-            $contact->increment('total_sms');
+        $contact->increment('total_sms');
 
-            // Push-to-front: if contact is queued in any campaign, bump to front
-            $queueEntry = CampaignContact::where('contact_id', $contact->id)
-                ->where('status', 'queued')
-                ->first();
+        // Push-to-front: if contact is queued in any campaign, bump to front
+        $queueEntry = CampaignContact::where('contact_id', $contact->id)
+            ->where('status', 'queued')
+            ->first();
 
-            if ($queueEntry) {
-                app(WebhookIntakeService::class)->pushToFront($contact, $queueEntry);
-            }
-
-            // Mark contact as having unread SMS
-            $contact->update(['has_unread_sms' => true]);
-
-            // Flag in queue as priority
-            CampaignContact::where('contact_id', $contact->id)
-                ->where('status', 'queued')
-                ->where('is_priority', false)
-                ->update(['is_priority' => true, 'priority_reason' => 'unread_sms']);
+        if ($queueEntry) {
+            app(WebhookIntakeService::class)->pushToFront($contact, $queueEntry);
         }
+
+        // Mark contact as having unread SMS
+        $contact->update(['has_unread_sms' => true]);
+
+        // Flag in queue as priority
+        CampaignContact::where('contact_id', $contact->id)
+            ->where('status', 'queued')
+            ->where('is_priority', false)
+            ->update(['is_priority' => true, 'priority_reason' => 'unread_sms']);
 
         Log::info('Prospector inbound SMS received', [
             'sms_id' => $smsMessage->id,
             'company_id' => $company->id,
-            'contact_id' => $contact?->id,
+            'contact_id' => $contact->id,
             'from' => $from,
             'to' => $to,
         ]);
