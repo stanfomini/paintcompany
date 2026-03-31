@@ -39,11 +39,13 @@ it('returns contacts with unread SMS before regular contacts', function () {
         'company_id' => $this->company->id,
         'pipeline_stage_id' => $this->stage->id,
         'has_unread_sms' => false,
+        'created_at' => now()->subHour(),
     ]);
     $unreadSms = Contact::factory()->create([
         'company_id' => $this->company->id,
         'pipeline_stage_id' => $this->stage->id,
         'has_unread_sms' => true,
+        'created_at' => now()->subHour(),
     ]);
 
     $queue = $this->service->getQueue($this->agent);
@@ -78,11 +80,13 @@ it('returns contacts with callback due elevated', function () {
         'company_id' => $this->company->id,
         'pipeline_stage_id' => $this->stage->id,
         'follow_up_at' => null,
+        'created_at' => now()->subHour(),
     ]);
     $callbackDue = Contact::factory()->create([
         'company_id' => $this->company->id,
         'pipeline_stage_id' => $this->stage->id,
         'follow_up_at' => now()->subHour(),
+        'created_at' => now()->subHour(),
     ]);
 
     $queue = $this->service->getQueue($this->agent);
@@ -217,4 +221,38 @@ it('returns the next contact as the first unclaimed item', function () {
 
     expect($next)->not->toBeNull();
     expect($next->id)->toBe($contact->id);
+});
+
+it('returns new leads (< 15 min old) before unread SMS contacts', function () {
+    $unreadSms = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'has_unread_sms' => true,
+        'created_at' => now()->subHour(),
+    ]);
+    $newLead = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'has_unread_sms' => false,
+        'created_at' => now()->subMinutes(5),
+    ]);
+
+    $queue = $this->service->getQueue($this->agent);
+
+    expect($queue)->toHaveCount(2);
+    expect($queue->first()->id)->toBe($newLead->id);
+    expect((int) $queue->first()->queue_priority)->toBe(2);
+});
+
+it('returns queue as serializable array', function () {
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+    ]);
+
+    $array = $this->service->getQueueAsArray($this->agent);
+
+    expect($array)->toBeArray();
+    expect($array)->toHaveCount(1);
+    expect($array[0])->toHaveKeys(['id', 'name', 'phone', 'company_name', 'pipeline_stage_id', 'pipeline_stage_name', 'queue_priority', 'has_unread_sms', 'follow_up_at', 'created_at', 'source']);
 });

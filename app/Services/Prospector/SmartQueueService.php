@@ -16,10 +16,11 @@ class SmartQueueService
      *
      * Priority tiers:
      * 1. Active inbound call (ringing/in_progress)
-     * 2. Unread SMS
-     * 3. Missed call / voicemail (last 24h)
-     * 4. Callback due (follow_up_at <= now)
-     * 5. Regular contacts (sorted by staleness)
+     * 2. New lead (created in last 15 min)
+     * 3. Unread SMS
+     * 4. Missed call / voicemail (last 24h)
+     * 5. Callback due (follow_up_at <= now)
+     * 6. Regular contacts (sorted by staleness)
      */
     public function getQueue(
         Agent $agent,
@@ -47,6 +48,7 @@ class SmartQueueService
 
         $now = now()->toDateTimeString();
         $oneDayAgo = now()->subDay()->toDateTimeString();
+        $fifteenMinAgo = now()->subMinutes(15)->toDateTimeString();
 
         // Compute priority tier as a sortable value using DB-agnostic approach
         $query->selectRaw('prospector_contacts.*, (
@@ -58,7 +60,8 @@ class SmartQueueService
                     AND prospector_calls.status IN (?, ?)
                     LIMIT 1
                 ) THEN 1
-                WHEN prospector_contacts.has_unread_sms = 1 THEN 2
+                WHEN prospector_contacts.created_at >= ? THEN 2
+                WHEN prospector_contacts.has_unread_sms = 1 THEN 3
                 WHEN EXISTS (
                     SELECT 1 FROM prospector_calls
                     WHERE prospector_calls.contact_id = prospector_contacts.id
@@ -67,12 +70,13 @@ class SmartQueueService
                     AND prospector_calls.answered_at IS NULL
                     AND prospector_calls.created_at >= ?
                     LIMIT 1
-                ) THEN 3
-                WHEN prospector_contacts.follow_up_at IS NOT NULL AND prospector_contacts.follow_up_at <= ? THEN 4
-                ELSE 5
+                ) THEN 4
+                WHEN prospector_contacts.follow_up_at IS NOT NULL AND prospector_contacts.follow_up_at <= ? THEN 5
+                ELSE 6
             END
         ) as queue_priority', [
             'inbound', 'ringing', 'in_progress',
+            $fifteenMinAgo,
             'inbound', 'no_answer', 'voicemail', 'busy', $oneDayAgo,
             $now,
         ]);
@@ -122,5 +126,37 @@ class SmartQueueService
     public function release(Contact $contact): void
     {
         $contact->update(['claimed_by_agent_id' => null]);
+    }
+
+    /**
+     * Get the queue as a plain array for JSON serialization to Alpine.js.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getQueueAsArray(
+        Agent $agent,
+        ?int $companyId = null,
+        ?int $pipelineStageId = null,
+        ?string $search = null,
+        int $limit = 50,
+    ): array {
+        return $this->getQueue($agent, $companyId, $pipelineStageId, $search, $limit)
+            ->map(fn (Contact $c) => [
+                'id' => $c->id,
+                'name' => $c->getFullName(),
+                'phone' => $c->getDisplayPhone(),
+                'company_id' => $c->company_id,
+                'company_name' => $c->company?->name ?? '',
+                'pipeline_stage_id' => $c->pipeline_stage_id,
+                'pipeline_stage_name' => $c->pipelineStage?->name ?? '',
+                'queue_priority' => (int) $c->queue_priority,
+                'has_unread_sms' => (bool) $c->has_unread_sms,
+                'follow_up_at' => $c->follow_up_at?->toISOString(),
+                'created_at' => $c->created_at?->toISOString(),
+                'source' => $c->source,
+                'last_contacted_at' => $c->last_contacted_at?->toISOString(),
+            ])
+            ->values()
+            ->all();
     }
 }

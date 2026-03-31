@@ -295,8 +295,8 @@ it('broadcasts QueueUpdated on push-to-front', function () {
     $this->service->pushToFront($contact, $entry);
 
     Event::assertDispatched(QueueUpdated::class, function ($event) use ($contact, $campaign) {
-        return $event->contact->id === $contact->id
-            && $event->campaign->id === $campaign->id
+        return $event->companyId === $campaign->company_id
+            && $event->contactId === $contact->id
             && $event->action === 'priority_bump';
     });
 });
@@ -310,15 +310,17 @@ it('QueueUpdated event has correct broadcast data', function () {
         'last_name' => 'Test',
     ]);
 
-    $event = new QueueUpdated($contact, $campaign, 'added');
+    $event = new QueueUpdated(
+        companyId: $campaign->company_id,
+        action: 'updated',
+        contactId: $contact->id,
+    );
 
     $data = $event->broadcastWith();
 
     expect($data)
-        ->toHaveKey('action', 'added')
-        ->toHaveKey('contact_id', $contact->id)
-        ->toHaveKey('contact_name', 'Queue Test')
-        ->toHaveKey('campaign_id', $campaign->id);
+        ->toHaveKey('action', 'updated')
+        ->toHaveKey('contact_id', $contact->id);
 
     expect($event->broadcastAs())->toBe('queue.updated');
 });
@@ -332,8 +334,8 @@ it('broadcasts QueueUpdated when enrolling at front', function () {
     $this->service->enrollAtFront($contact, $campaign);
 
     Event::assertDispatched(QueueUpdated::class, function ($event) use ($contact, $campaign) {
-        return $event->contact->id === $contact->id
-            && $event->campaign->id === $campaign->id
-            && $event->action === 'added';
+        return $event->companyId === $campaign->company_id
+            && $event->contactId === $contact->id
+            && $event->action === 'updated';
     });
 });

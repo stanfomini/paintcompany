@@ -269,7 +269,11 @@ class WebhookIntakeService
 
             $campaign->increment('contact_count');
 
-            broadcast(new QueueUpdated($contact, $campaign, 'added'));
+            broadcast(new QueueUpdated(
+                companyId: $campaign->company_id,
+                action: 'updated',
+                contactId: $contact->id,
+            ));
 
             return true;
         });
@@ -295,7 +299,11 @@ class WebhookIntakeService
 
         $campaign = Campaign::find($queueEntry->campaign_id);
         if ($campaign) {
-            broadcast(new QueueUpdated($contact, $campaign, 'priority_bump'));
+            broadcast(new QueueUpdated(
+                companyId: $campaign->company_id,
+                action: 'priority_bump',
+                contactId: $contact->id,
+            ));
         }
     }
 
