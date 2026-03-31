@@ -59,7 +59,10 @@ export default class SourceManager {
             videoTrack.addEventListener('ended', () => {
                 console.log(`[SourceManager] Track ended for: ${key}`);
                 if (this._sources.has(key)) {
-                    this._sources.get(key).state = 'dead';
+                    const entry = this._sources.get(key);
+                    entry.state = 'dead';
+                    entry.element.pause();
+                    entry.element.srcObject = null;
                     this._emit('source-lost', { key });
                 }
             }, { once: true });

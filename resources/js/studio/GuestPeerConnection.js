@@ -30,6 +30,7 @@ export default class GuestPeerConnection {
         this._connected = false;
         this._onConnectedCallback = null;
         this._onDisconnectedCallback = null;
+        this._iceTimeout = null;
     }
 
     onConnected(callback) {
@@ -61,14 +62,30 @@ export default class GuestPeerConnection {
             const state = this._pc.iceConnectionState;
             console.log(`[GuestPeer] ICE state: ${state}`);
 
+            // Clear any existing ICE timeout on state change
+            if (this._iceTimeout) {
+                clearTimeout(this._iceTimeout);
+                this._iceTimeout = null;
+            }
+
             if (state === 'connected' || state === 'completed') {
                 if (!this._connected) {
                     this._connected = true;
                     if (this._onConnectedCallback) this._onConnectedCallback();
                 }
-            }
-
-            if (state === 'disconnected' || state === 'failed' || state === 'closed') {
+            } else if (state === 'checking') {
+                this._iceTimeout = setTimeout(() => {
+                    console.warn('[GuestPeer] ICE checking timeout');
+                    this.disconnect();
+                    if (this._onDisconnectedCallback) this._onDisconnectedCallback();
+                }, 15000);
+            } else if (state === 'disconnected') {
+                this._iceTimeout = setTimeout(() => {
+                    console.warn('[GuestPeer] ICE disconnected timeout');
+                    this._connected = false;
+                    if (this._onDisconnectedCallback) this._onDisconnectedCallback();
+                }, 10000);
+            } else if (state === 'failed' || state === 'closed') {
                 this._connected = false;
                 if (this._onDisconnectedCallback) this._onDisconnectedCallback();
             }
@@ -139,6 +156,12 @@ export default class GuestPeerConnection {
         // Invalidate instance ID so stale whisper listeners are ignored
         this._instanceId = null;
 
+        // Clear ICE timeout
+        if (this._iceTimeout) {
+            clearTimeout(this._iceTimeout);
+            this._iceTimeout = null;
+        }
+
         if (this._channel) {
             this._channel.whisper('guest-disconnect', {
                 guestId: this._guestId,
@@ -146,6 +169,9 @@ export default class GuestPeerConnection {
         }
 
         if (this._pc) {
+            // Stop all tracks before closing the connection
+            this._pc.getReceivers().forEach(r => { if (r.track) r.track.stop(); });
+            this._pc.getSenders().forEach(s => { if (s.track) s.track.stop(); });
             this._pc.close();
             this._pc = null;
         }

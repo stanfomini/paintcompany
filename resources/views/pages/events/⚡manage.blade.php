@@ -2266,6 +2266,8 @@ class extends Component
                 // ==============================================================
 
                 async _setupPeerManager(eventId) {
+                    if (studioChannel) return; // Prevent double-join
+
                     const PeerManager = await window.loadPeerManager();
 
                     // Use the global Echo instance (authenticated as the host via standard Laravel auth).

@@ -10,7 +10,6 @@ export default class OverlayRenderer {
         if (!containerEl) throw new Error('[OverlayRenderer] containerEl required');
         this._container = containerEl;
         this._overlays = new Map(); // index → {element, timer, image, config}
-        this._capturing = false; // Prevent concurrent captures
     }
 
     addOverlay(index, config) {
@@ -78,9 +77,9 @@ export default class OverlayRenderer {
 
     async _captureOverlay(index) {
         const entry = this._overlays.get(index);
-        if (!entry || this._capturing) return;
+        if (!entry || entry._capturing) return;
 
-        this._capturing = true;
+        entry._capturing = true;
         try {
             const { default: html2canvas } = await import('html2canvas');
 
@@ -119,7 +118,7 @@ export default class OverlayRenderer {
             }
             console.warn(`[OverlayRenderer] Capture failed for ${index}:`, err?.message ?? err);
         } finally {
-            this._capturing = false;
+            entry._capturing = false;
         }
     }
 }

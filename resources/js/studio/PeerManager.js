@@ -53,6 +53,9 @@ export default class PeerManager {
     closeConnection(guestId) {
         const pc = this._connections.get(guestId);
         if (pc) {
+            // Stop all tracks before closing the connection
+            pc.getReceivers().forEach(r => { if (r.track) r.track.stop(); });
+            pc.getSenders().forEach(s => { if (s.track) s.track.stop(); });
             pc.close();
             this._connections.delete(guestId);
             console.log(`[PeerManager] Connection closed: ${guestId}`);
@@ -60,11 +63,9 @@ export default class PeerManager {
     }
 
     closeAll() {
-        for (const [guestId, pc] of this._connections) {
-            pc.close();
-            console.log(`[PeerManager] Connection closed: ${guestId}`);
+        for (const [guestId] of this._connections) {
+            this.closeConnection(guestId);
         }
-        this._connections.clear();
     }
 
     destroy() {
@@ -106,25 +107,61 @@ export default class PeerManager {
 
     async _handleOffer(guestId, sdp) {
         if (this._connections.has(guestId)) {
-            this._connections.get(guestId).close();
+            this.closeConnection(guestId);
         }
 
         const pc = new RTCPeerConnection({ iceServers: this._iceServers });
         this._connections.set(guestId, pc);
 
+        // Queue ICE candidates until answer is sent to prevent race condition
+        const iceCandidateQueue = [];
+        let answerSent = false;
+
         pc.onicecandidate = (event) => {
             if (event.candidate && this._channel) {
-                this._channel.whisper('ice-candidate', {
+                const candidateData = {
                     guestId: this._hostId,
                     targetId: guestId,
                     candidate: event.candidate.toJSON(),
-                });
+                };
+                if (answerSent) {
+                    this._channel.whisper('ice-candidate', candidateData);
+                } else {
+                    iceCandidateQueue.push(candidateData);
+                }
             }
         };
 
+        // ICE timeout tracking
+        let iceTimeout = null;
+
         pc.oniceconnectionstatechange = () => {
-            console.log(`[PeerManager] ICE state (${guestId}):`, pc.iceConnectionState);
-            if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+            const state = pc.iceConnectionState;
+            console.log(`[PeerManager] ICE state (${guestId}):`, state);
+
+            // Clear any existing timeout on state change
+            if (iceTimeout) {
+                clearTimeout(iceTimeout);
+                iceTimeout = null;
+            }
+
+            if (state === 'checking') {
+                iceTimeout = setTimeout(() => {
+                    console.warn(`[PeerManager] ICE checking timeout for ${guestId}`);
+                    this.closeConnection(guestId);
+                    if (this._onGuestDisconnectCallback) {
+                        this._onGuestDisconnectCallback({ guestId });
+                    }
+                }, 15000);
+            } else if (state === 'disconnected') {
+                iceTimeout = setTimeout(() => {
+                    console.warn(`[PeerManager] ICE disconnected timeout for ${guestId}`);
+                    this.closeConnection(guestId);
+                    if (this._onGuestDisconnectCallback) {
+                        this._onGuestDisconnectCallback({ guestId });
+                    }
+                }, 10000);
+            } else if (state === 'failed') {
                 this.closeConnection(guestId);
                 if (this._onGuestDisconnectCallback) {
                     this._onGuestDisconnectCallback({ guestId });
@@ -155,7 +192,13 @@ export default class PeerManager {
                 sdp: answer.sdp,
             });
 
-            console.log(`[PeerManager] Answer sent to: ${guestId}`);
+            // Flush queued ICE candidates now that answer is sent
+            answerSent = true;
+            for (const candidateData of iceCandidateQueue) {
+                this._channel.whisper('ice-candidate', candidateData);
+            }
+
+            console.log(`[PeerManager] Answer sent to: ${guestId} (flushed ${iceCandidateQueue.length} queued ICE candidates)`);
         } catch (err) {
             console.error(`[PeerManager] Failed to handle offer from ${guestId}:`, err);
             this.closeConnection(guestId);
