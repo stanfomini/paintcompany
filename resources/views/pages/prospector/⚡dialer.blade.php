@@ -285,6 +285,12 @@ class extends Component
         $this->previewContactId = $contactId;
         $this->loadContactState($contactId);
         $this->loadConversation($contactId);
+
+        // Clear unread SMS flag when agent views this contact
+        Contact::where('id', $contactId)
+            ->where('has_unread_sms', true)
+            ->update(['has_unread_sms' => false]);
+
         $this->clearCaches();
     }
 

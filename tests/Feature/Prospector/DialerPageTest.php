@@ -264,6 +264,19 @@ it('loads pipeline stages', function () {
         ->assertOk();
 });
 
+it('clears has_unread_sms when agent previews contact', function () {
+    $contact = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'has_unread_sms' => true,
+    ]);
+
+    Livewire::actingAs($this->user)
+        ->test('pages::prospector.dialer')
+        ->call('previewContact', $contact->id);
+
+    expect($contact->fresh()->has_unread_sms)->toBeFalse();
+});
+
 it('loads active script for company', function () {
     $script = CallScript::factory()->create([
         'company_id' => $this->company->id,
