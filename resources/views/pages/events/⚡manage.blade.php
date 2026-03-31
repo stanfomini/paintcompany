@@ -2183,13 +2183,13 @@ class extends Component
                  * Call startBroadcasting() when ready to go live to viewers.
                  */
                 async startStudio(livekitToken, livekitUrl, eventId) {
-                    try {
-                        this.connectionError = null;
-                        this._livekitToken = livekitToken;
-                        this._livekitUrl = livekitUrl;
-                        this._eventId = eventId;
+                    this.connectionError = null;
+                    this._livekitToken = livekitToken;
+                    this._livekitUrl = livekitUrl;
+                    this._eventId = eventId;
 
-                        // 1. Initialize SourceManager
+                    // 1. Initialize SourceManager (required — fail hard if this breaks)
+                    try {
                         const SourceManager = await window.loadSourceManager();
                         sourceManager = new SourceManager(this.$refs.sourceContainer);
 
@@ -2200,8 +2200,15 @@ class extends Component
                         sourceManager.on('source-ready', syncSources);
                         sourceManager.on('source-removed', syncSources);
                         sourceManager.on('source-lost', syncSources);
+                        console.log('[Studio] SourceManager initialized');
+                    } catch (err) {
+                        console.error('[Studio] SourceManager failed:', err);
+                        this.connectionError = 'Failed to initialize sources: ' + err.message;
+                        return;
+                    }
 
-                        // 2. Get local camera + mic
+                    // 2. Get local camera + mic (optional — studio works without host camera)
+                    try {
                         const cameraStream = await navigator.mediaDevices.getUserMedia({
                             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
                             audio: { echoCancellation: true, noiseSuppression: true },
@@ -2210,8 +2217,14 @@ class extends Component
                         hostAudioTrack = cameraStream.getAudioTracks()[0];
                         const videoOnlyStream = new MediaStream(cameraStream.getVideoTracks());
                         sourceManager.addSource('host', videoOnlyStream, 'You (Host)');
+                        console.log('[Studio] Host camera + mic acquired');
+                    } catch (err) {
+                        console.warn('[Studio] Camera/mic unavailable (non-fatal):', err.message);
+                        // Studio continues without host camera — guests and screen shares still work
+                    }
 
-                        // 3. Initialize dual compositors
+                    // 3. Initialize dual compositors (required for rendering)
+                    try {
                         const FrameCompositor = await window.loadFrameCompositor();
 
                         previewCompositor = new FrameCompositor(this.$refs.previewCanvas, sourceManager);
@@ -2229,34 +2242,40 @@ class extends Component
                         previewCompositor.start();
                         programCompositor.start();
                         console.log('[Studio] Compositors started');
-
-                        // 3b. Initialize OverlayRenderer for HTML overlays
-                        try {
-                            const OverlayRendererClass = await window.loadOverlayRenderer();
-                            overlayRenderer = new OverlayRendererClass(this.$refs.overlayRenderContainer);
-                            programCompositor.setOverlayRenderer(overlayRenderer);
-                            previewCompositor.setOverlayRenderer(overlayRenderer);
-
-                            this.overlayConfigs.forEach((overlay, idx) => {
-                                if (overlay.type === 'html' && overlay.visible !== false) {
-                                    overlayRenderer.addOverlay(idx, overlay);
-                                }
-                            });
-                            console.log('[Studio] OverlayRenderer initialized');
-                        } catch (err) {
-                            console.warn('[Studio] OverlayRenderer init failed (non-critical):', err.message);
-                        }
-
-                        // 4. Set up PeerManager for guest WebRTC connections
-                        await this._setupPeerManager(eventId);
-
-                        this.connected = true;
-                        console.log('[Studio] Setup complete — ready to broadcast');
-
                     } catch (err) {
-                        console.error('[Studio] Startup error:', err);
-                        this.connectionError = 'Failed to start studio: ' + err.message;
+                        console.error('[Studio] Compositor failed:', err);
+                        this.connectionError = 'Failed to start compositors: ' + err.message;
+                        // Continue — PeerManager can still work for guest management
                     }
+
+                    // 3b. Initialize OverlayRenderer for HTML overlays (optional)
+                    try {
+                        const OverlayRendererClass = await window.loadOverlayRenderer();
+                        overlayRenderer = new OverlayRendererClass(this.$refs.overlayRenderContainer);
+                        if (programCompositor) programCompositor.setOverlayRenderer(overlayRenderer);
+                        if (previewCompositor) previewCompositor.setOverlayRenderer(overlayRenderer);
+
+                        this.overlayConfigs.forEach((overlay, idx) => {
+                            if (overlay.type === 'html' && overlay.visible !== false) {
+                                overlayRenderer.addOverlay(idx, overlay);
+                            }
+                        });
+                        console.log('[Studio] OverlayRenderer initialized');
+                    } catch (err) {
+                        console.warn('[Studio] OverlayRenderer init failed (non-critical):', err.message);
+                    }
+
+                    // 4. Set up PeerManager for guest WebRTC connections (independent of camera)
+                    try {
+                        await this._setupPeerManager(eventId);
+                        console.log('[Studio] PeerManager initialized');
+                    } catch (err) {
+                        console.error('[Studio] PeerManager failed:', err);
+                        // Guest connections won't work but host can still broadcast
+                    }
+
+                    this.connected = true;
+                    console.log('[Studio] Setup complete — ready to broadcast');
                 },
 
                 /**
