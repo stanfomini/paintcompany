@@ -2356,12 +2356,26 @@ class extends Component
                     studioChannel = window.Echo.join(`event-studio.${eventId}`)
                         .here((users) => {
                             console.log('[Studio] Studio channel subscribed. Users:', users);
+                            // user.id = livekit identity (e.g. "guest-GJD67boV"), user.name = display name
+                            users.forEach(u => {
+                                if (u.id && !String(u.id).startsWith('host-')) {
+                                    this._updateGuestStatus(u.id, 'connected', u.name);
+                                }
+                            });
                         })
                         .joining((user) => {
                             console.log('[Studio] User joined studio channel:', user);
+                            if (user.id && !String(user.id).startsWith('host-')) {
+                                this._updateGuestStatus(user.id, 'connected', user.name);
+                            }
+                            this.$wire.refreshGuestStatuses();
                         })
                         .leaving((user) => {
                             console.log('[Studio] User left studio channel:', user);
+                            if (user.id && !String(user.id).startsWith('host-')) {
+                                this._updateGuestStatus(user.id, 'disconnected');
+                            }
+                            this.$wire.refreshGuestStatuses();
                         })
                         .error((error) => {
                             console.error('[Studio] Studio channel subscription FAILED:', error);
@@ -2377,6 +2391,9 @@ class extends Component
                         sourceManager.addSource(slotKey, stream, name);
                         console.log(`[Studio] Guest video registered: ${slotKey} (${name})`);
 
+                        // Mark guest as live in Alpine — their video is actually flowing
+                        this._updateGuestStatus(guestId, 'live');
+
                         // Also publish guest audio to LiveKit for viewers
                         const audioTrack = stream.getAudioTracks()[0];
                         if (audioTrack && room) {
@@ -2391,13 +2408,18 @@ class extends Component
                     });
 
                     peerManager.onGuestReady(({ guestId, name }) => {
-                        console.log(`[Studio] Guest ready in green room: ${name}`);
+                        console.log(`[Studio] Guest ready in green room: ${guestId} (${name})`);
+                        // Update Alpine guest list directly — real-time, no DB roundtrip
+                        this._updateGuestStatus(guestId, 'connected', name);
                         this.$wire.refreshGuestStatuses();
                     });
 
                     peerManager.onGuestDisconnect(({ guestId }) => {
                         const slotKey = this._guestSlotKey(guestId);
                         if (sourceManager) sourceManager.removeSource(slotKey);
+                        console.log(`[Studio] Guest disconnected: ${guestId}`);
+                        // Update Alpine guest list directly
+                        this._updateGuestStatus(guestId, 'disconnected');
                         this.$wire.refreshGuestStatuses();
                     });
                 },
@@ -2893,8 +2915,24 @@ class extends Component
 
                 _findGuest(guestId) {
                     // guestId from PeerManager is the livekit_identity string
-                    // We check against the Livewire guests data for the name
-                    return null;
+                    return this.liveGuests.find(g => g.identity === guestId) ?? null;
+                },
+
+                _updateGuestStatus(guestId, status, name) {
+                    const idx = this.liveGuests.findIndex(g => g.identity === guestId);
+                    if (idx !== -1) {
+                        this.liveGuests[idx].status = status;
+                        if (name) this.liveGuests[idx].name = name;
+                    } else if (status !== 'disconnected') {
+                        // Guest not in our list yet — add them
+                        this.liveGuests.push({
+                            id: null,
+                            name: name ?? guestId,
+                            status: status,
+                            slot_number: null,
+                            identity: guestId,
+                        });
+                    }
                 },
 
                 _updateViewerCount() {
