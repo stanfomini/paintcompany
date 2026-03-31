@@ -1,84 +1,100 @@
 <?php
 
 use App\Models\Prospector\Agent;
-use App\Models\Prospector\Campaign;
-use App\Models\Prospector\CampaignContact;
+use App\Models\Prospector\Call;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
+use App\Models\Prospector\Pipeline;
+use App\Models\Prospector\PipelineStage;
 use App\Services\Prospector\SmartQueueService;
 
 beforeEach(function () {
     $this->company = Company::factory()->create();
     $this->agent = Agent::factory()->create(['company_id' => $this->company->id]);
     $this->agent->companies()->attach($this->company->id);
-    $this->campaign = Campaign::factory()->create([
-        'company_id' => $this->company->id,
-        'status' => 'active',
-    ]);
+    $this->pipeline = Pipeline::factory()->create(['is_default' => true]);
+    $this->stage = PipelineStage::factory()->create(['pipeline_id' => $this->pipeline->id, 'sort_order' => 1]);
     $this->service = app(SmartQueueService::class);
 });
 
-it('returns priority items before regular queue items', function () {
-    $regularContact = Contact::factory()->create(['company_id' => $this->company->id]);
-    $priorityContact = Contact::factory()->create(['company_id' => $this->company->id]);
-
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $regularContact->id,
-        'status' => 'queued',
-        'sort_order' => 1,
-        'added_at' => now(),
+it('returns contacts that have a pipeline stage', function () {
+    $inQueue = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $priorityContact->id,
-        'status' => 'queued',
-        'sort_order' => 2,
-        'is_priority' => true,
-        'priority_reason' => 'inbound_call',
-        'added_at' => now(),
+    // No pipeline stage — should NOT appear
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => null,
     ]);
 
     $queue = $this->service->getQueue($this->agent);
 
-    expect($queue->first()->contact_id)->toBe($priorityContact->id);
-    expect($queue->last()->contact_id)->toBe($regularContact->id);
+    expect($queue)->toHaveCount(1);
+    expect($queue->first()->id)->toBe($inQueue->id);
 });
 
-it('returns queue items across multiple companies', function () {
-    $companyB = Company::factory()->create();
-    $this->agent->companies()->attach($companyB->id);
-
-    $campaignB = Campaign::factory()->create(['company_id' => $companyB->id, 'status' => 'active']);
-    $contactA = Contact::factory()->create(['company_id' => $this->company->id]);
-    $contactB = Contact::factory()->create(['company_id' => $companyB->id]);
-
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contactA->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+it('returns contacts with unread SMS before regular contacts', function () {
+    $regular = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'has_unread_sms' => false,
     ]);
-    CampaignContact::create([
-        'campaign_id' => $campaignB->id,
-        'contact_id' => $contactB->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+    $unreadSms = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'has_unread_sms' => true,
     ]);
 
     $queue = $this->service->getQueue($this->agent);
 
     expect($queue)->toHaveCount(2);
+    expect($queue->first()->id)->toBe($unreadSms->id);
 });
 
-it('excludes items claimed by other agents', function () {
-    $otherAgent = Agent::factory()->create(['company_id' => $this->company->id]);
-    $contact = Contact::factory()->create(['company_id' => $this->company->id]);
+it('returns contacts with active inbound call first', function () {
+    $regular = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+    ]);
+    $inboundCall = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+    ]);
+    Call::factory()->create([
+        'company_id' => $this->company->id,
+        'contact_id' => $inboundCall->id,
+        'direction' => 'inbound',
+        'status' => 'ringing',
+    ]);
 
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contact->id,
-        'status' => 'queued', 'sort_order' => 1,
-        'claimed_by_agent_id' => $otherAgent->id,
-        'added_at' => now(),
+    $queue = $this->service->getQueue($this->agent);
+
+    expect($queue->first()->id)->toBe($inboundCall->id);
+});
+
+it('returns contacts with callback due elevated', function () {
+    $regular = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'follow_up_at' => null,
+    ]);
+    $callbackDue = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'follow_up_at' => now()->subHour(),
+    ]);
+
+    $queue = $this->service->getQueue($this->agent);
+
+    expect($queue->first()->id)->toBe($callbackDue->id);
+});
+
+it('excludes DNC contacts', function () {
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'do_not_call' => true,
     ]);
 
     $queue = $this->service->getQueue($this->agent);
@@ -86,32 +102,70 @@ it('excludes items claimed by other agents', function () {
     expect($queue)->toHaveCount(0);
 });
 
-it('claims a queue item atomically', function () {
-    $contact = Contact::factory()->create(['company_id' => $this->company->id]);
-    $entry = CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contact->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+it('excludes contacts from unassigned companies', function () {
+    $otherCompany = Company::factory()->create();
+    Contact::factory()->create([
+        'company_id' => $otherCompany->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
 
-    $claimed = $this->service->claim($entry, $this->agent);
+    $queue = $this->service->getQueue($this->agent);
 
-    expect($claimed)->toBeTrue();
-    expect($entry->fresh()->claimed_by_agent_id)->toBe($this->agent->id);
+    expect($queue)->toHaveCount(0);
 });
 
-it('fails to claim an already claimed item', function () {
-    $otherAgent = Agent::factory()->create(['company_id' => $this->company->id]);
-    $contact = Contact::factory()->create(['company_id' => $this->company->id]);
-    $entry = CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contact->id,
-        'status' => 'queued', 'sort_order' => 1,
-        'claimed_by_agent_id' => $otherAgent->id,
-        'added_at' => now(),
+it('returns queue items across multiple companies', function () {
+    $companyB = Company::factory()->create();
+    $this->agent->companies()->attach($companyB->id);
+
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+    ]);
+    Contact::factory()->create([
+        'company_id' => $companyB->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
 
-    $claimed = $this->service->claim($entry, $this->agent);
+    $queue = $this->service->getQueue($this->agent);
+
+    expect($queue)->toHaveCount(2);
+});
+
+it('excludes contacts claimed by other agents', function () {
+    $otherAgent = Agent::factory()->create(['company_id' => $this->company->id]);
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'claimed_by_agent_id' => $otherAgent->id,
+    ]);
+
+    $queue = $this->service->getQueue($this->agent);
+
+    expect($queue)->toHaveCount(0);
+});
+
+it('claims a contact atomically', function () {
+    $contact = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+    ]);
+
+    $claimed = $this->service->claim($contact, $this->agent);
+
+    expect($claimed)->toBeTrue();
+    expect($contact->fresh()->claimed_by_agent_id)->toBe($this->agent->id);
+});
+
+it('fails to claim an already claimed contact', function () {
+    $otherAgent = Agent::factory()->create(['company_id' => $this->company->id]);
+    $contact = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
+        'claimed_by_agent_id' => $otherAgent->id,
+    ]);
+
+    $claimed = $this->service->claim($contact, $this->agent);
 
     expect($claimed)->toBeFalse();
 });
@@ -120,59 +174,47 @@ it('filters queue by company', function () {
     $companyB = Company::factory()->create();
     $this->agent->companies()->attach($companyB->id);
 
-    $campaignB = Campaign::factory()->create(['company_id' => $companyB->id, 'status' => 'active']);
-    $contactA = Contact::factory()->create(['company_id' => $this->company->id]);
-    $contactB = Contact::factory()->create(['company_id' => $companyB->id]);
-
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contactA->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
-    CampaignContact::create([
-        'campaign_id' => $campaignB->id,
-        'contact_id' => $contactB->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+    $contactB = Contact::factory()->create([
+        'company_id' => $companyB->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
 
     $queue = $this->service->getQueue($this->agent, companyId: $companyB->id);
 
     expect($queue)->toHaveCount(1);
-    expect($queue->first()->contact_id)->toBe($contactB->id);
+    expect($queue->first()->id)->toBe($contactB->id);
 });
 
-it('filters queue by campaign', function () {
-    $campaignB = Campaign::factory()->create(['company_id' => $this->company->id, 'status' => 'active']);
-    $contactA = Contact::factory()->create(['company_id' => $this->company->id]);
-    $contactB = Contact::factory()->create(['company_id' => $this->company->id]);
+it('filters queue by pipeline stage', function () {
+    $stageB = PipelineStage::factory()->create(['pipeline_id' => $this->pipeline->id, 'sort_order' => 2]);
 
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contactA->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+    Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
-    CampaignContact::create([
-        'campaign_id' => $campaignB->id,
-        'contact_id' => $contactB->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+    $contactB = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $stageB->id,
     ]);
 
-    $queue = $this->service->getQueue($this->agent, campaignId: $campaignB->id);
+    $queue = $this->service->getQueue($this->agent, pipelineStageId: $stageB->id);
 
     expect($queue)->toHaveCount(1);
-    expect($queue->first()->contact_id)->toBe($contactB->id);
+    expect($queue->first()->id)->toBe($contactB->id);
 });
 
-it('returns the next item as the first unclaimed priority or queue item', function () {
-    $contact = Contact::factory()->create(['company_id' => $this->company->id]);
-    CampaignContact::create([
-        'campaign_id' => $this->campaign->id,
-        'contact_id' => $contact->id,
-        'status' => 'queued', 'sort_order' => 1, 'added_at' => now(),
+it('returns the next contact as the first unclaimed item', function () {
+    $contact = Contact::factory()->create([
+        'company_id' => $this->company->id,
+        'pipeline_stage_id' => $this->stage->id,
     ]);
 
     $next = $this->service->getNext($this->agent);
 
     expect($next)->not->toBeNull();
-    expect($next->contact_id)->toBe($contact->id);
+    expect($next->id)->toBe($contact->id);
 });

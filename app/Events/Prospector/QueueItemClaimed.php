@@ -12,7 +12,6 @@ class QueueItemClaimed implements ShouldBroadcastNow
     use Dispatchable, InteractsWithSockets;
 
     public function __construct(
-        public int $campaignContactId,
         public int $contactId,
         public int $claimedByAgentId,
         public int $companyId,
@@ -23,7 +22,7 @@ class QueueItemClaimed implements ShouldBroadcastNow
      */
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('prospector-company.'.$this->companyId)];
+        return [new PrivateChannel('prospector.company.'.$this->companyId)];
     }
 
     public function broadcastAs(): string

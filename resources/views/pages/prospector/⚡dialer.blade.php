@@ -33,7 +33,6 @@ class extends Component
 {
     // Queue filters
     public ?int $filterCompanyId = null;
-    public ?int $filterCampaignId = null;
     public ?int $filterStageId = null;
     public string $queueSearch = '';
     public string $dialerMode = 'single'; // single, parallel
@@ -134,8 +133,8 @@ class extends Component
         $smartQueue = app(SmartQueueService::class);
         $first = $smartQueue->getNext($agent);
         if ($first) {
-            $this->previewContactId = $first->contact_id;
-            $this->loadContactState($first->contact_id);
+            $this->previewContactId = $first->id;
+            $this->loadContactState($first->id);
         }
     }
 
@@ -147,23 +146,6 @@ class extends Component
         }
 
         return Agent::with('user', 'company')->find($this->agentId);
-    }
-
-    #[Computed]
-    public function campaigns(): \Illuminate\Support\Collection
-    {
-        if (! $this->agent) {
-            return collect();
-        }
-        $companyIds = $this->agent->getCompanyIds();
-
-        return Campaign::whereIn('company_id', $companyIds)
-            ->where('status', 'active')
-            ->withCount(['campaignContacts as queued_count' => fn ($q) => $q->where('status', 'queued')])
-            ->with('company')
-            ->orderBy('priority')
-            ->orderBy('name')
-            ->get();
     }
 
     #[Computed]
@@ -189,7 +171,6 @@ class extends Component
         return app(SmartQueueService::class)->getQueue(
             agent: $this->agent,
             companyId: $this->filterCompanyId,
-            campaignId: $this->filterCampaignId,
             pipelineStageId: $this->filterStageId,
             search: $this->queueSearch ?: null,
             limit: 50,
@@ -285,17 +266,12 @@ class extends Component
     #[Computed]
     public function activeScript(): ?CallScript
     {
-        if (! $this->agent || ! $this->filterCampaignId) {
+        if (! $this->agent) {
             return null;
         }
 
         return CallScript::where('company_id', $this->agent->company_id)
             ->active()
-            ->where(function ($q) {
-                $q->where('campaign_id', $this->filterCampaignId)
-                    ->orWhereNull('campaign_id');
-            })
-            ->orderByRaw('campaign_id IS NULL')
             ->orderBy('sort_order')
             ->first();
     }
@@ -518,7 +494,6 @@ class extends Component
         $call = Call::create([
             'ulid' => \Illuminate\Support\Str::ulid()->toBase32(),
             'company_id' => $company->id,
-            'campaign_id' => $this->filterCampaignId,
             'agent_id' => $agent->id,
             'contact_id' => $contact->id,
             'dialer_session_id' => null,
@@ -560,23 +535,18 @@ class extends Component
             return;
         }
 
+        // Assign to first pipeline stage so they appear in queue
+        $defaultStage = PipelineStage::whereHas('pipeline', fn ($q) => $q->where('is_default', true))
+            ->orderBy('sort_order')
+            ->first();
+
         $contact = Contact::create([
             'company_id' => $this->agent->company_id,
             'first_name' => $firstName,
             'phone' => $phone,
             'source' => 'manual',
+            'pipeline_stage_id' => $defaultStage?->id,
         ]);
-
-        if ($this->filterCampaignId) {
-            $maxSort = CampaignContact::where('campaign_id', $this->filterCampaignId)->max('sort_order') ?? 0;
-
-            CampaignContact::create([
-                'campaign_id' => $this->filterCampaignId,
-                'contact_id' => $contact->id,
-                'status' => 'queued',
-                'sort_order' => $maxSort + 1,
-            ]);
-        }
 
         $this->previewContact($contact->id);
         $this->clearCaches();
@@ -611,7 +581,7 @@ class extends Component
         }
         $agent = Agent::findOrFail($this->agentId);
         $service = app(PowerDialerService::class);
-        $call = $service->dialForAgent($agent, $this->filterCampaignId);
+        $call = $service->dialForAgent($agent);
 
         if (! $call) {
             return;
@@ -1296,11 +1266,6 @@ class extends Component
                         <flux:select.option value="{{ $company->id }}">{{ $company->name }}</flux:select.option>
                     @endforeach
                 </flux:select>
-                <flux:select wire:model.live="filterCampaignId" size="sm" placeholder="All Campaigns" class="w-40">
-                    @foreach ($this->campaigns as $campaign)
-                        <flux:select.option value="{{ $campaign->id }}">{{ $campaign->name }} ({{ $campaign->queued_count }})</flux:select.option>
-                    @endforeach
-                </flux:select>
                 <flux:select wire:model.live="filterStageId" size="sm" placeholder="All Stages" class="w-40">
                     @foreach ($this->pipelineStages as $stage)
                         <flux:select.option value="{{ $stage->id }}">{{ $stage->pipeline->name }}: {{ $stage->name }}</flux:select.option>
@@ -1319,11 +1284,9 @@ class extends Component
                 </div>
 
                 <div class="flex flex-1 gap-2 overflow-x-auto py-1">
-                    @foreach ($this->queueContacts->take(20) as $queueItem)
+                    @foreach ($this->queueContacts->take(20) as $contact)
                         @php
-                            $contact = $queueItem->contact;
-                            if (! $contact) continue;
-                            $isPriority = $queueItem->is_priority;
+                            $isPriority = ($contact->queue_priority ?? 5) <= 3;
                             $isActive = ($activeContact && ($activeContact['id'] ?? null) === $contact->id)
                                 || $previewContactId === $contact->id;
                             $contactedToday = $contact->wasContactedToday();
@@ -1348,7 +1311,15 @@ class extends Component
                             class="relative flex shrink-0 items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-left transition hover:bg-zinc-50 dark:hover:bg-zinc-700/50 {{ $borderClass }}"
                         >
                             @if ($isPriority)
-                                <span class="absolute -right-1 -top-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white">{{ $queueItem->priority_reason ?? 'HOT' }}</span>
+                                @php
+                                    $priorityLabel = match((int) ($contact->queue_priority ?? 5)) {
+                                        1 => 'CALL',
+                                        2 => 'SMS',
+                                        3 => 'MISSED',
+                                        default => 'HOT',
+                                    };
+                                @endphp
+                                <span class="absolute -right-1 -top-1 rounded bg-red-600 px-1 text-[9px] font-bold text-white">{{ $priorityLabel }}</span>
                             @elseif ($isNew)
                                 <span class="absolute -right-1 -top-1 rounded bg-blue-600 px-1 text-[9px] font-bold text-white">NEW</span>
                             @endif

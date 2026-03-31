@@ -244,49 +244,45 @@ class PowerDialerService
      * Uses SmartQueueService for next contact and atomic claiming.
      * This is the session-free alternative to dialNext().
      */
-    public function dialForAgent(Agent $agent, ?int $campaignId = null): ?Call
+    public function dialForAgent(Agent $agent): ?Call
     {
         $smartQueue = app(SmartQueueService::class);
-        $next = $smartQueue->getNext($agent, $campaignId);
+        $contact = $smartQueue->getNext($agent);
 
-        if (! $next) {
+        if (! $contact) {
             return null;
         }
 
-        // Claim the item atomically
-        if (! $smartQueue->claim($next, $agent)) {
+        // Claim the contact atomically
+        if (! $smartQueue->claim($contact, $agent)) {
             // Someone else claimed it, try the next one
-            $next = $smartQueue->getNext($agent, $campaignId);
-            if (! $next || ! $smartQueue->claim($next, $agent)) {
+            $contact = $smartQueue->getNext($agent);
+            if (! $contact || ! $smartQueue->claim($contact, $agent)) {
                 return null;
             }
         }
 
-        $contact = $next->contact;
-        $campaign = $next->campaign;
-        $company = $campaign->company;
+        $company = $contact->company;
 
         // Select outbound number
         try {
-            $fromNumber = $this->numberSelectionService->selectNumber($company, $contact, $campaign);
+            $fromNumber = $this->numberSelectionService->selectNumber($company, $contact, null);
         } catch (\RuntimeException $e) {
             Log::warning('No available number for sessionless dial', [
                 'agent_id' => $agent->id,
                 'contact_id' => $contact->id,
                 'error' => $e->getMessage(),
             ]);
-            $smartQueue->release($next);
+            $smartQueue->release($contact);
 
             return null;
         }
 
         $conferenceName = 'dial-'.Str::ulid();
-        $next->markDialing();
 
         // Create the Call record
         $call = Call::create([
             'company_id' => $company->id,
-            'campaign_id' => $campaign->id,
             'agent_id' => $agent->id,
             'contact_id' => $contact->id,
             'from_phone_number_id' => $fromNumber->id,
@@ -322,7 +318,7 @@ class PowerDialerService
             ]);
 
             $call->markFailed();
-            $smartQueue->release($next);
+            $smartQueue->release($contact);
 
             return null;
         }
@@ -337,7 +333,6 @@ class PowerDialerService
             'call_ulid' => $call->ulid,
             'agent_id' => $agent->id,
             'contact_id' => $contact->id,
-            'campaign_id' => $campaign->id,
         ]);
 
         return $call;

@@ -40,6 +40,7 @@ class Contact extends Model
         'total_calls',
         'total_sms',
         'has_unread_sms',
+        'claimed_by_agent_id',
         'priority',
         'pipeline_stage_id',
         'follow_up_at',
@@ -99,6 +100,11 @@ class Contact extends Model
         return $this->hasMany(ContactNote::class, 'contact_id');
     }
 
+    public function claimedByAgent(): BelongsTo
+    {
+        return $this->belongsTo(Agent::class, 'claimed_by_agent_id');
+    }
+
     // ──────────────────────────────────────
     // Scopes
     // ──────────────────────────────────────
@@ -133,9 +139,43 @@ class Contact extends Model
         $query->orderByDesc('priority');
     }
 
+    public function scopeInQueue(Builder $query): void
+    {
+        $query->where('do_not_call', false)
+            ->whereNotNull('pipeline_stage_id');
+    }
+
+    public function scopeUnclaimed(Builder $query): void
+    {
+        $query->whereNull('claimed_by_agent_id');
+    }
+
     // ──────────────────────────────────────
     // Methods
     // ──────────────────────────────────────
+
+    /**
+     * Atomically claim this contact for an agent.
+     */
+    public function claim(int $agentId): bool
+    {
+        return static::where('id', $this->id)
+            ->whereNull('claimed_by_agent_id')
+            ->update(['claimed_by_agent_id' => $agentId]) > 0;
+    }
+
+    /**
+     * Release this contact back to the pool.
+     */
+    public function unclaim(): void
+    {
+        $this->update(['claimed_by_agent_id' => null]);
+    }
+
+    public function isClaimed(): bool
+    {
+        return $this->claimed_by_agent_id !== null;
+    }
 
     /**
      * Get the contact's full name.

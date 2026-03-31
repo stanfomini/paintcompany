@@ -4,7 +4,6 @@ use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\CallScript;
 use App\Models\Prospector\Campaign;
-use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\CompanyBookingLink;
 use App\Models\Prospector\Contact;
@@ -199,26 +198,18 @@ it('appends booking link to existing SMS body', function () {
 // Quick-Add Contact
 // ──────────────────────────────────────
 
-it('quick-adds a contact from the dialer', function () {
-    $campaign = Campaign::factory()->create([
-        'company_id' => $this->company->id,
-        'status' => 'active',
-    ]);
+it('quick-adds a contact from the dialer with default pipeline stage', function () {
+    $pipeline = Pipeline::factory()->create(['is_default' => true]);
+    $stage = PipelineStage::factory()->create(['pipeline_id' => $pipeline->id, 'sort_order' => 1]);
 
     Livewire::actingAs($this->user)
         ->test('pages::prospector.dialer')
-        ->set('filterCampaignId', $campaign->id)
         ->call('quickAddContact', 'Jane', '+15551234567');
 
     $contact = Contact::where('first_name', 'Jane')->where('phone', '+15551234567')->first();
     expect($contact)->not->toBeNull();
     expect($contact->source)->toBe('manual');
-
-    $queued = CampaignContact::where('campaign_id', $campaign->id)
-        ->where('contact_id', $contact->id)
-        ->first();
-    expect($queued)->not->toBeNull();
-    expect($queued->status)->toBe('queued');
+    expect($contact->pipeline_stage_id)->toBe($stage->id);
 });
 
 // ──────────────────────────────────────
@@ -273,24 +264,17 @@ it('loads pipeline stages', function () {
         ->assertOk();
 });
 
-it('loads active script for campaign', function () {
-    $campaign = Campaign::factory()->create([
-        'company_id' => $this->company->id,
-        'status' => 'active',
-    ]);
+it('loads active script for company', function () {
     $script = CallScript::factory()->create([
         'company_id' => $this->company->id,
-        'campaign_id' => $campaign->id,
         'is_active' => true,
     ]);
 
     Livewire::actingAs($this->user)
         ->test('pages::prospector.dialer')
-        ->set('filterCampaignId', $campaign->id)
         ->assertOk();
 
     $found = CallScript::where('company_id', $this->company->id)
-        ->where('campaign_id', $campaign->id)
         ->where('is_active', true)
         ->first();
     expect($found)->not->toBeNull();
