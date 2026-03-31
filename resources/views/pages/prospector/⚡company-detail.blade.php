@@ -1,6 +1,9 @@
 <?php
 
+use App\Models\Prospector\CallScript;
+use App\Models\Prospector\Campaign;
 use App\Models\Prospector\Company;
+use App\Models\Prospector\CompanyBookingLink;
 use App\Models\Prospector\PhoneNumber;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -32,6 +35,36 @@ class extends Component
     public ?int $unassigningNumberId = null;
     public string $unassigningNumber = '';
 
+    // Company notes
+    public string $companyNotes = '';
+
+    // Booking links
+    public bool $showBookingLinkModal = false;
+    public ?int $editingBookingLinkId = null;
+    public string $bookingLinkName = '';
+    public string $bookingLinkUrl = '';
+
+    // Default campaign
+    public ?int $defaultCampaignId = null;
+
+    // Call scripts
+    public bool $showCallScriptModal = false;
+    public ?int $editingScriptId = null;
+    public string $scriptName = '';
+    public string $scriptBody = '';
+    public ?int $scriptCampaignId = null;
+
+    // IVR Configuration
+    public bool $ivrEnabled = false;
+    public string $ivrGreeting = '';
+
+    // Delete confirmations
+    public bool $showDeleteBookingLinkModal = false;
+    public ?int $deletingBookingLinkId = null;
+
+    public bool $showDeleteScriptModal = false;
+    public ?int $deletingScriptId = null;
+
     public function boot(): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -43,8 +76,13 @@ class extends Component
     {
         $this->companyId = $companyId;
 
-        // Verify company exists
-        Company::findOrFail($companyId);
+        $company = Company::findOrFail($companyId);
+        $this->companyNotes = $company->notes ?? '';
+        $this->defaultCampaignId = $company->default_campaign_id;
+
+        $settings = $company->settings ?? [];
+        $this->ivrEnabled = data_get($settings, 'ivr.enabled', false);
+        $this->ivrGreeting = data_get($settings, 'ivr.greeting', '');
     }
 
     #[Computed]
@@ -272,9 +310,243 @@ class extends Component
         $this->unassigningNumber = '';
     }
 
+    // ──────────────────────────────────────
+    // Company Notes
+    // ──────────────────────────────────────
+
+    public function saveNotes(): void
+    {
+        Company::where('id', $this->companyId)->update(['notes' => $this->companyNotes ?: null]);
+        unset($this->company);
+    }
+
+    // ──────────────────────────────────────
+    // IVR Configuration
+    // ──────────────────────────────────────
+
+    public function saveIvr(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $this->validate([
+            'ivrGreeting' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $company = Company::findOrFail($this->companyId);
+        $settings = $company->settings ?? [];
+        $settings['ivr'] = [
+            'enabled' => $this->ivrEnabled,
+            'greeting' => $this->ivrGreeting,
+        ];
+        $company->update(['settings' => $settings]);
+
+        unset($this->company);
+    }
+
+    // ──────────────────────────────────────
+    // Booking Links
+    // ──────────────────────────────────────
+
+    #[Computed]
+    public function bookingLinks(): \Illuminate\Database\Eloquent\Collection
+    {
+        return CompanyBookingLink::where('company_id', $this->companyId)
+            ->orderBy('sort_order')
+            ->get();
+    }
+
+    public function openCreateBookingLink(): void
+    {
+        $this->editingBookingLinkId = null;
+        $this->bookingLinkName = '';
+        $this->bookingLinkUrl = '';
+        $this->showBookingLinkModal = true;
+    }
+
+    public function openEditBookingLink(int $linkId): void
+    {
+        $link = CompanyBookingLink::where('company_id', $this->companyId)->findOrFail($linkId);
+        $this->editingBookingLinkId = $link->id;
+        $this->bookingLinkName = $link->name;
+        $this->bookingLinkUrl = $link->url;
+        $this->showBookingLinkModal = true;
+    }
+
+    public function saveBookingLink(): void
+    {
+        $this->validate([
+            'bookingLinkName' => ['required', 'string', 'max:255'],
+            'bookingLinkUrl' => ['required', 'url', 'max:2000'],
+        ]);
+
+        if ($this->editingBookingLinkId) {
+            CompanyBookingLink::where('company_id', $this->companyId)
+                ->findOrFail($this->editingBookingLinkId)
+                ->update([
+                    'name' => $this->bookingLinkName,
+                    'url' => $this->bookingLinkUrl,
+                ]);
+        } else {
+            $maxSort = CompanyBookingLink::where('company_id', $this->companyId)->max('sort_order') ?? -1;
+            CompanyBookingLink::create([
+                'company_id' => $this->companyId,
+                'name' => $this->bookingLinkName,
+                'url' => $this->bookingLinkUrl,
+                'sort_order' => $maxSort + 1,
+            ]);
+        }
+
+        $this->showBookingLinkModal = false;
+        unset($this->bookingLinks);
+    }
+
+    public function confirmDeleteBookingLink(int $linkId): void
+    {
+        $this->deletingBookingLinkId = $linkId;
+        $this->showDeleteBookingLinkModal = true;
+    }
+
+    public function deleteBookingLink(): void
+    {
+        if ($this->deletingBookingLinkId) {
+            CompanyBookingLink::where('company_id', $this->companyId)
+                ->findOrFail($this->deletingBookingLinkId)
+                ->delete();
+        }
+        $this->showDeleteBookingLinkModal = false;
+        $this->deletingBookingLinkId = null;
+        unset($this->bookingLinks);
+    }
+
+    public function reorderBookingLinks(array $orderedIds): void
+    {
+        foreach ($orderedIds as $index => $id) {
+            CompanyBookingLink::where('id', $id)
+                ->where('company_id', $this->companyId)
+                ->update(['sort_order' => $index]);
+        }
+        unset($this->bookingLinks);
+    }
+
+    // ──────────────────────────────────────
+    // Default Campaign
+    // ──────────────────────────────────────
+
+    #[Computed]
+    public function campaigns(): \Illuminate\Database\Eloquent\Collection
+    {
+        return Campaign::where('company_id', $this->companyId)->orderBy('name')->get(['id', 'name']);
+    }
+
+    public function saveDefaultCampaign(): void
+    {
+        Company::where('id', $this->companyId)->update([
+            'default_campaign_id' => $this->defaultCampaignId ?: null,
+        ]);
+        unset($this->company);
+    }
+
+    // ──────────────────────────────────────
+    // Call Scripts
+    // ──────────────────────────────────────
+
+    #[Computed]
+    public function callScripts(): \Illuminate\Database\Eloquent\Collection
+    {
+        return CallScript::where('company_id', $this->companyId)
+            ->orderBy('sort_order')
+            ->get();
+    }
+
+    public function openCreateScript(): void
+    {
+        $this->editingScriptId = null;
+        $this->scriptName = '';
+        $this->scriptBody = '';
+        $this->scriptCampaignId = null;
+        $this->showCallScriptModal = true;
+    }
+
+    public function openEditScript(int $scriptId): void
+    {
+        $script = CallScript::where('company_id', $this->companyId)->findOrFail($scriptId);
+        $this->editingScriptId = $script->id;
+        $this->scriptName = $script->name;
+        $this->scriptBody = $script->body;
+        $this->scriptCampaignId = $script->campaign_id;
+        $this->showCallScriptModal = true;
+    }
+
+    public function saveCallScript(): void
+    {
+        $this->validate([
+            'scriptName' => ['required', 'string', 'max:255'],
+            'scriptBody' => ['required', 'string'],
+        ]);
+
+        if ($this->editingScriptId) {
+            CallScript::where('company_id', $this->companyId)
+                ->findOrFail($this->editingScriptId)
+                ->update([
+                    'name' => $this->scriptName,
+                    'body' => $this->scriptBody,
+                    'campaign_id' => $this->scriptCampaignId ?: null,
+                ]);
+        } else {
+            $maxSort = CallScript::where('company_id', $this->companyId)->max('sort_order') ?? -1;
+            CallScript::create([
+                'company_id' => $this->companyId,
+                'campaign_id' => $this->scriptCampaignId ?: null,
+                'name' => $this->scriptName,
+                'body' => $this->scriptBody,
+                'sort_order' => $maxSort + 1,
+            ]);
+        }
+
+        $this->showCallScriptModal = false;
+        unset($this->callScripts);
+    }
+
+    public function toggleScriptActive(int $scriptId): void
+    {
+        $script = CallScript::where('company_id', $this->companyId)->findOrFail($scriptId);
+        $script->update(['is_active' => ! $script->is_active]);
+        unset($this->callScripts);
+    }
+
+    public function confirmDeleteScript(int $scriptId): void
+    {
+        $this->deletingScriptId = $scriptId;
+        $this->showDeleteScriptModal = true;
+    }
+
+    public function deleteCallScript(): void
+    {
+        if ($this->deletingScriptId) {
+            CallScript::where('company_id', $this->companyId)
+                ->findOrFail($this->deletingScriptId)
+                ->delete();
+        }
+        $this->showDeleteScriptModal = false;
+        $this->deletingScriptId = null;
+        unset($this->callScripts);
+    }
+
+    // ──────────────────────────────────────
+    // Webhook URL
+    // ──────────────────────────────────────
+
+    #[Computed]
+    public function webhookUrl(): string
+    {
+        return url("/prospector/webhook/{$this->company->ulid}/leads");
+    }
+
     protected function clearCaches(): void
     {
-        unset($this->company, $this->assignedNumbers, $this->unassignedNumbers);
+        unset($this->company, $this->assignedNumbers, $this->unassignedNumbers, $this->bookingLinks, $this->callScripts, $this->campaigns);
     }
 
     protected function getRoleBadgeColor(string $role): string
@@ -443,6 +715,316 @@ class extends Component
             </flux:table.rows>
         </flux:table>
     @endif
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- Company Notes --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-8 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <flux:heading size="lg" class="mb-3">{{ __('Company Notes') }}</flux:heading>
+        <textarea
+            wire:model.blur="companyNotes"
+            wire:change="saveNotes"
+            rows="4"
+            class="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-blue-400"
+            placeholder="{{ __('Add notes about this company...') }}"
+        ></textarea>
+        <div class="mt-1 text-xs text-zinc-400" wire:loading.remove wire:target="saveNotes">{{ __('Auto-saves on blur') }}</div>
+        <div class="mt-1 text-xs text-blue-500" wire:loading wire:target="saveNotes">{{ __('Saving...') }}</div>
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- Webhook URL --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <flux:heading size="lg" class="mb-3">{{ __('Webhook Integration') }}</flux:heading>
+
+        <div class="space-y-3">
+            <div>
+                <flux:label>{{ __('Webhook URL') }}</flux:label>
+                <div class="mt-1 flex items-center gap-2">
+                    <code class="flex-1 rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono dark:border-zinc-600 dark:bg-zinc-700">
+                        {{ $this->webhookUrl }}
+                    </code>
+                    <flux:button
+                        size="sm"
+                        variant="ghost"
+                        icon="clipboard"
+                        x-on:click="navigator.clipboard.writeText('{{ $this->webhookUrl }}'); $el.querySelector('.flux-icon').classList.add('text-green-500'); setTimeout(() => $el.querySelector('.flux-icon').classList.remove('text-green-500'), 2000)"
+                        title="{{ __('Copy to clipboard') }}"
+                    />
+                </div>
+            </div>
+
+            <div x-data="{ showSecret: false }">
+                <flux:label>{{ __('Webhook Secret') }}</flux:label>
+                <div class="mt-1 flex items-center gap-2">
+                    <code class="flex-1 rounded border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-mono dark:border-zinc-600 dark:bg-zinc-700">
+                        <span x-show="!showSecret">{{ str_repeat('*', 32) }}</span>
+                        <span x-show="showSecret" x-cloak>{{ $this->company->webhook_secret }}</span>
+                    </code>
+                    <flux:button size="sm" variant="ghost" icon="eye" x-on:click="showSecret = !showSecret" title="{{ __('Toggle visibility') }}" />
+                </div>
+            </div>
+
+            <details class="mt-2">
+                <summary class="cursor-pointer text-sm text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
+                    {{ __('Example payload') }}
+                </summary>
+                <pre class="mt-2 max-h-48 overflow-auto rounded border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-600 dark:bg-zinc-700"><code>{
+  "first_name": "John",
+  "last_name": "Smith",
+  "phone": "+17205551234",
+  "email": "john@example.com",
+  "address": "123 Main St",
+  "city": "Denver",
+  "state": "CO",
+  "zip": "80202",
+  "source": "website",
+  "tags": ["exterior", "priority"]
+}</code></pre>
+            </details>
+        </div>
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- Default Campaign --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <flux:heading size="lg" class="mb-1">{{ __('Default Campaign') }}</flux:heading>
+        <flux:text class="mb-3 text-sm">{{ __('Auto-enroll new webhook leads into this campaign.') }}</flux:text>
+
+        <div class="flex items-center gap-2">
+            <div class="flex-1">
+                <flux:select wire:model="defaultCampaignId" wire:change="saveDefaultCampaign">
+                    <flux:select.option value="">{{ __('No default campaign') }}</flux:select.option>
+                    @foreach ($this->campaigns as $campaign)
+                        <flux:select.option value="{{ $campaign->id }}">{{ $campaign->name }}</flux:select.option>
+                    @endforeach
+                </flux:select>
+            </div>
+            <div wire:loading wire:target="saveDefaultCampaign">
+                <flux:text class="text-sm text-blue-500">{{ __('Saved') }}</flux:text>
+            </div>
+        </div>
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- IVR Configuration --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <flux:heading size="lg" class="mb-1">{{ __('IVR Configuration') }}</flux:heading>
+        <flux:text class="mb-4 text-sm">{{ __('Configure interactive voice response settings for inbound calls.') }}</flux:text>
+
+        <div class="space-y-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <flux:label>{{ __('Enable IVR') }}</flux:label>
+                    <flux:text class="text-xs">{{ __('Route inbound calls through an IVR menu.') }}</flux:text>
+                </div>
+                <flux:switch wire:model.live="ivrEnabled" wire:change="saveIvr" />
+            </div>
+
+            @if ($ivrEnabled)
+                <div>
+                    <flux:textarea
+                        wire:model="ivrGreeting"
+                        :label="__('Greeting Text')"
+                        :placeholder="__('e.g., Thank you for calling. Press 1 for sales, press 2 for support...')"
+                        rows="3"
+                    />
+                    <div class="mt-2 flex items-center gap-2">
+                        <flux:button size="sm" variant="primary" wire:click="saveIvr" wire:loading.attr="disabled" wire:target="saveIvr">
+                            <span wire:loading.remove wire:target="saveIvr">{{ __('Save IVR Settings') }}</span>
+                            <span wire:loading wire:target="saveIvr">{{ __('Saving...') }}</span>
+                        </flux:button>
+                        <div wire:loading.remove wire:target="saveIvr">
+                            @if (data_get($this->company->settings ?? [], 'ivr.enabled'))
+                                <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            @endif
+        </div>
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- Booking Links --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <div class="mb-3 flex items-center justify-between">
+            <flux:heading size="lg">{{ __('Booking Links') }}</flux:heading>
+            <flux:button size="sm" variant="ghost" icon="plus" wire:click="openCreateBookingLink">
+                {{ __('Add Link') }}
+            </flux:button>
+        </div>
+
+        @if ($this->bookingLinks->isEmpty())
+            <flux:text class="text-sm text-zinc-500">{{ __('No booking links configured. Add links to Calendly, estimate forms, etc.') }}</flux:text>
+        @else
+            <div
+                class="space-y-2"
+                x-data="{
+                    async initSortable() {
+                        const Sortable = await window.loadSortable();
+                        Sortable.create(this.$el, {
+                            handle: '.link-handle',
+                            animation: 150,
+                            onEnd: (evt) => {
+                                const ids = [...evt.from.children].map(el => parseInt(el.dataset.linkId));
+                                $wire.reorderBookingLinks(ids);
+                            }
+                        });
+                    }
+                }"
+                x-init="initSortable()"
+            >
+                @foreach ($this->bookingLinks as $link)
+                    <div
+                        wire:key="link-{{ $link->id }}"
+                        data-link-id="{{ $link->id }}"
+                        class="flex items-center gap-3 rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-600 dark:bg-zinc-700/50"
+                    >
+                        <div class="link-handle cursor-grab text-zinc-400 hover:text-zinc-600 active:cursor-grabbing dark:text-zinc-500">
+                            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm-6 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm6 0a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                        </div>
+                        <flux:icon name="link" variant="micro" class="text-zinc-400" />
+                        <div class="min-w-0 flex-1">
+                            <flux:text class="font-medium text-sm">{{ $link->name }}</flux:text>
+                            <flux:text class="text-xs text-zinc-500 truncate">{{ $link->url }}</flux:text>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <flux:button size="sm" variant="ghost" icon="arrow-top-right-on-square" x-on:click="window.open('{{ $link->url }}', '_blank')" title="{{ __('Open') }}" />
+                            <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditBookingLink({{ $link->id }})" title="{{ __('Edit') }}" />
+                            <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDeleteBookingLink({{ $link->id }})" title="{{ __('Delete') }}" />
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- Call Scripts --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <div class="mb-3 flex items-center justify-between">
+            <flux:heading size="lg">{{ __('Call Scripts') }}</flux:heading>
+            <flux:button size="sm" variant="ghost" icon="plus" wire:click="openCreateScript">
+                {{ __('Add Script') }}
+            </flux:button>
+        </div>
+
+        @if ($this->callScripts->isEmpty())
+            <flux:text class="text-sm text-zinc-500">{{ __('No call scripts yet. Create scripts for agents to reference during calls.') }}</flux:text>
+        @else
+            <div class="space-y-2">
+                @foreach ($this->callScripts as $script)
+                    <div wire:key="script-{{ $script->id }}" class="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3 dark:border-zinc-600 dark:bg-zinc-700/50">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <flux:text class="font-medium text-sm">{{ $script->name }}</flux:text>
+                                @if ($script->campaign_id)
+                                    <flux:badge size="sm" color="blue">{{ $script->campaign?->name ?? __('Campaign') }}</flux:badge>
+                                @else
+                                    <flux:badge size="sm" color="zinc">{{ __('Company-wide') }}</flux:badge>
+                                @endif
+                                @if ($script->is_active)
+                                    <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
+                                @else
+                                    <flux:badge size="sm" color="zinc">{{ __('Inactive') }}</flux:badge>
+                                @endif
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <flux:button size="sm" variant="ghost" wire:click="toggleScriptActive({{ $script->id }})" :icon="$script->is_active ? 'pause' : 'play'" title="{{ $script->is_active ? __('Deactivate') : __('Activate') }}" />
+                                <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditScript({{ $script->id }})" title="{{ __('Edit') }}" />
+                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDeleteScript({{ $script->id }})" title="{{ __('Delete') }}" />
+                            </div>
+                        </div>
+                        <details class="mt-2">
+                            <summary class="cursor-pointer text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">{{ __('Preview script') }}</summary>
+                            <div class="mt-2 max-h-32 overflow-auto rounded border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-600 dark:bg-zinc-800">
+                                {!! nl2br(e(Str::limit($script->body, 500))) !!}
+                            </div>
+                        </details>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>
+
+    {{-- Booking Link Modal --}}
+    <flux:modal wire:model="showBookingLinkModal" class="max-w-md">
+        <form wire:submit="saveBookingLink" class="space-y-6">
+            <flux:heading size="lg">
+                {{ $editingBookingLinkId ? __('Edit Booking Link') : __('Add Booking Link') }}
+            </flux:heading>
+            <flux:input wire:model="bookingLinkName" :label="__('Name')" :placeholder="__('e.g., Calendly')" required />
+            <flux:input wire:model="bookingLinkUrl" :label="__('URL')" :placeholder="__('https://calendly.com/...')" type="url" required />
+            <div class="flex gap-2">
+                <flux:button type="button" variant="ghost" wire:click="$set('showBookingLinkModal', false)" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary" class="flex-1">{{ $editingBookingLinkId ? __('Update') : __('Add') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    {{-- Delete Booking Link Confirmation --}}
+    <flux:modal wire:model="showDeleteBookingLinkModal" class="max-w-sm">
+        <div class="space-y-6">
+            <flux:heading size="lg">{{ __('Delete Booking Link') }}</flux:heading>
+            <flux:text>{{ __('Are you sure you want to delete this booking link?') }}</flux:text>
+            <div class="flex gap-2">
+                <flux:button variant="ghost" wire:click="$set('showDeleteBookingLinkModal', false)" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="danger" wire:click="deleteBookingLink" class="flex-1">{{ __('Delete') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
+
+    {{-- Call Script Modal --}}
+    <flux:modal wire:model="showCallScriptModal" variant="flyout" class="w-[500px]">
+        <form wire:submit="saveCallScript" class="space-y-6">
+            <flux:heading size="lg">
+                {{ $editingScriptId ? __('Edit Call Script') : __('New Call Script') }}
+            </flux:heading>
+
+            <flux:input wire:model="scriptName" :label="__('Script Name')" :placeholder="__('e.g., Cold Call Intro')" required />
+
+            <flux:select wire:model="scriptCampaignId" :label="__('Campaign (optional)')">
+                <flux:select.option value="">{{ __('Company-wide (all campaigns)') }}</flux:select.option>
+                @foreach ($this->campaigns as $campaign)
+                    <flux:select.option value="{{ $campaign->id }}">{{ $campaign->name }}</flux:select.option>
+                @endforeach
+            </flux:select>
+
+            <div>
+                <flux:label>{{ __('Script Body') }}</flux:label>
+                <textarea
+                    wire:model="scriptBody"
+                    rows="12"
+                    class="mt-1 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+                    placeholder="{{ __('Write your call script here...') }}"
+                    required
+                ></textarea>
+            </div>
+
+            <div class="flex gap-2">
+                <flux:button type="button" variant="ghost" wire:click="$set('showCallScriptModal', false)" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button type="submit" variant="primary" class="flex-1">{{ $editingScriptId ? __('Update') : __('Create') }}</flux:button>
+            </div>
+        </form>
+    </flux:modal>
+
+    {{-- Delete Script Confirmation --}}
+    <flux:modal wire:model="showDeleteScriptModal" class="max-w-sm">
+        <div class="space-y-6">
+            <flux:heading size="lg">{{ __('Delete Call Script') }}</flux:heading>
+            <flux:text>{{ __('Are you sure you want to delete this call script?') }}</flux:text>
+            <div class="flex gap-2">
+                <flux:button variant="ghost" wire:click="$set('showDeleteScriptModal', false)" class="flex-1">{{ __('Cancel') }}</flux:button>
+                <flux:button variant="danger" wire:click="deleteCallScript" class="flex-1">{{ __('Delete') }}</flux:button>
+            </div>
+        </div>
+    </flux:modal>
 
     {{-- Assign Numbers Modal --}}
     <flux:modal wire:model="showAssignModal" variant="flyout" class="w-[500px]">

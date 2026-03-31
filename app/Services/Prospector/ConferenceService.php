@@ -130,6 +130,116 @@ class ConferenceService
     }
 
     /**
+     * Warm transfer: add a third party to the conference while agent stays.
+     * Agent can brief the recipient, then drop themselves.
+     */
+    public function warmTransfer(string $conferenceName, string $toNumber, PhoneNumber $fromNumber): string
+    {
+        $client = $this->getTwilioClient($fromNumber);
+
+        $participant = $client->conferences($conferenceName)
+            ->participants
+            ->create(
+                $fromNumber->getEffectiveCallerId(),
+                $toNumber,
+                [
+                    'statusCallback' => route('prospector.webhook.twilio.voice.status'),
+                    'statusCallbackMethod' => 'POST',
+                    'statusCallbackEvent' => ['initiated', 'ringing', 'answered', 'completed'],
+                    'timeout' => 30,
+                ]
+            );
+
+        Log::info('Warm transfer initiated', [
+            'conference' => $conferenceName,
+            'to' => $toNumber,
+            'from' => $fromNumber->phone_number,
+            'call_sid' => $participant->callSid,
+        ]);
+
+        return $participant->callSid;
+    }
+
+    /**
+     * Cold transfer: add third party to conference, then remove the agent.
+     */
+    public function coldTransfer(string $conferenceName, string $agentCallSid, string $toNumber, PhoneNumber $fromNumber): string
+    {
+        $recipientSid = $this->warmTransfer($conferenceName, $toNumber, $fromNumber);
+
+        // Remove agent from conference so only contact + recipient remain
+        $this->removeParticipant($conferenceName, $agentCallSid);
+
+        Log::info('Cold transfer completed — agent removed', [
+            'conference' => $conferenceName,
+            'agent_call_sid' => $agentCallSid,
+            'recipient_sid' => $recipientSid,
+        ]);
+
+        return $recipientSid;
+    }
+
+    /**
+     * Transfer to another agent by dialing their WebRTC client identity into the conference.
+     */
+    public function transferToAgent(string $conferenceName, int $targetAgentId): string
+    {
+        $client = $this->getDefaultClient();
+
+        $identity = "agent-{$targetAgentId}";
+
+        $participant = $client->conferences($conferenceName)
+            ->participants
+            ->create(
+                "client:{$identity}",
+                "client:{$identity}",
+                [
+                    'statusCallback' => route('prospector.webhook.twilio.voice.status'),
+                    'statusCallbackMethod' => 'POST',
+                    'statusCallbackEvent' => ['initiated', 'ringing', 'answered', 'completed'],
+                    'timeout' => 30,
+                ]
+            );
+
+        Log::info('Agent-to-agent transfer initiated', [
+            'conference' => $conferenceName,
+            'target_agent_id' => $targetAgentId,
+            'target_identity' => $identity,
+            'call_sid' => $participant->callSid,
+        ]);
+
+        return $participant->callSid;
+    }
+
+    /**
+     * Place or unhold a participant in a conference.
+     */
+    public function holdParticipant(string $conferenceSid, string $callSid, bool $hold): void
+    {
+        $client = $this->getDefaultClient();
+
+        try {
+            $params = ['hold' => $hold];
+
+            $client->conferences($conferenceSid)
+                ->participants($callSid)
+                ->update($params);
+
+            Log::info($hold ? 'Participant placed on hold' : 'Participant taken off hold', [
+                'conference_sid' => $conferenceSid,
+                'call_sid' => $callSid,
+            ]);
+        } catch (\Exception $e) {
+            Log::warning('Failed to update participant hold status', [
+                'conference_sid' => $conferenceSid,
+                'call_sid' => $callSid,
+                'hold' => $hold,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Remove a participant from a conference by their call SID.
      */
     public function removeParticipant(string $conferenceSid, string $callSid): void
@@ -152,6 +262,88 @@ class ConferenceService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * Supervisor listen: join conference as muted participant.
+     * Supervisor hears everything but no one hears them.
+     */
+    public function supervisorListen(string $conferenceName, Agent $supervisor): string
+    {
+        $client = $this->getDefaultClient();
+
+        $identity = "agent-{$supervisor->id}";
+
+        $participant = $client->conferences($conferenceName)
+            ->participants
+            ->create(
+                "client:{$identity}",
+                "client:{$identity}",
+                ['muted' => true, 'beep' => false, 'coaching' => false]
+            );
+
+        Log::info('Supervisor listening to conference', [
+            'conference' => $conferenceName,
+            'supervisor_id' => $supervisor->id,
+            'call_sid' => $participant->callSid,
+        ]);
+
+        return $participant->callSid;
+    }
+
+    /**
+     * Supervisor whisper: join conference in coaching mode.
+     * Supervisor can speak to the coached participant only (not heard by others).
+     */
+    public function supervisorWhisper(string $conferenceName, Agent $supervisor, string $agentCallSid): string
+    {
+        $client = $this->getDefaultClient();
+
+        $identity = "agent-{$supervisor->id}";
+
+        $participant = $client->conferences($conferenceName)
+            ->participants
+            ->create(
+                "client:{$identity}",
+                "client:{$identity}",
+                ['coaching' => true, 'callSidToCoach' => $agentCallSid, 'beep' => false]
+            );
+
+        Log::info('Supervisor whispering in conference', [
+            'conference' => $conferenceName,
+            'supervisor_id' => $supervisor->id,
+            'coached_call_sid' => $agentCallSid,
+            'call_sid' => $participant->callSid,
+        ]);
+
+        return $participant->callSid;
+    }
+
+    /**
+     * Supervisor barge: join conference as full participant.
+     * Everyone hears everyone.
+     */
+    public function supervisorBarge(string $conferenceName, Agent $supervisor): string
+    {
+        $client = $this->getDefaultClient();
+
+        $identity = "agent-{$supervisor->id}";
+
+        $participant = $client->conferences($conferenceName)
+            ->participants
+            ->create(
+                "client:{$identity}",
+                "client:{$identity}",
+                ['muted' => false, 'beep' => false]
+            );
+
+        Log::info('Supervisor barging into conference', [
+            'conference' => $conferenceName,
+            'supervisor_id' => $supervisor->id,
+            'call_sid' => $participant->callSid,
+        ]);
+
+        return $participant->callSid;
     }
 
     /**

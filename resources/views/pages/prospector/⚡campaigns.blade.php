@@ -3,6 +3,7 @@
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\PhoneNumber;
+use App\Models\Prospector\RvmTemplate;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
@@ -40,6 +41,8 @@ class extends Component
     public string $dialerMode = 'single';
     public int $parallelLines = 2;
     public int $priority = 10;
+    public bool $autoVmDrop = false;
+    public ?int $defaultRvmTemplateId = null;
 
     // Delete
     public bool $showDeleteModal = false;
@@ -85,6 +88,20 @@ class extends Component
             ->get();
     }
 
+    #[Computed]
+    public function availableRvmTemplates(): \Illuminate\Support\Collection
+    {
+        if (! $this->companyId) {
+            return collect();
+        }
+
+        return RvmTemplate::query()
+            ->forCompany($this->companyId)
+            ->active()
+            ->orderBy('name')
+            ->get();
+    }
+
     public function updatedSearch(): void
     {
         $this->resetPage();
@@ -103,7 +120,9 @@ class extends Component
     public function updatedCompanyId(): void
     {
         $this->phoneNumberId = null;
+        $this->defaultRvmTemplateId = null;
         unset($this->availablePhoneNumbers);
+        unset($this->availableRvmTemplates);
     }
 
     public function openAddModal(): void
@@ -125,7 +144,10 @@ class extends Component
         $this->dialerMode = $campaign->dialer_mode ?? 'single';
         $this->parallelLines = $campaign->parallel_lines ?? 2;
         $this->priority = $campaign->priority ?? 10;
+        $this->autoVmDrop = $campaign->auto_vm_drop ?? false;
+        $this->defaultRvmTemplateId = $campaign->default_rvm_template_id;
         unset($this->availablePhoneNumbers);
+        unset($this->availableRvmTemplates);
         $this->showModal = true;
     }
 
@@ -158,6 +180,8 @@ class extends Component
             'dialerMode' => ['required', Rule::in(['single', 'parallel'])],
             'parallelLines' => ['required_if:dialerMode,parallel', 'integer', 'min:1', 'max:3'],
             'priority' => ['required', 'integer', 'min:1', 'max:100'],
+            'autoVmDrop' => ['boolean'],
+            'defaultRvmTemplateId' => ['nullable', 'exists:prospector_rvm_templates,id'],
         ]);
 
         $data = [
@@ -170,6 +194,8 @@ class extends Component
             'dialer_mode' => $this->dialerMode,
             'parallel_lines' => $this->dialerMode === 'parallel' ? $this->parallelLines : 1,
             'priority' => $this->priority,
+            'auto_vm_drop' => $this->autoVmDrop,
+            'default_rvm_template_id' => $this->autoVmDrop ? $this->defaultRvmTemplateId : null,
         ];
 
         if ($this->editingId) {
@@ -216,6 +242,33 @@ class extends Component
         $this->deletingName = '';
     }
 
+    public function cloneCampaign(int $id): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $original = Campaign::findOrFail($id);
+
+        Campaign::create([
+            'company_id' => $original->company_id,
+            'name' => $original->name.' (Copy)',
+            'description' => $original->description,
+            'status' => 'draft',
+            'phone_number_id' => $original->phone_number_id,
+            'use_local_presence' => $original->use_local_presence,
+            'dialer_mode' => $original->dialer_mode,
+            'parallel_lines' => $original->parallel_lines,
+            'priority' => $original->priority,
+            'auto_vm_drop' => $original->auto_vm_drop,
+            'default_rvm_template_id' => $original->default_rvm_template_id,
+            'created_by' => Auth::id(),
+        ]);
+
+        unset($this->campaigns);
+        session()->flash('success', __('Campaign cloned successfully.'));
+    }
+
     protected function resetForm(): void
     {
         $this->editingId = null;
@@ -228,6 +281,8 @@ class extends Component
         $this->dialerMode = 'single';
         $this->parallelLines = 2;
         $this->priority = 10;
+        $this->autoVmDrop = false;
+        $this->defaultRvmTemplateId = null;
     }
 }; ?>
 
@@ -242,6 +297,12 @@ class extends Component
             {{ __('Create Campaign') }}
         </flux:button>
     </div>
+
+    @if (session('success'))
+        <flux:callout color="green" icon="check-circle" class="mb-4">
+            <flux:callout.text>{{ session('success') }}</flux:callout.text>
+        </flux:callout>
+    @endif
 
     {{-- Filters --}}
     <div class="mb-4 flex flex-wrap items-center gap-3">
@@ -288,6 +349,7 @@ class extends Component
                 <flux:table.column>{{ __('Status') }}</flux:table.column>
                 <flux:table.column>{{ __('Dialer') }}</flux:table.column>
                 <flux:table.column>{{ __('Phone') }}</flux:table.column>
+                <flux:table.column>{{ __('Auto-VM') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Contacts') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Attempted') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Connected') }}</flux:table.column>
@@ -348,6 +410,14 @@ class extends Component
                             @endif
                         </flux:table.cell>
 
+                        <flux:table.cell>
+                            @if ($campaign->auto_vm_drop)
+                                <flux:badge size="sm" color="green">{{ __('On') }}</flux:badge>
+                            @else
+                                <span class="text-zinc-400">{{ __('Off') }}</span>
+                            @endif
+                        </flux:table.cell>
+
                         <flux:table.cell class="text-right">
                             {{ number_format($campaign->contact_count) }}
                         </flux:table.cell>
@@ -382,6 +452,7 @@ class extends Component
                                     title="{{ __('View') }}"
                                 />
                                 <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $campaign->id }})" title="{{ __('Edit') }}" />
+                                <flux:button size="sm" variant="ghost" icon="document-duplicate" wire:click="cloneCampaign({{ $campaign->id }})" title="{{ __('Clone') }}" />
                                 <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $campaign->id }})" title="{{ __('Delete') }}" />
                             </div>
                         </flux:table.cell>
@@ -472,6 +543,34 @@ class extends Component
                 max="100"
                 :description="__('Lower number = higher priority.')"
             />
+
+            <flux:separator />
+
+            <flux:switch
+                wire:model.live="autoVmDrop"
+                :label="__('Auto-drop VM on Answering Machine')"
+                :description="__('Automatically leave a voicemail when AMD detects a machine.')"
+            />
+
+            @if ($autoVmDrop)
+                <flux:select wire:model="defaultRvmTemplateId" :label="__('Default RVM Template')">
+                    <flux:select.option value="">{{ __('Select a template...') }}</flux:select.option>
+                    @foreach ($this->availableRvmTemplates as $template)
+                        <flux:select.option value="{{ $template->id }}">
+                            {{ $template->name }}
+                            @if ($template->duration_seconds)
+                                ({{ $template->duration_seconds }}s)
+                            @endif
+                        </flux:select.option>
+                    @endforeach
+                </flux:select>
+
+                @if ($this->availableRvmTemplates->isEmpty() && $companyId)
+                    <flux:text class="text-xs text-amber-600 dark:text-amber-400">
+                        {{ __('No active RVM templates found for this company. Create one in RVM Templates first.') }}
+                    </flux:text>
+                @endif
+            @endif
 
             <div class="flex gap-2">
                 <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>

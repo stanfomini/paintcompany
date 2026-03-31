@@ -85,6 +85,21 @@ class NumberSelectionService
     }
 
     /**
+     * Preview which number would be used for a contact without marking it as used.
+     *
+     * Same logic as selectNumber() but read-only — useful for showing
+     * area code badges on queue cards before dialing.
+     */
+    public function previewNumberForContact(Contact $contact, Company $company, ?Campaign $campaign = null): ?PhoneNumber
+    {
+        try {
+            return $this->selectNumber($company, $contact, $campaign);
+        } catch (RuntimeException) {
+            return null;
+        }
+    }
+
+    /**
      * Find a local presence phone number matching the given area code.
      *
      * Searches for shadow/local_presence numbers assigned to the company

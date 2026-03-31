@@ -83,6 +83,14 @@ window.loadCanvasEditor = async () => {
     return window.StudioCanvasEditor;
 };
 
+window.loadTwilioVoice = async () => {
+    if (!window.TwilioDevice) {
+        const { Device } = await import('@twilio/voice-sdk');
+        window.TwilioDevice = Device;
+    }
+    return window.TwilioDevice;
+};
+
 window.Pusher = Pusher;
 
 // Expose Echo constructor for pages that need custom auth (e.g., live event guest viewers)

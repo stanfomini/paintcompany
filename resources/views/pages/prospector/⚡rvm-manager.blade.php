@@ -37,6 +37,9 @@ class extends Component
     public array $selectedContactIds = [];
     public string $contactSearch = '';
 
+    // Audio preview
+    public ?int $playingTemplateId = null;
+
     // Delete
     public bool $showDeleteModal = false;
     public ?int $deletingId = null;
@@ -189,6 +192,11 @@ class extends Component
         $this->templateCompanyId = $template->company_id;
         $this->audioFile = null;
         $this->showTemplateModal = true;
+    }
+
+    public function toggleAudioPreview(int $id): void
+    {
+        $this->playingTemplateId = $this->playingTemplateId === $id ? null : $id;
     }
 
     public function toggleTemplateActive(int $id): void
@@ -381,10 +389,10 @@ class extends Component
         </div>
 
         <div class="flex gap-2">
-            <flux:button variant="primary" icon="plus" wire:click="openTemplateModal">
+            <flux:button variant="primary" icon="plus" wire:click="openTemplateModal" wire:loading.attr="disabled" wire:target="openTemplateModal">
                 {{ __('New Template') }}
             </flux:button>
-            <flux:button variant="filled" icon="paper-airplane" wire:click="openSendModal()">
+            <flux:button variant="filled" icon="paper-airplane" wire:click="openSendModal()" wire:loading.attr="disabled" wire:target="openSendModal">
                 {{ __('Send RVM') }}
             </flux:button>
         </div>
@@ -482,12 +490,37 @@ class extends Component
 
                             <flux:table.cell class="text-right">
                                 <div class="flex items-center justify-end gap-1">
+                                    @if ($template->audio_path)
+                                        <flux:button
+                                            size="sm"
+                                            variant="ghost"
+                                            :icon="$playingTemplateId === $template->id ? 'stop-circle' : 'play-circle'"
+                                            wire:click="toggleAudioPreview({{ $template->id }})"
+                                            title="{{ $playingTemplateId === $template->id ? __('Stop') : __('Preview') }}"
+                                        />
+                                    @endif
                                     <flux:button size="sm" variant="ghost" icon="paper-airplane" wire:click="openSendModal({{ $template->id }})" title="{{ __('Send RVM') }}" />
                                     <flux:button size="sm" variant="ghost" icon="pencil" wire:click="editTemplate({{ $template->id }})" title="{{ __('Edit') }}" />
                                     <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDeleteTemplate({{ $template->id }})" title="{{ __('Delete') }}" />
                                 </div>
                             </flux:table.cell>
                         </flux:table.row>
+
+                        {{-- Audio preview (inline) --}}
+                        @if ($playingTemplateId === $template->id && $template->audio_path)
+                            <flux:table.row wire:key="audio-{{ $template->id }}">
+                                <flux:table.cell colspan="7">
+                                    <div class="flex items-center gap-3 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
+                                        <flux:icon name="musical-note" class="size-5 text-zinc-500" />
+                                        <audio controls autoplay preload="auto" class="h-8 flex-1">
+                                            <source src="{{ Storage::url($template->audio_path) }}" type="audio/mpeg" />
+                                            {{ __('Your browser does not support the audio element.') }}
+                                        </audio>
+                                        <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="toggleAudioPreview({{ $template->id }})" />
+                                    </div>
+                                </flux:table.cell>
+                            </flux:table.row>
+                        @endif
                     @endforeach
                 </flux:table.rows>
             </flux:table>
@@ -529,7 +562,7 @@ class extends Component
             </flux:select>
 
             @if ($dropCompanyFilter || $dropTemplateFilter || $dropStatusFilter || $dropMethodFilter)
-                <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearDropFilters">
+                <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearDropFilters" wire:loading.attr="disabled" wire:target="clearDropFilters">
                     {{ __('Clear') }}
                 </flux:button>
             @endif
@@ -659,8 +692,9 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button type="button" variant="ghost" wire:click="closeTemplateModal" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button type="submit" variant="primary" class="flex-1">
-                    {{ $editingTemplateId ? __('Update') : __('Create Template') }}
+                <flux:button type="submit" variant="primary" class="flex-1" wire:loading.attr="disabled" wire:target="saveTemplate">
+                    <span wire:loading.remove wire:target="saveTemplate">{{ $editingTemplateId ? __('Update') : __('Create Template') }}</span>
+                    <span wire:loading wire:target="saveTemplate">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </form>
@@ -761,7 +795,10 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button variant="danger" wire:click="deleteTemplate" class="flex-1">{{ __('Delete') }}</flux:button>
+                <flux:button variant="danger" wire:click="deleteTemplate" class="flex-1" wire:loading.attr="disabled" wire:target="deleteTemplate">
+                    <span wire:loading.remove wire:target="deleteTemplate">{{ __('Delete') }}</span>
+                    <span wire:loading wire:target="deleteTemplate">{{ __('Deleting...') }}</span>
+                </flux:button>
             </div>
         </div>
     </flux:modal>

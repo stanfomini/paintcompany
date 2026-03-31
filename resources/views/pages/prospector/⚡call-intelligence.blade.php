@@ -37,6 +37,12 @@ class extends Component
     #[Url]
     public string $search = '';
 
+    #[Url]
+    public string $sortBy = 'processed_at';
+
+    #[Url]
+    public string $sortDir = 'desc';
+
     public ?int $expandedId = null;
 
     public function boot(): void
@@ -70,7 +76,7 @@ class extends Component
             })
             ->when($this->dateFrom, fn ($q) => $q->whereDate('processed_at', '>=', $this->dateFrom))
             ->when($this->dateTo, fn ($q) => $q->whereDate('processed_at', '<=', $this->dateTo))
-            ->orderByDesc('processed_at')
+            ->orderBy($this->sortBy, $this->sortDir)
             ->paginate(20);
     }
 
@@ -166,6 +172,18 @@ class extends Component
         $this->dateTo = '';
         $this->resetPage();
         unset($this->records, $this->stats, $this->agents);
+    }
+
+    public function sortByColumn(string $column): void
+    {
+        if ($this->sortBy === $column) {
+            $this->sortDir = $this->sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortBy = $column;
+            $this->sortDir = 'desc';
+        }
+
+        $this->resetPage();
     }
 
     public function toggleExpand(int $id): void
@@ -297,7 +315,7 @@ class extends Component
         </div>
 
         @if ($search || $companyFilter || $agentFilter || $scoreFilter || $dateFrom || $dateTo)
-            <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearFilters">
+            <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearFilters" wire:loading.attr="disabled" wire:target="clearFilters">
                 {{ __('Clear') }}
             </flux:button>
         @endif
@@ -313,12 +331,12 @@ class extends Component
     @else
         <flux:table>
             <flux:table.columns>
-                <flux:table.column>{{ __('Date') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sortBy === 'processed_at'" :direction="$sortBy === 'processed_at' ? $sortDir : null" wire:click="sortByColumn('processed_at')">{{ __('Date') }}</flux:table.column>
                 <flux:table.column>{{ __('Contact') }}</flux:table.column>
                 <flux:table.column>{{ __('Agent') }}</flux:table.column>
                 <flux:table.column>{{ __('Duration') }}</flux:table.column>
-                <flux:table.column>{{ __('Lead Score') }}</flux:table.column>
-                <flux:table.column>{{ __('Sentiment') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sortBy === 'lead_score'" :direction="$sortBy === 'lead_score' ? $sortDir : null" wire:click="sortByColumn('lead_score')">{{ __('Lead Score') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sortBy === 'sentiment_overall'" :direction="$sortBy === 'sentiment_overall' ? $sortDir : null" wire:click="sortByColumn('sentiment_overall')">{{ __('Sentiment') }}</flux:table.column>
                 <flux:table.column>{{ __('Summary') }}</flux:table.column>
                 <flux:table.column>{{ __('Keywords') }}</flux:table.column>
             </flux:table.columns>

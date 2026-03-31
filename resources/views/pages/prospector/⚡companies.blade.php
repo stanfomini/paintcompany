@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Prospector\Company;
+use App\Models\Prospector\Contact;
 use App\Models\Prospector\TwilioAccount;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -45,7 +46,7 @@ class extends Component
     {
         return Company::query()
             ->with(['twilioAccount', 'mainPhoneNumber'])
-            ->withCount('phoneNumbers')
+            ->withCount(['phoneNumbers', 'contacts', 'campaigns'])
             ->when($this->search, fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))
             ->orderBy('name')
             ->paginate(15);
@@ -208,7 +209,7 @@ class extends Component
             <flux:text class="mt-1">{{ __('Manage prospector companies and their phone number pools.') }}</flux:text>
         </div>
 
-        <flux:button variant="primary" icon="plus" wire:click="openAddModal">
+        <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
             {{ __('Create Company') }}
         </flux:button>
     </div>
@@ -236,7 +237,7 @@ class extends Component
             <flux:heading size="lg">{{ __('No companies found') }}</flux:heading>
             <flux:text class="mt-1">{{ __('Create your first company to start assigning phone numbers.') }}</flux:text>
             <div class="mt-4">
-                <flux:button variant="primary" icon="plus" wire:click="openAddModal">
+                <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
                     {{ __('Create Company') }}
                 </flux:button>
             </div>
@@ -247,6 +248,8 @@ class extends Component
                 <flux:table.column>{{ __('Company') }}</flux:table.column>
                 <flux:table.column>{{ __('Main Number') }}</flux:table.column>
                 <flux:table.column>{{ __('Phone Numbers') }}</flux:table.column>
+                <flux:table.column>{{ __('Contacts') }}</flux:table.column>
+                <flux:table.column>{{ __('Campaigns') }}</flux:table.column>
                 <flux:table.column>{{ __('Twilio Account') }}</flux:table.column>
                 <flux:table.column>{{ __('Status') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Actions') }}</flux:table.column>
@@ -275,6 +278,14 @@ class extends Component
                         </flux:table.cell>
 
                         <flux:table.cell>
+                            <flux:badge size="sm" color="zinc">{{ number_format($company->contacts_count) }}</flux:badge>
+                        </flux:table.cell>
+
+                        <flux:table.cell>
+                            <flux:badge size="sm" color="zinc">{{ $company->campaigns_count }}</flux:badge>
+                        </flux:table.cell>
+
+                        <flux:table.cell>
                             @if ($company->twilioAccount)
                                 <span class="text-sm">{{ $company->twilioAccount->name }}</span>
                             @else
@@ -299,8 +310,8 @@ class extends Component
                                     :href="route('prospector.companies.show', $company->id)"
                                     title="{{ __('View Details') }}"
                                 />
-                                <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $company->id }})" title="{{ __('Edit') }}" />
-                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $company->id }})" title="{{ __('Delete') }}" />
+                                <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $company->id }})" wire:loading.attr="disabled" title="{{ __('Edit') }}" />
+                                <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $company->id }})" wire:loading.attr="disabled" title="{{ __('Delete') }}" />
                                 <flux:switch
                                     wire:click="toggleActive({{ $company->id }})"
                                     :checked="$company->is_active"
@@ -353,8 +364,9 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button type="submit" variant="primary" class="flex-1">
-                    {{ $editingId ? __('Update Company') : __('Create Company') }}
+                <flux:button type="submit" variant="primary" class="flex-1" wire:loading.attr="disabled" wire:target="save">
+                    <span wire:loading.remove wire:target="save">{{ $editingId ? __('Update Company') : __('Create Company') }}</span>
+                    <span wire:loading wire:target="save">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </form>
@@ -372,7 +384,10 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button variant="danger" wire:click="delete" class="flex-1">{{ __('Delete') }}</flux:button>
+                <flux:button variant="danger" wire:click="delete" class="flex-1" wire:loading.attr="disabled" wire:target="delete">
+                    <span wire:loading.remove wire:target="delete">{{ __('Delete') }}</span>
+                    <span wire:loading wire:target="delete">{{ __('Deleting...') }}</span>
+                </flux:button>
             </div>
         </div>
     </flux:modal>

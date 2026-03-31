@@ -2,12 +2,16 @@
 
 namespace App\Services\Prospector;
 
+use App\Models\Prospector\Call;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\PhoneNumber;
+use App\Models\Prospector\TwilioAccount;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
+use RuntimeException;
 
 class PhoneNumberService
 {
@@ -351,6 +355,175 @@ class PhoneNumberService
                 "Invalid role '{$role}'. Must be one of: ".implode(', ', self::VALID_ROLES)
             );
         }
+    }
+
+    /**
+     * Search available phone numbers from Twilio for purchase.
+     *
+     * @return array<int, array{phone_number: string, friendly_name: string, area_code: string, locality: string, region: string}>
+     *
+     * @throws RuntimeException
+     */
+    public function searchAvailableNumbers(
+        TwilioAccount $account,
+        string $areaCode,
+        ?string $contains = null,
+        int $limit = 20,
+    ): array {
+        $client = $account->getClient();
+
+        $params = ['areaCode' => $areaCode];
+
+        if ($contains) {
+            $params['contains'] = $contains;
+        }
+
+        $results = $client->availablePhoneNumbers('US')
+            ->local
+            ->read($params, $limit);
+
+        return collect($results)->map(fn ($number) => [
+            'phone_number' => $number->phoneNumber,
+            'friendly_name' => $number->friendlyName,
+            'area_code' => substr(preg_replace('/\D/', '', $number->phoneNumber), 1, 3),
+            'locality' => $number->locality ?? '',
+            'region' => $number->region ?? '',
+        ])->all();
+    }
+
+    /**
+     * Purchase a phone number from Twilio and create the local record.
+     *
+     * @throws RuntimeException
+     */
+    public function purchaseNumber(
+        TwilioAccount $account,
+        string $phoneNumber,
+        ?Company $company = null,
+        string $role = 'local_presence',
+    ): PhoneNumber {
+        $client = $account->getClient();
+
+        $purchaseParams = ['phoneNumber' => $phoneNumber];
+
+        // Set the voice/SMS webhook URLs on the purchased number
+        $inboundUrl = route('prospector.webhook.twilio.voice.inbound');
+        $smsUrl = route('prospector.webhook.twilio.sms.incoming');
+
+        $purchaseParams['voiceUrl'] = $inboundUrl;
+        $purchaseParams['voiceMethod'] = 'POST';
+        $purchaseParams['smsUrl'] = $smsUrl;
+        $purchaseParams['smsMethod'] = 'POST';
+
+        $purchased = $client->incomingPhoneNumbers->create($purchaseParams);
+
+        $digits = preg_replace('/\D/', '', $phoneNumber);
+        if (strlen($digits) === 11 && str_starts_with($digits, '1')) {
+            $digits = substr($digits, 1);
+        }
+        $areaCode = substr($digits, 0, 3);
+
+        $record = PhoneNumber::create([
+            'twilio_account_id' => $account->id,
+            'company_id' => $company?->id,
+            'phone_number' => $phoneNumber,
+            'friendly_name' => $purchased->friendlyName ?? $phoneNumber,
+            'area_code' => $areaCode,
+            'twilio_sid' => $purchased->sid,
+            'role' => $company ? $role : 'unassigned',
+            'capabilities' => [
+                'voice' => $purchased->capabilities['voice'] ?? true,
+                'sms' => $purchased->capabilities['sms'] ?? true,
+                'mms' => $purchased->capabilities['mms'] ?? false,
+                'fax' => $purchased->capabilities['fax'] ?? false,
+            ],
+            'is_active' => true,
+            'monthly_cost' => $purchased->price ?? null,
+        ]);
+
+        if ($company && $role === 'main') {
+            $company->update(['main_phone_number_id' => $record->id]);
+        }
+
+        Log::info('Phone number purchased from Twilio', [
+            'phone_number_id' => $record->id,
+            'phone_number' => $phoneNumber,
+            'twilio_sid' => $purchased->sid,
+            'company_id' => $company?->id,
+            'role' => $record->role,
+        ]);
+
+        return $record;
+    }
+
+    /**
+     * Get daily call usage stats for a company's phone numbers over the last N days.
+     *
+     * @return array<int, array{phone_number_id: int, phone_number: string, date: string, call_count: int}>
+     */
+    public function getDailyUsageStats(Company $company, int $days = 7): array
+    {
+        $since = Carbon::now()->subDays($days)->startOfDay();
+
+        return Call::where('company_id', $company->id)
+            ->where('started_at', '>=', $since)
+            ->whereNotNull('from_number')
+            ->selectRaw('from_number, DATE(started_at) as call_date, COUNT(*) as call_count')
+            ->groupBy('from_number', 'call_date')
+            ->orderBy('call_date')
+            ->get()
+            ->map(fn ($row) => [
+                'from_number' => $row->from_number,
+                'date' => $row->call_date,
+                'call_count' => (int) $row->call_count,
+            ])
+            ->all();
+    }
+
+    /**
+     * Get today's call count per phone number for a company.
+     *
+     * @return array<string, int> Keyed by phone_number => count
+     */
+    public function getTodayUsageByNumber(Company $company): array
+    {
+        return Call::where('company_id', $company->id)
+            ->whereDate('started_at', Carbon::today())
+            ->whereNotNull('from_number')
+            ->selectRaw('from_number, COUNT(*) as call_count')
+            ->groupBy('from_number')
+            ->pluck('call_count', 'from_number')
+            ->map(fn ($count) => (int) $count)
+            ->all();
+    }
+
+    /**
+     * Get phone numbers grouped by company and role.
+     *
+     * @return \Illuminate\Support\Collection<int, array{company: Company, numbers: Collection<int, PhoneNumber>, main: ?PhoneNumber}>
+     */
+    public function getNumberPoolsByCompany(): \Illuminate\Support\Collection
+    {
+        $numbers = PhoneNumber::with('company')
+            ->where('is_active', true)
+            ->whereNotNull('company_id')
+            ->orderBy('company_id')
+            ->orderByRaw("CASE role WHEN 'main' THEN 0 WHEN 'local_presence' THEN 1 WHEN 'shadow' THEN 2 WHEN 'caller_id_shadow' THEN 3 ELSE 4 END")
+            ->orderBy('area_code')
+            ->get();
+
+        return $numbers->groupBy('company_id')->map(function ($companyNumbers) {
+            $company = $companyNumbers->first()->company;
+
+            return [
+                'company' => $company,
+                'numbers' => $companyNumbers,
+                'main' => $companyNumbers->firstWhere('role', 'main'),
+                'local_presence' => $companyNumbers->where('role', 'local_presence')->values(),
+                'shadow' => $companyNumbers->where('role', 'shadow')->values(),
+                'caller_id_shadow' => $companyNumbers->where('role', 'caller_id_shadow')->values(),
+            ];
+        })->values();
     }
 
     /**

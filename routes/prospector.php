@@ -44,8 +44,15 @@ Route::middleware(['auth:web', 'auth.internal'])->group(function () {
     // AI Call Intelligence
     Route::livewire('/call-intelligence', 'pages::prospector.call-intelligence')->name('call-intelligence');
 
+    // Pipelines
+    Route::livewire('/pipelines', 'pages::prospector.pipelines')->name('pipelines');
+    Route::livewire('/pipeline-view', 'pages::prospector.pipeline-view')->name('pipeline-view');
+
     // Ringless Voicemail
     Route::livewire('/rvm', 'pages::prospector.rvm-manager')->name('rvm');
+
+    // Twilio Voice SDK token
+    Route::get('/voice/token', [\App\Http\Controllers\Prospector\TwilioVoiceController::class, 'token'])->name('voice.token');
 });
 
 // Webhook routes (no auth, CSRF exempt via bootstrap/app.php)
@@ -69,6 +76,18 @@ Route::prefix('webhook')->name('webhook.')->group(function () {
         ->name('twilio.sms.incoming');
     Route::post('/twilio/sms/status', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'smsStatus'])
         ->name('twilio.sms.status');
+
+    // Twilio Voice SDK — TwiML for browser-originated calls
+    Route::post('/twilio/voice/incoming', [\App\Http\Controllers\Prospector\TwilioVoiceController::class, 'handleIncoming'])
+        ->name('twilio.voice.incoming');
+
+    // Inbound call routing
+    Route::post('/twilio/voice/inbound', [\App\Http\Controllers\Prospector\TwilioVoiceController::class, 'handleInboundCall'])
+        ->name('twilio.voice.inbound');
+
+    // IVR response handling
+    Route::post('/twilio/voice/ivr-response', [\App\Http\Controllers\Prospector\TwilioVoiceController::class, 'handleIvrResponse'])
+        ->name('twilio.voice.ivr-response');
 
     // RVM callbacks
     Route::post('/twilio/rvm/twiml/{drop}', [\App\Http\Controllers\Prospector\ProspectorWebhookController::class, 'rvmTwiml'])

@@ -24,6 +24,10 @@ class extends Component
     public ?array $syncResults = null;
     public ?int $syncingAccountId = null;
 
+    // Connection test
+    public ?array $testResult = null;
+    public ?int $testingAccountId = null;
+
     // Delete
     public bool $showDeleteModal = false;
     public ?int $deletingId = null;
@@ -147,6 +151,38 @@ class extends Component
         $this->syncingAccountId = null;
     }
 
+    public function testConnection(int $accountId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $account = TwilioAccount::findOrFail($accountId);
+        $this->testingAccountId = $accountId;
+
+        try {
+            $client = new \Twilio\Rest\Client($account->account_sid, $account->auth_token);
+            $twilioAccount = $client->api->v2010->accounts($account->account_sid)->fetch();
+
+            $this->testResult = [
+                'success' => true,
+                'friendly_name' => $twilioAccount->friendlyName,
+                'status' => $twilioAccount->status,
+            ];
+        } catch (\Throwable $e) {
+            $this->testResult = [
+                'success' => false,
+                'error' => $e->getMessage(),
+            ];
+        }
+    }
+
+    public function dismissTestResult(): void
+    {
+        $this->testResult = null;
+        $this->testingAccountId = null;
+    }
+
     public function toggleActive(int $id): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -213,9 +249,22 @@ class extends Component
             <flux:text class="mt-1">{{ __('Connect your Twilio accounts to manage phone numbers for prospecting.') }}</flux:text>
         </div>
 
-        <flux:button variant="primary" icon="plus" wire:click="openAddModal">
-            {{ __('Add Account') }}
-        </flux:button>
+        <div class="flex items-center gap-4">
+            {{-- Twilio Connection Status --}}
+            @php
+                $hasActiveAccount = $this->accounts->contains(fn ($a) => $a->is_active);
+            @endphp
+            <div class="flex items-center gap-2 text-sm">
+                <span class="inline-flex size-2.5 rounded-full {{ $hasActiveAccount ? 'bg-green-500' : 'bg-red-500' }}"></span>
+                <span class="text-zinc-600 dark:text-zinc-400">
+                    {{ $hasActiveAccount ? __('Twilio Connected') : __('No Active Account') }}
+                </span>
+            </div>
+
+            <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
+                {{ __('Add Account') }}
+            </flux:button>
+        </div>
     </div>
 
     @if (session('error'))
@@ -250,6 +299,31 @@ class extends Component
         </div>
     @endif
 
+    {{-- Test Connection Result Banner --}}
+    @if ($testResult && $testingAccountId)
+        <div class="mb-4">
+            @if ($testResult['success'] ?? false)
+                <flux:callout color="green" icon="check-circle">
+                    <flux:callout.heading>{{ __('Connection Successful') }}</flux:callout.heading>
+                    <flux:callout.text>
+                        {{ __('Account ":name" is :status.', [
+                            'name' => $testResult['friendly_name'] ?? 'Unknown',
+                            'status' => $testResult['status'] ?? 'active',
+                        ]) }}
+                    </flux:callout.text>
+                </flux:callout>
+            @else
+                <flux:callout color="red" icon="exclamation-triangle">
+                    <flux:callout.heading>{{ __('Connection Failed') }}</flux:callout.heading>
+                    <flux:callout.text>{{ $testResult['error'] ?? __('Unknown error') }}</flux:callout.text>
+                </flux:callout>
+            @endif
+            <div class="mt-2">
+                <flux:button size="sm" variant="ghost" wire:click="dismissTestResult">{{ __('Dismiss') }}</flux:button>
+            </div>
+        </div>
+    @endif
+
     {{-- Accounts list --}}
     @if ($this->accounts->isEmpty())
         <div class="rounded-lg border border-zinc-200 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-800">
@@ -257,7 +331,7 @@ class extends Component
             <flux:heading size="lg">{{ __('No Twilio accounts connected') }}</flux:heading>
             <flux:text class="mt-1">{{ __('Add a Twilio account to start managing phone numbers.') }}</flux:text>
             <div class="mt-4">
-                <flux:button variant="primary" icon="plus" wire:click="openAddModal">
+                <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled">
                     {{ __('Add Account') }}
                 </flux:button>
             </div>
@@ -319,6 +393,19 @@ class extends Component
                         <flux:button
                             size="sm"
                             variant="ghost"
+                            icon="signal"
+                            wire:click="testConnection({{ $account->id }})"
+                            wire:loading.attr="disabled"
+                            wire:target="testConnection({{ $account->id }})"
+                            title="{{ __('Test Connection') }}"
+                        >
+                            <span wire:loading.remove wire:target="testConnection({{ $account->id }})">{{ __('Test') }}</span>
+                            <span wire:loading wire:target="testConnection({{ $account->id }})">{{ __('Testing...') }}</span>
+                        </flux:button>
+
+                        <flux:button
+                            size="sm"
+                            variant="ghost"
                             icon="arrow-path"
                             wire:click="syncNumbers({{ $account->id }})"
                             wire:loading.attr="disabled"
@@ -329,8 +416,8 @@ class extends Component
                             <span wire:loading wire:target="syncNumbers({{ $account->id }})">{{ __('Syncing...') }}</span>
                         </flux:button>
 
-                        <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $account->id }})" title="{{ __('Edit') }}" />
-                        <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $account->id }})" title="{{ __('Delete') }}" />
+                        <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Edit') }}" />
+                        <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $account->id }})" wire:loading.attr="disabled" title="{{ __('Delete') }}" />
 
                         <flux:switch
                             wire:click="toggleActive({{ $account->id }})"
@@ -380,8 +467,9 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button type="submit" variant="primary" class="flex-1">
-                    {{ $editingId ? __('Update Account') : __('Add Account') }}
+                <flux:button type="submit" variant="primary" class="flex-1" wire:loading.attr="disabled" wire:target="save">
+                    <span wire:loading.remove wire:target="save">{{ $editingId ? __('Update Account') : __('Add Account') }}</span>
+                    <span wire:loading wire:target="save">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </form>
@@ -399,7 +487,10 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button variant="danger" wire:click="delete" class="flex-1">{{ __('Delete') }}</flux:button>
+                <flux:button variant="danger" wire:click="delete" class="flex-1" wire:loading.attr="disabled" wire:target="delete">
+                    <span wire:loading.remove wire:target="delete">{{ __('Delete') }}</span>
+                    <span wire:loading wire:target="delete">{{ __('Deleting...') }}</span>
+                </flux:button>
             </div>
         </div>
     </flux:modal>

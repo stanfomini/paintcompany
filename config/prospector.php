@@ -70,15 +70,35 @@ return [
     */
 
     'dispositions' => [
-        'interested' => 'Interested',
-        'callback' => 'Callback Requested',
-        'not_interested' => 'Not Interested',
-        'no_answer' => 'No Answer',
-        'voicemail' => 'Left Voicemail',
-        'wrong_number' => 'Wrong Number',
-        'dnc' => 'Do Not Call',
-        'busy' => 'Busy',
-        'disconnected' => 'Disconnected',
+        'interested' => [
+            'label' => 'Interested',
+        ],
+        'callback' => [
+            'label' => 'Callback Requested',
+        ],
+        'not_interested' => [
+            'label' => 'Not Interested',
+        ],
+        'no_answer' => [
+            'label' => 'No Answer',
+            'auto_sequence' => null,
+        ],
+        'voicemail' => [
+            'label' => 'Left Voicemail',
+            'auto_sequence' => null,
+        ],
+        'wrong_number' => [
+            'label' => 'Wrong Number',
+        ],
+        'dnc' => [
+            'label' => 'Do Not Call',
+        ],
+        'busy' => [
+            'label' => 'Busy',
+        ],
+        'disconnected' => [
+            'label' => 'Disconnected',
+        ],
     ],
 
     /*

@@ -43,6 +43,7 @@ class DialerCallConnected implements ShouldBroadcastNow
                 'phone' => $this->call->contact->getDisplayPhone(),
             ],
             'amd_result' => $this->call->amd_result,
+            'conference_name' => $this->call->twilio_conference_sid,
         ];
     }
 

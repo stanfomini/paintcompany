@@ -4,6 +4,7 @@ namespace App\Services\Prospector;
 
 use App\Events\Prospector\SmsReceived;
 use App\Models\Prospector\Agent;
+use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
 use App\Models\Prospector\PhoneNumber;
@@ -172,6 +173,15 @@ class ProspectorSmsService
         // Update the contact's SMS count
         if ($contact) {
             $contact->increment('total_sms');
+
+            // Push-to-front: if contact is queued in any campaign, bump to front
+            $queueEntry = CampaignContact::where('contact_id', $contact->id)
+                ->where('status', 'queued')
+                ->first();
+
+            if ($queueEntry) {
+                app(WebhookIntakeService::class)->pushToFront($contact, $queueEntry);
+            }
         }
 
         Log::info('Prospector inbound SMS received', [

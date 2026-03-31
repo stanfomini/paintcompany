@@ -69,6 +69,11 @@ class CampaignContact extends Model
         $query->where('status', 'queued')->orderBy('sort_order')->limit(1);
     }
 
+    public function scopeCallbackScheduled(Builder $query): void
+    {
+        $query->where('status', 'callback_scheduled');
+    }
+
     // ──────────────────────────────────────
     // Methods
     // ──────────────────────────────────────
@@ -124,6 +129,16 @@ class CampaignContact extends Model
     {
         $this->update([
             'status' => 'queued',
+        ]);
+    }
+
+    /**
+     * Schedule a callback by setting status to callback_scheduled.
+     */
+    public function markCallbackScheduled(): void
+    {
+        $this->update([
+            'status' => 'callback_scheduled',
         ]);
     }
 }

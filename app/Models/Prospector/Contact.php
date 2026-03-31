@@ -40,6 +40,8 @@ class Contact extends Model
         'total_calls',
         'total_sms',
         'priority',
+        'pipeline_stage_id',
+        'follow_up_at',
     ];
 
     protected function casts(): array
@@ -52,6 +54,7 @@ class Contact extends Model
             'total_calls' => 'integer',
             'total_sms' => 'integer',
             'priority' => 'integer',
+            'follow_up_at' => 'datetime',
         ];
     }
 
@@ -82,6 +85,16 @@ class Contact extends Model
     public function campaignEntries(): HasMany
     {
         return $this->hasMany(CampaignContact::class, 'contact_id');
+    }
+
+    public function pipelineStage(): BelongsTo
+    {
+        return $this->belongsTo(PipelineStage::class, 'pipeline_stage_id');
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(ContactNote::class, 'contact_id');
     }
 
     // ──────────────────────────────────────
@@ -171,6 +184,14 @@ class Contact extends Model
     public function isDnc(): bool
     {
         return $this->do_not_call;
+    }
+
+    /**
+     * Check if this contact was contacted today.
+     */
+    public function wasContactedToday(): bool
+    {
+        return $this->last_contacted_at?->isToday() ?? false;
     }
 
     /**

@@ -31,6 +31,8 @@ class Campaign extends Model
         'contact_count',
         'calls_attempted',
         'calls_connected',
+        'auto_vm_drop',
+        'default_rvm_template_id',
         'created_by',
     ];
 
@@ -43,6 +45,7 @@ class Campaign extends Model
             'contact_count' => 'integer',
             'calls_attempted' => 'integer',
             'calls_connected' => 'integer',
+            'auto_vm_drop' => 'boolean',
         ];
     }
 
@@ -83,6 +86,16 @@ class Campaign extends Model
     public function campaignContacts(): HasMany
     {
         return $this->hasMany(CampaignContact::class, 'campaign_id');
+    }
+
+    public function callScripts(): HasMany
+    {
+        return $this->hasMany(CallScript::class, 'campaign_id');
+    }
+
+    public function defaultRvmTemplate(): BelongsTo
+    {
+        return $this->belongsTo(RvmTemplate::class, 'default_rvm_template_id');
     }
 
     // ──────────────────────────────────────

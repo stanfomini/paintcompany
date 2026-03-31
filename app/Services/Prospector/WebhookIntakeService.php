@@ -2,10 +2,13 @@
 
 namespace App\Services\Prospector;
 
+use App\Events\Prospector\NewLeadArrived;
+use App\Events\Prospector\QueueUpdated;
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
+use App\Models\Prospector\Pipeline;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -96,6 +99,7 @@ class WebhookIntakeService
         }
 
         // Enroll in campaign if campaign_ulid provided
+        $enrolledCampaign = null;
         if (! empty($data['campaign_ulid'])) {
             $campaign = Campaign::where('company_id', $company->id)
                 ->where('ulid', $data['campaign_ulid'])
@@ -104,7 +108,35 @@ class WebhookIntakeService
 
             if ($campaign) {
                 $campaignEnrolled = $this->enrollInCampaign($contact, $campaign);
+                if ($campaignEnrolled) {
+                    $enrolledCampaign = $campaign;
+                }
             }
+        }
+
+        // Auto-enroll in default campaign if new contact and no explicit campaign enrollment
+        if ($created && ! $campaignEnrolled && $company->default_campaign_id) {
+            $defaultCampaign = Campaign::find($company->default_campaign_id);
+            if ($defaultCampaign && $defaultCampaign->isActive()) {
+                $campaignEnrolled = $this->enrollAtFront($contact, $defaultCampaign);
+                if ($campaignEnrolled) {
+                    $enrolledCampaign = $defaultCampaign;
+
+                    // Set default pipeline stage if pipeline exists
+                    $defaultPipeline = Pipeline::where('is_default', true)->first();
+                    if ($defaultPipeline) {
+                        $firstStage = $defaultPipeline->stages()->orderBy('sort_order')->first();
+                        if ($firstStage) {
+                            $contact->update(['pipeline_stage_id' => $firstStage->id]);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Broadcast new lead event if contact was just created
+        if ($created) {
+            broadcast(new NewLeadArrived($contact, $company, $enrolledCampaign));
         }
 
         Log::info('Webhook lead processed', [
@@ -228,6 +260,68 @@ class WebhookIntakeService
     }
 
     /**
+     * Enroll a contact at the front of a campaign queue.
+     *
+     * Shifts all existing queued contacts' sort_order up by 1,
+     * then inserts the new contact at sort_order 0.
+     */
+    public function enrollAtFront(Contact $contact, Campaign $campaign): bool
+    {
+        $alreadyEnrolled = CampaignContact::where('campaign_id', $campaign->id)
+            ->where('contact_id', $contact->id)
+            ->exists();
+
+        if ($alreadyEnrolled) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($contact, $campaign): bool {
+            // Shift all existing contacts' sort_order up by 1
+            CampaignContact::where('campaign_id', $campaign->id)
+                ->increment('sort_order');
+
+            // Insert new contact at front
+            CampaignContact::create([
+                'campaign_id' => $campaign->id,
+                'contact_id' => $contact->id,
+                'sort_order' => 0,
+                'status' => 'queued',
+                'added_at' => now(),
+            ]);
+
+            $campaign->increment('contact_count');
+
+            broadcast(new QueueUpdated($contact, $campaign, 'added'));
+
+            return true;
+        });
+    }
+
+    /**
+     * Move a queued contact to the front of their campaign queue.
+     *
+     * Used when an inbound SMS is received from a queued contact.
+     */
+    public function pushToFront(Contact $contact, CampaignContact $queueEntry): void
+    {
+        DB::transaction(function () use ($queueEntry): void {
+            $currentOrder = $queueEntry->sort_order;
+
+            // Shift contacts before this one down by 1
+            CampaignContact::where('campaign_id', $queueEntry->campaign_id)
+                ->where('sort_order', '<', $currentOrder)
+                ->increment('sort_order');
+
+            $queueEntry->update(['sort_order' => 0]);
+        });
+
+        $campaign = Campaign::find($queueEntry->campaign_id);
+        if ($campaign) {
+            broadcast(new QueueUpdated($contact, $campaign, 'priority_bump'));
+        }
+    }
+
+    /**
      * Build the update data array for an existing contact.
      *
      * Only updates fields that are provided and non-null.
@@ -271,6 +365,14 @@ class WebhookIntakeService
         }
 
         return $updateData;
+    }
+
+    /**
+     * Public wrapper for phone validation.
+     */
+    public function isValidPhonePublic(string $phone): bool
+    {
+        return $this->isValidPhone($phone);
     }
 
     /**

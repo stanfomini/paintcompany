@@ -276,6 +276,20 @@ class PowerDialerService
             $call->contact->update(['do_not_call' => true]);
         }
 
+        // Handle callback disposition — schedule for follow-up
+        if ($disposition === 'callback' && $call->contact->follow_up_at && $call->campaign_id) {
+            $campaignContact = CampaignContact::where('campaign_id', $call->campaign_id)
+                ->where('contact_id', $call->contact_id)
+                ->first();
+
+            if ($campaignContact) {
+                $campaignContact->markCallbackScheduled();
+            }
+        }
+
+        // Auto-enroll in drip sequence based on disposition
+        $this->autoEnrollInSequence($call->contact, $disposition, $call->company_id);
+
         // Broadcast disposition event
         broadcast(new ContactDispositioned(
             companyId: $call->company_id,
@@ -418,5 +432,45 @@ class PowerDialerService
         ]);
 
         return null;
+    }
+
+    /**
+     * Auto-enroll a contact in a drip sequence based on disposition.
+     *
+     * Checks if the disposition has an auto_sequence configured, finds the
+     * matching active sequence by name, and enrolls the contact.
+     */
+    private function autoEnrollInSequence(\App\Models\Prospector\Contact $contact, string $disposition, int $companyId): void
+    {
+        $autoSequenceName = config("prospector.dispositions.{$disposition}.auto_sequence");
+
+        if (! $autoSequenceName) {
+            return;
+        }
+
+        $sequence = \App\Models\Prospector\Sequence::where('company_id', $companyId)
+            ->where('name', $autoSequenceName)
+            ->active()
+            ->first();
+
+        if (! $sequence) {
+            return;
+        }
+
+        try {
+            app(SequenceEnrollmentService::class)->enrollContact($contact, $sequence);
+
+            Log::info('Auto-enrolled contact in sequence after disposition', [
+                'contact_id' => $contact->id,
+                'sequence_id' => $sequence->id,
+                'disposition' => $disposition,
+            ]);
+        } catch (\Exception $e) {
+            Log::warning('Auto-sequence enrollment failed', [
+                'contact_id' => $contact->id,
+                'disposition' => $disposition,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 }

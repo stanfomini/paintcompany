@@ -29,6 +29,8 @@ class Company extends Model
         'webhook_secret',
         'settings',
         'is_active',
+        'notes',
+        'default_campaign_id',
     ];
 
     protected function casts(): array
@@ -70,6 +72,31 @@ class Company extends Model
     public function mainPhoneNumber(): BelongsTo
     {
         return $this->belongsTo(PhoneNumber::class, 'main_phone_number_id');
+    }
+
+    public function bookingLinks(): HasMany
+    {
+        return $this->hasMany(CompanyBookingLink::class, 'company_id');
+    }
+
+    public function defaultCampaign(): BelongsTo
+    {
+        return $this->belongsTo(Campaign::class, 'default_campaign_id');
+    }
+
+    public function callScripts(): HasMany
+    {
+        return $this->hasMany(CallScript::class, 'company_id');
+    }
+
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(Contact::class, 'company_id');
+    }
+
+    public function campaigns(): HasMany
+    {
+        return $this->hasMany(Campaign::class, 'company_id');
     }
 
     // ──────────────────────────────────────

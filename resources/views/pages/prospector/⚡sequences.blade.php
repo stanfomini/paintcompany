@@ -54,7 +54,12 @@ class extends Component
     {
         return Sequence::query()
             ->with(['company', 'createdBy'])
-            ->withCount(['steps', 'enrollments as active_enrollments_count' => fn ($q) => $q->where('status', 'active')])
+            ->withCount([
+                'steps',
+                'enrollments as active_enrollments_count' => fn ($q) => $q->where('status', 'active'),
+                'enrollments as enrolled_count',
+                'enrollments as completed_count' => fn ($q) => $q->where('status', 'completed'),
+            ])
             ->when($this->search, fn ($q) => $q->where('name', 'like', '%'.$this->search.'%'))
             ->when($this->filterCompany, fn ($q) => $q->where('company_id', $this->filterCompany))
             ->when($this->filterStatus, fn ($q) => $q->where('status', $this->filterStatus))
@@ -183,6 +188,39 @@ class extends Component
         $this->deletingName = '';
     }
 
+    public function cloneSequence(int $id): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $original = Sequence::findOrFail($id);
+
+        $clone = Sequence::create([
+            'company_id' => $original->company_id,
+            'name' => $original->name.' (Copy)',
+            'description' => $original->description,
+            'status' => 'draft',
+            'trigger_type' => $original->trigger_type,
+            'trigger_config' => $original->trigger_config,
+            'exit_conditions' => $original->exit_conditions,
+            'business_hours_only' => $original->business_hours_only,
+            'created_by' => Auth::id(),
+        ]);
+
+        foreach ($original->steps()->orderBy('sort_order')->get() as $step) {
+            $clone->steps()->create([
+                'type' => $step->type,
+                'config' => $step->config,
+                'delay_value' => $step->delay_value,
+                'delay_unit' => $step->delay_unit,
+                'sort_order' => $step->sort_order,
+            ]);
+        }
+
+        unset($this->sequences);
+    }
+
     protected function resetForm(): void
     {
         $this->editingId = null;
@@ -202,7 +240,7 @@ class extends Component
             <flux:text class="mt-1">{{ __('Automated drip sequences for multi-touch outreach campaigns.') }}</flux:text>
         </div>
 
-        <flux:button variant="primary" icon="plus" wire:click="openAddModal">
+        <flux:button variant="primary" icon="plus" wire:click="openAddModal" wire:loading.attr="disabled" wire:target="openAddModal">
             {{ __('Create Sequence') }}
         </flux:button>
     </div>
@@ -252,6 +290,8 @@ class extends Component
                 <flux:table.column>{{ __('Trigger') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Steps') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Active') }}</flux:table.column>
+                <flux:table.column class="text-right">{{ __('Enrolled') }}</flux:table.column>
+                <flux:table.column class="text-right">{{ __('Completed') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Completion') }}</flux:table.column>
                 <flux:table.column>{{ __('Created By') }}</flux:table.column>
                 <flux:table.column class="text-right">{{ __('Actions') }}</flux:table.column>
@@ -304,6 +344,14 @@ class extends Component
                         </flux:table.cell>
 
                         <flux:table.cell class="text-right">
+                            {{ $sequence->enrolled_count }}
+                        </flux:table.cell>
+
+                        <flux:table.cell class="text-right">
+                            {{ $sequence->completed_count }}
+                        </flux:table.cell>
+
+                        <flux:table.cell class="text-right">
                             {{ $sequence->getCompletionRate() }}%
                         </flux:table.cell>
 
@@ -324,6 +372,7 @@ class extends Component
                                     :href="route('prospector.sequences.show', $sequence->id)"
                                     title="{{ __('View') }}"
                                 />
+                                <flux:button size="sm" variant="ghost" icon="square-2-stack" wire:click="cloneSequence({{ $sequence->id }})" wire:loading.attr="disabled" wire:target="cloneSequence({{ $sequence->id }})" title="{{ __('Clone') }}" />
                                 <flux:button size="sm" variant="ghost" icon="pencil" wire:click="openEditModal({{ $sequence->id }})" title="{{ __('Edit') }}" />
                                 <flux:button size="sm" variant="ghost" icon="trash" wire:click="confirmDelete({{ $sequence->id }})" title="{{ __('Delete') }}" />
                             </div>
@@ -394,8 +443,9 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button type="submit" variant="primary" class="flex-1">
-                    {{ $editingId ? __('Update Sequence') : __('Create Sequence') }}
+                <flux:button type="submit" variant="primary" class="flex-1" wire:loading.attr="disabled" wire:target="save">
+                    <span wire:loading.remove wire:target="save">{{ $editingId ? __('Update Sequence') : __('Create Sequence') }}</span>
+                    <span wire:loading wire:target="save">{{ __('Saving...') }}</span>
                 </flux:button>
             </div>
         </form>
@@ -413,7 +463,10 @@ class extends Component
 
             <div class="flex gap-2">
                 <flux:button variant="ghost" wire:click="cancelDelete" class="flex-1">{{ __('Cancel') }}</flux:button>
-                <flux:button variant="danger" wire:click="delete" class="flex-1">{{ __('Delete') }}</flux:button>
+                <flux:button variant="danger" wire:click="delete" class="flex-1" wire:loading.attr="disabled" wire:target="delete">
+                    <span wire:loading.remove wire:target="delete">{{ __('Delete') }}</span>
+                    <span wire:loading wire:target="delete">{{ __('Deleting...') }}</span>
+                </flux:button>
             </div>
         </div>
     </flux:modal>

@@ -103,7 +103,9 @@ class extends Component
     #[Computed]
     public function dispositions(): array
     {
-        return config('prospector.dispositions', []);
+        return collect(config('prospector.dispositions', []))
+            ->map(fn ($value) => is_array($value) ? $value['label'] : $value)
+            ->all();
     }
 
     #[Computed]
@@ -218,6 +220,60 @@ class extends Component
         $this->playingCallId = $this->playingCallId === $callId ? null : $callId;
     }
 
+    public function exportCsv(): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        $query = Call::query()
+            ->with(['agent.user', 'contact', 'company', 'campaign'])
+            ->when($this->search, function ($q) {
+                $q->where(function ($sub) {
+                    $sub->whereHas('contact', fn ($c) => $c->where('first_name', 'like', '%'.$this->search.'%')
+                        ->orWhere('last_name', 'like', '%'.$this->search.'%')
+                        ->orWhere('phone', 'like', '%'.$this->search.'%'))
+                        ->orWhere('from_number', 'like', '%'.$this->search.'%')
+                        ->orWhere('to_number', 'like', '%'.$this->search.'%');
+                });
+            })
+            ->when($this->companyFilter, fn ($q) => $q->where('company_id', $this->companyFilter))
+            ->when($this->agentFilter, fn ($q) => $q->where('agent_id', $this->agentFilter))
+            ->when($this->directionFilter, fn ($q) => $q->where('direction', $this->directionFilter))
+            ->when($this->statusFilter, fn ($q) => $q->where('status', $this->statusFilter))
+            ->when($this->dispositionFilter, fn ($q) => $q->where('disposition', $this->dispositionFilter))
+            ->when($this->dateFrom, fn ($q) => $q->whereDate('started_at', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->whereDate('started_at', '<=', $this->dateTo))
+            ->orderBy('started_at', 'desc');
+
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="call-history-'.date('Y-m-d').'.csv"',
+        ];
+
+        return response()->streamDownload(function () use ($query) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, ['Date/Time', 'Direction', 'Agent', 'Contact', 'Company', 'From', 'To', 'Duration (s)', 'Status', 'Disposition', 'AMD Result', 'Campaign']);
+
+            $query->chunk(500, function ($calls) use ($handle) {
+                foreach ($calls as $call) {
+                    fputcsv($handle, [
+                        $call->started_at?->format('Y-m-d H:i:s') ?? '',
+                        $call->direction,
+                        $call->agent?->user?->name ?? '',
+                        $call->contact ? $call->contact->getFullName() : '',
+                        $call->company?->name ?? '',
+                        $call->from_number ?? '',
+                        $call->to_number ?? '',
+                        $call->duration_seconds ?? 0,
+                        $call->status,
+                        $call->disposition ?? '',
+                        $call->amd_result ?? '',
+                        $call->campaign?->name ?? '',
+                    ]);
+                }
+            });
+
+            fclose($handle);
+        }, 'call-history-'.date('Y-m-d').'.csv', $headers);
+    }
+
     protected function clearCaches(): void
     {
         unset($this->calls, $this->stats, $this->agents);
@@ -293,6 +349,11 @@ class extends Component
             <flux:heading size="xl">{{ __('Call History') }}</flux:heading>
             <flux:text class="mt-1">{{ __('Browse and review all call records across campaigns.') }}</flux:text>
         </div>
+
+        <flux:button variant="ghost" icon="arrow-down-tray" wire:click="exportCsv" wire:loading.attr="disabled" wire:target="exportCsv">
+            <span wire:loading.remove wire:target="exportCsv">{{ __('Export CSV') }}</span>
+            <span wire:loading wire:target="exportCsv">{{ __('Exporting...') }}</span>
+        </flux:button>
     </div>
 
     {{-- Stats --}}
@@ -378,7 +439,7 @@ class extends Component
         </div>
 
         @if ($search || $companyFilter || $agentFilter || $directionFilter || $statusFilter || $dispositionFilter || $dateFrom || $dateTo)
-            <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearFilters">
+            <flux:button size="sm" variant="ghost" icon="x-mark" wire:click="clearFilters" wire:loading.attr="disabled" wire:target="clearFilters">
                 {{ __('Clear') }}
             </flux:button>
         @endif
@@ -501,9 +562,11 @@ class extends Component
                                 <flux:button
                                     size="sm"
                                     variant="ghost"
-                                    icon="play-circle"
+                                    :icon="$playingCallId === $call->id ? 'stop-circle' : 'play-circle'"
                                     wire:click.stop="togglePlayer({{ $call->id }})"
-                                    title="{{ __('Play Recording') }}"
+                                    wire:loading.attr="disabled"
+                                    wire:target="togglePlayer({{ $call->id }})"
+                                    title="{{ $playingCallId === $call->id ? __('Stop') : __('Play Recording') }}"
                                 />
                             @else
                                 <span class="text-zinc-400">-</span>

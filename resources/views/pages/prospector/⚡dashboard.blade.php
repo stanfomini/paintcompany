@@ -1,11 +1,18 @@
 <?php
 
+use App\Events\Prospector\SupervisorJoined;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\CampaignContact;
+use App\Models\Prospector\Company;
+use App\Models\Prospector\Contact;
 use App\Models\Prospector\DialerSession;
+use App\Models\Prospector\PhoneNumber;
+use App\Models\Prospector\Pipeline;
 use App\Models\Prospector\SmsMessage;
+use App\Models\Prospector\TwilioAccount;
+use App\Services\Prospector\ConferenceService;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -22,6 +29,26 @@ class extends Component
         if (Auth::user()->type !== 'internal') {
             abort(403);
         }
+    }
+
+    #[Computed]
+    public function onboardingSteps(): array
+    {
+        return [
+            ['label' => 'Connect Twilio Account', 'done' => TwilioAccount::where('is_active', true)->exists(), 'route' => 'prospector.settings'],
+            ['label' => 'Create a Company', 'done' => Company::where('is_active', true)->exists(), 'route' => 'prospector.companies'],
+            ['label' => 'Assign Phone Numbers', 'done' => PhoneNumber::whereNotNull('company_id')->exists(), 'route' => 'prospector.phone-numbers'],
+            ['label' => 'Add Contacts', 'done' => Contact::exists(), 'route' => 'prospector.contacts'],
+            ['label' => 'Create a Campaign', 'done' => Campaign::where('status', 'active')->exists(), 'route' => 'prospector.campaigns'],
+            ['label' => 'Set Up Pipeline', 'done' => Pipeline::exists(), 'route' => 'prospector.pipelines'],
+            ['label' => 'Start Dialing!', 'done' => DialerSession::exists(), 'route' => 'prospector.dialer'],
+        ];
+    }
+
+    #[Computed]
+    public function isOnboardingComplete(): bool
+    {
+        return collect($this->onboardingSteps)->every(fn (array $step) => $step['done']);
     }
 
     #[Computed]
@@ -154,6 +181,97 @@ class extends Component
             default => 'zinc',
         };
     }
+
+    // ──────────────────────────────────────
+    // Supervisor Features
+    // ──────────────────────────────────────
+
+    public ?string $supervisorMode = null; // null, listen, whisper, barge
+    public ?int $supervisorSessionId = null;
+    public ?string $supervisorCallSid = null;
+
+    #[Computed]
+    public function liveCalls(): \Illuminate\Support\Collection
+    {
+        return Call::query()
+            ->whereIn('status', ['ringing', 'in-progress', 'connected'])
+            ->whereNotNull('twilio_conference_sid')
+            ->with(['agent.user', 'contact'])
+            ->orderByDesc('started_at')
+            ->get();
+    }
+
+    public function listenToCall(int $callId): void
+    {
+        $this->supervisorAction($callId, 'listen');
+    }
+
+    public function whisperToAgent(int $callId): void
+    {
+        $this->supervisorAction($callId, 'whisper');
+    }
+
+    public function bargeIntoCall(int $callId): void
+    {
+        $this->supervisorAction($callId, 'barge');
+    }
+
+    public function leaveSupervisorMode(): void
+    {
+        if ($this->supervisorCallSid && $this->supervisorSessionId) {
+            $call = Call::find($this->supervisorSessionId);
+
+            if ($call && $call->twilio_conference_sid) {
+                app(ConferenceService::class)->removeParticipant(
+                    $call->twilio_conference_sid,
+                    $this->supervisorCallSid
+                );
+            }
+        }
+
+        $this->supervisorMode = null;
+        $this->supervisorSessionId = null;
+        $this->supervisorCallSid = null;
+    }
+
+    protected function supervisorAction(int $callId, string $mode): void
+    {
+        $call = Call::findOrFail($callId);
+
+        if (! $call->twilio_conference_sid || ! $call->agent_id) {
+            return;
+        }
+
+        $user = Auth::user();
+        $company = Company::where('is_active', true)->first();
+
+        if (! $company) {
+            return;
+        }
+
+        $supervisor = Agent::firstOrCreate(
+            ['user_id' => $user->id, 'company_id' => $company->id],
+            ['status' => 'offline', 'max_concurrent_lines' => 1, 'wrap_up_seconds' => 30],
+        );
+
+        // Leave existing supervisor mode if active
+        if ($this->supervisorCallSid) {
+            $this->leaveSupervisorMode();
+        }
+
+        $service = app(ConferenceService::class);
+
+        $this->supervisorCallSid = match ($mode) {
+            'listen' => $service->supervisorListen($call->twilio_conference_sid, $supervisor),
+            'whisper' => $service->supervisorWhisper($call->twilio_conference_sid, $supervisor, $call->twilio_call_sid),
+            'barge' => $service->supervisorBarge($call->twilio_conference_sid, $supervisor),
+        };
+
+        $this->supervisorMode = $mode;
+        $this->supervisorSessionId = $callId;
+
+        broadcast(new SupervisorJoined($supervisor, $call->agent_id, $mode));
+    }
 }; ?>
 
 <div wire:poll.10s>
@@ -161,6 +279,35 @@ class extends Component
         <flux:heading size="xl">{{ __('Prospector Dashboard') }}</flux:heading>
         <flux:text class="mt-1">{{ __('Real-time overview of calling operations and agent performance.') }}</flux:text>
     </div>
+
+    {{-- Onboarding Checklist (hidden when all complete) --}}
+    @unless ($this->isOnboardingComplete)
+        <div class="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-5 dark:border-blue-800 dark:bg-blue-900/20">
+            <div class="mb-3 flex items-center gap-2">
+                <flux:icon name="rocket-launch" variant="mini" class="text-blue-600 dark:text-blue-400" />
+                <flux:heading size="sm" class="text-blue-900 dark:text-blue-100">{{ __('Getting Started') }}</flux:heading>
+                <span class="ml-auto text-sm text-blue-600 dark:text-blue-400">
+                    {{ collect($this->onboardingSteps)->filter(fn ($s) => $s['done'])->count() }}/{{ count($this->onboardingSteps) }} {{ __('complete') }}
+                </span>
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                @foreach ($this->onboardingSteps as $step)
+                    <a
+                        href="{{ route($step['route']) }}"
+                        wire:navigate
+                        class="flex items-center gap-2 rounded-md px-3 py-2 text-sm transition {{ $step['done'] ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-white text-zinc-700 hover:bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700' }}"
+                    >
+                        @if ($step['done'])
+                            <flux:icon name="check-circle" variant="mini" class="size-5 shrink-0 text-green-600 dark:text-green-400" />
+                        @else
+                            <span class="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-zinc-300 dark:border-zinc-600"></span>
+                        @endif
+                        <span class="{{ $step['done'] ? 'line-through opacity-70' : 'font-medium' }}">{{ $step['label'] }}</span>
+                    </a>
+                @endforeach
+            </div>
+        </div>
+    @endunless
 
     {{-- Top Row: Today's Call Stats --}}
     <div class="mb-6 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -221,6 +368,103 @@ class extends Component
             <flux:text class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('SMS Sent Today') }}</flux:text>
             <flux:heading size="xl" class="mt-1">{{ number_format($this->operationalStats['sms_today']) }}</flux:heading>
         </div>
+    </div>
+
+    {{-- Live Calls Panel (Supervisor) --}}
+    <div class="mb-6">
+        <div class="mb-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <flux:heading size="lg">{{ __('Live Calls') }}</flux:heading>
+                @if ($this->liveCalls->isNotEmpty())
+                    <flux:badge size="sm" color="green">{{ $this->liveCalls->count() }}</flux:badge>
+                @endif
+            </div>
+            @if ($supervisorMode)
+                <div class="flex items-center gap-2">
+                    <flux:badge size="sm" color="{{ $supervisorMode === 'barge' ? 'red' : ($supervisorMode === 'whisper' ? 'amber' : 'blue') }}">
+                        {{ ucfirst($supervisorMode) }} Mode
+                    </flux:badge>
+                    <flux:button size="sm" variant="danger" icon="x-mark" wire:click="leaveSupervisorMode" wire:loading.attr="disabled" wire:target="leaveSupervisorMode">
+                        {{ __('Leave') }}
+                    </flux:button>
+                </div>
+            @endif
+        </div>
+
+        @if ($this->liveCalls->isEmpty())
+            <div class="rounded-lg border border-zinc-200 bg-white p-8 text-center dark:border-zinc-700 dark:bg-zinc-800">
+                <flux:icon name="phone" class="mx-auto mb-2 size-10 text-zinc-400" />
+                <flux:text>{{ __('No live calls at the moment.') }}</flux:text>
+                <flux:text class="mt-1 text-xs text-zinc-400">{{ __('Active calls will appear here with listen, whisper, and barge controls.') }}</flux:text>
+            </div>
+        @else
+            <div class="space-y-3">
+                @foreach ($this->liveCalls as $liveCall)
+                    <div
+                        wire:key="live-{{ $liveCall->id }}"
+                        class="flex items-center justify-between rounded-lg border px-4 py-3
+                            {{ $supervisorSessionId === $liveCall->id
+                                ? 'border-blue-300 bg-blue-50 dark:border-blue-700 dark:bg-blue-900/20'
+                                : 'border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800'
+                            }}"
+                    >
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="inline-flex size-2.5 rounded-full {{ $liveCall->status === 'connected' || $liveCall->status === 'in-progress' ? 'bg-green-500' : 'bg-amber-500 animate-pulse' }}"></span>
+                                <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                    {{ $liveCall->agent?->user?->name ?? __('Unknown Agent') }}
+                                </span>
+                                <span class="text-zinc-400">--</span>
+                                <span class="text-sm text-zinc-600 dark:text-zinc-300">
+                                    {{ ucfirst($liveCall->status) }}
+                                </span>
+                            </div>
+                            <div class="mt-0.5 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+                                @if ($liveCall->contact)
+                                    <span>{{ $liveCall->contact->getFullName() }}</span>
+                                    <span class="text-zinc-300 dark:text-zinc-600">|</span>
+                                    <span class="font-mono">{{ $liveCall->contact->getDisplayPhone() }}</span>
+                                @endif
+                                @if ($liveCall->started_at)
+                                    <span class="text-zinc-300 dark:text-zinc-600">|</span>
+                                    <span>{{ $liveCall->started_at->diffForHumans(syntax: true) }}</span>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="ml-3 flex shrink-0 items-center gap-1">
+                            <flux:button
+                                size="sm"
+                                variant="{{ $supervisorSessionId === $liveCall->id && $supervisorMode === 'listen' ? 'primary' : 'ghost' }}"
+                                icon="eye"
+                                wire:click="listenToCall({{ $liveCall->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="listenToCall({{ $liveCall->id }})"
+                                title="{{ __('Listen') }}"
+                            />
+                            <flux:button
+                                size="sm"
+                                variant="{{ $supervisorSessionId === $liveCall->id && $supervisorMode === 'whisper' ? 'primary' : 'ghost' }}"
+                                icon="chat-bubble-bottom-center-text"
+                                wire:click="whisperToAgent({{ $liveCall->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="whisperToAgent({{ $liveCall->id }})"
+                                title="{{ __('Whisper') }}"
+                            />
+                            <flux:button
+                                size="sm"
+                                variant="{{ $supervisorSessionId === $liveCall->id && $supervisorMode === 'barge' ? 'danger' : 'ghost' }}"
+                                icon="megaphone"
+                                wire:click="bargeIntoCall({{ $liveCall->id }})"
+                                wire:loading.attr="disabled"
+                                wire:target="bargeIntoCall({{ $liveCall->id }})"
+                                title="{{ __('Barge') }}"
+                            />
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        @endif
     </div>
 
     {{-- Active Sessions Panel --}}

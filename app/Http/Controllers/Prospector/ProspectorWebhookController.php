@@ -118,10 +118,59 @@ class ProspectorWebhookController extends Controller
                 'ended_at' => now(),
             ]);
 
+            // Auto-VM drop if campaign has it enabled
+            $this->attemptAutoVmDrop($call);
+
             broadcast(new DialerCallEnded($call->fresh(), $call->agent_id));
         }
 
         return response('', 200);
+    }
+
+    /**
+     * Attempt automatic voicemail drop when AMD detects a machine.
+     *
+     * If the call's campaign has auto_vm_drop enabled with a default
+     * RVM template, drop the voicemail and auto-disposition the call.
+     */
+    private function attemptAutoVmDrop(Call $call): void
+    {
+        $call->loadMissing(['campaign.defaultRvmTemplate', 'contact', 'fromPhoneNumber']);
+
+        $campaign = $call->campaign;
+
+        if (! $campaign || ! $campaign->auto_vm_drop || ! $campaign->default_rvm_template_id) {
+            return;
+        }
+
+        $template = $campaign->defaultRvmTemplate;
+        $company = $campaign->company;
+
+        if (! $template || ! $company || ! $call->contact) {
+            return;
+        }
+
+        try {
+            $rvmService = app(\App\Services\Prospector\RvmService::class);
+            $rvmService->drop($company, $call->contact, $template);
+
+            // Auto-disposition as voicemail
+            $call->update([
+                'disposition' => 'voicemail',
+                'disposition_notes' => 'Auto VM drop',
+            ]);
+
+            Log::info('Auto-VM dropped', [
+                'call_id' => $call->id,
+                'campaign_id' => $campaign->id,
+                'template_id' => $template->id,
+            ]);
+        } catch (\Exception $e) {
+            Log::warning('Auto-VM drop failed', [
+                'call_id' => $call->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
