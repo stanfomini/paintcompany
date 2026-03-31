@@ -2274,6 +2274,23 @@ class extends Component
                         console.warn('[Studio] OverlayRenderer init failed (non-critical):', err.message);
                     }
 
+                    // 4. Connect to LiveKit room early (for guest tracks)
+                    // This lets guests be brought on BEFORE the host clicks "Start Broadcasting"
+                    try {
+                        const { Room, RoomEvent } = await window.loadLiveKit();
+                        room = new Room({ adaptiveStream: true, dynacast: true });
+
+                        room.on(RoomEvent.ParticipantConnected, () => this._updateViewerCount());
+                        room.on(RoomEvent.ParticipantDisconnected, () => this._updateViewerCount());
+                        room.on(RoomEvent.Disconnected, () => { this.broadcasting = false; });
+
+                        await room.connect(this._livekitUrl, this._livekitToken);
+                        this._setupGuestTracksFromLiveKit();
+                        console.log('[Studio] LiveKit room connected (guest tracks ready)');
+                    } catch (err) {
+                        console.warn('[Studio] LiveKit room connection failed (non-fatal):', err.message);
+                    }
+
                     this.connected = true;
                     console.log('[Studio] Setup complete — ready to broadcast');
                 },
@@ -2286,15 +2303,19 @@ class extends Component
                     if (!programCompositor || this.broadcasting) return;
 
                     try {
-                        const { Room, RoomEvent } = await window.loadLiveKit();
-                        room = new Room({ adaptiveStream: true, dynacast: true });
+                        // Room is already connected from startStudio()
+                        // If not connected yet, connect now
+                        if (!room) {
+                            const { Room, RoomEvent } = await window.loadLiveKit();
+                            room = new Room({ adaptiveStream: true, dynacast: true });
 
-                        room.on(RoomEvent.ParticipantConnected, () => this._updateViewerCount());
-                        room.on(RoomEvent.ParticipantDisconnected, () => this._updateViewerCount());
-                        room.on(RoomEvent.Disconnected, () => { this.broadcasting = false; });
+                            room.on(RoomEvent.ParticipantConnected, () => this._updateViewerCount());
+                            room.on(RoomEvent.ParticipantDisconnected, () => this._updateViewerCount());
+                            room.on(RoomEvent.Disconnected, () => { this.broadcasting = false; });
 
-                        await room.connect(this._livekitUrl, this._livekitToken);
-                        this._setupGuestTracksFromLiveKit(); // Set up guest track listeners on the connected room
+                            await room.connect(this._livekitUrl, this._livekitToken);
+                            this._setupGuestTracksFromLiveKit();
+                        }
 
                         // Publish PROGRAM canvas to LiveKit
                         const canvasStream = programCompositor.getOutputStream();
