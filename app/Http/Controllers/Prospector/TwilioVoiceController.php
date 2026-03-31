@@ -48,7 +48,11 @@ class TwilioVoiceController extends Controller
             ['status' => 'offline', 'max_concurrent_lines' => 1, 'wrap_up_seconds' => 30],
         );
 
-        $token = $this->conferenceService->generateAccessToken($agent);
+        try {
+            $token = $this->conferenceService->generateAccessToken($agent);
+        } catch (\RuntimeException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
 
         return response()->json(['token' => $token]);
     }

@@ -26,6 +26,9 @@ class extends Component
     public string $name = '';
     public string $accountSid = '';
     public string $authToken = '';
+    public string $apiKeySid = '';
+    public string $apiKeySecret = '';
+    public string $twimlAppSid = '';
 
     // Sync results
     public ?array $syncResults = null;
@@ -147,6 +150,9 @@ class extends Component
         $this->name = $account->name;
         $this->accountSid = '';
         $this->authToken = '';
+        $this->apiKeySid = '';
+        $this->apiKeySecret = '';
+        $this->twimlAppSid = '';
         $this->showModal = true;
     }
 
@@ -179,6 +185,10 @@ class extends Component
             $rules['authToken'] = ['nullable', 'string', 'max:100'];
         }
 
+        $rules['apiKeySid'] = ['nullable', 'string', 'max:100'];
+        $rules['apiKeySecret'] = ['nullable', 'string', 'max:100'];
+        $rules['twimlAppSid'] = ['nullable', 'string', 'max:100'];
+
         $this->validate($rules);
 
         if ($this->editingId) {
@@ -191,6 +201,15 @@ class extends Component
             if (! empty($this->authToken)) {
                 $data['auth_token'] = $this->authToken;
             }
+            if (! empty($this->apiKeySid)) {
+                $data['api_key_sid'] = $this->apiKeySid;
+            }
+            if (! empty($this->apiKeySecret)) {
+                $data['api_key_secret'] = $this->apiKeySecret;
+            }
+            if (! empty($this->twimlAppSid)) {
+                $data['twiml_app_sid'] = $this->twimlAppSid;
+            }
 
             $account->update($data);
         } else {
@@ -198,6 +217,9 @@ class extends Component
                 'name' => $this->name,
                 'account_sid' => $this->accountSid,
                 'auth_token' => $this->authToken,
+                'api_key_sid' => $this->apiKeySid ?: null,
+                'api_key_secret' => $this->apiKeySecret ?: null,
+                'twiml_app_sid' => $this->twimlAppSid ?: null,
                 'is_active' => true,
             ]);
         }
@@ -324,6 +346,9 @@ class extends Component
         $this->name = '';
         $this->accountSid = '';
         $this->authToken = '';
+        $this->apiKeySid = '';
+        $this->apiKeySecret = '';
+        $this->twimlAppSid = '';
     }
 }; ?>
 
@@ -711,6 +736,28 @@ class extends Component
                 :placeholder="$editingId ? __('Leave blank to keep current') : __('Your Twilio auth token')"
                 :required="! $editingId"
             />
+
+            <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+                <div class="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">Voice SDK Credentials (for softphone)</div>
+                <div class="space-y-3">
+                    <flux:input
+                        wire:model="apiKeySid"
+                        :label="__('API Key SID')"
+                        :placeholder="$editingId ? __('Leave blank to keep current') : __('SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
+                    />
+                    <flux:input
+                        wire:model="apiKeySecret"
+                        type="password"
+                        :label="__('API Key Secret')"
+                        :placeholder="$editingId ? __('Leave blank to keep current') : __('Your API key secret')"
+                    />
+                    <flux:input
+                        wire:model="twimlAppSid"
+                        :label="__('TwiML App SID')"
+                        :placeholder="$editingId ? __('Leave blank to keep current') : __('APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
+                    />
+                </div>
+            </div>
 
             <div class="flex gap-2">
                 <flux:button type="button" variant="ghost" wire:click="closeModal" class="flex-1">{{ __('Cancel') }}</flux:button>

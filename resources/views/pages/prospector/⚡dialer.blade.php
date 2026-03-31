@@ -1246,24 +1246,39 @@ class extends Component
             return m + ':' + s;
         },
 
+        phoneError: null,
+
         async initTwilio() {
             try {
                 const Device = await window.loadTwilioVoice();
                 const res = await fetch('/prospector/voice/token');
-                const { token } = await res.json();
+                const data = await res.json();
 
-                this.twilioDevice = new Device(token, {
+                if (!res.ok || data.error) {
+                    this.phoneError = data.error || 'Failed to get phone token';
+                    console.error('Phone token error:', this.phoneError);
+                    return;
+                }
+
+                this.twilioDevice = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
                     edge: 'ashburn',
                 });
 
-                this.twilioDevice.on('registered', () => { this.deviceReady = true; });
-                this.twilioDevice.on('error', (err) => { console.error('Twilio Device error:', err); });
+                this.twilioDevice.on('registered', () => {
+                    this.deviceReady = true;
+                    this.phoneError = null;
+                });
+                this.twilioDevice.on('error', (err) => {
+                    console.error('Twilio Device error:', err);
+                    this.phoneError = err.message || 'Phone error';
+                });
                 this.twilioDevice.on('incoming', (call) => { call.accept(); this.activeConnection = call; });
 
                 await this.twilioDevice.register();
                 console.log('Twilio Device registered');
             } catch (err) {
+                this.phoneError = err.message || 'Failed to connect phone';
                 console.error('Failed to initialize Twilio Device:', err);
             }
         },
@@ -1743,11 +1758,19 @@ class extends Component
             <div class="space-y-4 lg:col-span-5">
 
                 {{-- Softphone Status Bar — always visible --}}
-                <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+                <div class="rounded-lg border bg-white dark:bg-zinc-800"
+                    :class="deviceReady ? 'border-green-300 dark:border-green-700' : (phoneError ? 'border-red-300 dark:border-red-700' : 'border-amber-300 dark:border-amber-700')"
+                >
                     <div class="flex items-center justify-between px-4 py-2.5">
                         <div class="flex items-center gap-2">
-                            <span class="inline-flex size-2.5 rounded-full" :class="deviceReady ? 'bg-green-500' : 'bg-red-500'"></span>
-                            <span class="text-sm font-medium" :class="deviceReady ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'" x-text="deviceReady ? 'Phone Ready' : 'Phone Connecting...'"></span>
+                            <span class="inline-flex size-2.5 rounded-full" :class="deviceReady ? 'bg-green-500' : (phoneError ? 'bg-red-500' : 'bg-amber-500 animate-pulse')"></span>
+                            <span class="text-sm font-medium"
+                                :class="deviceReady ? 'text-green-700 dark:text-green-400' : (phoneError ? 'text-red-700 dark:text-red-400' : 'text-amber-700 dark:text-amber-400')"
+                                x-text="deviceReady ? 'Phone Ready' : (phoneError ? 'Phone Error' : 'Phone Connecting...')"
+                            ></span>
+                            <template x-if="phoneError">
+                                <span class="text-xs text-red-500 dark:text-red-400" x-text="phoneError"></span>
+                            </template>
                         </div>
                         <div class="flex items-center gap-2">
                             @if ($callingFrom)
@@ -1756,6 +1779,9 @@ class extends Component
                             @if ($callStatus === 'connected')
                                 <span class="font-mono text-sm font-bold text-green-600 dark:text-green-400" x-text="formatTime(callTimer)">00:00</span>
                             @endif
+                            <template x-if="!deviceReady">
+                                <button type="button" x-on:click="initTwilio()" class="text-xs font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400">Retry</button>
+                            </template>
                         </div>
                     </div>
                 </div>

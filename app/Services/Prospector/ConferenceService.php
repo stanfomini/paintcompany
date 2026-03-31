@@ -32,13 +32,14 @@ class ConferenceService
             );
         }
 
-        $apiKeySid = config('prospector.twilio.api_key_sid');
-        $apiKeySecret = config('prospector.twilio.api_key_secret');
-        $twimlAppSid = config('prospector.twilio.twiml_app_sid');
+        // Read API Key from database (per-account), fall back to config
+        $apiKeySid = $twilioAccount->api_key_sid ?: config('prospector.twilio.api_key_sid');
+        $apiKeySecret = $twilioAccount->api_key_secret ?: config('prospector.twilio.api_key_secret');
+        $twimlAppSid = $twilioAccount->twiml_app_sid ?: config('prospector.twilio.twiml_app_sid');
 
         if (! $apiKeySid || ! $apiKeySecret) {
             throw new RuntimeException(
-                'Twilio API Key credentials not configured. Set TWILIO_API_KEY_SID and TWILIO_API_KEY_SECRET.'
+                "Twilio API Key not configured for account {$twilioAccount->name}. Edit the account in Prospector Settings and add your API Key SID and Secret."
             );
         }
 
