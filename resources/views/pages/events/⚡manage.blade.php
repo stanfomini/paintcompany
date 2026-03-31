@@ -659,9 +659,17 @@ class extends Component
     {
         $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
 
-        app(LiveEventService::class)->markGuestLive($guest);
+        // Grant publish permission in LiveKit — guest can now send camera/mic
+        try {
+            app(LiveKitService::class)->grantPublish($this->event, $guest);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveKit: Failed to grant publish to guest', [
+                'guest_id' => $guest->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
-        $this->dispatch('guest-bring-on', identity: $guest->getLivekitIdentity(), name: $guest->name, guestId: $guest->id);
+        app(LiveEventService::class)->markGuestLive($guest);
 
         unset($this->guests);
         $this->dispatchGuestSlotMap();
@@ -673,8 +681,19 @@ class extends Component
     {
         $guest = LiveEventGuest::where('live_event_id', $this->event->id)->findOrFail($guestId);
 
+        // Revoke publish permission — LiveKit automatically unpublishes all tracks
+        try {
+            app(LiveKitService::class)->revokePublish($this->event, $guest);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('LiveKit: Failed to revoke publish from guest', [
+                'guest_id' => $guest->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         app(LiveEventService::class)->markGuestOffAir($guest);
 
+        // Tell Alpine to remove the guest source
         $this->dispatch('guest-take-off', identity: $guest->getLivekitIdentity(), guestId: $guest->id);
 
         unset($this->guests);
@@ -1991,8 +2010,6 @@ class extends Component
             let sourceManager = null;
             let previewCompositor = null;
             let programCompositor = null;
-            let peerManager = null;
-            let studioChannel = null;
             let hostAudioTrack = null; // Separate reference for mute/unmute
             let overlayRenderer = null;
             let captionEngine = null;
@@ -2060,22 +2077,12 @@ class extends Component
                 init() {
                     this.$wire.on('livekit-disconnect', () => this.disconnect());
 
-                    this.$wire.on('guest-bring-on', ({ identity, name, guestId }) => {
-                        if (studioChannel) {
-                            studioChannel.whisper('bring-on', { guestId });
-                            console.log('[Studio] Bring-on whisper sent to guest:', guestId, name);
-                        } else {
-                            console.warn('[Studio] No studio channel — cannot signal guest');
-                        }
-                    });
-
                     this.$wire.on('guest-take-off', ({ identity, guestId }) => {
-                        if (studioChannel) {
-                            studioChannel.whisper('take-off', { guestId });
-                        }
-                        const slotKey = this._guestSlotKey(guestId);
+                        const slotKey = this._guestSlotKey(identity);
                         if (sourceManager) sourceManager.removeSource(slotKey);
+                        this._updateGuestStatus(identity, 'connected');
                         console.log('[Studio] Guest taken off:', slotKey);
+                        // No whisper needed — LiveKit API already revoked publish permission
                     });
 
                     // --- Renderless event listeners (real-time updates without re-render) ---
@@ -2181,7 +2188,7 @@ class extends Component
                 // ==============================================================
 
                 /**
-                 * Phase 1: Set up the studio locally (camera, compositors, PeerManager).
+                 * Phase 1: Set up the studio locally (camera, compositors).
                  * Does NOT connect to LiveKit or start broadcasting.
                  * Call startBroadcasting() when ready to go live to viewers.
                  */
@@ -2248,7 +2255,6 @@ class extends Component
                     } catch (err) {
                         console.error('[Studio] Compositor failed:', err);
                         this.connectionError = 'Failed to start compositors: ' + err.message;
-                        // Continue — PeerManager can still work for guest management
                     }
 
                     // 3b. Initialize OverlayRenderer for HTML overlays (optional)
@@ -2268,29 +2274,8 @@ class extends Component
                         console.warn('[Studio] OverlayRenderer init failed (non-critical):', err.message);
                     }
 
-                    // 4. Set up PeerManager for guest WebRTC connections (independent of camera)
-                    try {
-                        await this._setupPeerManager(eventId);
-                        console.log('[Studio] PeerManager initialized');
-                    } catch (err) {
-                        console.error('[Studio] PeerManager failed:', err);
-                        // Guest connections won't work but host can still broadcast
-                    }
-
                     this.connected = true;
                     console.log('[Studio] Setup complete — ready to broadcast');
-
-                    // Auto-bring-on any connected guests after page load
-                    // (guests were connected before goLive redirect but need to be re-signaled)
-                    setTimeout(() => {
-                        const connectedGuests = this.liveGuests.filter(g => g.status === 'connected');
-                        if (connectedGuests.length > 0) {
-                            console.log('[Studio] Auto-bringing on connected guests:', connectedGuests.map(g => g.name));
-                            connectedGuests.forEach(g => {
-                                this.$wire.bringGuestOn(g.id);
-                            });
-                        }
-                    }, 2000); // Wait 2s for PeerManager and Echo channel to fully establish
                 },
 
                 /**
@@ -2309,6 +2294,7 @@ class extends Component
                         room.on(RoomEvent.Disconnected, () => { this.broadcasting = false; });
 
                         await room.connect(this._livekitUrl, this._livekitToken);
+                        this._setupGuestTracksFromLiveKit(); // Set up guest track listeners on the connected room
 
                         // Publish PROGRAM canvas to LiveKit
                         const canvasStream = programCompositor.getOutputStream();
@@ -2337,91 +2323,93 @@ class extends Component
                 },
 
                 // ==============================================================
-                // PeerManager setup (guest WebRTC connections)
+                // LiveKit guest track listeners (replaces PeerManager)
                 // ==============================================================
 
-                async _setupPeerManager(eventId) {
-                    if (studioChannel) return; // Prevent double-join
-
-                    const PeerManager = await window.loadPeerManager();
-
-                    // Use the global Echo instance (authenticated as the host via standard Laravel auth).
-                    // The event-studio channel is registered in channels.php for internal users.
-                    // Guests use a separate Echo instance with custom auth (EventGuestAuthController).
-                    if (!window.Echo) {
-                        console.warn('[Studio] Echo not available, guest connections disabled');
+                _setupGuestTracksFromLiveKit() {
+                    if (!room) {
+                        console.warn('[Studio] No LiveKit room — guest tracks disabled');
                         return;
                     }
 
-                    studioChannel = window.Echo.join(`event-studio.${eventId}`)
-                        .here((users) => {
-                            console.log('[Studio] Studio channel subscribed. Users:', users);
-                            // user.id = livekit identity (e.g. "guest-GJD67boV"), user.name = display name
-                            users.forEach(u => {
-                                if (u.id && !String(u.id).startsWith('host-')) {
-                                    this._updateGuestStatus(u.id, 'connected', u.name);
+                    const { RoomEvent } = window.LiveKitClient;
+
+                    // When a guest starts publishing (brought on), their tracks arrive here
+                    room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+                        // Only handle guest participants (identity starts with "guest-")
+                        if (!participant.identity.startsWith('guest-')) return;
+
+                        const guestId = participant.identity;
+
+                        if (track.kind === 'video') {
+                            // Create a MediaStream from the LiveKit track and add to SourceManager
+                            const mediaStream = new MediaStream([track.mediaStreamTrack]);
+                            const slotKey = this._guestSlotKey(guestId);
+                            const name = participant.name || guestId;
+
+                            sourceManager.addSource(slotKey, mediaStream, name);
+                            console.log(`[Studio] Guest video from LiveKit: ${slotKey} (${name})`);
+
+                            // Update guest status in Alpine
+                            this._updateGuestStatus(guestId, 'live', name);
+                        }
+
+                        if (track.kind === 'audio') {
+                            // Guest audio is automatically forwarded to all subscribers by LiveKit
+                            // Viewers hear it directly — no need to re-publish
+                            console.log(`[Studio] Guest audio from LiveKit: ${participant.identity}`);
+                        }
+                    });
+
+                    // When a guest stops publishing (taken off), their tracks are removed
+                    room.on(RoomEvent.TrackUnsubscribed, (track, publication, participant) => {
+                        if (!participant.identity.startsWith('guest-')) return;
+
+                        if (track.kind === 'video') {
+                            const slotKey = this._guestSlotKey(participant.identity);
+                            if (sourceManager) sourceManager.removeSource(slotKey);
+                            console.log(`[Studio] Guest video removed: ${slotKey}`);
+                        }
+                    });
+
+                    // When a participant joins the room
+                    room.on(RoomEvent.ParticipantConnected, (participant) => {
+                        if (participant.identity.startsWith('guest-')) {
+                            console.log(`[Studio] Guest joined room: ${participant.identity} (${participant.name})`);
+                            this._updateGuestStatus(participant.identity, 'connected', participant.name);
+                            this.$wire.refreshGuestStatuses();
+                        }
+                    });
+
+                    // When a participant leaves the room
+                    room.on(RoomEvent.ParticipantDisconnected, (participant) => {
+                        if (participant.identity.startsWith('guest-')) {
+                            const slotKey = this._guestSlotKey(participant.identity);
+                            if (sourceManager) sourceManager.removeSource(slotKey);
+                            console.log(`[Studio] Guest left room: ${participant.identity}`);
+                            this._updateGuestStatus(participant.identity, 'disconnected');
+                            this.$wire.refreshGuestStatuses();
+                        }
+                    });
+
+                    // Check for guests already in the room (reconnection case)
+                    room.remoteParticipants.forEach((participant) => {
+                        if (participant.identity.startsWith('guest-')) {
+                            this._updateGuestStatus(participant.identity, 'connected', participant.name);
+
+                            // If they're already publishing (brought on before host connected), add their tracks
+                            participant.trackPublications.forEach((pub) => {
+                                if (pub.track && pub.track.kind === 'video') {
+                                    const mediaStream = new MediaStream([pub.track.mediaStreamTrack]);
+                                    const slotKey = this._guestSlotKey(participant.identity);
+                                    sourceManager.addSource(slotKey, mediaStream, participant.name || participant.identity);
+                                    this._updateGuestStatus(participant.identity, 'live', participant.name);
                                 }
-                            });
-                        })
-                        .joining((user) => {
-                            console.log('[Studio] User joined studio channel:', user);
-                            if (user.id && !String(user.id).startsWith('host-')) {
-                                this._updateGuestStatus(user.id, 'connected', user.name);
-                            }
-                            this.$wire.refreshGuestStatuses();
-                        })
-                        .leaving((user) => {
-                            console.log('[Studio] User left studio channel:', user);
-                            if (user.id && !String(user.id).startsWith('host-')) {
-                                this._updateGuestStatus(user.id, 'disconnected');
-                            }
-                            this.$wire.refreshGuestStatuses();
-                        })
-                        .error((error) => {
-                            console.error('[Studio] Studio channel subscription FAILED:', error);
-                        });
-                    peerManager = new PeerManager(studioChannel, 'host');
-
-                    // When guest video arrives via WebRTC peer connection
-                    peerManager.onRemoteStream(({ guestId, stream }) => {
-                        const slotKey = this._guestSlotKey(guestId);
-                        const guest = this._findGuest(guestId);
-                        const name = guest?.name ?? guestId;
-
-                        sourceManager.addSource(slotKey, stream, name);
-                        console.log(`[Studio] Guest video registered: ${slotKey} (${name})`);
-
-                        // Mark guest as live in Alpine — their video is actually flowing
-                        this._updateGuestStatus(guestId, 'live');
-
-                        // Also publish guest audio to LiveKit for viewers
-                        const audioTrack = stream.getAudioTracks()[0];
-                        if (audioTrack && room) {
-                            room.localParticipant.publishTrack(audioTrack, {
-                                name: `${slotKey}-audio`,
-                            }).then(() => {
-                                console.log(`[Broadcast] Guest audio published: ${slotKey}`);
-                            }).catch(err => {
-                                console.warn(`[Broadcast] Failed to publish guest audio:`, err);
                             });
                         }
                     });
 
-                    peerManager.onGuestReady(({ guestId, name }) => {
-                        console.log(`[Studio] Guest ready in green room: ${guestId} (${name})`);
-                        // Update Alpine guest list directly — real-time, no DB roundtrip
-                        this._updateGuestStatus(guestId, 'connected', name);
-                        this.$wire.refreshGuestStatuses();
-                    });
-
-                    peerManager.onGuestDisconnect(({ guestId }) => {
-                        const slotKey = this._guestSlotKey(guestId);
-                        if (sourceManager) sourceManager.removeSource(slotKey);
-                        console.log(`[Studio] Guest disconnected: ${guestId}`);
-                        // Update Alpine guest list directly
-                        this._updateGuestStatus(guestId, 'disconnected');
-                        this.$wire.refreshGuestStatuses();
-                    });
+                    console.log('[Studio] LiveKit guest track listeners set up');
                 },
 
                 // ==============================================================
@@ -2914,7 +2902,6 @@ class extends Component
                 },
 
                 _findGuest(guestId) {
-                    // guestId from PeerManager is the livekit_identity string
                     return this.liveGuests.find(g => g.identity === guestId) ?? null;
                 },
 
@@ -2950,7 +2937,6 @@ class extends Component
                     if (canvasEditor) { canvasEditor.destroy(); canvasEditor = null; }
                     if (captionEngine) { captionEngine.stop(); captionEngine = null; }
                     if (overlayRenderer) { overlayRenderer.destroy(); overlayRenderer = null; }
-                    if (peerManager) { peerManager.destroy(); peerManager = null; }
                     if (previewCompositor) { previewCompositor.stop(); previewCompositor.destroy(); previewCompositor = null; }
                     if (programCompositor) { programCompositor.stop(); programCompositor.destroy(); programCompositor = null; }
                     if (sourceManager) { sourceManager.destroy(); sourceManager = null; }
