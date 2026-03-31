@@ -19,6 +19,9 @@ class CampaignContact extends Model
         'campaign_id',
         'contact_id',
         'status',
+        'is_priority',
+        'priority_reason',
+        'claimed_by_agent_id',
         'sort_order',
         'attempts',
         'last_attempted_at',
@@ -29,6 +32,7 @@ class CampaignContact extends Model
     protected function casts(): array
     {
         return [
+            'is_priority' => 'boolean',
             'sort_order' => 'integer',
             'attempts' => 'integer',
             'last_attempted_at' => 'datetime',
@@ -48,6 +52,11 @@ class CampaignContact extends Model
     public function contact(): BelongsTo
     {
         return $this->belongsTo(Contact::class, 'contact_id');
+    }
+
+    public function claimedByAgent(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Prospector\Agent::class, 'claimed_by_agent_id');
     }
 
     // ──────────────────────────────────────
@@ -72,6 +81,21 @@ class CampaignContact extends Model
     public function scopeCallbackScheduled(Builder $query): void
     {
         $query->where('status', 'callback_scheduled');
+    }
+
+    public function scopePriority(Builder $query): void
+    {
+        $query->where('is_priority', true);
+    }
+
+    public function scopeUnclaimed(Builder $query): void
+    {
+        $query->whereNull('claimed_by_agent_id');
+    }
+
+    public function scopeSmartOrder(Builder $query): void
+    {
+        $query->orderByDesc('is_priority')->orderBy('sort_order');
     }
 
     // ──────────────────────────────────────
@@ -140,5 +164,31 @@ class CampaignContact extends Model
         $this->update([
             'status' => 'callback_scheduled',
         ]);
+    }
+
+    /**
+     * Flag this queue entry as priority with a reason.
+     */
+    public function markPriority(string $reason): void
+    {
+        $this->update(['is_priority' => true, 'priority_reason' => $reason]);
+    }
+
+    /**
+     * Atomically claim this entry for an agent (returns false if already claimed).
+     */
+    public function claim(int $agentId): bool
+    {
+        return static::where('id', $this->id)
+            ->whereNull('claimed_by_agent_id')
+            ->update(['claimed_by_agent_id' => $agentId]) > 0;
+    }
+
+    /**
+     * Release the claim on this entry.
+     */
+    public function unclaim(): void
+    {
+        $this->update(['claimed_by_agent_id' => null]);
     }
 }

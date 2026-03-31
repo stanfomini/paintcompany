@@ -39,6 +39,7 @@ class Contact extends Model
         'last_disposition',
         'total_calls',
         'total_sms',
+        'has_unread_sms',
         'priority',
         'pipeline_stage_id',
         'follow_up_at',
@@ -53,6 +54,7 @@ class Contact extends Model
             'last_contacted_at' => 'datetime',
             'total_calls' => 'integer',
             'total_sms' => 'integer',
+            'has_unread_sms' => 'boolean',
             'priority' => 'integer',
             'follow_up_at' => 'datetime',
         ];
