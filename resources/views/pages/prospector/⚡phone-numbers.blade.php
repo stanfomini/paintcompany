@@ -60,6 +60,9 @@ class extends Component
     public bool $showHealthModal = false;
     public ?int $healthCompanyId = null;
 
+    // Webhook config
+    public ?array $webhookResults = null;
+
     public function boot(): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -357,6 +360,39 @@ class extends Component
         $this->healthCompanyId = null;
     }
 
+    // ──────────────────────────────────────
+    // Webhook Configuration
+    // ──────────────────────────────────────
+
+    public function configureWebhook(int $numberId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $number = PhoneNumber::findOrFail($numberId);
+        $service = app(PhoneNumberService::class);
+        $result = $service->configureWebhooks($number);
+
+        $this->webhookResults = [$result];
+    }
+
+    public function configureAllWebhooks(int $companyId): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $company = Company::findOrFail($companyId);
+        $service = app(PhoneNumberService::class);
+        $this->webhookResults = $service->configureWebhooksForCompany($company);
+    }
+
+    public function dismissWebhookResults(): void
+    {
+        $this->webhookResults = null;
+    }
+
     protected function clearCaches(): void
     {
         unset($this->phoneNumbers, $this->stats, $this->numberPools, $this->todayUsage);
@@ -413,6 +449,45 @@ class extends Component
         <flux:callout color="green" icon="check-circle" class="mb-4">
             <flux:callout.text>{{ session('success') }}</flux:callout.text>
         </flux:callout>
+    @endif
+
+    {{-- Webhook Results Banner --}}
+    @if ($webhookResults)
+        @php
+            $configured = collect($webhookResults)->where('status', 'configured')->count();
+            $errors = collect($webhookResults)->where('status', 'error')->count();
+            $skipped = collect($webhookResults)->where('status', 'skipped')->count();
+        @endphp
+        <div class="mb-4">
+            @if ($errors > 0)
+                <flux:callout color="amber" icon="exclamation-triangle">
+                    <flux:callout.heading>{{ __('Webhook Configuration Complete') }}</flux:callout.heading>
+                    <flux:callout.text>
+                        {{ __(':configured configured, :errors failed, :skipped skipped', [
+                            'configured' => $configured,
+                            'errors' => $errors,
+                            'skipped' => $skipped,
+                        ]) }}
+                        @foreach (collect($webhookResults)->where('status', 'error') as $err)
+                            <br><span class="text-xs">{{ $err['phone_number'] }}: {{ $err['error'] ?? __('Unknown error') }}</span>
+                        @endforeach
+                    </flux:callout.text>
+                </flux:callout>
+            @else
+                <flux:callout color="green" icon="check-circle">
+                    <flux:callout.heading>{{ __('Webhooks Configured') }}</flux:callout.heading>
+                    <flux:callout.text>
+                        {{ __(':configured number(s) configured successfully.', ['configured' => $configured]) }}
+                        @if ($skipped > 0)
+                            {{ __(':skipped skipped.', ['skipped' => $skipped]) }}
+                        @endif
+                    </flux:callout.text>
+                </flux:callout>
+            @endif
+            <div class="mt-2">
+                <flux:button size="sm" variant="ghost" wire:click="dismissWebhookResults">{{ __('Dismiss') }}</flux:button>
+            </div>
+        </div>
     @endif
 
     {{-- Stats --}}
@@ -512,6 +587,17 @@ class extends Component
                                 </flux:badge>
                             </div>
                             <div class="flex items-center gap-2">
+                                <flux:button
+                                    size="sm"
+                                    variant="ghost"
+                                    icon="signal"
+                                    wire:click="configureAllWebhooks({{ $pool['company']->id }})"
+                                    wire:loading.attr="disabled"
+                                    wire:target="configureAllWebhooks({{ $pool['company']->id }})"
+                                >
+                                    <span wire:loading.remove wire:target="configureAllWebhooks({{ $pool['company']->id }})">{{ __('Configure Webhooks') }}</span>
+                                    <span wire:loading wire:target="configureAllWebhooks({{ $pool['company']->id }})">{{ __('Configuring...') }}</span>
+                                </flux:button>
                                 <flux:button size="sm" variant="ghost" icon="chart-bar" wire:click="openHealthDashboard({{ $pool['company']->id }})">
                                     {{ __('Usage Stats') }}
                                 </flux:button>
@@ -741,6 +827,15 @@ class extends Component
                             </flux:table.cell>
 
                             <flux:table.cell class="text-right">
+                                <flux:button
+                                    size="sm"
+                                    variant="ghost"
+                                    icon="signal"
+                                    wire:click="configureWebhook({{ $number->id }})"
+                                    wire:loading.attr="disabled"
+                                    wire:target="configureWebhook({{ $number->id }})"
+                                    title="{{ __('Configure Webhooks') }}"
+                                />
                                 @if ($number->company)
                                     <flux:button
                                         size="sm"

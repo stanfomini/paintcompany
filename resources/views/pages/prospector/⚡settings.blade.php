@@ -1,6 +1,10 @@
 <?php
 
+use App\Models\Prospector\Company;
+use App\Models\Prospector\MessagingService;
 use App\Models\Prospector\TwilioAccount;
+use App\Services\Prospector\PhoneNumberService;
+use App\Services\Prospector\TwilioComplianceService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
@@ -13,6 +17,9 @@ new
 #[Title('Prospector Settings')]
 class extends Component
 {
+    // Tab state
+    public string $activeTab = 'accounts';
+
     // Form state
     public bool $showModal = false;
     public ?int $editingId = null;
@@ -33,6 +40,12 @@ class extends Component
     public ?int $deletingId = null;
     public string $deletingName = '';
 
+    // A2P Compliance
+    public bool $showCreateServiceModal = false;
+    public string $serviceName = '';
+    public ?int $serviceAccountId = null;
+    public ?int $serviceCompanyId = null;
+
     public function boot(): void
     {
         if (Auth::user()->type !== 'internal') {
@@ -47,6 +60,12 @@ class extends Component
             ->withCount('phoneNumbers')
             ->orderBy('name')
             ->get();
+    }
+
+    #[Computed]
+    public function webhookUrls(): array
+    {
+        return app(PhoneNumberService::class)->getWebhookUrls();
     }
 
     public function openAddModal(): void
@@ -429,6 +448,32 @@ class extends Component
             @endforeach
         </div>
     @endif
+
+    {{-- Webhook URLs --}}
+    <div class="mt-8">
+        <flux:heading size="lg" class="mb-3">{{ __('Webhook URLs') }}</flux:heading>
+        <flux:text class="mb-4">{{ __('These are the endpoints Twilio numbers are configured to send requests to. Webhooks are auto-configured when numbers are assigned.') }}</flux:text>
+
+        <div class="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-800">
+            <div class="flex items-center gap-3">
+                <flux:badge size="sm" color="blue">{{ __('Voice') }}</flux:badge>
+                <code class="text-xs text-zinc-600 dark:text-zinc-300 break-all">{{ $this->webhookUrls['voiceUrl'] }}</code>
+                <flux:badge size="sm" color="zinc">{{ $this->webhookUrls['voiceMethod'] }}</flux:badge>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <flux:badge size="sm" color="green">{{ __('SMS') }}</flux:badge>
+                <code class="text-xs text-zinc-600 dark:text-zinc-300 break-all">{{ $this->webhookUrls['smsUrl'] }}</code>
+                <flux:badge size="sm" color="zinc">{{ $this->webhookUrls['smsMethod'] }}</flux:badge>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <flux:badge size="sm" color="purple">{{ __('Status') }}</flux:badge>
+                <code class="text-xs text-zinc-600 dark:text-zinc-300 break-all">{{ $this->webhookUrls['statusCallback'] }}</code>
+                <flux:badge size="sm" color="zinc">{{ $this->webhookUrls['statusCallbackMethod'] }}</flux:badge>
+            </div>
+        </div>
+    </div>
 
     {{-- Add/Edit Modal --}}
     <flux:modal wire:model="showModal" variant="flyout" class="w-[420px]">
