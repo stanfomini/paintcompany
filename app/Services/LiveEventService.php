@@ -230,7 +230,7 @@ class LiveEventService
     {
         $guest->update([
             'status' => 'connected',
-            'went_live_at' => null,
+            'live_ended_at' => now(),
         ]);
     }
 
@@ -239,7 +239,10 @@ class LiveEventService
      */
     public function markGuestDisconnected(LiveEventGuest $guest): void
     {
-        $guest->update(['status' => 'disconnected']);
+        $guest->update([
+            'status' => 'disconnected',
+            'disconnected_at' => now(),
+        ]);
     }
 
     /**
@@ -247,19 +250,23 @@ class LiveEventService
      */
     public function ensureBackstageChatThread(LiveEvent $event): ChatThread
     {
-        if ($event->backstage_chat_thread_id) {
-            return $event->backstageChatThread;
-        }
+        return \Illuminate\Support\Facades\DB::transaction(function () use ($event) {
+            $event = LiveEvent::lockForUpdate()->find($event->id);
 
-        $thread = ChatThread::create([
-            'type' => 'live_event',
-            'subject' => $event->title.' - Backstage',
-            'last_message_at' => now(),
-        ]);
+            if ($event->backstage_chat_thread_id) {
+                return $event->backstageChatThread;
+            }
 
-        $event->update(['backstage_chat_thread_id' => $thread->id]);
+            $thread = ChatThread::create([
+                'type' => 'live_event',
+                'subject' => $event->title.' - Backstage',
+                'last_message_at' => now(),
+            ]);
 
-        return $thread;
+            $event->update(['backstage_chat_thread_id' => $thread->id]);
+
+            return $thread;
+        });
     }
 
     /**

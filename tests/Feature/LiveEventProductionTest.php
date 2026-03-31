@@ -260,7 +260,7 @@ test('service takes guest off air', function () {
     $service->markGuestOffAir($guest);
 
     expect($guest->fresh()->status)->toBe('connected')
-        ->and($guest->fresh()->went_live_at)->toBeNull();
+        ->and($guest->fresh()->live_ended_at)->not->toBeNull();
 });
 
 test('service marks guest as disconnected', function () {
@@ -269,7 +269,8 @@ test('service marks guest as disconnected', function () {
 
     $service->markGuestDisconnected($guest);
 
-    expect($guest->fresh()->status)->toBe('disconnected');
+    expect($guest->fresh()->status)->toBe('disconnected')
+        ->and($guest->fresh()->disconnected_at)->not->toBeNull();
 });
 
 test('service removes guest', function () {

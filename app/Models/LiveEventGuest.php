@@ -24,6 +24,8 @@ class LiveEventGuest extends Model
         'slot_number',
         'connected_at',
         'went_live_at',
+        'disconnected_at',
+        'live_ended_at',
     ];
 
     protected function casts(): array
@@ -31,6 +33,8 @@ class LiveEventGuest extends Model
         return [
             'connected_at' => 'datetime',
             'went_live_at' => 'datetime',
+            'disconnected_at' => 'datetime',
+            'live_ended_at' => 'datetime',
         ];
     }
 
@@ -74,7 +78,7 @@ class LiveEventGuest extends Model
                 $guest->token = Str::random(64);
             }
             if (empty($guest->livekit_identity)) {
-                $guest->livekit_identity = 'guest-'.Str::random(8);
+                $guest->livekit_identity = 'guest-'.substr(md5($guest->email.$guest->live_event_id), 0, 12);
             }
             if (empty($guest->status)) {
                 $guest->status = 'invited';
