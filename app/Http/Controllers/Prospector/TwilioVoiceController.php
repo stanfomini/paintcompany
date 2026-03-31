@@ -37,10 +37,32 @@ class TwilioVoiceController extends Controller
     {
         $user = Auth::user();
 
-        $company = Company::where('is_active', true)->first();
+        // Find a company with fully configured Twilio credentials (API key set)
+        $company = Company::where('is_active', true)
+            ->whereHas('twilioAccount', function ($q) {
+                $q->whereNotNull('api_key_sid')
+                    ->whereNotNull('api_key_secret')
+                    ->where('is_active', true);
+            })
+            ->first();
 
         if (! $company) {
-            return response()->json(['error' => 'No active company configured.'], 422);
+            // Fall back to any active company so the agent record still gets created
+            $company = Company::where('is_active', true)->first();
+
+            if (! $company) {
+                return response()->json(['error' => 'No active company configured.'], 422);
+            }
+
+            // Create agent but explain why phone can't connect
+            Agent::firstOrCreate(
+                ['user_id' => $user->id, 'company_id' => $company->id],
+                ['status' => 'offline', 'max_concurrent_lines' => 1, 'wrap_up_seconds' => 30],
+            );
+
+            return response()->json([
+                'error' => 'No company has Voice SDK credentials configured. Go to Prospector Settings > Accounts and add API Key SID, API Key Secret, and TwiML App SID.',
+            ], 422);
         }
 
         $agent = Agent::firstOrCreate(
