@@ -71,6 +71,11 @@ export default class CaptionEngine {
         this._recognition.onerror = (event) => {
             if (event.error === 'no-speech') return; // Normal, just silence
             console.warn('[CaptionEngine] Recognition error:', event.error);
+            // Stop retrying on fatal errors (no mic, permission denied, etc.)
+            if (event.error === 'not-allowed' || event.error === 'audio-capture' || event.error === 'service-not-allowed') {
+                console.error('[CaptionEngine] Fatal error — stopping:', event.error);
+                this._running = false;
+            }
         };
 
         this._recognition.onend = () => {
