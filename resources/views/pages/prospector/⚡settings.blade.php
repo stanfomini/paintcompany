@@ -738,24 +738,39 @@ class extends Component
             />
 
             <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-700 dark:bg-zinc-800/50">
-                <div class="mb-2 text-xs font-medium text-zinc-600 dark:text-zinc-400">Voice SDK Credentials (for softphone)</div>
-                <div class="space-y-3">
-                    <flux:input
-                        wire:model="apiKeySid"
-                        :label="__('API Key SID')"
-                        :placeholder="$editingId ? __('Leave blank to keep current') : __('SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
-                    />
-                    <flux:input
-                        wire:model="apiKeySecret"
-                        type="password"
-                        :label="__('API Key Secret')"
-                        :placeholder="$editingId ? __('Leave blank to keep current') : __('Your API key secret')"
-                    />
-                    <flux:input
-                        wire:model="twimlAppSid"
-                        :label="__('TwiML App SID')"
-                        :placeholder="$editingId ? __('Leave blank to keep current') : __('APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
-                    />
+                <div class="mb-3 text-xs font-medium text-zinc-600 dark:text-zinc-400">Voice SDK Credentials (required for softphone)</div>
+                <div class="space-y-4">
+                    <div>
+                        <div class="mb-1.5 rounded bg-blue-50 px-2 py-1.5 text-[11px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                            Create at <strong>Twilio Console &gt; Account &gt; API Keys &amp; Tokens &gt; Create API Key</strong>. Choose "Standard" type. Starts with <code class="font-mono">SK</code>.
+                        </div>
+                        <flux:input
+                            wire:model="apiKeySid"
+                            :label="__('API Key SID')"
+                            :placeholder="$editingId ? __('Leave blank to keep current') : __('SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
+                        />
+                    </div>
+                    <div>
+                        <div class="mb-1.5 rounded bg-blue-50 px-2 py-1.5 text-[11px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                            Shown once when you create the API Key above. Copy it immediately — you cannot retrieve it later.
+                        </div>
+                        <flux:input
+                            wire:model="apiKeySecret"
+                            type="password"
+                            :label="__('API Key Secret')"
+                            :placeholder="$editingId ? __('Leave blank to keep current') : __('Your API key secret')"
+                        />
+                    </div>
+                    <div>
+                        <div class="mb-1.5 rounded bg-blue-50 px-2 py-1.5 text-[11px] text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                            Create at <strong>Twilio Console &gt; Voice &gt; TwiML Apps &gt; Create new TwiML App</strong>. Set Voice Request URL to <code class="font-mono">{{ url('/prospector/webhook/twilio/voice/incoming') }}</code>. Starts with <code class="font-mono">AP</code>.
+                        </div>
+                        <flux:input
+                            wire:model="twimlAppSid"
+                            :label="__('TwiML App SID')"
+                            :placeholder="$editingId ? __('Leave blank to keep current') : __('APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')"
+                        />
+                    </div>
                 </div>
             </div>
 
