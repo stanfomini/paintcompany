@@ -1262,7 +1262,6 @@ class extends Component
     {{-- ════════════════════════════════════════════════════════════════════ --}}
     {{-- LIVE QUEUE BAR (Horizontal, scrollable)                            --}}
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-    @if ($sessionStatus !== 'idle')
         <div class="mb-4 rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
             <div class="flex items-center gap-3 px-4 py-2">
                 <div class="flex shrink-0 items-center gap-2">
@@ -1319,7 +1318,6 @@ class extends Component
                 @endif
             </div>
         </div>
-    @endif
 
     {{-- Supervisor Indicator --}}
     @if ($supervisorMode)
@@ -1353,136 +1351,8 @@ class extends Component
 
 
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- CAMPAIGN SELECTOR (only when idle)                                  --}}
+    {{-- 3-COLUMN LAYOUT (always visible)                                    --}}
     {{-- ════════════════════════════════════════════════════════════════════ --}}
-    @if ($sessionStatus === 'idle')
-        <div class="mx-auto max-w-2xl">
-            {{-- Campaign Selector --}}
-            <div class="rounded-lg border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-800">
-                <div class="mb-4 flex items-center gap-3">
-                    <div class="flex size-10 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
-                        <flux:icon name="phone" class="size-5 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <div>
-                        <flux:heading size="lg">Power Dialer</flux:heading>
-                        <flux:text class="text-sm text-zinc-500">Select a campaign and start dialing</flux:text>
-                    </div>
-                </div>
-
-                @if ($this->campaigns->isEmpty())
-                    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
-                        <div class="flex items-start gap-3">
-                            <flux:icon name="exclamation-triangle" class="mt-0.5 size-5 shrink-0 text-amber-500" />
-                            <div>
-                                <p class="font-medium text-amber-800 dark:text-amber-200">No active campaigns</p>
-                                <p class="mt-1 text-sm text-amber-700 dark:text-amber-300">Create a campaign and add contacts to start dialing.</p>
-                                <div class="mt-3 flex flex-wrap gap-2">
-                                    <flux:button size="sm" variant="filled" :href="route('prospector.campaigns')" icon="plus">
-                                        Create Campaign
-                                    </flux:button>
-                                    <flux:button size="sm" variant="ghost" :href="route('prospector.contacts')" icon="users">
-                                        Manage Contacts
-                                    </flux:button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                @else
-                    <div class="space-y-4">
-                        <flux:select wire:model="selectedCampaignId" label="Campaign" placeholder="Select a campaign...">
-                            @foreach ($this->campaigns as $campaign)
-                                <flux:select.option value="{{ $campaign->id }}">
-                                    {{ $campaign->name }} ({{ $campaign->queued_count }} queued)
-                                    @if ($campaign->dialer_mode === 'parallel')
-                                        - Parallel
-                                    @endif
-                                </flux:select.option>
-                            @endforeach
-                        </flux:select>
-
-                        <flux:button
-                            variant="primary"
-                            icon="phone"
-                            wire:click="startSession"
-                            :disabled="! $selectedCampaignId"
-                            class="w-full"
-                        >
-                            Start Session
-                        </flux:button>
-                    </div>
-                @endif
-            </div>
-
-            {{-- Setup Checklist --}}
-            @php
-                $steps = [
-                    ['label' => 'Connect Twilio Account', 'done' => \App\Models\Prospector\TwilioAccount::where('is_active', true)->exists(), 'route' => 'prospector.settings', 'icon' => 'cog-6-tooth'],
-                    ['label' => 'Create a Company', 'done' => \App\Models\Prospector\Company::where('is_active', true)->exists(), 'route' => 'prospector.companies', 'icon' => 'building-office'],
-                    ['label' => 'Add Phone Numbers', 'done' => \App\Models\Prospector\PhoneNumber::whereNotNull('company_id')->exists(), 'route' => 'prospector.phone-numbers', 'icon' => 'phone'],
-                    ['label' => 'Import Contacts', 'done' => \App\Models\Prospector\Contact::exists(), 'route' => 'prospector.contacts', 'icon' => 'users'],
-                    ['label' => 'Create a Campaign', 'done' => \App\Models\Prospector\Campaign::where('status', 'active')->exists(), 'route' => 'prospector.campaigns', 'icon' => 'megaphone'],
-                    ['label' => 'Set Up Pipeline', 'done' => \App\Models\Prospector\Pipeline::exists(), 'route' => 'prospector.pipelines', 'icon' => 'funnel'],
-                ];
-                $completedCount = collect($steps)->where('done', true)->count();
-                $allDone = $completedCount === count($steps);
-            @endphp
-
-            @unless ($allDone)
-                <div class="mt-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
-                    <div class="mb-3 flex items-center justify-between">
-                        <flux:heading size="sm">Getting Started</flux:heading>
-                        <flux:badge size="sm" color="zinc">{{ $completedCount }}/{{ count($steps) }}</flux:badge>
-                    </div>
-
-                    <div class="mb-3 h-2 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-700">
-                        <div class="h-full rounded-full bg-blue-500 transition-all" style="width: {{ ($completedCount / count($steps)) * 100 }}%"></div>
-                    </div>
-
-                    <div class="space-y-2">
-                        @foreach ($steps as $step)
-                            <a
-                                href="{{ route($step['route']) }}"
-                                class="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors {{ $step['done'] ? 'text-zinc-400 dark:text-zinc-500' : 'text-zinc-700 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-700/50' }}"
-                            >
-                                @if ($step['done'])
-                                    <flux:icon name="check-circle" variant="solid" class="size-5 shrink-0 text-green-500" />
-                                @else
-                                    <flux:icon :name="$step['icon']" class="size-5 shrink-0 text-zinc-400" />
-                                @endif
-                                <span class="text-sm {{ $step['done'] ? 'line-through' : 'font-medium' }}">{{ $step['label'] }}</span>
-                                @unless ($step['done'])
-                                    <flux:icon name="chevron-right" variant="micro" class="ml-auto size-4 text-zinc-400" />
-                                @endunless
-                            </a>
-                        @endforeach
-                    </div>
-                </div>
-            @endunless
-
-            {{-- Quick Stats --}}
-            @if ($this->agent)
-                <div class="mt-4 grid grid-cols-3 gap-3">
-                    <div class="rounded-lg border border-zinc-200 bg-white p-4 text-center dark:border-zinc-700 dark:bg-zinc-800">
-                        <div class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ \App\Models\Prospector\Contact::where('company_id', $this->agent->company_id)->count() }}</div>
-                        <div class="text-xs text-zinc-500">Contacts</div>
-                    </div>
-                    <div class="rounded-lg border border-zinc-200 bg-white p-4 text-center dark:border-zinc-700 dark:bg-zinc-800">
-                        <div class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ $this->campaigns->count() }}</div>
-                        <div class="text-xs text-zinc-500">Campaigns</div>
-                    </div>
-                    <div class="rounded-lg border border-zinc-200 bg-white p-4 text-center dark:border-zinc-700 dark:bg-zinc-800">
-                        <div class="text-2xl font-bold text-zinc-900 dark:text-zinc-100">{{ \App\Models\Prospector\Call::today()->where('agent_id', $this->agent->id)->count() }}</div>
-                        <div class="text-xs text-zinc-500">Calls Today</div>
-                    </div>
-                </div>
-            @endif
-        </div>
-    @endif
-
-    {{-- ════════════════════════════════════════════════════════════════════ --}}
-    {{-- 3-COLUMN LAYOUT (only when session active)                         --}}
-    {{-- ════════════════════════════════════════════════════════════════════ --}}
-    @if ($sessionStatus !== 'idle')
         <div class="grid grid-cols-1 gap-4 lg:grid-cols-12">
 
             {{-- ──────────────────────────────────────────────────────── --}}
@@ -2159,10 +2029,11 @@ class extends Component
         </div>
 
         {{-- ════════════════════════════════════════════════════════════════════ --}}
-        {{-- SESSION BAR (Bottom, sticky)                                        --}}
+        {{-- SESSION BAR (Bottom, sticky — always visible)                       --}}
         {{-- ════════════════════════════════════════════════════════════════════ --}}
         <div class="sticky bottom-0 z-10 mt-4 rounded-lg border border-zinc-200 bg-white px-4 py-3 shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-4">
+                {{-- Left: Agent status + campaign selector --}}
                 <div class="flex items-center gap-4">
                     <div class="flex items-center gap-2">
                         <span class="inline-flex size-2.5 rounded-full {{ $this->getStatusDotClass($agentStatus) }}"></span>
@@ -2172,17 +2043,42 @@ class extends Component
                     @if ($dialerMode === 'parallel')
                         <flux:badge size="sm" color="indigo">Parallel</flux:badge>
                     @endif
+
+                    {{-- Campaign selector --}}
+                    <select
+                        wire:model="selectedCampaignId"
+                        class="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+                        @if ($sessionStatus !== 'idle') disabled @endif
+                    >
+                        <option value="">Select campaign...</option>
+                        @foreach ($this->campaigns as $campaign)
+                            <option value="{{ $campaign->id }}">
+                                {{ $campaign->name }} ({{ $campaign->queued_count }})
+                            </option>
+                        @endforeach
+                    </select>
+
+                    @if ($this->session)
+                        <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                            {{ $this->session->calls_attempted }} attempted &middot; {{ $this->session->calls_connected }} connected &middot; {{ gmdate('H:i:s', $this->session->total_talk_seconds) }}
+                        </span>
+                    @endif
                 </div>
 
+                {{-- Right: Session controls --}}
                 <div class="flex items-center gap-2">
-                    @if ($sessionStatus === 'active')
+                    @if ($sessionStatus === 'idle')
+                        <flux:button size="sm" variant="primary" icon="phone" wire:click="startSession" :disabled="! $selectedCampaignId">
+                            Start Session
+                        </flux:button>
+                    @elseif ($sessionStatus === 'active')
                         <flux:button size="sm" variant="filled" icon="pause" wire:click="pauseSession">Pause</flux:button>
+                        <flux:button size="sm" variant="danger" icon="stop" wire:click="endSession">Stop</flux:button>
                     @elseif ($sessionStatus === 'paused')
                         <flux:button size="sm" variant="primary" icon="play" wire:click="resumeSession">Resume</flux:button>
+                        <flux:button size="sm" variant="danger" icon="stop" wire:click="endSession">Stop</flux:button>
                     @endif
-                    <flux:button size="sm" variant="danger" icon="stop" wire:click="endSession">Stop</flux:button>
                 </div>
             </div>
         </div>
-    @endif
 </div>
