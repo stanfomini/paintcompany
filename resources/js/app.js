@@ -43,22 +43,6 @@ window.loadSourceManager = async () => {
     return window.StudioSourceManager;
 };
 
-window.loadPeerManager = async () => {
-    if (!window.StudioPeerManager) {
-        const module = await import('./studio/PeerManager.js');
-        window.StudioPeerManager = module.default;
-    }
-    return window.StudioPeerManager;
-};
-
-window.loadGuestPeerConnection = async () => {
-    if (!window.StudioGuestPeerConnection) {
-        const module = await import('./studio/GuestPeerConnection.js');
-        window.StudioGuestPeerConnection = module.default;
-    }
-    return window.StudioGuestPeerConnection;
-};
-
 window.loadOverlayRenderer = async () => {
     if (!window.StudioOverlayRenderer) {
         const module = await import('./studio/OverlayRenderer.js');
