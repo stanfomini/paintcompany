@@ -164,11 +164,11 @@ new #[Layout('layouts.video-call')] class extends Component
                         <div
                             class="w-2 h-2 rounded-full"
                             :class="{
-                                'bg-green-500': peerConnected || viewerConnected,
-                                'bg-yellow-500 animate-pulse': !peerConnected && !viewerConnected
+                                'bg-green-500': roomConnected,
+                                'bg-yellow-500 animate-pulse': !roomConnected
                             }"
                         ></div>
-                        <span class="text-xs text-zinc-400" x-text="peerConnected ? 'Live to host' : (viewerConnected ? 'Connected' : 'Connecting...')"></span>
+                        <span class="text-xs text-zinc-400" x-text="roomConnected ? (guestStatus === 'live' ? 'Live to host' : 'Connected') : 'Connecting...'"></span>
                     </div>
                 </div>
 
@@ -185,7 +185,6 @@ new #[Layout('layouts.video-call')] class extends Component
                 class="flex-shrink-0 px-4 py-3 border-b transition-colors duration-300"
                 :class="{
                     'bg-emerald-900/40 border-emerald-800': guestStatus === 'waiting',
-                    'bg-amber-900/40 border-amber-800': guestStatus === 'called',
                     'bg-red-900/40 border-red-800': guestStatus === 'live',
                     'bg-zinc-800 border-zinc-700': guestStatus === 'finished',
                 }"
@@ -199,38 +198,6 @@ new #[Layout('layouts.video-call')] class extends Component
                         <div>
                             <p class="text-sm font-medium text-emerald-300">You're in the green room</p>
                             <p class="text-xs text-emerald-400/70">The host will bring you on when ready.</p>
-                        </div>
-                    </div>
-                </template>
-
-                {{-- Called On --}}
-                <template x-if="guestStatus === 'called'">
-                    <div>
-                        <div class="flex items-center gap-3 mb-3">
-                            <div class="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0 animate-pulse">
-                                <svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" /></svg>
-                            </div>
-                            <div>
-                                <p class="text-sm font-medium text-amber-300">The host is ready for you!</p>
-                                <p class="text-xs text-amber-400/70">Tap Go Live when you're ready to be broadcast.</p>
-                            </div>
-                        </div>
-                        <div class="flex gap-2">
-                            <button
-                                type="button"
-                                @click="goLive()"
-                                class="flex-1 py-2.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2"
-                            >
-                                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" /></svg>
-                                Go Live
-                            </button>
-                            <button
-                                type="button"
-                                @click="notReady()"
-                                class="px-4 py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-sm transition-colors"
-                            >
-                                Not Ready
-                            </button>
                         </div>
                     </div>
                 </template>
@@ -443,16 +410,14 @@ new #[Layout('layouts.video-call')] class extends Component
         <script>
         Alpine.data('livekitGuest', (config) => {
             let localStream = null;
-            let peerConnection = null;   // GuestPeerConnection instance
-            let viewerRoom = null;       // LiveKit room (subscribe-only, for seeing broadcast)
-            let studioChannel = null;    // Echo presence channel for WebRTC signaling
+            let guestRoom = null;        // LiveKit room (single connection for viewing + publishing)
             let audioContext = null;
             let analyser = null;
             let animationFrame = null;
             let echoInstance = null;
 
             return {
-                guestStatus: 'waiting',   // 'waiting' | 'called' | 'live' | 'finished'
+                guestStatus: 'waiting',   // 'waiting' | 'live' | 'finished'
                 cameraEnabled: true,
                 micEnabled: true,
                 audioLevel: 0,
@@ -461,32 +426,29 @@ new #[Layout('layouts.video-call')] class extends Component
                 activeCameraId: '',
                 activeMicId: '',
                 hostTrackAttached: false,
-                peerConnected: false,     // WebRTC connection to host established
-                viewerConnected: false,   // LiveKit viewer connection
+                roomConnected: false,
 
                 async init() {
-                    // Start local camera preview immediately
                     await this.startLocalPreview();
 
-                    // Join Reverb channel for WebRTC signaling + bring-on/take-off signals
-                    this.setupStudioChannel();
+                    if (config.livekitToken && config.livekitUrl) {
+                        await this.setupGuestRoom({
+                            livekitUrl: config.livekitUrl,
+                            livekitToken: config.livekitToken,
+                            guestIdentity: config.guestIdentity,
+                        });
+                    }
 
-                    // Set up backstage chat via Echo/Reverb
                     this.setupBackstageChat();
 
                     // Listen for own sent messages (renderless won't re-render Blade)
                     this.$wire.on('backstage-message-sent', ({ content }) => {
                         this._appendBackstageMessage(content);
                     });
-
-                    // Connect to LiveKit as viewer (subscribe-only) to see broadcast output
-                    if (config.livekitToken && config.livekitUrl) {
-                        this.connectAsViewer();
-                    }
                 },
 
                 // ==============================================================
-                // Local camera preview (unchanged)
+                // Local camera preview
                 // ==============================================================
 
                 async startLocalPreview() {
@@ -532,7 +494,7 @@ new #[Layout('layouts.video-call')] class extends Component
                 },
 
                 // ==============================================================
-                // Device management (unchanged)
+                // Device management
                 // ==============================================================
 
                 async loadDevices() {
@@ -578,9 +540,14 @@ new #[Layout('layouts.video-call')] class extends Component
                             this.$refs.localPreview.srcObject = localStream;
                         }
 
-                        // Replace track on live peer connection (no renegotiation needed)
-                        if (peerConnection) {
-                            await peerConnection.replaceTrack(newTrack);
+                        // Replace published track in LiveKit if currently live
+                        if (guestRoom && this.guestStatus === 'live') {
+                            const localParticipant = guestRoom.localParticipant;
+                            const existingPub = Array.from(localParticipant.videoTrackPublications.values())
+                                .find(p => p.source === 'camera');
+                            if (existingPub && existingPub.track) {
+                                await localParticipant.publishTrack(newTrack, { name: 'camera', source: 'camera' });
+                            }
                         }
 
                         this.activeCameraId = deviceId;
@@ -607,9 +574,14 @@ new #[Layout('layouts.video-call')] class extends Component
                             localStream.addTrack(newTrack);
                         }
 
-                        // Replace track on live peer connection
-                        if (peerConnection) {
-                            await peerConnection.replaceTrack(newTrack);
+                        // Replace published track in LiveKit if currently live
+                        if (guestRoom && this.guestStatus === 'live') {
+                            const localParticipant = guestRoom.localParticipant;
+                            const existingPub = Array.from(localParticipant.audioTrackPublications.values())
+                                .find(p => p.source === 'microphone');
+                            if (existingPub && existingPub.track) {
+                                await localParticipant.publishTrack(newTrack, { name: 'microphone', source: 'microphone' });
+                            }
                         }
 
                         if (audioContext) {
@@ -630,6 +602,15 @@ new #[Layout('layouts.video-call')] class extends Component
                         });
                         this.micEnabled = !this.micEnabled;
                     }
+
+                    // Also mute/unmute published LiveKit track if live
+                    if (guestRoom && this.guestStatus === 'live') {
+                        guestRoom.localParticipant.audioTrackPublications.forEach(pub => {
+                            if (pub.track) {
+                                this.micEnabled ? pub.track.unmute() : pub.track.mute();
+                            }
+                        });
+                    }
                 },
 
                 toggleCamera() {
@@ -639,100 +620,33 @@ new #[Layout('layouts.video-call')] class extends Component
                         });
                         this.cameraEnabled = !this.cameraEnabled;
                     }
-                },
 
-                // ==============================================================
-                // Studio channel (Reverb) — WebRTC signaling + host commands
-                // ==============================================================
-
-                setupStudioChannel() {
-                    if (!config.eventId) return;
-
-                    try {
-                        const EchoLib = window.EchoLib;
-                        if (!EchoLib) {
-                            console.warn('[GuestRoom] Echo not available, peer connections disabled');
-                            return;
-                        }
-
-                        // Reuse existing echoInstance if backstage chat already created one,
-                        // otherwise create a new one
-                        if (!echoInstance) {
-                            echoInstance = new EchoLib({
-                                broadcaster: 'reverb',
-                                key: document.querySelector('meta[name="reverb-key"]')?.content,
-                                wsHost: document.querySelector('meta[name="reverb-host"]')?.content,
-                                wsPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
-                                wssPort: document.querySelector('meta[name="reverb-port"]')?.content || 443,
-                                forceTLS: (document.querySelector('meta[name="reverb-scheme"]')?.content || 'https') === 'https',
-                                enabledTransports: ['ws', 'wss'],
-                                authEndpoint: '/broadcasting/event-guest-auth',
-                                auth: {
-                                    headers: {
-                                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
-                                    },
-                                    params: {
-                                        guest_token: config.guestToken,
-                                    },
-                                },
-                            });
-                        }
-
-                        studioChannel = echoInstance.join(`event-studio.${config.eventId}`)
-                            .here((users) => {
-                                console.log('[GuestRoom] Studio channel subscribed. Users:', users);
-                            })
-                            .joining((user) => {
-                                console.log('[GuestRoom] User joined studio channel:', user);
-                            })
-                            .leaving((user) => {
-                                console.log('[GuestRoom] User left studio channel:', user);
-                            })
-                            .error((error) => {
-                                console.error('[GuestRoom] Studio channel subscription FAILED:', error);
-                            });
-
-                        // Listen for host commands via whispers
-                        studioChannel.listenForWhisper('bring-on', (data) => {
-                            console.log('[GuestRoom] Received bring-on whisper:', data);
-                            if (data.guestId && data.guestId !== config.guestId) return;
-                            this.guestStatus = 'called';
-                            if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
-                            console.log('[GuestRoom] Host is calling you on!');
+                    // Also mute/unmute published LiveKit track if live
+                    if (guestRoom && this.guestStatus === 'live') {
+                        guestRoom.localParticipant.videoTrackPublications.forEach(pub => {
+                            if (pub.track) {
+                                this.cameraEnabled ? pub.track.unmute() : pub.track.mute();
+                            }
                         });
-
-                        studioChannel.listenForWhisper('take-off', (data) => {
-                            console.log('[GuestRoom] Received take-off whisper:', data);
-                            if (data.guestId && data.guestId !== config.guestId) return;
-                            this.disconnectPeer();
-                            this.guestStatus = 'waiting';
-                            console.log('[GuestRoom] Host took you off air');
-                        });
-
-                        studioChannel.listenForWhisper('end-event', () => {
-                            this.guestStatus = 'finished';
-                        });
-
-                        console.log('[GuestRoom] Studio channel join requested');
-                    } catch (err) {
-                        console.warn('[GuestRoom] Studio channel setup failed:', err);
                     }
                 },
 
                 // ==============================================================
-                // LiveKit viewer connection (subscribe-only)
+                // LiveKit guest room — single connection for viewing + publishing
                 // ==============================================================
 
-                async connectAsViewer() {
+                async setupGuestRoom({ livekitUrl, livekitToken, guestIdentity }) {
                     try {
                         const { Room, RoomEvent } = await window.loadLiveKit();
-                        viewerRoom = new Room({
+
+                        guestRoom = new Room({
                             adaptiveStream: true,
                             dynacast: true,
                         });
 
-                        // Subscribe to host's published tracks (stream preview)
-                        viewerRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                        // Subscribe to host/coproducer tracks (stream preview)
+                        guestRoom.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
+                            // Only show host and coproducer tracks
                             if (!participant.identity.startsWith('host-') && !participant.identity.startsWith('coproducer-')) {
                                 return;
                             }
@@ -757,108 +671,104 @@ new #[Layout('layouts.video-call')] class extends Component
                             }
                         });
 
-                        viewerRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
+                        guestRoom.on(RoomEvent.TrackUnsubscribed, (track) => {
                             track.detach().forEach(el => el.remove());
                             if (this.$refs.streamPreview && this.$refs.streamPreview.children.length === 0) {
                                 this.hostTrackAttached = false;
                             }
                         });
 
-                        viewerRoom.on(RoomEvent.Disconnected, () => {
-                            this.viewerConnected = false;
+                        // Auto-publish when host grants canPublish permission
+                        guestRoom.on(RoomEvent.ParticipantPermissionsChanged, async (prevPermissions, participant) => {
+                            // Only respond to our own permission changes
+                            if (participant.identity !== guestIdentity) return;
+
+                            const canPublish = participant.permissions?.canPublish;
+                            console.log('[GuestRoom] Permissions changed — canPublish:', canPublish);
+
+                            if (canPublish && this.guestStatus !== 'live') {
+                                // Host brought us on — auto-publish camera + mic
+                                await this._publishLocalTracks();
+                                this.guestStatus = 'live';
+                                this._muteViewerAudio(true);
+                                if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+                                console.log('[GuestRoom] Auto-published — now LIVE');
+                            } else if (!canPublish && this.guestStatus === 'live') {
+                                // Host took us off — unpublish tracks
+                                await this._unpublishLocalTracks();
+                                this.guestStatus = 'waiting';
+                                this._muteViewerAudio(false);
+                                console.log('[GuestRoom] Unpublished — back to waiting');
+                            }
+                        });
+
+                        guestRoom.on(RoomEvent.Disconnected, () => {
+                            this.roomConnected = false;
                             this.guestStatus = 'finished';
                         });
 
-                        // Connect as subscriber only (canPublish: false in token)
-                        await viewerRoom.connect(config.livekitUrl, config.livekitToken);
-                        this.viewerConnected = true;
-                        console.log('[GuestRoom] Connected to LiveKit as viewer');
+                        // Connect to LiveKit room (initially canPublish: false)
+                        await guestRoom.connect(livekitUrl, livekitToken);
+                        this.roomConnected = true;
+                        console.log('[GuestRoom] Connected to LiveKit room');
                     } catch (err) {
-                        console.error('[GuestRoom] LiveKit viewer connection error:', err);
+                        console.error('[GuestRoom] LiveKit room connection error:', err);
                     }
                 },
 
-                // ==============================================================
-                // Go Live / Not Ready — WebRTC peer connection to host
-                // ==============================================================
+                async _publishLocalTracks() {
+                    if (!guestRoom || !localStream) return;
 
-                async goLive() {
-                    if (!studioChannel || !localStream) {
-                        console.warn('[GuestRoom] Cannot go live: no studio channel or local stream');
-                        return;
+                    const localParticipant = guestRoom.localParticipant;
+
+                    // Publish video track from local preview
+                    const videoTrack = localStream.getVideoTracks()[0];
+                    if (videoTrack && this.cameraEnabled) {
+                        await localParticipant.publishTrack(videoTrack, {
+                            name: 'camera',
+                            source: 'camera',
+                        });
                     }
 
-                    try {
-                        const GuestPeerConnection = await window.loadGuestPeerConnection();
-                        peerConnection = new GuestPeerConnection(studioChannel, config.guestIdentity);
-
-                        peerConnection.onConnected(() => {
-                            this.peerConnected = true;
-                            this.guestStatus = 'live';
-                            console.log('[GuestRoom] Connected to host via WebRTC');
-
-                            // Mute ALL viewer audio to prevent echo/feedback
-                            // (broadcast includes the guest's own voice with delay)
-                            this._muteViewerAudio(true);
-                        });
-
-                        peerConnection.onDisconnected(() => {
-                            this.peerConnected = false;
-                            if (this.guestStatus === 'live') {
-                                this.guestStatus = 'waiting';
-                            }
-
-                            // Unmute viewer audio when off air
-                            this._muteViewerAudio(false);
-                        });
-
-                        await peerConnection.connect(localStream);
-
-                        // Signal ready to host
-                        studioChannel.whisper('guest-ready', {
-                            guestId: config.guestIdentity,
-                            name: config.guestName || 'Guest',
-                        });
-                    } catch (err) {
-                        console.error('[GuestRoom] Failed to go live:', err);
-                    }
-                },
-
-                async notReady() {
-                    this.disconnectPeer();
-                    this.guestStatus = 'waiting';
-
-                    // Signal not-ready to host
-                    if (studioChannel) {
-                        studioChannel.whisper('guest-not-ready', {
-                            guestId: config.guestIdentity,
+                    // Publish audio track from local preview
+                    const audioTrack = localStream.getAudioTracks()[0];
+                    if (audioTrack && this.micEnabled) {
+                        await localParticipant.publishTrack(audioTrack, {
+                            name: 'microphone',
+                            source: 'microphone',
                         });
                     }
                 },
 
-                disconnectPeer() {
-                    if (peerConnection) {
-                        peerConnection.disconnect();
-                        peerConnection = null;
+                async _unpublishLocalTracks() {
+                    if (!guestRoom) return;
+
+                    const localParticipant = guestRoom.localParticipant;
+
+                    // Unpublish all local tracks (the tracks stay in localStream for preview)
+                    const pubs = Array.from(localParticipant.trackPublications.values());
+                    for (const pub of pubs) {
+                        if (pub.track) {
+                            await localParticipant.unpublishTrack(pub.track);
+                        }
                     }
-                    this.peerConnected = false;
-                    this._muteViewerAudio(false);
                 },
 
                 /**
-                 * Mute/unmute all audio from the LiveKit viewer connection.
+                 * Mute/unmute all audio from host in the LiveKit room.
                  * When the guest is live, their own voice comes back through
                  * the broadcast with delay — muting prevents confusing echo.
                  */
                 _muteViewerAudio(muted) {
-                    // Mute the specific host audio element if it exists
                     const hostAudio = document.getElementById('host-audio-preview');
                     if (hostAudio) hostAudio.muted = muted;
 
-                    // Also mute all audio tracks in the viewer room directly
-                    if (viewerRoom) {
-                        viewerRoom.remoteParticipants.forEach(participant => {
+                    if (guestRoom) {
+                        guestRoom.remoteParticipants.forEach(participant => {
                             participant.audioTrackPublications.forEach(pub => {
+                                if (pub.setEnabled) {
+                                    pub.setEnabled(!muted);
+                                }
                                 if (pub.track) {
                                     const els = pub.track.attachedElements;
                                     if (els) els.forEach(el => { el.muted = muted; });
@@ -871,7 +781,7 @@ new #[Layout('layouts.video-call')] class extends Component
                 },
 
                 // ==============================================================
-                // Backstage chat (unchanged)
+                // Backstage chat
                 // ==============================================================
 
                 setupBackstageChat() {
@@ -881,7 +791,6 @@ new #[Layout('layouts.video-call')] class extends Component
                         const EchoLib = window.EchoLib;
                         if (!EchoLib) return;
 
-                        // Reuse existing echoInstance or create one
                         if (!echoInstance) {
                             echoInstance = new EchoLib({
                                 broadcaster: 'reverb',
@@ -905,7 +814,6 @@ new #[Layout('layouts.video-call')] class extends Component
 
                         echoInstance.private(`event-backstage.${config.eventId}`)
                             .listen('.backstage.message', (e) => {
-                                // Append directly to DOM — never trigger Livewire refresh during live
                                 this._appendBackstageMessage(e.content, e.created_at);
                             });
                     } catch (err) {
@@ -945,12 +853,10 @@ new #[Layout('layouts.video-call')] class extends Component
 
                 destroy() {
                     this._muteViewerAudio(false);
-                    if (peerConnection) { peerConnection.disconnect(); peerConnection = null; }
                     if (animationFrame) cancelAnimationFrame(animationFrame);
                     if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
                     if (audioContext) { audioContext.close(); audioContext = null; }
-                    if (viewerRoom) { viewerRoom.disconnect(); viewerRoom = null; }
-                    if (studioChannel) { studioChannel = null; }
+                    if (guestRoom) { guestRoom.disconnect(); guestRoom = null; }
                     if (echoInstance) { echoInstance.disconnect(); echoInstance = null; }
                 },
             };
