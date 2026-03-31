@@ -584,7 +584,7 @@ class extends Component
         $numberService = app(\App\Services\Prospector\NumberSelectionService::class);
 
         try {
-            $fromNumber = $numberService->selectNumber($contact, $company, null);
+            $fromNumber = $numberService->selectNumber($company, $contact, null);
         } catch (\RuntimeException $e) {
             return;
         }
