@@ -12,6 +12,7 @@ use App\Models\LiveEventGuest;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Livekit\ParticipantPermission;
 
 class LiveKitService
 {
@@ -211,6 +212,41 @@ class LiveKitService
     public function removeParticipant(string $roomName, string $identity): void
     {
         $this->getRoomClient()->removeParticipant($roomName, $identity);
+    }
+
+    /**
+     * Update a participant's publish/subscribe permissions in a LiveKit room.
+     */
+    public function updateParticipantPermissions(string $roomName, string $identity, bool $canPublish, bool $canSubscribe = true): void
+    {
+        $permission = new ParticipantPermission;
+        $permission->setCanPublish($canPublish);
+        $permission->setCanSubscribe($canSubscribe);
+        $permission->setCanPublishData($canPublish);
+
+        $this->getRoomClient()->updateParticipant($roomName, $identity, permission: $permission);
+
+        Log::info('LiveKit: Updated participant permissions', [
+            'room' => $roomName,
+            'identity' => $identity,
+            'canPublish' => $canPublish,
+        ]);
+    }
+
+    /**
+     * Grant publish permissions to a guest (bring on air).
+     */
+    public function grantPublish(LiveEvent $event, LiveEventGuest $guest): void
+    {
+        $this->updateParticipantPermissions($event->livekit_room_name, $guest->getLivekitIdentity(), canPublish: true);
+    }
+
+    /**
+     * Revoke publish permissions from a guest (take off air).
+     */
+    public function revokePublish(LiveEvent $event, LiveEventGuest $guest): void
+    {
+        $this->updateParticipantPermissions($event->livekit_room_name, $guest->getLivekitIdentity(), canPublish: false);
     }
 
     /**
