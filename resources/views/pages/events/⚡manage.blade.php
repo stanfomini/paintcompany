@@ -87,9 +87,11 @@ class extends Component
     /**
      * Echo handler: new backstage message from a guest.
      */
+    #[Renderless]
     public function onBackstageMessage(array $event): void
     {
         unset($this->backstageMessages);
+        $this->dispatch('backstage-message-received', content: $event['content'] ?? '', createdAt: $event['created_at'] ?? '');
     }
 
     public function boot(): void
@@ -140,6 +142,7 @@ class extends Component
         $this->dispatch('livekit-disconnect');
     }
 
+    #[Renderless]
     public function answerQuestion(int $questionId): void
     {
         $question = LiveEventQuestion::where('live_event_id', $this->event->id)->findOrFail($questionId);
@@ -157,8 +160,10 @@ class extends Component
         }
 
         unset($this->pendingQuestions, $this->answeredQuestions);
+        $this->dispatch('question-updated', questionId: $questionId, action: 'answered');
     }
 
+    #[Renderless]
     public function dismissQuestion(int $questionId): void
     {
         $question = LiveEventQuestion::where('live_event_id', $this->event->id)->findOrFail($questionId);
@@ -166,8 +171,10 @@ class extends Component
         app(LiveEventService::class)->dismissQuestion($question);
 
         unset($this->pendingQuestions, $this->answeredQuestions);
+        $this->dispatch('question-updated', questionId: $questionId, action: 'dismissed');
     }
 
+    #[Renderless]
     public function addResource(): void
     {
         $this->validate([
@@ -178,12 +185,14 @@ class extends Component
 
         $maxSort = $this->event->resources()->max('sort_order') ?? 0;
 
-        $this->event->resources()->create([
+        $resource = $this->event->resources()->create([
             'title' => $this->newResourceTitle,
             'url' => $this->newResourceUrl,
             'type' => $this->newResourceType,
             'sort_order' => $maxSort + 1,
         ]);
+
+        $this->dispatch('resource-added', id: $resource->id, title: $resource->title, url: $resource->url, type: $resource->type);
 
         $this->reset('newResourceTitle', 'newResourceUrl', 'newResourceType');
         $this->newResourceType = 'link';
@@ -191,13 +200,16 @@ class extends Component
         unset($this->resources);
     }
 
+    #[Renderless]
     public function removeResource(int $resourceId): void
     {
         LiveEventResource::where('live_event_id', $this->event->id)->where('id', $resourceId)->delete();
 
         unset($this->resources);
+        $this->dispatch('resource-removed', id: $resourceId);
     }
 
+    #[Renderless]
     public function refreshViewerCount(): void
     {
         if ($this->event->status !== 'live') {
@@ -212,6 +224,9 @@ class extends Component
 
             // Broadcast the updated count to all viewers
             broadcast(new LiveEventViewerCountUpdated($this->event->id, $this->viewerCount));
+
+            // Push to Alpine (renderless won't re-render the Blade template)
+            $this->dispatch('viewer-count-updated', count: $this->viewerCount);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('LiveEvent: Failed to refresh viewer count', [
                 'event_id' => $this->event->id,
@@ -220,6 +235,7 @@ class extends Component
         }
     }
 
+    #[Renderless]
     public function sendChatMessage(): void
     {
         $this->validate([
@@ -231,11 +247,12 @@ class extends Component
         }
 
         $user = auth()->user();
+        $content = $user->name.': '.$this->chatMessage;
 
         $message = ChatMessage::create([
             'thread_id' => $this->event->chat_thread_id,
             'user_id' => $user->id,
-            'content' => $user->name.': '.$this->chatMessage,
+            'content' => $content,
             'type' => ChatMessage::TYPE_TEXT,
             'is_internal' => false,
         ]);
@@ -250,6 +267,8 @@ class extends Component
             ]);
         }
 
+        $this->dispatch('chat-message-appended', content: $content, id: $message->id);
+
         $this->chatMessage = '';
         unset($this->chatMessages);
     }
@@ -257,22 +276,27 @@ class extends Component
     /**
      * Echo handler: new chat message received via broadcast.
      */
+    #[Renderless]
     public function onChatMessage(array $event): void
     {
         unset($this->chatMessages);
+        $this->dispatch('chat-message-appended', content: $event['content'] ?? '', id: $event['id'] ?? 0);
     }
 
     /**
      * Echo handler: viewer count updated via broadcast.
      */
+    #[Renderless]
     public function onViewerCountUpdated(array $event): void
     {
         $this->viewerCount = $event['count'] ?? $this->viewerCount;
+        $this->dispatch('viewer-count-updated', count: $this->viewerCount);
     }
 
     /**
      * Echo handler: presence channel reports who is here on initial join.
      */
+    #[Renderless]
     public function onPresenceHere(array $event): void
     {
         $this->refreshViewerCount();
@@ -281,6 +305,7 @@ class extends Component
     /**
      * Echo handler: someone joined the presence channel.
      */
+    #[Renderless]
     public function onPresenceJoining(array $event): void
     {
         $this->refreshViewerCount();
@@ -289,6 +314,7 @@ class extends Component
     /**
      * Echo handler: someone left the presence channel.
      */
+    #[Renderless]
     public function onPresenceLeaving(array $event): void
     {
         $this->refreshViewerCount();
@@ -297,9 +323,11 @@ class extends Component
     /**
      * Echo handler: new question received from a viewer.
      */
+    #[Renderless]
     public function onQuestionReceived(array $event): void
     {
         unset($this->pendingQuestions);
+        $this->dispatch('question-received', question: $event['question'] ?? '', viewerName: $event['viewer_name'] ?? '', id: $event['id'] ?? 0);
     }
 
     #[Computed]
@@ -411,29 +439,37 @@ class extends Component
         $this->event->update(['overlays' => $overlays]);
     }
 
+    #[Renderless]
     public function toggleFrameMode(): void
     {
         $this->event->update(['use_frame_mode' => ! $this->event->use_frame_mode]);
         $this->event->refresh();
     }
 
-    public function saveAsTemplate(): void
+    #[Renderless]
+    public function saveAsTemplate(array $scenes = [], array $overlays = []): void
     {
         $this->validate([
             'templateName' => 'required|string|max:255',
         ]);
 
-        LiveEventSceneTemplate::create([
+        // Use Alpine-provided data if available (live state), fall back to DB (pre-live state)
+        $scenesToSave = ! empty($scenes) ? $scenes : $this->event->getScenesOrDefaults();
+        $overlaysToSave = ! empty($overlays) ? $overlays : ($this->event->overlays ?? []);
+
+        $template = LiveEventSceneTemplate::create([
             'user_id' => auth()->id(),
             'name' => $this->templateName,
-            'scenes' => $this->event->getScenesOrDefaults(),
-            'overlays' => $this->event->overlays ?? [],
+            'scenes' => $scenesToSave,
+            'overlays' => $overlaysToSave,
         ]);
 
         $this->reset('templateName');
         unset($this->sceneTemplates);
+        $this->dispatch('template-saved', id: $template->id, name: $template->name);
     }
 
+    #[Renderless]
     public function loadTemplate(int $templateId): void
     {
         $template = LiveEventSceneTemplate::where('user_id', auth()->id())->findOrFail($templateId);
@@ -443,8 +479,23 @@ class extends Component
             'overlays' => $template->overlays,
         ]);
         $this->event->refresh();
+
+        // Push loaded data to Alpine so compositors update
+        $this->dispatch('template-loaded', scenes: $template->scenes, overlays: $template->overlays ?? []);
     }
 
+    #[Renderless]
+    public function deleteTemplate(int $templateId): void
+    {
+        LiveEventSceneTemplate::where('user_id', auth()->id())
+            ->where('id', $templateId)
+            ->delete();
+
+        unset($this->sceneTemplates);
+        $this->dispatch('template-deleted', id: $templateId);
+    }
+
+    #[Renderless]
     public function addTextOverlay(): void
     {
         $this->validate([
@@ -452,7 +503,7 @@ class extends Component
         ]);
 
         $overlays = $this->event->overlays ?? [];
-        $overlays[] = [
+        $overlay = [
             'type' => 'text',
             'content' => $this->overlayText,
             'x' => 0.05,
@@ -462,12 +513,15 @@ class extends Component
             'color' => '#ffffff',
             'bg' => '#000000cc',
         ];
+        $overlays[] = $overlay;
 
         $this->event->update(['overlays' => $overlays]);
         $this->event->refresh();
+        $this->dispatch('overlay-added', overlay: $overlay);
         $this->reset('overlayText');
     }
 
+    #[Renderless]
     public function removeOverlay(int $index): void
     {
         $overlays = $this->event->overlays ?? [];
@@ -476,6 +530,7 @@ class extends Component
             unset($overlays[$index]);
             $this->event->update(['overlays' => array_values($overlays)]);
             $this->event->refresh();
+            $this->dispatch('overlay-removed', index: $index);
         }
     }
 
@@ -496,6 +551,7 @@ class extends Component
             ->values();
     }
 
+    #[Renderless]
     public function sendBackstageMessage(): void
     {
         $this->validate([
@@ -507,11 +563,12 @@ class extends Component
         $this->event->refresh();
 
         $user = auth()->user();
+        $content = $user->name.': '.$this->backstageMessage;
 
         $message = ChatMessage::create([
             'thread_id' => $thread->id,
             'user_id' => $user->id,
-            'content' => $user->name.': '.$this->backstageMessage,
+            'content' => $content,
             'type' => ChatMessage::TYPE_TEXT,
             'is_internal' => false,
         ]);
@@ -524,6 +581,8 @@ class extends Component
                 'error' => $e->getMessage(),
             ]);
         }
+
+        $this->dispatch('backstage-message-sent', content: $content);
 
         $this->backstageMessage = '';
         unset($this->backstageMessages);
@@ -744,17 +803,21 @@ class extends Component
 
                             {{-- Templates --}}
                             @if ($this->sceneTemplates->isNotEmpty())
-                                <div class="mt-4" x-data="{ selectedTemplate: '' }">
-                                    <div class="flex items-center gap-2">
-                                        <flux:select x-model="selectedTemplate" size="sm" class="flex-1" placeholder="{{ __('Load template...') }}">
-                                            @foreach ($this->sceneTemplates as $template)
-                                                <flux:select.option value="{{ $template->id }}">{{ $template->name }}</flux:select.option>
-                                            @endforeach
-                                        </flux:select>
-                                        <flux:button size="sm" variant="ghost" icon="arrow-down-tray" x-on:click="if (selectedTemplate) $wire.loadTemplate(parseInt(selectedTemplate))">
-                                            {{ __('Load') }}
-                                        </flux:button>
-                                    </div>
+                                <div class="mt-4 space-y-1">
+                                    @foreach ($this->sceneTemplates as $template)
+                                        <div class="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-1.5 dark:bg-zinc-900">
+                                            <span class="text-sm text-zinc-700 dark:text-zinc-300 truncate">{{ $template->name }}</span>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <flux:button size="xs" variant="ghost" icon="arrow-down-tray"
+                                                    wire:click="loadTemplate({{ $template->id }})">
+                                                    {{ __('Load') }}
+                                                </flux:button>
+                                                <flux:button size="xs" variant="ghost" icon="trash"
+                                                    wire:click="deleteTemplate({{ $template->id }})"
+                                                    wire:confirm="{{ __('Delete this template?') }}" />
+                                            </div>
+                                        </div>
+                                    @endforeach
                                 </div>
                             @endif
 
@@ -1172,6 +1235,8 @@ class extends Component
                     <button type="button" @click="deleteVersion()"
                             x-show="scenes.length > 1 && previewSceneIndex !== liveSceneIndex"
                             class="rounded bg-zinc-700 px-2 py-1 text-[10px] text-red-400 hover:bg-red-600/30">Delete</button>
+                    <div class="mx-1 h-4 w-px bg-zinc-700"></div>
+                    <button type="button" @click="$flux.modal('live-template-modal').show()" class="rounded bg-zinc-700 px-2 py-1 text-[10px] text-blue-400 hover:bg-zinc-600">Templates</button>
                 </div>
 
                 {{-- ═══════════════════════════════════════════ --}}
@@ -1434,6 +1499,57 @@ class extends Component
                 </div>
 
                 {{-- ═══════════════════════════════════════════ --}}
+                {{-- TEMPLATE MODAL --}}
+                {{-- ═══════════════════════════════════════════ --}}
+                <flux:modal name="live-template-modal" class="w-full max-w-md">
+                    <div class="space-y-4" x-data="{ templates: @js($this->sceneTemplates->toArray()) }"
+                         x-init="
+                            $wire.on('template-saved', ({ id, name }) => {
+                                templates.push({ id, name });
+                            });
+                            $wire.on('template-deleted', ({ id }) => {
+                                templates = templates.filter(t => t.id !== id);
+                            });
+                         ">
+                        <flux:heading size="lg">{{ __('Scene Templates') }}</flux:heading>
+
+                        {{-- Template list --}}
+                        <template x-if="templates.length > 0">
+                            <div class="space-y-2 max-h-60 overflow-y-auto">
+                                <template x-for="template in templates" :key="template.id">
+                                    <div class="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800">
+                                        <span class="text-sm text-zinc-700 dark:text-zinc-300 truncate" x-text="template.name"></span>
+                                        <div class="flex items-center gap-1 shrink-0 ml-2">
+                                            <flux:button size="xs" variant="primary"
+                                                @click="loadTemplate(template.id); $flux.modal('live-template-modal').close()">
+                                                {{ __('Load') }}
+                                            </flux:button>
+                                            <flux:button size="xs" variant="ghost" icon="trash"
+                                                @click="if (confirm('{{ __('Delete this template?') }}')) $wire.deleteTemplate(template.id)" />
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <template x-if="templates.length === 0">
+                            <flux:text class="text-sm text-zinc-400">{{ __('No saved templates yet.') }}</flux:text>
+                        </template>
+
+                        {{-- Save current --}}
+                        <div class="border-t border-zinc-200 pt-4 dark:border-zinc-700">
+                            <flux:heading size="sm" class="mb-2">{{ __('Save Current Scenes') }}</flux:heading>
+                            <div class="flex gap-2">
+                                <flux:input wire:model="templateName" placeholder="{{ __('Template name...') }}" size="sm" class="flex-1" />
+                                <flux:button size="sm" variant="primary" @click="saveTemplate(); $flux.modal('live-template-modal').close()">
+                                    {{ __('Save') }}
+                                </flux:button>
+                            </div>
+                            @error('templateName') <span class="mt-1 text-xs text-red-500">{{ $message }}</span> @enderror
+                        </div>
+                    </div>
+                </flux:modal>
+
+                {{-- ═══════════════════════════════════════════ --}}
                 {{-- OVERLAY MODALS --}}
                 {{-- ═══════════════════════════════════════════ --}}
 
@@ -1606,6 +1722,7 @@ class extends Component
                     {{-- Chat Tab --}}
                     <div x-show="activeTab === 'chat'" class="flex h-full flex-col">
                         <div
+                            id="live-chat-messages"
                             class="flex-1 overflow-y-auto px-4 py-2 space-y-1"
                             x-data
                             x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
@@ -1643,6 +1760,7 @@ class extends Component
                             @endif
                         </div>
 
+                        <div id="live-qa-panel">
                         @if ($this->pendingQuestions->isEmpty())
                             <div class="rounded-lg bg-zinc-50 p-4 text-center dark:bg-zinc-900">
                                 <flux:icon name="chat-bubble-left-right" class="mx-auto mb-2 size-6 text-zinc-400" />
@@ -1651,7 +1769,7 @@ class extends Component
                         @else
                             <div class="space-y-3">
                                 @foreach ($this->pendingQuestions as $question)
-                                    <div wire:key="q-{{ $question->id }}" class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
+                                    <div wire:key="q-{{ $question->id }}" id="question-{{ $question->id }}" class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-900/20">
                                         <div class="mb-1 flex items-center justify-between">
                                             <span class="text-xs font-medium text-amber-700 dark:text-amber-400">{{ $question->viewer_name }}</span>
                                             <span class="text-xs text-zinc-400">{{ $question->created_at->diffForHumans() }}</span>
@@ -1669,6 +1787,7 @@ class extends Component
                                 @endforeach
                             </div>
                         @endif
+                        </div>{{-- /live-qa-panel --}}
 
                         {{-- Answered Questions (collapsed) --}}
                         <div class="mt-4" x-data="{ showAnswered: false }">
@@ -1755,6 +1874,7 @@ class extends Component
                     {{-- Backstage Tab --}}
                     <div x-show="activeTab === 'backstage'" x-cloak class="flex h-full flex-col">
                         <div
+                            id="live-backstage-messages"
                             class="flex-1 overflow-y-auto px-4 py-2 space-y-1"
                             x-data
                             x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
@@ -1877,6 +1997,99 @@ class extends Component
                         if (sourceManager) sourceManager.removeSource(slotKey);
                         console.log('[Studio] Guest taken off:', slotKey);
                     });
+
+                    // --- Renderless event listeners (real-time updates without re-render) ---
+
+                    this.$wire.on('viewer-count-updated', ({ count }) => {
+                        this.viewerCount = count;
+                    });
+
+                    this.$wire.on('chat-message-appended', ({ content, id }) => {
+                        this._appendToChatPanel(content);
+                    });
+
+                    this.$wire.on('backstage-message-sent', ({ content }) => {
+                        this._appendToBackstagePanel(content);
+                    });
+
+                    this.$wire.on('backstage-message-received', ({ content, createdAt }) => {
+                        this._appendToBackstagePanel(content);
+                    });
+
+                    this.$wire.on('question-received', ({ question, viewerName, id }) => {
+                        this._appendToQAPanel(question, viewerName, id);
+                    });
+
+                    this.$wire.on('question-updated', ({ questionId, action }) => {
+                        const el = document.getElementById(`question-${questionId}`);
+                        if (el) el.remove();
+                    });
+
+                    this.$wire.on('template-loaded', ({ scenes, overlays }) => {
+                        this.scenes = scenes;
+                        this.overlayConfigs = overlays;
+                        this.previewSceneIndex = 0;
+                        const scene = this.scenes[0];
+                        if (previewCompositor && scene) previewCompositor.setScene(scene);
+                        if (programCompositor && scene) programCompositor.setScene(scene);
+                        if (previewCompositor) previewCompositor.setOverlays([...this.overlayConfigs]);
+                        if (programCompositor) programCompositor.setOverlays([...this.overlayConfigs]);
+                        if (canvasEditor && this.editorMode) {
+                            canvasEditor.setSlots(scene?.slots || []);
+                            this.selectedItem = null;
+                        }
+                        console.log('[Studio] Template loaded:', scenes.length, 'scenes');
+                    });
+                },
+
+                // --- DOM helpers for renderless updates ---
+
+                _appendToChatPanel(content) {
+                    const panel = document.getElementById('live-chat-messages');
+                    if (!panel) return;
+                    const div = document.createElement('div');
+                    div.className = 'text-xs text-zinc-300';
+                    div.textContent = content;
+                    panel.appendChild(div);
+                    panel.scrollTop = panel.scrollHeight;
+                },
+
+                _appendToBackstagePanel(content) {
+                    const panel = document.getElementById('live-backstage-messages');
+                    if (!panel) return;
+                    const div = document.createElement('div');
+                    div.className = 'text-sm text-zinc-300';
+                    div.textContent = content;
+                    panel.appendChild(div);
+                    panel.scrollTop = panel.scrollHeight;
+                },
+
+                _appendToQAPanel(question, viewerName, id) {
+                    const panel = document.getElementById('live-qa-panel');
+                    if (!panel) return;
+                    const div = document.createElement('div');
+                    div.id = `question-${id}`;
+                    div.className = 'flex items-start justify-between rounded-lg bg-zinc-800 px-3 py-2';
+                    div.innerHTML = `
+                        <div class="min-w-0">
+                            <span class="text-xs text-zinc-500">${viewerName}</span>
+                            <p class="text-sm text-zinc-200">${question}</p>
+                        </div>
+                        <div class="flex gap-1 shrink-0 ml-2">
+                            <button type="button" wire:click="answerQuestion(${id})" class="text-[10px] px-2 py-1 rounded bg-green-600/20 text-green-400 hover:bg-green-600/30">Answer</button>
+                            <button type="button" wire:click="dismissQuestion(${id})" class="text-[10px] px-2 py-1 rounded bg-zinc-700 text-zinc-400 hover:bg-zinc-600">Dismiss</button>
+                        </div>`;
+                    panel.prepend(div);
+                },
+
+                // --- Template helpers ---
+
+                saveTemplate() {
+                    this.$wire.saveAsTemplate(this.scenes, this.overlayConfigs);
+                },
+
+                loadTemplate(templateId) {
+                    this.$wire.loadTemplate(parseInt(templateId));
                 },
 
                 // ==============================================================

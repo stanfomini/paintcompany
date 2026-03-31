@@ -8,6 +8,7 @@ use App\Services\LiveEventService;
 use App\Services\LiveKitService;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Renderless;
 use Livewire\Component;
 
 new #[Layout('layouts.video-call')] class extends Component
@@ -69,6 +70,7 @@ new #[Layout('layouts.video-call')] class extends Component
         }
     }
 
+    #[Renderless]
     public function sendBackstageMessage(): void
     {
         $this->validate([
@@ -79,9 +81,11 @@ new #[Layout('layouts.video-call')] class extends Component
             return;
         }
 
+        $content = $this->guest->name.': '.$this->backstageMessage;
+
         $message = ChatMessage::create([
             'thread_id' => $this->event->backstage_chat_thread_id,
-            'content' => $this->guest->name.': '.$this->backstageMessage,
+            'content' => $content,
             'type' => ChatMessage::TYPE_TEXT,
             'is_internal' => false,
         ]);
@@ -94,6 +98,9 @@ new #[Layout('layouts.video-call')] class extends Component
                 'error' => $e->getMessage(),
             ]);
         }
+
+        // Dispatch to Alpine for client-side DOM append (renderless skips re-render)
+        $this->dispatch('backstage-message-sent', content: $content);
 
         $this->backstageMessage = '';
         unset($this->backstageMessages);
@@ -466,6 +473,11 @@ new #[Layout('layouts.video-call')] class extends Component
 
                     // Set up backstage chat via Echo/Reverb
                     this.setupBackstageChat();
+
+                    // Listen for own sent messages (renderless won't re-render Blade)
+                    this.$wire.on('backstage-message-sent', ({ content }) => {
+                        this._appendBackstageMessage(content);
+                    });
 
                     // Connect to LiveKit as viewer (subscribe-only) to see broadcast output
                     if (config.livekitToken && config.livekitUrl) {
@@ -893,11 +905,38 @@ new #[Layout('layouts.video-call')] class extends Component
 
                         echoInstance.private(`event-backstage.${config.eventId}`)
                             .listen('.backstage.message', (e) => {
-                                this.$wire.$refresh();
+                                // Append directly to DOM — never trigger Livewire refresh during live
+                                this._appendBackstageMessage(e.content, e.created_at);
                             });
                     } catch (err) {
                         console.warn('[GuestRoom] Backstage chat setup failed:', err);
                     }
+                },
+
+                // ==============================================================
+                // Client-side message rendering (avoids Livewire re-render)
+                // ==============================================================
+
+                _appendBackstageMessage(content, createdAt) {
+                    const container = this.$refs.chatScroll;
+                    if (!container) return;
+
+                    const div = document.createElement('div');
+                    div.className = 'text-xs';
+
+                    const contentSpan = document.createElement('span');
+                    contentSpan.className = 'text-zinc-300';
+                    contentSpan.textContent = content || '';
+                    div.appendChild(contentSpan);
+
+                    const timeSpan = document.createElement('span');
+                    timeSpan.className = 'text-zinc-600 ml-1';
+                    const d = createdAt ? new Date(createdAt) : new Date();
+                    timeSpan.textContent = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+                    div.appendChild(timeSpan);
+
+                    container.appendChild(div);
+                    container.scrollTop = container.scrollHeight;
                 },
 
                 // ==============================================================
