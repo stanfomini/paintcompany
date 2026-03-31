@@ -134,3 +134,21 @@ it('auto-configures webhooks when assigning a number to a company', function () 
     expect($result->company_id)->toBe($this->company->id)
         ->and($result->role)->toBe('local_presence');
 });
+
+// ─── integration: UI ─────────────────────────────────
+
+it('phone numbers page has configure webhooks button', function () {
+    $user = \App\Models\User::factory()->create(['type' => 'internal']);
+
+    // Create a company with an assigned number so the pool view renders
+    PhoneNumber::factory()->forAccount($this->account)->create([
+        'company_id' => $this->company->id,
+        'is_active' => true,
+        'role' => 'local_presence',
+    ]);
+
+    \Livewire\Livewire::actingAs($user)
+        ->test('pages::prospector.phone-numbers')
+        ->assertSee('Configure Webhooks')
+        ->assertStatus(200);
+});

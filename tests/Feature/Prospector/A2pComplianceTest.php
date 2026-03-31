@@ -85,3 +85,19 @@ it('settings page shows compliance tab', function () {
         ->assertSee('A2P Compliance')
         ->assertStatus(200);
 });
+
+it('settings page compliance tab shows messaging services', function () {
+    $user = \App\Models\User::factory()->create(['type' => 'internal']);
+    $account = TwilioAccount::factory()->create();
+    MessagingService::factory()->fullyCompliant()->create([
+        'twilio_account_id' => $account->id,
+        'friendly_name' => 'My Messaging Service',
+    ]);
+
+    \Livewire\Livewire::actingAs($user)
+        ->test('pages::prospector.settings')
+        ->set('activeTab', 'compliance')
+        ->assertSee('My Messaging Service')
+        ->assertSee('APPROVED')
+        ->assertStatus(200);
+});
