@@ -6,10 +6,13 @@ use App\Events\Prospector\DialerCallRinging;
 use App\Http\Controllers\Controller;
 use App\Models\Prospector\Agent;
 use App\Models\Prospector\Call;
+use App\Models\Prospector\Campaign;
+use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\Company;
 use App\Models\Prospector\Contact;
 use App\Models\Prospector\PhoneNumber;
 use App\Services\Prospector\ConferenceService;
+use App\Services\Prospector\WebhookIntakeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -113,6 +116,26 @@ class TwilioVoiceController extends Controller
             ['company_id' => $company->id, 'phone' => $fromNumber],
             ['first_name' => 'Unknown', 'source' => 'inbound_call'],
         );
+
+        // Flag this contact as priority in any active campaign queues
+        $queueEntries = CampaignContact::where('contact_id', $contact->id)
+            ->where('status', 'queued')
+            ->get();
+
+        if ($queueEntries->isNotEmpty()) {
+            foreach ($queueEntries as $entry) {
+                $entry->markPriority('inbound_call');
+            }
+        } elseif ($company->default_campaign_id) {
+            // Auto-enroll in default campaign at front with priority
+            $defaultCampaign = Campaign::find($company->default_campaign_id);
+            if ($defaultCampaign) {
+                app(WebhookIntakeService::class)->enrollAtFront($contact, $defaultCampaign);
+                CampaignContact::where('contact_id', $contact->id)
+                    ->where('campaign_id', $company->default_campaign_id)
+                    ->update(['is_priority' => true, 'priority_reason' => 'inbound_call']);
+            }
+        }
 
         // Check if company has IVR enabled
         $settings = $company->settings ?? [];

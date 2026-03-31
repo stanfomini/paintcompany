@@ -182,6 +182,15 @@ class ProspectorSmsService
             if ($queueEntry) {
                 app(WebhookIntakeService::class)->pushToFront($contact, $queueEntry);
             }
+
+            // Mark contact as having unread SMS
+            $contact->update(['has_unread_sms' => true]);
+
+            // Flag in queue as priority
+            CampaignContact::where('contact_id', $contact->id)
+                ->where('status', 'queued')
+                ->where('is_priority', false)
+                ->update(['is_priority' => true, 'priority_reason' => 'unread_sms']);
         }
 
         Log::info('Prospector inbound SMS received', [

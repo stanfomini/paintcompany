@@ -289,6 +289,11 @@ class WebhookIntakeService
                 'added_at' => now(),
             ]);
 
+            // Mark new lead as priority
+            CampaignContact::where('campaign_id', $campaign->id)
+                ->where('contact_id', $contact->id)
+                ->update(['is_priority' => true, 'priority_reason' => 'new_lead']);
+
             $campaign->increment('contact_count');
 
             broadcast(new QueueUpdated($contact, $campaign, 'added'));
