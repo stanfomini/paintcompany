@@ -83,6 +83,14 @@ window.loadCanvasEditor = async () => {
     return window.StudioCanvasEditor;
 };
 
+window.loadLivePlayer = async () => {
+    if (!window.LivePlayer) {
+        const module = await import('./studio/LivePlayer.js');
+        window.LivePlayer = module.default;
+    }
+    return window.LivePlayer;
+};
+
 window.loadTwilioVoice = async () => {
     if (!window.TwilioDevice) {
         const { Device } = await import('@twilio/voice-sdk');
