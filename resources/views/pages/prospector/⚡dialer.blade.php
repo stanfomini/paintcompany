@@ -626,7 +626,12 @@ class extends Component
             }
             $conferenceService->dialContactIntoConference($conferenceName, $contact, $fromNumber, $amdParams);
         } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to dial contact', [
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+            ]);
             $this->resetCallState();
+            $this->dispatch('dial-error', message: $e->getMessage());
         }
 
         $this->clearCaches();
@@ -1327,6 +1332,11 @@ class extends Component
 
             this.$wire.on('queue-reload', () => {
                 this.loadQueue();
+            });
+
+            this.$wire.on('dial-error', ({ message }) => {
+                this.phoneError = 'Call failed: ' + message;
+                setTimeout(() => { this.phoneError = null; }, 10000);
             });
 
             // Load initial queue
