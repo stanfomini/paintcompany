@@ -12,6 +12,7 @@ use App\Models\Prospector\Campaign;
 use App\Models\Prospector\CampaignContact;
 use App\Models\Prospector\DialerSession;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 
 class PowerDialerService
 {
@@ -232,6 +233,111 @@ class PowerDialerService
             'session_id' => $session->id,
             'contact_id' => $contact->id,
             'twilio_call_sid' => $callSid,
+        ]);
+
+        return $call;
+    }
+
+    /**
+     * Dial the next queued contact for an agent without requiring a session.
+     *
+     * Uses SmartQueueService for next contact and atomic claiming.
+     * This is the session-free alternative to dialNext().
+     */
+    public function dialForAgent(Agent $agent, ?int $campaignId = null): ?Call
+    {
+        $smartQueue = app(SmartQueueService::class);
+        $next = $smartQueue->getNext($agent, $campaignId);
+
+        if (! $next) {
+            return null;
+        }
+
+        // Claim the item atomically
+        if (! $smartQueue->claim($next, $agent)) {
+            // Someone else claimed it, try the next one
+            $next = $smartQueue->getNext($agent, $campaignId);
+            if (! $next || ! $smartQueue->claim($next, $agent)) {
+                return null;
+            }
+        }
+
+        $contact = $next->contact;
+        $campaign = $next->campaign;
+        $company = $campaign->company;
+
+        // Select outbound number
+        try {
+            $fromNumber = $this->numberSelectionService->selectNumber($company, $contact, $campaign);
+        } catch (\RuntimeException $e) {
+            Log::warning('No available number for sessionless dial', [
+                'agent_id' => $agent->id,
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+            ]);
+            $smartQueue->release($next);
+
+            return null;
+        }
+
+        $conferenceName = 'dial-'.Str::ulid();
+        $next->markDialing();
+
+        // Create the Call record
+        $call = Call::create([
+            'company_id' => $company->id,
+            'campaign_id' => $campaign->id,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'from_phone_number_id' => $fromNumber->id,
+            'from_number' => $fromNumber->getEffectiveCallerId(),
+            'to_number' => $contact->phone,
+            'direction' => 'outbound',
+            'status' => 'ringing',
+            'started_at' => now(),
+            'twilio_conference_sid' => $conferenceName,
+        ]);
+
+        // Get AMD params if enabled
+        $amdParams = [];
+        if (config('prospector.defaults.amd_enabled')) {
+            $amdParams = $this->amdService->getAmdParams();
+        }
+
+        // Dial into conference
+        try {
+            $callSid = $this->conferenceService->dialContactIntoConference(
+                $conferenceName,
+                $contact,
+                $fromNumber,
+                $amdParams,
+            );
+
+            $call->update(['twilio_call_sid' => $callSid]);
+        } catch (\Exception $e) {
+            Log::error('Failed to dial contact (sessionless)', [
+                'call_id' => $call->id,
+                'contact_id' => $contact->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            $call->markFailed();
+            $smartQueue->release($next);
+
+            return null;
+        }
+
+        $agent->incrementCallCount();
+        $this->agentStateService->setStatus($agent, 'ringing');
+
+        broadcast(new DialerCallRinging($call, $agent->id));
+
+        Log::info('Sessionless call placed', [
+            'call_id' => $call->id,
+            'call_ulid' => $call->ulid,
+            'agent_id' => $agent->id,
+            'contact_id' => $contact->id,
+            'campaign_id' => $campaign->id,
         ]);
 
         return $call;
