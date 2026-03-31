@@ -118,8 +118,11 @@ class extends Component
                 'max_concurrent_lines' => 1,
                 'wrap_up_seconds' => 30,
             ]);
-            $agent->companies()->attach($company->id);
         }
+
+        // Ensure agent is assigned to ALL active companies
+        $activeCompanyIds = Company::where('is_active', true)->pluck('id');
+        $agent->companies()->syncWithoutDetaching($activeCompanyIds);
 
         $this->agentId = $agent->id;
         $this->agentStatus = $agent->status;
@@ -399,6 +402,80 @@ class extends Component
 
         $this->contactPipelineStageId = $stageId ?: null;
         $this->clearCaches();
+
+        // Tell Alpine to reload the queue so stage change is reflected
+        $this->dispatch('queue-reload');
+    }
+
+    /**
+     * Quick-disposition a contact without requiring an active call.
+     * Used when agent reviews a contact and wants to set outcome directly.
+     */
+    public function quickDisposition(string $disposition, ?string $callbackAt = null): void
+    {
+        $contactId = $this->activeContact['id'] ?? $this->previewContactId;
+
+        if (! $contactId) {
+            return;
+        }
+
+        $contact = Contact::find($contactId);
+
+        if (! $contact) {
+            return;
+        }
+
+        // Update contact based on disposition
+        $updates = ['last_disposition' => $disposition];
+
+        if ($disposition === 'callback' && $callbackAt) {
+            $updates['follow_up_at'] = $callbackAt;
+        } elseif ($disposition === 'dnc') {
+            $updates['do_not_call'] = true;
+        } elseif ($disposition === 'not_interested' || $disposition === 'wrong_number' || $disposition === 'disconnected') {
+            // Move to Lost stage if it exists
+            $lostStage = PipelineStage::whereHas('pipeline', fn ($q) => $q->where('is_default', true))
+                ->where('name', 'Lost')
+                ->first();
+            if ($lostStage) {
+                $updates['pipeline_stage_id'] = $lostStage->id;
+            }
+        } elseif ($disposition === 'interested') {
+            // Move to Interested stage if it exists
+            $interestedStage = PipelineStage::whereHas('pipeline', fn ($q) => $q->where('is_default', true))
+                ->where('name', 'Interested')
+                ->first();
+            if ($interestedStage) {
+                $updates['pipeline_stage_id'] = $interestedStage->id;
+            }
+        }
+
+        $contact->update($updates);
+
+        if ($disposition === 'callback' && $callbackAt) {
+            $this->contactFollowUpAt = $callbackAt;
+        }
+
+        $this->contactPipelineStageId = $contact->fresh()->pipeline_stage_id;
+
+        // Add note if disposition notes exist
+        if ($this->dispositionNotes) {
+            ContactNote::create([
+                'contact_id' => $contactId,
+                'user_id' => Auth::id(),
+                'body' => "[{$disposition}] {$this->dispositionNotes}",
+            ]);
+            $this->dispositionNotes = '';
+        }
+
+        $this->clearCaches();
+        $this->dispatch('queue-reload');
+
+        // Auto-advance to next contact
+        $next = app(SmartQueueService::class)->getNext($this->agent);
+        if ($next && $next->id !== $contactId) {
+            $this->previewContact($next->id);
+        }
     }
 
     public function setFollowUp(?string $date): void
@@ -1228,9 +1305,13 @@ class extends Component
             // Initialize Twilio Voice SDK
             this.initTwilio();
 
-            // Listen for Livewire join-conference dispatch
+            // Listen for Livewire dispatches
             this.$wire.on('join-conference', ({ conferenceName }) => {
                 this.connectToConference(conferenceName);
+            });
+
+            this.$wire.on('queue-reload', () => {
+                this.loadQueue();
             });
 
             // Load initial queue
@@ -1657,20 +1738,30 @@ class extends Component
             </div>
 
             {{-- ──────────────────────────────────────────────────────── --}}
-            {{-- CENTER COLUMN: Call Controls, VM, SMS, Script           --}}
+            {{-- CENTER COLUMN: Softphone, Call, Disposition, SMS       --}}
             {{-- ──────────────────────────────────────────────────────── --}}
             <div class="space-y-4 lg:col-span-5">
-                {{-- Call Controls --}}
+
+                {{-- Softphone Status Bar — always visible --}}
                 <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
-                    <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                        <div class="flex items-center justify-between">
-                            <flux:heading size="sm">Call</flux:heading>
+                    <div class="flex items-center justify-between px-4 py-2.5">
+                        <div class="flex items-center gap-2">
+                            <span class="inline-flex size-2.5 rounded-full" :class="deviceReady ? 'bg-green-500' : 'bg-red-500'"></span>
+                            <span class="text-sm font-medium" :class="deviceReady ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'" x-text="deviceReady ? 'Phone Ready' : 'Phone Connecting...'"></span>
+                        </div>
+                        <div class="flex items-center gap-2">
                             @if ($callingFrom)
-                                <span class="text-xs text-zinc-400">From: {{ $callingFrom }}</span>
+                                <span class="text-xs text-zinc-400">{{ $callingFrom }}</span>
+                            @endif
+                            @if ($callStatus === 'connected')
+                                <span class="font-mono text-sm font-bold text-green-600 dark:text-green-400" x-text="formatTime(callTimer)">00:00</span>
                             @endif
                         </div>
                     </div>
+                </div>
 
+                {{-- Call Controls — always visible --}}
+                <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
                     <div class="p-4">
                         {{-- Parallel Lines Indicator --}}
                         @if ($dialerMode === 'parallel' && ! empty($parallelLines))
@@ -1700,33 +1791,8 @@ class extends Component
                             </div>
                         @endif
 
-                        {{-- Call Status Display --}}
-                        @if ($callStatus === 'idle' && ! $showDisposition)
-                            <div class="py-6 text-center">
-                                <flux:icon name="phone" class="mx-auto mb-3 size-10 text-zinc-300 dark:text-zinc-600" />
-                                <flux:text class="text-zinc-500">Ready to dial.</flux:text>
-                                <div class="mt-3 flex justify-center gap-2">
-                                    <flux:button variant="primary" size="sm" icon="phone-arrow-up-right" wire:click="dialNext">
-                                        {{ $dialerMode === 'parallel' ? 'Dial Batch' : 'Dial Next' }}
-                                    </flux:button>
-                                    <flux:button variant="ghost" size="sm" icon="hashtag" x-on:click="showManualDial = !showManualDial">
-                                        Manual
-                                    </flux:button>
-                                </div>
-                                {{-- Manual Dial Input --}}
-                                <div x-show="showManualDial" x-collapse class="mt-3">
-                                    <form wire:submit="manualDial" class="flex gap-2">
-                                        <input
-                                            type="tel"
-                                            wire:model="manualDialNumber"
-                                            placeholder="Enter phone number..."
-                                            class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-                                        />
-                                        <flux:button type="submit" size="sm" variant="primary" icon="phone">Dial</flux:button>
-                                    </form>
-                                </div>
-                            </div>
-                        @elseif ($callStatus === 'ringing' && $dialerMode !== 'parallel')
+                        @if ($callStatus === 'ringing' && $dialerMode !== 'parallel')
+                            {{-- Ringing state --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900/30">
                                     <flux:icon name="phone" class="size-7 animate-pulse text-amber-600 dark:text-amber-400" />
@@ -1741,6 +1807,7 @@ class extends Component
                                 </div>
                             </div>
                         @elseif ($callStatus === 'connected')
+                            {{-- Connected state --}}
                             <div class="text-center">
                                 <div class="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
                                     <flux:icon name="phone" class="size-7 text-green-600 dark:text-green-400" />
@@ -1753,8 +1820,6 @@ class extends Component
                                         <flux:badge size="sm" color="{{ $amdResult === 'human' ? 'green' : 'amber' }}">{{ ucfirst($amdResult) }}</flux:badge>
                                     </div>
                                 @endif
-
-                                <div class="mt-2 font-mono text-2xl font-bold text-green-600 dark:text-green-400" x-text="formatTime(callTimer)">00:00</div>
 
                                 <div class="mt-3 flex justify-center gap-2">
                                     <flux:button
@@ -1794,70 +1859,99 @@ class extends Component
                                         </flux:button>
                                     </div>
                                 @endif
-                            </div>
 
-                            {{-- Transfer Panel --}}
-                            @if ($showTransferPanel)
-                                <div class="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
-                                    <div class="mb-3 flex items-center justify-between">
-                                        <flux:heading size="sm">Transfer Call</flux:heading>
-                                        <flux:button size="xs" variant="ghost" icon="x-mark" wire:click="closeTransferPanel" />
-                                    </div>
+                                {{-- Transfer Panel --}}
+                                @if ($showTransferPanel)
+                                    <div class="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+                                        <div class="mb-3 flex items-center justify-between">
+                                            <flux:heading size="sm">Transfer Call</flux:heading>
+                                            <flux:button size="xs" variant="ghost" icon="x-mark" wire:click="closeTransferPanel" />
+                                        </div>
 
-                                    @if ($transferStatus === 'idle')
-                                        <div class="space-y-3">
-                                            <div>
-                                                <label class="mb-1 block text-xs text-zinc-500">Transfer to number</label>
-                                                <div class="flex gap-2">
-                                                    <input
-                                                        type="tel"
-                                                        wire:model="transferNumber"
-                                                        placeholder="Phone number..."
-                                                        class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
-                                                    />
-                                                    <flux:button size="sm" variant="primary" wire:click="warmTransfer">Warm</flux:button>
-                                                    <flux:button size="sm" variant="filled" wire:click="coldTransfer">Cold</flux:button>
-                                                </div>
-                                            </div>
-
-                                            @if ($this->onlineAgents->isNotEmpty())
+                                        @if ($transferStatus === 'idle')
+                                            <div class="space-y-3">
                                                 <div>
-                                                    <label class="mb-1 block text-xs text-zinc-500">Or transfer to agent</label>
-                                                    <div class="space-y-1">
-                                                        @foreach ($this->onlineAgents as $oa)
-                                                            <button
-                                                                type="button"
-                                                                wire:click="transferToAgent({{ $oa->id }})"
-                                                                class="flex w-full items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-left text-sm transition hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
-                                                            >
-                                                                <span class="inline-flex size-2 rounded-full bg-green-500"></span>
-                                                                <span>{{ $oa->user?->name ?? 'Agent #'.$oa->id }}</span>
-                                                            </button>
-                                                        @endforeach
+                                                    <label class="mb-1 block text-xs text-zinc-500">Transfer to number</label>
+                                                    <div class="flex gap-2">
+                                                        <input
+                                                            type="tel"
+                                                            wire:model="transferNumber"
+                                                            placeholder="Phone number..."
+                                                            class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+                                                        />
+                                                        <flux:button size="sm" variant="primary" wire:click="warmTransfer">Warm</flux:button>
+                                                        <flux:button size="sm" variant="filled" wire:click="coldTransfer">Cold</flux:button>
                                                     </div>
                                                 </div>
-                                            @endif
-                                        </div>
-                                    @elseif ($transferStatus === 'ringing')
-                                        <div class="py-4 text-center">
-                                            <flux:badge color="amber">Ringing transfer...</flux:badge>
-                                            <div class="mt-2 font-mono text-sm text-zinc-500">{{ $transferNumber }}</div>
-                                            <flux:button size="sm" variant="danger" wire:click="cancelTransfer" class="mt-3">Cancel</flux:button>
-                                        </div>
-                                    @elseif ($transferStatus === 'connected')
-                                        <div class="py-4 text-center">
-                                            <flux:badge color="green">Transfer connected</flux:badge>
-                                            <div class="mt-3 flex justify-center gap-2">
-                                                <flux:button size="sm" variant="primary" wire:click="completeTransfer">Complete</flux:button>
-                                                <flux:button size="sm" variant="danger" wire:click="cancelTransfer">Cancel</flux:button>
+
+                                                @if ($this->onlineAgents->isNotEmpty())
+                                                    <div>
+                                                        <label class="mb-1 block text-xs text-zinc-500">Or transfer to agent</label>
+                                                        <div class="space-y-1">
+                                                            @foreach ($this->onlineAgents as $oa)
+                                                                <button
+                                                                    type="button"
+                                                                    wire:click="transferToAgent({{ $oa->id }})"
+                                                                    class="flex w-full items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-left text-sm transition hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-700"
+                                                                >
+                                                                    <span class="inline-flex size-2 rounded-full bg-green-500"></span>
+                                                                    <span>{{ $oa->user?->name ?? 'Agent #'.$oa->id }}</span>
+                                                                </button>
+                                                            @endforeach
+                                                        </div>
+                                                    </div>
+                                                @endif
                                             </div>
-                                        </div>
+                                        @elseif ($transferStatus === 'ringing')
+                                            <div class="py-4 text-center">
+                                                <flux:badge color="amber">Ringing transfer...</flux:badge>
+                                                <div class="mt-2 font-mono text-sm text-zinc-500">{{ $transferNumber }}</div>
+                                                <flux:button size="sm" variant="danger" wire:click="cancelTransfer" class="mt-3">Cancel</flux:button>
+                                            </div>
+                                        @elseif ($transferStatus === 'connected')
+                                            <div class="py-4 text-center">
+                                                <flux:badge color="green">Transfer connected</flux:badge>
+                                                <div class="mt-3 flex justify-center gap-2">
+                                                    <flux:button size="sm" variant="primary" wire:click="completeTransfer">Complete</flux:button>
+                                                    <flux:button size="sm" variant="danger" wire:click="cancelTransfer">Cancel</flux:button>
+                                                </div>
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endif
+                            </div>
+                        @else
+                            {{-- Idle / ready state — always show dial buttons --}}
+                            <div class="flex items-center justify-between">
+                                <div class="flex gap-2">
+                                    <flux:button variant="primary" size="sm" icon="phone-arrow-up-right" wire:click="dialNext">
+                                        {{ $dialerMode === 'parallel' ? 'Dial Batch' : 'Dial Next' }}
+                                    </flux:button>
+                                    @if ($this->contactDetail)
+                                        <flux:button variant="filled" size="sm" icon="phone" wire:click="dialContact({{ $this->contactDetail->id }})">
+                                            Call {{ $this->contactDetail->getFullName() }}
+                                        </flux:button>
                                     @endif
                                 </div>
-                            @endif
+                                <flux:button variant="ghost" size="sm" icon="hashtag" x-on:click="showManualDial = !showManualDial">
+                                    Manual
+                                </flux:button>
+                            </div>
+                            {{-- Manual Dial Input --}}
+                            <div x-show="showManualDial" x-collapse class="mt-3">
+                                <form wire:submit="manualDial" class="flex gap-2">
+                                    <input
+                                        type="tel"
+                                        wire:model="manualDialNumber"
+                                        placeholder="Enter phone number..."
+                                        class="flex-1 rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-600 dark:bg-zinc-700 dark:text-zinc-100"
+                                    />
+                                    <flux:button type="submit" size="sm" variant="primary" icon="phone">Dial</flux:button>
+                                </form>
+                            </div>
                         @endif
 
-                        {{-- Disposition Panel (shown after call ends) --}}
+                        {{-- Post-call disposition (after a call ends) --}}
                         @if ($showDisposition)
                             <div class="border-t border-zinc-200 pt-4 dark:border-zinc-700">
                                 <flux:heading size="sm" class="mb-3">Disposition</flux:heading>
@@ -1936,6 +2030,61 @@ class extends Component
                             </div>
                         </div>
                     @endif
+                @endif
+
+                {{-- Quick Disposition — always visible when contact selected --}}
+                @if (($this->contactDetail || $previewContactId) && $callStatus === 'idle' && ! $showDisposition)
+                    <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800">
+                        <div class="border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
+                            <flux:heading size="sm">Quick Actions</flux:heading>
+                        </div>
+                        <div class="p-4">
+                            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                @foreach ($this->dispositions as $key => $label)
+                                    @php
+                                        $dispColor = match($key) {
+                                            'interested' => 'bg-green-50 border-green-300 text-green-700 hover:bg-green-100 dark:bg-green-900/20 dark:border-green-700 dark:text-green-300',
+                                            'callback' => 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100 dark:bg-blue-900/20 dark:border-blue-700 dark:text-blue-300',
+                                            'not_interested', 'wrong_number', 'dnc', 'disconnected' => 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100 dark:bg-red-900/20 dark:border-red-700 dark:text-red-300',
+                                            default => 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-300',
+                                        };
+                                    @endphp
+                                    @if ($key === 'callback')
+                                        <button
+                                            type="button"
+                                            x-on:click="showCallbackPicker = !showCallbackPicker"
+                                            class="rounded-lg border px-3 py-2 text-left text-sm font-medium transition {{ $dispColor }}"
+                                        >{{ $label }}</button>
+                                    @else
+                                        <button
+                                            type="button"
+                                            wire:click="quickDisposition('{{ $key }}')"
+                                            class="rounded-lg border px-3 py-2 text-left text-sm font-medium transition {{ $dispColor }}"
+                                        >{{ $label }}</button>
+                                    @endif
+                                @endforeach
+                            </div>
+
+                            {{-- Callback Date Picker --}}
+                            <div x-show="showCallbackPicker" x-collapse class="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                                <label class="mb-1 block text-xs font-medium text-blue-700 dark:text-blue-300">Callback Date/Time</label>
+                                <div class="flex gap-2">
+                                    <input
+                                        type="datetime-local"
+                                        wire:model="callbackDate"
+                                        class="flex-1 rounded-md border border-blue-300 bg-white px-2 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-blue-600 dark:bg-zinc-700 dark:text-zinc-100"
+                                    />
+                                    <flux:button size="sm" variant="primary" wire:click="quickDisposition('callback', callbackDate)" x-on:click="showCallbackPicker = false">
+                                        Schedule
+                                    </flux:button>
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <flux:textarea wire:model="dispositionNotes" placeholder="Notes (optional)..." rows="2" />
+                            </div>
+                        </div>
+                    </div>
                 @endif
 
                 {{-- SMS Conversation --}}
