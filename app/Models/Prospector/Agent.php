@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Agent extends Model
@@ -63,6 +64,11 @@ class Agent extends Model
         return $this->hasMany(Call::class, 'agent_id');
     }
 
+    public function companies(): BelongsToMany
+    {
+        return $this->belongsToMany(Company::class, 'prospector_agent_company');
+    }
+
     // ──────────────────────────────────────
     // Scopes
     // ──────────────────────────────────────
@@ -85,6 +91,23 @@ class Agent extends Model
     // ──────────────────────────────────────
     // Methods
     // ──────────────────────────────────────
+
+    /**
+     * Get all company IDs the agent is assigned to.
+     * Falls back to the single company_id FK if no pivot entries exist.
+     *
+     * @return array<int, int>
+     */
+    public function getCompanyIds(): array
+    {
+        $ids = $this->companies()->pluck('prospector_companies.id')->all();
+
+        if (empty($ids) && $this->company_id) {
+            return [$this->company_id];
+        }
+
+        return $ids;
+    }
 
     /**
      * Check if the agent is available for new calls.
