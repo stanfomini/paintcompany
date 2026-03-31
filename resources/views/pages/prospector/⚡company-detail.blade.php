@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\Prospector\Agent;
 use App\Models\Prospector\CallScript;
 use App\Models\Prospector\Campaign;
 use App\Models\Prospector\Company;
@@ -535,6 +536,36 @@ class extends Component
     }
 
     // ──────────────────────────────────────
+    // Agent Assignment
+    // ──────────────────────────────────────
+
+    #[Computed]
+    public function availableAgents(): \Illuminate\Support\Collection
+    {
+        return Agent::with('user')
+            ->whereDoesntHave('companies', fn ($q) => $q->where('prospector_companies.id', $this->companyId))
+            ->get();
+    }
+
+    #[Computed]
+    public function assignedAgents(): \Illuminate\Support\Collection
+    {
+        return $this->company->agents()->with('user')->get();
+    }
+
+    public function assignAgent(int $agentId): void
+    {
+        $this->company->agents()->syncWithoutDetaching([$agentId]);
+        unset($this->assignedAgents, $this->availableAgents);
+    }
+
+    public function unassignAgent(int $agentId): void
+    {
+        $this->company->agents()->detach($agentId);
+        unset($this->assignedAgents, $this->availableAgents);
+    }
+
+    // ──────────────────────────────────────
     // Webhook URL
     // ──────────────────────────────────────
 
@@ -546,7 +577,7 @@ class extends Component
 
     protected function clearCaches(): void
     {
-        unset($this->company, $this->assignedNumbers, $this->unassignedNumbers, $this->bookingLinks, $this->callScripts, $this->campaigns);
+        unset($this->company, $this->assignedNumbers, $this->unassignedNumbers, $this->bookingLinks, $this->callScripts, $this->campaigns, $this->assignedAgents, $this->availableAgents);
     }
 
     protected function getRoleBadgeColor(string $role): string
@@ -949,6 +980,59 @@ class extends Component
                         </details>
                     </div>
                 @endforeach
+            </div>
+        @endif
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
+    {{-- Assigned Agents --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <flux:heading size="lg" class="mb-3">{{ __('Assigned Agents') }}</flux:heading>
+
+        @foreach ($this->assignedAgents as $agent)
+            <div class="flex items-center justify-between border-b border-zinc-100 py-2 last:border-0 dark:border-zinc-700">
+                <div class="flex items-center gap-2">
+                    <div class="flex size-7 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/30">
+                        <span class="text-xs font-bold text-blue-600 dark:text-blue-400">{{ substr($agent->user->name, 0, 1) }}</span>
+                    </div>
+                    <span class="text-sm font-medium">{{ $agent->user->name }}</span>
+                    <flux:badge size="sm" :color="match($agent->status) {
+                        'available' => 'green',
+                        'on_call' => 'red',
+                        'ringing' => 'amber',
+                        'wrap_up' => 'amber',
+                        'break' => 'zinc',
+                        default => 'zinc',
+                    }">
+                        {{ ucfirst(str_replace('_', ' ', $agent->status)) }}
+                    </flux:badge>
+                </div>
+                <flux:button size="xs" variant="ghost" icon="x-mark"
+                    wire:click="unassignAgent({{ $agent->id }})"
+                    wire:confirm="{{ __('Remove this agent from') }} {{ $this->company->name }}?" />
+            </div>
+        @endforeach
+
+        @if ($this->assignedAgents->isEmpty())
+            <div class="py-3 text-center">
+                <flux:text class="text-sm text-zinc-400">{{ __('No agents assigned yet.') }}</flux:text>
+            </div>
+        @endif
+
+        @if ($this->availableAgents->isNotEmpty())
+            <div class="mt-3" x-data="{ agentToAssign: '' }">
+                <div class="flex gap-2">
+                    <flux:select x-model="agentToAssign" size="sm" class="flex-1" placeholder="{{ __('Add agent...') }}">
+                        @foreach ($this->availableAgents as $agent)
+                            <flux:select.option value="{{ $agent->id }}">{{ $agent->user->name }}</flux:select.option>
+                        @endforeach
+                    </flux:select>
+                    <flux:button size="sm" variant="primary" icon="plus"
+                        x-on:click="if (agentToAssign) { $wire.assignAgent(parseInt(agentToAssign)); agentToAssign = '' }">
+                        {{ __('Add') }}
+                    </flux:button>
+                </div>
             </div>
         @endif
     </div>
