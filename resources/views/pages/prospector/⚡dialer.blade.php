@@ -1557,6 +1557,9 @@ class extends Component
                 const device = new Device(data.token, {
                     codecPreferences: ['opus', 'pcmu'],
                     edge: 'ashburn',
+                    sounds: {
+                        incoming: '/sounds/phone-ring.wav',
+                    },
                 });
 
                 device.on('registered', () => {
@@ -1594,9 +1597,9 @@ class extends Component
                         window.__twilio.pendingCall = call;
                         this.connectionDebug = 'Inbound ringing — waiting for answer';
                         try {
-                            this._ringAudio = new Audio('/sounds/new-lead.wav');
+                            this._ringAudio = new Audio('/sounds/phone-ring.wav');
                             this._ringAudio.loop = true;
-                            this._ringAudio.volume = 0.6;
+                            this._ringAudio.volume = 0.8;
                             this._ringAudio.play().catch(() => {});
                         } catch (err) {}
 
