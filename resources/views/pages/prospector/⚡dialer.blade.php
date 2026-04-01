@@ -1382,6 +1382,14 @@ class extends Component
                 device.on('incoming', (call) => {
                     call.accept();
                     window.__twilio.connection = call;
+                    this.connectionDebug = 'Inbound connected';
+                    call.on('disconnect', () => {
+                        window.__twilio.connection = null;
+                        this.connectionDebug = null;
+                    });
+                    call.on('error', (err) => {
+                        this.phoneError = 'Call error: ' + (err.message || err);
+                    });
                 });
 
                 await device.register();

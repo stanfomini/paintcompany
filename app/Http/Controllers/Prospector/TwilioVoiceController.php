@@ -289,15 +289,17 @@ class TwilioVoiceController extends Controller
         }
 
         $conferenceName = 'inbound-'.Str::ulid();
+        $primaryAgent = $agents->first();
 
         $call = Call::create([
             'company_id' => $company->id,
             'contact_id' => $contact->id,
-            'agent_id' => $agents->first()->id,
+            'agent_id' => $primaryAgent->id,
             'direction' => 'inbound',
             'from_number' => $fromNumber,
             'to_number' => $toNumber,
             'twilio_call_sid' => $callSid,
+            'twilio_conference_sid' => $conferenceName,
             'status' => 'ringing',
             'started_at' => now(),
         ]);
@@ -311,10 +313,24 @@ class TwilioVoiceController extends Controller
             agentIds: $agentIds,
         ));
 
-        Log::info('Inbound call routed to agents', [
+        // Dial the agent's WebRTC client into the conference via Twilio Participants API.
+        // This triggers device.on('incoming') on their browser, which auto-accepts.
+        try {
+            $this->conferenceService->dialAgentIntoConference($conferenceName, $primaryAgent);
+        } catch (\Exception $e) {
+            Log::warning('Failed to dial agent into inbound conference', [
+                'call_id' => $call->id,
+                'agent_id' => $primaryAgent->id,
+                'conference' => $conferenceName,
+                'error' => $e->getMessage(),
+            ]);
+            // Echo broadcast is already sent — agent can still join via browser fallback
+        }
+
+        Log::info('Inbound call routed to agent', [
             'call_id' => $call->id,
             'company_id' => $company->id,
-            'agent_ids' => $agentIds,
+            'agent_id' => $primaryAgent->id,
             'contact_id' => $contact->id,
             'conference' => $conferenceName,
         ]);

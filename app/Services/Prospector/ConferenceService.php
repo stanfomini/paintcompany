@@ -187,6 +187,40 @@ class ConferenceService
     }
 
     /**
+     * Dial an agent's WebRTC client into a conference (used for inbound call routing).
+     *
+     * Sends an incoming call to the agent's registered Twilio Device,
+     * which auto-accepts and connects them to the conference.
+     */
+    public function dialAgentIntoConference(string $conferenceName, Agent $agent): string
+    {
+        $client = $this->getDefaultClient();
+
+        $identity = "agent-{$agent->id}";
+
+        $participant = $client->conferences($conferenceName)
+            ->participants
+            ->create(
+                "client:{$identity}",
+                "client:{$identity}",
+                [
+                    'statusCallback' => route('prospector.webhook.twilio.voice.status'),
+                    'statusCallbackMethod' => 'POST',
+                    'statusCallbackEvent' => ['initiated', 'ringing', 'answered', 'completed'],
+                    'timeout' => 30,
+                ]
+            );
+
+        Log::info('Dialed agent into inbound conference', [
+            'conference' => $conferenceName,
+            'agent_id' => $agent->id,
+            'call_sid' => $participant->callSid,
+        ]);
+
+        return $participant->callSid;
+    }
+
+    /**
      * Transfer to another agent by dialing their WebRTC client identity into the conference.
      */
     public function transferToAgent(string $conferenceName, int $targetAgentId): string
