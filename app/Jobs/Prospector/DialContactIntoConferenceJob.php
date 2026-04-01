@@ -26,7 +26,7 @@ class DialContactIntoConferenceJob implements ShouldQueue
         public PhoneNumber $fromNumber,
         public Call $call,
     ) {
-        $this->onQueue('prospector');
+        $this->onQueue('default');
     }
 
     public function handle(ConferenceService $conferenceService): void
