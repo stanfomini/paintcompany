@@ -30,6 +30,7 @@ class Company extends Model
         'webhook_secret',
         'settings',
         'is_active',
+        'color',
         'notes',
         'default_campaign_id',
     ];
@@ -140,6 +141,40 @@ class Company extends Model
         $end = Carbon::parse($this->business_hours_end, $this->timezone ?? 'America/Denver');
 
         return $now->between($start, $end);
+    }
+
+    /**
+     * Get the active IVR flow based on current business hours.
+     * Returns the business_hours or after_hours flow config, or null if IVR disabled.
+     *
+     * @return array{greeting: string, options: array, no_input_action: string}|null
+     */
+    public function getActiveIvrFlow(): ?array
+    {
+        $settings = $this->settings ?? [];
+        $ivr = $settings['ivr'] ?? null;
+
+        if (! $ivr || ! ($ivr['enabled'] ?? false)) {
+            return null;
+        }
+
+        // Dual-flow config: check for business_hours/after_hours keys
+        if (isset($ivr['business_hours']) || isset($ivr['after_hours'])) {
+            return $this->isBusinessHours()
+                ? ($ivr['business_hours'] ?? null)
+                : ($ivr['after_hours'] ?? null);
+        }
+
+        // Legacy single-flow config: greeting + options at top level
+        if (isset($ivr['greeting'])) {
+            return [
+                'greeting' => $ivr['greeting'],
+                'options' => $ivr['options'] ?? [],
+                'no_input_action' => 'voicemail',
+            ];
+        }
+
+        return null;
     }
 
     /**
