@@ -57,7 +57,15 @@ class extends Component
 
     // IVR Configuration
     public bool $ivrEnabled = false;
-    public string $ivrGreeting = '';
+    public string $ivrActiveTab = 'business_hours';
+    public string $bhGreeting = '';
+    public array $bhOptions = [];
+    public string $bhNoInputAction = 'route_agent';
+    public string $ahGreeting = '';
+    public array $ahOptions = [];
+    public string $ahNoInputAction = 'voicemail';
+    // Company color
+    public string $companyColor = '#3B82F6';
 
     // Delete confirmations
     public bool $showDeleteBookingLinkModal = false;
@@ -83,7 +91,25 @@ class extends Component
 
         $settings = $company->settings ?? [];
         $this->ivrEnabled = data_get($settings, 'ivr.enabled', false);
-        $this->ivrGreeting = data_get($settings, 'ivr.greeting', '');
+
+        // Load dual-flow config
+        $bh = data_get($settings, 'ivr.business_hours', []);
+        $this->bhGreeting = $bh['greeting'] ?? '';
+        $this->bhOptions = $this->normalizeOptions($bh['options'] ?? []);
+        $this->bhNoInputAction = $bh['no_input_action'] ?? 'route_agent';
+
+        $ah = data_get($settings, 'ivr.after_hours', []);
+        $this->ahGreeting = $ah['greeting'] ?? '';
+        $this->ahOptions = $this->normalizeOptions($ah['options'] ?? []);
+        $this->ahNoInputAction = $ah['no_input_action'] ?? 'voicemail';
+
+        // Legacy: migrate old single-flow config
+        if (! $bh && data_get($settings, 'ivr.greeting')) {
+            $this->bhGreeting = data_get($settings, 'ivr.greeting', '');
+            $this->bhOptions = $this->normalizeOptions(data_get($settings, 'ivr.options', []));
+        }
+
+        $this->companyColor = $company->color ?? '#3B82F6';
     }
 
     #[Computed]
@@ -325,24 +351,121 @@ class extends Component
     // IVR Configuration
     // ──────────────────────────────────────
 
+    protected function normalizeOptions(array $options): array
+    {
+        $normalized = [];
+        foreach ($options as $digit => $option) {
+            $normalized[] = [
+                'digit' => (string) $digit,
+                'label' => $option['label'] ?? '',
+                'action' => $option['action'] ?? 'voicemail',
+                'message' => $option['message'] ?? '',
+                'forward_to' => $option['forward_to'] ?? '',
+            ];
+        }
+
+        return $normalized;
+    }
+
+    protected function denormalizeOptions(array $options): array
+    {
+        $keyed = [];
+        foreach ($options as $option) {
+            $digit = $option['digit'] ?? '';
+            if ($digit === '') {
+                continue;
+            }
+            $entry = [
+                'action' => $option['action'] ?? 'voicemail',
+                'label' => $option['label'] ?? '',
+            ];
+            if ($option['action'] === 'play_info') {
+                $entry['message'] = $option['message'] ?? '';
+            }
+            if ($option['action'] === 'forward') {
+                $entry['forward_to'] = $option['forward_to'] ?? '';
+            }
+            $keyed[$digit] = $entry;
+        }
+
+        return $keyed;
+    }
+
+    public function addIvrOption(string $flow): void
+    {
+        $usedDigits = collect($flow === 'business_hours' ? $this->bhOptions : $this->ahOptions)->pluck('digit')->all();
+        $nextDigit = '1';
+        for ($i = 1; $i <= 9; $i++) {
+            if (! in_array((string) $i, $usedDigits, true)) {
+                $nextDigit = (string) $i;
+                break;
+            }
+        }
+
+        $newOption = [
+            'digit' => $nextDigit,
+            'label' => '',
+            'action' => 'route_agent',
+            'message' => '',
+            'forward_to' => '',
+        ];
+
+        if ($flow === 'business_hours') {
+            $this->bhOptions[] = $newOption;
+        } else {
+            $this->ahOptions[] = $newOption;
+        }
+    }
+
+    public function removeIvrOption(string $flow, int $index): void
+    {
+        if ($flow === 'business_hours') {
+            unset($this->bhOptions[$index]);
+            $this->bhOptions = array_values($this->bhOptions);
+        } else {
+            unset($this->ahOptions[$index]);
+            $this->ahOptions = array_values($this->ahOptions);
+        }
+    }
+
     public function saveIvr(): void
     {
         if (Auth::user()->type !== 'internal') {
             abort(403);
         }
 
-        $this->validate([
-            'ivrGreeting' => ['nullable', 'string', 'max:500'],
-        ]);
-
         $company = Company::findOrFail($this->companyId);
         $settings = $company->settings ?? [];
+
         $settings['ivr'] = [
             'enabled' => $this->ivrEnabled,
-            'greeting' => $this->ivrGreeting,
+            'business_hours' => [
+                'greeting' => $this->bhGreeting,
+                'options' => $this->denormalizeOptions($this->bhOptions),
+                'no_input_action' => $this->bhNoInputAction,
+            ],
+            'after_hours' => [
+                'greeting' => $this->ahGreeting,
+                'options' => $this->denormalizeOptions($this->ahOptions),
+                'no_input_action' => $this->ahNoInputAction,
+            ],
         ];
-        $company->update(['settings' => $settings]);
 
+        $company->update(['settings' => $settings]);
+        unset($this->company);
+    }
+
+    public function saveCompanyColor(): void
+    {
+        if (Auth::user()->type !== 'internal') {
+            abort(403);
+        }
+
+        $this->validate([
+            'companyColor' => ['required', 'string', 'regex:/^#[0-9A-Fa-f]{6}$/'],
+        ]);
+
+        Company::where('id', $this->companyId)->update(['color' => $this->companyColor]);
         unset($this->company);
     }
 
@@ -840,11 +963,28 @@ class extends Component
     </div>
 
     {{-- ──────────────────────────────────── --}}
+    {{-- Company Color --}}
+    {{-- ──────────────────────────────────── --}}
+    <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
+        <div class="flex items-center justify-between">
+            <div>
+                <flux:label>{{ __('Company Color') }}</flux:label>
+                <flux:text class="text-xs">{{ __('Color used to identify this company in the dialer queue.') }}</flux:text>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="color" wire:model="companyColor" wire:change="saveCompanyColor"
+                    class="h-8 w-8 cursor-pointer rounded border border-zinc-300 dark:border-zinc-600" />
+                <span class="text-xs text-zinc-500" x-text="$wire.companyColor"></span>
+            </div>
+        </div>
+    </div>
+
+    {{-- ──────────────────────────────────── --}}
     {{-- IVR Configuration --}}
     {{-- ──────────────────────────────────── --}}
     <div class="mt-6 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-800">
         <flux:heading size="lg" class="mb-1">{{ __('IVR Configuration') }}</flux:heading>
-        <flux:text class="mb-4 text-sm">{{ __('Configure interactive voice response settings for inbound calls.') }}</flux:text>
+        <flux:text class="mb-4 text-sm">{{ __('Configure interactive voice response for inbound calls. Set up separate flows for business hours and after hours.') }}</flux:text>
 
         <div class="space-y-4">
             <div class="flex items-center justify-between">
@@ -856,23 +996,142 @@ class extends Component
             </div>
 
             @if ($ivrEnabled)
-                <div>
-                    <flux:textarea
-                        wire:model="ivrGreeting"
-                        :label="__('Greeting Text')"
-                        :placeholder="__('e.g., Thank you for calling. Press 1 for sales, press 2 for support...')"
-                        rows="3"
-                    />
-                    <div class="mt-2 flex items-center gap-2">
-                        <flux:button size="sm" variant="primary" wire:click="saveIvr" wire:loading.attr="disabled" wire:target="saveIvr">
-                            <span wire:loading.remove wire:target="saveIvr">{{ __('Save IVR Settings') }}</span>
-                            <span wire:loading wire:target="saveIvr">{{ __('Saving...') }}</span>
-                        </flux:button>
-                        <div wire:loading.remove wire:target="saveIvr">
-                            @if (data_get($this->company->settings ?? [], 'ivr.enabled'))
-                                <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
-                            @endif
+                <div class="border-b border-zinc-200 dark:border-zinc-700">
+                    <nav class="-mb-px flex gap-4">
+                        <button type="button" wire:click="$set('ivrActiveTab', 'business_hours')"
+                            class="border-b-2 px-1 pb-2 text-sm font-medium transition {{ $ivrActiveTab === 'business_hours' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                            {{ __('Business Hours') }}
+                        </button>
+                        <button type="button" wire:click="$set('ivrActiveTab', 'after_hours')"
+                            class="border-b-2 px-1 pb-2 text-sm font-medium transition {{ $ivrActiveTab === 'after_hours' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-zinc-500 hover:text-zinc-700 dark:text-zinc-400' }}">
+                            {{ __('After Hours') }}
+                        </button>
+                    </nav>
+                </div>
+
+                @if ($ivrActiveTab === 'business_hours')
+                    <div class="space-y-4">
+                        <flux:textarea wire:model="bhGreeting" :label="__('Greeting')"
+                            :placeholder="__('e.g., Thank you for calling. Press 1 to speak with a team member, press 2 for general information.')"
+                            rows="3" />
+
+                        <div>
+                            <div class="mb-2 flex items-center justify-between">
+                                <flux:label>{{ __('Menu Options') }}</flux:label>
+                                <flux:button size="xs" variant="ghost" icon="plus" wire:click="addIvrOption('business_hours')">
+                                    {{ __('Add Option') }}
+                                </flux:button>
+                            </div>
+                            <div class="space-y-2">
+                                @foreach ($bhOptions as $index => $option)
+                                    <div class="flex items-start gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700" wire:key="bh-opt-{{ $index }}">
+                                        <div class="w-16 shrink-0">
+                                            <flux:select wire:model="bhOptions.{{ $index }}.digit" size="sm" label="{{ __('Key') }}">
+                                                @for ($d = 1; $d <= 9; $d++)
+                                                    <flux:select.option value="{{ $d }}">{{ $d }}</flux:select.option>
+                                                @endfor
+                                            </flux:select>
+                                        </div>
+                                        <div class="min-w-0 flex-1 space-y-2">
+                                            <flux:input wire:model="bhOptions.{{ $index }}.label" size="sm" :placeholder="__('Label (e.g., Sales)')" />
+                                            <flux:select wire:model.live="bhOptions.{{ $index }}.action" size="sm">
+                                                <flux:select.option value="route_agent">{{ __('Route to Agent') }}</flux:select.option>
+                                                <flux:select.option value="voicemail">{{ __('Voicemail') }}</flux:select.option>
+                                                <flux:select.option value="play_info">{{ __('Play Information') }}</flux:select.option>
+                                                <flux:select.option value="forward">{{ __('Forward to Number') }}</flux:select.option>
+                                            </flux:select>
+                                            @if (($bhOptions[$index]['action'] ?? '') === 'play_info')
+                                                <flux:textarea wire:model="bhOptions.{{ $index }}.message" size="sm" rows="2"
+                                                    :placeholder="__('Message to read (e.g., Our hours are Mon-Fri 8am to 5pm.)')" />
+                                            @endif
+                                            @if (($bhOptions[$index]['action'] ?? '') === 'forward')
+                                                <flux:input wire:model="bhOptions.{{ $index }}.forward_to" size="sm"
+                                                    :placeholder="__('Phone number (e.g., +13035551234)')" />
+                                            @endif
+                                        </div>
+                                        <flux:button size="xs" variant="ghost" icon="x-mark"
+                                            wire:click="removeIvrOption('business_hours', {{ $index }})" class="mt-5 shrink-0" />
+                                    </div>
+                                @endforeach
+                                @if (empty($bhOptions))
+                                    <flux:text class="text-sm text-zinc-400">{{ __('No options configured. Add one above.') }}</flux:text>
+                                @endif
+                            </div>
                         </div>
+
+                        <flux:select wire:model="bhNoInputAction" :label="__('No Input Fallback')">
+                            <flux:select.option value="route_agent">{{ __('Route to Agent') }}</flux:select.option>
+                            <flux:select.option value="voicemail">{{ __('Voicemail') }}</flux:select.option>
+                        </flux:select>
+                    </div>
+                @endif
+
+                @if ($ivrActiveTab === 'after_hours')
+                    <div class="space-y-4">
+                        <flux:textarea wire:model="ahGreeting" :label="__('Greeting')"
+                            :placeholder="__('e.g., Thank you for calling. We are currently closed. Press 1 to leave a message.')"
+                            rows="3" />
+
+                        <div>
+                            <div class="mb-2 flex items-center justify-between">
+                                <flux:label>{{ __('Menu Options') }}</flux:label>
+                                <flux:button size="xs" variant="ghost" icon="plus" wire:click="addIvrOption('after_hours')">
+                                    {{ __('Add Option') }}
+                                </flux:button>
+                            </div>
+                            <div class="space-y-2">
+                                @foreach ($ahOptions as $index => $option)
+                                    <div class="flex items-start gap-2 rounded-lg border border-zinc-200 p-3 dark:border-zinc-700" wire:key="ah-opt-{{ $index }}">
+                                        <div class="w-16 shrink-0">
+                                            <flux:select wire:model="ahOptions.{{ $index }}.digit" size="sm" label="{{ __('Key') }}">
+                                                @for ($d = 1; $d <= 9; $d++)
+                                                    <flux:select.option value="{{ $d }}">{{ $d }}</flux:select.option>
+                                                @endfor
+                                            </flux:select>
+                                        </div>
+                                        <div class="min-w-0 flex-1 space-y-2">
+                                            <flux:input wire:model="ahOptions.{{ $index }}.label" size="sm" :placeholder="__('Label')" />
+                                            <flux:select wire:model.live="ahOptions.{{ $index }}.action" size="sm">
+                                                <flux:select.option value="route_agent">{{ __('Route to Agent') }}</flux:select.option>
+                                                <flux:select.option value="voicemail">{{ __('Voicemail') }}</flux:select.option>
+                                                <flux:select.option value="play_info">{{ __('Play Information') }}</flux:select.option>
+                                                <flux:select.option value="forward">{{ __('Forward to Number') }}</flux:select.option>
+                                            </flux:select>
+                                            @if (($ahOptions[$index]['action'] ?? '') === 'play_info')
+                                                <flux:textarea wire:model="ahOptions.{{ $index }}.message" size="sm" rows="2"
+                                                    :placeholder="__('Message to read')" />
+                                            @endif
+                                            @if (($ahOptions[$index]['action'] ?? '') === 'forward')
+                                                <flux:input wire:model="ahOptions.{{ $index }}.forward_to" size="sm"
+                                                    :placeholder="__('Phone number')" />
+                                            @endif
+                                        </div>
+                                        <flux:button size="xs" variant="ghost" icon="x-mark"
+                                            wire:click="removeIvrOption('after_hours', {{ $index }})" class="mt-5 shrink-0" />
+                                    </div>
+                                @endforeach
+                                @if (empty($ahOptions))
+                                    <flux:text class="text-sm text-zinc-400">{{ __('No options configured. Add one above.') }}</flux:text>
+                                @endif
+                            </div>
+                        </div>
+
+                        <flux:select wire:model="ahNoInputAction" :label="__('No Input Fallback')">
+                            <flux:select.option value="route_agent">{{ __('Route to Agent') }}</flux:select.option>
+                            <flux:select.option value="voicemail">{{ __('Voicemail') }}</flux:select.option>
+                        </flux:select>
+                    </div>
+                @endif
+
+                <div class="flex items-center gap-2">
+                    <flux:button size="sm" variant="primary" wire:click="saveIvr" wire:loading.attr="disabled" wire:target="saveIvr">
+                        <span wire:loading.remove wire:target="saveIvr">{{ __('Save IVR Settings') }}</span>
+                        <span wire:loading wire:target="saveIvr">{{ __('Saving...') }}</span>
+                    </flux:button>
+                    <div wire:loading.remove wire:target="saveIvr">
+                        @if (data_get($this->company->settings ?? [], 'ivr.enabled'))
+                            <flux:badge size="sm" color="green">{{ __('Active') }}</flux:badge>
+                        @endif
                     </div>
                 </div>
             @endif

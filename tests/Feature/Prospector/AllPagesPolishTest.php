@@ -281,12 +281,14 @@ it('shows IVR configuration section on company detail page', function () {
 it('saves IVR settings on company detail page', function () {
     Livewire::actingAs($this->user)->test('pages::prospector.company-detail', ['companyId' => $this->company->id])
         ->set('ivrEnabled', true)
-        ->set('ivrGreeting', 'Press 1 for sales.')
+        ->set('bhGreeting', 'Press 1 for sales.')
+        ->set('ahGreeting', 'We are closed. Leave a message.')
         ->call('saveIvr');
 
     $this->company->refresh();
     expect(data_get($this->company->settings, 'ivr.enabled'))->toBeTrue();
-    expect(data_get($this->company->settings, 'ivr.greeting'))->toBe('Press 1 for sales.');
+    expect(data_get($this->company->settings, 'ivr.business_hours.greeting'))->toBe('Press 1 for sales.');
+    expect(data_get($this->company->settings, 'ivr.after_hours.greeting'))->toBe('We are closed. Leave a message.');
 });
 
 // ─── Dashboard: Live Calls Panel Always Visible ────────
