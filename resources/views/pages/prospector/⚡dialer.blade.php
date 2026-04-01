@@ -635,6 +635,7 @@ class extends Component
 
         // Set active call state
         $this->setActiveCallFromCall($call->load('contact'));
+        $this->preCallStatus = $this->agentStatus;
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
 
@@ -745,6 +746,7 @@ class extends Component
 
         $call->load('contact');
         $this->setActiveCallFromCall($call);
+        $this->preCallStatus = $this->agentStatus;
         $this->agentStatus = 'ringing';
         $this->showDisposition = false;
         $conferenceName = $call->twilio_conference_sid;
@@ -868,6 +870,40 @@ class extends Component
         $this->callStatus = 'ended';
         $this->showDisposition = true;
         $this->agentStatus = 'wrap_up';
+
+        $agent = Agent::findOrFail($this->agentId);
+        app(AgentStateService::class)->setStatus($agent, 'wrap_up');
+
+        // Start client-side wrap-up countdown timer
+        $this->dispatch('start-wrap-up-timer');
+    }
+
+    public function completeWrapUp(): void
+    {
+        $returnStatus = in_array($this->preCallStatus, ['available', 'nearby']) ? $this->preCallStatus : 'available';
+        $this->preCallStatus = null;
+        $this->agentStatus = $returnStatus;
+
+        if ($this->agentId) {
+            $agent = Agent::findOrFail($this->agentId);
+            app(AgentStateService::class)->setStatus($agent, $returnStatus);
+        }
+    }
+
+    public function setWrapUpSeconds(int $seconds): void
+    {
+        $allowed = [15, 30, 45, 60, 90, 120];
+        if (! in_array($seconds, $allowed)) {
+            return;
+        }
+        $this->wrapUpSeconds = $seconds;
+
+        if ($this->agentId) {
+            $agent = Agent::findOrFail($this->agentId);
+            $settings = $agent->settings ?? [];
+            $settings['wrap_up_seconds'] = $seconds;
+            $agent->update(['settings' => $settings]);
+        }
     }
 
     public function submitDisposition(string $disposition, ?string $callbackAt = null): void
@@ -892,17 +928,15 @@ class extends Component
         }
 
         $this->resetCallState();
-        $this->agentStatus = 'wrap_up';
         $this->dispositionNotes = '';
         $this->callbackDate = null;
         $this->parallelLines = [];
         $this->connectedLineIndex = null;
-        $this->clearCaches();
 
-        // Auto-advance to next contact if agent is active
-        if ($this->agentStatus !== 'offline') {
-            $this->dialNext();
-        }
+        // Cancel wrap-up timer and transition to available/nearby immediately
+        $this->dispatch('cancel-wrap-up-timer');
+        $this->completeWrapUp();
+        $this->clearCaches();
     }
 
     // ──────────────────────────────────────
@@ -1160,6 +1194,11 @@ class extends Component
         $this->agentStatus = 'on_call';
         $this->inboundRinging = false;
 
+        if ($this->agentId) {
+            $agent = Agent::findOrFail($this->agentId);
+            app(AgentStateService::class)->setStatus($agent, 'on_call');
+        }
+
         // In parallel mode, find and highlight the winning line
         if ($this->dialerMode === 'parallel') {
             $connectedCallId = $data['call_id'] ?? null;
@@ -1192,6 +1231,14 @@ class extends Component
         $this->showDisposition = true;
         $this->supervisorName = null;
         $this->supervisorMode = null;
+        $this->agentStatus = 'wrap_up';
+
+        if ($this->agentId) {
+            $agent = Agent::findOrFail($this->agentId);
+            app(AgentStateService::class)->setStatus($agent, 'wrap_up');
+        }
+
+        $this->dispatch('start-wrap-up-timer');
         $this->clearCaches();
     }
 
@@ -1207,6 +1254,7 @@ class extends Component
         $this->activeContact = $data['contact'] ?? null;
         $this->callStatus = 'ringing';
         $this->callingFrom = $data['from_number'] ?? null;
+        $this->preCallStatus = $this->agentStatus;
         $this->agentStatus = 'ringing';
         $this->inboundRinging = true;
 

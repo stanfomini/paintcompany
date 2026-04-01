@@ -400,8 +400,8 @@ class PowerDialerService
             campaignName: $call->campaign?->name,
         ));
 
-        // Transition agent to wrap_up (auto-transitions to available after wrap_up_seconds)
-        $this->agentStateService->transitionToWrapUp($call->agent);
+        // Wrap-up transition is now handled by the dialer UI (client-side timer).
+        // The Livewire endCall()/onCallEnded() method sets wrap_up status.
 
         Log::info('Call dispositioned', [
             'call_id' => $call->id,
