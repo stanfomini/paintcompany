@@ -62,6 +62,8 @@ class extends Component
     // UI
     public bool $isMuted = false;
     public bool $autoAnswerInbound = false;
+    public ?string $preCallStatus = null;
+    public int $wrapUpSeconds = 30;
 
     // SMS
     public string $smsBody = '';
@@ -129,6 +131,7 @@ class extends Component
         $this->agentId = $agent->id;
         $this->agentStatus = $agent->status;
         $this->autoAnswerInbound = ($agent->settings['auto_answer_inbound'] ?? false);
+        $this->wrapUpSeconds = ($agent->settings['wrap_up_seconds'] ?? 30);
 
         if ($agent->status === 'offline') {
             $agent->goAvailable();
@@ -690,7 +693,7 @@ class extends Component
             return;
         }
         $agent = Agent::findOrFail($this->agentId);
-        $validStatuses = ['available', 'break', 'offline'];
+        $validStatuses = ['available', 'nearby', 'break', 'offline'];
         if (! in_array($status, $validStatuses)) {
             return;
         }
@@ -2652,6 +2655,10 @@ class extends Component
                     class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'available' ? 'bg-green-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
                     Available
                 </button>
+                <button wire:click="setAgentStatus('nearby')"
+                    class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'nearby' ? 'bg-yellow-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
+                    Nearby
+                </button>
                 <button wire:click="setAgentStatus('break')"
                     class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {{ $agentStatus === 'break' ? 'bg-amber-500 text-white' : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400' }}">
                     Break
@@ -2662,7 +2669,15 @@ class extends Component
                 </button>
             </div>
             @if ($agentStatus === 'on_call')
-                <flux:badge color="red" size="sm">On Call</flux:badge>
+                <flux:badge color="blue" size="sm">On Call</flux:badge>
+            @elseif ($agentStatus === 'ringing')
+                <flux:badge color="amber" size="sm">Ringing</flux:badge>
+            @elseif ($agentStatus === 'wrap_up')
+                <flux:badge color="purple" size="sm">
+                    Wrap Up <span x-show="wrapUpRemaining > 0" class="ml-1 font-mono" x-text="wrapUpRemaining + 's'"></span>
+                </flux:badge>
+            @elseif ($agentStatus === 'nearby')
+                <flux:badge color="yellow" size="sm">Nearby</flux:badge>
             @endif
         </div>
 </div>
