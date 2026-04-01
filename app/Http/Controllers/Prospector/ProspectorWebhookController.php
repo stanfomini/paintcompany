@@ -84,6 +84,14 @@ class ProspectorWebhookController extends Controller
 
         if (in_array($mappedStatus, ['completed', 'busy', 'no_answer', 'failed', 'canceled'])) {
             broadcast(new DialerCallEnded($call, $call->agent_id));
+
+            // Dispatch AI call intelligence processing for completed calls
+            if ($mappedStatus === 'completed') {
+                $aiSettings = \App\Models\Prospector\AiSetting::current();
+                if ($aiSettings->isConfigured()) {
+                    \App\Jobs\Prospector\ProcessCallIntelligenceJob::dispatch($call->fresh());
+                }
+            }
         }
 
         return response('', 200);

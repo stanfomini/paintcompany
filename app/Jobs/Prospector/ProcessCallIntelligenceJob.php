@@ -27,6 +27,21 @@ class ProcessCallIntelligenceJob implements ShouldQueue
 
     public function handle(CallIntelligenceService $service): void
     {
+        // Recording may not be ready yet — Twilio sends it separately
+        if (! $this->call->recording_url) {
+            $this->call->refresh();
+
+            if (! $this->call->recording_url) {
+                Log::info('ProcessCallIntelligenceJob: Recording not ready, releasing back to queue', [
+                    'call_id' => $this->call->id,
+                    'attempt' => $this->attempts(),
+                ]);
+                $this->release(30);
+
+                return;
+            }
+        }
+
         try {
             $service->processCall($this->call);
         } catch (\Exception $e) {
