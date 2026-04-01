@@ -1564,7 +1564,7 @@ class extends Component
                 setTimeout(() => { this.phoneError = null; }, 10000);
             });
 
-            // Manual answer: agent clicks "Answer" for inbound call
+            // Manual answer: agent clicks Answer for inbound call
             this.$wire.on('answer-inbound-call', () => {
                 const pending = window.__twilio.pendingCall;
                 if (pending) {
@@ -1583,7 +1583,7 @@ class extends Component
                 }
             });
 
-            // Manual decline: agent clicks "Decline" for inbound call
+            // Manual decline: agent clicks Decline for inbound call
             this.$wire.on('decline-inbound-call', () => {
                 const pending = window.__twilio.pendingCall;
                 if (pending) {
