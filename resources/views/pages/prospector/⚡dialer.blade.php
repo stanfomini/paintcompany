@@ -1410,6 +1410,20 @@ class extends Component
                 device.on('error', (err) => {
                     this.phoneError = err.message || 'Phone error';
                 });
+                device.on('tokenWillExpire', async () => {
+                    try {
+                        const refreshUrl = window.__twilio.companyId
+                            ? '/prospector/voice/token?company_id=' + window.__twilio.companyId
+                            : '/prospector/voice/token';
+                        const res = await fetch(refreshUrl);
+                        const data = await res.json();
+                        if (res.ok && data.token) {
+                            device.updateToken(data.token);
+                        }
+                    } catch (err) {
+                        this.phoneError = 'Token refresh failed';
+                    }
+                });
                 device.on('incoming', (call) => {
                     if ($wire.autoAnswerInbound) {
                         // Auto-answer: accept immediately
