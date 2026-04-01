@@ -123,7 +123,7 @@ class TwilioVoiceController extends Controller
         $to = $request->input('To', '');
         $conferenceName = $request->input('conference', '');
 
-        Log::info('handleIncoming called', [
+        Log::error('DEBUG handleIncoming called', [
             'to' => $to,
             'conference' => $conferenceName,
             'all_params' => $request->all(),
@@ -132,7 +132,7 @@ class TwilioVoiceController extends Controller
         $response = new VoiceResponse;
 
         if ($conferenceName) {
-            Log::info('handleIncoming: joining conference', ['conference' => $conferenceName]);
+            Log::error('DEBUG handleIncoming: joining conference', ['conference' => $conferenceName]);
             $dial = $response->dial();
             $dial->conference($conferenceName, [
                 'startConferenceOnEnter' => true,
@@ -140,11 +140,11 @@ class TwilioVoiceController extends Controller
                 'beep' => false,
             ]);
         } elseif (str_starts_with($to, 'client:')) {
-            Log::info('handleIncoming: dialing client', ['to' => $to]);
+            Log::error('DEBUG handleIncoming: dialing client', ['to' => $to]);
             $dial = $response->dial();
             $dial->client(substr($to, 7));
         } else {
-            Log::info('handleIncoming: no conference, no client — hanging up');
+            Log::error('DEBUG handleIncoming: no conference, no client — hanging up');
             $response->say('No conference specified.');
             $response->hangup();
         }
