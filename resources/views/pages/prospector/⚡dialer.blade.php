@@ -1530,14 +1530,7 @@ class extends Component
 
         async initTwilio(companyId = null) {
             try {
-                // Destroy existing device if re-initializing for a different company
-                if (window.__twilio.device) {
-                    this.deviceReady = false;
-                    window.__twilio.device.destroy();
-                    window.__twilio.device = null;
-                    window.__twilio.connection = null;
-                }
-
+                // Fetch token FIRST — don't destroy the old device until we know the new one works
                 const Device = await window.loadTwilioVoice();
                 const tokenUrl = companyId
                     ? '/prospector/voice/token?company_id=' + companyId
@@ -1547,7 +1540,16 @@ class extends Component
 
                 if (!res.ok || data.error) {
                     this.phoneError = data.error || 'Failed to get phone token';
+                    // Keep the old device working — don't destroy it
                     return;
+                }
+
+                // Token succeeded — NOW destroy the old device
+                if (window.__twilio.device) {
+                    this.deviceReady = false;
+                    window.__twilio.device.destroy();
+                    window.__twilio.device = null;
+                    window.__twilio.connection = null;
                 }
 
                 window.__twilio.companyId = data.company_id || null;
